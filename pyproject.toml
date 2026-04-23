@@ -1,0 +1,60 @@
+[project]
+name = "pycastle"
+version = "0.1.0"
+description = "Python orchestrator for autonomous Claude Code agents in Docker"
+readme = "prd.md"
+license = { text = "MIT" }
+requires-python = ">=3.11.3"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "click",
+    "docker",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "mypy",
+    "ruff",
+]
+
+[project.scripts]
+pycastle = "pycastle.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pycastle = [
+    "defaults/.gitignore",
+    "defaults/.env",
+    "defaults/config.py",
+    "defaults/Dockerfile",
+    "defaults/prompts/plan-prompt.md",
+    "defaults/prompts/implement-prompt.md",
+    "defaults/prompts/review-prompt.md",
+    "defaults/prompts/merge-prompt.md",
+    "defaults/prompts/CODING_STANDARDS.md",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
