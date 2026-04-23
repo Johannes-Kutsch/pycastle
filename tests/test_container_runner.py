@@ -149,280 +149,116 @@ def test_two_agents_run_concurrently(tmp_path):
     )
 
 
-# ── Cycle 5: __enter__ raises RuntimeError on worktree failure ───────────────
+# ── Cycle 15: worktree add must not run inside the container ─────────────────
 
 @patch("pycastle.container_runner.LOGS_DIR")
 @patch("pycastle.container_runner.docker")
-def test_enter_raises_on_worktree_failure(mock_docker, mock_logs_dir, tmp_path):
+def test_worktree_add_not_called_inside_container(mock_docker, mock_logs_dir, tmp_path):
+    """When worktree_host_path is provided, ContainerRunner must not exec worktree add."""
     mock_container = MagicMock()
     mock_docker.from_env.return_value.containers.run.return_value = mock_container
+    mock_container.exec_run.return_value = MagicMock(exit_code=0, output=b"")
 
-    fail_result = MagicMock()
-    fail_result.exit_code = 1
-    fail_result.output = b"fatal: branch 'no-such-branch' not found"
-    mock_container.exec_run.return_value = fail_result
+    worktree_path = tmp_path / "worktree"
+    worktree_path.mkdir()
 
-    runner = ContainerRunner("test", tmp_path, {}, branch="no-such-branch")
-    with pytest.raises(RuntimeError):
-        runner.__enter__()
+    runner = ContainerRunner(
+        "test", tmp_path, {}, branch="feature/test", worktree_host_path=worktree_path
+    )
+    runner.__enter__()
+    runner.__exit__(None, None, None)
+
+    all_exec_cmds = [
+        " ".join(call.args[0]) if isinstance(call.args[0], list) else str(call.args[0])
+        for call in mock_container.exec_run.call_args_list
+    ]
+    assert not any("worktree add" in cmd for cmd in all_exec_cmds), (
+        f"worktree add was called inside the container: {all_exec_cmds}"
+    )
 
 
-# ── Cycle 7: __enter__ raises RuntimeError when project files missing from worktree ──
+# ── Cycle 16: implementer mounts worktree dir at /home/agent/workspace ────────
 
 @patch("pycastle.container_runner.LOGS_DIR")
 @patch("pycastle.container_runner.docker")
-def test_enter_raises_when_project_files_missing(mock_docker, mock_logs_dir, tmp_path):
+def test_implementer_mounts_worktree_at_workspace(mock_docker, mock_logs_dir, tmp_path):
+    """When worktree_host_path is provided the container must bind it at /home/agent/workspace."""
     mock_container = MagicMock()
     mock_docker.from_env.return_value.containers.run.return_value = mock_container
+    mock_container.exec_run.return_value = MagicMock(exit_code=0, output=b"")
 
-    prune_ok = MagicMock()
-    prune_ok.exit_code = 0
+    worktree_path = tmp_path / "worktree"
+    worktree_path.mkdir()
 
-    rev_parse_ok = MagicMock()
-    rev_parse_ok.exit_code = 0
+    runner = ContainerRunner(
+        "test", tmp_path, {}, branch="feature/test", worktree_host_path=worktree_path
+    )
+    runner.__enter__()
+    runner.__exit__(None, None, None)
 
-    worktree_ok = MagicMock()
-    worktree_ok.exit_code = 0
-    worktree_ok.output = b""
-
-    files_absent = MagicMock()
-    files_absent.exit_code = 1  # test -e returns 1 when file is absent
-
-    ls_ok = MagicMock()
-    ls_ok.exit_code = 0
-    ls_ok.output = b""
-    mock_container.exec_run.side_effect = [prune_ok, rev_parse_ok, worktree_ok, files_absent, ls_ok]
-
-    runner = ContainerRunner("test", tmp_path, {}, branch="feature/fix")
-    with pytest.raises(RuntimeError, match="(?i)commit"):
-        runner.__enter__()
+    volumes = mock_docker.from_env.return_value.containers.run.call_args.kwargs["volumes"]
+    bound_paths = {v["bind"]: k for k, v in volumes.items()}
+    assert "/home/agent/workspace" in bound_paths, (
+        f"/home/agent/workspace not mounted; volumes={volumes}"
+    )
+    assert bound_paths["/home/agent/workspace"] == str(worktree_path.resolve()).replace("\\", "/"), (
+        f"Wrong host path mounted at /home/agent/workspace: {bound_paths['/home/agent/workspace']!r}"
+    )
 
 
-# ── Cycle 8: container is cleaned up when worktree setup fails ───────────────
+# ── Cycle 17: host-side worktree removed even when container raises ───────────
 
-@patch("pycastle.container_runner.LOGS_DIR")
-@patch("pycastle.container_runner.docker")
-def test_container_cleaned_up_when_worktree_setup_fails(mock_docker, mock_logs_dir, tmp_path):
-    mock_container = MagicMock()
-    mock_docker.from_env.return_value.containers.run.return_value = mock_container
+class _StreamingErrorRunner:
+    """Fake runner that succeeds setup but raises during run_streaming."""
 
-    fail_result = MagicMock()
-    fail_result.exit_code = 1
-    fail_result.output = b"fatal: already registered worktree"
-    mock_container.exec_run.return_value = fail_result
+    def __init__(self, *args, **kwargs):
+        self.branch = None
+        self.env = {}
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def exec_simple(self, cmd, timeout=None):
+        return ""
+
+    def write_file(self, *_):
+        pass
+
+    def run_streaming(self):
+        raise RuntimeError("container crashed mid-run")
+
+
+def test_host_worktree_removed_even_when_container_raises(tmp_path):
+    """remove_worktree must be called on the host in finally, even if the container throws."""
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
-    with pytest.raises(Exception):
+    with patch("pycastle.container_runner.ContainerRunner", _StreamingErrorRunner), \
+         patch("pycastle.container_runner.create_worktree") as mock_create, \
+         patch("pycastle.container_runner.remove_worktree") as mock_remove:
+        with pytest.raises(RuntimeError, match="container crashed"):
+            _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
+
+    mock_remove.assert_called_once()
+
+
+# ── Cycle 8: no container is started when host-side worktree creation fails ───
+
+@patch("pycastle.container_runner.LOGS_DIR")
+@patch("pycastle.container_runner.docker")
+def test_no_container_started_when_worktree_creation_fails(mock_docker, mock_logs_dir, tmp_path):
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with patch("pycastle.container_runner.create_worktree",
+               side_effect=RuntimeError("git worktree add failed")), \
+         pytest.raises(RuntimeError, match="worktree add failed"):
         _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
 
-    mock_container.stop.assert_called()
-    mock_container.remove.assert_called()
-
-
-# ── Cycle 9: parallel implementers use distinct worktree paths ───────────────
-
-@patch("pycastle.container_runner.LOGS_DIR")
-@patch("pycastle.container_runner.docker")
-def test_parallel_implementers_use_distinct_worktree_paths(mock_docker, mock_logs_dir, tmp_path):
-    """Two runners with different branches must issue worktree add with different paths."""
-    import re
-
-    worktree_paths_seen = []
-
-    def recording_exec_run(cmd, **kwargs):
-        if isinstance(cmd, list):
-            cmd_str = " ".join(cmd)
-            # Extract the worktree path: first /home/agent/... token after "worktree add"
-            m = re.search(r"worktree add (?:-b \S+ )?(/home/agent/\S+)", cmd_str)
-            if m:
-                worktree_paths_seen.append(m.group(1))
-        result = MagicMock()
-        result.exit_code = 0
-        result.output = b""
-        return result
-
-    containers = [MagicMock(), MagicMock()]
-    for c in containers:
-        c.exec_run.side_effect = recording_exec_run
-    mock_docker.from_env.return_value.containers.run.side_effect = containers
-
-    runner1 = ContainerRunner("r1", tmp_path, {}, branch="sandcastle/issue-2-foo")
-    runner2 = ContainerRunner("r2", tmp_path, {}, branch="sandcastle/issue-3-bar")
-    runner1.__enter__()
-    runner2.__enter__()
-    runner1.__exit__(None, None, None)
-    runner2.__exit__(None, None, None)
-
-    assert len(worktree_paths_seen) >= 2
-    assert worktree_paths_seen[0] != worktree_paths_seen[1], (
-        f"Both runners used the same worktree path '{worktree_paths_seen[0]}' — collision"
-    )
-
-
-# ── Cycle 10: stale worktree registration is pruned before worktree add ──────
-
-@patch("pycastle.container_runner.LOGS_DIR")
-@patch("pycastle.container_runner.docker")
-def test_worktree_prune_runs_before_worktree_add(mock_docker, mock_logs_dir, tmp_path):
-    """_setup_worktree must prune stale registrations before attempting worktree add."""
-    call_order = []
-
-    def recording_exec_run(cmd, **kwargs):
-        if isinstance(cmd, list):
-            cmd_str = " ".join(cmd)
-            if "worktree prune" in cmd_str:
-                call_order.append("prune")
-            elif "worktree add" in cmd_str:
-                call_order.append("add")
-        result = MagicMock()
-        result.exit_code = 0
-        result.output = b""
-        return result
-
-    mock_container = MagicMock()
-    mock_container.exec_run.side_effect = recording_exec_run
-    mock_docker.from_env.return_value.containers.run.return_value = mock_container
-
-    runner = ContainerRunner("test", tmp_path, {}, branch="feature/test")
-    runner.__enter__()
-    runner.__exit__(None, None, None)
-
-    assert "prune" in call_order, "git worktree prune was never called"
-    assert "add" in call_order, "git worktree add was never called"
-    assert call_order.index("prune") < call_order.index("add"), (
-        "git worktree prune must run before git worktree add"
-    )
-
-
-# ── Cycle 11: existing branch is checked out without -b ──────────────────────
-
-@patch("pycastle.container_runner.LOGS_DIR")
-@patch("pycastle.container_runner.docker")
-def test_existing_branch_checked_out_without_create_flag(mock_docker, mock_logs_dir, tmp_path):
-    """When the branch already exists, worktree add must not use -b (create-new)."""
-    worktree_add_cmds = []
-
-    def recording_exec_run(cmd, **kwargs):
-        if isinstance(cmd, list):
-            cmd_str = " ".join(cmd)
-            if "worktree add" in cmd_str and "worktree remove" not in cmd_str:
-                worktree_add_cmds.append(cmd_str)
-        result = MagicMock()
-        result.exit_code = 0
-        result.output = b""
-        return result
-
-    mock_container = MagicMock()
-    mock_container.exec_run.side_effect = recording_exec_run
-    mock_docker.from_env.return_value.containers.run.return_value = mock_container
-
-    # Simulate an existing branch by making rev-parse succeed
-    runner = ContainerRunner("test", tmp_path, {}, branch="feature/existing")
-    runner.__enter__()
-    runner.__exit__(None, None, None)
-
-    assert worktree_add_cmds, "No worktree add command was issued"
-    final_add = worktree_add_cmds[-1]
-    assert " -b " not in final_add, (
-        f"worktree add used -b for an existing branch: {final_add!r}"
-    )
-
-
-# ── Cycle 14: missing-files error includes worktree path and ls output ────────
-
-@patch("pycastle.container_runner.LOGS_DIR")
-@patch("pycastle.container_runner.docker")
-def test_missing_project_files_error_includes_worktree_path_and_listing(mock_docker, mock_logs_dir, tmp_path):
-    mock_container = MagicMock()
-    mock_docker.from_env.return_value.containers.run.return_value = mock_container
-
-    prune_ok = MagicMock(exit_code=0)
-    rev_parse_ok = MagicMock(exit_code=0)
-    worktree_ok = MagicMock(exit_code=0, output=b"")
-    files_absent = MagicMock(exit_code=1)
-    ls_result = MagicMock(exit_code=0, output=b"only_random_files.txt\n")
-
-    mock_container.exec_run.side_effect = [prune_ok, rev_parse_ok, worktree_ok, files_absent, ls_result]
-
-    runner = ContainerRunner("test", tmp_path, {}, branch="feature/fix")
-    with pytest.raises(RuntimeError) as exc_info:
-        runner.__enter__()
-
-    msg = str(exc_info.value)
-    assert "/home/agent/workspace-feature-fix" in msg, f"worktree path missing from error: {msg!r}"
-    assert "only_random_files.txt" in msg, f"ls output missing from error: {msg!r}"
-
-
-# ── Cycle 12: new-branch worktree add includes HEAD as final argument ─────────
-
-@patch("pycastle.container_runner.LOGS_DIR")
-@patch("pycastle.container_runner.docker")
-def test_new_branch_worktree_add_ends_with_HEAD(mock_docker, mock_logs_dir, tmp_path):
-    """For a new branch, git worktree add must end with HEAD."""
-    worktree_add_cmds = []
-
-    def recording_exec_run(cmd, **kwargs):
-        if isinstance(cmd, list):
-            cmd_str = " ".join(cmd)
-            if "worktree add" in cmd_str and "worktree remove" not in cmd_str:
-                worktree_add_cmds.append(cmd_str)
-            if "rev-parse" in cmd_str:
-                result = MagicMock()
-                result.exit_code = 1
-                result.output = b""
-                return result
-        result = MagicMock()
-        result.exit_code = 0
-        result.output = b""
-        return result
-
-    mock_container = MagicMock()
-    mock_container.exec_run.side_effect = recording_exec_run
-    mock_docker.from_env.return_value.containers.run.return_value = mock_container
-
-    runner = ContainerRunner("test", tmp_path, {}, branch="feature/new")
-    runner.__enter__()
-    runner.__exit__(None, None, None)
-
-    assert worktree_add_cmds, "No worktree add command was issued"
-    assert worktree_add_cmds[-1].split()[-1] == "HEAD", (
-        f"worktree add for new branch does not end with HEAD: {worktree_add_cmds[-1]!r}"
-    )
-
-
-# ── Cycle 13: existing-branch worktree add uses branch name as final token ────
-
-@patch("pycastle.container_runner.LOGS_DIR")
-@patch("pycastle.container_runner.docker")
-def test_existing_branch_worktree_add_ends_with_branch_name(mock_docker, mock_logs_dir, tmp_path):
-    """For an existing branch, git worktree add must end with the branch name."""
-    worktree_add_cmds = []
-
-    def recording_exec_run(cmd, **kwargs):
-        if isinstance(cmd, list):
-            cmd_str = " ".join(cmd)
-            if "worktree add" in cmd_str and "worktree remove" not in cmd_str:
-                worktree_add_cmds.append(cmd_str)
-        result = MagicMock()
-        result.exit_code = 0
-        result.output = b""
-        return result
-
-    mock_container = MagicMock()
-    mock_container.exec_run.side_effect = recording_exec_run
-    mock_docker.from_env.return_value.containers.run.return_value = mock_container
-
-    branch = "feature/existing"
-    runner = ContainerRunner("test", tmp_path, {}, branch=branch)
-    runner.__enter__()
-    runner.__exit__(None, None, None)
-
-    assert worktree_add_cmds, "No worktree add command was issued"
-    assert worktree_add_cmds[-1].split()[-1] == branch, (
-        f"worktree add for existing branch does not end with branch name: {worktree_add_cmds[-1]!r}"
-    )
+    mock_docker.from_env.return_value.containers.run.assert_not_called()
 
 
 # ── Cycle 4: exec_simple raises TimeoutError on stalled command ───────────────
