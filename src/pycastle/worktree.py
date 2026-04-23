@@ -4,6 +4,19 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Callable, TypeVar
+
+_T = TypeVar("_T")
+
+
+def _retry_on_permission_error(fn: Callable[[], _T], attempts: int = 3, delay: float = 0.1) -> _T:
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay)
 
 
 def _is_ancestor(branch: str, repo_path: Path) -> bool:
@@ -97,10 +110,10 @@ def patch_gitdir_for_container(worktree_path: Path) -> None:
         return
 
     git_file = worktree_path / ".git"
-    if not git_file.is_file():
+    if not _retry_on_permission_error(git_file.is_file):
         return
 
-    content = git_file.read_text(encoding="utf-8")
+    content = _retry_on_permission_error(lambda: git_file.read_text(encoding="utf-8"))
 
     def _rewrite(m: re.Match) -> str:
         path = m.group(1).strip().replace("\\", "/")
@@ -111,11 +124,4 @@ def patch_gitdir_for_container(worktree_path: Path) -> None:
         return f"gitdir: /home/agent/repo/{suffix}"
 
     new_content = re.sub(r"gitdir:\s*(.+)", _rewrite, content)
-    for attempt in range(3):
-        try:
-            git_file.write_text(new_content.rstrip() + "\n", encoding="utf-8")
-            break
-        except PermissionError:
-            if attempt == 2:
-                raise
-            time.sleep(0.1)
+    _retry_on_permission_error(lambda: git_file.write_text(new_content.rstrip() + "\n", encoding="utf-8"))
