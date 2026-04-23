@@ -78,7 +78,7 @@ class ContainerRunner:
         if branch_exists.exit_code == 0:
             add_cmd = f"git -C /home/agent/repo worktree add {self._worktree_path} {self.branch}"
         else:
-            add_cmd = f"git -C /home/agent/repo worktree add -b {self.branch} {self._worktree_path}"
+            add_cmd = f"git -C /home/agent/repo worktree add -b {self.branch} {self._worktree_path} HEAD"
         wt_result = self._container.exec_run(
             ["bash", "-c", add_cmd],
             environment=self._container_env,
@@ -94,9 +94,15 @@ class ContainerRunner:
             environment=self._container_env,
         )
         if check.exit_code != 0:
+            ls = self._container.exec_run(
+                ["bash", "-c", f"ls {self._worktree_path}"],
+                environment=self._container_env,
+            )
+            listing = (ls.output or b"").decode("utf-8", errors="replace").strip()
             raise RuntimeError(
-                "No pyproject.toml or requirements.txt found in the worktree. "
-                "Commit your project files before running agents."
+                f"No pyproject.toml or requirements.txt found in worktree {self._worktree_path}. "
+                f"Commit your project files before running agents. "
+                f"Worktree contents:\n{listing or '(empty or missing)'}"
             )
 
     def __exit__(self, *_):

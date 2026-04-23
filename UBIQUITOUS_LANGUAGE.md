@@ -41,13 +41,24 @@
 | --- | --- | --- |
 | **agent** | A Claude Code instance running inside an isolated Docker container | bot, worker |
 | **orchestrator** | The main loop that coordinates agent phases across GitHub issues | runner, coordinator |
-| **3-phase loop** | A single orchestration iteration: plan → implement+review → merge | pipeline, workflow |
-| **plan phase** | Phase where the planner agent analyzes open issues and produces an ordered plan | planning step |
-| **implement phase** | Phase where implementer agents fix individual issues in isolated worktrees | coding step |
-| **review phase** | Phase where the reviewer agent checks an implementer's changes before merge | code review step |
-| **merge phase** | Phase where the merger agent integrates completed branches and closes issues | integration step |
+| **iteration** | One complete 3-phase loop (plan → implement+review → merge); up to `MAX_ITERATIONS` run per `pycastle run` invocation | cycle, round, pipeline |
+| **3-phase loop** | The structure of a single **iteration**: plan phase, implement+review phase, merge phase | pipeline, workflow |
+| **plan phase** | Phase where the **Planner** analyzes open issues and produces a **plan** | planning step |
+| **implement phase** | Phase where **Implementers** fix individual issues in isolated **worktrees** | coding step |
+| **review phase** | Phase where the **Reviewer** checks an **Implementer**'s changes before merge | code review step |
+| **merge phase** | Phase where the **Merger** integrates completed branches and closes issues | integration step |
+| **Planner** | The named agent role that runs during the **plan phase**; outputs a **plan** | planning agent |
+| **Implementer** | The named agent role that runs during the **implement phase**; one **Implementer** per **issue** | coding agent, implementation agent |
+| **Reviewer** | The named agent role that runs after an **Implementer** completes; validates changes before merge | review agent |
+| **Merger** | The named agent role that runs during the **merge phase**; integrates all completed branches | merge agent, integration agent |
+| **plan** | The structured data (JSON) output by the **Planner** listing which issues to work on and the branch name for each | plan output, plan JSON |
 | **issue** | A GitHub issue labeled for agent processing, representing one unit of work | ticket, task, card |
+| **AFK issue** | An issue the **Planner** assigns to an **Implementer** because it can be resolved autonomously; labeled `ready-for-agent` | agent issue, auto issue |
+| **HITL issue** | An issue that requires human intervention; labeled `ready-for-human` — the **Planner** must never assign it to an **Implementer** | manual issue, human issue |
+| **blocker** | An issue that must be resolved before another issue can be worked on; informs the **Planner**'s selection | dependency, prerequisite |
+| **dependency graph** | The set of blocker relationships between issues, analyzed by the **Planner** to determine the safe working set for an **iteration** | issue graph, dependency map |
 | **worktree** | An isolated git working tree created inside a container for a single issue | workspace, branch dir |
+| **branch** | A git branch name assigned to an **issue** inside the **plan**; follows the pattern `sandcastle/issue-<n>-<slug>` | feature branch, issue branch |
 
 ## Prompts
 
@@ -66,6 +77,12 @@
 | --- | --- | --- |
 | **Dockerfile** | File in the pycastle directory defining the Docker image for agent containers — ships without baked-in credentials | image definition |
 | **container runner** | Package module that manages Docker container lifecycle and injects runtime secrets | docker wrapper |
+| **host repo** | The git repository on the developer's machine that is mounted read-write into each agent container | project repo, local repo |
+| **volume mount** | The Docker bind mount that attaches the **host repo** at `/home/agent/repo` inside each container | bind mount, volume |
+| **worktree setup** | The container initialization step that runs `git worktree add` to create the **worktree** for an **Implementer** before the agent prompt is sent; uses the new-branch path when the branch doesn't exist, the existing-branch path when it does | worktree init, worktree creation |
+| **new-branch path** | The `git worktree add -b <branch> <path> HEAD` form used when the **branch** does not yet exist; `HEAD` must be passed explicitly to force commit resolution on Windows Docker mounts | — |
+| **existing-branch path** | The `git worktree add <path> <branch>` form used when the **branch** already exists; the branch name serves as the commit-ish | — |
+| **worktree contents check** | The guard step run after `git worktree add` that verifies `pyproject.toml` or `requirements.txt` is present in the **worktree**; fails with the worktree path and directory listing if absent | checkout guard, file check |
 | **runtime injection** | The act of reading `~/.claude.json` from the host and writing it to `/home/agent/.claude.json` inside a container before the agent runs | baking in, build-time config |
 
 ## Relationships
@@ -73,10 +90,20 @@
 - A **consuming project** contains exactly one **pycastle directory**.
 - A **pycastle directory** contains one **config.py**, one **.env**, one **Dockerfile**, and one **prompts directory**.
 - A **prompts directory** contains one **prompt** per orchestration phase plus **CODING_STANDARDS.md**.
-- The **orchestrator** runs one or more **3-phase loops**, bounded by `MAX_ITERATIONS`.
-- Each **issue** must carry the **issue label** to be picked up by the **plan phase**.
-- Each **issue** is processed by one **implementer agent** followed by one **reviewer agent** in the **implement phase**.
+- The **orchestrator** runs one or more **iterations**, bounded by `MAX_ITERATIONS`.
+- Each **iteration** consists of one **plan phase**, one **implement phase** (with embedded **review phase**), and one **merge phase**.
+- The **Planner** runs once per **iteration** and produces exactly one **plan**.
+- A **plan** contains one entry per unblocked **AFK issue**, each paired with a **branch** name.
+- The **Planner** uses the **dependency graph** to exclude **blockers** and **HITL issues** from the **plan**.
+- Each **AFK issue** in a **plan** is processed by one **Implementer** followed by one **Reviewer**.
+- Each **Implementer** runs inside its own container with its own **worktree**, created by **worktree setup** before the agent prompt is sent.
+- The **Merger** runs once per **iteration** after all **Implementers** and **Reviewers** complete.
+- Each **issue** must carry the **issue label** to be picked up by the **Planner**.
+- An **AFK issue** carries `ready-for-agent`; a **HITL issue** carries `ready-for-human`.
 - The **container runner** performs **runtime injection** before every agent run.
+- **Worktree setup** always runs the **worktree contents check** immediately after `git worktree add`; a failed check raises an error with the worktree path and directory listing.
+- **Worktree setup** uses the **new-branch path** when the branch doesn't yet exist, and the **existing-branch path** when it does.
+- The **host repo** is attached to each container via a **volume mount** at `/home/agent/repo`.
 - The **canonical label set** is defined once in the pycastle package; **pycastle labels** applies it to any target repo.
 - A **label reset** deletes all existing repo labels before applying the **canonical label set**.
 
@@ -90,13 +117,17 @@
 
 > **Domain expert:** "No. **CLAUDE_ACCOUNT_JSON** is read from `~/.claude.json` on your machine at runtime. The **container runner** performs **runtime injection** — it writes that file into each container before the **agent** starts. It never lives in **.env**."
 
-> **Dev:** "What's the difference between `ready-for-agent` and the **canonical label set**?"
+> **Dev:** "When I run `pycastle run`, the **Planner** listed three issues but only two showed up in the **plan**. Why?"
 
-> **Domain expert:** "`ready-for-agent` is the **issue label** — the specific value the **orchestrator** filters on when picking up work. The **canonical label set** is the full set of seven labels that pycastle uses to manage issue state across a repo's lifecycle. Run `pycastle labels` to apply the whole set to a new repo."
+> **Domain expert:** "The **Planner** reads the **dependency graph**. If an issue has an open **blocker**, it's excluded from the **plan** for that **iteration**. The blocked issue will appear in a future **iteration** once its **blocker** is resolved and merged."
 
-> **Dev:** "If the repo already has labels, will `pycastle labels` overwrite them?"
+> **Dev:** "What if one of the issues is labeled `ready-for-human`?"
 
-> **Domain expert:** "By default it skips existing labels. Choose **label reset** to delete everything first and recreate from the **canonical label set** — useful when a repo inherited GitHub's default labels you don't use."
+> **Domain expert:** "That's a **HITL issue** — the **Planner** must never assign it to an **Implementer**. Only **AFK issues** (labeled `ready-for-agent`) go into the **plan**. A **HITL issue** needs a human to act on it directly."
+
+> **Dev:** "The **Implementer** for issue #4 failed with 'no pyproject.toml found in worktree /home/agent/workspace-sandcastle-issue-4-...' The file is definitely committed."
+
+> **Domain expert:** "That's a **worktree contents check** failure. The **container runner** runs **worktree setup**, which calls `git worktree add` via the **volume mount**. On Windows Docker mounts, git may create the directory but skip the file checkout unless `HEAD` is passed explicitly — that's the **new-branch path**. The error now includes the worktree path and a directory listing so you can see exactly what git did check out."
 
 ## Flagged ambiguities
 
@@ -105,3 +136,6 @@
 - **"defaults"** can mean either (a) the bundled template files copied by `pycastle init`, or (b) the default values inside `config.py`. Prefer **defaults** for (a) and **default config values** for (b).
 - **"token"** is overloaded: **GH_TOKEN** (GitHub PAT), **CLAUDE_CODE_OAUTH_TOKEN** (Claude subscription token), and **ANTHROPIC_API_KEY** (direct API key) are all called "tokens" in conversation. Always use the full env var name when precision matters.
 - **"label"** can mean a GitHub label object (name + description + color) or the specific **issue label** value (`ready-for-agent`) that triggers agent processing. Use **label** for the former and **issue label** for the latter.
+- **"plan"** is used to mean both (a) the act of planning (the **plan phase**) and (b) the structured artifact the **Planner** produces (a JSON list of issue/branch pairs). Use **plan phase** for the former and **plan** for the latter.
+- **"agent"** sometimes refers to a specific named role (Planner, Implementer, Reviewer, Merger) and sometimes to any Claude Code container instance. Use the specific role name when precision matters; use **agent** only when referring to the concept generically.
+- **"AFK"** and **"HITL"** are not surfaced in the pycastle UI or label names — they are workflow concepts. Their concrete representation is the **issue label**: `ready-for-agent` for **AFK issues**, `ready-for-human` for **HITL issues**. Never conflate the concept with the label name.
