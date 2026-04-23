@@ -28,6 +28,11 @@ class ContainerRunner:
         self._container_env: dict[str, str] = {}
         slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
         self._log_path = LOGS_DIR / f"{slug}.log"
+        if branch:
+            branch_slug = re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
+            self._worktree_path = f"/home/agent/workspace-{branch_slug}"
+        else:
+            self._worktree_path = "/home/agent/workspace"
 
     def __enter__(self) -> "ContainerRunner":
         LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -57,22 +62,49 @@ class ContainerRunner:
             self.write_file(claude_json, "/home/agent/.claude.json")
 
         if self.branch:
-            # Try to check out existing branch; fall back to creating it
-            self._container.exec_run(
-                ["bash", "-c",
-                 f"git -C /home/agent/repo worktree add /home/agent/workspace {self.branch} "
-                 f"|| git -C /home/agent/repo worktree add -b {self.branch} /home/agent/workspace"],
-                environment=self._container_env,
-            )
+            self._setup_worktree()
 
         return self
+
+    def _setup_worktree(self):
+        self._container.exec_run(
+            ["bash", "-c", "git -C /home/agent/repo worktree prune"],
+            environment=self._container_env,
+        )
+        branch_exists = self._container.exec_run(
+            ["bash", "-c", f"git -C /home/agent/repo rev-parse --verify {self.branch}"],
+            environment=self._container_env,
+        )
+        if branch_exists.exit_code == 0:
+            add_cmd = f"git -C /home/agent/repo worktree add {self._worktree_path} {self.branch}"
+        else:
+            add_cmd = f"git -C /home/agent/repo worktree add -b {self.branch} {self._worktree_path}"
+        wt_result = self._container.exec_run(
+            ["bash", "-c", add_cmd],
+            environment=self._container_env,
+        )
+        if wt_result.exit_code != 0:
+            output = (wt_result.output or b"").decode("utf-8", errors="replace")
+            raise RuntimeError(f"git worktree add failed: {output.strip()}")
+
+        check = self._container.exec_run(
+            ["bash", "-c",
+             f"test -e {self._worktree_path}/pyproject.toml"
+             f" || test -e {self._worktree_path}/requirements.txt"],
+            environment=self._container_env,
+        )
+        if check.exit_code != 0:
+            raise RuntimeError(
+                "No pyproject.toml or requirements.txt found in the worktree. "
+                "Commit your project files before running agents."
+            )
 
     def __exit__(self, *_):
         if self._container:
             if self.branch:
                 self._container.exec_run(
                     ["bash", "-c",
-                     "git -C /home/agent/repo worktree remove --force /home/agent/workspace"],
+                     f"git -C /home/agent/repo worktree remove --force {self._worktree_path}"],
                     environment=self._container_env,
                 )
             try:
@@ -95,7 +127,7 @@ class ContainerRunner:
                 result_holder[0] = self._container.exec_run(
                     ["bash", "-c", command],
                     demux=True,
-                    workdir="/home/agent/workspace",
+                    workdir=self._worktree_path,
                     environment=self.env,
                 )
             except Exception as exc:
@@ -136,7 +168,7 @@ class ContainerRunner:
         result = self._container.exec_run(
             ["bash", "-c", "claude --print < /tmp/prompt.md"],
             stream=True,
-            workdir="/home/agent/workspace",
+            workdir=self._worktree_path,
         )
         parts: list[str] = []
         with open(self._log_path, "w", encoding="utf-8") as log:
@@ -164,9 +196,9 @@ async def run_agent(
 
     loop = asyncio.get_event_loop()
     runner = ContainerRunner(name, mount_path, env, branch=branch)
-    # Wrap blocking Docker setup in executor so the event loop stays responsive
-    await loop.run_in_executor(None, runner.__enter__)
     try:
+        # Wrap blocking Docker setup in executor so the event loop stays responsive
+        await loop.run_in_executor(None, runner.__enter__)
         try:
             await loop.run_in_executor(
                 None,
