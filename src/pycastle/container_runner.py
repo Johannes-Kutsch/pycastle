@@ -8,7 +8,8 @@ from pathlib import Path
 
 import docker
 
-from .config import DOCKER_IMAGE, LOGS_DIR
+from .config import DOCKER_IMAGE, LOGS_DIR, PYCASTLE_DIR
+from .worktree import create_worktree, patch_gitdir_for_container, remove_worktree
 
 
 class ContainerRunner:
@@ -18,33 +19,33 @@ class ContainerRunner:
         mount_path: Path,
         env: dict[str, str],
         branch: str | None = None,
+        worktree_host_path: Path | None = None,
     ):
         self.name = name
         self.mount_path = mount_path
         self.env = env
         self.branch = branch
+        self.worktree_host_path = worktree_host_path
         self._client = docker.from_env()
         self._container = None
         self._container_env: dict[str, str] = {}
         slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
         self._log_path = LOGS_DIR / f"{slug}.log"
-        if branch:
-            branch_slug = re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
-            self._worktree_path = f"/home/agent/workspace-{branch_slug}"
-        else:
-            self._worktree_path = "/home/agent/workspace"
+        self._worktree_path = "/home/agent/workspace"
 
     def __enter__(self) -> "ContainerRunner":
         LOGS_DIR.mkdir(parents=True, exist_ok=True)
-        host_path = str(self.mount_path.resolve()).replace("\\", "/")
+        repo_path = str(self.mount_path.resolve()).replace("\\", "/")
 
-        if self.branch:
-            # Mount the main repo at /home/agent/repo; worktree is created inside
-            bind_point = "/home/agent/repo"
-            working_dir = "/home/agent"  # workspace doesn't exist until worktree add runs
+        if self.worktree_host_path:
+            worktree_path = str(self.worktree_host_path.resolve()).replace("\\", "/")
+            volumes = {
+                worktree_path: {"bind": "/home/agent/workspace", "mode": "rw"},
+                repo_path: {"bind": "/home/agent/repo", "mode": "ro"},
+            }
         else:
-            bind_point = "/home/agent/workspace"
-            working_dir = "/home/agent/workspace"
+            volumes = {repo_path: {"bind": "/home/agent/workspace", "mode": "rw"}}
+        working_dir = "/home/agent/workspace"
 
         # CLAUDE_ACCOUNT_JSON is written as a file inside the container, not passed as env var
         self._container_env = {k: v for k, v in self.env.items() if k != "CLAUDE_ACCOUNT_JSON"}
@@ -52,7 +53,7 @@ class ContainerRunner:
         self._container = self._client.containers.run(
             DOCKER_IMAGE,
             detach=True,
-            volumes={host_path: {"bind": bind_point, "mode": "rw"}},
+            volumes=volumes,
             environment=self._container_env,
             working_dir=working_dir,
         )
@@ -61,58 +62,10 @@ class ContainerRunner:
         if claude_json:
             self.write_file(claude_json, "/home/agent/.claude.json")
 
-        if self.branch:
-            self._setup_worktree()
-
         return self
-
-    def _setup_worktree(self):
-        self._container.exec_run(
-            ["bash", "-c", "git -C /home/agent/repo worktree prune"],
-            environment=self._container_env,
-        )
-        branch_exists = self._container.exec_run(
-            ["bash", "-c", f"git -C /home/agent/repo rev-parse --verify {self.branch}"],
-            environment=self._container_env,
-        )
-        if branch_exists.exit_code == 0:
-            add_cmd = f"git -C /home/agent/repo worktree add {self._worktree_path} {self.branch}"
-        else:
-            add_cmd = f"git -C /home/agent/repo worktree add -b {self.branch} {self._worktree_path} HEAD"
-        wt_result = self._container.exec_run(
-            ["bash", "-c", add_cmd],
-            environment=self._container_env,
-        )
-        if wt_result.exit_code != 0:
-            output = (wt_result.output or b"").decode("utf-8", errors="replace")
-            raise RuntimeError(f"git worktree add failed: {output.strip()}")
-
-        check = self._container.exec_run(
-            ["bash", "-c",
-             f"test -e {self._worktree_path}/pyproject.toml"
-             f" || test -e {self._worktree_path}/requirements.txt"],
-            environment=self._container_env,
-        )
-        if check.exit_code != 0:
-            ls = self._container.exec_run(
-                ["bash", "-c", f"ls {self._worktree_path}"],
-                environment=self._container_env,
-            )
-            listing = (ls.output or b"").decode("utf-8", errors="replace").strip()
-            raise RuntimeError(
-                f"No pyproject.toml or requirements.txt found in worktree {self._worktree_path}. "
-                f"Commit your project files before running agents. "
-                f"Worktree contents:\n{listing or '(empty or missing)'}"
-            )
 
     def __exit__(self, *_):
         if self._container:
-            if self.branch:
-                self._container.exec_run(
-                    ["bash", "-c",
-                     f"git -C /home/agent/repo worktree remove --force {self._worktree_path}"],
-                    environment=self._container_env,
-                )
             try:
                 self._container.stop(timeout=5)
             except Exception:
@@ -200,8 +153,15 @@ async def run_agent(
 
     print(f"\n[{name}] Started")
 
+    worktree_host_path: Path | None = None
+    if branch:
+        branch_slug = re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
+        worktree_host_path = mount_path / PYCASTLE_DIR / ".worktrees" / branch_slug
+        create_worktree(mount_path, worktree_host_path, branch)
+        patch_gitdir_for_container(worktree_host_path)
+
     loop = asyncio.get_event_loop()
-    runner = ContainerRunner(name, mount_path, env, branch=branch)
+    runner = ContainerRunner(name, mount_path, env, branch=branch, worktree_host_path=worktree_host_path)
     try:
         # Wrap blocking Docker setup in executor so the event loop stays responsive
         await loop.run_in_executor(None, runner.__enter__)
@@ -224,3 +184,5 @@ async def run_agent(
         return await loop.run_in_executor(None, runner.run_streaming)
     finally:
         runner.__exit__(None, None, None)
+        if worktree_host_path:
+            remove_worktree(mount_path, worktree_host_path)
