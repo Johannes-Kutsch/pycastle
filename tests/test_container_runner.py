@@ -188,7 +188,10 @@ def test_enter_raises_when_project_files_missing(mock_docker, mock_logs_dir, tmp
     files_absent = MagicMock()
     files_absent.exit_code = 1  # test -e returns 1 when file is absent
 
-    mock_container.exec_run.side_effect = [prune_ok, rev_parse_ok, worktree_ok, files_absent]
+    ls_ok = MagicMock()
+    ls_ok.exit_code = 0
+    ls_ok.output = b""
+    mock_container.exec_run.side_effect = [prune_ok, rev_parse_ok, worktree_ok, files_absent, ls_ok]
 
     runner = ContainerRunner("test", tmp_path, {}, branch="feature/fix")
     with pytest.raises(RuntimeError, match="(?i)commit"):
@@ -324,6 +327,101 @@ def test_existing_branch_checked_out_without_create_flag(mock_docker, mock_logs_
     final_add = worktree_add_cmds[-1]
     assert " -b " not in final_add, (
         f"worktree add used -b for an existing branch: {final_add!r}"
+    )
+
+
+# ── Cycle 14: missing-files error includes worktree path and ls output ────────
+
+@patch("pycastle.container_runner.LOGS_DIR")
+@patch("pycastle.container_runner.docker")
+def test_missing_project_files_error_includes_worktree_path_and_listing(mock_docker, mock_logs_dir, tmp_path):
+    mock_container = MagicMock()
+    mock_docker.from_env.return_value.containers.run.return_value = mock_container
+
+    prune_ok = MagicMock(exit_code=0)
+    rev_parse_ok = MagicMock(exit_code=0)
+    worktree_ok = MagicMock(exit_code=0, output=b"")
+    files_absent = MagicMock(exit_code=1)
+    ls_result = MagicMock(exit_code=0, output=b"only_random_files.txt\n")
+
+    mock_container.exec_run.side_effect = [prune_ok, rev_parse_ok, worktree_ok, files_absent, ls_result]
+
+    runner = ContainerRunner("test", tmp_path, {}, branch="feature/fix")
+    with pytest.raises(RuntimeError) as exc_info:
+        runner.__enter__()
+
+    msg = str(exc_info.value)
+    assert "/home/agent/workspace-feature-fix" in msg, f"worktree path missing from error: {msg!r}"
+    assert "only_random_files.txt" in msg, f"ls output missing from error: {msg!r}"
+
+
+# ── Cycle 12: new-branch worktree add includes HEAD as final argument ─────────
+
+@patch("pycastle.container_runner.LOGS_DIR")
+@patch("pycastle.container_runner.docker")
+def test_new_branch_worktree_add_ends_with_HEAD(mock_docker, mock_logs_dir, tmp_path):
+    """For a new branch, git worktree add must end with HEAD."""
+    worktree_add_cmds = []
+
+    def recording_exec_run(cmd, **kwargs):
+        if isinstance(cmd, list):
+            cmd_str = " ".join(cmd)
+            if "worktree add" in cmd_str and "worktree remove" not in cmd_str:
+                worktree_add_cmds.append(cmd_str)
+            if "rev-parse" in cmd_str:
+                result = MagicMock()
+                result.exit_code = 1
+                result.output = b""
+                return result
+        result = MagicMock()
+        result.exit_code = 0
+        result.output = b""
+        return result
+
+    mock_container = MagicMock()
+    mock_container.exec_run.side_effect = recording_exec_run
+    mock_docker.from_env.return_value.containers.run.return_value = mock_container
+
+    runner = ContainerRunner("test", tmp_path, {}, branch="feature/new")
+    runner.__enter__()
+    runner.__exit__(None, None, None)
+
+    assert worktree_add_cmds, "No worktree add command was issued"
+    assert worktree_add_cmds[-1].split()[-1] == "HEAD", (
+        f"worktree add for new branch does not end with HEAD: {worktree_add_cmds[-1]!r}"
+    )
+
+
+# ── Cycle 13: existing-branch worktree add uses branch name as final token ────
+
+@patch("pycastle.container_runner.LOGS_DIR")
+@patch("pycastle.container_runner.docker")
+def test_existing_branch_worktree_add_ends_with_branch_name(mock_docker, mock_logs_dir, tmp_path):
+    """For an existing branch, git worktree add must end with the branch name."""
+    worktree_add_cmds = []
+
+    def recording_exec_run(cmd, **kwargs):
+        if isinstance(cmd, list):
+            cmd_str = " ".join(cmd)
+            if "worktree add" in cmd_str and "worktree remove" not in cmd_str:
+                worktree_add_cmds.append(cmd_str)
+        result = MagicMock()
+        result.exit_code = 0
+        result.output = b""
+        return result
+
+    mock_container = MagicMock()
+    mock_container.exec_run.side_effect = recording_exec_run
+    mock_docker.from_env.return_value.containers.run.return_value = mock_container
+
+    branch = "feature/existing"
+    runner = ContainerRunner("test", tmp_path, {}, branch=branch)
+    runner.__enter__()
+    runner.__exit__(None, None, None)
+
+    assert worktree_add_cmds, "No worktree add command was issued"
+    assert worktree_add_cmds[-1].split()[-1] == branch, (
+        f"worktree add for existing branch does not end with branch name: {worktree_add_cmds[-1]!r}"
     )
 
 
