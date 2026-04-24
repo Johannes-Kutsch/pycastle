@@ -28,12 +28,14 @@ class ContainerRunner:
         env: dict[str, str],
         branch: str | None = None,
         worktree_host_path: Path | None = None,
+        gitdir_overlay: Path | None = None,
     ):
         self.name = name
         self.mount_path = mount_path
         self.env = env
         self.branch = branch
         self.worktree_host_path = worktree_host_path
+        self.gitdir_overlay = gitdir_overlay
         self._client = docker.from_env()
         self._container = None
         self._container_env: dict[str, str] = {}
@@ -51,6 +53,9 @@ class ContainerRunner:
                 worktree_path: {"bind": "/home/agent/workspace", "mode": "rw"},
                 repo_path: {"bind": "/home/agent/repo", "mode": "ro"},
             }
+            if self.gitdir_overlay:
+                overlay_path = str(self.gitdir_overlay.resolve()).replace("\\", "/")
+                volumes[overlay_path] = {"bind": "/home/agent/workspace/.git", "mode": "ro"}
         else:
             volumes = {repo_path: {"bind": "/home/agent/workspace", "mode": "rw"}}
         working_dir = "/home/agent/workspace"
@@ -247,16 +252,24 @@ async def run_agent(
         await lock.acquire()
 
     worktree_host_path: Path | None = None
+    gitdir_overlay: Path | None = None
     try:
         if branch:
             branch_slug = re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
             worktree_host_path = mount_path / PYCASTLE_DIR / ".worktrees" / branch_slug
             create_worktree(mount_path, worktree_host_path, branch)
-            patch_gitdir_for_container(worktree_host_path)
+            gitdir_overlay = patch_gitdir_for_container(worktree_host_path)
 
         loop = asyncio.get_event_loop()
-        runner = ContainerRunner(name, mount_path, env, branch=branch, worktree_host_path=worktree_host_path)
+        runner = ContainerRunner(
+            name, mount_path, env,
+            branch=branch,
+            worktree_host_path=worktree_host_path,
+            gitdir_overlay=gitdir_overlay,
+        )
         async with AsyncExitStack() as stack:
+            if gitdir_overlay:
+                stack.callback(gitdir_overlay.unlink, missing_ok=True)
             if worktree_host_path:
                 stack.callback(remove_worktree, mount_path, worktree_host_path)
             stack.callback(runner.__exit__, None, None, None)

@@ -226,18 +226,18 @@ def test_remove_worktree_is_silent_when_path_missing(repo, tmp_path):
 # ── Cycle D: .git file is patched to Linux gitdir path on Windows ─────────────
 
 def test_patch_gitdir_rewrites_windows_path(tmp_path):
-    """On Windows the .git file must use the container-internal gitdir path."""
+    """On Windows the function returns a temp file with the container-internal gitdir path."""
     worktree = tmp_path / "my-branch"
     worktree.mkdir()
-    (worktree / ".git").write_text(
-        "gitdir: C:/Users/johan/repo/.git/worktrees/my-branch\n"
-    )
+    git_file = worktree / ".git"
+    git_file.write_text("gitdir: C:/Users/johan/repo/.git/worktrees/my-branch\n")
 
     with patch("sys.platform", "win32"):
-        patch_gitdir_for_container(worktree)
+        result = patch_gitdir_for_container(worktree)
 
-    result = (worktree / ".git").read_text().strip()
-    assert result == "gitdir: /home/agent/repo/.git/worktrees/my-branch"
+    assert result is not None
+    assert result.read_text().strip() == "gitdir: /home/agent/repo/.git/worktrees/my-branch"
+    assert git_file.read_text() == "gitdir: C:/Users/johan/repo/.git/worktrees/my-branch\n"
 
 
 def test_create_worktree_recovers_from_stale_directory(repo, tmp_path):
@@ -263,126 +263,34 @@ def test_remove_worktree_falls_back_to_rmtree_when_git_fails(repo, tmp_path):
     assert not worktree.exists()
 
 
-def test_patch_gitdir_retries_on_transient_permission_error(tmp_path):
-    """A single PermissionError on write must not propagate — the function must retry."""
+# ── Cycle 32-1: mount overlay — patch writes temp file, never touches host ──
+
+def test_patch_gitdir_returns_temp_file_and_leaves_host_unchanged(tmp_path):
+    """Even when the host .git is locked (read-only), the function returns a
+    temp file with corrected content and does not write to the host file."""
     worktree = tmp_path / "my-branch"
     worktree.mkdir()
     git_file = worktree / ".git"
     git_file.write_text("gitdir: C:/Users/johan/repo/.git/worktrees/my-branch\n")
-
-    _real_write = Path.write_text
-    attempt = [0]
-
-    def _flaky_write(self, data, **kwargs):
-        attempt[0] += 1
-        if attempt[0] == 1:
-            raise PermissionError("file locked by git.exe")
-        return _real_write(self, data, **kwargs)
-
-    with patch("sys.platform", "win32"), patch.object(Path, "write_text", _flaky_write):
-        patch_gitdir_for_container(worktree)
-
-    assert git_file.read_text().strip() == "gitdir: /home/agent/repo/.git/worktrees/my-branch"
-
-
-def test_patch_gitdir_retries_is_file_on_transient_permission_error(tmp_path):
-    """A single PermissionError on is_file must not abort — the function must retry and proceed."""
-    worktree = tmp_path / "my-branch"
-    worktree.mkdir()
-    git_file = worktree / ".git"
-    git_file.write_text("gitdir: C:/Users/johan/repo/.git/worktrees/my-branch\n")
-
-    _real_is_file = Path.is_file
-    attempt = [0]
-
-    def _flaky_is_file(self):
-        attempt[0] += 1
-        if attempt[0] == 1:
-            raise PermissionError("file locked by git.exe")
-        return _real_is_file(self)
-
-    with patch("sys.platform", "win32"), patch.object(Path, "is_file", _flaky_is_file):
-        patch_gitdir_for_container(worktree)
-
-    assert git_file.read_text().strip() == "gitdir: /home/agent/repo/.git/worktrees/my-branch"
-
-
-def test_patch_gitdir_retries_read_on_transient_permission_error(tmp_path):
-    """A single PermissionError on read_text must not propagate — the function must retry."""
-    worktree = tmp_path / "my-branch"
-    worktree.mkdir()
-    git_file = worktree / ".git"
-    git_file.write_text("gitdir: C:/Users/johan/repo/.git/worktrees/my-branch\n")
-
-    _real_read = Path.read_text
-    attempt = [0]
-
-    def _flaky_read(self, **kwargs):
-        attempt[0] += 1
-        if attempt[0] == 1:
-            raise PermissionError("file locked by git.exe")
-        return _real_read(self, **kwargs)
-
-    with patch("sys.platform", "win32"), patch.object(Path, "read_text", _flaky_read):
-        patch_gitdir_for_container(worktree)
-
-    assert git_file.read_text().strip() == "gitdir: /home/agent/repo/.git/worktrees/my-branch"
-
-
-def test_patch_gitdir_reraises_after_all_retries_exhausted(tmp_path):
-    """When every read attempt raises PermissionError the error must propagate to the caller."""
-    worktree = tmp_path / "my-branch"
-    worktree.mkdir()
-    (worktree / ".git").write_text("gitdir: C:/Users/johan/repo/.git/worktrees/my-branch\n")
-
-    def _always_fail(self, **kwargs):
-        raise PermissionError("file permanently locked")
-
-    with patch("sys.platform", "win32"), patch.object(Path, "read_text", _always_fail):
-        with pytest.raises(PermissionError):
-            patch_gitdir_for_container(worktree)
-
-
-# ── Cycle 31-1: patch succeeds when .git file is read-only ───────────────────
-
-def test_patch_gitdir_succeeds_on_readonly_git_file(tmp_path):
-    """patch_gitdir_for_container must rewrite a read-only .git file without raising."""
-    worktree = tmp_path / "my-branch"
-    worktree.mkdir()
-    git_file = worktree / ".git"
-    git_file.write_text("gitdir: C:/Users/johan/repo/.git/worktrees/my-branch\n")
-    git_file.chmod(0o444)
+    git_file.chmod(0o444)  # simulate exclusive lock — writes would fail
 
     with patch("sys.platform", "win32"):
-        patch_gitdir_for_container(worktree)
+        overlay = patch_gitdir_for_container(worktree)
 
-    assert git_file.read_text().strip() == "gitdir: /home/agent/repo/.git/worktrees/my-branch"
-
-
-def test_patch_gitdir_preserves_read_permission_on_readonly_file(tmp_path):
-    """After patching a read-only .git file the file must still be readable."""
-    worktree = tmp_path / "my-branch"
-    worktree.mkdir()
-    git_file = worktree / ".git"
-    git_file.write_text("gitdir: C:/Users/johan/repo/.git/worktrees/my-branch\n")
-    git_file.chmod(0o444)
-
-    with patch("sys.platform", "win32"):
-        patch_gitdir_for_container(worktree)
-
-    # Must not raise — file is still readable
-    content = git_file.read_text()
-    assert "gitdir:" in content
+    assert overlay is not None
+    assert overlay.read_text().strip() == "gitdir: /home/agent/repo/.git/worktrees/my-branch"
+    assert git_file.read_text() == "gitdir: C:/Users/johan/repo/.git/worktrees/my-branch\n"
 
 
 def test_patch_gitdir_noop_on_non_windows(tmp_path):
-    """On Linux/macOS the .git file must not be modified."""
+    """On Linux/macOS the function returns None and leaves the .git file untouched."""
     worktree = tmp_path / "my-branch"
     worktree.mkdir()
     original = "gitdir: /home/user/repo/.git/worktrees/my-branch\n"
     (worktree / ".git").write_text(original)
 
     with patch("sys.platform", "linux"):
-        patch_gitdir_for_container(worktree)
+        result = patch_gitdir_for_container(worktree)
 
+    assert result is None
     assert (worktree / ".git").read_text() == original

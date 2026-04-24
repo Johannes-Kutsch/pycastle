@@ -223,6 +223,39 @@ def test_implementer_mounts_worktree_at_workspace(mock_docker, mock_logs_dir, tm
     )
 
 
+# ── Cycle 32-2: gitdir overlay bound at /home/agent/workspace/.git ───────────
+
+@patch("pycastle.container_runner.LOGS_DIR")
+@patch("pycastle.container_runner.docker")
+def test_container_mounts_gitdir_overlay_at_workspace_git(mock_docker, mock_logs_dir, tmp_path):
+    """When gitdir_overlay is set, ContainerRunner must bind-mount it at /home/agent/workspace/.git."""
+    mock_container = MagicMock()
+    mock_docker.from_env.return_value.containers.run.return_value = mock_container
+
+    overlay_file = tmp_path / "gitdir_overlay"
+    overlay_file.write_text("gitdir: /home/agent/repo/.git/worktrees/my-branch\n")
+    worktree_path = tmp_path / "worktree"
+    worktree_path.mkdir()
+
+    runner = ContainerRunner(
+        "test", tmp_path, {},
+        branch="feature/test",
+        worktree_host_path=worktree_path,
+        gitdir_overlay=overlay_file,
+    )
+    runner.__enter__()
+    runner.__exit__(None, None, None)
+
+    volumes = mock_docker.from_env.return_value.containers.run.call_args.kwargs["volumes"]
+    bound_paths = {v["bind"]: k for k, v in volumes.items()}
+    assert "/home/agent/workspace/.git" in bound_paths, (
+        f"/home/agent/workspace/.git not mounted; volumes={volumes}"
+    )
+    assert bound_paths["/home/agent/workspace/.git"] == str(overlay_file.resolve()).replace("\\", "/"), (
+        f"Wrong host path at /home/agent/workspace/.git: {bound_paths['/home/agent/workspace/.git']!r}"
+    )
+
+
 # ── Cycle 17: host-side worktree removed even when container raises ───────────
 
 class _StreamingErrorRunner:
@@ -566,3 +599,49 @@ def test_container_cleanup_runs_even_when_worktree_cleanup_raises(tmp_path):
             _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
 
     assert len(container_exit_calls) == 1
+
+
+# ── Cycle 32-3: gitdir temp file cleaned up after run_agent ──────────────────
+
+class _SuccessRunner:
+    def __init__(self, *_, **__): pass
+    def __enter__(self): return self
+    def __exit__(self, *_): pass
+    def exec_simple(self, cmd, timeout=None): return ""
+    def write_file(self, *_): pass
+    def run_streaming(self): return "done"
+
+
+def test_gitdir_temp_file_deleted_after_run_agent_succeeds(tmp_path):
+    """The temp file returned by patch_gitdir_for_container must be deleted after run_agent."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    overlay = tmp_path / "gitdir_temp"
+    overlay.write_text("gitdir: /home/agent/repo/.git/worktrees/test\n")
+
+    with patch("pycastle.container_runner.ContainerRunner", _SuccessRunner), \
+         patch("pycastle.container_runner.create_worktree"), \
+         patch("pycastle.container_runner.remove_worktree"), \
+         patch("pycastle.container_runner.patch_gitdir_for_container", return_value=overlay):
+        _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
+
+    assert not overlay.exists(), "gitdir temp file must be deleted after run_agent"
+
+
+def test_gitdir_temp_file_deleted_even_when_container_raises(tmp_path):
+    """The temp file must be deleted even when the container cleanup raises."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    overlay = tmp_path / "gitdir_temp_err"
+    overlay.write_text("gitdir: /home/agent/repo/.git/worktrees/test\n")
+
+    with patch("pycastle.container_runner.ContainerRunner", _ContainerExitErrorRunner), \
+         patch("pycastle.container_runner.create_worktree"), \
+         patch("pycastle.container_runner.remove_worktree"), \
+         patch("pycastle.container_runner.patch_gitdir_for_container", return_value=overlay):
+        with pytest.raises(RuntimeError):
+            _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
+
+    assert not overlay.exists(), "gitdir temp file must be deleted even when container cleanup raises"
