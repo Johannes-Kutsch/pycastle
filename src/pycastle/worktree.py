@@ -1,32 +1,13 @@
+import os
 import re
 import shutil
-import stat
 import subprocess
 import sys
-import time
+import tempfile
 from pathlib import Path
-from typing import Callable, TypeVar
 
 from .defaults.config import WORKTREE_TIMEOUT
 from .errors import WorktreeError, WorktreeTimeoutError
-
-_T = TypeVar("_T")
-
-
-def _retry_on_permission_error(fn: Callable[[], _T], attempts: int = 3, delay: float = 0.1) -> _T:
-    for attempt in range(attempts):
-        try:
-            return fn()
-        except PermissionError:
-            if attempt == attempts - 1:
-                raise
-            time.sleep(delay)
-
-
-def _write_text_force(path: Path, content: str) -> None:
-    """Grant owner write permission then write content, handling transient ACL locks."""
-    _retry_on_permission_error(lambda: path.chmod(stat.S_IREAD | stat.S_IWRITE))
-    _retry_on_permission_error(lambda: path.write_text(content, encoding="utf-8"))
 
 
 def _run(*args, **kwargs) -> subprocess.CompletedProcess:
@@ -120,20 +101,21 @@ def remove_worktree(repo_path: Path, worktree_path: Path) -> None:
         shutil.rmtree(worktree_path, ignore_errors=True)
 
 
-def patch_gitdir_for_container(worktree_path: Path) -> None:
-    """Rewrite the worktree .git file to use the container-internal repo path.
+def patch_gitdir_for_container(worktree_path: Path) -> Path | None:
+    """Return a temp file with the container-internal gitdir path, or None.
 
     Only needed on Windows where git writes a Windows-style absolute path that
-    the Linux container cannot follow.
+    the Linux container cannot follow. The host .git file is never modified;
+    the caller should bind-mount the returned path over the container's .git.
     """
     if sys.platform != "win32":
-        return
+        return None
 
     git_file = worktree_path / ".git"
-    if not _retry_on_permission_error(git_file.is_file):
-        return
+    if not git_file.is_file():
+        return None
 
-    content = _retry_on_permission_error(lambda: git_file.read_text(encoding="utf-8"))
+    content = git_file.read_text(encoding="utf-8")
 
     def _rewrite(m: re.Match) -> str:
         path = m.group(1).strip().replace("\\", "/")
@@ -144,4 +126,12 @@ def patch_gitdir_for_container(worktree_path: Path) -> None:
         return f"gitdir: /home/agent/repo/{suffix}"
 
     new_content = re.sub(r"gitdir:\s*(.+)", _rewrite, content)
-    _write_text_force(git_file, new_content.rstrip() + "\n")
+
+    fd, tmp = tempfile.mkstemp(suffix=".gitdir_overlay")
+    try:
+        os.close(fd)
+        Path(tmp).write_text(new_content.rstrip() + "\n", encoding="utf-8")
+    except Exception:
+        os.unlink(tmp)
+        raise
+    return Path(tmp)
