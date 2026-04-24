@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tarfile
 import threading
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 import docker
@@ -255,14 +256,13 @@ async def run_agent(
 
         loop = asyncio.get_event_loop()
         runner = ContainerRunner(name, mount_path, env, branch=branch, worktree_host_path=worktree_host_path)
-        try:
+        async with AsyncExitStack() as stack:
+            if worktree_host_path:
+                stack.callback(remove_worktree, mount_path, worktree_host_path)
+            stack.callback(runner.__exit__, None, None, None)
             await _setup(name, runner, loop, exec_timeout)
             await _prepare(name, runner, loop, exec_timeout, prompt_file, prompt_args or {})
             return await _work(name, runner, loop)
-        finally:
-            runner.__exit__(None, None, None)
-            if worktree_host_path:
-                remove_worktree(mount_path, worktree_host_path)
     finally:
         if lock is not None and lock.locked():
             lock.release()
