@@ -274,3 +274,120 @@ def test_exec_simple_times_out():
             runner.exec_simple("sleep inf", timeout=0.05)
     finally:
         blocker.set()  # release the background thread
+
+
+# ── Cycle 22: phase logging ───────────────────────────────────────────────────
+
+class _PhaseLogRunner:
+    """Minimal fake runner for phase logging and git-identity tests."""
+
+    def __init__(self, *args, **kwargs):
+        self.branch = None
+        self.env = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def exec_simple(self, cmd, timeout=None):
+        return ""
+
+    def write_file(self, *_):
+        pass
+
+    def run_streaming(self):
+        return ""
+
+
+def test_run_agent_logs_setup_phase(tmp_path, capsys):
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Plain prompt.")
+
+    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    assert "[Test] Phase: Setup" in capsys.readouterr().out
+
+
+def test_run_agent_logs_prepare_phase(tmp_path, capsys):
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Plain prompt.")
+
+    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    assert "[Test] Phase: Prepare" in capsys.readouterr().out
+
+
+def test_run_agent_logs_work_phase(tmp_path, capsys):
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Plain prompt.")
+
+    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    assert "[Test] Phase: Work" in capsys.readouterr().out
+
+
+# ── Cycle 22: git identity injection ─────────────────────────────────────────
+
+def _make_exec_logging_runner():
+    """Return (RunnerClass, exec_log) — exec_log collects exec_simple calls."""
+    exec_log: list[str] = []
+
+    class _Runner:
+        def __init__(self, *args, **kwargs):
+            self.branch = None
+            self.env = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            exec_log.append(cmd)
+            return ""
+
+        def write_file(self, *_):
+            pass
+
+        def run_streaming(self):
+            return ""
+
+    return _Runner, exec_log
+
+
+def _git_mock(name="Alice", email="alice@example.com"):
+    def _check_output(cmd, **kw):
+        if "user.name" in cmd:
+            return f"{name}\n"
+        return f"{email}\n"
+    return _check_output
+
+
+def test_setup_injects_host_git_name(tmp_path):
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+    _Runner, exec_log = _make_exec_logging_runner()
+
+    with patch("pycastle.container_runner.ContainerRunner", _Runner), \
+         patch("pycastle.container_runner.subprocess.check_output", side_effect=_git_mock()):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    assert any("git config user.name" in cmd and "Alice" in cmd for cmd in exec_log)
+
+
+def test_setup_injects_host_git_email(tmp_path):
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+    _Runner, exec_log = _make_exec_logging_runner()
+
+    with patch("pycastle.container_runner.ContainerRunner", _Runner), \
+         patch("pycastle.container_runner.subprocess.check_output", side_effect=_git_mock()):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    assert any("git config user.email" in cmd and "alice@example.com" in cmd for cmd in exec_log)
