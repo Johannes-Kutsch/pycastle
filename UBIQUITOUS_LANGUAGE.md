@@ -57,8 +57,11 @@
 | **HITL issue** | An issue that requires human intervention; labeled `ready-for-human` — the **Planner** must never assign it to an **Implementer** | manual issue, human issue |
 | **blocker** | An issue that must be resolved before another issue can be worked on; informs the **Planner**'s selection | dependency, prerequisite |
 | **dependency graph** | The set of blocker relationships between issues, analyzed by the **Planner** to determine the safe working set for an **iteration** | issue graph, dependency map |
-| **worktree** | An isolated git working tree created inside a container for a single issue | workspace, branch dir |
+| **worktree** | An isolated git working tree created on the **host** for a single issue and bind-mounted into the agent container | workspace, branch dir |
 | **branch** | A git branch name assigned to an **issue** inside the **plan**; follows the pattern `sandcastle/issue-<n>-<slug>` | feature branch, issue branch |
+| **orphan worktree** | A worktree directory under `.pycastle/.worktrees/` that is no longer registered in git, typically left by a crashed agent run | stale worktree, leftover worktree |
+| **orphan sweep** | The startup operation that cross-references `.pycastle/.worktrees/` against `git worktree list --porcelain` and deletes any unregistered directories | worktree cleanup, stale cleanup |
+| **collision detection** | The mechanism that prevents two parallel agents from simultaneously creating worktrees for the same branch, implemented as a per-branch async lock | — |
 
 ## Prompts
 
@@ -70,6 +73,19 @@
 | **shell expression** | A `` !`command` `` token inside a prompt, replaced by the command's stdout output at preprocess time | shell expansion |
 | **prompt pipeline** | The two-stage process of rendering placeholders then preprocessing shell expressions | templating, rendering |
 | **CODING_STANDARDS.md** | A reference document placed in the prompts directory and treated as a prompt for discovery and scaffolding purposes | standards file |
+
+## Agent Lifecycle
+
+| Term | Definition | Aliases to avoid |
+| --- | --- | --- |
+| **agent lifecycle phase** | One of three named stages (Setup, Prepare, Work) within a single agent container run | step, stage |
+| **Setup phase** | The first agent lifecycle phase: worktree creation, gitdir patching, container start, and git identity propagation | container setup, init phase |
+| **Prepare phase** | The second agent lifecycle phase: dependency installation, prompt rendering, and prompt injection into the container | hook phase, pre-work |
+| **Work phase** | The third agent lifecycle phase: Claude Code invocation and streaming output collection | execution phase, run phase |
+| **git identity propagation** | The Setup phase operation that reads the host `git user.name` and `git user.email` and configures them inside the container so that `git commit` succeeds | git config injection, user setup |
+| **idle timeout** | The maximum wall-clock seconds an agent may produce no output before being killed and raising `AgentTimeoutError`; default 300 s | inactivity timeout, silence timeout |
+| **worktree timeout** | The maximum wall-clock seconds a git worktree operation may take before being killed and raising `WorktreeTimeoutError`; default 30 s | git timeout |
+| **errors log** | The append-only `logs/errors.log` file that records full tracebacks for every failed agent run, separated by timestamped dividers | error file, crash log |
 
 ## Infrastructure
 
@@ -84,6 +100,11 @@
 | **existing-branch path** | The `git worktree add <path> <branch>` form used when the **branch** already exists; the branch name serves as the commit-ish | — |
 | **worktree contents check** | The guard step run after `git worktree add` that verifies `pyproject.toml` or `requirements.txt` is present in the **worktree**; fails with the worktree path and directory listing if absent | checkout guard, file check |
 | **runtime injection** | The act of reading `~/.claude.json` from the host and writing it to `/home/agent/.claude.json` inside a container before the agent runs | baking in, build-time config |
+| **PycastleError** | Base exception class for all pycastle domain errors; all agent, container, and worktree failures subclass it | — |
+| **DockerError** | Error subclass raised when a Docker operation (container start, stop, remove) fails | container error |
+| **WorktreeError** | Error subclass raised when a git worktree operation fails for a non-timeout reason | git error |
+| **WorktreeTimeoutError** | Error subclass raised when a git worktree operation exceeds the **worktree timeout** | — |
+| **AgentTimeoutError** | Error subclass raised when an agent produces no output for longer than the **idle timeout** | hung agent error |
 
 ## Relationships
 
@@ -106,6 +127,13 @@
 - The **host repo** is attached to each container via a **volume mount** at `/home/agent/repo`.
 - The **canonical label set** is defined once in the pycastle package; **pycastle labels** applies it to any target repo.
 - A **label reset** deletes all existing repo labels before applying the **canonical label set**.
+- Each agent run progresses through three **agent lifecycle phases** in order: **Setup phase** → **Prepare phase** → **Work phase**.
+- The **Setup phase** always includes **git identity propagation** before the agent prompt is sent.
+- An **orphan sweep** runs once at **orchestrator** startup (not per agent) to avoid racing with active worktrees.
+- **Collision detection** holds a per-branch lock for the full duration of an agent run, from **worktree setup** through worktree removal.
+- A `WorktreeTimeoutError` is raised when any git operation within **worktree setup** exceeds the **worktree timeout**.
+- An `AgentTimeoutError` is raised when the **Work phase** produces no output for longer than the **idle timeout**.
+- All failed agent runs append a full traceback to the **errors log**, separated by a timestamped divider.
 
 ## Example dialogue
 
@@ -129,6 +157,20 @@
 
 > **Domain expert:** "That's a **worktree contents check** failure. The **container runner** runs **worktree setup**, which calls `git worktree add` via the **volume mount**. On Windows Docker mounts, git may create the directory but skip the file checkout unless `HEAD` is passed explicitly — that's the **new-branch path**. The error now includes the worktree path and a directory listing so you can see exactly what git did check out."
 
+## Example dialogue (extended)
+
+> **Dev:** "The implementer for issue #7 timed out — what does that mean exactly?"
+
+> **Domain expert:** "There are two kinds of timeout. A **worktree timeout** fires if `git worktree add` takes more than 30 seconds during the **Setup phase** — that raises `WorktreeTimeoutError`. An **idle timeout** fires if the **Work phase** produces no output for 300 seconds — that raises `AgentTimeoutError`. Check the **errors log** to see which one it was and at what timestamp."
+
+> **Dev:** "Could two agents collide on the same branch?"
+
+> **Domain expert:** "Not anymore. **Collision detection** holds a per-branch lock for the entire agent run. The second agent will wait until the first completes worktree removal before it can start **worktree setup**. If the **Planner** somehow assigned the same branch twice, the second agent fails fast with a clear error rather than corrupting the worktree."
+
+> **Dev:** "After a crash I see leftover directories under `.pycastle/.worktrees/`. Will they cause problems?"
+
+> **Domain expert:** "Those are **orphan worktrees**. The **orphan sweep** runs at the start of every `pycastle run` — it compares those directories against `git worktree list --porcelain` and deletes anything git no longer knows about. By the time the first **iteration** starts, the slate is clean."
+
 ## Flagged ambiguities
 
 - **"config"** is used loosely to mean either `config.py` (behavioral settings) or the combined configuration of a project (config.py + .env). Use **config.py** when referring to the file, and **pycastle directory** when referring to the full set of local overrides.
@@ -139,3 +181,6 @@
 - **"plan"** is used to mean both (a) the act of planning (the **plan phase**) and (b) the structured artifact the **Planner** produces (a JSON list of issue/branch pairs). Use **plan phase** for the former and **plan** for the latter.
 - **"agent"** sometimes refers to a specific named role (Planner, Implementer, Reviewer, Merger) and sometimes to any Claude Code container instance. Use the specific role name when precision matters; use **agent** only when referring to the concept generically.
 - **"AFK"** and **"HITL"** are not surfaced in the pycastle UI or label names — they are workflow concepts. Their concrete representation is the **issue label**: `ready-for-agent` for **AFK issues**, `ready-for-human` for **HITL issues**. Never conflate the concept with the label name.
+- **"phase"** now operates at two levels: *orchestration phases* (plan, implement, review, merge) are stages of an **iteration**; *agent lifecycle phases* (Setup, Prepare, Work) are stages of a single agent container run. Use the full term (**agent lifecycle phase** vs **plan phase**) when the level is not obvious from context.
+- **"worktree"** was previously defined as "created inside a container" — this is incorrect. The **worktree** is always created on the **host** and bind-mounted into the container. The container never runs `git worktree add`.
+- **"timeout"** is used for two distinct limits: **idle timeout** (agent produces no output) and **worktree timeout** (git operation takes too long). Always qualify which kind is meant.
