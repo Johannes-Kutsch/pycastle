@@ -150,6 +150,7 @@ class ContainerRunner:
         threading.Thread(target=_feed, daemon=True).start()
 
         parts: list[str] = []
+        line_buf = ""
         with open(self._log_path, "w", encoding="utf-8") as log:
             while True:
                 try:
@@ -161,10 +162,13 @@ class ContainerRunner:
                 if chunk is _sentinel:
                     break
                 text = chunk.decode("utf-8", errors="replace")
-                print(text, end="", flush=True)
                 log.write(text)
                 log.flush()
                 parts.append(text)
+                line_buf += text
+                while "\n" in line_buf:
+                    line, line_buf = line_buf.split("\n", 1)
+                    print(f"[{self.name}] {line}", flush=True)
         return "".join(parts)
 
 

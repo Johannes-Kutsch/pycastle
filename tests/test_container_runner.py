@@ -12,6 +12,22 @@ from pycastle.errors import AgentTimeoutError
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+def _streaming_runner(name: str, chunks: list, log_path) -> ContainerRunner:
+    """ContainerRunner whose run_streaming replays the given byte chunks."""
+    runner = object.__new__(ContainerRunner)
+    runner.name = name
+    runner.env = {}
+    runner._container_env = {}
+    runner.branch = None
+    runner._worktree_path = "/home/agent/workspace"
+    runner._container = MagicMock()
+    runner._log_path = log_path
+    mock_result = MagicMock()
+    mock_result.output = iter(chunks)
+    runner._container.exec_run.return_value = mock_result
+    return runner
+
+
 def _fake_runner(exit_code=0, stdout=b"", stderr=b""):
     """ContainerRunner with mocked Docker container, bypassing __init__."""
     runner = object.__new__(ContainerRunner)
@@ -458,3 +474,46 @@ def test_run_agent_different_branches_both_succeed(tmp_path):
     results = asyncio.run(_two_different_branches())
     errors = [r for r in results if isinstance(r, Exception)]
     assert not errors, f"Expected both agents to succeed, got errors: {errors}"
+
+
+# ── Cycle 24-A1: run_streaming prefixes lines in stdout ──────────────────────
+
+def test_run_streaming_prefixes_complete_lines_in_stdout(tmp_path, capsys):
+    runner = _streaming_runner("TestAgent", [b"hello world\n"], tmp_path / "test.log")
+    runner.run_streaming()
+    assert "[TestAgent] hello world" in capsys.readouterr().out
+
+
+def test_run_streaming_prefixes_each_line_separately(tmp_path, capsys):
+    """Multiple lines in a single chunk must each get their own prefix."""
+    runner = _streaming_runner("Bot", [b"line one\nline two\n"], tmp_path / "test.log")
+    runner.run_streaming()
+    out = capsys.readouterr().out
+    assert "[Bot] line one" in out
+    assert "[Bot] line two" in out
+
+
+def test_run_streaming_handles_chunks_split_across_newlines(tmp_path, capsys):
+    """A line split across two chunks must be assembled before prefixing."""
+    runner = _streaming_runner("Bot", [b"hel", b"lo\n"], tmp_path / "test.log")
+    runner.run_streaming()
+    assert "[Bot] hello" in capsys.readouterr().out
+
+
+# ── Cycle 24-A2: log file stays raw (unprefixed) ─────────────────────────────
+
+def test_run_streaming_log_file_is_raw_unprefixed(tmp_path):
+    log_path = tmp_path / "test.log"
+    runner = _streaming_runner("TestAgent", [b"hello world\n"], log_path)
+    runner.run_streaming()
+    assert log_path.read_text() == "hello world\n"
+    assert "[TestAgent]" not in log_path.read_text()
+
+
+def test_run_streaming_log_file_contains_full_raw_output(tmp_path):
+    """Log file must capture all raw bytes, including multi-chunk output."""
+    log_path = tmp_path / "test.log"
+    runner = _streaming_runner("Bot", [b"line one\n", b"line two\n"], log_path)
+    runner.run_streaming()
+    content = log_path.read_text()
+    assert content == "line one\nline two\n"
