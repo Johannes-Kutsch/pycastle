@@ -30,10 +30,25 @@ def prune_orphan_worktrees(repo_root: Path) -> None:
             shutil.rmtree(child)
 
 
+def _extract_text(output: str) -> str:
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict) and obj.get("type") == "result":
+            return obj.get("result", output)
+    return output
+
+
 def parse_plan(output: str) -> list[dict]:
-    match = re.search(r"<plan>([\s\S]*?)</plan>", output)
+    text = _extract_text(output)
+    match = re.search(r"<plan>([\s\S]*?)</plan>", text)
     if not match:
-        raise RuntimeError("Planner produced no <plan> tag.\n\n" + output)
+        raise RuntimeError("Planner produced no <plan> tag.\n\n" + text)
     return json.loads(match.group(1))["issues"]
 
 
@@ -51,7 +66,7 @@ async def run_issue(issue: dict, env: dict[str, str], repo_root: Path) -> dict |
         prompt_args=prompt_args,
         branch=issue["branch"],
     )
-    if "<promise>COMPLETE</promise>" not in result:
+    if "<promise>COMPLETE</promise>" not in _extract_text(result):
         return None
     await run_agent(
         name=f"Reviewer #{issue['number']}",
