@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pycastle.container_runner import ContainerRunner, run_agent
+from pycastle.container_runner import ContainerRunner, _build_claude_command, run_agent
 from pycastle.errors import AgentTimeoutError
 
 
@@ -20,6 +20,7 @@ def _streaming_runner(name: str, chunks: list, log_path) -> ContainerRunner:
     runner._container_env = {}
     runner.branch = None
     runner._worktree_path = "/home/agent/workspace"
+    runner._prompt = ""
     runner._container = MagicMock()
     runner._log_path = log_path
     mock_result = MagicMock()
@@ -36,6 +37,7 @@ def _fake_runner(exit_code=0, stdout=b"", stderr=b""):
     runner._container_env = {}
     runner.branch = None
     runner._worktree_path = "/home/agent/workspace"
+    runner._prompt = ""
     runner._container = MagicMock()
     mock_result = MagicMock()
     mock_result.exit_code = exit_code
@@ -80,9 +82,6 @@ class _PipFailRunner:
         if "pip" in cmd:
             raise RuntimeError("pip install failed: no matching distribution")
         return ""
-
-    def write_file(self, *args):
-        pass
 
     def run_streaming(self):
         return ""
@@ -131,9 +130,6 @@ class _SlowFakeRunner:
         if "pip" in cmd:
             time.sleep(_DELAY)
         return ""
-
-    def write_file(self, *args):
-        pass
 
     def run_streaming(self):
         return ""
@@ -274,9 +270,6 @@ class _StreamingErrorRunner:
     def exec_simple(self, cmd, timeout=None):
         return ""
 
-    def write_file(self, *_):
-        pass
-
     def run_streaming(self):
         raise RuntimeError("container crashed mid-run")
 
@@ -344,9 +337,6 @@ class _PhaseLogRunner:
     def exec_simple(self, cmd, timeout=None):
         return ""
 
-    def write_file(self, *_):
-        pass
-
     def run_streaming(self):
         return ""
 
@@ -401,9 +391,6 @@ def _make_exec_logging_runner():
         def exec_simple(self, cmd, timeout=None):
             exec_log.append(cmd)
             return ""
-
-        def write_file(self, *_):
-            pass
 
         def run_streaming(self):
             return ""
@@ -559,7 +546,6 @@ class _ContainerExitErrorRunner:
     def __enter__(self): return self
     def __exit__(self, *_): raise RuntimeError("container stop failed")
     def exec_simple(self, cmd, timeout=None): return ""
-    def write_file(self, *_): pass
     def run_streaming(self): return "done"
 
 
@@ -589,7 +575,6 @@ def test_container_cleanup_runs_even_when_worktree_cleanup_raises(tmp_path):
         def __enter__(self): return self
         def __exit__(self, *_): container_exit_calls.append(True)
         def exec_simple(self, cmd, timeout=None): return ""
-        def write_file(self, *_): pass
         def run_streaming(self): return "done"
 
     with patch("pycastle.container_runner.ContainerRunner", _TrackingRunner), \
@@ -608,7 +593,6 @@ class _SuccessRunner:
     def __enter__(self): return self
     def __exit__(self, *_): pass
     def exec_simple(self, cmd, timeout=None): return ""
-    def write_file(self, *_): pass
     def run_streaming(self): return "done"
 
 
@@ -645,3 +629,123 @@ def test_gitdir_temp_file_deleted_even_when_container_raises(tmp_path):
             _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
 
     assert not overlay.exists(), "gitdir temp file must be deleted even when container cleanup raises"
+
+
+# ── Cycle 36-1: _build_claude_command includes required flags ────────────────
+
+def test_build_claude_command_includes_output_format_stream_json():
+    cmd = _build_claude_command("prompt")
+    assert "--output-format stream-json" in cmd
+
+
+def test_build_claude_command_includes_dangerously_skip_permissions():
+    cmd = _build_claude_command("prompt")
+    assert "--dangerously-skip-permissions" in cmd
+
+
+def test_build_claude_command_includes_verbose():
+    cmd = _build_claude_command("prompt")
+    assert "--verbose" in cmd
+
+
+def test_build_claude_command_includes_stdin_flag():
+    cmd = _build_claude_command("prompt")
+    assert "-p -" in cmd
+
+
+# ── Cycle 36-2: prompt in heredoc, no temp file ──────────────────────────────
+
+def test_build_claude_command_embeds_prompt_content():
+    cmd = _build_claude_command("my test prompt")
+    assert "my test prompt" in cmd
+
+
+def test_build_claude_command_does_not_use_temp_file():
+    cmd = _build_claude_command("prompt")
+    assert "/tmp/prompt.md" not in cmd
+
+
+# ── Cycle 36-3: run_streaming passes correct command to exec_run ─────────────
+
+def test_run_streaming_command_includes_required_flags(tmp_path):
+    runner = _streaming_runner("TestAgent", [b"output\n"], tmp_path / "test.log")
+    runner._prompt = "test prompt"
+    runner.run_streaming()
+    cmd_str = runner._container.exec_run.call_args[0][0][2]
+    assert "--output-format stream-json" in cmd_str
+    assert "--dangerously-skip-permissions" in cmd_str
+    assert "--verbose" in cmd_str
+    assert "-p -" in cmd_str
+    assert "/tmp/prompt.md" not in cmd_str
+
+
+# ── Cycle 36-4: _prepare stores prompt on runner, no write_file ─────────────
+
+def test_prepare_stores_prompt_on_runner(tmp_path):
+    from pycastle.container_runner import _prepare
+
+    prompt_file = tmp_path / "p.md"
+    prompt_file.write_text("my prompt content")
+
+    runner = MagicMock()
+    runner.exec_simple.return_value = ""
+
+    async def _run():
+        await _prepare("test", runner, asyncio.get_event_loop(), None, prompt_file, {})
+
+    asyncio.run(_run())
+
+    assert runner._prompt == "my prompt content"
+
+
+def test_prepare_does_not_call_write_file(tmp_path):
+    from pycastle.container_runner import _prepare
+
+    prompt_file = tmp_path / "p.md"
+    prompt_file.write_text("my prompt content")
+
+    runner = MagicMock()
+    runner.exec_simple.return_value = ""
+
+    async def _run():
+        await _prepare("test", runner, asyncio.get_event_loop(), None, prompt_file, {})
+
+    asyncio.run(_run())
+
+    runner.write_file.assert_not_called()
+
+
+# ── Cycle 36-5: streaming consumer prints each line immediately ──────────────
+
+def test_run_streaming_prints_lines_from_separate_chunks(tmp_path, capsys):
+    """Lines arriving in separate chunks must each be printed, not buffered until the end."""
+    runner = _streaming_runner("Bot", [b"line one\n", b"line two\n"], tmp_path / "test.log")
+    runner.run_streaming()
+    out = capsys.readouterr().out
+    assert "[Bot] line one" in out
+    assert "[Bot] line two" in out
+
+
+# ── Cycle 36-6: run_agent completes without .claude/settings.json ────────────
+
+def test_run_agent_does_not_write_claude_settings_json(tmp_path):
+    """--dangerously-skip-permissions makes pre-creating .claude/settings.json unnecessary."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test prompt")
+
+    written_paths: list[str] = []
+
+    class _TrackingRunner:
+        def __init__(self, *_, **__): pass
+        def __enter__(self): return self
+        def __exit__(self, *_): pass
+        def exec_simple(self, cmd, timeout=None): return ""
+        def write_file(self, content, path): written_paths.append(path)
+        def run_streaming(self): return "done"
+
+    with patch("pycastle.container_runner.ContainerRunner", _TrackingRunner):
+        _run(run_agent("test", prompt, tmp_path, {}))
+
+    assert not any(".claude/settings.json" in p for p in written_paths), (
+        f"settings.json must not be pre-created; written paths: {written_paths}"
+    )
