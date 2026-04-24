@@ -9,6 +9,7 @@ from pathlib import Path
 import docker
 
 from .config import DOCKER_IMAGE, LOGS_DIR, PYCASTLE_DIR
+from .errors import DockerError, DockerTimeoutError
 from .worktree import create_worktree, patch_gitdir_for_container, remove_worktree
 
 
@@ -97,7 +98,7 @@ class ContainerRunner:
         thread.join(timeout=timeout)
 
         if thread.is_alive():
-            raise TimeoutError(f"Command timed out after {timeout}s: {command}")
+            raise DockerTimeoutError(f"Command timed out after {timeout}s: {command}")
 
         if exc_holder[0]:
             raise exc_holder[0]
@@ -106,7 +107,7 @@ class ContainerRunner:
         stdout = (result.output[0] or b"").decode("utf-8", errors="replace")
         stderr = (result.output[1] or b"").decode("utf-8", errors="replace")
         if result.exit_code != 0:
-            raise RuntimeError(
+            raise DockerError(
                 f"Command failed (exit {result.exit_code}): {stderr.strip() or stdout.strip()}"
             )
         if stderr and not stdout:

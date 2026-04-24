@@ -6,6 +6,8 @@ import time
 from pathlib import Path
 from typing import Callable, TypeVar
 
+from .errors import WorktreeError
+
 _T = TypeVar("_T")
 
 
@@ -52,7 +54,7 @@ def create_worktree(repo_path: Path, worktree_path: Path, branch: str) -> None:
 
     result = subprocess.run(cmd, cwd=repo_path, capture_output=True)
     if result.returncode != 0:
-        raise RuntimeError(
+        raise WorktreeError(
             f"git worktree add failed: {result.stderr.decode('utf-8', errors='replace').strip()}"
         )
 
@@ -84,7 +86,7 @@ def create_worktree(repo_path: Path, worktree_path: Path, branch: str) -> None:
             else "(missing)"
         )
         remove_worktree(repo_path, worktree_path)
-        raise RuntimeError(
+        raise WorktreeError(
             f"No pyproject.toml or requirements.txt found in worktree {worktree_path}. "
             f"Commit your project files before running agents. "
             f"Worktree contents:\n{listing or '(empty)'}"
