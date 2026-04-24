@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.container_runner import ContainerRunner, run_agent
+from pycastle.errors import AgentTimeoutError
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -391,3 +392,69 @@ def test_setup_injects_host_git_email(tmp_path):
         _run(run_agent("Test", prompt, tmp_path, {}))
 
     assert any("git config user.email" in cmd and "alice@example.com" in cmd for cmd in exec_log)
+
+
+# ── Cycle 23-4: run_streaming raises AgentTimeoutError on idle timeout ────────
+
+def _never_yields():
+    """Generator that blocks forever without yielding — simulates a hung agent."""
+    event = threading.Event()
+    event.wait()
+    return
+    yield  # makes this a generator
+
+
+def test_run_streaming_raises_agent_timeout_error_when_idle(tmp_path):
+    runner = _fake_runner()
+    mock_result = MagicMock()
+    mock_result.output = _never_yields()
+    runner._container.exec_run.return_value = mock_result
+    runner._log_path = tmp_path / "test.log"
+
+    with patch("pycastle.container_runner.IDLE_TIMEOUT", 0.05):
+        with pytest.raises(AgentTimeoutError):
+            runner.run_streaming()
+
+
+# ── Cycle 23-5: branch collision lock ────────────────────────────────────────
+
+def test_second_run_agent_on_same_branch_raises_branch_collision_error(tmp_path):
+    from pycastle.errors import BranchCollisionError
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    async def _two_on_same_branch():
+        with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner), \
+             patch("pycastle.container_runner.create_worktree"), \
+             patch("pycastle.container_runner.remove_worktree"):
+            return await asyncio.gather(
+                run_agent("A1", prompt, tmp_path, {}, branch="feature/collision"),
+                run_agent("A2", prompt, tmp_path, {}, branch="feature/collision"),
+                return_exceptions=True,
+            )
+
+    results = asyncio.run(_two_on_same_branch())
+    errors = [r for r in results if isinstance(r, Exception)]
+    assert any(isinstance(e, BranchCollisionError) for e in errors), (
+        f"Expected BranchCollisionError, got: {errors}"
+    )
+
+
+def test_run_agent_different_branches_both_succeed(tmp_path):
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    async def _two_different_branches():
+        with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner), \
+             patch("pycastle.container_runner.create_worktree"), \
+             patch("pycastle.container_runner.remove_worktree"):
+            return await asyncio.gather(
+                run_agent("B1", prompt, tmp_path, {}, branch="feature/branch-one"),
+                run_agent("B2", prompt, tmp_path, {}, branch="feature/branch-two"),
+                return_exceptions=True,
+            )
+
+    results = asyncio.run(_two_different_branches())
+    errors = [r for r in results if isinstance(r, Exception)]
+    assert not errors, f"Expected both agents to succeed, got errors: {errors}"
