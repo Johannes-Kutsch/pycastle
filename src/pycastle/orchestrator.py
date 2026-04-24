@@ -1,10 +1,33 @@
 import asyncio
 import json
 import re
+import shutil
+import subprocess
+import sys
+import traceback
+from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import ISSUE_LABEL, MAX_ITERATIONS, MAX_PARALLEL, PROMPTS_DIR
+from .config import ISSUE_LABEL, LOGS_DIR, MAX_ITERATIONS, MAX_PARALLEL, PROMPTS_DIR
 from .container_runner import run_agent
+
+
+def prune_orphan_worktrees(repo_root: Path) -> None:
+    worktrees_dir = repo_root / "pycastle" / ".worktrees"
+    if not worktrees_dir.exists():
+        return
+    raw = subprocess.check_output(
+        ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
+        text=True,
+    )
+    active = {
+        line[len("worktree "):].strip()
+        for line in raw.splitlines()
+        if line.startswith("worktree ")
+    }
+    for child in worktrees_dir.iterdir():
+        if str(child.resolve()) not in active and child.is_dir():
+            shutil.rmtree(child)
 
 
 def parse_plan(output: str) -> list[dict]:
@@ -42,6 +65,7 @@ async def run_issue(issue: dict, env: dict[str, str], repo_root: Path) -> dict |
 
 
 async def run(env: dict[str, str], repo_root: Path) -> None:
+    prune_orphan_worktrees(repo_root)
     for iteration in range(1, MAX_ITERATIONS + 1):
         print(f"\n=== Iteration {iteration}/{MAX_ITERATIONS} ===\n")
 
@@ -75,6 +99,13 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
         completed: list[dict] = []
         for issue, result in zip(issues, results):
             if isinstance(result, Exception):
+                tb = "".join(traceback.format_exception(type(result), result, result.__traceback__))
+                timestamp = datetime.now(timezone.utc).isoformat()
+                entry = f"--- {timestamp} ---\n{tb}\n"
+                print(entry, file=sys.stderr)
+                LOGS_DIR.mkdir(parents=True, exist_ok=True)
+                with open(LOGS_DIR / "errors.log", "a", encoding="utf-8") as f:
+                    f.write(entry)
                 print(f"  ✗ #{issue['number']} ({issue['branch']}) failed: {result}")
             elif result is not None:
                 completed.append(issue)
