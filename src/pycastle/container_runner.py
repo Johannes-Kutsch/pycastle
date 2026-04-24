@@ -2,6 +2,7 @@ import asyncio
 import io
 import os
 import re
+import subprocess
 import sys
 import tarfile
 from pathlib import Path
@@ -141,6 +142,57 @@ class ContainerRunner:
         return "".join(parts)
 
 
+async def _setup(
+    name: str,
+    runner: "ContainerRunner",
+    loop: asyncio.AbstractEventLoop,
+    exec_timeout: float | None,
+) -> None:
+    print(f"[{name}] Phase: Setup")
+    await loop.run_in_executor(None, runner.__enter__)
+    git_name = subprocess.check_output(["git", "config", "user.name"], text=True).strip()
+    git_email = subprocess.check_output(["git", "config", "user.email"], text=True).strip()
+    await loop.run_in_executor(None, runner.exec_simple, f"git config user.name '{git_name}'", exec_timeout)
+    await loop.run_in_executor(None, runner.exec_simple, f"git config user.email '{git_email}'", exec_timeout)
+
+
+async def _prepare(
+    name: str,
+    runner: "ContainerRunner",
+    loop: asyncio.AbstractEventLoop,
+    exec_timeout: float | None,
+    prompt_file: Path,
+    prompt_args: dict[str, str],
+) -> None:
+    from .prompt_pipeline import prepare_prompt
+
+    print(f"[{name}] Phase: Prepare")
+    try:
+        await loop.run_in_executor(
+            None,
+            runner.exec_simple,
+            "pip install -e '.[dev]' || pip install -r requirements.txt",
+            exec_timeout,
+        )
+    except RuntimeError as exc:
+        print(f"  [{name}] Warning: dependency install skipped: {exc}", file=sys.stderr)
+
+    async def container_exec(cmd: str) -> str:
+        return await loop.run_in_executor(None, runner.exec_simple, cmd, exec_timeout)
+
+    prompt = await prepare_prompt(prompt_file, prompt_args, container_exec)
+    runner.write_file(prompt, "/tmp/prompt.md")
+
+
+async def _work(
+    name: str,
+    runner: "ContainerRunner",
+    loop: asyncio.AbstractEventLoop,
+) -> str:
+    print(f"[{name}] Phase: Work")
+    return await loop.run_in_executor(None, runner.run_streaming)
+
+
 async def run_agent(
     name: str,
     prompt_file: Path,
@@ -150,8 +202,6 @@ async def run_agent(
     branch: str | None = None,
     exec_timeout: float | None = None,
 ) -> str:
-    from .prompt_pipeline import prepare_prompt
-
     print(f"\n[{name}] Started")
 
     worktree_host_path: Path | None = None
@@ -164,25 +214,9 @@ async def run_agent(
     loop = asyncio.get_event_loop()
     runner = ContainerRunner(name, mount_path, env, branch=branch, worktree_host_path=worktree_host_path)
     try:
-        # Wrap blocking Docker setup in executor so the event loop stays responsive
-        await loop.run_in_executor(None, runner.__enter__)
-        try:
-            await loop.run_in_executor(
-                None,
-                runner.exec_simple,
-                "pip install -e '.[dev]' || pip install -r requirements.txt",
-                exec_timeout,
-            )
-        except RuntimeError as exc:
-            print(f"  [{name}] Warning: dependency install skipped: {exc}", file=sys.stderr)
-
-        async def container_exec(cmd: str) -> str:
-            return await loop.run_in_executor(None, runner.exec_simple, cmd, exec_timeout)
-
-        prompt = await prepare_prompt(prompt_file, prompt_args or {}, container_exec)
-        runner.write_file(prompt, "/tmp/prompt.md")
-
-        return await loop.run_in_executor(None, runner.run_streaming)
+        await _setup(name, runner, loop, exec_timeout)
+        await _prepare(name, runner, loop, exec_timeout, prompt_file, prompt_args or {})
+        return await _work(name, runner, loop)
     finally:
         runner.__exit__(None, None, None)
         if worktree_host_path:
