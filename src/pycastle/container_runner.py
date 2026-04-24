@@ -1,17 +1,22 @@
 import asyncio
 import io
 import os
+import queue
 import re
 import subprocess
 import sys
 import tarfile
+import threading
 from pathlib import Path
 
 import docker
 
 from .config import DOCKER_IMAGE, LOGS_DIR, PYCASTLE_DIR
-from .errors import DockerError, DockerTimeoutError
+from .defaults.config import IDLE_TIMEOUT
+from .errors import AgentTimeoutError, BranchCollisionError, DockerError, DockerTimeoutError
 from .worktree import create_worktree, patch_gitdir_for_container, remove_worktree
+
+_branch_locks: dict[str, asyncio.Lock] = {}
 
 
 class ContainerRunner:
@@ -131,9 +136,30 @@ class ContainerRunner:
             stream=True,
             workdir=self._worktree_path,
         )
+
+        q: queue.Queue = queue.Queue()
+        _sentinel = object()
+
+        def _feed():
+            try:
+                for chunk in result.output:
+                    q.put(chunk)
+            finally:
+                q.put(_sentinel)
+
+        threading.Thread(target=_feed, daemon=True).start()
+
         parts: list[str] = []
         with open(self._log_path, "w", encoding="utf-8") as log:
-            for chunk in result.output:
+            while True:
+                try:
+                    chunk = q.get(timeout=IDLE_TIMEOUT)
+                except queue.Empty:
+                    raise AgentTimeoutError(
+                        f"Agent idle for more than {IDLE_TIMEOUT}s"
+                    )
+                if chunk is _sentinel:
+                    break
                 text = chunk.decode("utf-8", errors="replace")
                 print(text, end="", flush=True)
                 log.write(text)
@@ -204,20 +230,35 @@ async def run_agent(
 ) -> str:
     print(f"\n[{name}] Started")
 
-    worktree_host_path: Path | None = None
+    lock: asyncio.Lock | None = None
     if branch:
-        branch_slug = re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
-        worktree_host_path = mount_path / PYCASTLE_DIR / ".worktrees" / branch_slug
-        create_worktree(mount_path, worktree_host_path, branch)
-        patch_gitdir_for_container(worktree_host_path)
+        if branch not in _branch_locks:
+            _branch_locks[branch] = asyncio.Lock()
+        lock = _branch_locks[branch]
+        if lock.locked():
+            raise BranchCollisionError(
+                f"Branch {branch!r} already has an agent running"
+            )
+        await lock.acquire()
 
-    loop = asyncio.get_event_loop()
-    runner = ContainerRunner(name, mount_path, env, branch=branch, worktree_host_path=worktree_host_path)
+    worktree_host_path: Path | None = None
     try:
-        await _setup(name, runner, loop, exec_timeout)
-        await _prepare(name, runner, loop, exec_timeout, prompt_file, prompt_args or {})
-        return await _work(name, runner, loop)
+        if branch:
+            branch_slug = re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
+            worktree_host_path = mount_path / PYCASTLE_DIR / ".worktrees" / branch_slug
+            create_worktree(mount_path, worktree_host_path, branch)
+            patch_gitdir_for_container(worktree_host_path)
+
+        loop = asyncio.get_event_loop()
+        runner = ContainerRunner(name, mount_path, env, branch=branch, worktree_host_path=worktree_host_path)
+        try:
+            await _setup(name, runner, loop, exec_timeout)
+            await _prepare(name, runner, loop, exec_timeout, prompt_file, prompt_args or {})
+            return await _work(name, runner, loop)
+        finally:
+            runner.__exit__(None, None, None)
+            if worktree_host_path:
+                remove_worktree(mount_path, worktree_host_path)
     finally:
-        runner.__exit__(None, None, None)
-        if worktree_host_path:
-            remove_worktree(mount_path, worktree_host_path)
+        if lock is not None and lock.locked():
+            lock.release()

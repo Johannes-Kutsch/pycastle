@@ -9,6 +9,42 @@ import pytest
 from pycastle.worktree import create_worktree, patch_gitdir_for_container, remove_worktree
 
 
+# ── Cycle 23-1: timeout constants ────────────────────────────────────────────
+
+def test_worktree_timeout_constant_exists():
+    from pycastle.defaults.config import WORKTREE_TIMEOUT
+    assert WORKTREE_TIMEOUT == 30
+
+
+def test_idle_timeout_constant_exists():
+    from pycastle.defaults.config import IDLE_TIMEOUT
+    assert IDLE_TIMEOUT == 300
+
+
+# ── Cycle 23-2: create_worktree raises WorktreeTimeoutError on subprocess timeout ──
+
+def test_create_worktree_raises_worktree_timeout_error(repo, tmp_path):
+    from pycastle.errors import WorktreeTimeoutError
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    ):
+        with pytest.raises(WorktreeTimeoutError):
+            create_worktree(repo, tmp_path / "wt", "feature/timeout")
+
+
+def test_remove_worktree_raises_worktree_timeout_error(repo, tmp_path):
+    from pycastle.errors import WorktreeTimeoutError
+    worktree = tmp_path / "wt"
+    create_worktree(repo, worktree, "feature/remove-timeout")
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    ):
+        with pytest.raises(WorktreeTimeoutError):
+            remove_worktree(repo, worktree)
+
+
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
 @pytest.fixture

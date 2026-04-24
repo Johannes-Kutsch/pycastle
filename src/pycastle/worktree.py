@@ -6,7 +6,8 @@ import time
 from pathlib import Path
 from typing import Callable, TypeVar
 
-from .errors import WorktreeError
+from .defaults.config import WORKTREE_TIMEOUT
+from .errors import WorktreeError, WorktreeTimeoutError
 
 _T = TypeVar("_T")
 
@@ -21,8 +22,18 @@ def _retry_on_permission_error(fn: Callable[[], _T], attempts: int = 3, delay: f
             time.sleep(delay)
 
 
+def _run(*args, **kwargs) -> subprocess.CompletedProcess:
+    kwargs.setdefault("timeout", WORKTREE_TIMEOUT)
+    try:
+        return subprocess.run(*args, **kwargs)
+    except subprocess.TimeoutExpired as exc:
+        raise WorktreeTimeoutError(
+            f"git command timed out after {WORKTREE_TIMEOUT}s: {exc.cmd}"
+        ) from exc
+
+
 def _is_ancestor(branch: str, repo_path: Path) -> bool:
-    result = subprocess.run(
+    result = _run(
         ["git", "merge-base", "--is-ancestor", branch, "HEAD"],
         cwd=repo_path, capture_output=True,
     )
@@ -30,19 +41,19 @@ def _is_ancestor(branch: str, repo_path: Path) -> bool:
 
 
 def create_worktree(repo_path: Path, worktree_path: Path, branch: str) -> None:
-    subprocess.run(
+    _run(
         ["git", "worktree", "prune"],
         cwd=repo_path, capture_output=True,
     )
 
     if worktree_path.exists():
-        subprocess.run(
+        _run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
             cwd=repo_path, capture_output=True,
         )
         shutil.rmtree(worktree_path, ignore_errors=True)
 
-    rev_parse = subprocess.run(
+    rev_parse = _run(
         ["git", "rev-parse", "--verify", branch],
         cwd=repo_path, capture_output=True,
     )
@@ -52,7 +63,7 @@ def create_worktree(repo_path: Path, worktree_path: Path, branch: str) -> None:
     else:
         cmd = ["git", "worktree", "add", "-b", branch, str(worktree_path), "HEAD"]
 
-    result = subprocess.run(cmd, cwd=repo_path, capture_output=True)
+    result = _run(cmd, cwd=repo_path, capture_output=True)
     if result.returncode != 0:
         raise WorktreeError(
             f"git worktree add failed: {result.stderr.decode('utf-8', errors='replace').strip()}"
@@ -65,8 +76,8 @@ def create_worktree(repo_path: Path, worktree_path: Path, branch: str) -> None:
     if not has_files and rev_parse.returncode == 0:
         if _is_ancestor(branch, repo_path):
             remove_worktree(repo_path, worktree_path)
-            subprocess.run(["git", "branch", "-D", branch], cwd=repo_path, capture_output=True)
-            result = subprocess.run(
+            _run(["git", "branch", "-D", branch], cwd=repo_path, capture_output=True)
+            result = _run(
                 ["git", "worktree", "add", "-b", branch, str(worktree_path), "HEAD"],
                 cwd=repo_path, capture_output=True,
             )
@@ -94,7 +105,7 @@ def create_worktree(repo_path: Path, worktree_path: Path, branch: str) -> None:
 
 
 def remove_worktree(repo_path: Path, worktree_path: Path) -> None:
-    result = subprocess.run(
+    result = _run(
         ["git", "worktree", "remove", "--force", str(worktree_path)],
         cwd=repo_path, capture_output=True,
     )
