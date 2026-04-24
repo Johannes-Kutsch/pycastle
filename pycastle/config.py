@@ -3,6 +3,8 @@ from pathlib import Path
 
 MAX_ITERATIONS = 10
 MAX_PARALLEL = 1
+WORKTREE_TIMEOUT = 30
+IDLE_TIMEOUT = 300
 DOCKER_IMAGE = "pycastle"
 ISSUE_LABEL = "ready-for-agent"
 PYCASTLE_DIR = Path("pycastle")
