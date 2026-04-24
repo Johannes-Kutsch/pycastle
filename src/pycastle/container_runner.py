@@ -20,6 +20,12 @@ from .worktree import create_worktree, patch_gitdir_for_container, remove_worktr
 _branch_locks: dict[str, asyncio.Lock] = {}
 
 
+def _build_claude_command(prompt: str) -> str:
+    flags = "--print --verbose --dangerously-skip-permissions --output-format stream-json -p -"
+    marker = "__PYCASTLE_PROMPT__"
+    return f"claude {flags} <<'{marker}'\n{prompt}\n{marker}"
+
+
 class ContainerRunner:
     def __init__(
         self,
@@ -138,7 +144,7 @@ class ContainerRunner:
 
     def run_streaming(self) -> str:
         result = self._container.exec_run(
-            ["bash", "-c", "claude --print < /tmp/prompt.md"],
+            ["bash", "-c", _build_claude_command(self._prompt)],
             stream=True,
             workdir=self._worktree_path,
         )
@@ -217,7 +223,7 @@ async def _prepare(
         return await loop.run_in_executor(None, runner.exec_simple, cmd, exec_timeout)
 
     prompt = await prepare_prompt(prompt_file, prompt_args, container_exec)
-    runner.write_file(prompt, "/tmp/prompt.md")
+    runner._prompt = prompt
 
 
 async def _work(
