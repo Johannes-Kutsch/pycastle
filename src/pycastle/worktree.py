@@ -1,5 +1,6 @@
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -20,6 +21,12 @@ def _retry_on_permission_error(fn: Callable[[], _T], attempts: int = 3, delay: f
             if attempt == attempts - 1:
                 raise
             time.sleep(delay)
+
+
+def _write_text_force(path: Path, content: str) -> None:
+    """Grant owner write permission then write content, handling transient ACL locks."""
+    _retry_on_permission_error(lambda: path.chmod(stat.S_IREAD | stat.S_IWRITE))
+    _retry_on_permission_error(lambda: path.write_text(content, encoding="utf-8"))
 
 
 def _run(*args, **kwargs) -> subprocess.CompletedProcess:
@@ -137,4 +144,4 @@ def patch_gitdir_for_container(worktree_path: Path) -> None:
         return f"gitdir: /home/agent/repo/{suffix}"
 
     new_content = re.sub(r"gitdir:\s*(.+)", _rewrite, content)
-    _retry_on_permission_error(lambda: git_file.write_text(new_content.rstrip() + "\n", encoding="utf-8"))
+    _write_text_force(git_file, new_content.rstrip() + "\n")
