@@ -428,7 +428,7 @@ def test_setup_injects_host_git_name(tmp_path):
          patch("pycastle.container_runner.subprocess.check_output", side_effect=_git_mock()):
         _run(run_agent("Test", prompt, tmp_path, {}))
 
-    assert any("git config user.name" in cmd and "Alice" in cmd for cmd in exec_log)
+    assert any("git config --global user.name" in cmd and "Alice" in cmd for cmd in exec_log)
 
 
 def test_setup_injects_host_git_email(tmp_path):
@@ -440,7 +440,7 @@ def test_setup_injects_host_git_email(tmp_path):
          patch("pycastle.container_runner.subprocess.check_output", side_effect=_git_mock()):
         _run(run_agent("Test", prompt, tmp_path, {}))
 
-    assert any("git config user.email" in cmd and "alice@example.com" in cmd for cmd in exec_log)
+    assert any("git config --global user.email" in cmd and "alice@example.com" in cmd for cmd in exec_log)
 
 
 # ── Cycle 23-4: run_streaming raises AgentTimeoutError on idle timeout ────────

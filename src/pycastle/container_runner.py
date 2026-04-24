@@ -188,8 +188,8 @@ async def _setup(
     await loop.run_in_executor(None, runner.__enter__)
     git_name = subprocess.check_output(["git", "config", "user.name"], text=True).strip()
     git_email = subprocess.check_output(["git", "config", "user.email"], text=True).strip()
-    await loop.run_in_executor(None, runner.exec_simple, f"git config user.name '{git_name}'", exec_timeout)
-    await loop.run_in_executor(None, runner.exec_simple, f"git config user.email '{git_email}'", exec_timeout)
+    await loop.run_in_executor(None, runner.exec_simple, f"git config --global user.name '{git_name}'", exec_timeout)
+    await loop.run_in_executor(None, runner.exec_simple, f"git config --global user.email '{git_email}'", exec_timeout)
 
 
 async def _prepare(
