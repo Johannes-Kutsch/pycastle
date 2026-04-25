@@ -20,9 +20,7 @@ Here are the last 10 commits:
 
 # EXPLORATION
 
-Explore the repo and fill your context window with relevant information that will allow you to complete the task.
-
-Pay extra attention to test files that touch the relevant parts of the code.
+After fetching the issue, explore only the files mentioned in the issue body and the test files that directly touch those files. Do not survey the full repository.
 
 # EXECUTION
 
