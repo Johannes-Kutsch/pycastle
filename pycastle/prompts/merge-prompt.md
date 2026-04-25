@@ -4,6 +4,8 @@ Merge the following branches into the current branch:
 
 {{BRANCHES}}
 
+The branches listed above are local — they were created by implementer agents running in worktrees on this machine. Do **not** run `git fetch origin` before merging; use the local branch directly.
+
 For each branch:
 
 1. Run `git merge <branch> --no-edit`

@@ -23,6 +23,9 @@ USER agent
 # Trust any bind-mounted directory regardless of host ownership
 RUN git config --global --add safe.directory '*'
 
+# Rewrite SSH GitHub URLs to HTTPS so GH_TOKEN-based auth works without SSH keys
+RUN git config --global url."https://github.com/".insteadOf "git@github.com:"
+
 # Install Claude Code CLI
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
