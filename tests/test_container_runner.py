@@ -726,6 +726,39 @@ def test_run_streaming_prints_lines_from_separate_chunks(tmp_path, capsys):
     assert "[Bot] line two" in out
 
 
+# ── Cycle 37-1: parent .git mounted rw at /.pycastle-parent-git ──────────────
+
+@patch("pycastle.container_runner.LOGS_DIR")
+@patch("pycastle.container_runner.docker")
+def test_container_mounts_parent_git_rw(mock_docker, mock_logs_dir, tmp_path):
+    """When worktree_host_path is set, <mount_path>/.git must be bound at /.pycastle-parent-git with mode rw."""
+    mock_container = MagicMock()
+    mock_docker.from_env.return_value.containers.run.return_value = mock_container
+
+    worktree_path = tmp_path / "worktree"
+    worktree_path.mkdir()
+
+    runner = ContainerRunner(
+        "test", tmp_path, {}, branch="feature/test", worktree_host_path=worktree_path
+    )
+    runner.__enter__()
+    runner.__exit__(None, None, None)
+
+    volumes = mock_docker.from_env.return_value.containers.run.call_args.kwargs["volumes"]
+    expected_host = str((tmp_path / ".git").resolve()).replace("\\", "/")
+    assert "/.pycastle-parent-git" in {v["bind"] for v in volumes.values()}, (
+        f"/.pycastle-parent-git not mounted; volumes={volumes}"
+    )
+    parent_git_entry = next(v for v in volumes.values() if v["bind"] == "/.pycastle-parent-git")
+    assert parent_git_entry["mode"] == "rw", (
+        f"/.pycastle-parent-git must be rw; got mode={parent_git_entry['mode']!r}"
+    )
+    host_key = next(k for k, v in volumes.items() if v["bind"] == "/.pycastle-parent-git")
+    assert host_key == expected_host, (
+        f"Wrong host path for /.pycastle-parent-git: {host_key!r}, expected {expected_host!r}"
+    )
+
+
 # ── Cycle 36-6: run_agent completes without .claude/settings.json ────────────
 
 def test_run_agent_does_not_write_claude_settings_json(tmp_path):
