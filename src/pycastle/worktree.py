@@ -9,6 +9,8 @@ from pathlib import Path
 from .defaults.config import WORKTREE_TIMEOUT
 from .errors import WorktreeError, WorktreeTimeoutError
 
+CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
+
 
 def _run(*args, **kwargs) -> subprocess.CompletedProcess:
     kwargs.setdefault("timeout", WORKTREE_TIMEOUT)
@@ -122,8 +124,8 @@ def patch_gitdir_for_container(worktree_path: Path) -> Path | None:
         idx = path.find(".git/worktrees/")
         if idx == -1:
             return m.group(0)
-        suffix = path[idx:]  # ".git/worktrees/<name>"
-        return f"gitdir: /home/agent/repo/{suffix}"
+        suffix = path[idx + len(".git/worktrees/"):]  # "<name>"
+        return f"gitdir: {CONTAINER_PARENT_GIT}/worktrees/{suffix}"
 
     new_content = re.sub(r"gitdir:\s*(.+)", _rewrite, content)
 

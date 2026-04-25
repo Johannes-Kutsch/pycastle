@@ -15,7 +15,7 @@ import docker
 from .config import DOCKER_IMAGE, LOGS_DIR, PYCASTLE_DIR
 from .defaults.config import IDLE_TIMEOUT
 from .errors import AgentTimeoutError, BranchCollisionError, DockerError, DockerTimeoutError
-from .worktree import create_worktree, patch_gitdir_for_container, remove_worktree
+from .worktree import CONTAINER_PARENT_GIT, create_worktree, patch_gitdir_for_container, remove_worktree
 
 _branch_locks: dict[str, asyncio.Lock] = {}
 
@@ -55,9 +55,11 @@ class ContainerRunner:
 
         if self.worktree_host_path:
             worktree_path = str(self.worktree_host_path.resolve()).replace("\\", "/")
+            parent_git_path = str((self.mount_path / ".git").resolve()).replace("\\", "/")
             volumes = {
                 worktree_path: {"bind": "/home/agent/workspace", "mode": "rw"},
                 repo_path: {"bind": "/home/agent/repo", "mode": "ro"},
+                parent_git_path: {"bind": CONTAINER_PARENT_GIT, "mode": "rw"},
             }
             if self.gitdir_overlay:
                 overlay_path = str(self.gitdir_overlay.resolve()).replace("\\", "/")

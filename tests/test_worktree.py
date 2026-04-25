@@ -236,7 +236,7 @@ def test_patch_gitdir_rewrites_windows_path(tmp_path):
         result = patch_gitdir_for_container(worktree)
 
     assert result is not None
-    assert result.read_text().strip() == "gitdir: /home/agent/repo/.git/worktrees/my-branch"
+    assert result.read_text().strip() == "gitdir: /.pycastle-parent-git/worktrees/my-branch"
     assert git_file.read_text() == "gitdir: C:/Users/johan/repo/.git/worktrees/my-branch\n"
 
 
@@ -278,7 +278,7 @@ def test_patch_gitdir_returns_temp_file_and_leaves_host_unchanged(tmp_path):
         overlay = patch_gitdir_for_container(worktree)
 
     assert overlay is not None
-    assert overlay.read_text().strip() == "gitdir: /home/agent/repo/.git/worktrees/my-branch"
+    assert overlay.read_text().strip() == "gitdir: /.pycastle-parent-git/worktrees/my-branch"
     assert git_file.read_text() == "gitdir: C:/Users/johan/repo/.git/worktrees/my-branch\n"
 
 
