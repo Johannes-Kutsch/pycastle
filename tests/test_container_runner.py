@@ -634,35 +634,42 @@ def test_gitdir_temp_file_deleted_even_when_container_raises(tmp_path):
 # ── Cycle 36-1: _build_claude_command includes required flags ────────────────
 
 def test_build_claude_command_includes_output_format_stream_json():
-    cmd = _build_claude_command("prompt")
+    cmd = _build_claude_command()
     assert "--output-format stream-json" in cmd
 
 
 def test_build_claude_command_includes_dangerously_skip_permissions():
-    cmd = _build_claude_command("prompt")
+    cmd = _build_claude_command()
     assert "--dangerously-skip-permissions" in cmd
 
 
 def test_build_claude_command_includes_verbose():
-    cmd = _build_claude_command("prompt")
+    cmd = _build_claude_command()
     assert "--verbose" in cmd
 
 
 def test_build_claude_command_includes_stdin_flag():
-    cmd = _build_claude_command("prompt")
+    cmd = _build_claude_command()
     assert "-p -" in cmd
 
 
-# ── Cycle 36-2: prompt in heredoc, no temp file ──────────────────────────────
+# ── Cycle 36-2: stdin redirect from temp file, no heredoc ────────────────────
 
-def test_build_claude_command_embeds_prompt_content():
-    cmd = _build_claude_command("my test prompt")
-    assert "my test prompt" in cmd
+def test_build_claude_command_redirects_stdin_from_temp_file():
+    cmd = _build_claude_command()
+    assert "< /tmp/.pycastle_prompt" in cmd
 
 
 def test_build_claude_command_does_not_use_temp_file():
-    cmd = _build_claude_command("prompt")
+    cmd = _build_claude_command()
     assert "/tmp/prompt.md" not in cmd
+
+
+# ── Cycle 44-1: command string does not embed large prompt inline ─────────────
+
+def test_build_claude_command_does_not_embed_large_prompt():
+    cmd = _build_claude_command()
+    assert len(cmd) < 1024
 
 
 # ── Cycle 36-3: run_streaming passes correct command to exec_run ─────────────
@@ -670,13 +677,49 @@ def test_build_claude_command_does_not_use_temp_file():
 def test_run_streaming_command_includes_required_flags(tmp_path):
     runner = _streaming_runner("TestAgent", [b"output\n"], tmp_path / "test.log")
     runner._prompt = "test prompt"
+    runner.write_file = MagicMock()
     runner.run_streaming()
-    cmd_str = runner._container.exec_run.call_args[0][0][2]
-    assert "--output-format stream-json" in cmd_str
-    assert "--dangerously-skip-permissions" in cmd_str
-    assert "--verbose" in cmd_str
-    assert "-p -" in cmd_str
-    assert "/tmp/prompt.md" not in cmd_str
+    streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
+    assert "--output-format stream-json" in streaming_cmd
+    assert "--dangerously-skip-permissions" in streaming_cmd
+    assert "--verbose" in streaming_cmd
+    assert "-p -" in streaming_cmd
+    assert "< /tmp/.pycastle_prompt" in streaming_cmd
+
+
+# ── Cycle 44-2: run_streaming writes prompt to temp file ─────────────────────
+
+def test_run_streaming_writes_prompt_to_temp_file(tmp_path):
+    runner = _streaming_runner("Agent", [b"output\n"], tmp_path / "test.log")
+    runner._prompt = "my test prompt"
+    runner.write_file = MagicMock()
+    runner.run_streaming()
+    runner.write_file.assert_called_once_with("my test prompt", "/tmp/.pycastle_prompt")
+
+
+# ── Cycle 44-3: command string redirects stdin from temp file ─────────────────
+
+def test_run_streaming_command_redirects_stdin_from_temp_file(tmp_path):
+    runner = _streaming_runner("Agent", [b"output\n"], tmp_path / "test.log")
+    runner._prompt = "test"
+    runner.write_file = MagicMock()
+    runner.run_streaming()
+    streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
+    assert "< /tmp/.pycastle_prompt" in streaming_cmd
+
+
+# ── Cycle 44-4: temp prompt file is cleaned up after run ─────────────────────
+
+def test_run_streaming_cleans_up_temp_prompt_file(tmp_path):
+    runner = _streaming_runner("Agent", [b"output\n"], tmp_path / "test.log")
+    runner._prompt = "test"
+    runner.write_file = MagicMock()
+    runner.run_streaming()
+    all_cmds = [
+        call[0][0]
+        for call in runner._container.exec_run.call_args_list
+    ]
+    assert any("rm -f /tmp/.pycastle_prompt" in " ".join(cmd) for cmd in all_cmds)
 
 
 # ── Cycle 36-4: _prepare stores prompt on runner, no write_file ─────────────

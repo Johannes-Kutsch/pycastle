@@ -20,10 +20,9 @@ from .worktree import CONTAINER_PARENT_GIT, create_worktree, patch_gitdir_for_co
 _branch_locks: dict[str, asyncio.Lock] = {}
 
 
-def _build_claude_command(prompt: str) -> str:
+def _build_claude_command() -> str:
     flags = "--print --verbose --dangerously-skip-permissions --output-format stream-json -p -"
-    marker = "__PYCASTLE_PROMPT__"
-    return f"claude {flags} <<'{marker}'\n{prompt}\n{marker}"
+    return f"claude {flags} < /tmp/.pycastle_prompt"
 
 
 class ContainerRunner:
@@ -145,8 +144,9 @@ class ContainerRunner:
         self._container.put_archive(os.path.dirname(container_path), buf)
 
     def run_streaming(self) -> str:
+        self.write_file(self._prompt, "/tmp/.pycastle_prompt")
         result = self._container.exec_run(
-            ["bash", "-c", _build_claude_command(self._prompt)],
+            ["bash", "-c", _build_claude_command()],
             stream=True,
             workdir=self._worktree_path,
         )
@@ -165,24 +165,33 @@ class ContainerRunner:
 
         parts: list[str] = []
         line_buf = ""
-        with open(self._log_path, "w", encoding="utf-8") as log:
-            while True:
-                try:
-                    chunk = q.get(timeout=IDLE_TIMEOUT)
-                except queue.Empty:
-                    raise AgentTimeoutError(
-                        f"Agent idle for more than {IDLE_TIMEOUT}s"
-                    )
-                if chunk is _sentinel:
-                    break
-                text = chunk.decode("utf-8", errors="replace")
-                log.write(text)
-                log.flush()
-                parts.append(text)
-                line_buf += text
-                while "\n" in line_buf:
-                    line, line_buf = line_buf.split("\n", 1)
-                    print(f"[{self.name}] {line}", flush=True)
+        try:
+            with open(self._log_path, "w", encoding="utf-8") as log:
+                while True:
+                    try:
+                        chunk = q.get(timeout=IDLE_TIMEOUT)
+                    except queue.Empty:
+                        raise AgentTimeoutError(
+                            f"Agent idle for more than {IDLE_TIMEOUT}s"
+                        )
+                    if chunk is _sentinel:
+                        break
+                    text = chunk.decode("utf-8", errors="replace")
+                    log.write(text)
+                    log.flush()
+                    parts.append(text)
+                    line_buf += text
+                    while "\n" in line_buf:
+                        line, line_buf = line_buf.split("\n", 1)
+                        print(f"[{self.name}] {line}", flush=True)
+        finally:
+            try:
+                self._container.exec_run(
+                    ["bash", "-c", "rm -f /tmp/.pycastle_prompt"],
+                    workdir=self._worktree_path,
+                )
+            except Exception:
+                pass
         return "".join(parts)
 
 
