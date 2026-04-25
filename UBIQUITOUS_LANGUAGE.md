@@ -73,13 +73,15 @@
 | **shell expression** | A `` !`command` `` token inside a prompt, replaced by the command's stdout output at preprocess time | shell expansion |
 | **prompt pipeline** | The two-stage process of rendering placeholders then preprocessing shell expressions | templating, rendering |
 | **CODING_STANDARDS.md** | A reference document placed in the prompts directory and treated as a prompt for discovery and scaffolding purposes | standards file |
+| **EXPLORATION section** | The section of the **implement prompt** that instructs the **Implementer** to read files before coding; scoped to files mentioned in the issue body and their test files — not a full repository survey | explore section, discovery section |
+| **Explore subagent** | A Claude Code subagent spawned by the **Implementer** during the **EXPLORATION section** to read relevant files; token usage is bounded by scoping the subagent prompt to the issue body rather than the full repository | explore agent, repo scanner |
 
 ## Agent Lifecycle
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **agent lifecycle phase** | One of three named stages (Setup, Prepare, Work) within a single agent container run | step, stage |
-| **Setup phase** | The first agent lifecycle phase: worktree creation, gitdir patching, container start, and git identity propagation | container setup, init phase |
+| **Setup phase** | The first agent lifecycle phase: worktree creation, **gitdir overlay** creation, **parent git dir mount** wiring, container start, and git identity propagation | container setup, init phase |
 | **Prepare phase** | The second agent lifecycle phase: dependency installation, prompt rendering, and prompt injection into the container | hook phase, pre-work |
 | **Work phase** | The third agent lifecycle phase: Claude Code invocation and streaming output collection | execution phase, run phase |
 | **git identity propagation** | The Setup phase operation that reads the host `git user.name` and `git user.email` and configures them inside the container so that `git commit` succeeds | git config injection, user setup |
@@ -93,8 +95,14 @@
 | --- | --- | --- |
 | **Dockerfile** | File in the pycastle directory defining the Docker image for agent containers — ships without baked-in credentials | image definition |
 | **container runner** | Package module that manages Docker container lifecycle and injects runtime secrets | docker wrapper |
-| **host repo** | The git repository on the developer's machine that is mounted read-write into each agent container | project repo, local repo |
-| **volume mount** | The Docker bind mount that attaches the **host repo** at `/home/agent/repo` inside each container | bind mount, volume |
+| **host repo** | The git repository on the developer's machine that is mounted into each agent container | project repo, local repo |
+| **volume mount** | A Docker bind mount that attaches a host filesystem path to a container-internal path, with an explicit read/write mode | bind mount, volume |
+| **RO mount** | A **volume mount** with `mode: "ro"` — the container cannot write to it; used for the host repo to prevent accidental modification of main-branch files | read-only mount |
+| **RW mount** | A **volume mount** with `mode: "rw"` — the container can read and write; used for the **worktree** and **parent git dir mount** | read-write mount |
+| **gitdir file** | The `.git` file inside a git worktree directory; contains a `gitdir:` pointer to the parent repo's worktree metadata directory at `<repo>/.git/worktrees/<name>/` | .git file, git pointer |
+| **gitdir overlay** | A host temp file containing a corrected `gitdir:` path, mounted over the worktree's **gitdir file** inside the container so that Linux git can resolve the parent repo path correctly; needed only on Windows hosts | git file patch, gitdir patch |
+| **parent git dir mount** | A **RW mount** that binds `<host-repo>/.git` to `/.pycastle-parent-git` inside the container, giving the agent write access to worktree metadata (index, HEAD, locks) without making the rest of the host repo writable | git dir mount, .git mount |
+| **`/.pycastle-parent-git`** | The deterministic container-internal path where the **parent git dir mount** is bound; referenced by the **gitdir overlay** so that `git add` and `git commit` can write index locks | — |
 | **worktree setup** | The container initialization step that runs `git worktree add` to create the **worktree** for an **Implementer** before the agent prompt is sent; uses the new-branch path when the branch doesn't exist, the existing-branch path when it does | worktree init, worktree creation |
 | **new-branch path** | The `git worktree add -b <branch> <path> HEAD` form used when the **branch** does not yet exist; `HEAD` must be passed explicitly to force commit resolution on Windows Docker mounts | — |
 | **existing-branch path** | The `git worktree add <path> <branch>` form used when the **branch** already exists; the branch name serves as the commit-ish | — |
@@ -124,7 +132,10 @@
 - The **container runner** performs **runtime injection** before every agent run.
 - **Worktree setup** always runs the **worktree contents check** immediately after `git worktree add`; a failed check raises an error with the worktree path and directory listing.
 - **Worktree setup** uses the **new-branch path** when the branch doesn't yet exist, and the **existing-branch path** when it does.
-- The **host repo** is attached to each container via a **volume mount** at `/home/agent/repo`.
+- The **host repo** is attached to each **Implementer** container as an **RO mount** at `/home/agent/repo`.
+- The **worktree** is attached as an **RW mount** at `/home/agent/workspace`.
+- The **parent git dir mount** binds `<host-repo>/.git` at `/.pycastle-parent-git` as **RW**, enabling `git add` and `git commit` inside the container.
+- On Windows hosts, the **gitdir overlay** is additionally mounted over `/home/agent/workspace/.git` as **RO**, redirecting the `gitdir:` pointer from a Windows host path to `/.pycastle-parent-git/worktrees/<name>`.
 - The **canonical label set** is defined once in the pycastle package; **pycastle labels** applies it to any target repo.
 - A **label reset** deletes all existing repo labels before applying the **canonical label set**.
 - Each agent run progresses through three **agent lifecycle phases** in order: **Setup phase** → **Prepare phase** → **Work phase**.
@@ -181,6 +192,8 @@
 - **"plan"** is used to mean both (a) the act of planning (the **plan phase**) and (b) the structured artifact the **Planner** produces (a JSON list of issue/branch pairs). Use **plan phase** for the former and **plan** for the latter.
 - **"agent"** sometimes refers to a specific named role (Planner, Implementer, Reviewer, Merger) and sometimes to any Claude Code container instance. Use the specific role name when precision matters; use **agent** only when referring to the concept generically.
 - **"AFK"** and **"HITL"** are not surfaced in the pycastle UI or label names — they are workflow concepts. Their concrete representation is the **issue label**: `ready-for-agent` for **AFK issues**, `ready-for-human` for **HITL issues**. Never conflate the concept with the label name.
+- **"gitdir"** is used for three distinct things: the **gitdir file** (the `.git` pointer file in a worktree), the **gitdir overlay** (the corrected temp file mounted over it), and the gitdir path value inside that file. Always qualify: **gitdir file**, **gitdir overlay**, or **gitdir path**.
+- **"volume mount"** was previously described as "attaches the host repo at `/home/agent/repo`" — this is now incorrect. A container run involves multiple **volume mounts** (RO repo, RW worktree, RW parent git dir, RO gitdir overlay). Never conflate **volume mount** with the specific repo mount.
 - **"phase"** now operates at two levels: *orchestration phases* (plan, implement, review, merge) are stages of an **iteration**; *agent lifecycle phases* (Setup, Prepare, Work) are stages of a single agent container run. Use the full term (**agent lifecycle phase** vs **plan phase**) when the level is not obvious from context.
 - **"worktree"** was previously defined as "created inside a container" — this is incorrect. The **worktree** is always created on the **host** and bind-mounted into the container. The container never runs `git worktree add`.
 - **"timeout"** is used for two distinct limits: **idle timeout** (agent produces no output) and **worktree timeout** (git operation takes too long). Always qualify which kind is meant.
