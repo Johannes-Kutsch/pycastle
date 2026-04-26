@@ -16,3 +16,16 @@ DOCKERFILE = Path("pycastle/Dockerfile")
 
 PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 SHELL_EXPR = re.compile(r"!`([^`]+)`")
+
+PREFLIGHT_CHECKS: list[tuple[str, str]] = [
+    ("ruff", "ruff check ."),
+    ("mypy", "mypy ."),
+    ("pytest", "pytest"),
+]
+
+IMPLEMENT_CHECKS: list[str] = [
+    "ruff check --fix",
+    "ruff format --check",
+    "mypy .",
+    "pytest",
+]

@@ -165,3 +165,51 @@ def test_failed_agent_prints_traceback_to_stderr(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "RuntimeError" in err
     assert "stderr traceback check" in err
+
+
+# ── Cycle 50-4: FEEDBACK_COMMANDS passed to implementer ──────────────────────
+
+
+def test_run_issue_passes_feedback_commands_to_implementer(tmp_path):
+    """run_issue must include FEEDBACK_COMMANDS in prompt_args for the implementer."""
+    import asyncio
+    from pycastle.orchestrator import run_issue
+
+    captured_args: list[dict] = []
+
+    async def _fake_run_agent(
+        name, prompt_file, mount_path, env, prompt_args=None, **kw
+    ):
+        captured_args.append({"name": name, "prompt_args": prompt_args or {}})
+        return "<promise>COMPLETE</promise>"
+
+    issue = {"number": 1, "title": "Fix thing", "branch": "issue/1"}
+    with patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent):
+        asyncio.run(run_issue(issue, {}, tmp_path))
+
+    implementer_call = next(a for a in captured_args if "Implementer" in a["name"])
+    assert "FEEDBACK_COMMANDS" in implementer_call["prompt_args"]
+
+
+def test_run_issue_feedback_commands_formatted_from_implement_checks(tmp_path):
+    """FEEDBACK_COMMANDS must be formatted from IMPLEMENT_CHECKS with backtick wrapping."""
+    import asyncio
+    from pycastle.defaults.config import IMPLEMENT_CHECKS
+    from pycastle.orchestrator import run_issue
+
+    captured_args: list[dict] = []
+
+    async def _fake_run_agent(
+        name, prompt_file, mount_path, env, prompt_args=None, **kw
+    ):
+        captured_args.append({"name": name, "prompt_args": prompt_args or {}})
+        return "<promise>COMPLETE</promise>"
+
+    issue = {"number": 1, "title": "Fix thing", "branch": "issue/1"}
+    with patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent):
+        asyncio.run(run_issue(issue, {}, tmp_path))
+
+    implementer_call = next(a for a in captured_args if "Implementer" in a["name"])
+    feedback_commands = implementer_call["prompt_args"]["FEEDBACK_COMMANDS"]
+    for cmd in IMPLEMENT_CHECKS:
+        assert f"`{cmd}`" in feedback_commands

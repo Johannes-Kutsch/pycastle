@@ -13,12 +13,13 @@ from pathlib import Path
 import docker
 
 from .config import DOCKER_IMAGE, LOGS_DIR, PYCASTLE_DIR
-from .defaults.config import IDLE_TIMEOUT
+from .defaults.config import IDLE_TIMEOUT, PREFLIGHT_CHECKS
 from .errors import (
     AgentTimeoutError,
     BranchCollisionError,
     DockerError,
     DockerTimeoutError,
+    PreflightError,
 )
 from .worktree import (
     CONTAINER_PARENT_GIT,
@@ -212,6 +213,23 @@ class ContainerRunner:
         return "".join(parts)
 
 
+async def _preflight(
+    name: str,
+    runner: "ContainerRunner",
+    loop: asyncio.AbstractEventLoop,
+    exec_timeout: float | None,
+    checks: list[tuple[str, str]],
+) -> list[tuple[str, str, str]]:
+    print(f"[{name}] Phase: Pre-flight")
+    failures: list[tuple[str, str, str]] = []
+    for check_name, command in checks:
+        try:
+            await loop.run_in_executor(None, runner.exec_simple, command, exec_timeout)
+        except DockerError as exc:
+            failures.append((check_name, command, str(exc)))
+    return failures
+
+
 async def _setup(
     name: str,
     runner: "ContainerRunner",
@@ -285,6 +303,7 @@ async def run_agent(
     prompt_args: dict[str, str] | None = None,
     branch: str | None = None,
     exec_timeout: float | None = None,
+    skip_preflight: bool = False,
 ) -> str:
     print(f"\n[{name}] Started")
 
@@ -324,6 +343,12 @@ async def run_agent(
                 stack.callback(remove_worktree, mount_path, worktree_host_path)
             stack.callback(runner.__exit__, None, None, None)
             await _setup(name, runner, loop, exec_timeout)
+            if not skip_preflight:
+                failures = await _preflight(
+                    name, runner, loop, exec_timeout, PREFLIGHT_CHECKS
+                )
+                if failures:
+                    raise PreflightError(failures)
             await _prepare(
                 name, runner, loop, exec_timeout, prompt_file, prompt_args or {}
             )
