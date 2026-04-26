@@ -1145,6 +1145,17 @@ def test_run_agent_logs_preflight_phase(tmp_path, capsys):
     assert "[Test] Phase: Pre-flight" in capsys.readouterr().out
 
 
+def test_prepare_runs_before_preflight(tmp_path, capsys):
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    out = capsys.readouterr().out
+    assert out.index("[Test] Phase: Prepare") < out.index("[Test] Phase: Pre-flight")
+
+
 # ── Cycle 51-1: one bug-report agent spawned per preflight failure ────────────
 
 
