@@ -343,6 +343,9 @@ async def run_agent(
                 stack.callback(remove_worktree, mount_path, worktree_host_path)
             stack.callback(runner.__exit__, None, None, None)
             await _setup(name, runner, loop, exec_timeout)
+            await _prepare(
+                name, runner, loop, exec_timeout, prompt_file, prompt_args or {}
+            )
             if not skip_preflight:
                 failures = await _preflight(
                     name, runner, loop, exec_timeout, PREFLIGHT_CHECKS
@@ -370,9 +373,6 @@ async def run_agent(
                         ]
                     )
                     raise PreflightError(failures)
-            await _prepare(
-                name, runner, loop, exec_timeout, prompt_file, prompt_args or {}
-            )
             return await _work(name, runner, loop)
     finally:
         if lock is not None and lock.locked():
