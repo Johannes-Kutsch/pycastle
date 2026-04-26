@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 import os
 import queue
 import re
@@ -30,6 +31,36 @@ from .worktree import (
 )
 
 _branch_locks: dict[str, asyncio.Lock] = {}
+
+
+def _format_stream_line(line: str) -> str | None:
+    """Return a human-readable summary of a stream-json line, or None to suppress it."""
+    try:
+        obj = json.loads(line)
+    except (json.JSONDecodeError, ValueError):
+        return line
+    if not isinstance(obj, dict):
+        return line
+    line_type = obj.get("type")
+    if line_type == "system":
+        return None
+    if line_type == "result":
+        result_text = obj.get("result", "")
+        return result_text if result_text else None
+    if line_type == "assistant":
+        content = obj.get("message", {}).get("content", [])
+        parts: list[str] = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text":
+                text = block.get("text", "").strip()
+                if text:
+                    parts.append(text)
+            elif block.get("type") == "tool_use":
+                parts.append(f"(tool: {block.get('name', 'unknown')})")
+        return " ".join(parts) if parts else None
+    return None
 
 
 def _build_claude_command() -> str:
@@ -210,7 +241,9 @@ class ContainerRunner:
                     line_buf += text
                     while "\n" in line_buf:
                         line, line_buf = line_buf.split("\n", 1)
-                        print(f"[{self.name}] {line}", flush=True)
+                        formatted = _format_stream_line(line)
+                        if formatted is not None:
+                            print(f"[{self.name}] {formatted}", flush=True)
         finally:
             try:
                 self._active_container.exec_run(

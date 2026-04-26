@@ -5,7 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pycastle.container_runner import ContainerRunner, _build_claude_command, run_agent
+from pycastle.container_runner import (
+    ContainerRunner,
+    _build_claude_command,
+    _format_stream_line,
+    run_agent,
+)
 from pycastle.errors import AgentTimeoutError
 
 
@@ -1290,3 +1295,73 @@ def test_preflight_error_raised_after_all_bug_report_agents_complete(tmp_path):
     assert completion_order == ["bug-report"], (
         "PreflightError raised before bug-report agent completed"
     )
+
+
+# ── Cycle 65-1: assistant text content extracted for terminal ─────────────────
+
+
+def test_format_stream_line_extracts_text_from_assistant_message():
+    line = '{"type":"assistant","message":{"id":"msg_x","content":[{"type":"text","text":"Analysing issues"}]}}'
+    assert _format_stream_line(line) == "Analysing issues"
+
+
+# ── Cycle 65-2: system init lines suppressed ──────────────────────────────────
+
+
+def test_format_stream_line_returns_none_for_system_init():
+    line = '{"type":"system","subtype":"init","session_id":"abc","tools":[]}'
+    assert _format_stream_line(line) is None
+
+
+# ── Cycle 65-3: tool_use content block summarised ─────────────────────────────
+
+
+def test_format_stream_line_summarises_tool_use_block():
+    line = '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}'
+    assert _format_stream_line(line) == "(tool: Bash)"
+
+
+# ── Cycle 65-4: result line prints result text ────────────────────────────────
+
+
+def test_format_stream_line_returns_result_text():
+    line = '{"type":"result","result":"Final answer here","session_id":"abc"}'
+    assert _format_stream_line(line) == "Final answer here"
+
+
+# ── Cycle 65-5: non-JSON line returned verbatim ───────────────────────────────
+
+
+def test_format_stream_line_returns_plain_text_verbatim():
+    assert _format_stream_line("plain text output") == "plain text output"
+
+
+# ── Cycle 65-6: run_streaming terminal output is human-readable ──────────────
+
+
+def test_run_streaming_terminal_shows_text_not_raw_json(tmp_path, capsys):
+    """Terminal must show extracted text, not the raw JSON envelope."""
+    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working on it"}]}}\n'
+    runner = _streaming_runner("Planner", [json_line], tmp_path / "test.log")
+    runner.run_streaming()
+    out = capsys.readouterr().out
+    assert "Working on it" in out
+    assert '"type":"assistant"' not in out
+
+
+def test_run_streaming_suppresses_system_init_line(tmp_path, capsys):
+    """System init JSON must produce no terminal output at all."""
+    json_line = b'{"type":"system","subtype":"init","session_id":"s1","tools":[]}\n'
+    runner = _streaming_runner("Planner", [json_line], tmp_path / "test.log")
+    runner.run_streaming()
+    out = capsys.readouterr().out
+    assert out == ""
+
+
+def test_run_streaming_log_file_unchanged_for_json_lines(tmp_path):
+    """Log file must still contain the raw, unmodified JSON bytes."""
+    raw = b'{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}\n'
+    log_path = tmp_path / "test.log"
+    runner = _streaming_runner("Planner", [raw], log_path)
+    runner.run_streaming()
+    assert log_path.read_bytes() == raw
