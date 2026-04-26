@@ -1365,3 +1365,41 @@ def test_run_streaming_log_file_unchanged_for_json_lines(tmp_path):
     runner = _streaming_runner("Planner", [raw], log_path)
     runner.run_streaming()
     assert log_path.read_bytes() == raw
+
+
+# ── Cycle 65-7: _format_stream_line edge cases ───────────────────────────────
+
+
+def test_format_stream_line_joins_text_and_tool_use_with_space():
+    line = '{"type":"assistant","message":{"content":[{"type":"text","text":"Reading files"},{"type":"tool_use","name":"Read","id":"t1","input":{}}]}}'
+    assert _format_stream_line(line) == "Reading files (tool: Read)"
+
+
+def test_format_stream_line_returns_none_for_whitespace_only_text():
+    line = '{"type":"assistant","message":{"content":[{"type":"text","text":"   "}]}}'
+    assert _format_stream_line(line) is None
+
+
+def test_format_stream_line_returns_none_for_empty_content_list():
+    line = '{"type":"assistant","message":{"content":[]}}'
+    assert _format_stream_line(line) is None
+
+
+def test_format_stream_line_returns_none_for_missing_message():
+    line = '{"type":"assistant"}'
+    assert _format_stream_line(line) is None
+
+
+def test_format_stream_line_returns_none_for_empty_result_string():
+    line = '{"type":"result","result":""}'
+    assert _format_stream_line(line) is None
+
+
+def test_format_stream_line_returns_none_for_unknown_type():
+    line = '{"type":"tool_result","content":"output"}'
+    assert _format_stream_line(line) is None
+
+
+def test_format_stream_line_returns_verbatim_for_json_array():
+    line = '["not","a","dict"]'
+    assert _format_stream_line(line) == line

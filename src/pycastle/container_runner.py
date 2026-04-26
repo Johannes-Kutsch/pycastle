@@ -37,7 +37,7 @@ def _format_stream_line(line: str) -> str | None:
     """Return a human-readable summary of a stream-json line, or None to suppress it."""
     try:
         obj = json.loads(line)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError:
         return line
     if not isinstance(obj, dict):
         return line
