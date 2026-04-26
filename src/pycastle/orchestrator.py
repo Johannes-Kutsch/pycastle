@@ -11,6 +11,7 @@ from pathlib import Path
 from .config import ISSUE_LABEL, LOGS_DIR, MAX_ITERATIONS, MAX_PARALLEL, PROMPTS_DIR
 from .container_runner import run_agent
 from .defaults.config import IMPLEMENT_CHECKS
+from .errors import PreflightError
 
 
 def prune_orphan_worktrees(repo_root: Path) -> None:
@@ -93,13 +94,19 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
     for iteration in range(1, MAX_ITERATIONS + 1):
         print(f"\n=== Iteration {iteration}/{MAX_ITERATIONS} ===\n")
 
-        plan_output = await run_agent(
-            name="Planner",
-            prompt_file=PROMPTS_DIR / "plan-prompt.md",
-            mount_path=repo_root,
-            env=env,
-            prompt_args={"ISSUE_LABEL": ISSUE_LABEL},
-        )
+        try:
+            plan_output = await run_agent(
+                name="Planner",
+                prompt_file=PROMPTS_DIR / "plan-prompt.md",
+                mount_path=repo_root,
+                env=env,
+                prompt_args={"ISSUE_LABEL": ISSUE_LABEL},
+            )
+        except PreflightError as exc:
+            print("[Planner] Pre-flight failed — aborting run:")
+            for check_name, command, output in exc.failures:
+                print(f"  ✗ {check_name} ({command}): {output}")
+            return
         issues = parse_plan(plan_output)
 
         if not issues:
@@ -122,7 +129,11 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
 
         completed: list[dict] = []
         for issue, result in zip(issues, results):
-            if isinstance(result, Exception):
+            if isinstance(result, PreflightError):
+                print(f"  ✗ #{issue['number']} ({issue['branch']}) pre-flight failed:")
+                for check_name, command, output in result.failures:
+                    print(f"    ✗ {check_name} ({command}): {output}")
+            elif isinstance(result, Exception):
                 tb = "".join(
                     traceback.format_exception(
                         type(result), result, result.__traceback__
