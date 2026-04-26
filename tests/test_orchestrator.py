@@ -213,3 +213,147 @@ def test_run_issue_feedback_commands_formatted_from_implement_checks(tmp_path):
     feedback_commands = implementer_call["prompt_args"]["FEEDBACK_COMMANDS"]
     for cmd in IMPLEMENT_CHECKS:
         assert f"`{cmd}`" in feedback_commands
+
+
+# ── Cycle 52-1: planner PreflightError → no implementers spawned ─────────────
+
+
+def test_planner_preflight_error_spawns_no_implementers(tmp_path):
+    """A PreflightError from the planner must abort the run with no implementer agents spawned."""
+    import asyncio
+    from pycastle.errors import PreflightError
+    from pycastle.orchestrator import run
+
+    implementer_names: list[str] = []
+
+    async def _fake_run_agent(
+        name, prompt_file, mount_path, env, prompt_args=None, **kw
+    ):
+        if name == "Planner":
+            raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
+        implementer_names.append(name)
+        return ""
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    assert implementer_names == [], (
+        f"Expected no implementers, got: {implementer_names}"
+    )
+
+
+def test_planner_preflight_error_run_exits_cleanly(tmp_path):
+    """A PreflightError from the planner must not propagate out of run()."""
+    import asyncio
+    from pycastle.errors import PreflightError
+    from pycastle.orchestrator import run
+
+    async def _fake_run_agent(
+        name, prompt_file, mount_path, env, prompt_args=None, **kw
+    ):
+        raise PreflightError([("ruff", "ruff check .", "E501")])
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+    ):
+        asyncio.run(run({}, tmp_path))  # must not raise
+
+
+def test_planner_preflight_error_message_names_failed_checks(tmp_path, capsys):
+    """Aborting due to planner PreflightError must print the check name and command."""
+    import asyncio
+    from pycastle.errors import PreflightError
+    from pycastle.orchestrator import run
+
+    async def _fake_run_agent(
+        name, prompt_file, mount_path, env, prompt_args=None, **kw
+    ):
+        raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    out = capsys.readouterr().out
+    assert "ruff" in out
+    assert "ruff check ." in out
+
+
+# ── Cycle 52-2: implementer PreflightError → siblings complete ───────────────
+
+
+def test_implementer_preflight_error_siblings_complete(tmp_path):
+    """An implementer PreflightError must not prevent sibling issues from completing."""
+    import asyncio
+    from pycastle.errors import PreflightError
+    from pycastle.orchestrator import run
+
+    completed_issues: list[int] = []
+
+    async def _fake_run_agent(
+        name, prompt_file, mount_path, env, prompt_args=None, **kw
+    ):
+        if name == "Planner":
+            return "<plan>placeholder</plan>"
+        if name == "Implementer #1":
+            raise PreflightError([("ruff", "ruff check .", "E501")])
+        if "Implementer" in name:
+            completed_issues.append(int(name.split("#")[1]))
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch(
+            "pycastle.orchestrator.parse_plan",
+            return_value=[
+                {"number": 1, "title": "Issue one", "branch": "issue/1"},
+                {"number": 2, "title": "Issue two", "branch": "issue/2"},
+            ],
+        ),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    assert 2 in completed_issues, (
+        f"Issue #2 must complete; completed: {completed_issues}"
+    )
+
+
+def test_implementer_preflight_error_logs_check_details(tmp_path, capsys):
+    """An implementer PreflightError must print the failed check name and command to stdout."""
+    import asyncio
+    from pycastle.errors import PreflightError
+    from pycastle.orchestrator import run
+
+    async def _fake_run_agent(
+        name, prompt_file, mount_path, env, prompt_args=None, **kw
+    ):
+        if name == "Planner":
+            return "<plan>placeholder</plan>"
+        raise PreflightError([("mypy", "mypy .", "error: Cannot find module")])
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch(
+            "pycastle.orchestrator.parse_plan",
+            return_value=[{"number": 3, "title": "Fix types", "branch": "issue/3"}],
+        ),
+        patch("pycastle.orchestrator.LOGS_DIR", tmp_path),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    out = capsys.readouterr().out
+    # Must show per-check formatted line, not just the raw exception repr
+    assert "mypy" in out
+    assert "mypy ." in out
+    assert "[('mypy'" not in out, (
+        "Output must not be raw tuple repr — format each check explicitly"
+    )
