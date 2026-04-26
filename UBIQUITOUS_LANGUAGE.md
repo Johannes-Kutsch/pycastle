@@ -23,6 +23,8 @@
 | **CLAUDE_CODE_OAUTH_TOKEN** | Long-lived OAuth token for Claude Code authentication, generated via `claude setup-token` and stored in .env | claude token, oauth token |
 | **ANTHROPIC_API_KEY** | Alternative Claude Code authentication via direct API key; not required when CLAUDE_CODE_OAUTH_TOKEN is set | api key, anthropic token |
 | **CLAUDE_ACCOUNT_JSON** | Serialized Claude Code account credentials blob, read at runtime from `~/.claude.json` on the host — never stored in .env | claude config, claude json |
+| **PREFLIGHT_CHECKS** | Config entry (`list[tuple[str, str]]`) of `(name, command)` pairs defining the **quality checks** run during the **Pre-flight phase**; machine-executed by the **container runner** | preflight commands, check list |
+| **IMPLEMENT_CHECKS** | Config entry (`list[str]`) of command strings rendered into the **FEEDBACK LOOPS section** of the implement-prompt as agent instructions; distinct from **PREFLIGHT_CHECKS** because commands may differ (e.g. `ruff check --fix` vs `ruff check .`) | feedback commands, implement commands |
 | **full replacement** | Override strategy where the local config.py replaces the package default entirely | merge, partial override |
 | **config loader** | Package module that discovers and imports config.py from CWD, falling back to package defaults | — |
 
@@ -76,6 +78,8 @@
 | **prompt pipeline** | The two-stage process of rendering placeholders then preprocessing shell expressions | templating, rendering |
 | **CODING_STANDARDS.md** | A reference document placed in the prompts directory and treated as a prompt for discovery and scaffolding purposes | standards file |
 | **EXPLORATION section** | The section of the **implement prompt** that instructs the **Implementer** to read files before coding; scoped to files mentioned in the issue body and their test files — not a full repository survey | explore section, discovery section |
+| **FEEDBACK LOOPS section** | The section of the **implement prompt** that instructs the **Implementer** to run **IMPLEMENT_CHECKS** commands before committing; commands are injected via the `{{FEEDBACK_COMMANDS}}` placeholder | feedback section, pre-commit checks |
+| **`{{FEEDBACK_COMMANDS}}`** | A **placeholder** in the implement-prompt rendered at run time from `config.IMPLEMENT_CHECKS`; produces a backtick-formatted command list passed to the **Implementer** as an agent instruction | — |
 | **bug-report.md** | The **prompt** used by the **bug-report agent**; receives `{{CHECK_NAME}}`, `{{COMMAND}}`, and `{{OUTPUT}}` placeholders; creates one GitHub issue with a structured failure report and applies `bug` and `needs-triage` labels | error prompt, preflight prompt |
 | **Explore subagent** | A Claude Code subagent spawned by the **Implementer** during the **EXPLORATION section** to read relevant files; token usage is bounded by scoping the subagent prompt to the issue body rather than the full repository | explore agent, repo scanner |
 
@@ -86,7 +90,7 @@
 | **agent lifecycle phase** | One of four named stages (Setup, Pre-flight, Prepare, Work) within a single agent container run | step, stage |
 | **Setup phase** | The first agent lifecycle phase: worktree creation, **gitdir overlay** creation, **parent git dir mount** wiring, container start, and git identity propagation | container setup, init phase |
 | **Pre-flight phase** | The second agent lifecycle phase: runs the three **quality checks** (ruff, mypy, pytest) sequentially and independently inside the container; on any failure, spawns a **bug-report agent** per failing check then raises `PreflightError` to abort the current run | preflight, pre-flight check phase |
-| **quality check** | One of the three commands run during the **Pre-flight phase**: `ruff check .`, `mypy . --ignore-missing-imports`, or `pytest`; each runs independently so all failures are reported in a single pass | quality gate, check |
+| **quality check** | One of the commands run during the **Pre-flight phase** as defined in `PREFLIGHT_CHECKS`; defaults are `ruff check .`, `mypy .`, and `pytest`; each runs independently so all failures are reported in a single pass | quality gate, check |
 | **pre-flight failure** | The result of a **quality check** returning a non-zero exit code during the **Pre-flight phase** | check failure |
 | **pre-existing failure** | A **pre-flight failure** that existed in the codebase before the current agent's task began; the root cause of **scope creep** when agents attempt to fix it | baseline failure |
 | **scope creep** | The behavior where an agent modifies files outside its assigned task scope, typically caused by inheriting **pre-existing failures** and treating them as its own responsibility | overreach |
@@ -223,6 +227,7 @@
 - **"gitdir"** is used for three distinct things: the **gitdir file** (the `.git` pointer file in a worktree), the **gitdir overlay** (the corrected temp file mounted over it), and the gitdir path value inside that file. Always qualify: **gitdir file**, **gitdir overlay**, or **gitdir path**.
 - **"RALPH"** is used both as the required commit message prefix (`RALPH: ...`) and as an informal nickname for the **Implementer** agent. The commit prefix usage is canonical and correct. The nickname usage is an alias to avoid — use **Implementer** in conversation.
 - **"quality gate"** and **"pre-flight check"** were used interchangeably in conversation. The canonical term is **quality check** (for a single check command) and **Pre-flight phase** (for the lifecycle stage). Avoid "quality gate" as it conflates the two.
+- **`PREFLIGHT_CHECKS`** and **`IMPLEMENT_CHECKS`** serve different purposes and intentionally use different command shapes. `PREFLIGHT_CHECKS` commands are machine-executed for detection only (e.g. `ruff check .` — no auto-fix). `IMPLEMENT_CHECKS` commands are agent instructions for remediation (e.g. `ruff check --fix`). Never merge these into a single config entry.
 - **"pre-flight check"** can mean either the **Pre-flight phase** (the lifecycle stage) or a **quality check** (a single ruff/mypy/pytest command). Always qualify: use **Pre-flight phase** for the stage and **quality check** for an individual command.
 - **"bug report"** is used for both the GitHub issue filed by the **bug-report agent** and the general concept of reporting a defect. In pycastle context, a **bug report** always means the structured GitHub issue produced by the **bug-report agent** from a **pre-flight failure**.
 - **"volume mount"** was previously described as "attaches the host repo at `/home/agent/repo`" — this is now incorrect. A container run involves multiple **volume mounts** (RO repo, RW worktree, RW parent git dir, RO gitdir overlay). Never conflate **volume mount** with the specific repo mount.

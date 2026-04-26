@@ -53,6 +53,23 @@ def test_branch_collision_error_is_worktree_error():
     assert issubclass(BranchCollisionError, WorktreeError)
 
 
+# ── PreflightError ────────────────────────────────────────────────────────────
+
+
+def test_preflight_error_is_pycastle_error():
+    from pycastle.errors import PreflightError
+
+    assert issubclass(PreflightError, PycastleError)
+
+
+def test_preflight_error_carries_failure_tuples():
+    from pycastle.errors import PreflightError
+
+    failures = [("ruff", "ruff check .", "E501 line too long")]
+    err = PreflightError(failures)
+    assert err.failures == failures
+
+
 # ── Raise sites ───────────────────────────────────────────────────────────────
 
 

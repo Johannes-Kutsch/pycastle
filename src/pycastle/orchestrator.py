@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .config import ISSUE_LABEL, LOGS_DIR, MAX_ITERATIONS, MAX_PARALLEL, PROMPTS_DIR
 from .container_runner import run_agent
+from .defaults.config import IMPLEMENT_CHECKS
 
 
 def prune_orphan_worktrees(repo_root: Path) -> None:
@@ -52,11 +53,19 @@ def parse_plan(output: str) -> list[dict]:
     return json.loads(match.group(1))["issues"]
 
 
+def _format_feedback_commands(checks: list[str]) -> str:
+    wrapped = [f"`{cmd}`" for cmd in checks]
+    if len(wrapped) <= 1:
+        return "".join(wrapped)
+    return ", ".join(wrapped[:-1]) + " and " + wrapped[-1]
+
+
 async def run_issue(issue: dict, env: dict[str, str], repo_root: Path) -> dict | None:
     prompt_args = {
         "ISSUE_NUMBER": str(issue["number"]),
         "ISSUE_TITLE": issue["title"],
         "BRANCH": issue["branch"],
+        "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
     }
     result = await run_agent(
         name=f"Implementer #{issue['number']}",

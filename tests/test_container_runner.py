@@ -951,3 +951,195 @@ def test_run_agent_does_not_write_claude_settings_json(tmp_path):
     assert not any(".claude/settings.json" in p for p in written_paths), (
         f"settings.json must not be pre-created; written paths: {written_paths}"
     )
+
+
+# ── Cycle 50-1: PREFLIGHT_CHECKS and IMPLEMENT_CHECKS in defaults/config ─────
+
+
+def test_preflight_checks_contains_ruff_mypy_pytest():
+    from pycastle.defaults.config import PREFLIGHT_CHECKS
+
+    names = [name for name, _ in PREFLIGHT_CHECKS]
+    assert names == ["ruff", "mypy", "pytest"]
+
+
+def test_preflight_checks_commands():
+    from pycastle.defaults.config import PREFLIGHT_CHECKS
+
+    cmds = {name: cmd for name, cmd in PREFLIGHT_CHECKS}
+    assert cmds["ruff"] == "ruff check ."
+    assert cmds["mypy"] == "mypy ."
+    assert cmds["pytest"] == "pytest"
+
+
+def test_implement_checks_contains_expected_commands():
+    from pycastle.defaults.config import IMPLEMENT_CHECKS
+
+    assert IMPLEMENT_CHECKS == [
+        "ruff check --fix",
+        "ruff format --check",
+        "mypy .",
+        "pytest",
+    ]
+
+
+# ── Cycle 50-2: _preflight() runs all checks independently ───────────────────
+
+
+def _make_preflight_runner(results: dict[str, str | Exception]):
+    """Fake runner whose exec_simple returns or raises based on the command."""
+
+    class _Runner:
+        def __init__(self):
+            self.branch = None
+            self.env = {}
+
+        def exec_simple(self, cmd, timeout=None):
+            for key, val in results.items():
+                if key in cmd:
+                    if isinstance(val, Exception):
+                        raise val
+                    return val
+            return ""
+
+    return _Runner()
+
+
+def test_preflight_all_checks_run_when_one_fails():
+    """A DockerError in one check must not prevent the remaining checks from running."""
+    from pycastle.container_runner import _preflight
+    from pycastle.errors import DockerError
+
+    ran: list[str] = []
+
+    class _TrackingRunner:
+        def __init__(self):
+            self.branch = None
+            self.env = {}
+
+        def exec_simple(self, cmd, timeout=None):
+            ran.append(cmd)
+            if "ruff" in cmd:
+                raise DockerError("ruff failed")
+            return ""
+
+    async def _coro():
+        loop = asyncio.get_event_loop()
+        checks = [("ruff", "ruff check ."), ("mypy", "mypy ."), ("pytest", "pytest")]
+        return await _preflight("test", _TrackingRunner(), loop, None, checks)
+
+    asyncio.run(_coro())
+    assert len(ran) == 3
+
+
+def test_preflight_returns_failure_tuples():
+    from pycastle.container_runner import _preflight
+    from pycastle.errors import DockerError
+
+    async def _run():
+        loop = asyncio.get_event_loop()
+        checks = [("ruff", "ruff check ."), ("mypy", "mypy .")]
+        runner = _make_preflight_runner(
+            {"ruff check": DockerError("E501 line too long"), "mypy": ""}
+        )
+        return await _preflight("test", runner, loop, None, checks)
+
+    failures = asyncio.run(_run())
+    assert len(failures) == 1
+    name, cmd, output = failures[0]
+    assert name == "ruff"
+    assert cmd == "ruff check ."
+    assert "E501" in output
+
+
+def test_preflight_returns_empty_list_on_clean_pass():
+    from pycastle.container_runner import _preflight
+
+    async def _run():
+        loop = asyncio.get_event_loop()
+        checks = [("ruff", "ruff check ."), ("mypy", "mypy ."), ("pytest", "pytest")]
+        runner = _make_preflight_runner({})
+        return await _preflight("test", runner, loop, None, checks)
+
+    assert asyncio.run(_run()) == []
+
+
+# ── Cycle 50-3: run_agent wires preflight, raises PreflightError, skip flag ───
+
+
+class _PreflightFailRunner:
+    """Fake runner whose exec_simple fails for ruff check."""
+
+    def __init__(self, *args, **kwargs):
+        self.branch = None
+        self.env = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def exec_simple(self, cmd, timeout=None):
+        from pycastle.errors import DockerError
+
+        if "ruff check" in cmd:
+            raise DockerError("E501 line too long")
+        return ""
+
+    def run_streaming(self):
+        return ""
+
+
+def test_run_agent_raises_preflight_error_when_check_fails(tmp_path):
+    from pycastle.errors import PreflightError
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner),
+        pytest.raises(PreflightError) as exc_info,
+    ):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    assert len(exc_info.value.failures) >= 1
+
+
+def test_run_agent_preflight_error_carries_correct_tuple(tmp_path):
+    from pycastle.errors import PreflightError
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner),
+        pytest.raises(PreflightError) as exc_info,
+    ):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    name, cmd, output = exc_info.value.failures[0]
+    assert name == "ruff"
+    assert cmd == "ruff check ."
+    assert "E501" in output
+
+
+def test_run_agent_skip_preflight_bypasses_phase(tmp_path):
+    """run_agent(skip_preflight=True) must proceed to Prepare and Work without pre-flight."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner):
+        result = _run(run_agent("Test", prompt, tmp_path, {}, skip_preflight=True))
+
+    assert result == ""
+
+
+def test_run_agent_logs_preflight_phase(tmp_path, capsys):
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    assert "[Test] Phase: Pre-flight" in capsys.readouterr().out
