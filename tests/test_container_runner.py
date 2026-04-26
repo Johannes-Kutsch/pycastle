@@ -1143,3 +1143,139 @@ def test_run_agent_logs_preflight_phase(tmp_path, capsys):
         _run(run_agent("Test", prompt, tmp_path, {}))
 
     assert "[Test] Phase: Pre-flight" in capsys.readouterr().out
+
+
+# ── Cycle 51-1: one bug-report agent spawned per preflight failure ────────────
+
+
+def test_bug_report_agent_spawned_once_per_single_failure(tmp_path):
+    """When preflight returns one failure, run_agent must be called once with skip_preflight=True."""
+    from pycastle.errors import PreflightError
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    async def _fake_bug_report(*args, **kwargs):
+        return ""
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner),
+        patch(
+            "pycastle.container_runner.run_agent", side_effect=_fake_bug_report
+        ) as mock_spawn,
+        pytest.raises(PreflightError),
+    ):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    assert mock_spawn.call_count == 1
+
+
+def test_bug_report_agent_spawned_once_per_each_failure(tmp_path):
+    """When preflight returns two failures, run_agent must be called twice."""
+    from pycastle.errors import DockerError, PreflightError
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    class _TwoFailureRunner:
+        def __init__(self, *args, **kwargs):
+            self.branch = None
+            self.env = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            if "ruff" in cmd or "mypy" in cmd:
+                raise DockerError(f"{cmd} failed")
+            return ""
+
+        def run_streaming(self):
+            return ""
+
+    async def _fake_bug_report(*args, **kwargs):
+        return ""
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _TwoFailureRunner),
+        patch(
+            "pycastle.container_runner.run_agent", side_effect=_fake_bug_report
+        ) as mock_spawn,
+        pytest.raises(PreflightError),
+    ):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    assert mock_spawn.call_count == 2
+
+
+def test_bug_report_agent_receives_correct_placeholder_values(tmp_path):
+    """Each bug-report agent must receive CHECK_NAME, COMMAND, OUTPUT from its failure tuple."""
+    from pycastle.errors import DockerError, PreflightError
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    class _RuffFailRunner:
+        def __init__(self, *args, **kwargs):
+            self.branch = None
+            self.env = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            if "ruff" in cmd:
+                raise DockerError("E501 line too long")
+            return ""
+
+        def run_streaming(self):
+            return ""
+
+    async def _fake_bug_report(*args, **kwargs):
+        return ""
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _RuffFailRunner),
+        patch(
+            "pycastle.container_runner.run_agent", side_effect=_fake_bug_report
+        ) as mock_spawn,
+        pytest.raises(PreflightError),
+    ):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    call_kwargs = mock_spawn.call_args.kwargs
+    assert call_kwargs["prompt_args"]["CHECK_NAME"] == "ruff"
+    assert call_kwargs["prompt_args"]["COMMAND"] == "ruff check ."
+    assert "E501" in call_kwargs["prompt_args"]["OUTPUT"]
+    assert call_kwargs["skip_preflight"] is True
+
+
+def test_preflight_error_raised_after_all_bug_report_agents_complete(tmp_path):
+    """PreflightError must be raised only after all bug-report agents have been awaited."""
+    from pycastle.errors import PreflightError
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    completion_order: list[str] = []
+
+    async def _fake_bug_report(*args, **kwargs):
+        completion_order.append("bug-report")
+        return ""
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner),
+        patch("pycastle.container_runner.run_agent", side_effect=_fake_bug_report),
+        pytest.raises(PreflightError),
+    ):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    assert completion_order == ["bug-report"], (
+        "PreflightError raised before bug-report agent completed"
+    )
