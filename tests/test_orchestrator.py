@@ -1,13 +1,12 @@
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from pycastle.orchestrator import prune_orphan_worktrees
 
 
 # ── Cycle 24-B1: prune_orphan_worktrees deletes orphan dirs ──────────────────
+
 
 def _porcelain(paths: list[Path]) -> str:
     """Build a git worktree list --porcelain string listing the given paths."""
@@ -50,6 +49,7 @@ def test_prune_orphan_worktrees_deletes_only_orphans(tmp_path):
 
 # ── Cycle 24-B2: prune_orphan_worktrees preserves active worktrees ───────────
 
+
 def test_prune_orphan_worktrees_preserves_active_dir(tmp_path):
     worktrees_dir = tmp_path / "pycastle" / ".worktrees"
     worktrees_dir.mkdir(parents=True)
@@ -70,6 +70,7 @@ def test_prune_orphan_worktrees_noop_when_dir_missing(tmp_path):
 
 # ── Cycle 24-B3: run() calls prune_orphan_worktrees before the loop ──────────
 
+
 def test_run_calls_prune_before_iteration_loop(tmp_path):
     call_order: list[str] = []
 
@@ -83,9 +84,11 @@ def test_run_calls_prune_before_iteration_loop(tmp_path):
     import asyncio
     from pycastle.orchestrator import run
 
-    with patch("pycastle.orchestrator.prune_orphan_worktrees", side_effect=_fake_prune), \
-         patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent), \
-         patch("pycastle.orchestrator.parse_plan", return_value=[]):
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees", side_effect=_fake_prune),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch("pycastle.orchestrator.parse_plan", return_value=[]),
+    ):
         asyncio.run(run({}, tmp_path))
 
     assert call_order[0] == "prune", f"prune must be first call, got: {call_order}"
@@ -93,22 +96,28 @@ def test_run_calls_prune_before_iteration_loop(tmp_path):
 
 # ── Cycle 24-C1/C2: error logging on agent failure ───────────────────────────
 
+
 def _make_failing_run(tmp_path, exc: Exception):
     """Return a coroutine factory that drives run() with one issue that raises exc."""
     import asyncio
     from pycastle.orchestrator import run
 
-    async def _fake_run_agent(name, prompt_file, mount_path, env, prompt_args=None, **kw):
+    async def _fake_run_agent(
+        name, prompt_file, mount_path, env, prompt_args=None, **kw
+    ):
         if name == "Planner":
             return "<plan>placeholder</plan>"
         raise exc
 
     def _go():
-        with patch("pycastle.orchestrator.prune_orphan_worktrees"), \
-             patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent), \
-             patch("pycastle.orchestrator.parse_plan", return_value=[
-                 {"number": 1, "title": "Fix thing", "branch": "issue/1"}
-             ]):
+        with (
+            patch("pycastle.orchestrator.prune_orphan_worktrees"),
+            patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+            patch(
+                "pycastle.orchestrator.parse_plan",
+                return_value=[{"number": 1, "title": "Fix thing", "branch": "issue/1"}],
+            ),
+        ):
             asyncio.run(run({}, tmp_path))
 
     return _go

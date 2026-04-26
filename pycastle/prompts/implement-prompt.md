@@ -33,7 +33,7 @@ If applicable, use RGR to complete the task.
 
 # FEEDBACK LOOPS
 
-Before committing, run `ruff check . && mypy . --ignore-missing-imports` and `pytest` to ensure the tests pass.
+Before committing, run `ruff check --fix`, `ruff format --check` and `pytest` to ensure the tests pass.
 
 # COMMIT
 

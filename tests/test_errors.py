@@ -1,6 +1,5 @@
 import subprocess
 import threading
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,6 +16,7 @@ from pycastle.errors import (
 
 
 # ── Hierarchy ─────────────────────────────────────────────────────────────────
+
 
 def test_worktree_error_is_runtime_error():
     assert issubclass(WorktreeError, RuntimeError)
@@ -55,8 +55,10 @@ def test_branch_collision_error_is_worktree_error():
 
 # ── Raise sites ───────────────────────────────────────────────────────────────
 
+
 def _fake_runner(exit_code=0, stdout=b"", stderr=b""):
     from pycastle.container_runner import ContainerRunner
+
     runner = object.__new__(ContainerRunner)
     runner.name = "test"
     runner.env = {}
@@ -93,11 +95,25 @@ def test_create_worktree_raises_worktree_error_on_git_failure(tmp_path):
     from pycastle.worktree import create_worktree
 
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "t@t.com"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "T"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "user.email", "t@t.com"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "user.name", "T"],
+        check=True,
+        capture_output=True,
+    )
     (tmp_path / "pyproject.toml").write_text("[project]\nname='t'\n")
-    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "init"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "."], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "-m", "init"],
+        check=True,
+        capture_output=True,
+    )
 
     wt = tmp_path / "wt"
     create_worktree(tmp_path, wt, "feature/same")
