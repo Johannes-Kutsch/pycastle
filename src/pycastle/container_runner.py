@@ -11,6 +11,7 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 
 import docker
+from docker.models.containers import Container as DockerContainer
 
 from .config import DOCKER_IMAGE, LOGS_DIR, PYCASTLE_DIR
 from .defaults.config import IDLE_TIMEOUT, PREFLIGHT_CHECKS
@@ -53,11 +54,18 @@ class ContainerRunner:
         self.worktree_host_path = worktree_host_path
         self.gitdir_overlay = gitdir_overlay
         self._client = docker.from_env()
-        self._container = None
+        self._container: DockerContainer | None = None
         self._container_env: dict[str, str] = {}
+        self._prompt: str = ""
         slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
         self._log_path = LOGS_DIR / f"{slug}.log"
         self._worktree_path = "/home/agent/workspace"
+
+    @property
+    def _active_container(self) -> DockerContainer:
+        if self._container is None:
+            raise DockerError("Container not started")
+        return self._container
 
     def __enter__(self) -> "ContainerRunner":
         LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -116,12 +124,13 @@ class ContainerRunner:
     def exec_simple(self, command: str, timeout: float | None = None) -> str:
         import threading
 
+        container = self._active_container
         result_holder: list = [None]
         exc_holder: list = [None]
 
         def _run():
             try:
-                result_holder[0] = self._container.exec_run(
+                result_holder[0] = container.exec_run(
                     ["bash", "-c", command],
                     demux=True,
                     workdir=self._worktree_path,
@@ -159,11 +168,11 @@ class ContainerRunner:
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
         buf.seek(0)
-        self._container.put_archive(os.path.dirname(container_path), buf)
+        self._active_container.put_archive(os.path.dirname(container_path), buf)
 
     def run_streaming(self) -> str:
         self.write_file(self._prompt, "/tmp/.pycastle_prompt")
-        result = self._container.exec_run(
+        result = self._active_container.exec_run(
             ["bash", "-c", _build_claude_command()],
             stream=True,
             workdir=self._worktree_path,
@@ -204,7 +213,7 @@ class ContainerRunner:
                         print(f"[{self.name}] {line}", flush=True)
         finally:
             try:
-                self._container.exec_run(
+                self._active_container.exec_run(
                     ["bash", "-c", "rm -f /tmp/.pycastle_prompt"],
                     workdir=self._worktree_path,
                 )

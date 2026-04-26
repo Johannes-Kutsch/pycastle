@@ -8,12 +8,13 @@ import sys as _sys
 _local = Path("pycastle/config.py")
 if _local.exists():
     _spec = _util.spec_from_file_location("_pycastle_local_config", _local)
-    _mod = _util.module_from_spec(_spec)
-    _spec.loader.exec_module(_mod)
-    _me = _sys.modules[__name__]
-    for _k, _v in vars(_mod).items():
-        if not _k.startswith("_"):
-            setattr(_me, _k, _v)
+    if _spec is not None and _spec.loader is not None:
+        _mod = _util.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        _me = _sys.modules[__name__]
+        for _k, _v in vars(_mod).items():
+            if not _k.startswith("_"):
+                setattr(_me, _k, _v)
 
 
 MAX_ITERATIONS = 10
