@@ -36,5 +36,5 @@ async def _preprocess(prompt: str, exec_fn) -> str:
         return prompt
     results = await asyncio.gather(*[exec_fn(m.group(1)) for m in matches])
     for match, out in zip(reversed(matches), reversed(list(results))):
-        prompt = prompt[: match.start()] + out.rstrip("\n") + prompt[match.end():]
+        prompt = prompt[: match.start()] + out.rstrip("\n") + prompt[match.end() :]
     return prompt

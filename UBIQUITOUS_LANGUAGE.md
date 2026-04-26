@@ -51,6 +51,8 @@
 | **Implementer** | The named agent role that runs during the **implement phase**; one **Implementer** per **issue** | coding agent, implementation agent |
 | **Reviewer** | The named agent role that runs after an **Implementer** completes; validates changes before merge | review agent |
 | **Merger** | The named agent role that runs during the **merge phase**; integrates all completed branches | merge agent, integration agent |
+| **bug-report agent** | An on-demand agent spawned by the **Pre-flight phase** when a **quality check** fails; files one GitHub issue per **pre-flight failure** and always runs with **skip_preflight** enabled | error reporter, bug filer |
+| **RALPH** | The required commit message prefix for all **Implementer** commits (e.g. `RALPH: fix auth bug`); also used informally as a nickname for the **Implementer** — avoid the latter usage, use **Implementer** instead | — |
 | **plan** | The structured data (JSON) output by the **Planner** listing which issues to work on and the branch name for each | plan output, plan JSON |
 | **issue** | A GitHub issue labeled for agent processing, representing one unit of work | ticket, task, card |
 | **AFK issue** | An issue the **Planner** assigns to an **Implementer** because it can be resolved autonomously; labeled `ready-for-agent` | agent issue, auto issue |
@@ -74,16 +76,23 @@
 | **prompt pipeline** | The two-stage process of rendering placeholders then preprocessing shell expressions | templating, rendering |
 | **CODING_STANDARDS.md** | A reference document placed in the prompts directory and treated as a prompt for discovery and scaffolding purposes | standards file |
 | **EXPLORATION section** | The section of the **implement prompt** that instructs the **Implementer** to read files before coding; scoped to files mentioned in the issue body and their test files — not a full repository survey | explore section, discovery section |
+| **bug-report.md** | The **prompt** used by the **bug-report agent**; receives `{{CHECK_NAME}}`, `{{COMMAND}}`, and `{{OUTPUT}}` placeholders; creates one GitHub issue with a structured failure report and applies `bug` and `needs-triage` labels | error prompt, preflight prompt |
 | **Explore subagent** | A Claude Code subagent spawned by the **Implementer** during the **EXPLORATION section** to read relevant files; token usage is bounded by scoping the subagent prompt to the issue body rather than the full repository | explore agent, repo scanner |
 
 ## Agent Lifecycle
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **agent lifecycle phase** | One of three named stages (Setup, Prepare, Work) within a single agent container run | step, stage |
+| **agent lifecycle phase** | One of four named stages (Setup, Pre-flight, Prepare, Work) within a single agent container run | step, stage |
 | **Setup phase** | The first agent lifecycle phase: worktree creation, **gitdir overlay** creation, **parent git dir mount** wiring, container start, and git identity propagation | container setup, init phase |
-| **Prepare phase** | The second agent lifecycle phase: dependency installation, prompt rendering, and prompt injection into the container | hook phase, pre-work |
-| **Work phase** | The third agent lifecycle phase: Claude Code invocation and streaming output collection | execution phase, run phase |
+| **Pre-flight phase** | The second agent lifecycle phase: runs the three **quality checks** (ruff, mypy, pytest) sequentially and independently inside the container; on any failure, spawns a **bug-report agent** per failing check then raises `PreflightError` to abort the current run | preflight, pre-flight check phase |
+| **quality check** | One of the three commands run during the **Pre-flight phase**: `ruff check .`, `mypy . --ignore-missing-imports`, or `pytest`; each runs independently so all failures are reported in a single pass | quality gate, check |
+| **pre-flight failure** | The result of a **quality check** returning a non-zero exit code during the **Pre-flight phase** | check failure |
+| **pre-existing failure** | A **pre-flight failure** that existed in the codebase before the current agent's task began; the root cause of **scope creep** when agents attempt to fix it | baseline failure |
+| **scope creep** | The behavior where an agent modifies files outside its assigned task scope, typically caused by inheriting **pre-existing failures** and treating them as its own responsibility | overreach |
+| **skip_preflight** | A flag on `run_agent()` that bypasses the **Pre-flight phase**; always `True` for the **bug-report agent** to prevent circular failures; defaults to `False` for all other agents | — |
+| **Prepare phase** | The third agent lifecycle phase: dependency installation, prompt rendering, and prompt injection into the container | hook phase, pre-work |
+| **Work phase** | The fourth agent lifecycle phase: Claude Code invocation and streaming output collection | execution phase, run phase |
 | **git identity propagation** | The Setup phase operation that reads the host `git user.name` and `git user.email` and configures them inside the container so that `git commit` succeeds | git config injection, user setup |
 | **idle timeout** | The maximum wall-clock seconds an agent may produce no output before being killed and raising `AgentTimeoutError`; default 300 s | inactivity timeout, silence timeout |
 | **worktree timeout** | The maximum wall-clock seconds a git worktree operation may take before being killed and raising `WorktreeTimeoutError`; default 30 s | git timeout |
@@ -113,6 +122,7 @@
 | **WorktreeError** | Error subclass raised when a git worktree operation fails for a non-timeout reason | git error |
 | **WorktreeTimeoutError** | Error subclass raised when a git worktree operation exceeds the **worktree timeout** | — |
 | **AgentTimeoutError** | Error subclass raised when an agent produces no output for longer than the **idle timeout** | hung agent error |
+| **PreflightError** | Error subclass raised by `run_agent()` after all **bug-report agents** have been spawned for **pre-flight failures**; signals callers to abort (planner → abort whole run; implementer → skip that issue) | preflight error |
 
 ## Relationships
 
@@ -138,7 +148,11 @@
 - On Windows hosts, the **gitdir overlay** is additionally mounted over `/home/agent/workspace/.git` as **RO**, redirecting the `gitdir:` pointer from a Windows host path to `/.pycastle-parent-git/worktrees/<name>`.
 - The **canonical label set** is defined once in the pycastle package; **pycastle labels** applies it to any target repo.
 - A **label reset** deletes all existing repo labels before applying the **canonical label set**.
-- Each agent run progresses through three **agent lifecycle phases** in order: **Setup phase** → **Prepare phase** → **Work phase**.
+- Each agent run progresses through four **agent lifecycle phases** in order: **Setup phase** → **Pre-flight phase** → **Prepare phase** → **Work phase**, unless **skip_preflight** is set, in which case the **Pre-flight phase** is skipped.
+- The **bug-report agent** always runs with **skip_preflight** enabled to prevent circular pre-flight failures.
+- A **pre-flight failure** in the **Planner**'s container raises `PreflightError` and aborts the entire **orchestrator** run.
+- A **pre-flight failure** in an **Implementer**'s container raises `PreflightError` and skips only that issue, returning `None` from `run_issue()`; other parallel issues continue.
+- The **bug-report agent** is spawned once per **pre-flight failure**, not once per run; if ruff, mypy, and pytest all fail, three **bug-report agents** are spawned.
 - The **Setup phase** always includes **git identity propagation** before the agent prompt is sent.
 - An **orphan sweep** runs once at **orchestrator** startup (not per agent) to avoid racing with active worktrees.
 - **Collision detection** holds a per-branch lock for the full duration of an agent run, from **worktree setup** through worktree removal.
@@ -182,6 +196,20 @@
 
 > **Domain expert:** "Those are **orphan worktrees**. The **orphan sweep** runs at the start of every `pycastle run` — it compares those directories against `git worktree list --porcelain` and deletes anything git no longer knows about. By the time the first **iteration** starts, the slate is clean."
 
+## Example dialogue (pre-flight)
+
+> **Dev:** "The Planner aborted with a `PreflightError` before any Implementers started. What happened?"
+
+> **Domain expert:** "The **Pre-flight phase** ran inside the Planner's container and one or more **quality checks** returned non-zero. Each failing check triggered a **bug-report agent** that filed a GitHub issue. Then `PreflightError` was raised, aborting the whole run. Check your repo for new issues labeled `bug` + `needs-triage`."
+
+> **Dev:** "Why does the bug-report agent skip pre-flight itself?"
+
+> **Domain expert:** "Because the codebase is already known to be broken — that's why we're filing the report. Running pre-flight again would just spawn another **bug-report agent**, which would spawn another, and so on. **skip_preflight** breaks the cycle."
+
+> **Dev:** "RALPH made a ton of changes on issue #26 that had nothing to do with the task."
+
+> **Domain expert:** "That's **scope creep** from a **pre-existing failure**. The **Implementer** ran ruff and mypy at the end of its work, found failures that existed before it started, and treated them as its responsibility to fix. The **Pre-flight phase** prevents this: if the checks are already red when the container starts, the run aborts and files a bug report rather than letting the **Implementer** inherit the mess."
+
 ## Flagged ambiguities
 
 - **"config"** is used loosely to mean either `config.py` (behavioral settings) or the combined configuration of a project (config.py + .env). Use **config.py** when referring to the file, and **pycastle directory** when referring to the full set of local overrides.
@@ -193,6 +221,10 @@
 - **"agent"** sometimes refers to a specific named role (Planner, Implementer, Reviewer, Merger) and sometimes to any Claude Code container instance. Use the specific role name when precision matters; use **agent** only when referring to the concept generically.
 - **"AFK"** and **"HITL"** are not surfaced in the pycastle UI or label names — they are workflow concepts. Their concrete representation is the **issue label**: `ready-for-agent` for **AFK issues**, `ready-for-human` for **HITL issues**. Never conflate the concept with the label name.
 - **"gitdir"** is used for three distinct things: the **gitdir file** (the `.git` pointer file in a worktree), the **gitdir overlay** (the corrected temp file mounted over it), and the gitdir path value inside that file. Always qualify: **gitdir file**, **gitdir overlay**, or **gitdir path**.
+- **"RALPH"** is used both as the required commit message prefix (`RALPH: ...`) and as an informal nickname for the **Implementer** agent. The commit prefix usage is canonical and correct. The nickname usage is an alias to avoid — use **Implementer** in conversation.
+- **"quality gate"** and **"pre-flight check"** were used interchangeably in conversation. The canonical term is **quality check** (for a single check command) and **Pre-flight phase** (for the lifecycle stage). Avoid "quality gate" as it conflates the two.
+- **"pre-flight check"** can mean either the **Pre-flight phase** (the lifecycle stage) or a **quality check** (a single ruff/mypy/pytest command). Always qualify: use **Pre-flight phase** for the stage and **quality check** for an individual command.
+- **"bug report"** is used for both the GitHub issue filed by the **bug-report agent** and the general concept of reporting a defect. In pycastle context, a **bug report** always means the structured GitHub issue produced by the **bug-report agent** from a **pre-flight failure**.
 - **"volume mount"** was previously described as "attaches the host repo at `/home/agent/repo`" — this is now incorrect. A container run involves multiple **volume mounts** (RO repo, RW worktree, RW parent git dir, RO gitdir overlay). Never conflate **volume mount** with the specific repo mount.
 - **"phase"** now operates at two levels: *orchestration phases* (plan, implement, review, merge) are stages of an **iteration**; *agent lifecycle phases* (Setup, Prepare, Work) are stages of a single agent container run. Use the full term (**agent lifecycle phase** vs **plan phase**) when the level is not obvious from context.
 - **"worktree"** was previously defined as "created inside a container" — this is incorrect. The **worktree** is always created on the **host** and bind-mounted into the container. The container never runs `git worktree add`.

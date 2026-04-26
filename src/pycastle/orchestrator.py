@@ -21,7 +21,7 @@ def prune_orphan_worktrees(repo_root: Path) -> None:
         text=True,
     )
     active = {
-        line[len("worktree "):].strip()
+        line[len("worktree ") :].strip()
         for line in raw.splitlines()
         if line.startswith("worktree ")
     }
@@ -114,7 +114,11 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
         completed: list[dict] = []
         for issue, result in zip(issues, results):
             if isinstance(result, Exception):
-                tb = "".join(traceback.format_exception(type(result), result, result.__traceback__))
+                tb = "".join(
+                    traceback.format_exception(
+                        type(result), result, result.__traceback__
+                    )
+                )
                 timestamp = datetime.now(timezone.utc).isoformat()
                 entry = f"--- {timestamp} ---\n{tb}\n"
                 print(entry, file=sys.stderr)
@@ -140,7 +144,9 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
             env=env,
             prompt_args={
                 "BRANCHES": "\n".join(f"- {i['branch']}" for i in completed),
-                "ISSUES": "\n".join(f"- #{i['number']}: {i['title']}" for i in completed),
+                "ISSUES": "\n".join(
+                    f"- #{i['number']}: {i['title']}" for i in completed
+                ),
             },
         )
         print("\nBranches merged.")

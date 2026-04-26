@@ -1,7 +1,6 @@
 import asyncio
 import threading
 import time
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,6 +10,7 @@ from pycastle.errors import AgentTimeoutError
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
 
 def _streaming_runner(name: str, chunks: list, log_path) -> ContainerRunner:
     """ContainerRunner whose run_streaming replays the given byte chunks."""
@@ -52,6 +52,7 @@ def _run(coro):
 
 # ── Cycle 1: exec_simple raises on non-zero exit ──────────────────────────────
 
+
 def test_exec_simple_raises_on_nonzero_exit():
     runner = _fake_runner(exit_code=1, stderr=b"command failed")
     with pytest.raises(RuntimeError, match="command failed"):
@@ -64,6 +65,7 @@ def test_exec_simple_returns_stdout_on_success():
 
 
 # ── Cycle 2: pip install failure does not crash run_agent ────────────────────
+
 
 class _PipFailRunner:
     """Fake ContainerRunner: exec_simple raises when pip is the command."""
@@ -164,6 +166,7 @@ def test_two_agents_run_concurrently(tmp_path):
 
 # ── Cycle 15: worktree add must not run inside the container ─────────────────
 
+
 @patch("pycastle.container_runner.LOGS_DIR")
 @patch("pycastle.container_runner.docker")
 def test_worktree_add_not_called_inside_container(mock_docker, mock_logs_dir, tmp_path):
@@ -192,6 +195,7 @@ def test_worktree_add_not_called_inside_container(mock_docker, mock_logs_dir, tm
 
 # ── Cycle 16: implementer mounts worktree dir at /home/agent/workspace ────────
 
+
 @patch("pycastle.container_runner.LOGS_DIR")
 @patch("pycastle.container_runner.docker")
 def test_implementer_mounts_worktree_at_workspace(mock_docker, mock_logs_dir, tmp_path):
@@ -209,21 +213,28 @@ def test_implementer_mounts_worktree_at_workspace(mock_docker, mock_logs_dir, tm
     runner.__enter__()
     runner.__exit__(None, None, None)
 
-    volumes = mock_docker.from_env.return_value.containers.run.call_args.kwargs["volumes"]
+    volumes = mock_docker.from_env.return_value.containers.run.call_args.kwargs[
+        "volumes"
+    ]
     bound_paths = {v["bind"]: k for k, v in volumes.items()}
     assert "/home/agent/workspace" in bound_paths, (
         f"/home/agent/workspace not mounted; volumes={volumes}"
     )
-    assert bound_paths["/home/agent/workspace"] == str(worktree_path.resolve()).replace("\\", "/"), (
+    assert bound_paths["/home/agent/workspace"] == str(worktree_path.resolve()).replace(
+        "\\", "/"
+    ), (
         f"Wrong host path mounted at /home/agent/workspace: {bound_paths['/home/agent/workspace']!r}"
     )
 
 
 # ── Cycle 32-2: gitdir overlay bound at /home/agent/workspace/.git ───────────
 
+
 @patch("pycastle.container_runner.LOGS_DIR")
 @patch("pycastle.container_runner.docker")
-def test_container_mounts_gitdir_overlay_at_workspace_git(mock_docker, mock_logs_dir, tmp_path):
+def test_container_mounts_gitdir_overlay_at_workspace_git(
+    mock_docker, mock_logs_dir, tmp_path
+):
     """When gitdir_overlay is set, ContainerRunner must bind-mount it at /home/agent/workspace/.git."""
     mock_container = MagicMock()
     mock_docker.from_env.return_value.containers.run.return_value = mock_container
@@ -234,7 +245,9 @@ def test_container_mounts_gitdir_overlay_at_workspace_git(mock_docker, mock_logs
     worktree_path.mkdir()
 
     runner = ContainerRunner(
-        "test", tmp_path, {},
+        "test",
+        tmp_path,
+        {},
         branch="feature/test",
         worktree_host_path=worktree_path,
         gitdir_overlay=overlay_file,
@@ -242,17 +255,22 @@ def test_container_mounts_gitdir_overlay_at_workspace_git(mock_docker, mock_logs
     runner.__enter__()
     runner.__exit__(None, None, None)
 
-    volumes = mock_docker.from_env.return_value.containers.run.call_args.kwargs["volumes"]
+    volumes = mock_docker.from_env.return_value.containers.run.call_args.kwargs[
+        "volumes"
+    ]
     bound_paths = {v["bind"]: k for k, v in volumes.items()}
     assert "/home/agent/workspace/.git" in bound_paths, (
         f"/home/agent/workspace/.git not mounted; volumes={volumes}"
     )
-    assert bound_paths["/home/agent/workspace/.git"] == str(overlay_file.resolve()).replace("\\", "/"), (
+    assert bound_paths["/home/agent/workspace/.git"] == str(
+        overlay_file.resolve()
+    ).replace("\\", "/"), (
         f"Wrong host path at /home/agent/workspace/.git: {bound_paths['/home/agent/workspace/.git']!r}"
     )
 
 
 # ── Cycle 17: host-side worktree removed even when container raises ───────────
+
 
 class _StreamingErrorRunner:
     """Fake runner that succeeds setup but raises during run_streaming."""
@@ -279,9 +297,11 @@ def test_host_worktree_removed_even_when_container_raises(tmp_path):
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
-    with patch("pycastle.container_runner.ContainerRunner", _StreamingErrorRunner), \
-         patch("pycastle.container_runner.create_worktree") as mock_create, \
-         patch("pycastle.container_runner.remove_worktree") as mock_remove:
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _StreamingErrorRunner),
+        patch("pycastle.container_runner.create_worktree"),
+        patch("pycastle.container_runner.remove_worktree") as mock_remove,
+    ):
         with pytest.raises(RuntimeError, match="container crashed"):
             _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
 
@@ -290,21 +310,29 @@ def test_host_worktree_removed_even_when_container_raises(tmp_path):
 
 # ── Cycle 8: no container is started when host-side worktree creation fails ───
 
+
 @patch("pycastle.container_runner.LOGS_DIR")
 @patch("pycastle.container_runner.docker")
-def test_no_container_started_when_worktree_creation_fails(mock_docker, mock_logs_dir, tmp_path):
+def test_no_container_started_when_worktree_creation_fails(
+    mock_docker, mock_logs_dir, tmp_path
+):
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
-    with patch("pycastle.container_runner.create_worktree",
-               side_effect=RuntimeError("git worktree add failed")), \
-         pytest.raises(RuntimeError, match="worktree add failed"):
+    with (
+        patch(
+            "pycastle.container_runner.create_worktree",
+            side_effect=RuntimeError("git worktree add failed"),
+        ),
+        pytest.raises(RuntimeError, match="worktree add failed"),
+    ):
         _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
 
     mock_docker.from_env.return_value.containers.run.assert_not_called()
 
 
 # ── Cycle 4: exec_simple raises TimeoutError on stalled command ───────────────
+
 
 def test_exec_simple_times_out():
     blocker = threading.Event()
@@ -320,6 +348,7 @@ def test_exec_simple_times_out():
 
 
 # ── Cycle 22: phase logging ───────────────────────────────────────────────────
+
 
 class _PhaseLogRunner:
     """Minimal fake runner for phase logging and git-identity tests."""
@@ -373,6 +402,7 @@ def test_run_agent_logs_work_phase(tmp_path, capsys):
 
 # ── Cycle 22: git identity injection ─────────────────────────────────────────
 
+
 def _make_exec_logging_runner():
     """Return (RunnerClass, exec_log) — exec_log collects exec_simple calls."""
     exec_log: list[str] = []
@@ -403,6 +433,7 @@ def _git_mock(name="Alice", email="alice@example.com"):
         if "user.name" in cmd:
             return f"{name}\n"
         return f"{email}\n"
+
     return _check_output
 
 
@@ -411,11 +442,17 @@ def test_setup_injects_host_git_name(tmp_path):
     prompt.write_text("test")
     _Runner, exec_log = _make_exec_logging_runner()
 
-    with patch("pycastle.container_runner.ContainerRunner", _Runner), \
-         patch("pycastle.container_runner.subprocess.check_output", side_effect=_git_mock()):
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _Runner),
+        patch(
+            "pycastle.container_runner.subprocess.check_output", side_effect=_git_mock()
+        ),
+    ):
         _run(run_agent("Test", prompt, tmp_path, {}))
 
-    assert any("git config --global user.name" in cmd and "Alice" in cmd for cmd in exec_log)
+    assert any(
+        "git config --global user.name" in cmd and "Alice" in cmd for cmd in exec_log
+    )
 
 
 def test_setup_injects_host_git_email(tmp_path):
@@ -423,14 +460,22 @@ def test_setup_injects_host_git_email(tmp_path):
     prompt.write_text("test")
     _Runner, exec_log = _make_exec_logging_runner()
 
-    with patch("pycastle.container_runner.ContainerRunner", _Runner), \
-         patch("pycastle.container_runner.subprocess.check_output", side_effect=_git_mock()):
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _Runner),
+        patch(
+            "pycastle.container_runner.subprocess.check_output", side_effect=_git_mock()
+        ),
+    ):
         _run(run_agent("Test", prompt, tmp_path, {}))
 
-    assert any("git config --global user.email" in cmd and "alice@example.com" in cmd for cmd in exec_log)
+    assert any(
+        "git config --global user.email" in cmd and "alice@example.com" in cmd
+        for cmd in exec_log
+    )
 
 
 # ── Cycle 23-4: run_streaming raises AgentTimeoutError on idle timeout ────────
+
 
 def _never_yields():
     """Generator that blocks forever without yielding — simulates a hung agent."""
@@ -454,6 +499,7 @@ def test_run_streaming_raises_agent_timeout_error_when_idle(tmp_path):
 
 # ── Cycle 23-5: branch collision lock ────────────────────────────────────────
 
+
 def test_second_run_agent_on_same_branch_raises_branch_collision_error(tmp_path):
     from pycastle.errors import BranchCollisionError
 
@@ -461,9 +507,11 @@ def test_second_run_agent_on_same_branch_raises_branch_collision_error(tmp_path)
     prompt.write_text("test")
 
     async def _two_on_same_branch():
-        with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner), \
-             patch("pycastle.container_runner.create_worktree"), \
-             patch("pycastle.container_runner.remove_worktree"):
+        with (
+            patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner),
+            patch("pycastle.container_runner.create_worktree"),
+            patch("pycastle.container_runner.remove_worktree"),
+        ):
             return await asyncio.gather(
                 run_agent("A1", prompt, tmp_path, {}, branch="feature/collision"),
                 run_agent("A2", prompt, tmp_path, {}, branch="feature/collision"),
@@ -482,9 +530,11 @@ def test_run_agent_different_branches_both_succeed(tmp_path):
     prompt.write_text("test")
 
     async def _two_different_branches():
-        with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner), \
-             patch("pycastle.container_runner.create_worktree"), \
-             patch("pycastle.container_runner.remove_worktree"):
+        with (
+            patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner),
+            patch("pycastle.container_runner.create_worktree"),
+            patch("pycastle.container_runner.remove_worktree"),
+        ):
             return await asyncio.gather(
                 run_agent("B1", prompt, tmp_path, {}, branch="feature/branch-one"),
                 run_agent("B2", prompt, tmp_path, {}, branch="feature/branch-two"),
@@ -497,6 +547,7 @@ def test_run_agent_different_branches_both_succeed(tmp_path):
 
 
 # ── Cycle 24-A1: run_streaming prefixes lines in stdout ──────────────────────
+
 
 def test_run_streaming_prefixes_complete_lines_in_stdout(tmp_path, capsys):
     runner = _streaming_runner("TestAgent", [b"hello world\n"], tmp_path / "test.log")
@@ -522,6 +573,7 @@ def test_run_streaming_handles_chunks_split_across_newlines(tmp_path, capsys):
 
 # ── Cycle 24-A2: log file stays raw (unprefixed) ─────────────────────────────
 
+
 def test_run_streaming_log_file_is_raw_unprefixed(tmp_path):
     log_path = tmp_path / "test.log"
     runner = _streaming_runner("TestAgent", [b"hello world\n"], log_path)
@@ -541,21 +593,33 @@ def test_run_streaming_log_file_contains_full_raw_output(tmp_path):
 
 # ── Cycle 25-A: container cleanup raises → worktree cleanup still runs ────────
 
+
 class _ContainerExitErrorRunner:
-    def __init__(self, *_, **__): pass
-    def __enter__(self): return self
-    def __exit__(self, *_): raise RuntimeError("container stop failed")
-    def exec_simple(self, cmd, timeout=None): return ""
-    def run_streaming(self): return "done"
+    def __init__(self, *_, **__):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        raise RuntimeError("container stop failed")
+
+    def exec_simple(self, cmd, timeout=None):
+        return ""
+
+    def run_streaming(self):
+        return "done"
 
 
 def test_worktree_cleanup_runs_even_when_container_cleanup_raises(tmp_path):
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
-    with patch("pycastle.container_runner.ContainerRunner", _ContainerExitErrorRunner), \
-         patch("pycastle.container_runner.create_worktree"), \
-         patch("pycastle.container_runner.remove_worktree") as mock_remove:
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _ContainerExitErrorRunner),
+        patch("pycastle.container_runner.create_worktree"),
+        patch("pycastle.container_runner.remove_worktree") as mock_remove,
+    ):
         with pytest.raises(RuntimeError, match="container stop failed"):
             _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
 
@@ -564,6 +628,7 @@ def test_worktree_cleanup_runs_even_when_container_cleanup_raises(tmp_path):
 
 # ── Cycle 25-B: worktree cleanup raises → container cleanup still runs ────────
 
+
 def test_container_cleanup_runs_even_when_worktree_cleanup_raises(tmp_path):
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
@@ -571,15 +636,29 @@ def test_container_cleanup_runs_even_when_worktree_cleanup_raises(tmp_path):
     container_exit_calls = []
 
     class _TrackingRunner:
-        def __init__(self, *_, **__): pass
-        def __enter__(self): return self
-        def __exit__(self, *_): container_exit_calls.append(True)
-        def exec_simple(self, cmd, timeout=None): return ""
-        def run_streaming(self): return "done"
+        def __init__(self, *_, **__):
+            pass
 
-    with patch("pycastle.container_runner.ContainerRunner", _TrackingRunner), \
-         patch("pycastle.container_runner.create_worktree"), \
-         patch("pycastle.container_runner.remove_worktree", side_effect=RuntimeError("worktree removal failed")):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            container_exit_calls.append(True)
+
+        def exec_simple(self, cmd, timeout=None):
+            return ""
+
+        def run_streaming(self):
+            return "done"
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _TrackingRunner),
+        patch("pycastle.container_runner.create_worktree"),
+        patch(
+            "pycastle.container_runner.remove_worktree",
+            side_effect=RuntimeError("worktree removal failed"),
+        ),
+    ):
         with pytest.raises(RuntimeError, match="worktree removal failed"):
             _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
 
@@ -588,12 +667,22 @@ def test_container_cleanup_runs_even_when_worktree_cleanup_raises(tmp_path):
 
 # ── Cycle 32-3: gitdir temp file cleaned up after run_agent ──────────────────
 
+
 class _SuccessRunner:
-    def __init__(self, *_, **__): pass
-    def __enter__(self): return self
-    def __exit__(self, *_): pass
-    def exec_simple(self, cmd, timeout=None): return ""
-    def run_streaming(self): return "done"
+    def __init__(self, *_, **__):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def exec_simple(self, cmd, timeout=None):
+        return ""
+
+    def run_streaming(self):
+        return "done"
 
 
 def test_gitdir_temp_file_deleted_after_run_agent_succeeds(tmp_path):
@@ -604,10 +693,14 @@ def test_gitdir_temp_file_deleted_after_run_agent_succeeds(tmp_path):
     overlay = tmp_path / "gitdir_temp"
     overlay.write_text("gitdir: /home/agent/repo/.git/worktrees/test\n")
 
-    with patch("pycastle.container_runner.ContainerRunner", _SuccessRunner), \
-         patch("pycastle.container_runner.create_worktree"), \
-         patch("pycastle.container_runner.remove_worktree"), \
-         patch("pycastle.container_runner.patch_gitdir_for_container", return_value=overlay):
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _SuccessRunner),
+        patch("pycastle.container_runner.create_worktree"),
+        patch("pycastle.container_runner.remove_worktree"),
+        patch(
+            "pycastle.container_runner.patch_gitdir_for_container", return_value=overlay
+        ),
+    ):
         _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
 
     assert not overlay.exists(), "gitdir temp file must be deleted after run_agent"
@@ -621,17 +714,24 @@ def test_gitdir_temp_file_deleted_even_when_container_raises(tmp_path):
     overlay = tmp_path / "gitdir_temp_err"
     overlay.write_text("gitdir: /home/agent/repo/.git/worktrees/test\n")
 
-    with patch("pycastle.container_runner.ContainerRunner", _ContainerExitErrorRunner), \
-         patch("pycastle.container_runner.create_worktree"), \
-         patch("pycastle.container_runner.remove_worktree"), \
-         patch("pycastle.container_runner.patch_gitdir_for_container", return_value=overlay):
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _ContainerExitErrorRunner),
+        patch("pycastle.container_runner.create_worktree"),
+        patch("pycastle.container_runner.remove_worktree"),
+        patch(
+            "pycastle.container_runner.patch_gitdir_for_container", return_value=overlay
+        ),
+    ):
         with pytest.raises(RuntimeError):
             _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
 
-    assert not overlay.exists(), "gitdir temp file must be deleted even when container cleanup raises"
+    assert not overlay.exists(), (
+        "gitdir temp file must be deleted even when container cleanup raises"
+    )
 
 
 # ── Cycle 36-1: _build_claude_command includes required flags ────────────────
+
 
 def test_build_claude_command_includes_output_format_stream_json():
     cmd = _build_claude_command()
@@ -655,6 +755,7 @@ def test_build_claude_command_includes_stdin_flag():
 
 # ── Cycle 36-2: stdin redirect from temp file, no heredoc ────────────────────
 
+
 def test_build_claude_command_redirects_stdin_from_temp_file():
     cmd = _build_claude_command()
     assert "< /tmp/.pycastle_prompt" in cmd
@@ -667,12 +768,14 @@ def test_build_claude_command_does_not_use_temp_file():
 
 # ── Cycle 44-1: command string does not embed large prompt inline ─────────────
 
+
 def test_build_claude_command_does_not_embed_large_prompt():
     cmd = _build_claude_command()
     assert len(cmd) < 1024
 
 
 # ── Cycle 36-3: run_streaming passes correct command to exec_run ─────────────
+
 
 def test_run_streaming_command_includes_required_flags(tmp_path):
     runner = _streaming_runner("TestAgent", [b"output\n"], tmp_path / "test.log")
@@ -689,6 +792,7 @@ def test_run_streaming_command_includes_required_flags(tmp_path):
 
 # ── Cycle 44-2: run_streaming writes prompt to temp file ─────────────────────
 
+
 def test_run_streaming_writes_prompt_to_temp_file(tmp_path):
     runner = _streaming_runner("Agent", [b"output\n"], tmp_path / "test.log")
     runner._prompt = "my test prompt"
@@ -698,6 +802,7 @@ def test_run_streaming_writes_prompt_to_temp_file(tmp_path):
 
 
 # ── Cycle 44-3: command string redirects stdin from temp file ─────────────────
+
 
 def test_run_streaming_command_redirects_stdin_from_temp_file(tmp_path):
     runner = _streaming_runner("Agent", [b"output\n"], tmp_path / "test.log")
@@ -710,19 +815,18 @@ def test_run_streaming_command_redirects_stdin_from_temp_file(tmp_path):
 
 # ── Cycle 44-4: temp prompt file is cleaned up after run ─────────────────────
 
+
 def test_run_streaming_cleans_up_temp_prompt_file(tmp_path):
     runner = _streaming_runner("Agent", [b"output\n"], tmp_path / "test.log")
     runner._prompt = "test"
     runner.write_file = MagicMock()
     runner.run_streaming()
-    all_cmds = [
-        call[0][0]
-        for call in runner._container.exec_run.call_args_list
-    ]
+    all_cmds = [call[0][0] for call in runner._container.exec_run.call_args_list]
     assert any("rm -f /tmp/.pycastle_prompt" in " ".join(cmd) for cmd in all_cmds)
 
 
 # ── Cycle 36-4: _prepare stores prompt on runner, no write_file ─────────────
+
 
 def test_prepare_stores_prompt_on_runner(tmp_path):
     from pycastle.container_runner import _prepare
@@ -760,9 +864,12 @@ def test_prepare_does_not_call_write_file(tmp_path):
 
 # ── Cycle 36-5: streaming consumer prints each line immediately ──────────────
 
+
 def test_run_streaming_prints_lines_from_separate_chunks(tmp_path, capsys):
     """Lines arriving in separate chunks must each be printed, not buffered until the end."""
-    runner = _streaming_runner("Bot", [b"line one\n", b"line two\n"], tmp_path / "test.log")
+    runner = _streaming_runner(
+        "Bot", [b"line one\n", b"line two\n"], tmp_path / "test.log"
+    )
     runner.run_streaming()
     out = capsys.readouterr().out
     assert "[Bot] line one" in out
@@ -770,6 +877,7 @@ def test_run_streaming_prints_lines_from_separate_chunks(tmp_path, capsys):
 
 
 # ── Cycle 37-1: parent .git mounted rw at /.pycastle-parent-git ──────────────
+
 
 @patch("pycastle.container_runner.LOGS_DIR")
 @patch("pycastle.container_runner.docker")
@@ -787,22 +895,29 @@ def test_container_mounts_parent_git_rw(mock_docker, mock_logs_dir, tmp_path):
     runner.__enter__()
     runner.__exit__(None, None, None)
 
-    volumes = mock_docker.from_env.return_value.containers.run.call_args.kwargs["volumes"]
+    volumes = mock_docker.from_env.return_value.containers.run.call_args.kwargs[
+        "volumes"
+    ]
     expected_host = str((tmp_path / ".git").resolve()).replace("\\", "/")
     assert "/.pycastle-parent-git" in {v["bind"] for v in volumes.values()}, (
         f"/.pycastle-parent-git not mounted; volumes={volumes}"
     )
-    parent_git_entry = next(v for v in volumes.values() if v["bind"] == "/.pycastle-parent-git")
+    parent_git_entry = next(
+        v for v in volumes.values() if v["bind"] == "/.pycastle-parent-git"
+    )
     assert parent_git_entry["mode"] == "rw", (
         f"/.pycastle-parent-git must be rw; got mode={parent_git_entry['mode']!r}"
     )
-    host_key = next(k for k, v in volumes.items() if v["bind"] == "/.pycastle-parent-git")
+    host_key = next(
+        k for k, v in volumes.items() if v["bind"] == "/.pycastle-parent-git"
+    )
     assert host_key == expected_host, (
         f"Wrong host path for /.pycastle-parent-git: {host_key!r}, expected {expected_host!r}"
     )
 
 
 # ── Cycle 36-6: run_agent completes without .claude/settings.json ────────────
+
 
 def test_run_agent_does_not_write_claude_settings_json(tmp_path):
     """--dangerously-skip-permissions makes pre-creating .claude/settings.json unnecessary."""
@@ -812,12 +927,23 @@ def test_run_agent_does_not_write_claude_settings_json(tmp_path):
     written_paths: list[str] = []
 
     class _TrackingRunner:
-        def __init__(self, *_, **__): pass
-        def __enter__(self): return self
-        def __exit__(self, *_): pass
-        def exec_simple(self, cmd, timeout=None): return ""
-        def write_file(self, content, path): written_paths.append(path)
-        def run_streaming(self): return "done"
+        def __init__(self, *_, **__):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            return ""
+
+        def write_file(self, content, path):
+            written_paths.append(path)
+
+        def run_streaming(self):
+            return "done"
 
     with patch("pycastle.container_runner.ContainerRunner", _TrackingRunner):
         _run(run_agent("test", prompt, tmp_path, {}))

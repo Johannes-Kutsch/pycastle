@@ -29,7 +29,9 @@ def test_renders_before_preprocess(tmp_path):
     """Placeholder substitution happens before shell expansion."""
     f = tmp_path / "p.md"
     f.write_text("!`echo {{MSG}}`")
-    assert run(prepare_prompt(f, {"MSG": "hello"}, _noop_exec)) == "output-of:echo hello"
+    assert (
+        run(prepare_prompt(f, {"MSG": "hello"}, _noop_exec)) == "output-of:echo hello"
+    )
 
 
 def test_raises_on_missing_arg(tmp_path):

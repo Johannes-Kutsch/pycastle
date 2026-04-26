@@ -23,7 +23,10 @@ def _load_env() -> dict[str, str]:
     if claude_json.exists():
         env["CLAUDE_ACCOUNT_JSON"] = claude_json.read_text(encoding="utf-8")
     else:
-        print("Warning: ~/.claude.json not found — container will run without account credentials.", file=sys.stderr)
+        print(
+            "Warning: ~/.claude.json not found — container will run without account credentials.",
+            file=sys.stderr,
+        )
     return env
 
 
@@ -35,25 +38,34 @@ def main() -> None:
 @main.command("init")
 def init_cmd() -> None:
     from .init_command import main as _init
+
     _init()
 
 
 @main.command("labels")
 def labels_cmd() -> None:
     from .labels import main as _labels
+
     _labels()
 
 
 @main.command("build")
-@click.option("--no-cache", is_flag=True, default=False, help="Build without using the Docker cache.")
+@click.option(
+    "--no-cache",
+    is_flag=True,
+    default=False,
+    help="Build without using the Docker cache.",
+)
 def build_cmd(no_cache: bool) -> None:
     from .build_command import main as _build
+
     _build(no_cache)
 
 
 @main.command("run")
 def run_cmd() -> None:
     from .orchestrator import run
+
     asyncio.run(run(_load_env(), Path(".").resolve()))
 
 

@@ -26,7 +26,9 @@ def _write_env_key(env_file: Path, key: str, value: str) -> None:
 
 def _write_config_value(config_file: Path, key: str, value: str) -> None:
     content = config_file.read_text()
-    content = re.sub(rf'^{key}\s*=\s*"[^"]*"', f'{key} = "{value}"', content, flags=re.MULTILINE)
+    content = re.sub(
+        rf'^{key}\s*=\s*"[^"]*"', f'{key} = "{value}"', content, flags=re.MULTILINE
+    )
     config_file.write_text(content)
 
 
@@ -45,7 +47,10 @@ def main() -> None:
         try:
             target.write_bytes(src.read_bytes())
         except Exception as e:
-            click.echo(click.style(f"Error: could not write {target} — {e}", fg="red"), err=True)
+            click.echo(
+                click.style(f"Error: could not write {target} — {e}", fg="red"),
+                err=True,
+            )
             sys.exit(1)
 
     config_file = dest / "config.py"
@@ -53,33 +58,58 @@ def main() -> None:
     try:
         _write_config_value(config_file, "DOCKER_IMAGE", image_name)
     except Exception as e:
-        click.echo(click.style(f"Error: could not set DOCKER_IMAGE in {config_file} — {e}", fg="red"), err=True)
+        click.echo(
+            click.style(
+                f"Error: could not set DOCKER_IMAGE in {config_file} — {e}", fg="red"
+            ),
+            err=True,
+        )
         sys.exit(1)
 
     env_file = dest / ".env"
 
-    gh_token = click.prompt("GitHub token (press Enter to skip)", default="", hide_input=True, show_default=False)
+    gh_token = click.prompt(
+        "GitHub token (press Enter to skip)",
+        default="",
+        hide_input=True,
+        show_default=False,
+    )
     if gh_token:
         try:
             _write_env_key(env_file, "GH_TOKEN", gh_token)
         except Exception as e:
-            click.echo(click.style(f"Error: could not save GH_TOKEN — {e}", fg="red"), err=True)
+            click.echo(
+                click.style(f"Error: could not save GH_TOKEN — {e}", fg="red"), err=True
+            )
             sys.exit(1)
 
-    claude_token = click.prompt("Claude token (press Enter to skip)", default="", hide_input=True, show_default=False)
+    claude_token = click.prompt(
+        "Claude token (press Enter to skip)",
+        default="",
+        hide_input=True,
+        show_default=False,
+    )
     if claude_token:
         try:
             _write_env_key(env_file, "CLAUDE_CODE_OAUTH_TOKEN", claude_token)
         except Exception as e:
-            click.echo(click.style(f"Error: could not save CLAUDE_CODE_OAUTH_TOKEN — {e}", fg="red"), err=True)
+            click.echo(
+                click.style(
+                    f"Error: could not save CLAUDE_CODE_OAUTH_TOKEN — {e}", fg="red"
+                ),
+                err=True,
+            )
             sys.exit(1)
 
     if not claude_token:
-        click.echo("Set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in pycastle/.env before running pycastle.")
+        click.echo(
+            "Set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in pycastle/.env before running pycastle."
+        )
 
     click.echo()
     if gh_token and click.confirm("Create GitHub labels?", default=False):
         from .labels import create_labels_interactive
+
         create_labels_interactive(gh_token)
 
     click.echo()

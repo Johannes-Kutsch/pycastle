@@ -25,7 +25,8 @@ def _run(*args, **kwargs) -> subprocess.CompletedProcess:
 def _is_ancestor(branch: str, repo_path: Path) -> bool:
     result = _run(
         ["git", "merge-base", "--is-ancestor", branch, "HEAD"],
-        cwd=repo_path, capture_output=True,
+        cwd=repo_path,
+        capture_output=True,
     )
     return result.returncode == 0
 
@@ -33,19 +34,22 @@ def _is_ancestor(branch: str, repo_path: Path) -> bool:
 def create_worktree(repo_path: Path, worktree_path: Path, branch: str) -> None:
     _run(
         ["git", "worktree", "prune"],
-        cwd=repo_path, capture_output=True,
+        cwd=repo_path,
+        capture_output=True,
     )
 
     if worktree_path.exists():
         _run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
-            cwd=repo_path, capture_output=True,
+            cwd=repo_path,
+            capture_output=True,
         )
         shutil.rmtree(worktree_path, ignore_errors=True)
 
     rev_parse = _run(
         ["git", "rev-parse", "--verify", branch],
-        cwd=repo_path, capture_output=True,
+        cwd=repo_path,
+        capture_output=True,
     )
 
     if rev_parse.returncode == 0:
@@ -59,26 +63,25 @@ def create_worktree(repo_path: Path, worktree_path: Path, branch: str) -> None:
             f"git worktree add failed: {result.stderr.decode('utf-8', errors='replace').strip()}"
         )
 
-    has_files = (
-        (worktree_path / "pyproject.toml").exists()
-        or (worktree_path / "requirements.txt").exists()
-    )
+    has_files = (worktree_path / "pyproject.toml").exists() or (
+        worktree_path / "requirements.txt"
+    ).exists()
     if not has_files and rev_parse.returncode == 0:
         if _is_ancestor(branch, repo_path):
             remove_worktree(repo_path, worktree_path)
             _run(["git", "branch", "-D", branch], cwd=repo_path, capture_output=True)
             result = _run(
                 ["git", "worktree", "add", "-b", branch, str(worktree_path), "HEAD"],
-                cwd=repo_path, capture_output=True,
+                cwd=repo_path,
+                capture_output=True,
             )
             if result.returncode != 0:
                 raise RuntimeError(
                     f"git worktree add failed: {result.stderr.decode('utf-8', errors='replace').strip()}"
                 )
-            has_files = (
-                (worktree_path / "pyproject.toml").exists()
-                or (worktree_path / "requirements.txt").exists()
-            )
+            has_files = (worktree_path / "pyproject.toml").exists() or (
+                worktree_path / "requirements.txt"
+            ).exists()
 
     if not has_files:
         listing = (
@@ -97,7 +100,8 @@ def create_worktree(repo_path: Path, worktree_path: Path, branch: str) -> None:
 def remove_worktree(repo_path: Path, worktree_path: Path) -> None:
     result = _run(
         ["git", "worktree", "remove", "--force", str(worktree_path)],
-        cwd=repo_path, capture_output=True,
+        cwd=repo_path,
+        capture_output=True,
     )
     if result.returncode != 0:
         shutil.rmtree(worktree_path, ignore_errors=True)
@@ -124,7 +128,7 @@ def patch_gitdir_for_container(worktree_path: Path) -> Path | None:
         idx = path.find(".git/worktrees/")
         if idx == -1:
             return m.group(0)
-        suffix = path[idx + len(".git/worktrees/"):]  # "<name>"
+        suffix = path[idx + len(".git/worktrees/") :]  # "<name>"
         return f"gitdir: {CONTAINER_PARENT_GIT}/worktrees/{suffix}"
 
     new_content = re.sub(r"gitdir:\s*(.+)", _rewrite, content)

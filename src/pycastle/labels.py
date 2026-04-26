@@ -12,10 +12,26 @@ import click
 LABELS = [
     {"name": "bug", "description": "Something isn't working", "color": "d73a4a"},
     {"name": "enhancement", "description": "New feature or request", "color": "0d9488"},
-    {"name": "need-info", "description": "Waiting on reporter for more information", "color": "b03176"},
-    {"name": "needs-triage", "description": "Maintainer needs to evaluate this issue", "color": "d6b80d"},
-    {"name": "ready-for-agent", "description": "Fully specified, ready for afk agent", "color": "0be348"},
-    {"name": "ready-for-human", "description": "Requires human implementation", "color": "5181b8"},
+    {
+        "name": "need-info",
+        "description": "Waiting on reporter for more information",
+        "color": "b03176",
+    },
+    {
+        "name": "needs-triage",
+        "description": "Maintainer needs to evaluate this issue",
+        "color": "d6b80d",
+    },
+    {
+        "name": "ready-for-agent",
+        "description": "Fully specified, ready for afk agent",
+        "color": "0be348",
+    },
+    {
+        "name": "ready-for-human",
+        "description": "Requires human implementation",
+        "color": "5181b8",
+    },
     {"name": "wontfix", "description": "This will not be worked on", "color": "e1e4e8"},
 ]
 
@@ -26,11 +42,15 @@ def _get_remote_repo() -> tuple[str, str] | None:
     try:
         url = subprocess.run(
             ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
         if "github.com" not in url:
             return None
-        path = url.split("github.com/")[-1] if "github.com/" in url else url.split(":")[-1]
+        path = (
+            url.split("github.com/")[-1] if "github.com/" in url else url.split(":")[-1]
+        )
         path = re.sub(r"\.git$", "", path)
         owner, repo = path.split("/", 1)
         return owner, repo
@@ -38,7 +58,9 @@ def _get_remote_repo() -> tuple[str, str] | None:
         return None
 
 
-def _gh(method: str, path: str, token: str, data: dict | None = None) -> tuple[int, object]:
+def _gh(
+    method: str, path: str, token: str, data: dict | None = None
+) -> tuple[int, object]:
     req = urllib.request.Request(f"{_API}{path}", method=method)
     req.add_header("Authorization", f"Bearer {token}")
     req.add_header("Accept", "application/vnd.github+json")
@@ -61,7 +83,10 @@ def _resolve_repo(token: str) -> tuple[str, str] | None:
             return owner, repo
     slug = click.prompt("Enter repo slug (e.g. torvalds/linux)")
     if "/" not in slug:
-        click.echo(click.style("Error: invalid format, expected owner/repo.", fg="red"), err=True)
+        click.echo(
+            click.style("Error: invalid format, expected owner/repo.", fg="red"),
+            err=True,
+        )
         return None
     owner, repo = slug.split("/", 1)
     return owner, repo
@@ -76,10 +101,16 @@ def create_labels_interactive(token: str) -> None:
     reset = click.confirm("Delete all existing labels first?", default=False)
 
     if reset:
-        status, existing = _gh("GET", f"/repos/{owner}/{repo}/labels?per_page=100", token)
+        status, existing = _gh(
+            "GET", f"/repos/{owner}/{repo}/labels?per_page=100", token
+        )
         if status == 200 and isinstance(existing, list):
             for label in existing:
-                _gh("DELETE", f"/repos/{owner}/{repo}/labels/{urllib.parse.quote(label['name'])}", token)
+                _gh(
+                    "DELETE",
+                    f"/repos/{owner}/{repo}/labels/{urllib.parse.quote(label['name'])}",
+                    token,
+                )
 
     counts = {"created": 0, "skipped": 0, "failed": 0}
     failures: list[str] = []
@@ -94,7 +125,9 @@ def create_labels_interactive(token: str) -> None:
             failures.append(f"{label['name']}: HTTP {status}")
 
     for name in failures:
-        click.echo(click.style(f"Error: failed to create label {name}.", fg="red"), err=True)
+        click.echo(
+            click.style(f"Error: failed to create label {name}.", fg="red"), err=True
+        )
 
     parts = []
     if counts["created"]:
@@ -113,6 +146,7 @@ def create_labels_interactive(token: str) -> None:
 def main() -> None:
     from dotenv import load_dotenv
     from .config import ENV_FILE
+
     load_dotenv(ENV_FILE)
 
     token = os.getenv("GH_TOKEN", "").strip()

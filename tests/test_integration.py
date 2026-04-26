@@ -4,21 +4,24 @@ from unittest.mock import patch
 import pytest
 
 from pycastle.container_runner import ContainerRunner, _setup
-from pycastle.worktree import create_worktree, patch_gitdir_for_container, remove_worktree
+from pycastle.worktree import (
+    create_worktree,
+    patch_gitdir_for_container,
+    remove_worktree,
+)
 
 
 def _docker_available() -> bool:
     try:
         import docker as _docker
+
         _docker.from_env().ping()
         return True
     except Exception:
         return False
 
 
-pytestmark = pytest.mark.skipif(
-    not _docker_available(), reason="Docker not available"
-)
+pytestmark = pytest.mark.skipif(not _docker_available(), reason="Docker not available")
 
 
 # ── Cycle 1: _setup succeeds with read-only repo mount ───────────────────────
@@ -33,9 +36,18 @@ def test_setup_configures_git_identity_with_readonly_repo_mount(git_repo):
     which is always writable inside the container.
     """
     import subprocess
+
     (git_repo / "pyproject.toml").write_text("[project]\nname = 'test'\n")
-    subprocess.run(["git", "-C", str(git_repo), "add", "pyproject.toml"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(git_repo), "commit", "-m", "add pyproject"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(git_repo), "add", "pyproject.toml"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(git_repo), "commit", "-m", "add pyproject"],
+        check=True,
+        capture_output=True,
+    )
 
     worktree_path = git_repo / ".pycastle" / ".worktrees" / "test-branch"
     create_worktree(git_repo, worktree_path, "test-branch")
@@ -51,14 +63,24 @@ def test_setup_configures_git_identity_with_readonly_repo_mount(git_repo):
     )
     loop = asyncio.new_event_loop()
     try:
+
         def _mock_host_git(cmd, **kw):
             return "Test User\n" if "user.name" in cmd else "test@example.com\n"
 
-        with patch("pycastle.container_runner.subprocess.check_output", side_effect=_mock_host_git):
+        with patch(
+            "pycastle.container_runner.subprocess.check_output",
+            side_effect=_mock_host_git,
+        ):
             loop.run_until_complete(_setup("integration-test", runner, loop, 30.0))
 
-        assert runner.exec_simple("git config --global user.name", 10.0).strip() == "Test User"
-        assert runner.exec_simple("git config --global user.email", 10.0).strip() == "test@example.com"
+        assert (
+            runner.exec_simple("git config --global user.name", 10.0).strip()
+            == "Test User"
+        )
+        assert (
+            runner.exec_simple("git config --global user.email", 10.0).strip()
+            == "test@example.com"
+        )
     finally:
         runner.__exit__(None, None, None)
         loop.close()

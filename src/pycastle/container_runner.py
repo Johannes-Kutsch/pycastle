@@ -14,8 +14,18 @@ import docker
 
 from .config import DOCKER_IMAGE, LOGS_DIR, PYCASTLE_DIR
 from .defaults.config import IDLE_TIMEOUT
-from .errors import AgentTimeoutError, BranchCollisionError, DockerError, DockerTimeoutError
-from .worktree import CONTAINER_PARENT_GIT, create_worktree, patch_gitdir_for_container, remove_worktree
+from .errors import (
+    AgentTimeoutError,
+    BranchCollisionError,
+    DockerError,
+    DockerTimeoutError,
+)
+from .worktree import (
+    CONTAINER_PARENT_GIT,
+    create_worktree,
+    patch_gitdir_for_container,
+    remove_worktree,
+)
 
 _branch_locks: dict[str, asyncio.Lock] = {}
 
@@ -54,7 +64,9 @@ class ContainerRunner:
 
         if self.worktree_host_path:
             worktree_path = str(self.worktree_host_path.resolve()).replace("\\", "/")
-            parent_git_path = str((self.mount_path / ".git").resolve()).replace("\\", "/")
+            parent_git_path = str((self.mount_path / ".git").resolve()).replace(
+                "\\", "/"
+            )
             volumes = {
                 worktree_path: {"bind": "/home/agent/workspace", "mode": "rw"},
                 repo_path: {"bind": "/home/agent/repo", "mode": "ro"},
@@ -62,13 +74,18 @@ class ContainerRunner:
             }
             if self.gitdir_overlay:
                 overlay_path = str(self.gitdir_overlay.resolve()).replace("\\", "/")
-                volumes[overlay_path] = {"bind": "/home/agent/workspace/.git", "mode": "ro"}
+                volumes[overlay_path] = {
+                    "bind": "/home/agent/workspace/.git",
+                    "mode": "ro",
+                }
         else:
             volumes = {repo_path: {"bind": "/home/agent/workspace", "mode": "rw"}}
         working_dir = "/home/agent/workspace"
 
         # CLAUDE_ACCOUNT_JSON is written as a file inside the container, not passed as env var
-        self._container_env = {k: v for k, v in self.env.items() if k != "CLAUDE_ACCOUNT_JSON"}
+        self._container_env = {
+            k: v for k, v in self.env.items() if k != "CLAUDE_ACCOUNT_JSON"
+        }
 
         self._container = self._client.containers.run(
             DOCKER_IMAGE,
@@ -203,10 +220,24 @@ async def _setup(
 ) -> None:
     print(f"[{name}] Phase: Setup")
     await loop.run_in_executor(None, runner.__enter__)
-    git_name = subprocess.check_output(["git", "config", "user.name"], text=True).strip()
-    git_email = subprocess.check_output(["git", "config", "user.email"], text=True).strip()
-    await loop.run_in_executor(None, runner.exec_simple, f"git config --global user.name '{git_name}'", exec_timeout)
-    await loop.run_in_executor(None, runner.exec_simple, f"git config --global user.email '{git_email}'", exec_timeout)
+    git_name = subprocess.check_output(
+        ["git", "config", "user.name"], text=True
+    ).strip()
+    git_email = subprocess.check_output(
+        ["git", "config", "user.email"], text=True
+    ).strip()
+    await loop.run_in_executor(
+        None,
+        runner.exec_simple,
+        f"git config --global user.name '{git_name}'",
+        exec_timeout,
+    )
+    await loop.run_in_executor(
+        None,
+        runner.exec_simple,
+        f"git config --global user.email '{git_email}'",
+        exec_timeout,
+    )
 
 
 async def _prepare(
@@ -279,7 +310,9 @@ async def run_agent(
 
         loop = asyncio.get_event_loop()
         runner = ContainerRunner(
-            name, mount_path, env,
+            name,
+            mount_path,
+            env,
             branch=branch,
             worktree_host_path=worktree_host_path,
             gitdir_overlay=gitdir_overlay,
@@ -291,7 +324,9 @@ async def run_agent(
                 stack.callback(remove_worktree, mount_path, worktree_host_path)
             stack.callback(runner.__exit__, None, None, None)
             await _setup(name, runner, loop, exec_timeout)
-            await _prepare(name, runner, loop, exec_timeout, prompt_file, prompt_args or {})
+            await _prepare(
+                name, runner, loop, exec_timeout, prompt_file, prompt_args or {}
+            )
             return await _work(name, runner, loop)
     finally:
         if lock is not None and lock.locked():
