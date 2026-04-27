@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 
 MAX_ITERATIONS = 10
-MAX_PARALLEL = 1
+MAX_PARALLEL = 4
 WORKTREE_TIMEOUT = 30
 IDLE_TIMEOUT = 300
 DOCKER_IMAGE = "pycastle"
@@ -29,3 +29,13 @@ IMPLEMENT_CHECKS: list[str] = [
     "mypy .",
     "pytest",
 ]
+
+# Per-stage model and effort overrides.
+# model shorthands: haiku, sonnet, opus  (leave empty to use the Claude CLI default)
+# effort values:    low, normal, high    (leave empty to use the Claude CLI default)
+STAGE_OVERRIDES: dict[str, dict[str, str]] = {
+    "plan": {"model": "", "effort": ""},
+    "implement": {"model": "", "effort": ""},
+    "review": {"model": "", "effort": ""},
+    "merge": {"model": "", "effort": ""},
+}
