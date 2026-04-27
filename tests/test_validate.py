@@ -281,6 +281,52 @@ def test_list_models_called_once_across_multiple_validations():
     mock_run.assert_called_once()
 
 
+# ── validate_config: atomicity — no partial mutations on failure ──────────────
+
+
+def test_failed_validation_does_not_mutate_earlier_resolved_stages():
+    overrides = {
+        "plan": {"model": "sonnet", "effort": ""},      # valid — resolved first
+        "implement": {"model": "badmodel", "effort": ""},  # invalid — raises second
+    }
+    with patch("subprocess.run", return_value=_subprocess_ok()):
+        from pycastle.validate import validate_config
+
+        with pytest.raises(ConfigValidationError):
+            validate_config(overrides)
+    assert overrides["plan"]["model"] == "sonnet"
+
+
+# ── validate_config: claude is not called when all model strings are empty ────
+
+
+def test_stages_with_only_empty_models_do_not_call_claude():
+    overrides = {
+        "plan": {"model": "", "effort": "low"},
+        "implement": {"model": "", "effort": ""},
+    }
+    with patch("subprocess.run") as mock_run:
+        from pycastle.validate import validate_config
+
+        validate_config(overrides)
+    mock_run.assert_not_called()
+
+
+# ── validate_config: no parseable claude models in output ────────────────────
+
+
+def test_no_parseable_claude_models_raises_with_empty_valid_options():
+    overrides = {"plan": {"model": "sonnet", "effort": ""}}
+    non_claude_models = ["gpt-4", "gpt-3.5-turbo"]
+    with patch("subprocess.run", return_value=_subprocess_ok(non_claude_models)):
+        from pycastle.validate import validate_config
+
+        with pytest.raises(ConfigValidationError) as exc_info:
+            validate_config(overrides)
+    assert exc_info.value.invalid_value == "sonnet"
+    assert exc_info.value.valid_options == []
+
+
 # ── integration test: real claude list-models ─────────────────────────────────
 
 
