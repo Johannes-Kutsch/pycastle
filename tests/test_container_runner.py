@@ -1,6 +1,5 @@
 import asyncio
 import threading
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -120,38 +119,33 @@ def test_run_agent_warns_stderr_when_pip_install_fails(tmp_path, capsys):
 
 # ── Cycle 3: two agents run concurrently ─────────────────────────────────────
 
-_DELAY = 0.08  # per-stage delay for each fake runner (s)
-
-
-class _SlowFakeRunner:
-    """Fake ContainerRunner that sleeps during __enter__ and pip install."""
-
-    def __init__(self, *args, **kwargs):
-        self.branch = None
-        self.env = {}
-
-    def __enter__(self):
-        time.sleep(_DELAY)
-        return self
-
-    def __exit__(self, *args):
-        pass
-
-    def exec_simple(self, cmd, timeout=None):
-        if "pip" in cmd:
-            time.sleep(_DELAY)
-        return ""
-
-    def run_streaming(self):
-        return ""
-
-
 def test_two_agents_run_concurrently(tmp_path):
     """Two concurrent run_agent calls must interleave rather than serialize.
 
-    Each agent sleeps _DELAY in __enter__ and another _DELAY in pip install.
-    Sequential execution would take ≥ 4 * _DELAY; concurrent takes ≈ 2 * _DELAY.
+    A threading.Barrier(2) placed in __enter__ blocks each agent's thread until
+    both are inside simultaneously. If agents run sequentially the barrier times
+    out, which is structurally impossible with concurrent execution.
     """
+    barrier = threading.Barrier(2, timeout=5.0)
+
+    class _BarrierRunner:
+        def __init__(self, *args, **kwargs):
+            self.branch = None
+            self.env = {}
+
+        def __enter__(self):
+            barrier.wait()
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            return ""
+
+        def run_streaming(self):
+            return ""
+
     prompt = tmp_path / "p.md"
     prompt.write_text("Plain prompt.")
 
@@ -161,16 +155,13 @@ def test_two_agents_run_concurrently(tmp_path):
             run_agent("A2", prompt, tmp_path, {}),
         )
 
-    with patch("pycastle.container_runner.ContainerRunner", _SlowFakeRunner):
-        start = time.monotonic()
-        _run(_both())
-        elapsed = time.monotonic() - start
-
-    # Must finish well under sequential time (4 * _DELAY = 0.32 s).
-    # Generous ceiling of 3.5 * _DELAY leaves room for CI overhead.
-    assert elapsed < 3.5 * _DELAY, (
-        f"Agents appear to be running sequentially: {elapsed:.3f}s >= {3 * _DELAY:.3f}s"
-    )
+    try:
+        with patch("pycastle.container_runner.ContainerRunner", _BarrierRunner):
+            _run(_both())
+    except threading.BrokenBarrierError:
+        pytest.fail(
+            "Agents ran sequentially: Agent 2 never reached __enter__ while Agent 1 was still inside it"
+        )
 
 
 # ── Cycle 15: worktree add must not run inside the container ─────────────────
