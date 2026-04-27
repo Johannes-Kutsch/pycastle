@@ -27,6 +27,14 @@
 | **IMPLEMENT_CHECKS** | Config entry (`list[str]`) of command strings rendered into the **FEEDBACK LOOPS section** of the implement-prompt as agent instructions; distinct from **PREFLIGHT_CHECKS** because commands may differ (e.g. `ruff check --fix` vs `ruff check .`) | feedback commands, implement commands |
 | **full replacement** | Override strategy where the local config.py replaces the package default entirely | merge, partial override |
 | **config loader** | Package module that discovers and imports config.py from CWD, falling back to package defaults | — |
+| **STAGE_OVERRIDES** | Config dict with one entry per **orchestration phase** (`plan`, `implement`, `review`, `merge`), each holding a **model shorthand** and an **effort level** | stage config, model config |
+| **stage override** | The per-phase `model` + `effort` entry inside `STAGE_OVERRIDES` for one **orchestration phase** | phase config, agent config |
+| **model shorthand** | A short family alias (`haiku`, `sonnet`, `opus`) that pycastle resolves to the latest **full model ID** at startup | model alias, model name |
+| **full model ID** | The versioned Claude model identifier (e.g. `claude-sonnet-4-6`) resolved from a **model shorthand** via `claude list-models` | model ID, model version |
+| **effort level** | One of three Claude effort values (`low`, `normal`, `high`) that controls cost and reasoning depth for an agent run | effort, effort flag |
+| **CLI default** | The behavior when no `--model` or `--effort` flag is injected — Claude CLI uses its own built-in defaults; triggered by an empty string in **STAGE_OVERRIDES** | default model, unset |
+| **validate_config** | A startup function that resolves **model shorthands** to **full model IDs** and validates all **stage overrides**, mutating `STAGE_OVERRIDES` in-memory; raises `ConfigValidationError` on any invalid entry | config validation, startup check |
+| **ConfigValidationError** | Error raised by **validate_config** when a **model shorthand** or **effort level** is unrecognised; message includes the invalid value, the closest valid suggestion, and the full list of valid options | validation error, config error |
 
 ## GitHub Integration
 
@@ -130,6 +138,17 @@
 
 ## Relationships
 
+- **STAGE_OVERRIDES** contains exactly four entries, one per **orchestration phase**: `plan`, `implement`, `review`, `merge`.
+- Each **stage override** entry has two optional fields: `model` (a **model shorthand** or empty string) and `effort` (an **effort level** or empty string).
+- An empty string in a **stage override** signals **CLI default** — no flag is injected for that field.
+- **validate_config** is called once at the start of `orchestrator.run()`, before any agent container starts.
+- **validate_config** queries `claude list-models` once per process, caches the result, and picks the highest semver **full model ID** when multiple versions match a **model shorthand**.
+- If `claude list-models` is unavailable, **validate_config** raises **ConfigValidationError** immediately.
+- After **validate_config** completes, all non-empty `model` entries in `STAGE_OVERRIDES` contain **full model IDs**, not **model shorthands**.
+- The **orchestrator** extracts the **stage name** (`plan`, `implement`, `review`, `merge`) from the agent's `name` parameter before each `run_agent()` call.
+- Resolved `model` and `effort` values are passed as explicit kwargs to `run_agent()` and from there to `_build_claude_command()`.
+- `_build_claude_command()` conditionally appends `--model` and `--effort` flags only when the resolved value is non-empty.
+
 - A **consuming project** contains exactly one **pycastle directory**.
 - A **pycastle directory** contains one **config.py**, one **.env**, one **Dockerfile**, and one **prompts directory**.
 - A **prompts directory** contains one **prompt** per orchestration phase plus **CODING_STANDARDS.md**.
@@ -214,7 +233,30 @@
 
 > **Domain expert:** "That's **scope creep** from a **pre-existing failure**. The **Implementer** ran ruff and mypy at the end of its work, found failures that existed before it started, and treated them as its responsibility to fix. The **Pre-flight phase** prevents this: if the checks are already red when the container starts, the run aborts and files a bug report rather than letting the **Implementer** inherit the mess."
 
+## Example dialogue (stage overrides)
+
+> **Dev:** "I want the Planner to use Haiku but the Implementer to use Opus. What do I put in config?"
+
+> **Domain expert:** "Set `STAGE_OVERRIDES` in your `config.py`. For the `plan` entry set `model` to `"haiku"` and for `implement` set it to `"opus"`. Leave the others empty — empty string means **CLI default**, no flag is injected for that phase."
+
+> **Dev:** "So I write `"haiku"` — not `"claude-haiku-4-5-20251001"`?"
+
+> **Domain expert:** "Exactly. You write the **model shorthand**. At startup, **validate_config** queries `claude list-models`, picks the latest version of that family, and replaces the shorthand in memory with the **full model ID**. Your config file never needs updating when a new Haiku ships."
+
+> **Dev:** "What if I typo it as `"hiku"`?"
+
+> **Domain expert:** "**validate_config** raises **ConfigValidationError** before any container starts. The error names the invalid value, suggests the closest valid option, and lists all recognised shorthands. You fix the config and re-run — nothing expensive has happened yet."
+
+> **Dev:** "Can I set effort on some stages and leave model empty on them?"
+
+> **Domain expert:** "Yes. Each **stage override** has independent `model` and `effort` fields. Setting `effort: \"high\"` and leaving `model: \"\"` means extended thinking with the **CLI default** model. They compose freely."
+
 ## Flagged ambiguities
+
+- **"model"** is used to mean both the **model shorthand** (what the user writes in config: `"sonnet"`) and the **full model ID** (what pycastle passes to the CLI: `"claude-sonnet-4-6"`). Always qualify: **model shorthand** for user-facing aliases, **full model ID** for resolved versioned names.
+- **"stage"** was introduced in this conversation to mean an **orchestration phase** (plan/implement/review/merge). The existing glossary uses **phase** for this concept. Use **orchestration phase** when unambiguous context is absent; reserve **stage** only in the context of `STAGE_OVERRIDES` where it is the canonical key name.
+- **"default"** is now overloaded three ways: (a) **CLI default** (no flag injected, Claude uses its built-in default), (b) **default config values** (empty strings in `STAGE_OVERRIDES` defaults), and (c) the `defaults/` package directory. Always qualify which meaning is intended.
+- **"override"** appears at two levels: a **stage override** (one entry in `STAGE_OVERRIDES` for a specific phase) and **full replacement** (the existing strategy where local config.py replaces the package default entirely). Never use "override" alone — qualify as **stage override** or **full replacement**.
 
 - **"config"** is used loosely to mean either `config.py` (behavioral settings) or the combined configuration of a project (config.py + .env). Use **config.py** when referring to the file, and **pycastle directory** when referring to the full set of local overrides.
 - **"prompt"** is used both for phase-driving instructions (plan-prompt.md, implement-prompt.md, etc.) and for `CODING_STANDARDS.md`, which is a reference document, not an instruction. The canonical rule: everything in the **prompts directory** is called a **prompt** for discovery and scaffolding purposes, regardless of whether it drives an agent phase directly.
