@@ -119,6 +119,7 @@ def test_run_agent_warns_stderr_when_pip_install_fails(tmp_path, capsys):
 
 # ── Cycle 3: two agents run concurrently ─────────────────────────────────────
 
+
 def test_two_agents_run_concurrently(tmp_path):
     """Two concurrent run_agent calls must interleave rather than serialize.
 
