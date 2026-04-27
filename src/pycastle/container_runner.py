@@ -63,8 +63,12 @@ def _format_stream_line(line: str) -> str | None:
     return None
 
 
-def _build_claude_command() -> str:
+def _build_claude_command(model: str = "", effort: str = "") -> str:
     flags = "--print --verbose --dangerously-skip-permissions --output-format stream-json -p -"
+    if model:
+        flags += f" --model {model}"
+    if effort:
+        flags += f" --effort {effort}"
     return f"claude {flags} < /tmp/.pycastle_prompt"
 
 
@@ -77,6 +81,8 @@ class ContainerRunner:
         branch: str | None = None,
         worktree_host_path: Path | None = None,
         gitdir_overlay: Path | None = None,
+        model: str = "",
+        effort: str = "",
     ):
         self.name = name
         self.mount_path = mount_path
@@ -84,6 +90,8 @@ class ContainerRunner:
         self.branch = branch
         self.worktree_host_path = worktree_host_path
         self.gitdir_overlay = gitdir_overlay
+        self.model = model
+        self.effort = effort
         self._client = docker.from_env()
         self._container: DockerContainer | None = None
         self._container_env: dict[str, str] = {}
@@ -204,7 +212,7 @@ class ContainerRunner:
     def run_streaming(self) -> str:
         self.write_file(self._prompt, "/tmp/.pycastle_prompt")
         result = self._active_container.exec_run(
-            ["bash", "-c", _build_claude_command()],
+            ["bash", "-c", _build_claude_command(model=self.model, effort=self.effort)],
             stream=True,
             workdir=self._worktree_path,
         )
@@ -346,6 +354,8 @@ async def run_agent(
     branch: str | None = None,
     exec_timeout: float | None = None,
     skip_preflight: bool = False,
+    model: str = "",
+    effort: str = "",
 ) -> str:
     print(f"\n[{name}] Started")
 
@@ -377,6 +387,8 @@ async def run_agent(
             branch=branch,
             worktree_host_path=worktree_host_path,
             gitdir_overlay=gitdir_overlay,
+            model=model,
+            effort=effort,
         )
         async with AsyncExitStack() as stack:
             if gitdir_overlay:
