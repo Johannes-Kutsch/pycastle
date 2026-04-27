@@ -26,6 +26,21 @@ class AgentTimeoutError(PycastleError, TimeoutError):
     pass
 
 
+class ConfigValidationError(PycastleError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        invalid_value: str = "",
+        suggestion: str = "",
+        valid_options: list[str] | None = None,
+    ) -> None:
+        self.invalid_value = invalid_value
+        self.suggestion = suggestion
+        self.valid_options = valid_options or []
+        super().__init__(message)
+
+
 class PreflightError(PycastleError):
     def __init__(self, failures: list[tuple[str, str, str]]):
         self.failures = failures
