@@ -29,3 +29,13 @@ IMPLEMENT_CHECKS: list[str] = [
     "mypy .",
     "pytest",
 ]
+
+# Per-stage model and effort overrides.
+# model shorthands: haiku, sonnet, opus  (leave empty to use the Claude CLI default)
+# effort values:    low, normal, high    (leave empty to use the Claude CLI default)
+STAGE_OVERRIDES: dict[str, dict[str, str]] = {
+    "plan": {"model": "", "effort": ""},
+    "implement": {"model": "", "effort": ""},
+    "review": {"model": "", "effort": ""},
+    "merge": {"model": "", "effort": ""},
+}
