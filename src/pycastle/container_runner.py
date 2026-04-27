@@ -232,7 +232,7 @@ class ContainerRunner:
         parts: list[str] = []
         line_buf = ""
         try:
-            with open(self._log_path, "w", encoding="utf-8") as log:
+            with open(self._log_path, "wb") as log:
                 while True:
                     try:
                         chunk = q.get(timeout=IDLE_TIMEOUT)
@@ -242,9 +242,9 @@ class ContainerRunner:
                         )
                     if chunk is _sentinel:
                         break
-                    text = chunk.decode("utf-8", errors="replace")
-                    log.write(text)
+                    log.write(chunk)
                     log.flush()
+                    text = chunk.decode("utf-8", errors="replace")
                     parts.append(text)
                     line_buf += text
                     while "\n" in line_buf:
