@@ -357,3 +357,318 @@ def test_implementer_preflight_error_logs_check_details(tmp_path, capsys):
     assert "[('mypy'" not in out, (
         "Output must not be raw tuple repr — format each check explicitly"
     )
+
+
+# ── Issue-78: validate_config called at start of run() ───────────────────────
+
+
+def test_run_calls_validate_config_before_any_agent(tmp_path):
+    """validate_config must be called before the first run_agent call."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    call_order: list[str] = []
+
+    def _fake_validate(overrides):
+        call_order.append("validate")
+
+    async def _fake_run_agent(*args, **kwargs):
+        call_order.append("agent")
+        return "<plan>[]</plan>"
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config", side_effect=_fake_validate),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch("pycastle.orchestrator.parse_plan", return_value=[]),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    assert call_order[0] == "validate", f"validate must be first; got {call_order}"
+
+
+def test_run_validate_config_error_propagates_no_agents_started(tmp_path):
+    """ConfigValidationError from validate_config must propagate and prevent all agents."""
+    import asyncio
+    import pytest
+    from pycastle.errors import ConfigValidationError
+    from pycastle.orchestrator import run
+
+    agents_started: list[str] = []
+
+    async def _fake_run_agent(*args, **kwargs):
+        agents_started.append(kwargs.get("name", args[0] if args else "?"))
+        return ""
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch(
+            "pycastle.orchestrator.validate_config",
+            side_effect=ConfigValidationError("bad model"),
+        ),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+    ):
+        with pytest.raises(ConfigValidationError):
+            asyncio.run(run({}, tmp_path))
+
+    assert agents_started == [], f"No agents must start; got {agents_started}"
+
+
+# ── Issue-78: _stage_for_agent helper ─────────────────────────────────────────
+
+
+def test_stage_for_agent_planner():
+    from pycastle.orchestrator import _stage_for_agent
+
+    assert _stage_for_agent("Planner") == "plan"
+
+
+def test_stage_for_agent_implementer():
+    from pycastle.orchestrator import _stage_for_agent
+
+    assert _stage_for_agent("Implementer #42") == "implement"
+
+
+def test_stage_for_agent_reviewer():
+    from pycastle.orchestrator import _stage_for_agent
+
+    assert _stage_for_agent("Reviewer #7") == "review"
+
+
+def test_stage_for_agent_merger():
+    from pycastle.orchestrator import _stage_for_agent
+
+    assert _stage_for_agent("Merger") == "merge"
+
+
+# ── Issue-78: model/effort passed per stage ───────────────────────────────────
+
+
+def test_planner_receives_plan_stage_model_and_effort(tmp_path):
+    """Planner run_agent call must include model and effort from plan stage override."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        captured.append(
+            {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
+        )
+        return "<plan>[]</plan>"
+
+    stage_overrides = {
+        "plan": {"model": "claude-haiku-4-5", "effort": "low"},
+        "implement": {"model": "", "effort": ""},
+        "review": {"model": "", "effort": ""},
+        "merge": {"model": "", "effort": ""},
+    }
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch("pycastle.orchestrator.parse_plan", return_value=[]),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    planner_call = next(c for c in captured if c["name"] == "Planner")
+    assert planner_call["model"] == "claude-haiku-4-5"
+    assert planner_call["effort"] == "low"
+
+
+def test_implementer_receives_implement_stage_model_and_effort(tmp_path):
+    """Each Implementer run_agent call must include model and effort from implement stage."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        captured.append(
+            {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
+        )
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    stage_overrides = {
+        "plan": {"model": "", "effort": ""},
+        "implement": {"model": "claude-sonnet-4-6", "effort": "high"},
+        "review": {"model": "", "effort": ""},
+        "merge": {"model": "", "effort": ""},
+    }
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch(
+            "pycastle.orchestrator.parse_plan",
+            return_value=[{"number": 1, "title": "Fix", "branch": "issue/1"}],
+        ),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    impl_call = next(c for c in captured if "Implementer" in c["name"])
+    assert impl_call["model"] == "claude-sonnet-4-6"
+    assert impl_call["effort"] == "high"
+
+
+def test_reviewer_receives_review_stage_model_and_effort(tmp_path):
+    """Each Reviewer run_agent call must include model and effort from review stage."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        captured.append(
+            {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
+        )
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    stage_overrides = {
+        "plan": {"model": "", "effort": ""},
+        "implement": {"model": "", "effort": ""},
+        "review": {"model": "claude-haiku-4-5", "effort": "normal"},
+        "merge": {"model": "", "effort": ""},
+    }
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch(
+            "pycastle.orchestrator.parse_plan",
+            return_value=[{"number": 1, "title": "Fix", "branch": "issue/1"}],
+        ),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    rev_call = next(c for c in captured if "Reviewer" in c["name"])
+    assert rev_call["model"] == "claude-haiku-4-5"
+    assert rev_call["effort"] == "normal"
+
+
+def test_merger_receives_merge_stage_model_and_effort(tmp_path):
+    """Merger run_agent call must include model and effort from merge stage override."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        captured.append(
+            {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
+        )
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    stage_overrides = {
+        "plan": {"model": "", "effort": ""},
+        "implement": {"model": "", "effort": ""},
+        "review": {"model": "", "effort": ""},
+        "merge": {"model": "claude-opus-4-7", "effort": "low"},
+    }
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch(
+            "pycastle.orchestrator.parse_plan",
+            return_value=[{"number": 1, "title": "Fix", "branch": "issue/1"}],
+        ),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    merger_call = next(c for c in captured if c["name"] == "Merger")
+    assert merger_call["model"] == "claude-opus-4-7"
+    assert merger_call["effort"] == "low"
+
+
+def test_empty_stage_override_passes_empty_strings(tmp_path):
+    """Empty model and effort in stage override must pass empty strings to run_agent."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        captured.append(
+            {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
+        )
+        return "<plan>[]</plan>"
+
+    stage_overrides = {
+        "plan": {"model": "", "effort": ""},
+        "implement": {"model": "", "effort": ""},
+        "review": {"model": "", "effort": ""},
+        "merge": {"model": "", "effort": ""},
+    }
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch("pycastle.orchestrator.parse_plan", return_value=[]),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    planner_call = next(c for c in captured if c["name"] == "Planner")
+    assert planner_call["model"] == ""
+    assert planner_call["effort"] == ""
+
+
+def test_stage_overrides_are_independent(tmp_path):
+    """Different stages must receive their own independent model/effort values."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        captured.append(
+            {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
+        )
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    stage_overrides = {
+        "plan": {"model": "claude-haiku-4-5", "effort": "low"},
+        "implement": {"model": "claude-sonnet-4-6", "effort": "normal"},
+        "review": {"model": "claude-haiku-4-5", "effort": ""},
+        "merge": {"model": "claude-opus-4-7", "effort": "high"},
+    }
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch(
+            "pycastle.orchestrator.parse_plan",
+            return_value=[{"number": 1, "title": "Fix", "branch": "issue/1"}],
+        ),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    by_name = {c["name"]: c for c in captured}
+    assert by_name["Planner"]["model"] == "claude-haiku-4-5"
+    assert by_name["Planner"]["effort"] == "low"
+    assert by_name["Implementer #1"]["model"] == "claude-sonnet-4-6"
+    assert by_name["Implementer #1"]["effort"] == "normal"
+    assert by_name["Reviewer #1"]["model"] == "claude-haiku-4-5"
+    assert by_name["Reviewer #1"]["effort"] == ""
+    assert by_name["Merger"]["model"] == "claude-opus-4-7"
+    assert by_name["Merger"]["effort"] == "high"

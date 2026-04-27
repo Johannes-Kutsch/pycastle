@@ -10,8 +10,9 @@ from pathlib import Path
 
 from .config import ISSUE_LABEL, LOGS_DIR, MAX_ITERATIONS, MAX_PARALLEL, PROMPTS_DIR
 from .container_runner import run_agent
-from .defaults.config import IMPLEMENT_CHECKS
+from .defaults.config import IMPLEMENT_CHECKS, STAGE_OVERRIDES
 from .errors import PreflightError
+from .validate import validate_config
 
 
 def prune_orphan_worktrees(repo_root: Path) -> None:
@@ -54,6 +55,18 @@ def parse_plan(output: str) -> list[dict]:
     return json.loads(match.group(1))["issues"]
 
 
+def _stage_for_agent(name: str) -> str:
+    if name == "Planner":
+        return "plan"
+    if name.startswith("Implementer"):
+        return "implement"
+    if name.startswith("Reviewer"):
+        return "review"
+    if name == "Merger":
+        return "merge"
+    return ""
+
+
 def _format_feedback_commands(checks: list[str]) -> str:
     wrapped = [f"`{cmd}`" for cmd in checks]
     if len(wrapped) <= 1:
@@ -61,7 +74,12 @@ def _format_feedback_commands(checks: list[str]) -> str:
     return ", ".join(wrapped[:-1]) + " and " + wrapped[-1]
 
 
-async def run_issue(issue: dict, env: dict[str, str], repo_root: Path) -> dict | None:
+async def run_issue(
+    issue: dict, env: dict[str, str], repo_root: Path, overrides: dict | None = None
+) -> dict | None:
+    overrides = overrides or {}
+    impl_stage = overrides.get("implement", {})
+    rev_stage = overrides.get("review", {})
     prompt_args = {
         "ISSUE_NUMBER": str(issue["number"]),
         "ISSUE_TITLE": issue["title"],
@@ -75,6 +93,8 @@ async def run_issue(issue: dict, env: dict[str, str], repo_root: Path) -> dict |
         env=env,
         prompt_args=prompt_args,
         branch=issue["branch"],
+        model=impl_stage.get("model", ""),
+        effort=impl_stage.get("effort", ""),
     )
     if "<promise>COMPLETE</promise>" not in _extract_text(result):
         return None
@@ -85,15 +105,19 @@ async def run_issue(issue: dict, env: dict[str, str], repo_root: Path) -> dict |
         env=env,
         prompt_args=prompt_args,
         branch=issue["branch"],
+        model=rev_stage.get("model", ""),
+        effort=rev_stage.get("effort", ""),
     )
     return issue
 
 
 async def run(env: dict[str, str], repo_root: Path) -> None:
+    validate_config(STAGE_OVERRIDES)
     prune_orphan_worktrees(repo_root)
     for iteration in range(1, MAX_ITERATIONS + 1):
         print(f"\n=== Iteration {iteration}/{MAX_ITERATIONS} ===\n")
 
+        plan_stage = STAGE_OVERRIDES.get("plan", {})
         try:
             plan_output = await run_agent(
                 name="Planner",
@@ -101,6 +125,8 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
                 mount_path=repo_root,
                 env=env,
                 prompt_args={"ISSUE_LABEL": ISSUE_LABEL},
+                model=plan_stage.get("model", ""),
+                effort=plan_stage.get("effort", ""),
             )
         except PreflightError as exc:
             print("[Planner] Pre-flight failed — aborting run:")
@@ -121,7 +147,7 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
 
         async def bounded(issue: dict) -> dict | None:
             async with semaphore:
-                return await run_issue(issue, env, repo_root)
+                return await run_issue(issue, env, repo_root, STAGE_OVERRIDES)
 
         results = await asyncio.gather(
             *[bounded(i) for i in issues], return_exceptions=True
@@ -157,6 +183,7 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
         for i in completed:
             print(f"  {i['branch']}")
 
+        merge_stage = STAGE_OVERRIDES.get("merge", {})
         await run_agent(
             name="Merger",
             prompt_file=PROMPTS_DIR / "merge-prompt.md",
@@ -168,6 +195,8 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
                     f"- #{i['number']}: {i['title']}" for i in completed
                 ),
             },
+            model=merge_stage.get("model", ""),
+            effort=merge_stage.get("effort", ""),
         )
         print("\nBranches merged.")
 
