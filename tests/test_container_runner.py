@@ -26,6 +26,8 @@ def _streaming_runner(name: str, chunks: list, log_path) -> ContainerRunner:
     runner.branch = None
     runner._worktree_path = "/home/agent/workspace"
     runner._prompt = ""
+    runner.model = ""
+    runner.effort = ""
     runner._container = MagicMock()
     runner._log_path = log_path
     mock_result = MagicMock()
@@ -43,6 +45,8 @@ def _fake_runner(exit_code=0, stdout=b"", stderr=b""):
     runner.branch = None
     runner._worktree_path = "/home/agent/workspace"
     runner._prompt = ""
+    runner.model = ""
+    runner.effort = ""
     runner._container = MagicMock()
     mock_result = MagicMock()
     mock_result.exit_code = exit_code
@@ -733,6 +737,156 @@ def test_gitdir_temp_file_deleted_even_when_container_raises(tmp_path):
     assert not overlay.exists(), (
         "gitdir temp file must be deleted even when container cleanup raises"
     )
+
+
+# ── Issue 75: _build_claude_command accepts model and effort flags ────────────
+
+
+def test_build_claude_command_includes_model_flag():
+    cmd = _build_claude_command(model="claude-sonnet-4-6")
+    assert "--model claude-sonnet-4-6" in cmd
+
+
+def test_build_claude_command_includes_effort_flag():
+    cmd = _build_claude_command(effort="high")
+    assert "--effort high" in cmd
+
+
+def test_build_claude_command_excludes_model_when_empty():
+    cmd = _build_claude_command(model="", effort="")
+    assert "--model" not in cmd
+
+
+def test_build_claude_command_excludes_effort_when_empty():
+    cmd = _build_claude_command(model="", effort="")
+    assert "--effort" not in cmd
+
+
+def test_build_claude_command_includes_both_flags_when_set():
+    cmd = _build_claude_command(model="claude-opus-4-7", effort="high")
+    assert "--model claude-opus-4-7" in cmd
+    assert "--effort high" in cmd
+
+
+def test_run_agent_passes_model_to_container_runner(tmp_path):
+    """run_agent with model kwarg must pass model to ContainerRunner."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    captured: dict = {}
+
+    class _CapturingRunner:
+        def __init__(self, *args, model="", effort="", **kwargs):
+            self.branch = None
+            self.env = {}
+            captured["model"] = model
+            captured["effort"] = effort
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            return ""
+
+        def run_streaming(self):
+            return ""
+
+    with patch("pycastle.container_runner.ContainerRunner", _CapturingRunner):
+        _run(run_agent("Test", prompt, tmp_path, {}, model="claude-sonnet-4-6"))
+
+    assert captured["model"] == "claude-sonnet-4-6"
+
+
+def test_run_agent_passes_effort_to_container_runner(tmp_path):
+    """run_agent with effort kwarg must pass effort to ContainerRunner."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    captured: dict = {}
+
+    class _CapturingRunner:
+        def __init__(self, *args, model="", effort="", **kwargs):
+            self.branch = None
+            self.env = {}
+            captured["model"] = model
+            captured["effort"] = effort
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            return ""
+
+        def run_streaming(self):
+            return ""
+
+    with patch("pycastle.container_runner.ContainerRunner", _CapturingRunner):
+        _run(run_agent("Test", prompt, tmp_path, {}, effort="high"))
+
+    assert captured["effort"] == "high"
+
+
+def test_run_agent_defaults_model_and_effort_to_empty_string(tmp_path):
+    """run_agent with no model/effort kwargs must pass empty strings."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    captured: dict = {}
+
+    class _CapturingRunner:
+        def __init__(self, *args, model="UNSET", effort="UNSET", **kwargs):
+            self.branch = None
+            self.env = {}
+            captured["model"] = model
+            captured["effort"] = effort
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            return ""
+
+        def run_streaming(self):
+            return ""
+
+    with patch("pycastle.container_runner.ContainerRunner", _CapturingRunner):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    assert captured["model"] == ""
+    assert captured["effort"] == ""
+
+
+def test_run_streaming_includes_model_flag_when_set(tmp_path):
+    """run_streaming must pass --model to exec_run when model is set on runner."""
+    runner = _streaming_runner("Agent", [b"done\n"], tmp_path / "test.log")
+    runner.model = "claude-sonnet-4-6"
+    runner.effort = ""
+    runner.write_file = MagicMock()
+    runner.run_streaming()
+
+    streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
+    assert "--model claude-sonnet-4-6" in streaming_cmd
+
+
+def test_run_streaming_includes_effort_flag_when_set(tmp_path):
+    """run_streaming must pass --effort to exec_run when effort is set on runner."""
+    runner = _streaming_runner("Agent", [b"done\n"], tmp_path / "test.log")
+    runner.model = ""
+    runner.effort = "high"
+    runner.write_file = MagicMock()
+    runner.run_streaming()
+
+    streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
+    assert "--effort high" in streaming_cmd
 
 
 # ── Cycle 36-1: _build_claude_command includes required flags ────────────────
