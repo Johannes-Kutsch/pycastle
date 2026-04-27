@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 
 MAX_ITERATIONS = 10
-MAX_PARALLEL = 1
+MAX_PARALLEL = 4
 WORKTREE_TIMEOUT = 30
 IDLE_TIMEOUT = 300
 DOCKER_IMAGE = "pycastle"
