@@ -84,20 +84,20 @@ def validate_config(overrides: dict) -> None:
     """Validate and resolve model/effort values in overrides in place.
 
     Empty strings bypass validation. Raises ConfigValidationError on any invalid entry.
+    All entries are validated before any mutations are applied.
     """
     if not overrides:
         return
 
-    models = _fetch_models()
     valid_efforts = sorted(_VALID_EFFORTS)
+    resolved_models: dict[str, str] = {}
 
     for stage, values in overrides.items():
         model = values.get("model", "")
         effort = values.get("effort", "")
 
         if model:
-            resolved = _resolve_shorthand(model, models)
-            overrides[stage]["model"] = resolved
+            resolved_models[stage] = _resolve_shorthand(model, _fetch_models())
 
         if effort and effort not in _VALID_EFFORTS:
             close = get_close_matches(effort, valid_efforts, n=1, cutoff=0.0)
@@ -109,3 +109,6 @@ def validate_config(overrides: dict) -> None:
                 suggestion=suggestion,
                 valid_options=valid_efforts,
             )
+
+    for stage, resolved_model in resolved_models.items():
+        overrides[stage]["model"] = resolved_model
