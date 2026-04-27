@@ -29,3 +29,10 @@ IMPLEMENT_CHECKS: list[str] = [
     "mypy .",
     "pytest",
 ]
+
+STAGE_OVERRIDES: dict[str, dict[str, str]] = {
+    "plan": {"model": "", "effort": ""},
+    "implement": {"model": "", "effort": ""},
+    "review": {"model": "", "effort": ""},
+    "merge": {"model": "", "effort": ""},
+}
