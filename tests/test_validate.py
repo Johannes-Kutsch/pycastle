@@ -1,9 +1,17 @@
 import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.errors import ConfigValidationError, PycastleError
+from pycastle.claude_service import ClaudeService
+from pycastle.errors import (
+    ClaudeCliNotFoundError,
+    ClaudeCommandError,
+    ClaudeServiceError,
+    ClaudeTimeoutError,
+    ConfigValidationError,
+    PycastleError,
+)
 
 
 # ── ConfigValidationError hierarchy ──────────────────────────────────────────
@@ -42,20 +50,10 @@ _FAKE_MODELS = [
 ]
 
 
-def _subprocess_ok(models: list[str] = _FAKE_MODELS):
-    result = MagicMock()
-    result.returncode = 0
-    result.stdout = "\n".join(models) + "\n"
-    result.stderr = ""
-    return result
-
-
-def _subprocess_fail(returncode: int = 1, stderr: str = "unknown subcommand"):
-    result = MagicMock()
-    result.returncode = returncode
-    result.stdout = ""
-    result.stderr = stderr
-    return result
+def _make_service(models: list[str] = _FAKE_MODELS) -> ClaudeService:
+    mock = MagicMock(spec=ClaudeService)
+    mock.list_models.return_value = tuple(models)
+    return mock
 
 
 @pytest.fixture(autouse=True)
@@ -71,31 +69,29 @@ def _clear_model_cache():
 
 
 def test_empty_overrides_do_not_call_claude():
-    with patch("subprocess.run") as mock_run:
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        validate_config({})
-        mock_run.assert_not_called()
+    mock_service = _make_service()
+    validate_config({}, claude_service=mock_service)
+    mock_service.list_models.assert_not_called()
 
 
 # ── validate_config: empty model/effort strings pass without modification ─────
 
 
 def test_empty_model_skips_validation_and_leaves_value():
-    overrides = {"plan": {"model": "", "effort": ""}}
-    with patch("subprocess.run", return_value=_subprocess_ok()):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        validate_config(overrides)
+    overrides = {"plan": {"model": "", "effort": ""}}
+    validate_config(overrides, claude_service=_make_service())
     assert overrides["plan"]["model"] == ""
 
 
 def test_empty_effort_skips_validation_and_leaves_value():
-    overrides = {"plan": {"model": "", "effort": ""}}
-    with patch("subprocess.run", return_value=_subprocess_ok()):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        validate_config(overrides)
+    overrides = {"plan": {"model": "", "effort": ""}}
+    validate_config(overrides, claude_service=_make_service())
     assert overrides["plan"]["effort"] == ""
 
 
@@ -103,29 +99,26 @@ def test_empty_effort_skips_validation_and_leaves_value():
 
 
 def test_valid_shorthand_resolves_to_full_model_id():
-    overrides = {"plan": {"model": "sonnet", "effort": ""}}
-    with patch("subprocess.run", return_value=_subprocess_ok()):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        validate_config(overrides)
+    overrides = {"plan": {"model": "sonnet", "effort": ""}}
+    validate_config(overrides, claude_service=_make_service())
     assert overrides["plan"]["model"] == "claude-sonnet-4-6"
 
 
 def test_haiku_shorthand_resolves():
-    overrides = {"implement": {"model": "haiku", "effort": ""}}
-    with patch("subprocess.run", return_value=_subprocess_ok()):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        validate_config(overrides)
+    overrides = {"implement": {"model": "haiku", "effort": ""}}
+    validate_config(overrides, claude_service=_make_service())
     assert overrides["implement"]["model"] == "claude-haiku-4-5-20251001"
 
 
 def test_opus_shorthand_resolves():
-    overrides = {"review": {"model": "opus", "effort": ""}}
-    with patch("subprocess.run", return_value=_subprocess_ok()):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        validate_config(overrides)
+    overrides = {"review": {"model": "opus", "effort": ""}}
+    validate_config(overrides, claude_service=_make_service())
     assert overrides["review"]["model"] == "claude-opus-4-7"
 
 
@@ -133,29 +126,27 @@ def test_opus_shorthand_resolves():
 
 
 def test_highest_semver_wins_for_shorthand():
+    from pycastle.validate import validate_config
+
     models = [
         "claude-sonnet-3-5",
         "claude-sonnet-4-6",
         "claude-sonnet-4-5-20241022",
     ]
     overrides = {"plan": {"model": "sonnet", "effort": ""}}
-    with patch("subprocess.run", return_value=_subprocess_ok(models)):
-        from pycastle.validate import validate_config
-
-        validate_config(overrides)
+    validate_config(overrides, claude_service=_make_service(models))
     assert overrides["plan"]["model"] == "claude-sonnet-4-6"
 
 
 def test_newest_patch_wins_over_older_minor():
+    from pycastle.validate import validate_config
+
     models = [
         "claude-haiku-3-5",
         "claude-haiku-4-5-20251001",
     ]
     overrides = {"plan": {"model": "haiku", "effort": ""}}
-    with patch("subprocess.run", return_value=_subprocess_ok(models)):
-        from pycastle.validate import validate_config
-
-        validate_config(overrides)
+    validate_config(overrides, claude_service=_make_service(models))
     assert overrides["plan"]["model"] == "claude-haiku-4-5-20251001"
 
 
@@ -163,32 +154,29 @@ def test_newest_patch_wins_over_older_minor():
 
 
 def test_invalid_model_raises_config_validation_error():
-    overrides = {"plan": {"model": "gpt4", "effort": ""}}
-    with patch("subprocess.run", return_value=_subprocess_ok()):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        with pytest.raises(ConfigValidationError) as exc_info:
-            validate_config(overrides)
+    overrides = {"plan": {"model": "gpt4", "effort": ""}}
+    with pytest.raises(ConfigValidationError) as exc_info:
+        validate_config(overrides, claude_service=_make_service())
     assert exc_info.value.invalid_value == "gpt4"
 
 
 def test_invalid_model_error_has_suggestion():
-    overrides = {"plan": {"model": "sonnit", "effort": ""}}
-    with patch("subprocess.run", return_value=_subprocess_ok()):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        with pytest.raises(ConfigValidationError) as exc_info:
-            validate_config(overrides)
+    overrides = {"plan": {"model": "sonnit", "effort": ""}}
+    with pytest.raises(ConfigValidationError) as exc_info:
+        validate_config(overrides, claude_service=_make_service())
     assert exc_info.value.suggestion == "sonnet"
 
 
 def test_invalid_model_error_lists_valid_options():
-    overrides = {"plan": {"model": "unknown", "effort": ""}}
-    with patch("subprocess.run", return_value=_subprocess_ok()):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        with pytest.raises(ConfigValidationError) as exc_info:
-            validate_config(overrides)
+    overrides = {"plan": {"model": "unknown", "effort": ""}}
+    with pytest.raises(ConfigValidationError) as exc_info:
+        validate_config(overrides, claude_service=_make_service())
     assert set(exc_info.value.valid_options) == {"haiku", "sonnet", "opus"}
 
 
@@ -196,104 +184,162 @@ def test_invalid_model_error_lists_valid_options():
 
 
 def test_invalid_effort_raises_config_validation_error():
-    overrides = {"plan": {"model": "", "effort": "ultra"}}
-    with patch("subprocess.run", return_value=_subprocess_ok()):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        with pytest.raises(ConfigValidationError) as exc_info:
-            validate_config(overrides)
+    overrides = {"plan": {"model": "", "effort": "ultra"}}
+    with pytest.raises(ConfigValidationError) as exc_info:
+        validate_config(overrides, claude_service=_make_service())
     assert exc_info.value.invalid_value == "ultra"
 
 
 def test_invalid_effort_error_has_suggestion():
-    overrides = {"plan": {"model": "", "effort": "hih"}}
-    with patch("subprocess.run", return_value=_subprocess_ok()):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        with pytest.raises(ConfigValidationError) as exc_info:
-            validate_config(overrides)
+    overrides = {"plan": {"model": "", "effort": "hih"}}
+    with pytest.raises(ConfigValidationError) as exc_info:
+        validate_config(overrides, claude_service=_make_service())
     assert exc_info.value.suggestion == "high"
 
 
 def test_invalid_effort_error_lists_valid_options():
-    overrides = {"plan": {"model": "", "effort": "max"}}
-    with patch("subprocess.run", return_value=_subprocess_ok()):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        with pytest.raises(ConfigValidationError) as exc_info:
-            validate_config(overrides)
+    overrides = {"plan": {"model": "", "effort": "max"}}
+    with pytest.raises(ConfigValidationError) as exc_info:
+        validate_config(overrides, claude_service=_make_service())
     assert set(exc_info.value.valid_options) == {"low", "normal", "high"}
 
 
 def test_valid_effort_values_pass():
-    for effort in ("low", "normal", "high"):
-        from pycastle.validate import _fetch_models, validate_config
+    from pycastle.validate import _fetch_models, validate_config
 
+    for effort in ("low", "normal", "high"):
         _fetch_models.cache_clear()
         overrides = {"plan": {"model": "", "effort": effort}}
-        with patch("subprocess.run", return_value=_subprocess_ok()):
-            validate_config(overrides)
+        validate_config(overrides, claude_service=_make_service())
         assert overrides["plan"]["effort"] == effort
 
 
-# ── validate_config: claude list-models unavailable ──────────────────────────
+# ── validate_config: ClaudeService errors convert to ConfigValidationError ────
 
 
-def test_file_not_found_raises_config_validation_error():
+def test_cli_not_found_raises_config_validation_error():
+    from pycastle.validate import validate_config
+
+    mock_service = MagicMock(spec=ClaudeService)
+    mock_service.list_models.side_effect = ClaudeCliNotFoundError(
+        "claude CLI not found; ensure it is installed and on PATH"
+    )
     overrides = {"plan": {"model": "sonnet", "effort": ""}}
-    with patch("subprocess.run", side_effect=FileNotFoundError):
-        from pycastle.validate import validate_config
-
-        with pytest.raises(ConfigValidationError) as exc_info:
-            validate_config(overrides)
+    with pytest.raises(ConfigValidationError) as exc_info:
+        validate_config(overrides, claude_service=mock_service)
     assert "claude" in str(exc_info.value).lower()
 
 
 def test_nonzero_exit_raises_config_validation_error():
-    overrides = {"plan": {"model": "sonnet", "effort": ""}}
-    with patch("subprocess.run", return_value=_subprocess_fail(returncode=127)):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        with pytest.raises(ConfigValidationError):
-            validate_config(overrides)
+    mock_service = MagicMock(spec=ClaudeService)
+    mock_service.list_models.side_effect = ClaudeCommandError(
+        "claude list-models failed (exit 127): not found"
+    )
+    overrides = {"plan": {"model": "sonnet", "effort": ""}}
+    with pytest.raises(ConfigValidationError):
+        validate_config(overrides, claude_service=mock_service)
 
 
 def test_timeout_raises_config_validation_error():
-    overrides = {"plan": {"model": "sonnet", "effort": ""}}
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("claude", 10)):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        with pytest.raises(ConfigValidationError):
-            validate_config(overrides)
+    mock_service = MagicMock(spec=ClaudeService)
+    mock_service.list_models.side_effect = ClaudeTimeoutError(
+        "claude list-models timed out after 10 s"
+    )
+    overrides = {"plan": {"model": "sonnet", "effort": ""}}
+    with pytest.raises(ConfigValidationError):
+        validate_config(overrides, claude_service=mock_service)
+
+
+def test_claude_service_error_converts_to_config_validation_error():
+    from pycastle.validate import validate_config
+
+    mock_service = MagicMock(spec=ClaudeService)
+    mock_service.list_models.side_effect = ClaudeServiceError(
+        "claude list-models returned no models"
+    )
+    overrides = {"plan": {"model": "sonnet", "effort": ""}}
+    with pytest.raises(ConfigValidationError):
+        validate_config(overrides, claude_service=mock_service)
+
+
+# ── validate_config: ClaudeServiceError message is preserved ─────────────────
+
+
+def test_claude_service_error_message_is_preserved_in_config_validation_error():
+    from pycastle.validate import validate_config
+
+    mock_service = MagicMock(spec=ClaudeService)
+    mock_service.list_models.side_effect = ClaudeServiceError("very specific error text")
+    overrides = {"plan": {"model": "sonnet", "effort": ""}}
+    with pytest.raises(ConfigValidationError) as exc_info:
+        validate_config(overrides, claude_service=mock_service)
+    assert "very specific error text" in str(exc_info.value)
 
 
 # ── validate_config: list-models is only called once (cached) ─────────────────
 
 
 def test_list_models_called_once_across_multiple_validations():
+    from pycastle.validate import validate_config
+
+    mock_service = _make_service()
     overrides1 = {"plan": {"model": "sonnet", "effort": ""}}
     overrides2 = {"implement": {"model": "haiku", "effort": ""}}
-    with patch("subprocess.run", return_value=_subprocess_ok()) as mock_run:
-        from pycastle.validate import validate_config
+    validate_config(overrides1, claude_service=mock_service)
+    validate_config(overrides2, claude_service=mock_service)
+    mock_service.list_models.assert_called_once()
 
-        validate_config(overrides1)
-        validate_config(overrides2)
-    mock_run.assert_called_once()
+
+def test_different_service_instances_cache_independently():
+    from pycastle.validate import validate_config
+
+    service1 = _make_service(["claude-sonnet-4-6"])
+    service2 = _make_service(["claude-haiku-4-5-20251001"])
+    validate_config({"plan": {"model": "sonnet", "effort": ""}}, claude_service=service1)
+    validate_config({"plan": {"model": "haiku", "effort": ""}}, claude_service=service2)
+    service1.list_models.assert_called_once()
+    service2.list_models.assert_called_once()
+
+
+def test_service_error_is_not_cached_subsequent_call_succeeds():
+    from pycastle.validate import validate_config
+
+    mock_service = MagicMock(spec=ClaudeService)
+    mock_service.list_models.side_effect = ClaudeServiceError("transient failure")
+    overrides = {"plan": {"model": "sonnet", "effort": ""}}
+    with pytest.raises(ConfigValidationError):
+        validate_config(overrides, claude_service=mock_service)
+
+    mock_service.list_models.side_effect = None
+    mock_service.list_models.return_value = tuple(_FAKE_MODELS)
+    overrides = {"plan": {"model": "sonnet", "effort": ""}}
+    validate_config(overrides, claude_service=mock_service)
+    assert overrides["plan"]["model"] == "claude-sonnet-4-6"
+    assert mock_service.list_models.call_count == 2
 
 
 # ── validate_config: atomicity — no partial mutations on failure ──────────────
 
 
 def test_failed_validation_does_not_mutate_earlier_resolved_stages():
+    from pycastle.validate import validate_config
+
     overrides = {
-        "plan": {"model": "sonnet", "effort": ""},      # valid — resolved first
+        "plan": {"model": "sonnet", "effort": ""},  # valid — resolved first
         "implement": {"model": "badmodel", "effort": ""},  # invalid — raises second
     }
-    with patch("subprocess.run", return_value=_subprocess_ok()):
-        from pycastle.validate import validate_config
-
-        with pytest.raises(ConfigValidationError):
-            validate_config(overrides)
+    with pytest.raises(ConfigValidationError):
+        validate_config(overrides, claude_service=_make_service())
     assert overrides["plan"]["model"] == "sonnet"
 
 
@@ -301,28 +347,27 @@ def test_failed_validation_does_not_mutate_earlier_resolved_stages():
 
 
 def test_stages_with_only_empty_models_do_not_call_claude():
+    from pycastle.validate import validate_config
+
+    mock_service = _make_service()
     overrides = {
         "plan": {"model": "", "effort": "low"},
         "implement": {"model": "", "effort": ""},
     }
-    with patch("subprocess.run") as mock_run:
-        from pycastle.validate import validate_config
-
-        validate_config(overrides)
-    mock_run.assert_not_called()
+    validate_config(overrides, claude_service=mock_service)
+    mock_service.list_models.assert_not_called()
 
 
 # ── validate_config: no parseable claude models in output ────────────────────
 
 
 def test_no_parseable_claude_models_raises_with_empty_valid_options():
-    overrides = {"plan": {"model": "sonnet", "effort": ""}}
-    non_claude_models = ["gpt-4", "gpt-3.5-turbo"]
-    with patch("subprocess.run", return_value=_subprocess_ok(non_claude_models)):
-        from pycastle.validate import validate_config
+    from pycastle.validate import validate_config
 
-        with pytest.raises(ConfigValidationError) as exc_info:
-            validate_config(overrides)
+    non_claude_models = ["gpt-4", "gpt-3.5-turbo"]
+    overrides = {"plan": {"model": "sonnet", "effort": ""}}
+    with pytest.raises(ConfigValidationError) as exc_info:
+        validate_config(overrides, claude_service=_make_service(non_claude_models))
     assert exc_info.value.invalid_value == "sonnet"
     assert exc_info.value.valid_options == []
 
