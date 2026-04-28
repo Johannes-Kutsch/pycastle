@@ -1694,8 +1694,13 @@ def test_format_stream_line_returns_none_for_empty_result_string():
     assert _format_stream_line(line) is None
 
 
+def test_format_stream_line_returns_none_for_missing_result_key():
+    line = '{"type":"result","session_id":"abc"}'
+    assert _format_stream_line(line) is None
+
+
 def test_format_stream_line_returns_none_for_null_result():
-    line = '{"type":"result","result":null}'
+    line = '{"type":"result","result":null,"session_id":"abc"}'
     assert _format_stream_line(line) is None
 
 

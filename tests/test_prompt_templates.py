@@ -91,14 +91,17 @@ def test_reviewer_template_renders_without_error():
     assert_template_renders(prompt_file, args)
 
 
-# ── Cycle 6: Bug-report template renders without error ───────────────────────
+# ── Cycle 6: Preflight-issue template renders without error ──────────────────
 
 
-def test_bug_report_template_renders_without_error():
-    prompt_file = REPO_ROOT / PROMPTS_DIR / "bug-report.md"
+def test_preflight_issue_template_renders_without_error():
+    prompt_file = REPO_ROOT / PROMPTS_DIR / "preflight-issue.md"
     args = {
         "CHECK_NAME": "pytest",
         "COMMAND": "pytest",
         "OUTPUT": "1 failed",
     }
-    assert_template_renders(prompt_file, args)
+    rendered = assert_template_renders(prompt_file, args)
+    assert "{{CHECK_NAME}}" not in rendered
+    assert "{{COMMAND}}" not in rendered
+    assert "{{OUTPUT}}" not in rendered
