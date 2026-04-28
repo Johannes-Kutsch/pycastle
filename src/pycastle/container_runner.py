@@ -8,6 +8,7 @@ import shlex
 import sys
 import tarfile
 import threading
+from collections.abc import Callable
 from contextlib import AsyncExitStack
 from pathlib import Path
 
@@ -363,8 +364,8 @@ async def run_agent(
     effort: str = "",
     git_service: GitService | None = None,
     stage: str = "",
-    create_worktree_fn=create_worktree,
-    remove_worktree_fn=remove_worktree,
+    create_worktree_fn: Callable[[Path, Path, str], None] = create_worktree,
+    remove_worktree_fn: Callable[[Path, Path], None] = remove_worktree,
 ) -> str:
     print(f"\n[{name}] Started")
 

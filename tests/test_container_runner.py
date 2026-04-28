@@ -1,4 +1,5 @@
 import asyncio
+import shutil
 import threading
 from unittest.mock import MagicMock, patch
 
@@ -62,6 +63,14 @@ def _fake_runner(exit_code=0, stdout=b"", stderr=b""):
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def _noop_create(repo, wt, branch):
+    pass
+
+
+def _noop_remove(repo, wt):
+    pass
 
 
 # ── Cycle 1: exec_simple raises on non-zero exit ──────────────────────────────
@@ -301,8 +310,6 @@ class _StreamingErrorRunner:
 
 def test_host_worktree_removed_even_when_container_raises(tmp_path):
     """remove_worktree_fn must be called on the host in finally, even if the container throws."""
-    import shutil
-
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
@@ -644,9 +651,6 @@ def test_second_run_agent_on_same_branch_raises_branch_collision_error(tmp_path)
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
-    _noop_create = lambda repo, wt, branch: None  # noqa: E731
-    _noop_remove = lambda repo, wt: None  # noqa: E731
-
     async def _two_on_same_branch():
         with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
             return await asyncio.gather(
@@ -681,9 +685,6 @@ def test_second_run_agent_on_same_branch_raises_branch_collision_error(tmp_path)
 def test_run_agent_different_branches_both_succeed(tmp_path):
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
-
-    _noop_create = lambda repo, wt, branch: None  # noqa: E731
-    _noop_remove = lambda repo, wt: None  # noqa: E731
 
     async def _two_different_branches():
         with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
@@ -780,8 +781,6 @@ class _ContainerExitErrorRunner:
 
 
 def test_worktree_cleanup_runs_even_when_container_cleanup_raises(tmp_path):
-    import shutil
-
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
@@ -851,7 +850,7 @@ def test_container_cleanup_runs_even_when_worktree_cleanup_raises(tmp_path):
                 tmp_path,
                 {},
                 branch="feature/test",
-                create_worktree_fn=lambda repo, wt, branch: None,
+                create_worktree_fn=_noop_create,
                 remove_worktree_fn=failing_remove,
             )
         )
@@ -900,8 +899,8 @@ def test_gitdir_temp_file_deleted_after_run_agent_succeeds(tmp_path):
                 tmp_path,
                 {},
                 branch="feature/test",
-                create_worktree_fn=lambda repo, wt, branch: None,
-                remove_worktree_fn=lambda repo, wt: None,
+                create_worktree_fn=_noop_create,
+                remove_worktree_fn=_noop_remove,
             )
         )
 
@@ -930,8 +929,8 @@ def test_gitdir_temp_file_deleted_even_when_container_raises(tmp_path):
                 tmp_path,
                 {},
                 branch="feature/test",
-                create_worktree_fn=lambda repo, wt, branch: None,
-                remove_worktree_fn=lambda repo, wt: None,
+                create_worktree_fn=_noop_create,
+                remove_worktree_fn=_noop_remove,
             )
         )
 
