@@ -25,6 +25,8 @@ def _list_models() -> tuple[str, ...]:
         raise ClaudeCliNotFoundError(
             "claude CLI not found; ensure it is installed and on PATH"
         ) from exc
+    except OSError as exc:
+        raise ClaudeServiceError(f"claude list-models OS error: {exc}") from exc
     except subprocess.TimeoutExpired as exc:
         raise ClaudeTimeoutError("claude list-models timed out after 10 s") from exc
 

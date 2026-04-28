@@ -244,3 +244,22 @@ def test_timeout_expired_does_not_propagate_as_original_exception():
             pytest.fail("TimeoutExpired leaked to caller")
         except ClaudeServiceError:
             pass
+
+
+def test_permission_error_does_not_propagate_as_original_exception():
+    from pycastle.claude_service import ClaudeService
+
+    with patch("subprocess.run", side_effect=PermissionError("permission denied")):
+        service = ClaudeService()
+        with pytest.raises(ClaudeServiceError):
+            service.list_models()
+
+
+def test_os_error_message_is_preserved():
+    from pycastle.claude_service import ClaudeService
+
+    with patch("subprocess.run", side_effect=OSError("some OS error")):
+        service = ClaudeService()
+        with pytest.raises(ClaudeServiceError) as exc_info:
+            service.list_models()
+    assert "some OS error" in str(exc_info.value)
