@@ -17,6 +17,7 @@ from .defaults.config import (  # noqa: F401
     PROMPTS_DIR,
     PYCASTLE_DIR,
     STAGE_OVERRIDES,
+    USAGE_LIMIT_PATTERNS,
     WORKTREE_TIMEOUT,
     WORKTREES_DIR,
 )
