@@ -324,6 +324,73 @@ def test_close_issue_with_parents_skips_parent_when_siblings_still_open():
     assert closed == [["gh", "issue", "close", "10"]]
 
 
+# ── has_open_issues_with_label() ──────────────────────────────────────────────
+
+
+def test_has_open_issues_with_label_returns_true_when_count_greater_than_zero():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"3\n", stderr=b""),
+    ):
+        assert svc.has_open_issues_with_label("ready-for-agent") is True
+
+
+def test_has_open_issues_with_label_returns_false_when_count_is_zero():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"0\n", stderr=b""),
+    ):
+        assert svc.has_open_issues_with_label("ready-for-agent") is False
+
+
+def test_has_open_issues_with_label_passes_correct_command_args():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"0\n", stderr=b""),
+    ) as m:
+        svc.has_open_issues_with_label("my-label")
+    cmd = m.call_args[0][0]
+    assert "--repo" in cmd
+    assert "owner/repo" in cmd
+    assert "--label" in cmd
+    assert "my-label" in cmd
+    assert "--state" in cmd
+    assert "open" in cmd
+
+
+def test_has_open_issues_with_label_raises_github_command_error_on_nonzero_exit():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
+    ):
+        with pytest.raises(GithubCommandError):
+            svc.has_open_issues_with_label("ready-for-agent")
+
+
+def test_has_open_issues_with_label_raises_github_command_error_on_non_numeric_output():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"not-a-number\n", stderr=b""),
+    ):
+        with pytest.raises(GithubCommandError):
+            svc.has_open_issues_with_label("ready-for-agent")
+
+
+def test_has_open_issues_with_label_raises_github_timeout_error_on_timeout():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
+    ):
+        with pytest.raises(GithubTimeoutError):
+            svc.has_open_issues_with_label("ready-for-agent")
+
+
 def test_close_issue_with_parents_closes_chain_recursively():
     svc = GithubService("owner/repo")
     with patch(

@@ -98,6 +98,39 @@ class GithubService:
             int(str(item["number"])) for item in data if item.get("state") == "open"
         ]
 
+    def has_open_issues_with_label(self, label: str) -> bool:
+        result = self._run(
+            [
+                "gh",
+                "issue",
+                "list",
+                "--repo",
+                self.repo,
+                "--state",
+                "open",
+                "--label",
+                label,
+                "--json",
+                "number",
+                "--jq",
+                "length",
+            ],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise GithubCommandError(
+                f"gh issue list --label {label} failed",
+                returncode=result.returncode,
+                stderr=result.stderr.decode("utf-8", errors="replace").strip(),
+            )
+        output = result.stdout.decode("utf-8", errors="replace").strip()
+        try:
+            return int(output) > 0
+        except ValueError:
+            raise GithubCommandError(
+                f"gh issue list --label {label} returned unexpected output: {output!r}",
+            ) from None
+
     def close_issue_with_parents(self, number: int) -> None:
         self.close_issue(number)
         parent = self.get_parent(number)
