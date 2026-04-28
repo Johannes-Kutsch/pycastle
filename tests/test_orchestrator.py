@@ -54,6 +54,60 @@ def test_parse_plan_raises_descriptively_when_issues_key_missing():
         parse_plan(output)
 
 
+# ── Issue 188: deterministic branch names ────────────────────────────────────
+
+
+def test_run_computes_branch_from_issue_number_not_planner_slug(tmp_path):
+    """After parse_plan, each issue branch must be sandcastle/issue-N, ignoring planner slug."""
+    captured_branches: list[str] = []
+
+    async def _fake_run_agent(name, prompt_args=None, **kwargs):
+        if name == "Planner":
+            return '<plan>{"issues": [{"number": 42, "title": "Fix thing", "branch": "sandcastle/issue-42-some-random-slug"}]}</plan>'
+        if "Implementer" in name:
+            captured_branches.append((prompt_args or {}).get("BRANCH", ""))
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        github_service=_make_github_svc(),
+    )
+
+    assert captured_branches == ["sandcastle/issue-42"], (
+        f"Expected branch sandcastle/issue-42; got {captured_branches}"
+    )
+
+
+def test_preflight_issue_branch_uses_sandcastle_format(tmp_path):
+    """A preflight fix issue must use branch sandcastle/issue-N, not issue/N."""
+    captured_branches: list[str] = []
+
+    async def _fake_run_agent(name, prompt_args=None, branch=None, **kwargs):
+        if name == "Planner":
+            raise PreflightError([("ruff", "ruff check .", "E501")])
+        if "preflight-issue" in name:
+            return "<issue>77</issue>"
+        if "Implementer" in name:
+            captured_branches.append((prompt_args or {}).get("BRANCH", ""))
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        github_service=_make_github_svc_afk(),
+        max_iterations=1,
+    )
+
+    assert captured_branches == ["sandcastle/issue-77"], (
+        f"Expected sandcastle/issue-77; got {captured_branches}"
+    )
+
+
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -867,8 +921,8 @@ def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
         f"Expected exactly one Merger call; got {merger_calls}"
     )
     branches_arg = merger_calls[0]["prompt_args"]["BRANCHES"]
-    assert "issue/2" in branches_arg
-    assert "issue/1" not in branches_arg
+    assert "sandcastle/issue-2" in branches_arg
+    assert "sandcastle/issue-1" not in branches_arg
 
 
 def test_conflict_branch_skips_post_merge_checks(tmp_path):
@@ -1165,7 +1219,7 @@ def test_clean_merged_branches_are_deleted_after_try_merge(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    mock_git.delete_branch.assert_called_with("issue/1", tmp_path)
+    mock_git.delete_branch.assert_called_with("sandcastle/issue-1", tmp_path)
 
 
 def test_conflict_branches_are_deleted_after_merger_agent(tmp_path):
@@ -1184,7 +1238,7 @@ def test_conflict_branches_are_deleted_after_merger_agent(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    mock_git.delete_branch.assert_called_with("issue/2", tmp_path)
+    mock_git.delete_branch.assert_called_with("sandcastle/issue-2", tmp_path)
 
 
 def test_non_ancestor_branch_not_deleted(tmp_path):
