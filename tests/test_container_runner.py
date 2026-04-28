@@ -119,7 +119,9 @@ def test_run_agent_proceeds_when_pip_install_fails(tmp_path):
     prompt.write_text("Plain prompt.")
 
     with patch("pycastle.container_runner.ContainerRunner", _PipFailRunner):
-        result = _run(run_agent("Test", prompt, tmp_path, {}))
+        result = _run(
+            run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
+        )
 
     assert result == ""
 
@@ -129,7 +131,7 @@ def test_run_agent_warns_stderr_when_pip_install_fails(tmp_path, capsys):
     prompt.write_text("Plain prompt.")
 
     with patch("pycastle.container_runner.ContainerRunner", _PipFailRunner):
-        _run(run_agent("Test", prompt, tmp_path, {}))
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     assert "warning" in capsys.readouterr().err.lower()
 
@@ -169,8 +171,8 @@ def test_two_agents_run_concurrently(tmp_path):
 
     async def _both():
         return await asyncio.gather(
-            run_agent("A1", prompt, tmp_path, {}),
-            run_agent("A2", prompt, tmp_path, {}),
+            run_agent("A1", prompt, tmp_path, {}, git_service=_make_git_service()),
+            run_agent("A2", prompt, tmp_path, {}, git_service=_make_git_service()),
         )
 
     try:
@@ -336,6 +338,7 @@ def test_host_worktree_removed_even_when_container_raises(tmp_path):
                 branch="feature/test",
                 create_worktree_fn=fake_create,
                 remove_worktree_fn=fake_remove,
+                git_service=_make_git_service(),
             )
         )
 
@@ -415,7 +418,7 @@ def test_run_agent_logs_setup_phase(tmp_path, capsys):
     prompt.write_text("Plain prompt.")
 
     with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
-        _run(run_agent("Test", prompt, tmp_path, {}))
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     assert "[Test] Phase: Setup" in capsys.readouterr().out
 
@@ -425,7 +428,7 @@ def test_run_agent_logs_prepare_phase(tmp_path, capsys):
     prompt.write_text("Plain prompt.")
 
     with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
-        _run(run_agent("Test", prompt, tmp_path, {}))
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     assert "[Test] Phase: Prepare" in capsys.readouterr().out
 
@@ -435,7 +438,7 @@ def test_run_agent_logs_work_phase(tmp_path, capsys):
     prompt.write_text("Plain prompt.")
 
     with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
-        _run(run_agent("Test", prompt, tmp_path, {}))
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     assert "[Test] Phase: Work" in capsys.readouterr().out
 
@@ -473,6 +476,46 @@ def _make_git_service(name="Alice", email="alice@example.com") -> MagicMock:
     mock.get_user_name.return_value = name
     mock.get_user_email.return_value = email
     return mock
+
+
+def test_setup_configures_git_identity_with_readonly_repo_mount():
+    """_setup must use --global when configuring git identity.
+
+    When a branch is used, /home/agent/repo is mounted read-only. A local
+    git config write would fail with exit 255; --global writes to ~/.gitconfig
+    instead, which is always writable inside the container.
+    """
+    import asyncio as _asyncio
+
+    from pycastle.container_runner import _setup
+
+    exec_log: list[str] = []
+
+    class _LoggingRunner:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            exec_log.append(cmd)
+            return ""
+
+    mock_git = MagicMock(spec=GitService)
+    mock_git.get_user_name.return_value = "Test User"
+    mock_git.get_user_email.return_value = "test@example.com"
+
+    loop = _asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(
+            _setup("test", _LoggingRunner(), loop, 30.0, git_service=mock_git)
+        )
+    finally:
+        loop.close()
+
+    assert any("git config --global user.name" in cmd for cmd in exec_log)
+    assert any("git config --global user.email" in cmd for cmd in exec_log)
 
 
 def test_setup_injects_host_git_name(tmp_path):
@@ -699,6 +742,7 @@ def test_run_agent_different_branches_both_succeed(tmp_path):
                     branch="feature/branch-one",
                     create_worktree_fn=_noop_create,
                     remove_worktree_fn=_noop_remove,
+                    git_service=_make_git_service(),
                 ),
                 run_agent(
                     "B2",
@@ -708,6 +752,7 @@ def test_run_agent_different_branches_both_succeed(tmp_path):
                     branch="feature/branch-two",
                     create_worktree_fn=_noop_create,
                     remove_worktree_fn=_noop_remove,
+                    git_service=_make_git_service(),
                 ),
                 return_exceptions=True,
             )
@@ -903,6 +948,7 @@ def test_gitdir_temp_file_deleted_after_run_agent_succeeds(tmp_path):
                 branch="feature/test",
                 create_worktree_fn=_noop_create,
                 remove_worktree_fn=_noop_remove,
+                git_service=_make_git_service(),
             )
         )
 
@@ -997,7 +1043,16 @@ def test_run_agent_passes_model_to_container_runner(tmp_path):
             return ""
 
     with patch("pycastle.container_runner.ContainerRunner", _CapturingRunner):
-        _run(run_agent("Test", prompt, tmp_path, {}, model="claude-sonnet-4-6"))
+        _run(
+            run_agent(
+                "Test",
+                prompt,
+                tmp_path,
+                {},
+                model="claude-sonnet-4-6",
+                git_service=_make_git_service(),
+            )
+        )
 
     assert captured["model"] == "claude-sonnet-4-6"
 
@@ -1029,7 +1084,16 @@ def test_run_agent_passes_effort_to_container_runner(tmp_path):
             return ""
 
     with patch("pycastle.container_runner.ContainerRunner", _CapturingRunner):
-        _run(run_agent("Test", prompt, tmp_path, {}, effort="high"))
+        _run(
+            run_agent(
+                "Test",
+                prompt,
+                tmp_path,
+                {},
+                effort="high",
+                git_service=_make_git_service(),
+            )
+        )
 
     assert captured["effort"] == "high"
 
@@ -1061,7 +1125,7 @@ def test_run_agent_defaults_model_and_effort_to_empty_string(tmp_path):
             return ""
 
     with patch("pycastle.container_runner.ContainerRunner", _CapturingRunner):
-        _run(run_agent("Test", prompt, tmp_path, {}))
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     assert captured["model"] == ""
     assert captured["effort"] == ""
@@ -1315,7 +1379,7 @@ def test_run_agent_does_not_write_claude_settings_json(tmp_path):
             return "done"
 
     with patch("pycastle.container_runner.ContainerRunner", _TrackingRunner):
-        _run(run_agent("test", prompt, tmp_path, {}))
+        _run(run_agent("test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     assert not any(".claude/settings.json" in p for p in written_paths), (
         f"settings.json must not be pre-created; written paths: {written_paths}"
@@ -1470,7 +1534,7 @@ def test_run_agent_raises_preflight_error_when_check_fails(tmp_path):
         patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner),
         pytest.raises(PreflightError) as exc_info,
     ):
-        _run(run_agent("Test", prompt, tmp_path, {}))
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     assert len(exc_info.value.failures) >= 1
 
@@ -1485,7 +1549,7 @@ def test_run_agent_preflight_error_carries_correct_tuple(tmp_path):
         patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner),
         pytest.raises(PreflightError) as exc_info,
     ):
-        _run(run_agent("Test", prompt, tmp_path, {}))
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     name, cmd, output = exc_info.value.failures[0]
     assert name == "ruff"
@@ -1499,7 +1563,16 @@ def test_run_agent_skip_preflight_bypasses_phase(tmp_path):
     prompt.write_text("test")
 
     with patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner):
-        result = _run(run_agent("Test", prompt, tmp_path, {}, skip_preflight=True))
+        result = _run(
+            run_agent(
+                "Test",
+                prompt,
+                tmp_path,
+                {},
+                skip_preflight=True,
+                git_service=_make_git_service(),
+            )
+        )
 
     assert result == ""
 
@@ -1509,7 +1582,7 @@ def test_run_agent_logs_preflight_phase(tmp_path, capsys):
     prompt.write_text("test")
 
     with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
-        _run(run_agent("Test", prompt, tmp_path, {}))
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     assert "[Test] Phase: Pre-flight" in capsys.readouterr().out
 
@@ -1519,7 +1592,7 @@ def test_prepare_runs_before_preflight(tmp_path, capsys):
     prompt.write_text("test")
 
     with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
-        _run(run_agent("Test", prompt, tmp_path, {}))
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     out = capsys.readouterr().out
     assert out.index("[Test] Phase: Prepare") < out.index("[Test] Phase: Pre-flight")
@@ -1540,7 +1613,7 @@ def test_no_agent_spawned_when_single_preflight_check_fails(tmp_path):
         patch("pycastle.container_runner.run_agent") as mock_spawn,
         pytest.raises(PreflightError),
     ):
-        _run(run_agent("Test", prompt, tmp_path, {}))
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     mock_spawn.assert_not_called()
 
@@ -1576,7 +1649,7 @@ def test_no_agent_spawned_when_multiple_preflight_checks_fail(tmp_path):
         patch("pycastle.container_runner.run_agent") as mock_spawn,
         pytest.raises(PreflightError),
     ):
-        _run(run_agent("Test", prompt, tmp_path, {}))
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     mock_spawn.assert_not_called()
 
@@ -1718,6 +1791,15 @@ def test_run_agent_accepts_stage_parameter(tmp_path):
     prompt.write_text("test")
 
     with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
-        result = _run(run_agent("Test", prompt, tmp_path, {}, stage="pre-planning"))
+        result = _run(
+            run_agent(
+                "Test",
+                prompt,
+                tmp_path,
+                {},
+                stage="pre-planning",
+                git_service=_make_git_service(),
+            )
+        )
 
     assert result == ""
