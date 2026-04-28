@@ -59,7 +59,13 @@ def parse_plan(output: str) -> list[dict]:
     match = re.search(r"<plan>([\s\S]*?)</plan>", text)
     if not match:
         raise RuntimeError("Planner produced no <plan> tag.\n\n" + text)
-    return json.loads(match.group(1))["issues"]
+    data = json.loads(match.group(1))
+    if isinstance(data, list):
+        return data
+    for key in ("issues", "unblocked_issues"):
+        if key in data:
+            return data[key]
+    raise RuntimeError(f"Plan JSON has no 'issues' or 'unblocked_issues' key. Keys found: {list(data.keys())}")
 
 
 def _stage_for_agent(name: str) -> str:
