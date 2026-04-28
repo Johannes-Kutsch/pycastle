@@ -39,6 +39,9 @@ def _known_shorthands(models: tuple[str, ...]) -> list[str]:
 
 
 def _resolve_shorthand(shorthand: str, models: tuple[str, ...]) -> str:
+    if shorthand in models:
+        return shorthand
+
     candidates = [
         (m, _parse_version(match.group(2)))
         for m in models

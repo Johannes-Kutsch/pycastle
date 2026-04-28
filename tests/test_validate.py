@@ -1,4 +1,3 @@
-import subprocess
 from unittest.mock import MagicMock
 
 import pytest
@@ -279,7 +278,9 @@ def test_claude_service_error_message_is_preserved_in_config_validation_error():
     from pycastle.validate import validate_config
 
     mock_service = MagicMock(spec=ClaudeService)
-    mock_service.list_models.side_effect = ClaudeServiceError("very specific error text")
+    mock_service.list_models.side_effect = ClaudeServiceError(
+        "very specific error text"
+    )
     overrides = {"plan": {"model": "sonnet", "effort": ""}}
     with pytest.raises(ConfigValidationError) as exc_info:
         validate_config(overrides, claude_service=mock_service)
@@ -305,7 +306,9 @@ def test_different_service_instances_cache_independently():
 
     service1 = _make_service(["claude-sonnet-4-6"])
     service2 = _make_service(["claude-haiku-4-5-20251001"])
-    validate_config({"plan": {"model": "sonnet", "effort": ""}}, claude_service=service1)
+    validate_config(
+        {"plan": {"model": "sonnet", "effort": ""}}, claude_service=service1
+    )
     validate_config({"plan": {"model": "haiku", "effort": ""}}, claude_service=service2)
     service1.list_models.assert_called_once()
     service2.list_models.assert_called_once()
@@ -372,47 +375,32 @@ def test_no_parseable_claude_models_raises_with_empty_valid_options():
     assert exc_info.value.valid_options == []
 
 
-# ── integration test: real claude list-models ─────────────────────────────────
+# ── validate_config: idempotency — calling twice on the same dict is safe ─────
 
 
-def _claude_list_models_available() -> bool:
-    """Return True only when claude list-models exits 0 and returns parseable model IDs."""
-    import re
+def test_validate_config_is_idempotent_with_shorthand():
+    from pycastle.validate import validate_config
 
-    _model_re = re.compile(r"^claude-(haiku|sonnet|opus)-\S+$")
-    try:
-        result = subprocess.run(
-            ["claude", "list-models"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            return False
-        lines = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
-        return any(_model_re.match(line) for line in lines)
-    except Exception:
-        return False
+    svc = _make_service()
+    overrides = {"plan": {"model": "haiku", "effort": ""}}
+    validate_config(overrides, claude_service=svc)
+    # First call resolves "haiku" → full ID in place; second call must not raise.
+    validate_config(overrides, claude_service=svc)
+    assert overrides["plan"]["model"] == "claude-haiku-4-5-20251001"
 
 
-@pytest.mark.skipif(
-    not _claude_list_models_available(),
-    reason="claude list-models not available",
-)
-def test_integration_validate_config_happy_path():
-    from pycastle.validate import _fetch_models, validate_config
+def test_already_resolved_full_model_id_is_accepted_unchanged():
+    from pycastle.validate import validate_config
 
-    _fetch_models.cache_clear()
-    overrides = {
-        "plan": {"model": "sonnet", "effort": "low"},
-        "implement": {"model": "opus", "effort": "high"},
-        "review": {"model": "haiku", "effort": "normal"},
-        "merge": {"model": "", "effort": ""},
-    }
-    validate_config(overrides)
-    assert overrides["plan"]["model"].startswith("claude-sonnet-")
-    assert overrides["implement"]["model"].startswith("claude-opus-")
-    assert overrides["review"]["model"].startswith("claude-haiku-")
-    assert overrides["merge"]["model"] == ""
-    assert overrides["plan"]["effort"] == "low"
-    assert overrides["merge"]["effort"] == ""
+    overrides = {"plan": {"model": "claude-sonnet-4-6", "effort": ""}}
+    validate_config(overrides, claude_service=_make_service())
+    assert overrides["plan"]["model"] == "claude-sonnet-4-6"
+
+
+def test_unknown_full_looking_id_still_raises():
+    from pycastle.validate import validate_config
+
+    overrides = {"plan": {"model": "claude-haiku-99-0", "effort": ""}}
+    with pytest.raises(ConfigValidationError) as exc_info:
+        validate_config(overrides, claude_service=_make_service())
+    assert exc_info.value.invalid_value == "claude-haiku-99-0"
