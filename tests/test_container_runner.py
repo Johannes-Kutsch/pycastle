@@ -10,6 +10,7 @@ from pycastle.container_runner import (
     ContainerRunner,
     _build_claude_command,
     _format_stream_line,
+    reset_usage_limit_flag,
     run_agent,
 )
 from pycastle.errors import AgentTimeoutError, UsageLimitError
@@ -487,7 +488,9 @@ def test_setup_configures_git_identity_with_readonly_repo_mount():
 
     loop = asyncio.new_event_loop()
     try:
-        loop.run_until_complete(_setup("test", _Runner(), loop, 30.0, git_service=mock_git))
+        loop.run_until_complete(
+            _setup("test", _Runner(), loop, 30.0, git_service=mock_git)
+        )
     finally:
         loop.close()
 
@@ -1843,3 +1846,262 @@ def test_run_streaming_error_carries_original_casing(tmp_path):
     with pytest.raises(UsageLimitError) as exc_info:
         runner.run_streaming()
     assert str(exc_info.value) == "YOU'VE HIT YOUR SESSION LIMIT"
+
+
+# ── Issue 182: halt flag + conditional worktree preservation ──────────────────
+
+
+class _UsageLimitRunner:
+    """Fake runner whose run_streaming raises UsageLimitError."""
+
+    def __init__(self, *args, **kwargs):
+        self.branch = None
+        self.env = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def exec_simple(self, cmd, timeout=None):
+        return ""
+
+    def run_streaming(self):
+        raise UsageLimitError("You've hit your session limit")
+
+
+@pytest.fixture(autouse=True)
+def _reset_halt_flag():
+    reset_usage_limit_flag()
+    yield
+    reset_usage_limit_flag()
+
+
+def test_run_agent_sets_halt_flag_on_usage_limit_error(tmp_path):
+    """run_agent must set the module-level halt flag when UsageLimitError is raised."""
+    from pycastle.container_runner import _usage_limit_halt
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _UsageLimitRunner),
+        pytest.raises(UsageLimitError),
+    ):
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                create_worktree_fn=_noop_create,
+                remove_worktree_fn=_noop_remove,
+                git_service=_make_git_service(),
+            )
+        )
+
+    assert _usage_limit_halt.is_set()
+
+
+def test_run_agent_returns_immediately_when_halt_flag_set(tmp_path):
+    """run_agent must return immediately (no container, no worktree) when the halt flag is set."""
+    from pycastle.container_runner import _usage_limit_halt
+
+    _usage_limit_halt.set()
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    create_called = []
+    container_started = []
+
+    def fake_create(repo, wt, branch, sha=None):
+        create_called.append(True)
+
+    class _TrackingRunner:
+        def __init__(self, *args, **kwargs):
+            container_started.append(True)
+            self.branch = None
+            self.env = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            return ""
+
+        def run_streaming(self):
+            return ""
+
+    with patch("pycastle.container_runner.ContainerRunner", _TrackingRunner):
+        result = _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/halted",
+                create_worktree_fn=fake_create,
+                remove_worktree_fn=_noop_remove,
+                git_service=_make_git_service(),
+            )
+        )
+
+    assert result == ""
+    assert not create_called, "create_worktree must not be called when halt flag is set"
+    assert not container_started, (
+        "ContainerRunner must not be started when halt flag is set"
+    )
+
+
+def test_worktree_not_removed_when_usage_limit_error_raised(tmp_path):
+    """remove_worktree_fn must NOT be called when UsageLimitError is raised (worktree preserved)."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    remove_called = []
+
+    def fake_remove(repo, wt):
+        remove_called.append(True)
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _UsageLimitRunner),
+        pytest.raises(UsageLimitError),
+    ):
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/preserve",
+                create_worktree_fn=_noop_create,
+                remove_worktree_fn=fake_remove,
+                git_service=_make_git_service(),
+            )
+        )
+
+    assert not remove_called, (
+        "remove_worktree must NOT be called when UsageLimitError occurs"
+    )
+
+
+def test_worktree_removed_for_non_usage_limit_exception(tmp_path):
+    """remove_worktree_fn must still be called for non-UsageLimitError exceptions."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    remove_called = []
+
+    def fake_remove(repo, wt):
+        remove_called.append(True)
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _StreamingErrorRunner),
+        pytest.raises(RuntimeError, match="container crashed"),
+    ):
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/other-error",
+                create_worktree_fn=_noop_create,
+                remove_worktree_fn=fake_remove,
+                git_service=_make_git_service(),
+            )
+        )
+
+    assert remove_called, (
+        "remove_worktree must be called for non-UsageLimitError exceptions"
+    )
+
+
+def test_container_cleaned_up_when_usage_limit_error_raised(tmp_path):
+    """Container stop/remove must be called even when UsageLimitError occurs."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    container_exit_calls = []
+
+    class _UsageLimitWithTracking:
+        def __init__(self, *args, **kwargs):
+            self.branch = None
+            self.env = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            container_exit_calls.append(True)
+
+        def exec_simple(self, cmd, timeout=None):
+            return ""
+
+        def run_streaming(self):
+            raise UsageLimitError("You've hit your session limit")
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _UsageLimitWithTracking),
+        pytest.raises(UsageLimitError),
+    ):
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/container-cleanup",
+                create_worktree_fn=_noop_create,
+                remove_worktree_fn=_noop_remove,
+                git_service=_make_git_service(),
+            )
+        )
+
+    assert len(container_exit_calls) == 1, (
+        "container __exit__ must be called on UsageLimitError"
+    )
+
+
+def test_reset_usage_limit_flag_allows_run_agent_to_proceed(tmp_path):
+    """After reset_usage_limit_flag(), run_agent must proceed normally (not return early)."""
+    from pycastle.container_runner import _usage_limit_halt
+
+    _usage_limit_halt.set()
+    reset_usage_limit_flag()
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    ran = []
+
+    class _TrackingRunner:
+        def __init__(self, *args, **kwargs):
+            self.branch = None
+            self.env = {}
+
+        def __enter__(self):
+            ran.append(True)
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            return ""
+
+        def run_streaming(self):
+            return "done"
+
+    with patch("pycastle.container_runner.ContainerRunner", _TrackingRunner):
+        result = _run(
+            run_agent("test", prompt, tmp_path, {}, git_service=_make_git_service())
+        )
+
+    assert ran, "ContainerRunner must be started after reset_usage_limit_flag()"
+    assert result == "done"
