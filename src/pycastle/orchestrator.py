@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import re
 import shutil
@@ -7,6 +8,7 @@ import sys
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from .config import ISSUE_LABEL, LOGS_DIR, MAX_ITERATIONS, MAX_PARALLEL, PROMPTS_DIR
 from .container_runner import run_agent
@@ -91,11 +93,9 @@ async def run_issue(
         "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
     }
 
-    async def _bounded_run_agent(**kwargs: object) -> str:
-        if semaphore is not None:
-            async with semaphore:
-                return await run_agent(**kwargs)  # type: ignore[arg-type]
-        return await run_agent(**kwargs)  # type: ignore[arg-type]
+    async def _bounded_run_agent(**kwargs: Any) -> str:
+        async with (semaphore or contextlib.nullcontext()):
+            return await run_agent(**kwargs)
 
     result = await _bounded_run_agent(
         name=f"Implementer #{issue['number']}",
