@@ -80,6 +80,10 @@ def _extract_text(output: str) -> str:
     return output
 
 
+def branch_for(issue_number: int) -> str:
+    return f"sandcastle/issue-{issue_number}"
+
+
 def parse_plan(output: str) -> list[dict]:
     text = _extract_text(output)
     match = re.search(r"<plan>([\s\S]*?)</plan>", text)
@@ -181,10 +185,11 @@ async def run_issue(
     overrides = overrides or {}
     impl_stage = overrides.get("implement", {})
     rev_stage = overrides.get("review", {})
+    _branch = branch_for(issue["number"])
     prompt_args = {
         "ISSUE_NUMBER": str(issue["number"]),
         "ISSUE_TITLE": issue["title"],
-        "BRANCH": issue["branch"],
+        "BRANCH": _branch,
         "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
     }
 
@@ -198,7 +203,7 @@ async def run_issue(
         mount_path=repo_root,
         env=env,
         prompt_args=prompt_args,
-        branch=issue["branch"],
+        branch=_branch,
         model=impl_stage.get("model", ""),
         effort=impl_stage.get("effort", ""),
         stage="pre-implementation",
@@ -210,7 +215,7 @@ async def run_issue(
     reviewer_prompt_args = {
         "ISSUE_NUMBER": str(issue["number"]),
         "ISSUE_TITLE": issue["title"],
-        "BRANCH": issue["branch"],
+        "BRANCH": _branch,
         "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
     }
     await _bounded_run_agent(
@@ -219,7 +224,7 @@ async def run_issue(
         mount_path=repo_root,
         env=env,
         prompt_args=reviewer_prompt_args,
-        branch=issue["branch"],
+        branch=_branch,
         model=rev_stage.get("model", ""),
         effort=rev_stage.get("effort", ""),
         stage="pre-review",
@@ -298,15 +303,12 @@ async def run(
                 {
                     "number": pf_num,
                     "title": pf_title,
-                    "branch": f"sandcastle/issue-{pf_num}",
                 }
             ]
             _skip_preflight = True  # skip SHA pinning — code was broken
 
         if issues is None:
             issues = parse_plan(plan_output)
-            for issue in issues:
-                issue["branch"] = f"sandcastle/issue-{issue['number']}"
 
         if not issues:
             print(f"No issues with label '{ISSUE_LABEL}' found. Skipping.")
@@ -318,7 +320,9 @@ async def run(
 
         print(f"Planning complete. {len(issues)} issue(s):")
         for issue in issues:
-            print(f"  #{issue['number']}: {issue['title']} → {issue['branch']}")
+            print(
+                f"  #{issue['number']}: {issue['title']} → {branch_for(issue['number'])}"
+            )
 
         semaphore = asyncio.Semaphore(_max_parallel)
 
@@ -341,7 +345,9 @@ async def run(
         completed: list[dict] = []
         for issue, result in zip(issues, results):
             if isinstance(result, PreflightError):
-                print(f"  ✗ #{issue['number']} ({issue['branch']}) pre-flight failed:")
+                print(
+                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) pre-flight failed:"
+                )
                 for check_name, command, output in result.failures:
                     print(f"    ✗ {check_name} ({command}): {output}")
             elif isinstance(result, Exception):
@@ -356,7 +362,9 @@ async def run(
                 _logs_dir.mkdir(parents=True, exist_ok=True)
                 with open(_logs_dir / "errors.log", "a", encoding="utf-8") as f:
                     f.write(entry)
-                print(f"  ✗ #{issue['number']} ({issue['branch']}) failed: {result}")
+                print(
+                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {result}"
+                )
             elif result is not None:
                 completed.append(issue)
 
@@ -366,20 +374,22 @@ async def run(
 
         print(f"\nExecution complete. {len(completed)} branch(es) with commits:")
         for i in completed:
-            print(f"  {i['branch']}")
+            print(f"  {branch_for(i['number'])}")
 
         await wait_for_clean_working_tree(repo_root, git_svc)
 
         conflict_issues: list[dict] = []
         for issue in completed:
-            if git_svc.try_merge(repo_root, issue["branch"]):
+            if git_svc.try_merge(repo_root, branch_for(issue["number"])):
                 _get_github_svc().close_issue(issue["number"])
             else:
                 conflict_issues.append(issue)
         if len(completed) > len(conflict_issues):
             _get_github_svc().close_completed_parent_issues()
 
-        clean_branches = [i["branch"] for i in completed if i not in conflict_issues]
+        clean_branches = [
+            branch_for(i["number"]) for i in completed if i not in conflict_issues
+        ]
         delete_merged_branches(clean_branches, repo_root, git_svc)
 
         clean_count = len(completed) - len(conflict_issues)
@@ -403,7 +413,6 @@ async def run(
                 pf_issue = {
                     "number": pf_num,
                     "title": pf_title,
-                    "branch": f"sandcastle/issue-{pf_num}",
                 }
                 pf_semaphore = asyncio.Semaphore(_max_parallel)
                 pf_completed = await run_issue(
@@ -438,7 +447,9 @@ async def run(
                 mount_path=repo_root,
                 env=env,
                 prompt_args={
-                    "BRANCHES": "\n".join(f"- {i['branch']}" for i in conflict_issues),
+                    "BRANCHES": "\n".join(
+                        f"- {branch_for(i['number'])}" for i in conflict_issues
+                    ),
                     "ISSUES": "\n".join(
                         f"- #{i['number']}: {i['title']}" for i in conflict_issues
                     ),
@@ -450,7 +461,7 @@ async def run(
             )
             print("\nBranches merged.")
             delete_merged_branches(
-                [i["branch"] for i in conflict_issues], repo_root, git_svc
+                [branch_for(i["number"]) for i in conflict_issues], repo_root, git_svc
             )
 
     print("\nAll done.")
