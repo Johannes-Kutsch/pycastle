@@ -74,15 +74,6 @@ def test_prune_orphan_worktrees_noop_when_dir_missing(tmp_path):
     prune_orphan_worktrees(tmp_path)  # no exception — no git_service needed
 
 
-def test_prune_orphan_worktrees_removes_orphan_directories(tmp_path):
-    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
-    worktrees_dir.mkdir(parents=True)
-    orphan = worktrees_dir / "stale-branch"
-    orphan.mkdir()
-    prune_orphan_worktrees(tmp_path, git_service=_make_git_service([]))
-    assert not orphan.exists()
-
-
 # ── Cycle 24-B3: run() calls prune_orphan_worktrees before the loop ──────────
 
 

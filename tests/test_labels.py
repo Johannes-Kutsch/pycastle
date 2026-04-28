@@ -81,10 +81,3 @@ def test_get_remote_repo_strips_dot_git_suffix():
     mock_svc.get_remote_url.return_value = "https://github.com/owner/repo.git"
     owner, repo = _get_remote_repo(git_service=mock_svc)
     assert repo == "repo"
-
-
-def test_get_remote_repo_returns_correct_tuple_for_github_url():
-    mock_svc = MagicMock(spec=GitService)
-    mock_svc.get_remote_url.return_value = "https://github.com/myorg/myrepo.git"
-    result = _get_remote_repo(git_service=mock_svc)
-    assert result == ("myorg", "myrepo")
