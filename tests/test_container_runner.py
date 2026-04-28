@@ -1544,6 +1544,11 @@ def test_format_stream_line_returns_none_for_missing_message():
     assert _format_stream_line(line) is None
 
 
+def test_format_stream_line_returns_none_for_null_message():
+    line = '{"type":"assistant","message":null}'
+    assert _format_stream_line(line) is None
+
+
 def test_format_stream_line_returns_none_for_empty_result_string():
     line = '{"type":"result","result":""}'
     assert _format_stream_line(line) is None

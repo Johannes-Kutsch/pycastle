@@ -48,7 +48,7 @@ def _format_stream_line(line: str) -> str | None:
         result_text = obj.get("result", "")
         return result_text if result_text else None
     if line_type == "assistant":
-        content = obj.get("message", {}).get("content", [])
+        content = (obj.get("message") or {}).get("content", [])
         parts: list[str] = []
         for block in content:
             if not isinstance(block, dict):
