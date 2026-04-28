@@ -3,7 +3,6 @@ import contextlib
 import json
 import re
 import shutil
-import subprocess
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -13,22 +12,18 @@ from typing import Any
 from .config import IMPLEMENT_CHECKS, ISSUE_LABEL, LOGS_DIR, MAX_ITERATIONS, MAX_PARALLEL, PROMPTS_DIR, STAGE_OVERRIDES
 from .container_runner import run_agent
 from .errors import PreflightError
+from .git_service import GitService
 from .validate import validate_config
 
 
-def prune_orphan_worktrees(repo_root: Path) -> None:
+def prune_orphan_worktrees(
+    repo_root: Path, git_service: GitService | None = None
+) -> None:
     worktrees_dir = repo_root / "pycastle" / ".worktrees"
     if not worktrees_dir.exists():
         return
-    raw = subprocess.check_output(
-        ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
-        text=True,
-    )
-    active = {
-        line[len("worktree ") :].strip()
-        for line in raw.splitlines()
-        if line.startswith("worktree ")
-    }
+    svc = git_service or GitService()
+    active = {str(p) for p in svc.list_worktrees(repo_root)}
     for child in worktrees_dir.iterdir():
         if str(child.resolve()) not in active and child.is_dir():
             shutil.rmtree(child)
@@ -93,7 +88,7 @@ async def run_issue(
     }
 
     async def _bounded_run_agent(**kwargs: Any) -> str:
-        async with (semaphore or contextlib.nullcontext()):
+        async with semaphore or contextlib.nullcontext():
             return await run_agent(**kwargs)
 
     result = await _bounded_run_agent(
