@@ -367,9 +367,11 @@ async def run(
         conflict_issues: list[dict] = []
         for issue in completed:
             if git_svc.try_merge(repo_root, issue["branch"]):
-                _get_github_svc().close_issue_with_parents(issue["number"])
+                _get_github_svc().close_issue(issue["number"])
             else:
                 conflict_issues.append(issue)
+        if len(completed) > len(conflict_issues):
+            _get_github_svc().close_completed_parent_issues()
 
         clean_branches = [i["branch"] for i in completed if i not in conflict_issues]
         delete_merged_branches(clean_branches, repo_root, git_svc)
@@ -411,7 +413,8 @@ async def run(
                     pf_branch = f"issue/{pf_num}"
                     await wait_for_clean_working_tree(repo_root, git_svc)
                     if git_svc.try_merge(repo_root, pf_branch):
-                        _get_github_svc().close_issue_with_parents(pf_num)
+                        _get_github_svc().close_issue(pf_num)
+                        _get_github_svc().close_completed_parent_issues()
                         delete_merged_branches([pf_branch], repo_root, git_svc)
                         second_failures = _run_host_checks(PREFLIGHT_CHECKS)
                         if not second_failures:
