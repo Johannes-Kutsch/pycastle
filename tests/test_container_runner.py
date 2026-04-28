@@ -1693,6 +1693,16 @@ def test_format_stream_line_returns_result_text():
     assert _format_stream_line(line) == "Final answer here"
 
 
+def test_format_stream_line_returns_none_for_empty_result():
+    line = '{"type":"result","result":"","session_id":"abc"}'
+    assert _format_stream_line(line) is None
+
+
+def test_format_stream_line_returns_none_for_missing_result_key():
+    line = '{"type":"result","session_id":"abc"}'
+    assert _format_stream_line(line) is None
+
+
 # ── Cycle 65-5: non-JSON line returned verbatim ───────────────────────────────
 
 
