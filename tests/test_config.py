@@ -1,4 +1,3 @@
-from pathlib import Path
 
 import pycastle.defaults.config as defaults_config
 
