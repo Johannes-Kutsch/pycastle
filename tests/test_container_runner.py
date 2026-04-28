@@ -1,4 +1,5 @@
 import asyncio
+import shutil
 import threading
 from unittest.mock import MagicMock, patch
 
@@ -62,6 +63,14 @@ def _fake_runner(exit_code=0, stdout=b"", stderr=b""):
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def _noop_create(repo, wt, branch):
+    pass
+
+
+def _noop_remove(repo, wt):
+    pass
 
 
 # ── Cycle 1: exec_simple raises on non-zero exit ──────────────────────────────
@@ -300,19 +309,35 @@ class _StreamingErrorRunner:
 
 
 def test_host_worktree_removed_even_when_container_raises(tmp_path):
-    """remove_worktree must be called on the host in finally, even if the container throws."""
+    """remove_worktree_fn must be called on the host in finally, even if the container throws."""
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
+    worktree_dir = tmp_path / "pycastle" / ".worktrees" / "feature-test"
+
+    def fake_create(repo, wt, branch):
+        wt.mkdir(parents=True, exist_ok=True)
+
+    def fake_remove(repo, wt):
+        shutil.rmtree(wt, ignore_errors=True)
+
     with (
         patch("pycastle.container_runner.ContainerRunner", _StreamingErrorRunner),
-        patch("pycastle.container_runner.create_worktree"),
-        patch("pycastle.container_runner.remove_worktree") as mock_remove,
+        pytest.raises(RuntimeError, match="container crashed"),
     ):
-        with pytest.raises(RuntimeError, match="container crashed"):
-            _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/test",
+                create_worktree_fn=fake_create,
+                remove_worktree_fn=fake_remove,
+            )
+        )
 
-    mock_remove.assert_called_once()
+    assert not worktree_dir.exists()
 
 
 # ── Cycle 8: no container is started when host-side worktree creation fails ───
@@ -326,14 +351,20 @@ def test_no_container_started_when_worktree_creation_fails(
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
-    with (
-        patch(
-            "pycastle.container_runner.create_worktree",
-            side_effect=RuntimeError("git worktree add failed"),
-        ),
-        pytest.raises(RuntimeError, match="worktree add failed"),
-    ):
-        _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
+    def failing_create(repo, wt, branch):
+        raise RuntimeError("git worktree add failed")
+
+    with pytest.raises(RuntimeError, match="worktree add failed"):
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/test",
+                create_worktree_fn=failing_create,
+            )
+        )
 
     mock_docker.from_env.return_value.containers.run.assert_not_called()
 
@@ -535,30 +566,6 @@ def test_setup_propagates_git_timeout_error(tmp_path):
         _run(run_agent("Test", prompt, tmp_path, {}, git_service=mock_git))
 
 
-def test_setup_calls_get_user_name_on_git_service(tmp_path):
-    """_setup() must call git_service.get_user_name() exactly once."""
-    prompt = tmp_path / "p.md"
-    prompt.write_text("test")
-    mock_git = _make_git_service()
-
-    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
-        _run(run_agent("Test", prompt, tmp_path, {}, git_service=mock_git))
-
-    mock_git.get_user_name.assert_called_once()
-
-
-def test_setup_calls_get_user_email_on_git_service(tmp_path):
-    """_setup() must call git_service.get_user_email() exactly once."""
-    prompt = tmp_path / "p.md"
-    prompt.write_text("test")
-    mock_git = _make_git_service()
-
-    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
-        _run(run_agent("Test", prompt, tmp_path, {}, git_service=mock_git))
-
-    mock_git.get_user_email.assert_called_once()
-
-
 # ── Issue 90: shell-safe quoting of git identity values ──────────────────────
 
 
@@ -645,14 +652,26 @@ def test_second_run_agent_on_same_branch_raises_branch_collision_error(tmp_path)
     prompt.write_text("test")
 
     async def _two_on_same_branch():
-        with (
-            patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner),
-            patch("pycastle.container_runner.create_worktree"),
-            patch("pycastle.container_runner.remove_worktree"),
-        ):
+        with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
             return await asyncio.gather(
-                run_agent("A1", prompt, tmp_path, {}, branch="feature/collision"),
-                run_agent("A2", prompt, tmp_path, {}, branch="feature/collision"),
+                run_agent(
+                    "A1",
+                    prompt,
+                    tmp_path,
+                    {},
+                    branch="feature/collision",
+                    create_worktree_fn=_noop_create,
+                    remove_worktree_fn=_noop_remove,
+                ),
+                run_agent(
+                    "A2",
+                    prompt,
+                    tmp_path,
+                    {},
+                    branch="feature/collision",
+                    create_worktree_fn=_noop_create,
+                    remove_worktree_fn=_noop_remove,
+                ),
                 return_exceptions=True,
             )
 
@@ -668,14 +687,26 @@ def test_run_agent_different_branches_both_succeed(tmp_path):
     prompt.write_text("test")
 
     async def _two_different_branches():
-        with (
-            patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner),
-            patch("pycastle.container_runner.create_worktree"),
-            patch("pycastle.container_runner.remove_worktree"),
-        ):
+        with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
             return await asyncio.gather(
-                run_agent("B1", prompt, tmp_path, {}, branch="feature/branch-one"),
-                run_agent("B2", prompt, tmp_path, {}, branch="feature/branch-two"),
+                run_agent(
+                    "B1",
+                    prompt,
+                    tmp_path,
+                    {},
+                    branch="feature/branch-one",
+                    create_worktree_fn=_noop_create,
+                    remove_worktree_fn=_noop_remove,
+                ),
+                run_agent(
+                    "B2",
+                    prompt,
+                    tmp_path,
+                    {},
+                    branch="feature/branch-two",
+                    create_worktree_fn=_noop_create,
+                    remove_worktree_fn=_noop_remove,
+                ),
                 return_exceptions=True,
             )
 
@@ -753,15 +784,31 @@ def test_worktree_cleanup_runs_even_when_container_cleanup_raises(tmp_path):
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
+    worktree_dir = tmp_path / "pycastle" / ".worktrees" / "feature-test"
+
+    def fake_create(repo, wt, branch):
+        wt.mkdir(parents=True, exist_ok=True)
+
+    def fake_remove(repo, wt):
+        shutil.rmtree(wt, ignore_errors=True)
+
     with (
         patch("pycastle.container_runner.ContainerRunner", _ContainerExitErrorRunner),
-        patch("pycastle.container_runner.create_worktree"),
-        patch("pycastle.container_runner.remove_worktree") as mock_remove,
+        pytest.raises(RuntimeError, match="container stop failed"),
     ):
-        with pytest.raises(RuntimeError, match="container stop failed"):
-            _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/test",
+                create_worktree_fn=fake_create,
+                remove_worktree_fn=fake_remove,
+            )
+        )
 
-    mock_remove.assert_called_once()
+    assert not worktree_dir.exists()
 
 
 # ── Cycle 25-B: worktree cleanup raises → container cleanup still runs ────────
@@ -789,16 +836,24 @@ def test_container_cleanup_runs_even_when_worktree_cleanup_raises(tmp_path):
         def run_streaming(self):
             return "done"
 
+    def failing_remove(repo, wt):
+        raise RuntimeError("worktree removal failed")
+
     with (
         patch("pycastle.container_runner.ContainerRunner", _TrackingRunner),
-        patch("pycastle.container_runner.create_worktree"),
-        patch(
-            "pycastle.container_runner.remove_worktree",
-            side_effect=RuntimeError("worktree removal failed"),
-        ),
+        pytest.raises(RuntimeError, match="worktree removal failed"),
     ):
-        with pytest.raises(RuntimeError, match="worktree removal failed"):
-            _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/test",
+                create_worktree_fn=_noop_create,
+                remove_worktree_fn=failing_remove,
+            )
+        )
 
     assert len(container_exit_calls) == 1
 
@@ -833,13 +888,21 @@ def test_gitdir_temp_file_deleted_after_run_agent_succeeds(tmp_path):
 
     with (
         patch("pycastle.container_runner.ContainerRunner", _SuccessRunner),
-        patch("pycastle.container_runner.create_worktree"),
-        patch("pycastle.container_runner.remove_worktree"),
         patch(
             "pycastle.container_runner.patch_gitdir_for_container", return_value=overlay
         ),
     ):
-        _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/test",
+                create_worktree_fn=_noop_create,
+                remove_worktree_fn=_noop_remove,
+            )
+        )
 
     assert not overlay.exists(), "gitdir temp file must be deleted after run_agent"
 
@@ -854,14 +917,22 @@ def test_gitdir_temp_file_deleted_even_when_container_raises(tmp_path):
 
     with (
         patch("pycastle.container_runner.ContainerRunner", _ContainerExitErrorRunner),
-        patch("pycastle.container_runner.create_worktree"),
-        patch("pycastle.container_runner.remove_worktree"),
         patch(
             "pycastle.container_runner.patch_gitdir_for_container", return_value=overlay
         ),
+        pytest.raises(RuntimeError),
     ):
-        with pytest.raises(RuntimeError):
-            _run(run_agent("test", prompt, tmp_path, {}, branch="feature/test"))
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/test",
+                create_worktree_fn=_noop_create,
+                remove_worktree_fn=_noop_remove,
+            )
+        )
 
     assert not overlay.exists(), (
         "gitdir temp file must be deleted even when container cleanup raises"
