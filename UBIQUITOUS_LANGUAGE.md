@@ -136,6 +136,30 @@
 | **AgentTimeoutError** | Error subclass raised when an agent produces no output for longer than the **idle timeout** | hung agent error |
 | **PreflightError** | Error subclass raised by `run_agent()` after all **bug-report agents** have been spawned for **pre-flight failures**; signals callers to abort (planner → abort whole run; implementer → skip that issue) | preflight error |
 
+## Service Abstraction & Dependency Injection
+
+| Term | Definition | Aliases to avoid |
+| --- | --- | --- |
+| **Service** | An injectable abstraction that encapsulates all subprocess calls for a single external tool or domain (Git, Claude CLI, Docker) | Provider, adapter, wrapper |
+| **service interface** | The public methods of a **Service** that callers depend on; never exposes subprocess calls or tool-specific details | Contract, API |
+| **Custom exception hierarchy** | Domain-specific exception types raised by a **Service** (e.g., `GitCommandError`, `GitTimeoutError`); callers never see raw subprocess exceptions | Tool exceptions, system errors |
+| **Dependency injection** | Pattern of passing **Service** implementations to functions/classes that depend on them, enabling tests to inject mocks | Parameter injection, constructor injection |
+| **test fixture** | A pytest fixture that provides default **Service** implementations (or stubs) for all tests; individual tests override for specific scenarios | Mock factory, test helper |
+| **Default implementation** | A **Service** implementation (or stub) provided by a **test fixture**, replacing real subprocess calls with deterministic returns | Mock, test double |
+| **GitService** | **Service** that encapsulates all git subprocess operations (config, worktree management, branch queries, remote info) | Git wrapper, git provider |
+| **ClaudeService** | **Service** that encapsulates the `claude list-models` subprocess call with process-lifetime caching | Claude wrapper, model provider |
+| **DockerService** | **Service** that encapsulates the `docker build` subprocess call with support for build args | Docker wrapper, build provider |
+
+## Test Anti-Patterns (Red Flags)
+
+| Term | Definition | Why it's a problem |
+| --- | --- | --- |
+| **Verifying through external means** | Tests that call subprocess, query databases, or check external state directly instead of testing through the **service interface** | Requires external tools/setup in test environment; test failures reflect environment problems, not code bugs; tests fail in CI without tool installation |
+| **Mocking internal collaborators** | Tests that mock classes or functions within the same codebase rather than using dependency injection | Creates brittle tests coupled to implementation; breaks on refactoring without behavior change |
+| **Testing private methods** | Tests that call functions prefixed with `_` or access private attributes | Private methods are implementation details; public behavior should be verified through the interface instead |
+| **Asserting on call counts/order** | Tests that verify internal function calls happened N times or in a specific sequence | Breaks when refactoring without behavior change; couples tests to implementation rather than behavior |
+| **Test name describes HOW not WHAT** | Test names like `test_calls_git_config` instead of `test_setup_configures_git_identity` | Developers cannot understand test intent or expected behavior from the name alone |
+
 ## Relationships
 
 - **STAGE_OVERRIDES** contains exactly four entries, one per **orchestration phase**: `plan`, `implement`, `review`, `merge`.
@@ -182,6 +206,15 @@
 - A `WorktreeTimeoutError` is raised when any git operation within **worktree setup** exceeds the **worktree timeout**.
 - An `AgentTimeoutError` is raised when the **Work phase** produces no output for longer than the **idle timeout**.
 - All failed agent runs append a full traceback to the **errors log**, separated by a timestamped divider.
+
+- A **Service** defines a **Custom exception hierarchy** so callers never import or handle raw subprocess exceptions.
+- **Dependency injection** enables tests to pass **Default implementations** of a **Service** without calling external tools.
+- A **test fixture** provides **Default implementations** for all **Services** (GitService, ClaudeService, DockerService); individual tests override specific **Services** when testing error paths.
+- A **Service** **interface** contains only public methods; subprocess calls and tool-specific details are hidden inside the **Service**.
+- Tests verify behavior through the **Service interface** rather than **verifying through external means** (direct subprocess calls).
+- **Verifying through external means** is eliminated by injecting **Default implementations** of **Services** instead of patching subprocess.
+- **Mocking internal collaborators** is avoided by using **Services** as abstractions — **Services** are external to the business logic being tested, not internal collaborators.
+- **Testing private methods** becomes unnecessary when tests focus on the public **Service interface** that calls them internally.
 
 ## Example dialogue
 
@@ -233,6 +266,28 @@
 
 > **Domain expert:** "That's **scope creep** from a **pre-existing failure**. The **Implementer** ran ruff and mypy at the end of its work, found failures that existed before it started, and treated them as its responsibility to fix. The **Pre-flight phase** prevents this: if the checks are already red when the container starts, the run aborts and files a bug report rather than letting the **Implementer** inherit the mess."
 
+## Example dialogue (service abstraction)
+
+> **Dev:** "These tests are all failing in CI because `git config user.name` can't be run. How do I fix this?"
+
+> **Domain expert:** "Don't patch subprocess — create a **GitService** and use **dependency injection**. The **Service** hides subprocess calls; your test injects a **Default implementation** that returns hardcoded values."
+
+> **Dev:** "So the **service interface** is what the test sees, not the actual git calls?"
+
+> **Domain expert:** "Exactly. The test calls methods like `git_service.get_user_name()` — it doesn't know or care that production uses subprocess. Tests inject a mock implementation that returns test data."
+
+> **Dev:** "What about error cases — timeouts, git not found?"
+
+> **Domain expert:** "The **GitService** defines a **Custom exception hierarchy** — `GitCommandError`, `GitTimeoutError`, etc. Tests verify 'when GitService raises GitTimeoutError, the code does X'. You never see `CalledProcessError` in a test."
+
+> **Dev:** "What if I need different behavior for different tests?"
+
+> **Domain expert:** "The **test fixture** provides **Default implementations** of all **Services** by default. Individual tests override the **Service** they're testing. That's **dependency injection** — pass the **Service** to the code being tested, and tests pass mocks."
+
+> **Dev:** "This eliminates the red flags we saw — **Verifying through external means**, **mocking internal collaborators**?"
+
+> **Domain expert:** "Yes. You're not calling subprocess in tests, so no more environment dependencies. You're not mocking classes in your own codebase — you're injecting **Services** that are boundaries to external tools. Tests are now resilient to refactoring."
+
 ## Example dialogue (stage overrides)
 
 > **Dev:** "I want the Planner to use Haiku but the Implementer to use Opus. What do I put in config?"
@@ -276,3 +331,13 @@
 - **"phase"** now operates at two levels: *orchestration phases* (plan, implement, review, merge) are stages of an **iteration**; *agent lifecycle phases* (Setup, Prepare, Work) are stages of a single agent container run. Use the full term (**agent lifecycle phase** vs **plan phase**) when the level is not obvious from context.
 - **"worktree"** was previously defined as "created inside a container" — this is incorrect. The **worktree** is always created on the **host** and bind-mounted into the container. The container never runs `git worktree add`.
 - **"timeout"** is used for two distinct limits: **idle timeout** (agent produces no output) and **worktree timeout** (git operation takes too long). Always qualify which kind is meant.
+
+- **"Service"** can refer to a specific service implementation (GitService, ClaudeService, DockerService) or the abstract pattern (a subprocess-encapsulating dependency that tests can inject). Use the specific service name when referring to one implementation; use **Service** generically only for the pattern.
+
+- **"Mock"** has multiple meanings in testing: (a) a test double that returns fixed values, (b) a test double that asserts on calls made to it. In this context, we use **Default implementation** for (a) — we're injecting behaviors, not asserting on calls. Avoid bare "mock"; use **Default implementation** or **test double** to clarify.
+
+- **"Interface"** could mean a Python Protocol/ABC or just "the public methods that callers depend on". Use **service interface** to clarify: it's the contract between the **Service** and code that uses it, not a Python type system construct (though it may be implemented as one).
+
+- **"Provider"** was used initially for **Service**. In Python/design pattern context, a provider often suggests a factory that returns instances. Here, **Service** is clearer for an injectable abstraction that tests can substitute. Avoid "provider" in this context; use **Service**.
+
+- **"Test fixture"** can mean pytest fixtures (the mechanism) or the concept of providing test doubles. Prefer **test fixture** for the pytest mechanism and **test fixture** (with context) for the concept of injecting test implementations.
