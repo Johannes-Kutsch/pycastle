@@ -7,7 +7,7 @@ from functools import lru_cache
 from .claude_service import ClaudeService
 from .errors import ClaudeServiceError, ConfigValidationError
 
-_VALID_EFFORTS = frozenset({"low", "normal", "high"})
+_VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 _MODEL_RE = re.compile(r"^claude-(haiku|sonnet|opus)-(.+)$")
 _DEFAULT_CLAUDE_SERVICE = ClaudeService()
 
