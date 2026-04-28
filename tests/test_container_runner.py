@@ -1763,3 +1763,24 @@ def test_run_streaming_does_not_raise_for_normal_line(tmp_path):
         tmp_path / "test.log",
     )
     runner.run_streaming()
+
+
+def test_run_streaming_raises_when_pattern_split_across_chunks(tmp_path):
+    runner = _streaming_runner(
+        "Agent",
+        [b"You've hit ", b"your weekly limit\n"],
+        tmp_path / "test.log",
+    )
+    with pytest.raises(UsageLimitError):
+        runner.run_streaming()
+
+
+def test_run_streaming_error_carries_original_casing(tmp_path):
+    runner = _streaming_runner(
+        "Agent",
+        [b"YOU'VE HIT YOUR SESSION LIMIT\n"],
+        tmp_path / "test.log",
+    )
+    with pytest.raises(UsageLimitError) as exc_info:
+        runner.run_streaming()
+    assert str(exc_info.value) == "YOU'VE HIT YOUR SESSION LIMIT"
