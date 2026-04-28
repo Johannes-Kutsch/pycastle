@@ -1,22 +1,17 @@
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-
+from pycastle.git_service import GitService
 from pycastle.orchestrator import prune_orphan_worktrees
 
 
 # ── Cycle 24-B1: prune_orphan_worktrees deletes orphan dirs ──────────────────
 
 
-def _porcelain(paths: list[Path]) -> str:
-    """Build a git worktree list --porcelain string listing the given paths."""
-    lines = []
-    for p in paths:
-        lines.append(f"worktree {p}")
-        lines.append("HEAD abc1234")
-        lines.append("branch refs/heads/main")
-        lines.append("")
-    return "\n".join(lines)
+def _make_git_service(active_paths: list[Path]) -> GitService:
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.list_worktrees.return_value = active_paths
+    return mock_svc
 
 
 def test_prune_orphan_worktrees_deletes_absent_dir(tmp_path):
@@ -25,8 +20,7 @@ def test_prune_orphan_worktrees_deletes_absent_dir(tmp_path):
     orphan = worktrees_dir / "orphan-branch"
     orphan.mkdir()
 
-    with patch("subprocess.check_output", return_value=_porcelain([])):
-        prune_orphan_worktrees(tmp_path)
+    prune_orphan_worktrees(tmp_path, git_service=_make_git_service([]))
 
     assert not orphan.exists()
 
@@ -40,8 +34,7 @@ def test_prune_orphan_worktrees_deletes_only_orphans(tmp_path):
     active = worktrees_dir / "active-branch"
     active.mkdir()
 
-    with patch("subprocess.check_output", return_value=_porcelain([active])):
-        prune_orphan_worktrees(tmp_path)
+    prune_orphan_worktrees(tmp_path, git_service=_make_git_service([active]))
 
     assert not orphan.exists()
     assert active.exists()
@@ -56,16 +49,22 @@ def test_prune_orphan_worktrees_preserves_active_dir(tmp_path):
     active = worktrees_dir / "my-branch"
     active.mkdir()
 
-    with patch("subprocess.check_output", return_value=_porcelain([active])):
-        prune_orphan_worktrees(tmp_path)
+    prune_orphan_worktrees(tmp_path, git_service=_make_git_service([active]))
 
     assert active.exists()
 
 
 def test_prune_orphan_worktrees_noop_when_dir_missing(tmp_path):
     """Must not raise if pycastle/.worktrees/ does not exist yet."""
-    with patch("subprocess.check_output", return_value=_porcelain([])):
-        prune_orphan_worktrees(tmp_path)  # no exception
+    prune_orphan_worktrees(tmp_path)  # no exception — no git_service needed
+
+
+def test_prune_orphan_worktrees_calls_list_worktrees_with_repo_root(tmp_path):
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+    mock_svc = _make_git_service([])
+    prune_orphan_worktrees(tmp_path, git_service=mock_svc)
+    mock_svc.list_worktrees.assert_called_once_with(tmp_path)
 
 
 # ── Cycle 24-B3: run() calls prune_orphan_worktrees before the loop ──────────
