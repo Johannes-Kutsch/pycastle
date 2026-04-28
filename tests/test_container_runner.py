@@ -1,5 +1,6 @@
 import asyncio
 import threading
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,43 +20,44 @@ from pycastle.git_service import (
 )
 
 
+# ── Issue 153: docker_client injection ───────────────────────────────────────
+
+
+def test_container_runner_init_uses_injected_docker_client():
+    """ContainerRunner must accept docker_client and use it instead of docker.from_env()."""
+    mock_client = MagicMock()
+    runner = ContainerRunner("test", Path("/fake"), {}, docker_client=mock_client)
+    assert runner._client is mock_client
+
+
+def test_container_runner_init_calls_docker_from_env_when_no_client_given():
+    """When docker_client is None, __init__ must call docker.from_env()."""
+    with patch("pycastle.container_runner.docker") as mock_docker:
+        runner = ContainerRunner("test", Path("/fake"), {})
+    assert runner._client is mock_docker.from_env.return_value
+
+
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 
 def _streaming_runner(name: str, chunks: list, log_path) -> ContainerRunner:
     """ContainerRunner whose run_streaming replays the given byte chunks."""
-    runner = object.__new__(ContainerRunner)
-    runner.name = name
-    runner.env = {}
-    runner._container_env = {}
-    runner.branch = None
-    runner._worktree_path = "/home/agent/workspace"
-    runner._prompt = ""
-    runner.model = ""
-    runner.effort = ""
-    runner._container = MagicMock()
+    runner = ContainerRunner(name, Path("/fake"), {}, docker_client=MagicMock())
     runner._log_path = log_path
     mock_result = MagicMock()
     mock_result.output = iter(chunks)
+    runner._container = MagicMock()
     runner._container.exec_run.return_value = mock_result
     return runner
 
 
 def _fake_runner(exit_code=0, stdout=b"", stderr=b""):
-    """ContainerRunner with mocked Docker container, bypassing __init__."""
-    runner = object.__new__(ContainerRunner)
-    runner.name = "test"
-    runner.env = {}
-    runner._container_env = {}
-    runner.branch = None
-    runner._worktree_path = "/home/agent/workspace"
-    runner._prompt = ""
-    runner.model = ""
-    runner.effort = ""
-    runner._container = MagicMock()
+    """ContainerRunner with mocked Docker container."""
+    runner = ContainerRunner("test", Path("/fake"), {}, docker_client=MagicMock())
     mock_result = MagicMock()
     mock_result.exit_code = exit_code
     mock_result.output = (stdout, stderr)
+    runner._container = MagicMock()
     runner._container.exec_run.return_value = mock_result
     return runner
 
