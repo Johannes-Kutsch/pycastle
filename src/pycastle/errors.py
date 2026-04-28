@@ -41,6 +41,22 @@ class ConfigValidationError(PycastleError):
         super().__init__(message)
 
 
+class ClaudeServiceError(PycastleError):
+    pass
+
+
+class ClaudeCliNotFoundError(ClaudeServiceError):
+    pass
+
+
+class ClaudeTimeoutError(ClaudeServiceError, TimeoutError):
+    pass
+
+
+class ClaudeCommandError(ClaudeServiceError):
+    pass
+
+
 class PreflightError(PycastleError):
     def __init__(self, failures: list[tuple[str, str, str]]):
         self.failures = failures
