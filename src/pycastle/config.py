@@ -1,9 +1,26 @@
-import re
-from pathlib import Path
-
-# Override with local pycastle/config.py if present in CWD
 import importlib.util as _util
 import sys as _sys
+from pathlib import Path
+
+from .defaults.config import (  # noqa: F401
+    DOCKERFILE,
+    DOCKER_IMAGE,
+    ENV_FILE,
+    IDLE_TIMEOUT,
+    IMPLEMENT_CHECKS,
+    ISSUE_LABEL,
+    LOGS_DIR,
+    MAX_ITERATIONS,
+    MAX_PARALLEL,
+    PLACEHOLDER,
+    PREFLIGHT_CHECKS,
+    PROMPTS_DIR,
+    PYCASTLE_DIR,
+    SHELL_EXPR,
+    STAGE_OVERRIDES,
+    WORKTREE_TIMEOUT,
+    WORKTREES_DIR,
+)
 
 _local = Path("pycastle/config.py")
 if _local.exists():
@@ -15,18 +32,3 @@ if _local.exists():
         for _k, _v in vars(_mod).items():
             if not _k.startswith("_"):
                 setattr(_me, _k, _v)
-
-
-MAX_ITERATIONS = 10
-MAX_PARALLEL = 1
-DOCKER_IMAGE = "pycastle"
-ISSUE_LABEL = "ready-for-agent"
-PYCASTLE_DIR = Path("pycastle")
-PROMPTS_DIR = Path("pycastle/prompts")
-LOGS_DIR = Path("pycastle/logs")
-WORKTREES_DIR = Path("worktrees")
-ENV_FILE = Path("pycastle/.env")
-DOCKERFILE = Path("pycastle/Dockerfile")
-
-PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
-SHELL_EXPR = re.compile(r"!`([^`]+)`")

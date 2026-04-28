@@ -2,7 +2,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .defaults.config import WORKTREE_TIMEOUT
+from .config import WORKTREE_TIMEOUT
 
 
 class GitServiceError(RuntimeError):
