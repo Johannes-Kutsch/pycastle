@@ -363,6 +363,8 @@ async def run_agent(
     effort: str = "",
     git_service: GitService | None = None,
     stage: str = "",
+    create_worktree_fn=create_worktree,
+    remove_worktree_fn=remove_worktree,
 ) -> str:
     print(f"\n[{name}] Started")
 
@@ -383,7 +385,7 @@ async def run_agent(
         if branch:
             branch_slug = re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
             worktree_host_path = mount_path / PYCASTLE_DIR / ".worktrees" / branch_slug
-            create_worktree(mount_path, worktree_host_path, branch)
+            create_worktree_fn(mount_path, worktree_host_path, branch)
             gitdir_overlay = patch_gitdir_for_container(worktree_host_path)
 
         loop = asyncio.get_event_loop()
@@ -401,7 +403,7 @@ async def run_agent(
             if gitdir_overlay:
                 stack.callback(gitdir_overlay.unlink, missing_ok=True)
             if worktree_host_path:
-                stack.callback(remove_worktree, mount_path, worktree_host_path)
+                stack.callback(remove_worktree_fn, mount_path, worktree_host_path)
             stack.callback(runner.__exit__, None, None, None)
             await _setup(name, runner, loop, exec_timeout, git_service)
             await _prepare(
