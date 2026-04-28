@@ -1,14 +1,20 @@
-import contextlib
+import asyncio
+import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
+from pycastle.errors import ConfigValidationError, PreflightError
 from pycastle.git_service import GitCommandError, GitService
+from pycastle.github_service import GithubService
 from pycastle.orchestrator import (
+    _stage_for_agent,
     delete_merged_branches,
     parse_plan,
     prune_orphan_worktrees,
+    run,
+    run_issue,
 )
 
 
@@ -50,24 +56,66 @@ def test_parse_plan_raises_descriptively_when_issues_key_missing():
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
-@contextlib.contextmanager
-def _merge_patches(*, try_merge_return: bool = True):
-    """Context manager that satisfies orchestrator's merge-loop dependencies."""
-    mock_git = MagicMock(spec=GitService)
-    mock_git.try_merge.return_value = try_merge_return
-    with (
-        patch("pycastle.orchestrator.GitService", return_value=mock_git),
-        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
-        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-        patch("pycastle.orchestrator._run_host_checks", return_value=[]),
-    ):
-        yield mock_git
+def _plan_json(issues: list[dict]) -> str:
+    return f"<plan>{json.dumps({'issues': issues})}</plan>"
+
+
+def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
+    mock_svc = MagicMock(spec=GitService)
+    if try_merge_side_effect is not None:
+        results = list(try_merge_side_effect)
+        idx = [0]
+
+        def _try_merge(repo_path, branch):
+            val = results[idx[0]]
+            idx[0] += 1
+            return val
+
+        mock_svc.try_merge.side_effect = _try_merge
+    else:
+        mock_svc.try_merge.return_value = True
+    mock_svc.is_ancestor.return_value = is_ancestor
+    return mock_svc
+
+
+def _make_github_svc():
+    return MagicMock(spec=GithubService)
+
+
+def _run(
+    tmp_path,
+    run_agent_fn,
+    *,
+    validate_config=None,
+    git_service=None,
+    github_service=None,
+    run_host_checks=None,
+    stage_overrides=None,
+    max_parallel=4,
+    max_iterations=1,
+    logs_dir=None,
+):
+    asyncio.run(
+        run(
+            {},
+            tmp_path,
+            run_agent=run_agent_fn,
+            validate_config=validate_config or (lambda _: None),
+            git_service=git_service,
+            github_service=github_service,
+            run_host_checks=run_host_checks or (lambda _: []),
+            stage_overrides=stage_overrides,
+            max_parallel=max_parallel,
+            max_iterations=max_iterations,
+            logs_dir=logs_dir,
+        )
+    )
 
 
 # ── Cycle 24-B1: prune_orphan_worktrees deletes orphan dirs ──────────────────
 
 
-def _make_git_service(active_paths: list[Path]) -> GitService:
+def _make_git_service_for_prune(active_paths: list[Path]) -> GitService:
     mock_svc = MagicMock(spec=GitService)
     mock_svc.list_worktrees.return_value = active_paths
     return mock_svc
@@ -79,7 +127,7 @@ def test_prune_orphan_worktrees_deletes_absent_dir(tmp_path):
     orphan = worktrees_dir / "orphan-branch"
     orphan.mkdir()
 
-    prune_orphan_worktrees(tmp_path, git_service=_make_git_service([]))
+    prune_orphan_worktrees(tmp_path, git_service=_make_git_service_for_prune([]))
 
     assert not orphan.exists()
 
@@ -93,7 +141,7 @@ def test_prune_orphan_worktrees_deletes_only_orphans(tmp_path):
     active = worktrees_dir / "active-branch"
     active.mkdir()
 
-    prune_orphan_worktrees(tmp_path, git_service=_make_git_service([active]))
+    prune_orphan_worktrees(tmp_path, git_service=_make_git_service_for_prune([active]))
 
     assert not orphan.exists()
     assert active.exists()
@@ -108,7 +156,7 @@ def test_prune_orphan_worktrees_preserves_active_dir(tmp_path):
     active = worktrees_dir / "my-branch"
     active.mkdir()
 
-    prune_orphan_worktrees(tmp_path, git_service=_make_git_service([active]))
+    prune_orphan_worktrees(tmp_path, git_service=_make_git_service_for_prune([active]))
 
     assert active.exists()
 
@@ -118,90 +166,43 @@ def test_prune_orphan_worktrees_noop_when_dir_missing(tmp_path):
     prune_orphan_worktrees(tmp_path)  # no exception — no git_service needed
 
 
-# ── Cycle 24-B3: run() calls prune_orphan_worktrees before the loop ──────────
-
-
-def test_run_calls_prune_before_iteration_loop(tmp_path):
-    call_order: list[str] = []
-
-    def _fake_prune(repo_root):
-        call_order.append("prune")
-
-    async def _fake_run_agent(*args, **kwargs):
-        call_order.append("agent")
-        return "<plan>[]</plan>"
-
-    import asyncio
-    from pycastle.orchestrator import run
-
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees", side_effect=_fake_prune),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch("pycastle.orchestrator.parse_plan", return_value=[]),
-        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
-        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-    ):
-        asyncio.run(run({}, tmp_path))
-
-    assert call_order[0] == "prune", f"prune must be first call, got: {call_order}"
-
-
 # ── Cycle 24-C1/C2: error logging on agent failure ───────────────────────────
 
 
-def _make_failing_run(tmp_path, exc: Exception):
-    """Return a coroutine factory that drives run() with one issue that raises exc."""
-    import asyncio
-    from pycastle.orchestrator import run
-
-    async def _fake_run_agent(
-        name, prompt_file, mount_path, env, prompt_args=None, **kw
-    ):
-        if name == "Planner":
-            return "<plan>placeholder</plan>"
-        raise exc
-
-    def _go():
-        with (
-            patch("pycastle.orchestrator.prune_orphan_worktrees"),
-            patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-            patch(
-                "pycastle.orchestrator.parse_plan",
-                return_value=[{"number": 1, "title": "Fix thing", "branch": "issue/1"}],
-            ),
-            patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
-            patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-        ):
-            asyncio.run(run({}, tmp_path))
-
-    return _go
-
-
-def test_failed_agent_appends_traceback_to_errors_log(tmp_path, capsys):
+def test_failed_agent_appends_traceback_to_errors_log(tmp_path):
     logs_dir = tmp_path / "pycastle" / "logs"
     logs_dir.mkdir(parents=True)
     errors_log = logs_dir / "errors.log"
 
     boom = RuntimeError("something went wrong")
-    run_it = _make_failing_run(tmp_path, boom)
 
-    with patch("pycastle.orchestrator.LOGS_DIR", logs_dir):
-        run_it()
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json(
+                [{"number": 1, "title": "Fix thing", "branch": "issue/1"}]
+            )
+        raise boom
+
+    _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
 
     content = errors_log.read_text()
     assert "RuntimeError" in content
     assert "something went wrong" in content
 
 
-def test_failed_agent_errors_log_has_timestamp_separator(tmp_path, capsys):
+def test_failed_agent_errors_log_has_timestamp_separator(tmp_path):
     logs_dir = tmp_path / "pycastle" / "logs"
     logs_dir.mkdir(parents=True)
     errors_log = logs_dir / "errors.log"
 
-    run_it = _make_failing_run(tmp_path, RuntimeError("boom"))
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json(
+                [{"number": 1, "title": "Fix thing", "branch": "issue/1"}]
+            )
+        raise RuntimeError("boom")
 
-    with patch("pycastle.orchestrator.LOGS_DIR", logs_dir):
-        run_it()
+    _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
 
     assert "---" in errors_log.read_text()
 
@@ -210,11 +211,14 @@ def test_failed_agent_prints_traceback_to_stderr(tmp_path, capsys):
     logs_dir = tmp_path / "pycastle" / "logs"
     logs_dir.mkdir(parents=True)
 
-    boom = RuntimeError("stderr traceback check")
-    run_it = _make_failing_run(tmp_path, boom)
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json(
+                [{"number": 1, "title": "Fix thing", "branch": "issue/1"}]
+            )
+        raise RuntimeError("stderr traceback check")
 
-    with patch("pycastle.orchestrator.LOGS_DIR", logs_dir):
-        run_it()
+    _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
 
     err = capsys.readouterr().err
     assert "RuntimeError" in err
@@ -226,9 +230,6 @@ def test_failed_agent_prints_traceback_to_stderr(tmp_path, capsys):
 
 def test_run_issue_passes_feedback_commands_to_implementer(tmp_path):
     """run_issue must include FEEDBACK_COMMANDS in prompt_args for the implementer."""
-    import asyncio
-    from pycastle.orchestrator import run_issue
-
     captured_args: list[dict] = []
 
     async def _fake_run_agent(
@@ -238,8 +239,7 @@ def test_run_issue_passes_feedback_commands_to_implementer(tmp_path):
         return "<promise>COMPLETE</promise>"
 
     issue = {"number": 1, "title": "Fix thing", "branch": "issue/1"}
-    with patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent):
-        asyncio.run(run_issue(issue, {}, tmp_path))
+    asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
 
     implementer_call = next(a for a in captured_args if "Implementer" in a["name"])
     assert "FEEDBACK_COMMANDS" in implementer_call["prompt_args"]
@@ -247,9 +247,7 @@ def test_run_issue_passes_feedback_commands_to_implementer(tmp_path):
 
 def test_run_issue_feedback_commands_formatted_from_implement_checks(tmp_path):
     """FEEDBACK_COMMANDS must be formatted from IMPLEMENT_CHECKS with backtick wrapping."""
-    import asyncio
     from pycastle.defaults.config import IMPLEMENT_CHECKS
-    from pycastle.orchestrator import run_issue
 
     captured_args: list[dict] = []
 
@@ -260,8 +258,7 @@ def test_run_issue_feedback_commands_formatted_from_implement_checks(tmp_path):
         return "<promise>COMPLETE</promise>"
 
     issue = {"number": 1, "title": "Fix thing", "branch": "issue/1"}
-    with patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent):
-        asyncio.run(run_issue(issue, {}, tmp_path))
+    asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
 
     implementer_call = next(a for a in captured_args if "Implementer" in a["name"])
     feedback_commands = implementer_call["prompt_args"]["FEEDBACK_COMMANDS"]
@@ -274,27 +271,15 @@ def test_run_issue_feedback_commands_formatted_from_implement_checks(tmp_path):
 
 def test_planner_preflight_error_spawns_no_implementers(tmp_path):
     """A PreflightError from the planner must abort the run with no implementer agents spawned."""
-    import asyncio
-    from pycastle.errors import PreflightError
-    from pycastle.orchestrator import run
-
     implementer_names: list[str] = []
 
-    async def _fake_run_agent(
-        name, prompt_file, mount_path, env, prompt_args=None, **kw
-    ):
+    async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
         implementer_names.append(name)
         return ""
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
-        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-    ):
-        asyncio.run(run({}, tmp_path))
+    _run(tmp_path, _fake_run_agent)
 
     assert implementer_names == [], (
         f"Expected no implementers, got: {implementer_names}"
@@ -303,42 +288,20 @@ def test_planner_preflight_error_spawns_no_implementers(tmp_path):
 
 def test_planner_preflight_error_run_exits_cleanly(tmp_path):
     """A PreflightError from the planner must not propagate out of run()."""
-    import asyncio
-    from pycastle.errors import PreflightError
-    from pycastle.orchestrator import run
 
-    async def _fake_run_agent(
-        name, prompt_file, mount_path, env, prompt_args=None, **kw
-    ):
+    async def _fake_run_agent(name, **kwargs):
         raise PreflightError([("ruff", "ruff check .", "E501")])
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
-        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-    ):
-        asyncio.run(run({}, tmp_path))  # must not raise
+    _run(tmp_path, _fake_run_agent)  # must not raise
 
 
 def test_planner_preflight_error_message_names_failed_checks(tmp_path, capsys):
     """Aborting due to planner PreflightError must print the check name and command."""
-    import asyncio
-    from pycastle.errors import PreflightError
-    from pycastle.orchestrator import run
 
-    async def _fake_run_agent(
-        name, prompt_file, mount_path, env, prompt_args=None, **kw
-    ):
+    async def _fake_run_agent(name, **kwargs):
         raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
-        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-    ):
-        asyncio.run(run({}, tmp_path))
+    _run(tmp_path, _fake_run_agent)
 
     out = capsys.readouterr().out
     assert "ruff" in out
@@ -350,17 +313,16 @@ def test_planner_preflight_error_message_names_failed_checks(tmp_path, capsys):
 
 def test_implementer_preflight_error_siblings_complete(tmp_path):
     """An implementer PreflightError must not prevent sibling issues from completing."""
-    import asyncio
-    from pycastle.errors import PreflightError
-    from pycastle.orchestrator import run
-
     completed_issues: list[int] = []
 
-    async def _fake_run_agent(
-        name, prompt_file, mount_path, env, prompt_args=None, **kw
-    ):
+    issues = [
+        {"number": 1, "title": "Issue one", "branch": "issue/1"},
+        {"number": 2, "title": "Issue two", "branch": "issue/2"},
+    ]
+
+    async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return "<plan>placeholder</plan>"
+            return _plan_json(issues)
         if name == "Implementer #1":
             raise PreflightError([("ruff", "ruff check .", "E501")])
         if "Implementer" in name:
@@ -368,19 +330,12 @@ def test_implementer_preflight_error_siblings_complete(tmp_path):
             return "<promise>COMPLETE</promise>"
         return ""
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch(
-            "pycastle.orchestrator.parse_plan",
-            return_value=[
-                {"number": 1, "title": "Issue one", "branch": "issue/1"},
-                {"number": 2, "title": "Issue two", "branch": "issue/2"},
-            ],
-        ),
-    ):
-        with _merge_patches():
-            asyncio.run(run({}, tmp_path))
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(),
+        github_service=_make_github_svc(),
+    )
 
     assert 2 in completed_issues, (
         f"Issue #2 must complete; completed: {completed_issues}"
@@ -389,32 +344,19 @@ def test_implementer_preflight_error_siblings_complete(tmp_path):
 
 def test_implementer_preflight_error_logs_check_details(tmp_path, capsys):
     """An implementer PreflightError must print the failed check name and command to stdout."""
-    import asyncio
-    from pycastle.errors import PreflightError
-    from pycastle.orchestrator import run
 
-    async def _fake_run_agent(
-        name, prompt_file, mount_path, env, prompt_args=None, **kw
-    ):
+    async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return "<plan>placeholder</plan>"
+            return _plan_json(
+                [{"number": 3, "title": "Fix types", "branch": "issue/3"}]
+            )
         raise PreflightError([("mypy", "mypy .", "error: Cannot find module")])
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch(
-            "pycastle.orchestrator.parse_plan",
-            return_value=[{"number": 3, "title": "Fix types", "branch": "issue/3"}],
-        ),
-        patch("pycastle.orchestrator.LOGS_DIR", tmp_path),
-        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
-        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-    ):
-        asyncio.run(run({}, tmp_path))
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
 
     out = capsys.readouterr().out
-    # Must show per-check formatted line, not just the raw exception repr
     assert "mypy" in out
     assert "mypy ." in out
     assert "[('mypy'" not in out, (
@@ -427,9 +369,6 @@ def test_implementer_preflight_error_logs_check_details(tmp_path, capsys):
 
 def test_run_calls_validate_config_before_any_agent(tmp_path):
     """validate_config must be called before the first run_agent call."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     call_order: list[str] = []
 
     def _fake_validate(overrides):
@@ -437,44 +376,33 @@ def test_run_calls_validate_config_before_any_agent(tmp_path):
 
     async def _fake_run_agent(*args, **kwargs):
         call_order.append("agent")
-        return "<plan>[]</plan>"
+        return _plan_json([])
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config", side_effect=_fake_validate),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch("pycastle.orchestrator.parse_plan", return_value=[]),
-        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
-        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-    ):
-        asyncio.run(run({}, tmp_path))
+    _run(tmp_path, _fake_run_agent, validate_config=_fake_validate)
 
     assert call_order[0] == "validate", f"validate must be first; got {call_order}"
 
 
 def test_run_validate_config_error_propagates_no_agents_started(tmp_path):
     """ConfigValidationError from validate_config must propagate and prevent all agents."""
-    import asyncio
-    import pytest
-    from pycastle.errors import ConfigValidationError
-    from pycastle.orchestrator import run
-
     agents_started: list[str] = []
 
     async def _fake_run_agent(*args, **kwargs):
-        agents_started.append(kwargs.get("name", args[0] if args else "?"))
+        agents_started.append(kwargs.get("name", "?"))
         return ""
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch(
-            "pycastle.orchestrator.validate_config",
-            side_effect=ConfigValidationError("bad model"),
-        ),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-    ):
-        with pytest.raises(ConfigValidationError):
-            asyncio.run(run({}, tmp_path))
+    def _raising_validate(_):
+        raise ConfigValidationError("bad model")
+
+    with pytest.raises(ConfigValidationError):
+        asyncio.run(
+            run(
+                {},
+                tmp_path,
+                run_agent=_fake_run_agent,
+                validate_config=_raising_validate,
+            )
+        )
 
     assert agents_started == [], f"No agents must start; got {agents_started}"
 
@@ -483,26 +411,18 @@ def test_run_validate_config_error_propagates_no_agents_started(tmp_path):
 
 
 def test_stage_for_agent_planner():
-    from pycastle.orchestrator import _stage_for_agent
-
     assert _stage_for_agent("Planner") == "plan"
 
 
 def test_stage_for_agent_implementer():
-    from pycastle.orchestrator import _stage_for_agent
-
     assert _stage_for_agent("Implementer #42") == "implement"
 
 
 def test_stage_for_agent_reviewer():
-    from pycastle.orchestrator import _stage_for_agent
-
     assert _stage_for_agent("Reviewer #7") == "review"
 
 
 def test_stage_for_agent_merger():
-    from pycastle.orchestrator import _stage_for_agent
-
     assert _stage_for_agent("Merger") == "merge"
 
 
@@ -511,16 +431,13 @@ def test_stage_for_agent_merger():
 
 def test_planner_receives_plan_stage_model_and_effort(tmp_path):
     """Planner run_agent call must include model and effort from plan stage override."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     captured: list[dict] = []
 
     async def _fake_run_agent(name, **kwargs):
         captured.append(
             {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
         )
-        return "<plan>[]</plan>"
+        return _plan_json([])
 
     stage_overrides = {
         "plan": {"model": "claude-haiku-4-5", "effort": "low"},
@@ -529,16 +446,7 @@ def test_planner_receives_plan_stage_model_and_effort(tmp_path):
         "merge": {"model": "", "effort": ""},
     }
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch("pycastle.orchestrator.parse_plan", return_value=[]),
-        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
-        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-    ):
-        asyncio.run(run({}, tmp_path))
+    _run(tmp_path, _fake_run_agent, stage_overrides=stage_overrides)
 
     planner_call = next(c for c in captured if c["name"] == "Planner")
     assert planner_call["model"] == "claude-haiku-4-5"
@@ -547,9 +455,6 @@ def test_planner_receives_plan_stage_model_and_effort(tmp_path):
 
 def test_implementer_receives_implement_stage_model_and_effort(tmp_path):
     """Each Implementer run_agent call must include model and effort from implement stage."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     captured: list[dict] = []
 
     async def _fake_run_agent(name, **kwargs):
@@ -558,7 +463,7 @@ def test_implementer_receives_implement_stage_model_and_effort(tmp_path):
         )
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
     stage_overrides = {
         "plan": {"model": "", "effort": ""},
@@ -567,18 +472,13 @@ def test_implementer_receives_implement_stage_model_and_effort(tmp_path):
         "merge": {"model": "", "effort": ""},
     }
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch(
-            "pycastle.orchestrator.parse_plan",
-            return_value=[{"number": 1, "title": "Fix", "branch": "issue/1"}],
-        ),
-    ):
-        with _merge_patches():
-            asyncio.run(run({}, tmp_path))
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        stage_overrides=stage_overrides,
+        git_service=_make_git_svc(),
+        github_service=_make_github_svc(),
+    )
 
     impl_call = next(c for c in captured if "Implementer" in c["name"])
     assert impl_call["model"] == "claude-sonnet-4-6"
@@ -587,9 +487,6 @@ def test_implementer_receives_implement_stage_model_and_effort(tmp_path):
 
 def test_reviewer_receives_review_stage_model_and_effort(tmp_path):
     """Each Reviewer run_agent call must include model and effort from review stage."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     captured: list[dict] = []
 
     async def _fake_run_agent(name, **kwargs):
@@ -598,7 +495,7 @@ def test_reviewer_receives_review_stage_model_and_effort(tmp_path):
         )
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
     stage_overrides = {
         "plan": {"model": "", "effort": ""},
@@ -607,18 +504,13 @@ def test_reviewer_receives_review_stage_model_and_effort(tmp_path):
         "merge": {"model": "", "effort": ""},
     }
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch(
-            "pycastle.orchestrator.parse_plan",
-            return_value=[{"number": 1, "title": "Fix", "branch": "issue/1"}],
-        ),
-    ):
-        with _merge_patches():
-            asyncio.run(run({}, tmp_path))
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        stage_overrides=stage_overrides,
+        git_service=_make_git_svc(),
+        github_service=_make_github_svc(),
+    )
 
     rev_call = next(c for c in captured if "Reviewer" in c["name"])
     assert rev_call["model"] == "claude-haiku-4-5"
@@ -627,9 +519,6 @@ def test_reviewer_receives_review_stage_model_and_effort(tmp_path):
 
 def test_merger_receives_merge_stage_model_and_effort(tmp_path):
     """Merger run_agent call must include model and effort from merge stage override."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     captured: list[dict] = []
 
     async def _fake_run_agent(name, **kwargs):
@@ -638,7 +527,7 @@ def test_merger_receives_merge_stage_model_and_effort(tmp_path):
         )
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
     stage_overrides = {
         "plan": {"model": "", "effort": ""},
@@ -647,18 +536,13 @@ def test_merger_receives_merge_stage_model_and_effort(tmp_path):
         "merge": {"model": "claude-opus-4-7", "effort": "low"},
     }
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch(
-            "pycastle.orchestrator.parse_plan",
-            return_value=[{"number": 1, "title": "Fix", "branch": "issue/1"}],
-        ),
-    ):
-        with _merge_patches(try_merge_return=False):
-            asyncio.run(run({}, tmp_path))
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        stage_overrides=stage_overrides,
+        git_service=_make_git_svc(try_merge_side_effect=[False]),
+        github_service=_make_github_svc(),
+    )
 
     merger_call = next(c for c in captured if c["name"] == "Merger")
     assert merger_call["model"] == "claude-opus-4-7"
@@ -667,16 +551,13 @@ def test_merger_receives_merge_stage_model_and_effort(tmp_path):
 
 def test_empty_stage_override_passes_empty_strings(tmp_path):
     """Empty model and effort in stage override must pass empty strings to run_agent."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     captured: list[dict] = []
 
     async def _fake_run_agent(name, **kwargs):
         captured.append(
             {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
         )
-        return "<plan>[]</plan>"
+        return _plan_json([])
 
     stage_overrides = {
         "plan": {"model": "", "effort": ""},
@@ -685,16 +566,7 @@ def test_empty_stage_override_passes_empty_strings(tmp_path):
         "merge": {"model": "", "effort": ""},
     }
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch("pycastle.orchestrator.parse_plan", return_value=[]),
-        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
-        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-    ):
-        asyncio.run(run({}, tmp_path))
+    _run(tmp_path, _fake_run_agent, stage_overrides=stage_overrides)
 
     planner_call = next(c for c in captured if c["name"] == "Planner")
     assert planner_call["model"] == ""
@@ -703,9 +575,6 @@ def test_empty_stage_override_passes_empty_strings(tmp_path):
 
 def test_stage_overrides_are_independent(tmp_path):
     """Different stages must receive their own independent model/effort values."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     captured: list[dict] = []
 
     async def _fake_run_agent(name, **kwargs):
@@ -714,7 +583,7 @@ def test_stage_overrides_are_independent(tmp_path):
         )
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
     stage_overrides = {
         "plan": {"model": "claude-haiku-4-5", "effort": "low"},
@@ -723,18 +592,13 @@ def test_stage_overrides_are_independent(tmp_path):
         "merge": {"model": "claude-opus-4-7", "effort": "high"},
     }
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch(
-            "pycastle.orchestrator.parse_plan",
-            return_value=[{"number": 1, "title": "Fix", "branch": "issue/1"}],
-        ),
-    ):
-        with _merge_patches(try_merge_return=False):
-            asyncio.run(run({}, tmp_path))
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        stage_overrides=stage_overrides,
+        git_service=_make_git_svc(try_merge_side_effect=[False]),
+        github_service=_make_github_svc(),
+    )
 
     by_name = {c["name"]: c for c in captured}
     assert by_name["Planner"]["model"] == "claude-haiku-4-5"
@@ -752,9 +616,7 @@ def test_stage_overrides_are_independent(tmp_path):
 
 def test_merger_receives_checks_prompt_arg_from_preflight_checks(tmp_path):
     """Merger must receive CHECKS built from PREFLIGHT_CHECKS commands joined by ' && '."""
-    import asyncio
     from pycastle.defaults.config import PREFLIGHT_CHECKS
-    from pycastle.orchestrator import run
 
     captured: list[dict] = []
 
@@ -762,19 +624,14 @@ def test_merger_receives_checks_prompt_arg_from_preflight_checks(tmp_path):
         captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch(
-            "pycastle.orchestrator.parse_plan",
-            return_value=[{"number": 1, "title": "Fix", "branch": "issue/1"}],
-        ),
-    ):
-        with _merge_patches(try_merge_return=False):
-            asyncio.run(run({}, tmp_path))
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[False]),
+        github_service=_make_github_svc(),
+    )
 
     merger_call = next(c for c in captured if c["name"] == "Merger")
     expected_checks = " && ".join(cmd for _, cmd in PREFLIGHT_CHECKS)
@@ -783,28 +640,20 @@ def test_merger_receives_checks_prompt_arg_from_preflight_checks(tmp_path):
 
 def test_each_agent_passes_correct_stage_string(tmp_path):
     """Planner, Implementer, Reviewer, and Merger must each pass the correct stage= string."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     captured: list[dict] = []
 
     async def _fake_run_agent(name, **kwargs):
         captured.append({"name": name, "stage": kwargs.get("stage")})
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch(
-            "pycastle.orchestrator.parse_plan",
-            return_value=[{"number": 1, "title": "Fix", "branch": "issue/1"}],
-        ),
-    ):
-        with _merge_patches(try_merge_return=False):
-            asyncio.run(run({}, tmp_path))
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[False]),
+        github_service=_make_github_svc(),
+    )
 
     by_name = {c["name"]: c for c in captured}
     assert by_name["Planner"]["stage"] == "pre-planning"
@@ -818,9 +667,6 @@ def test_each_agent_passes_correct_stage_string(tmp_path):
 
 def test_multiple_implementers_run_in_parallel(tmp_path):
     """With MAX_PARALLEL >= N issues, all N implementers must be active simultaneously."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     active_implementers: set[str] = set()
     max_concurrent = 0
 
@@ -829,7 +675,12 @@ def test_multiple_implementers_run_in_parallel(tmp_path):
     ):
         nonlocal max_concurrent
         if name == "Planner":
-            return "<plan>placeholder</plan>"
+            return _plan_json(
+                [
+                    {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
+                    for i in range(1, 4)
+                ]
+            )
         if "Implementer" in name:
             active_implementers.add(name)
             max_concurrent = max(max_concurrent, len(active_implementers))
@@ -838,20 +689,13 @@ def test_multiple_implementers_run_in_parallel(tmp_path):
             return "<promise>COMPLETE</promise>"
         return ""
 
-    issues = [
-        {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
-        for i in range(1, 4)
-    ]
-
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch("pycastle.orchestrator.parse_plan", return_value=issues),
-        patch("pycastle.orchestrator.MAX_PARALLEL", 4),
-    ):
-        with _merge_patches():
-            asyncio.run(run({}, tmp_path))
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(),
+        github_service=_make_github_svc(),
+        max_parallel=4,
+    )
 
     assert max_concurrent == 3, (
         f"Expected all 3 implementers active simultaneously, max was {max_concurrent}"
@@ -860,9 +704,6 @@ def test_multiple_implementers_run_in_parallel(tmp_path):
 
 def test_concurrent_agents_never_exceed_max_parallel(tmp_path):
     """The total number of concurrently active agents must never exceed MAX_PARALLEL."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     active_count = 0
     max_active = 0
     max_parallel = 3
@@ -872,7 +713,12 @@ def test_concurrent_agents_never_exceed_max_parallel(tmp_path):
     ):
         nonlocal active_count, max_active
         if name == "Planner":
-            return "<plan>placeholder</plan>"
+            return _plan_json(
+                [
+                    {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
+                    for i in range(1, 8)
+                ]
+            )
         active_count += 1
         max_active = max(max_active, active_count)
         await asyncio.sleep(0.01)
@@ -881,20 +727,13 @@ def test_concurrent_agents_never_exceed_max_parallel(tmp_path):
             return "<promise>COMPLETE</promise>"
         return ""
 
-    issues = [
-        {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
-        for i in range(1, 8)
-    ]
-
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch("pycastle.orchestrator.parse_plan", return_value=issues),
-        patch("pycastle.orchestrator.MAX_PARALLEL", max_parallel),
-    ):
-        with _merge_patches():
-            asyncio.run(run({}, tmp_path))
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(),
+        github_service=_make_github_svc(),
+        max_parallel=max_parallel,
+    )
 
     assert max_active <= max_parallel, (
         f"Active agents exceeded MAX_PARALLEL={max_parallel}: max observed={max_active}"
@@ -903,16 +742,18 @@ def test_concurrent_agents_never_exceed_max_parallel(tmp_path):
 
 def test_implementer_starts_while_reviewer_runs(tmp_path):
     """A new Implementer must be able to start while a prior issue's Reviewer is running."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     events: list[str] = []
 
     async def _fake_run_agent(
         name, prompt_file, mount_path, env, prompt_args=None, **kw
     ):
         if name == "Planner":
-            return "<plan>placeholder</plan>"
+            return _plan_json(
+                [
+                    {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
+                    for i in range(1, 4)
+                ]
+            )
         events.append(f"start:{name}")
         await asyncio.sleep(0.03)
         events.append(f"end:{name}")
@@ -920,20 +761,13 @@ def test_implementer_starts_while_reviewer_runs(tmp_path):
             return "<promise>COMPLETE</promise>"
         return ""
 
-    issues = [
-        {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
-        for i in range(1, 4)
-    ]
-
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch("pycastle.orchestrator.parse_plan", return_value=issues),
-        patch("pycastle.orchestrator.MAX_PARALLEL", 2),
-    ):
-        with _merge_patches():
-            asyncio.run(run({}, tmp_path))
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(),
+        github_service=_make_github_svc(),
+        max_parallel=2,
+    )
 
     impl_3_start = next(
         (i for i, e in enumerate(events) if e == "start:Implementer #3"), None
@@ -950,79 +784,27 @@ def test_implementer_starts_while_reviewer_runs(tmp_path):
 # ── Issue-101: sequential merge loop with post-merge checks ──────────────────
 
 
-def _make_merge_test_patches(
-    tmp_path,
-    *,
-    issues: list[dict] | None = None,
-    try_merge_side_effect=None,
-    run_host_checks_return=None,
-    extra_patches: list | None = None,
-):
-    """Return a context-manager stack with standard patches for merge-loop tests."""
-    issues = issues or [{"number": 1, "title": "Fix", "branch": "issue/1"}]
-    if try_merge_side_effect is None:
-        try_merge_side_effect = [True] * len(issues)
-
-    mock_git = MagicMock()
-    _results = list(try_merge_side_effect)
-    _idx = [0]
-
-    def _try_merge(repo_path, branch):
-        val = _results[_idx[0]]
-        _idx[0] += 1
-        return val
-
-    mock_git.try_merge.side_effect = _try_merge
-    mock_github = MagicMock()
-
-    @contextlib.contextmanager
-    def _stack(run_agent_side_effect):
-        patches = [
-            patch("pycastle.orchestrator.prune_orphan_worktrees"),
-            patch("pycastle.orchestrator.validate_config"),
-            patch("pycastle.orchestrator.run_agent", side_effect=run_agent_side_effect),
-            patch("pycastle.orchestrator.parse_plan", return_value=issues),
-            patch("pycastle.orchestrator.GitService", return_value=mock_git),
-            patch("pycastle.orchestrator.GithubService", return_value=mock_github),
-            patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-            patch(
-                "pycastle.orchestrator._run_host_checks",
-                return_value=run_host_checks_return or [],
-            ),
-            patch("pycastle.orchestrator.MAX_ITERATIONS", 1),
-        ]
-        for p in extra_patches or []:
-            patches.append(p)
-        with contextlib.ExitStack() as stack:
-            for p in patches:
-                stack.enter_context(p)
-            yield mock_git, mock_github
-
-    return _stack
-
-
 def test_clean_merges_skip_merger(tmp_path):
     """When all branches merge cleanly, Merger agent must NOT be spawned."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     agent_names: list[str] = []
-
-    async def _fake_run_agent(name, **kwargs):
-        agent_names.append(name)
-        if "Implementer" in name:
-            return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
 
     issues = [
         {"number": 1, "title": "Fix A", "branch": "issue/1"},
         {"number": 2, "title": "Fix B", "branch": "issue/2"},
     ]
-    ctx = _make_merge_test_patches(
-        tmp_path, issues=issues, try_merge_side_effect=[True, True]
+
+    async def _fake_run_agent(name, **kwargs):
+        agent_names.append(name)
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True, True]),
+        github_service=_make_github_svc(),
     )
-    with ctx(_fake_run_agent):
-        asyncio.run(run({}, tmp_path))
 
     assert "Merger" not in agent_names, (
         f"Merger must not be spawned on clean merges; agents called: {agent_names}"
@@ -1031,23 +813,23 @@ def test_clean_merges_skip_merger(tmp_path):
 
 def test_clean_merge_calls_close_issue_with_parents(tmp_path):
     """Each cleanly-merged issue must be closed via close_issue_with_parents."""
-    import asyncio
-    from pycastle.orchestrator import run
-
-    async def _fake_run_agent(name, **kwargs):
-        if "Implementer" in name:
-            return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
-
     issues = [
         {"number": 7, "title": "Fix A", "branch": "issue/7"},
         {"number": 8, "title": "Fix B", "branch": "issue/8"},
     ]
-    ctx = _make_merge_test_patches(
-        tmp_path, issues=issues, try_merge_side_effect=[True, True]
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
+
+    mock_github = _make_github_svc()
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True, True]),
+        github_service=mock_github,
     )
-    with ctx(_fake_run_agent) as (mock_git, mock_github):
-        asyncio.run(run({}, tmp_path))
 
     closed = [
         call.args[0] for call in mock_github.close_issue_with_parents.call_args_list
@@ -1057,27 +839,25 @@ def test_clean_merge_calls_close_issue_with_parents(tmp_path):
 
 def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
     """When one branch conflicts, Merger is spawned with only the conflicting branch."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     captured: list[dict] = []
-
-    async def _fake_run_agent(name, **kwargs):
-        captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
-        if "Implementer" in name:
-            return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
 
     issues = [
         {"number": 1, "title": "Clean", "branch": "issue/1"},
         {"number": 2, "title": "Conflict", "branch": "issue/2"},
     ]
-    # issue/1 merges cleanly, issue/2 conflicts
-    ctx = _make_merge_test_patches(
-        tmp_path, issues=issues, try_merge_side_effect=[True, False]
+
+    async def _fake_run_agent(name, **kwargs):
+        captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True, False]),
+        github_service=_make_github_svc(),
     )
-    with ctx(_fake_run_agent):
-        asyncio.run(run({}, tmp_path))
 
     merger_calls = [c for c in captured if c["name"] == "Merger"]
     assert len(merger_calls) == 1, (
@@ -1090,53 +870,40 @@ def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
 
 def test_conflict_branch_skips_post_merge_checks(tmp_path):
     """When any branch conflicts, post-merge host checks must not run."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     host_checks_called = []
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Conflict", "branch": "issue/1"}])
 
-    issues = [{"number": 1, "title": "Conflict", "branch": "issue/1"}]
-    ctx = _make_merge_test_patches(
-        tmp_path, issues=issues, try_merge_side_effect=[False]
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[False]),
+        github_service=_make_github_svc(),
+        run_host_checks=lambda _: host_checks_called.append(True) or [],
     )
-    with ctx(_fake_run_agent):
-        with patch(
-            "pycastle.orchestrator._run_host_checks",
-            side_effect=lambda _: host_checks_called.append(True) or [],
-        ):
-            asyncio.run(run({}, tmp_path))
 
     assert host_checks_called == [], "Host checks must not run when conflicts exist"
 
 
 def test_post_merge_checks_run_after_all_clean_merges(tmp_path):
     """After all clean merges with no conflicts, host PREFLIGHT_CHECKS must run."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     host_checks_called = []
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
-    issues = [{"number": 1, "title": "Fix", "branch": "issue/1"}]
-
-    ctx = _make_merge_test_patches(
-        tmp_path, issues=issues, try_merge_side_effect=[True]
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        github_service=_make_github_svc(),
+        run_host_checks=lambda checks: host_checks_called.append(checks) or [],
     )
-    with ctx(_fake_run_agent):
-        with patch(
-            "pycastle.orchestrator._run_host_checks",
-            side_effect=lambda checks: host_checks_called.append(checks) or [],
-        ):
-            asyncio.run(run({}, tmp_path))
 
     assert len(host_checks_called) == 1, (
         f"_run_host_checks must be called once; called {len(host_checks_called)} times"
@@ -1145,27 +912,22 @@ def test_post_merge_checks_run_after_all_clean_merges(tmp_path):
 
 def test_post_merge_check_failure_spawns_bug_report_not_merger(tmp_path):
     """On post-merge check failure, bug-report is spawned and Merger is NOT spawned."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     agent_names: list[str] = []
 
     async def _fake_run_agent(name, **kwargs):
         agent_names.append(name)
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
-    issues = [{"number": 1, "title": "Fix", "branch": "issue/1"}]
     failures = [("pytest", "pytest", "FAILED tests/test_foo.py")]
-    ctx = _make_merge_test_patches(
+    _run(
         tmp_path,
-        issues=issues,
-        try_merge_side_effect=[True],
-        run_host_checks_return=failures,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        github_service=_make_github_svc(),
+        run_host_checks=lambda _: failures,
     )
-    with ctx(_fake_run_agent):
-        asyncio.run(run({}, tmp_path))
 
     assert "Merger" not in agent_names, (
         f"Merger must not spawn on check failure; agents={agent_names}"
@@ -1178,27 +940,22 @@ def test_post_merge_check_failure_spawns_bug_report_not_merger(tmp_path):
 
 def test_post_merge_bug_report_uses_post_merge_stage(tmp_path):
     """Bug-report agents spawned on post-merge failure must use '[post-merge]' in CHECK_NAME."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     captured: list[dict] = []
 
     async def _fake_run_agent(name, **kwargs):
         captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
-    issues = [{"number": 1, "title": "Fix", "branch": "issue/1"}]
     failures = [("pytest", "pytest", "FAILED")]
-    ctx = _make_merge_test_patches(
+    _run(
         tmp_path,
-        issues=issues,
-        try_merge_side_effect=[True],
-        run_host_checks_return=failures,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        github_service=_make_github_svc(),
+        run_host_checks=lambda _: failures,
     )
-    with ctx(_fake_run_agent):
-        asyncio.run(run({}, tmp_path))
 
     bug_calls = [c for c in captured if "bug-report" in c["name"]]
     assert bug_calls, "Expected bug-report agent calls"
@@ -1210,23 +967,23 @@ def test_post_merge_bug_report_uses_post_merge_stage(tmp_path):
 
 def test_conflict_branch_does_not_close_issue(tmp_path):
     """Conflicting branches must not be closed via close_issue_with_parents."""
-    import asyncio
-    from pycastle.orchestrator import run
-
-    async def _fake_run_agent(name, **kwargs):
-        if "Implementer" in name:
-            return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
-
     issues = [
         {"number": 1, "title": "Clean", "branch": "issue/1"},
         {"number": 2, "title": "Conflict", "branch": "issue/2"},
     ]
-    ctx = _make_merge_test_patches(
-        tmp_path, issues=issues, try_merge_side_effect=[True, False]
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
+
+    mock_github = _make_github_svc()
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True, False]),
+        github_service=mock_github,
     )
-    with ctx(_fake_run_agent) as (_, mock_github):
-        asyncio.run(run({}, tmp_path))
 
     closed = [
         call.args[0] for call in mock_github.close_issue_with_parents.call_args_list
@@ -1237,26 +994,25 @@ def test_conflict_branch_does_not_close_issue(tmp_path):
 
 def test_merger_receives_correct_issues_prompt_arg(tmp_path):
     """Merger ISSUES prompt arg must list only the conflicting issues, not clean ones."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     captured: list[dict] = []
-
-    async def _fake_run_agent(name, **kwargs):
-        captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
-        if "Implementer" in name:
-            return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
 
     issues = [
         {"number": 3, "title": "Clean issue", "branch": "issue/3"},
         {"number": 4, "title": "Conflict issue", "branch": "issue/4"},
     ]
-    ctx = _make_merge_test_patches(
-        tmp_path, issues=issues, try_merge_side_effect=[True, False]
+
+    async def _fake_run_agent(name, **kwargs):
+        captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True, False]),
+        github_service=_make_github_svc(),
     )
-    with ctx(_fake_run_agent):
-        asyncio.run(run({}, tmp_path))
 
     merger_calls = [c for c in captured if c["name"] == "Merger"]
     assert len(merger_calls) == 1
@@ -1271,31 +1027,26 @@ def test_merger_receives_correct_issues_prompt_arg(tmp_path):
 
 def test_multiple_check_failures_spawn_one_bug_report_each(tmp_path):
     """Each post-merge check failure must spawn exactly one bug-report agent."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     agent_names: list[str] = []
 
     async def _fake_run_agent(name, **kwargs):
         agent_names.append(name)
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
-    issues = [{"number": 1, "title": "Fix", "branch": "issue/1"}]
     failures = [
         ("pytest", "pytest", "FAILED tests/test_foo.py"),
         ("mypy", "mypy .", "error: Found 2 errors"),
         ("ruff", "ruff check .", "ruff: error"),
     ]
-    ctx = _make_merge_test_patches(
+    _run(
         tmp_path,
-        issues=issues,
-        try_merge_side_effect=[True],
-        run_host_checks_return=failures,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        github_service=_make_github_svc(),
+        run_host_checks=lambda _: failures,
     )
-    with ctx(_fake_run_agent):
-        asyncio.run(run({}, tmp_path))
 
     bug_reports = [n for n in agent_names if "bug-report" in n]
     assert len(bug_reports) == 3, (
@@ -1305,27 +1056,22 @@ def test_multiple_check_failures_spawn_one_bug_report_each(tmp_path):
 
 def test_bug_report_receives_correct_command_and_output(tmp_path):
     """Bug-report prompt_args must include the exact COMMAND and OUTPUT from the failing check."""
-    import asyncio
-    from pycastle.orchestrator import run
-
     captured: list[dict] = []
 
     async def _fake_run_agent(name, **kwargs):
         captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
-    issues = [{"number": 1, "title": "Fix", "branch": "issue/1"}]
     failures = [("pytest", "pytest -x", "FAILED tests/test_bar.py::test_something")]
-    ctx = _make_merge_test_patches(
+    _run(
         tmp_path,
-        issues=issues,
-        try_merge_side_effect=[True],
-        run_host_checks_return=failures,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        github_service=_make_github_svc(),
+        run_host_checks=lambda _: failures,
     )
-    with ctx(_fake_run_agent):
-        asyncio.run(run({}, tmp_path))
 
     bug_calls = [c for c in captured if "bug-report" in c["name"]]
     assert len(bug_calls) == 1
@@ -1392,177 +1138,139 @@ def test_delete_merged_branches_uses_injected_git_service(tmp_path):
 
 def test_clean_merged_branches_are_deleted_after_try_merge(tmp_path):
     """Branches merged cleanly via try_merge must be deleted after the merge loop."""
-    import asyncio
-    from pycastle.orchestrator import run
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix A", "branch": "issue/1"}])
 
-    issues = [{"number": 1, "title": "Fix A", "branch": "issue/1"}]
-    ctx = _make_merge_test_patches(
-        tmp_path, issues=issues, try_merge_side_effect=[True]
+    mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=True)
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=mock_git,
+        github_service=_make_github_svc(),
     )
-    with ctx(_fake_run_agent) as (mock_git, _):
-        mock_git.is_ancestor.return_value = True
-        asyncio.run(run({}, tmp_path))
 
     mock_git.delete_branch.assert_called_with("issue/1", tmp_path)
 
 
 def test_conflict_branches_are_deleted_after_merger_agent(tmp_path):
     """Branches resolved by the Merger agent must be deleted after it returns."""
-    import asyncio
-    from pycastle.orchestrator import run
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 2, "title": "Conflict", "branch": "issue/2"}])
 
-    issues = [{"number": 2, "title": "Conflict", "branch": "issue/2"}]
-    ctx = _make_merge_test_patches(
-        tmp_path, issues=issues, try_merge_side_effect=[False]
+    mock_git = _make_git_svc(try_merge_side_effect=[False], is_ancestor=True)
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=mock_git,
+        github_service=_make_github_svc(),
     )
-    with ctx(_fake_run_agent) as (mock_git, _):
-        mock_git.is_ancestor.return_value = True
-        asyncio.run(run({}, tmp_path))
 
     mock_git.delete_branch.assert_called_with("issue/2", tmp_path)
 
 
 def test_non_ancestor_branch_not_deleted(tmp_path):
     """A branch that is not an ancestor of HEAD must not be deleted."""
-    import asyncio
-    from pycastle.orchestrator import run
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix A", "branch": "issue/1"}])
 
-    issues = [{"number": 1, "title": "Fix A", "branch": "issue/1"}]
-    ctx = _make_merge_test_patches(
-        tmp_path, issues=issues, try_merge_side_effect=[True]
+    mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=False)
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=mock_git,
+        github_service=_make_github_svc(),
     )
-    with ctx(_fake_run_agent) as (mock_git, _):
-        mock_git.is_ancestor.return_value = False
-        asyncio.run(run({}, tmp_path))
 
     mock_git.delete_branch.assert_not_called()
 
 
 def test_delete_branch_error_does_not_abort_run(tmp_path):
     """A GitCommandError on delete_branch must not propagate out of run()."""
-    import asyncio
-    from pycastle.orchestrator import run
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return "<plan>placeholder</plan>"
+        return _plan_json([{"number": 1, "title": "Fix A", "branch": "issue/1"}])
 
-    issues = [{"number": 1, "title": "Fix A", "branch": "issue/1"}]
-    ctx = _make_merge_test_patches(
-        tmp_path, issues=issues, try_merge_side_effect=[True]
+    mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=True)
+    mock_git.delete_branch.side_effect = GitCommandError(
+        "fail", returncode=1, stderr=""
     )
-    with ctx(_fake_run_agent) as (mock_git, _):
-        mock_git.is_ancestor.return_value = True
-        mock_git.delete_branch.side_effect = GitCommandError(
-            "fail", returncode=1, stderr=""
-        )
-        asyncio.run(run({}, tmp_path))  # must not raise
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=mock_git,
+        github_service=_make_github_svc(),
+    )  # must not raise
 
 
-# ── Issue-162: early exit when no ready-for-agent issues ─────────────────────
+# ── run_issue: implementer completion check ───────────────────────────────────
 
 
-def test_run_skips_agent_when_no_ready_for_agent_issues(tmp_path):
-    """run_agent must never be called when has_open_issues_with_label returns False."""
-    import asyncio
-    from pycastle.orchestrator import run
+def test_run_issue_returns_none_when_implementer_does_not_complete(tmp_path):
+    """run_issue must return None when implementer response lacks <promise>COMPLETE</promise>."""
 
-    agent_names: list[str] = []
+    async def _fake_run_agent(**kwargs):
+        return "I tried but could not finish"
+
+    issue = {"number": 1, "title": "Fix thing", "branch": "issue/1"}
+    result = asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+
+    assert result is None
+
+
+def test_run_issue_returns_issue_when_implementer_completes(tmp_path):
+    """run_issue must return the issue dict when implementer produces COMPLETE."""
+
+    async def _fake_run_agent(**kwargs):
+        return "<promise>COMPLETE</promise>"
+
+    issue = {"number": 2, "title": "Fix thing", "branch": "issue/2"}
+    result = asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+
+    assert result == issue
+
+
+def test_run_incomplete_implementers_skip_merge(tmp_path):
+    """When no implementer produces COMPLETE, try_merge must never be called."""
 
     async def _fake_run_agent(name, **kwargs):
-        agent_names.append(name)
-        return ""
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return ""  # implementer does not return COMPLETE
 
-    mock_github = MagicMock()
-    mock_github.has_open_issues_with_label.return_value = False
-
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
-        patch("pycastle.orchestrator.GithubService", return_value=mock_github),
-        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-    ):
-        asyncio.run(run({}, tmp_path))
-
-    assert agent_names == [], (
-        f"No agents must be called when no issues found; got: {agent_names}"
+    mock_git = _make_git_svc()
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=mock_git,
+        github_service=_make_github_svc(),
     )
 
-
-def test_run_exits_loop_after_first_iteration_when_no_issues(tmp_path):
-    """Loop must break after first iteration when no issues found (not loop again)."""
-    import asyncio
-    from pycastle.orchestrator import run
-
-    mock_github = MagicMock()
-    mock_github.has_open_issues_with_label.return_value = False
-
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.GithubService", return_value=mock_github),
-        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-        patch("pycastle.orchestrator.MAX_ITERATIONS", 3),
-    ):
-        asyncio.run(run({}, tmp_path))
-
-    assert mock_github.has_open_issues_with_label.call_count == 1, (
-        f"has_open_issues_with_label must be called once (not looped); "
-        f"called {mock_github.has_open_issues_with_label.call_count} times"
-    )
+    mock_git.try_merge.assert_not_called()
 
 
-def test_run_prints_skip_message_when_no_ready_for_agent_issues(tmp_path, capsys):
-    """Early exit must print the expected skip message."""
-    import asyncio
-    from pycastle.orchestrator import run
-
-    mock_github = MagicMock()
-    mock_github.has_open_issues_with_label.return_value = False
-
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.GithubService", return_value=mock_github),
-        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-    ):
-        asyncio.run(run({}, tmp_path))
-
-    assert "No issues with label 'ready-for-agent' found. Skipping." in capsys.readouterr().out
+# ── error log directory creation ─────────────────────────────────────────────
 
 
-def test_run_prints_skip_message_when_planner_returns_no_issues(tmp_path, capsys):
-    """Post-planner empty-issues path must print the same skip message."""
-    import asyncio
-    from pycastle.orchestrator import run
+def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
+    """run() must create logs_dir with parents if it does not exist before writing errors.log."""
+    logs_dir = tmp_path / "new" / "nested" / "logs"
 
-    mock_github = MagicMock()
-    mock_github.has_open_issues_with_label.return_value = True
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        raise RuntimeError("agent failed")
 
-    with (
-        patch("pycastle.orchestrator.prune_orphan_worktrees"),
-        patch("pycastle.orchestrator.validate_config"),
-        patch("pycastle.orchestrator.run_agent", return_value="<plan>{\"issues\": []}</plan>"),
-        patch("pycastle.orchestrator.GithubService", return_value=mock_github),
-        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
-    ):
-        asyncio.run(run({}, tmp_path))
+    _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
 
-    assert "No issues with label 'ready-for-agent' found. Skipping." in capsys.readouterr().out
+    assert (logs_dir / "errors.log").exists()
