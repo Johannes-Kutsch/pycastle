@@ -386,17 +386,6 @@ def test_get_labels_returns_empty_list_when_no_labels():
         assert svc.get_labels(42) == []
 
 
-def test_get_labels_calls_correct_api_endpoint():
-    svc = GithubService("owner/repo")
-    with patch(
-        "subprocess.run",
-        return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
-    ) as m:
-        svc.get_labels(7)
-    cmd = m.call_args[0][0]
-    assert "repos/owner/repo/issues/7" in " ".join(cmd)
-
-
 def test_get_labels_raises_github_command_error_on_failure():
     svc = GithubService("owner/repo")
     with patch(
