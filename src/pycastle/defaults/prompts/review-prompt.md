@@ -82,7 +82,6 @@ Never change what the code does - only how it does it. All original features, ou
 4. Make any code quality improvements directly on this branch
 5. Run `ruff check . && mypy . --ignore-missing-imports` and `pytest` again to ensure nothing is broken
 6. Commit with a message starting with `RALPH: Review -` describing the refinements
-
-If the code is already clean, well-tested, and handles edge cases properly, do nothing.
+7. Post a comment on the GitHub issue using the exact commit message from step 6: `gh issue comment {{ISSUE_NUMBER}} --body "$(git log --format=%B -n 1 HEAD)"`. If no commit was made in step 6, post this fixed message instead: `gh issue comment {{ISSUE_NUMBER}} --body "RALPH: Review - No issues found. All checks pass."`
 
 Once complete, output <promise>COMPLETE</promise>.
