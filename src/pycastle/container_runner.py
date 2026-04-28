@@ -89,6 +89,7 @@ class ContainerRunner:
         gitdir_overlay: Path | None = None,
         model: str = "",
         effort: str = "",
+        docker_client=None,
     ):
         self.name = name
         self.mount_path = mount_path
@@ -98,7 +99,7 @@ class ContainerRunner:
         self.gitdir_overlay = gitdir_overlay
         self.model = model
         self.effort = effort
-        self._client = docker.from_env()
+        self._client = docker_client if docker_client is not None else docker.from_env()
         self._container: DockerContainer | None = None
         self._container_env: dict[str, str] = {}
         self._prompt: str = ""
