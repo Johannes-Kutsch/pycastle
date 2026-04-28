@@ -415,6 +415,32 @@ async def run_agent(
                     name, runner, loop, exec_timeout, PREFLIGHT_CHECKS
                 )
                 if failures:
+                    _bug_prompt = (
+                        Path(__file__).parent
+                        / "defaults"
+                        / "prompts"
+                        / "preflight-issue.md"
+                    )
+                    await asyncio.gather(
+                        *[
+                            run_agent(
+                                name=f"bug-report ({check_name})",
+                                prompt_file=_bug_prompt,
+                                mount_path=mount_path,
+                                env=env,
+                                prompt_args={
+                                    "CHECK_NAME": f"[{stage}] {check_name}"
+                                    if stage
+                                    else check_name,
+                                    "COMMAND": command,
+                                    "OUTPUT": output,
+                                },
+                                exec_timeout=exec_timeout,
+                                skip_preflight=True,
+                            )
+                            for check_name, command, output in failures
+                        ]
+                    )
                     raise PreflightError(failures)
             return await _work(name, runner, loop)
     finally:
