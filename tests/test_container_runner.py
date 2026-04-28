@@ -899,6 +899,14 @@ def test_build_claude_command_includes_verbose():
     assert "--verbose" in cmd
 
 
+# ── Issue 79: --print flag removed to prevent duplicate console output ────────
+
+
+def test_build_claude_command_does_not_include_print_flag():
+    cmd = _build_claude_command()
+    assert "--print" not in cmd
+
+
 def test_build_claude_command_includes_stdin_flag():
     cmd = _build_claude_command()
     assert "-p -" in cmd
