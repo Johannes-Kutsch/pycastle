@@ -416,7 +416,7 @@ async def run(
                     sha=None,
                 )
                 if pf_completed:
-                    pf_branch = f"issue/{pf_num}"
+                    pf_branch = f"sandcastle/issue-{pf_num}"
                     await wait_for_clean_working_tree(repo_root, git_svc)
                     if git_svc.try_merge(repo_root, pf_branch):
                         _get_github_svc().close_issue(pf_num)

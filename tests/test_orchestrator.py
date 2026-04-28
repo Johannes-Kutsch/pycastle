@@ -108,6 +108,49 @@ def test_preflight_issue_branch_uses_sandcastle_format(tmp_path):
     )
 
 
+def test_post_merge_preflight_fix_tries_merge_on_sandcastle_branch(tmp_path):
+    """After a post-merge check failure, try_merge for the preflight fix must use sandcastle/issue-N."""
+    check_call_count = [0]
+    try_merge_branches: list[str] = []
+
+    mock_git = _make_git_svc()
+
+    def _try_merge(repo_path, branch):
+        try_merge_branches.append(branch)
+        return True
+
+    mock_git.try_merge.side_effect = _try_merge
+    mock_git.get_head_sha.return_value = "sha"
+
+    def _run_host_checks(_):
+        check_call_count[0] += 1
+        if check_call_count[0] == 1:
+            return [("pytest", "pytest", "FAILED")]
+        return []
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        if "preflight-issue" in name:
+            return "<issue>55</issue>"
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=mock_git,
+        github_service=_make_github_svc_afk(),
+        run_host_checks=_run_host_checks,
+    )
+
+    pf_merge_calls = [b for b in try_merge_branches if "55" in b]
+    assert pf_merge_calls == ["sandcastle/issue-55"], (
+        f"Preflight fix must try_merge sandcastle/issue-55; got {pf_merge_calls}"
+    )
+
+
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
