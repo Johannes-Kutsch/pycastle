@@ -20,17 +20,16 @@ An issue B is **blocked by** issue A if:
 
 An issue is **unblocked** if it has zero blocking dependencies on other open issues.
 
+Any issue referenced as a dependency that does not appear in the open issues list above has already been completed. Do not treat absent issues as blockers. Do not infer blockers from integration stability concerns — if a referenced issue is not in the list, its work is fully integrated and stable.
+
 If the issue appears to be a PRD and it has implementation issues which link to it, the PRD cannot be worked on.
 
 # OUTPUT
 
-Output your plan as a JSON object wrapped in `<plan>` tags with two keys:
-
-- `unblocked_issues`: issues ready to work on now
-- `blocked_issues`: issues that cannot be started yet
+Output your plan as a JSON object wrapped in `<plan>` tags:
 
 <plan>
-{"unblocked_issues": [{"number": 42, "title": "Fix auth bug"}], "blocked_issues": [{"number": 43, "title": "Add OAuth flow"}]}
+{"issues": [{"number": 42, "title": "Fix auth bug"}]}
 </plan>
 
-If every issue is blocked, place the single highest-priority candidate (fewest or weakest dependencies) in `unblocked_issues` and the rest in `blocked_issues`.
+Include only unblocked issues. If every issue is blocked, include the single highest-priority candidate (the one with the fewest or weakest dependencies).

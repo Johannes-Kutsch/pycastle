@@ -20,6 +20,8 @@ An issue B is **blocked by** issue A if:
 
 An issue is **unblocked** if it has zero blocking dependencies on other open issues.
 
+Any issue referenced as a dependency that does not appear in the open issues list above has already been completed. Do not treat absent issues as blockers. Do not infer blockers from integration stability concerns — if a referenced issue is not in the list, its work is fully integrated and stable.
+
 If the issue appears to be a PRD and it has implementation issues which link to it, the PRD cannot be worked on.
 
 # OUTPUT
