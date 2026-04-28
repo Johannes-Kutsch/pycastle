@@ -6,6 +6,7 @@ from .defaults.config import (  # noqa: F401
     DOCKERFILE,
     DOCKER_IMAGE_NAME,
     ENV_FILE,
+    HITL_LABEL,
     IDLE_TIMEOUT,
     IMPLEMENT_CHECKS,
     ISSUE_LABEL,
