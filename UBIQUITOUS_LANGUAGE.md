@@ -17,7 +17,9 @@
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **config.py** | Python file in the pycastle directory defining behavioral configuration (paths, limits, image names) | settings.py, settings |
+| **config.py** | Python file in the **pycastle directory** defining behavioral configuration (paths, limits, image names); overrides the **defaults module** field by field at runtime | settings.py, settings |
+| **defaults module** | The `src/pycastle/defaults/config.py` file bundled in the package; contains only pure default values, no logic, never touched by users or the **config loader** directly | defaults config, fallback config |
+| **config loader** | The `src/pycastle/config.py` package module; contains no default values of its own — it imports everything from the **defaults module**, then applies field-by-field overrides from the consuming project's **config.py** if it exists | — |
 | **.env** | File in the pycastle directory holding secrets and credentials only — never committed to git | environment file, config |
 | **GH_TOKEN** | GitHub personal access token stored in .env, used for GitHub API calls and label management | github token, gh pat |
 | **CLAUDE_CODE_OAUTH_TOKEN** | Long-lived OAuth token for Claude Code authentication, generated via `claude setup-token` and stored in .env | claude token, oauth token |
@@ -25,7 +27,7 @@
 | **CLAUDE_ACCOUNT_JSON** | Serialized Claude Code account credentials blob, read at runtime from `~/.claude.json` on the host — never stored in .env | claude config, claude json |
 | **PREFLIGHT_CHECKS** | Config entry (`list[tuple[str, str]]`) of `(name, command)` pairs defining the **quality checks** run during the **Pre-flight phase**; machine-executed by the **container runner** | preflight commands, check list |
 | **IMPLEMENT_CHECKS** | Config entry (`list[str]`) of command strings rendered into the **FEEDBACK LOOPS section** of the implement-prompt as agent instructions; distinct from **PREFLIGHT_CHECKS** because commands may differ (e.g. `ruff check --fix` vs `ruff check .`) | feedback commands, implement commands |
-| **full replacement** | Override strategy where the local config.py replaces the package default entirely | merge, partial override |
+| **field-by-field override** | The config loader strategy: for each non-underscore name in the consuming project's **config.py**, `setattr` replaces the corresponding name in the **config loader** module; absent names fall back to the **defaults module** | full replacement, merge override |
 | **config loader** | Package module that discovers and imports config.py from CWD, falling back to package defaults | — |
 | **STAGE_OVERRIDES** | Config dict with one entry per **orchestration phase** (`plan`, `implement`, `review`, `merge`), each holding a **model shorthand** and an **effort level** | stage config, model config |
 | **stage override** | The per-phase `model` + `effort` entry inside `STAGE_OVERRIDES` for one **orchestration phase** | phase config, agent config |
@@ -364,6 +366,12 @@
 - **"phase"** now operates at two levels: *orchestration phases* (plan, implement, review, merge) are stages of an **iteration**; *agent lifecycle phases* (Setup, Prepare, Work) are stages of a single agent container run. Use the full term (**agent lifecycle phase** vs **plan phase**) when the level is not obvious from context.
 - **"worktree"** was previously defined as "created inside a container" — this is incorrect. The **worktree** is always created on the **host** and bind-mounted into the container. The container never runs `git worktree add`.
 - **"timeout"** is used for two distinct limits: **idle timeout** (agent produces no output) and **worktree timeout** (git operation takes too long). Always qualify which kind is meant.
+
+- **"config.py"** refers to two entirely different files: the consuming project's `pycastle/config.py` (the user's **config.py**, defines overrides) and the package's `src/pycastle/config.py` (the **config loader**, contains no default values). Never say "config.py" without qualifying which one — use **config.py** for the user file and **config loader** for the package module.
+
+- **"defaults"** has a third meaning introduced here: the `src/pycastle/defaults/config.py` file (the **defaults module**), distinct from (a) bundled template files copied by `pycastle init` and (b) the concept of default config values. Always qualify: **defaults module** for the file, **default config values** for the values themselves.
+
+- **"override"** now operates at three levels: (a) **stage override** (one entry in `STAGE_OVERRIDES` per orchestration phase), (b) **field-by-field override** (the config loader applying user values on top of defaults), and (c) **full replacement** (old term, now retired — the mechanism was never a full replacement). Use the qualified form; avoid bare "override."
 
 - **"Service"** can refer to a specific service implementation (GitService, ClaudeService, DockerService, GithubService) or the abstract pattern (a subprocess-encapsulating dependency that tests can inject). Use the specific service name when referring to one implementation; use **Service** generically only for the pattern.
 
