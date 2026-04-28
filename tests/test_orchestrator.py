@@ -1211,3 +1211,66 @@ def test_delete_branch_error_does_not_abort_run(tmp_path):
         git_service=mock_git,
         github_service=_make_github_svc(),
     )  # must not raise
+
+
+# ── run_issue: implementer completion check ───────────────────────────────────
+
+
+def test_run_issue_returns_none_when_implementer_does_not_complete(tmp_path):
+    """run_issue must return None when implementer response lacks <promise>COMPLETE</promise>."""
+
+    async def _fake_run_agent(**kwargs):
+        return "I tried but could not finish"
+
+    issue = {"number": 1, "title": "Fix thing", "branch": "issue/1"}
+    result = asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+
+    assert result is None
+
+
+def test_run_issue_returns_issue_when_implementer_completes(tmp_path):
+    """run_issue must return the issue dict when implementer produces COMPLETE."""
+
+    async def _fake_run_agent(**kwargs):
+        return "<promise>COMPLETE</promise>"
+
+    issue = {"number": 2, "title": "Fix thing", "branch": "issue/2"}
+    result = asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+
+    assert result == issue
+
+
+def test_run_incomplete_implementers_skip_merge(tmp_path):
+    """When no implementer produces COMPLETE, try_merge must never be called."""
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return ""  # implementer does not return COMPLETE
+
+    mock_git = _make_git_svc()
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=mock_git,
+        github_service=_make_github_svc(),
+    )
+
+    mock_git.try_merge.assert_not_called()
+
+
+# ── error log directory creation ─────────────────────────────────────────────
+
+
+def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
+    """run() must create logs_dir with parents if it does not exist before writing errors.log."""
+    logs_dir = tmp_path / "new" / "nested" / "logs"
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        raise RuntimeError("agent failed")
+
+    _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
+
+    assert (logs_dir / "errors.log").exists()
