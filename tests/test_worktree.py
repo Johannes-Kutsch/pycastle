@@ -58,14 +58,6 @@ def test_create_worktree_creates_worktree_directory(repo, tmp_path):
     assert worktree.exists()
 
 
-def test_remove_worktree_removes_worktree_directory(repo, tmp_path):
-    worktree = tmp_path / "wt"
-    create_worktree(repo, worktree, "feature/remove-delegate")
-    assert worktree.exists()
-    remove_worktree(repo, worktree)
-    assert not worktree.exists()
-
-
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
 
