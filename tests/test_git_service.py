@@ -447,6 +447,41 @@ def test_create_worktree_uses_head_when_sha_is_omitted(tmp_path):
     assert "HEAD" in add_cmd
 
 
+def test_create_worktree_uses_head_when_sha_is_none(tmp_path):
+    svc = GitService()
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        if "rev-parse" in cmd:
+            return MagicMock(returncode=1, stdout=b"", stderr=b"")
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        svc.create_worktree(tmp_path, tmp_path / "wt", "feature/new", sha=None)
+
+    add_cmd = next(c for c in captured if "add" in c and "worktree" in c)
+    assert "HEAD" in add_cmd
+
+
+def test_create_worktree_ignores_sha_when_branch_already_exists(tmp_path):
+    svc = GitService()
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        if "rev-parse" in cmd:
+            return MagicMock(returncode=0, stdout=b"abc\n", stderr=b"")
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        svc.create_worktree(tmp_path, tmp_path / "wt", "existing-branch", sha="abc123")
+
+    add_cmd = next(c for c in captured if "add" in c and "worktree" in c)
+    assert "-b" not in add_cmd
+    assert "abc123" not in add_cmd
+
+
 # ── remove_worktree() ─────────────────────────────────────────────────────────
 
 

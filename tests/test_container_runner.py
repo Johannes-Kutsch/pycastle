@@ -1764,6 +1764,11 @@ def test_format_stream_line_returns_none_for_empty_result_string():
     assert _format_stream_line(line) is None
 
 
+def test_format_stream_line_returns_none_for_null_result():
+    line = '{"type":"result","result":null}'
+    assert _format_stream_line(line) is None
+
+
 def test_format_stream_line_returns_none_for_unknown_type():
     line = '{"type":"tool_result","content":"output"}'
     assert _format_stream_line(line) is None
