@@ -559,6 +559,59 @@ def test_setup_calls_get_user_email_on_git_service(tmp_path):
     mock_git.get_user_email.assert_called_once()
 
 
+# ── Issue 90: shell-safe quoting of git identity values ──────────────────────
+
+
+def test_setup_shell_quotes_git_name_containing_single_quote(tmp_path):
+    """A git user.name with a single quote (e.g. O'Brien) must produce a valid shell command."""
+    import shlex
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+    _Runner, exec_log = _make_exec_logging_runner()
+
+    with patch("pycastle.container_runner.ContainerRunner", _Runner):
+        _run(
+            run_agent(
+                "Test",
+                prompt,
+                tmp_path,
+                {},
+                git_service=_make_git_service(name="O'Brien"),
+            )
+        )
+
+    name_cmds = [cmd for cmd in exec_log if "user.name" in cmd]
+    assert name_cmds
+    parsed = shlex.split(name_cmds[0])
+    assert parsed[-1] == "O'Brien"
+
+
+def test_setup_shell_quotes_git_email_containing_single_quote(tmp_path):
+    """A git user.email with a single quote must produce a valid shell command."""
+    import shlex
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+    _Runner, exec_log = _make_exec_logging_runner()
+
+    with patch("pycastle.container_runner.ContainerRunner", _Runner):
+        _run(
+            run_agent(
+                "Test",
+                prompt,
+                tmp_path,
+                {},
+                git_service=_make_git_service(email="it's@example.com"),
+            )
+        )
+
+    email_cmds = [cmd for cmd in exec_log if "user.email" in cmd]
+    assert email_cmds
+    parsed = shlex.split(email_cmds[0])
+    assert parsed[-1] == "it's@example.com"
+
+
 # ── Cycle 23-4: run_streaming raises AgentTimeoutError on idle timeout ────────
 
 

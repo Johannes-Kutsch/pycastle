@@ -4,6 +4,7 @@ import json
 import os
 import queue
 import re
+import shlex
 import sys
 import tarfile
 import threading
@@ -296,13 +297,13 @@ async def _setup(
     await loop.run_in_executor(
         None,
         runner.exec_simple,
-        f"git config --global user.name '{git_name}'",
+        f"git config --global user.name {shlex.quote(git_name)}",
         exec_timeout,
     )
     await loop.run_in_executor(
         None,
         runner.exec_simple,
-        f"git config --global user.email '{git_email}'",
+        f"git config --global user.email {shlex.quote(git_email)}",
         exec_timeout,
     )
 
