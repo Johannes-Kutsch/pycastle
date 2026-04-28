@@ -1,84 +1,44 @@
 import os
 import re
-import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-from .defaults.config import WORKTREE_TIMEOUT
-from .errors import WorktreeError, WorktreeTimeoutError
+from .errors import WorktreeError
+from .git_service import GitCommandError, GitService
 
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
 
 
-def _run(*args, **kwargs) -> subprocess.CompletedProcess:
-    kwargs.setdefault("timeout", WORKTREE_TIMEOUT)
-    try:
-        return subprocess.run(*args, **kwargs)
-    except subprocess.TimeoutExpired as exc:
-        raise WorktreeTimeoutError(
-            f"git command timed out after {WORKTREE_TIMEOUT}s: {exc.cmd}"
-        ) from exc
+def create_worktree(
+    repo_path: Path,
+    worktree_path: Path,
+    branch: str,
+    git_service: GitService | None = None,
+) -> None:
+    svc = git_service or GitService()
 
-
-def _is_ancestor(branch: str, repo_path: Path) -> bool:
-    result = _run(
-        ["git", "merge-base", "--is-ancestor", branch, "HEAD"],
-        cwd=repo_path,
-        capture_output=True,
-    )
-    return result.returncode == 0
-
-
-def create_worktree(repo_path: Path, worktree_path: Path, branch: str) -> None:
-    _run(
-        ["git", "worktree", "prune"],
-        cwd=repo_path,
-        capture_output=True,
-    )
+    branch_exists = svc.verify_ref_exists(branch, repo_path)
 
     if worktree_path.exists():
-        _run(
-            ["git", "worktree", "remove", "--force", str(worktree_path)],
-            cwd=repo_path,
-            capture_output=True,
-        )
-        shutil.rmtree(worktree_path, ignore_errors=True)
+        svc.remove_worktree(repo_path, worktree_path)
 
-    rev_parse = _run(
-        ["git", "rev-parse", "--verify", branch],
-        cwd=repo_path,
-        capture_output=True,
-    )
-
-    if rev_parse.returncode == 0:
-        cmd = ["git", "worktree", "add", str(worktree_path), branch]
-    else:
-        cmd = ["git", "worktree", "add", "-b", branch, str(worktree_path), "HEAD"]
-
-    result = _run(cmd, cwd=repo_path, capture_output=True)
-    if result.returncode != 0:
-        raise WorktreeError(
-            f"git worktree add failed: {result.stderr.decode('utf-8', errors='replace').strip()}"
-        )
+    try:
+        svc.create_worktree(repo_path, worktree_path, branch)
+    except GitCommandError as exc:
+        raise WorktreeError(str(exc)) from exc
 
     has_files = (worktree_path / "pyproject.toml").exists() or (
         worktree_path / "requirements.txt"
     ).exists()
-    if not has_files and rev_parse.returncode == 0:
-        if _is_ancestor(branch, repo_path):
-            remove_worktree(repo_path, worktree_path)
-            _run(["git", "branch", "-D", branch], cwd=repo_path, capture_output=True)
-            result = _run(
-                ["git", "worktree", "add", "-b", branch, str(worktree_path), "HEAD"],
-                cwd=repo_path,
-                capture_output=True,
-            )
-            if result.returncode != 0:
-                raise RuntimeError(
-                    f"git worktree add failed: {result.stderr.decode('utf-8', errors='replace').strip()}"
-                )
+    if not has_files and branch_exists:
+        if svc.is_ancestor(branch, repo_path):
+            svc.remove_worktree(repo_path, worktree_path)
+            svc.delete_branch(branch, repo_path)
+            try:
+                svc.create_worktree(repo_path, worktree_path, branch)
+            except GitCommandError as exc:
+                raise WorktreeError(str(exc)) from exc
             has_files = (worktree_path / "pyproject.toml").exists() or (
                 worktree_path / "requirements.txt"
             ).exists()
@@ -89,7 +49,7 @@ def create_worktree(repo_path: Path, worktree_path: Path, branch: str) -> None:
             if worktree_path.exists()
             else "(missing)"
         )
-        remove_worktree(repo_path, worktree_path)
+        svc.remove_worktree(repo_path, worktree_path)
         raise WorktreeError(
             f"No pyproject.toml or requirements.txt found in worktree {worktree_path}. "
             f"Commit your project files before running agents. "
@@ -97,14 +57,13 @@ def create_worktree(repo_path: Path, worktree_path: Path, branch: str) -> None:
         )
 
 
-def remove_worktree(repo_path: Path, worktree_path: Path) -> None:
-    result = _run(
-        ["git", "worktree", "remove", "--force", str(worktree_path)],
-        cwd=repo_path,
-        capture_output=True,
-    )
-    if result.returncode != 0:
-        shutil.rmtree(worktree_path, ignore_errors=True)
+def remove_worktree(
+    repo_path: Path,
+    worktree_path: Path,
+    git_service: GitService | None = None,
+) -> None:
+    svc = git_service or GitService()
+    svc.remove_worktree(repo_path, worktree_path)
 
 
 def patch_gitdir_for_container(worktree_path: Path) -> Path | None:

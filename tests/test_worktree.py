@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pycastle.git_service import GitService, GitTimeoutError
 from pycastle.worktree import (
     create_worktree,
     patch_gitdir_for_container,
@@ -26,31 +27,50 @@ def test_idle_timeout_constant_exists():
     assert IDLE_TIMEOUT == 300
 
 
-# ── Cycle 23-2: create_worktree raises WorktreeTimeoutError on subprocess timeout ──
+# ── Cycle 23-2: create_worktree propagates GitTimeoutError on timeout ──
 
 
-def test_create_worktree_raises_worktree_timeout_error(repo, tmp_path):
-    from pycastle.errors import WorktreeTimeoutError
+def test_create_worktree_raises_git_timeout_error(tmp_path):
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.verify_ref_exists.side_effect = GitTimeoutError("timed out")
 
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
-    ):
-        with pytest.raises(WorktreeTimeoutError):
-            create_worktree(repo, tmp_path / "wt", "feature/timeout")
+    with pytest.raises(GitTimeoutError):
+        create_worktree(
+            tmp_path, tmp_path / "wt", "feature/timeout", git_service=mock_svc
+        )
 
 
-def test_remove_worktree_raises_worktree_timeout_error(repo, tmp_path):
-    from pycastle.errors import WorktreeTimeoutError
+def test_remove_worktree_raises_git_timeout_error(tmp_path):
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.remove_worktree.side_effect = GitTimeoutError("timed out")
 
+    with pytest.raises(GitTimeoutError):
+        remove_worktree(tmp_path, tmp_path / "wt", git_service=mock_svc)
+
+
+# ── Cycle 23-3: create_worktree and remove_worktree delegate to GitService ──
+
+
+def test_create_worktree_calls_git_service_create_worktree(tmp_path):
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.verify_ref_exists.return_value = False
     worktree = tmp_path / "wt"
-    create_worktree(repo, worktree, "feature/remove-timeout")
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
-    ):
-        with pytest.raises(WorktreeTimeoutError):
-            remove_worktree(repo, worktree)
+
+    # Make worktree dir appear after create so has_files check works
+    def _fake_create(repo_path, worktree_path, branch):
+        worktree_path.mkdir(parents=True, exist_ok=True)
+        (worktree_path / "pyproject.toml").write_text("")
+
+    mock_svc.create_worktree.side_effect = _fake_create
+    create_worktree(tmp_path, worktree, "feature/new", git_service=mock_svc)
+    mock_svc.create_worktree.assert_called_once_with(tmp_path, worktree, "feature/new")
+
+
+def test_remove_worktree_delegates_to_git_service(tmp_path):
+    mock_svc = MagicMock(spec=GitService)
+    worktree = tmp_path / "wt"
+    remove_worktree(tmp_path, worktree, git_service=mock_svc)
+    mock_svc.remove_worktree.assert_called_once_with(tmp_path, worktree)
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -342,7 +362,11 @@ def test_create_worktree_recovers_from_stale_directory(repo, tmp_path):
 
 
 def test_remove_worktree_falls_back_to_rmtree_when_git_fails(repo, tmp_path):
-    """When git worktree remove exits non-zero the directory must still be removed."""
+    """When git worktree remove exits non-zero the directory must still be removed.
+
+    The rmtree fallback is implemented in GitService.remove_worktree; this test
+    verifies the end-to-end behavior using a real repo and patching subprocess.
+    """
     worktree = tmp_path / "wt"
     create_worktree(repo, worktree, "feature/fallback")
     assert worktree.exists()
