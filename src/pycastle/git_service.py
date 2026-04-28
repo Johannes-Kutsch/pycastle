@@ -147,10 +147,11 @@ class GitService:
 
         result = self._run(cmd, cwd=repo_path, capture_output=True)
         if result.returncode != 0:
+            stderr = result.stderr.decode("utf-8", errors="replace").strip()
             raise GitCommandError(
-                f"git worktree add failed: {result.stderr.decode('utf-8', errors='replace').strip()}",
+                f"git worktree add failed: {stderr}",
                 returncode=result.returncode,
-                stderr=result.stderr.decode("utf-8", errors="replace").strip(),
+                stderr=stderr,
             )
 
     def remove_worktree(self, repo_path: Path, worktree_path: Path) -> None:
