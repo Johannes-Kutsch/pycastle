@@ -22,7 +22,7 @@ from .config import (
 )
 from .container_runner import run_agent
 from .errors import PreflightError
-from .git_service import GitService
+from .git_service import GitCommandError, GitService
 from .github_service import GithubService
 from .validate import validate_config
 
@@ -38,6 +38,20 @@ def prune_orphan_worktrees(
     for child in worktrees_dir.iterdir():
         if str(child.resolve()) not in active and child.is_dir():
             shutil.rmtree(child)
+
+
+def delete_merged_branches(
+    branches: list[str], repo_root: Path, git_service: GitService | None = None
+) -> None:
+    svc = git_service or GitService()
+    for branch in branches:
+        if not svc.is_ancestor(branch, repo_root):
+            continue
+        try:
+            svc.delete_branch(branch, repo_root)
+            print(f"Deleted merged branch: {branch}")
+        except GitCommandError as e:
+            print(f"Warning: could not delete branch {branch!r}: {e}", file=sys.stderr)
 
 
 def _extract_text(output: str) -> str:
@@ -236,6 +250,9 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
             else:
                 conflict_issues.append(issue)
 
+        clean_branches = [i["branch"] for i in completed if i not in conflict_issues]
+        delete_merged_branches(clean_branches, repo_root, git_svc)
+
         clean_count = len(completed) - len(conflict_issues)
         if clean_count > 0 and not conflict_issues:
             check_failures = _run_host_checks(PREFLIGHT_CHECKS)
@@ -279,5 +296,8 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
                 stage="pre-merge",
             )
             print("\nBranches merged.")
+            delete_merged_branches(
+                [i["branch"] for i in conflict_issues], repo_root, git_svc
+            )
 
     print("\nAll done.")
