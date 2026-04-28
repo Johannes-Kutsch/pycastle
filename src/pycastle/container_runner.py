@@ -4,7 +4,7 @@ import json
 import os
 import queue
 import re
-import subprocess
+import shlex
 import sys
 import tarfile
 import threading
@@ -22,6 +22,7 @@ from .errors import (
     DockerTimeoutError,
     PreflightError,
 )
+from .git_service import GitService
 from .worktree import (
     CONTAINER_PARENT_GIT,
     create_worktree,
@@ -284,25 +285,24 @@ async def _setup(
     runner: "ContainerRunner",
     loop: asyncio.AbstractEventLoop,
     exec_timeout: float | None,
+    git_service: GitService | None = None,
 ) -> None:
     print(f"[{name}] Phase: Setup")
     await loop.run_in_executor(None, runner.__enter__)
-    git_name = subprocess.check_output(
-        ["git", "config", "user.name"], text=True
-    ).strip()
-    git_email = subprocess.check_output(
-        ["git", "config", "user.email"], text=True
-    ).strip()
+    if git_service is None:
+        git_service = GitService()
+    git_name = git_service.get_user_name()
+    git_email = git_service.get_user_email()
     await loop.run_in_executor(
         None,
         runner.exec_simple,
-        f"git config --global user.name '{git_name}'",
+        f"git config --global user.name {shlex.quote(git_name)}",
         exec_timeout,
     )
     await loop.run_in_executor(
         None,
         runner.exec_simple,
-        f"git config --global user.email '{git_email}'",
+        f"git config --global user.email {shlex.quote(git_email)}",
         exec_timeout,
     )
 
@@ -355,6 +355,7 @@ async def run_agent(
     skip_preflight: bool = False,
     model: str = "",
     effort: str = "",
+    git_service: GitService | None = None,
 ) -> str:
     print(f"\n[{name}] Started")
 
@@ -395,7 +396,7 @@ async def run_agent(
             if worktree_host_path:
                 stack.callback(remove_worktree, mount_path, worktree_host_path)
             stack.callback(runner.__exit__, None, None, None)
-            await _setup(name, runner, loop, exec_timeout)
+            await _setup(name, runner, loop, exec_timeout, git_service)
             await _prepare(
                 name, runner, loop, exec_timeout, prompt_file, prompt_args or {}
             )
