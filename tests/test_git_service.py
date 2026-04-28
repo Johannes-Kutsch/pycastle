@@ -336,8 +336,6 @@ def test_get_remote_url_uses_custom_remote():
 
 
 def _make_fake_run(prune_rc=0, rev_parse_rc=1, add_rc=0):
-    """Return a fake subprocess.run that sequences responses by command content."""
-
     def fake_run(cmd, **kwargs):
         if "prune" in cmd:
             return MagicMock(returncode=prune_rc, stdout=b"", stderr=b"")
@@ -403,6 +401,27 @@ def test_create_worktree_raises_git_timeout_error_on_timeout(tmp_path):
     ):
         with pytest.raises(GitTimeoutError):
             svc.create_worktree(tmp_path, tmp_path / "wt", "feature/new")
+
+
+def test_create_worktree_continues_after_silent_remove_failure(tmp_path):
+    svc = GitService()
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        if "remove" in cmd and "worktree" in cmd:
+            return MagicMock(returncode=1, stdout=b"", stderr=b"not a worktree")
+        if "rev-parse" in cmd:
+            return MagicMock(returncode=1, stdout=b"", stderr=b"")
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        svc.create_worktree(tmp_path, worktree, "feature/new")
+
+    cmds_str = [" ".join(c) for c in captured]
+    assert any("worktree add" in c for c in cmds_str)
 
 
 def test_create_worktree_removes_existing_dir_before_add(tmp_path):
