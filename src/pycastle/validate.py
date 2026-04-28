@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import re
-import subprocess
 from difflib import get_close_matches
 from functools import lru_cache
 
-from .errors import ConfigValidationError
+from .claude_service import ClaudeService
+from .errors import ClaudeServiceError, ConfigValidationError
 
 _VALID_EFFORTS = frozenset({"low", "normal", "high"})
 _MODEL_RE = re.compile(r"^claude-(haiku|sonnet|opus)-(.+)$")
+_DEFAULT_CLAUDE_SERVICE = ClaudeService()
 
 
 def _parse_version(version_str: str) -> tuple[int, ...]:
@@ -16,34 +17,12 @@ def _parse_version(version_str: str) -> tuple[int, ...]:
     return tuple(int(p) if p.isdigit() else 0 for p in parts)
 
 
-@lru_cache(maxsize=1)
-def _fetch_models() -> tuple[str, ...]:
-    """Invoke `claude list-models` and return available model IDs. Cached for the process lifetime."""
+@lru_cache(maxsize=None)
+def _fetch_models(claude_service: ClaudeService) -> tuple[str, ...]:
     try:
-        result = subprocess.run(
-            ["claude", "list-models"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except FileNotFoundError as exc:
-        raise ConfigValidationError(
-            "claude CLI not found; ensure it is installed and on PATH",
-        ) from exc
-    except subprocess.TimeoutExpired as exc:
-        raise ConfigValidationError(
-            "claude list-models timed out after 10 s",
-        ) from exc
-
-    if result.returncode != 0:
-        raise ConfigValidationError(
-            f"claude list-models failed (exit {result.returncode}): {result.stderr.strip()}",
-        )
-
-    models = tuple(line.strip() for line in result.stdout.splitlines() if line.strip())
-    if not models:
-        raise ConfigValidationError("claude list-models returned no models")
-    return models
+        return claude_service.list_models()
+    except ClaudeServiceError as exc:
+        raise ConfigValidationError(str(exc)) from exc
 
 
 def _known_shorthands(models: tuple[str, ...]) -> list[str]:
@@ -80,7 +59,9 @@ def _resolve_shorthand(shorthand: str, models: tuple[str, ...]) -> str:
     )
 
 
-def validate_config(overrides: dict) -> None:
+def validate_config(
+    overrides: dict, *, claude_service: ClaudeService | None = None
+) -> None:
     """Validate and resolve model/effort values in overrides in place.
 
     Empty strings bypass validation. Raises ConfigValidationError on any invalid entry.
@@ -89,6 +70,7 @@ def validate_config(overrides: dict) -> None:
     if not overrides:
         return
 
+    cs = claude_service if claude_service is not None else _DEFAULT_CLAUDE_SERVICE
     valid_efforts = sorted(_VALID_EFFORTS)
     resolved_models: dict[str, str] = {}
 
@@ -97,7 +79,7 @@ def validate_config(overrides: dict) -> None:
         effort = values.get("effort", "")
 
         if model:
-            resolved_models[stage] = _resolve_shorthand(model, _fetch_models())
+            resolved_models[stage] = _resolve_shorthand(model, _fetch_models(cs))
 
         if effort and effort not in _VALID_EFFORTS:
             close = get_close_matches(effort, valid_efforts, n=1, cutoff=0.0)
