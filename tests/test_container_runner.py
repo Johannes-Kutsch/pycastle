@@ -1848,6 +1848,37 @@ def test_run_streaming_error_carries_original_casing(tmp_path):
     assert str(exc_info.value) == "YOU'VE HIT YOUR SESSION LIMIT"
 
 
+# ── Issue 186: UsageLimitError false positive in JSON tool-result lines ────────
+
+
+def test_run_streaming_does_not_raise_for_json_line_containing_usage_limit_phrase(
+    tmp_path,
+):
+    """A JSON-encoded tool result that mentions a usage-limit phrase is not a real limit."""
+    import json
+
+    json_line = json.dumps(
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "content": "You've hit your session limit is documented here as an example",
+                    }
+                ],
+            },
+        }
+    )
+    runner = _streaming_runner(
+        "Agent",
+        [(json_line + "\n").encode()],
+        tmp_path / "test.log",
+    )
+    runner.run_streaming()  # must not raise
+
+
 # ── Issue 182: halt flag + conditional worktree preservation ──────────────────
 
 
