@@ -905,8 +905,6 @@ def _make_merge_test_patches(
     extra_patches: list | None = None,
 ):
     """Return a context-manager stack with standard patches for merge-loop tests."""
-    import contextlib
-
     issues = issues or [{"number": 1, "title": "Fix", "branch": "issue/1"}]
     if try_merge_side_effect is None:
         try_merge_side_effect = [True] * len(issues)
@@ -1153,4 +1151,130 @@ def test_post_merge_bug_report_uses_post_merge_stage(tmp_path):
     check_name = bug_calls[0]["prompt_args"].get("CHECK_NAME", "")
     assert "[post-merge]" in check_name, (
         f"CHECK_NAME must include '[post-merge]'; got {check_name!r}"
+    )
+
+
+def test_conflict_branch_does_not_close_issue(tmp_path):
+    """Conflicting branches must not be closed via close_issue_with_parents."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    issues = [
+        {"number": 1, "title": "Clean", "branch": "issue/1"},
+        {"number": 2, "title": "Conflict", "branch": "issue/2"},
+    ]
+    ctx = _make_merge_test_patches(
+        tmp_path, issues=issues, try_merge_side_effect=[True, False]
+    )
+    with ctx(_fake_run_agent) as (_, mock_github):
+        asyncio.run(run({}, tmp_path))
+
+    closed = [
+        call.args[0] for call in mock_github.close_issue_with_parents.call_args_list
+    ]
+    assert 2 not in closed, f"Conflict issue #2 must not be closed; closed: {closed}"
+    assert 1 in closed, f"Clean issue #1 must be closed; closed: {closed}"
+
+
+def test_merger_receives_correct_issues_prompt_arg(tmp_path):
+    """Merger ISSUES prompt arg must list only the conflicting issues, not clean ones."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    issues = [
+        {"number": 3, "title": "Clean issue", "branch": "issue/3"},
+        {"number": 4, "title": "Conflict issue", "branch": "issue/4"},
+    ]
+    ctx = _make_merge_test_patches(
+        tmp_path, issues=issues, try_merge_side_effect=[True, False]
+    )
+    with ctx(_fake_run_agent):
+        asyncio.run(run({}, tmp_path))
+
+    merger_calls = [c for c in captured if c["name"] == "Merger"]
+    assert len(merger_calls) == 1
+    issues_arg = merger_calls[0]["prompt_args"]["ISSUES"]
+    assert "#4" in issues_arg, f"Conflict issue #4 must appear in ISSUES; got {issues_arg!r}"
+    assert "#3" not in issues_arg, f"Clean issue #3 must not appear in ISSUES; got {issues_arg!r}"
+
+
+def test_multiple_check_failures_spawn_one_bug_report_each(tmp_path):
+    """Each post-merge check failure must spawn exactly one bug-report agent."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    agent_names: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        agent_names.append(name)
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    issues = [{"number": 1, "title": "Fix", "branch": "issue/1"}]
+    failures = [
+        ("pytest", "pytest", "FAILED tests/test_foo.py"),
+        ("mypy", "mypy .", "error: Found 2 errors"),
+        ("ruff", "ruff check .", "ruff: error"),
+    ]
+    ctx = _make_merge_test_patches(
+        tmp_path,
+        issues=issues,
+        try_merge_side_effect=[True],
+        run_host_checks_return=failures,
+    )
+    with ctx(_fake_run_agent):
+        asyncio.run(run({}, tmp_path))
+
+    bug_reports = [n for n in agent_names if "bug-report" in n]
+    assert len(bug_reports) == 3, (
+        f"Expected 3 bug-report agents (one per failure); got {bug_reports}"
+    )
+
+
+def test_bug_report_receives_correct_command_and_output(tmp_path):
+    """Bug-report prompt_args must include the exact COMMAND and OUTPUT from the failing check."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    issues = [{"number": 1, "title": "Fix", "branch": "issue/1"}]
+    failures = [("pytest", "pytest -x", "FAILED tests/test_bar.py::test_something")]
+    ctx = _make_merge_test_patches(
+        tmp_path,
+        issues=issues,
+        try_merge_side_effect=[True],
+        run_host_checks_return=failures,
+    )
+    with ctx(_fake_run_agent):
+        asyncio.run(run({}, tmp_path))
+
+    bug_calls = [c for c in captured if "bug-report" in c["name"]]
+    assert len(bug_calls) == 1
+    args = bug_calls[0]["prompt_args"]
+    assert args.get("COMMAND") == "pytest -x", (
+        f"COMMAND must be 'pytest -x'; got {args.get('COMMAND')!r}"
+    )
+    assert args.get("OUTPUT") == "FAILED tests/test_bar.py::test_something", (
+        f"OUTPUT mismatch; got {args.get('OUTPUT')!r}"
     )
