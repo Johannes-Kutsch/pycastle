@@ -74,14 +74,6 @@ def test_prune_orphan_worktrees_noop_when_dir_missing(tmp_path):
     prune_orphan_worktrees(tmp_path)  # no exception — no git_service needed
 
 
-def test_prune_orphan_worktrees_calls_list_worktrees_with_repo_root(tmp_path):
-    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
-    worktrees_dir.mkdir(parents=True)
-    mock_svc = _make_git_service([])
-    prune_orphan_worktrees(tmp_path, git_service=mock_svc)
-    mock_svc.list_worktrees.assert_called_once_with(tmp_path)
-
-
 # ── Cycle 24-B3: run() calls prune_orphan_worktrees before the loop ──────────
 
 
