@@ -76,24 +76,7 @@ class GithubService:
             ) from None
 
     def get_open_sub_issues(self, number: int) -> list[int]:
-        result = self._run(
-            ["gh", "api", f"repos/{self.repo}/issues/{number}/sub_issues"],
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            raise GithubCommandError(
-                f"gh api repos/{self.repo}/issues/{number}/sub_issues failed",
-                returncode=result.returncode,
-                stderr=result.stderr.decode("utf-8", errors="replace").strip(),
-            )
-        try:
-            data: list[dict[str, object]] = json.loads(
-                result.stdout.decode("utf-8", errors="replace")
-            )
-        except json.JSONDecodeError as exc:
-            raise GithubCommandError(
-                f"gh api repos/{self.repo}/issues/{number}/sub_issues returned invalid JSON",
-            ) from exc
+        data = self._get_all_sub_issues(number)
         return [
             int(str(item["number"])) for item in data if item.get("state") == "open"
         ]
@@ -192,6 +175,8 @@ class GithubService:
                 self.repo,
                 "--state",
                 "open",
+                "--limit",
+                "1000",
                 "--json",
                 "number",
                 "--jq",
