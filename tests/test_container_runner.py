@@ -479,38 +479,15 @@ def _make_git_service(name="Alice", email="alice@example.com") -> MagicMock:
 
 
 def test_setup_configures_git_identity_with_readonly_repo_mount():
-    """_setup must use --global when configuring git identity.
-
-    When a branch is used, /home/agent/repo is mounted read-only. A local
-    git config write would fail with exit 255; --global writes to ~/.gitconfig
-    instead, which is always writable inside the container.
-    """
-    import asyncio as _asyncio
-
+    """_setup must use --global because the repo is mounted read-only inside the container."""
     from pycastle.container_runner import _setup
 
-    exec_log: list[str] = []
+    _Runner, exec_log = _make_exec_logging_runner()
+    mock_git = _make_git_service()
 
-    class _LoggingRunner:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            pass
-
-        def exec_simple(self, cmd, timeout=None):
-            exec_log.append(cmd)
-            return ""
-
-    mock_git = MagicMock(spec=GitService)
-    mock_git.get_user_name.return_value = "Test User"
-    mock_git.get_user_email.return_value = "test@example.com"
-
-    loop = _asyncio.new_event_loop()
+    loop = asyncio.new_event_loop()
     try:
-        loop.run_until_complete(
-            _setup("test", _LoggingRunner(), loop, 30.0, git_service=mock_git)
-        )
+        loop.run_until_complete(_setup("test", _Runner(), loop, 30.0, git_service=mock_git))
     finally:
         loop.close()
 
