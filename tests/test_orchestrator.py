@@ -1729,15 +1729,23 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
 def test_preplanning_and_postmerge_failures_use_same_handler(tmp_path):
     """Both pre-planning and post-merge preflight failures must spawn a preflight-issue agent."""
     preflight_issue_calls: list[str] = []
-    call_count = [0]
+    labels_call_count = [0]
+
+    mock_git = _make_git_svc(try_merge_side_effect=[True])
+    mock_github = MagicMock(spec=GithubService)
+    mock_github.get_issue_title.return_value = "Preflight fix"
+
+    def _get_labels(issue_number):
+        labels_call_count[0] += 1
+        if labels_call_count[0] == 1:
+            return ["ready-for-agent"]  # AFK: let pre-planning fix run
+        return ["ready-for-human"]  # HITL: exit on post-merge failure
+
+    mock_github.get_labels.side_effect = _get_labels
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            # First call: raise PreflightError; second call: return issues
-            call_count[0] += 1
-            if call_count[0] == 1:
-                raise PreflightError([("ruff", "ruff check .", "error")])
-            return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+            raise PreflightError([("ruff", "ruff check .", "error")])
         if "preflight-issue" in name:
             preflight_issue_calls.append(name)
             return "<issue>50</issue>"
@@ -1745,24 +1753,66 @@ def test_preplanning_and_postmerge_failures_use_same_handler(tmp_path):
             return "<promise>COMPLETE</promise>"
         return ""
 
-    failures_returned = [True]
-
-    def _run_host_checks(_):
-        if failures_returned[0]:
-            failures_returned[0] = False
-            return [("pytest", "pytest", "FAILED")]
-        return []
-
     with pytest.raises(SystemExit):
         _run(
             tmp_path,
             _fake_run_agent,
-            git_service=_make_git_svc(try_merge_side_effect=[True, True]),
-            github_service=_make_github_svc_hitl(),
-            run_host_checks=_run_host_checks,
-            max_iterations=2,
+            git_service=mock_git,
+            github_service=mock_github,
+            run_host_checks=lambda _: [("pytest", "pytest", "FAILED")],
+            max_iterations=1,
         )
 
-    assert len(preflight_issue_calls) >= 1, (
-        "preflight-issue agent must be spawned for both failure types"
+    assert len(preflight_issue_calls) == 2, (
+        f"preflight-issue must be spawned for both pre-planning and post-merge failures; "
+        f"got {len(preflight_issue_calls)}"
+    )
+
+
+def test_afk_post_merge_fix_success_skips_preflight_next_iteration(tmp_path):
+    """When AFK post-merge fix merges and its second check passes, the next Planner must skip preflight."""
+    planner_skip_flags: list[bool] = []
+    planner_call_count = [0]
+    check_call_count = [0]
+
+    mock_git = _make_git_svc(try_merge_side_effect=[True, True])
+    mock_git.get_head_sha.return_value = "fix_sha"
+
+    mock_github = MagicMock(spec=GithubService)
+    mock_github.get_labels.return_value = ["ready-for-agent"]  # AFK
+    mock_github.get_issue_title.return_value = "Fix preflight"
+
+    def _run_host_checks(_):
+        check_call_count[0] += 1
+        if check_call_count[0] == 1:
+            return [("pytest", "pytest", "FAILED")]  # post-merge check fails
+        return []  # second check (after AFK fix) passes
+
+    async def _fake_run_agent(name, skip_preflight=False, **kwargs):
+        if name == "Planner":
+            planner_skip_flags.append(skip_preflight)
+            planner_call_count[0] += 1
+            if planner_call_count[0] == 1:
+                return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+            return _plan_json([])  # second iteration: no issues → terminate
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        if "preflight-issue" in name:
+            return "<issue>99</issue>"
+        return ""
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=mock_git,
+        github_service=mock_github,
+        run_host_checks=_run_host_checks,
+        max_iterations=2,
+    )
+
+    assert len(planner_skip_flags) == 2, (
+        f"Expected 2 Planner calls; got {len(planner_skip_flags)}"
+    )
+    assert planner_skip_flags[1] is True, (
+        "Next Planner must skip preflight when AFK post-merge fix passed second check"
     )
