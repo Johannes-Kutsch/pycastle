@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pycastle.errors import WorktreeTimeoutError
 from pycastle.git_service import GitService, GitTimeoutError
 from pycastle.worktree import (
     create_worktree,
@@ -27,24 +28,24 @@ def test_idle_timeout_constant_exists():
     assert IDLE_TIMEOUT == 300
 
 
-# ── Cycle 23-2: create_worktree propagates GitTimeoutError on timeout ──
+# ── Cycle 23-2: create_worktree and remove_worktree raise WorktreeTimeoutError on timeout ──
 
 
-def test_create_worktree_raises_git_timeout_error(tmp_path):
+def test_create_worktree_raises_worktree_timeout_error(tmp_path):
     mock_svc = MagicMock(spec=GitService)
     mock_svc.verify_ref_exists.side_effect = GitTimeoutError("timed out")
 
-    with pytest.raises(GitTimeoutError):
+    with pytest.raises(WorktreeTimeoutError):
         create_worktree(
             tmp_path, tmp_path / "wt", "feature/timeout", git_service=mock_svc
         )
 
 
-def test_remove_worktree_raises_git_timeout_error(tmp_path):
+def test_remove_worktree_raises_worktree_timeout_error(tmp_path):
     mock_svc = MagicMock(spec=GitService)
     mock_svc.remove_worktree.side_effect = GitTimeoutError("timed out")
 
-    with pytest.raises(GitTimeoutError):
+    with pytest.raises(WorktreeTimeoutError):
         remove_worktree(tmp_path, tmp_path / "wt", git_service=mock_svc)
 
 
