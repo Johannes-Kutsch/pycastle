@@ -45,6 +45,8 @@ Only work on the issue specified. Work on branch {{BRANCH}}.
 
 Explore only the files mentioned in the issue body and the test files that directly touch those files. Do not survey the full repository.
 
+If you need project coding standards, read `pycastle/prompts/CODING_STANDARDS.md`.
+
 ### 3. Behaviors
 
 From the issue, derive a prioritized list of behaviors to test. Most critical paths first, edge cases last.

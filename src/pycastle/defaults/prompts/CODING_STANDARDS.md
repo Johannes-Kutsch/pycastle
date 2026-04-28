@@ -8,13 +8,7 @@ Optional parameters passed to functions should be scrutinised extremely carefull
 
 ## Testing
 
-### Core Principle
-
-Tests verify behavior through public interfaces, not implementation details. Code can change entirely; tests shouldn't break unless behavior changed.
-
-### Good Tests
-
-Integration-style tests that exercise real code paths through public APIs. They describe _what_ the system does, not _how_.
+### Good
 
 ```python
 # GOOD: Tests observable behavior through the public interface
@@ -24,12 +18,7 @@ def test_create_user_makes_user_retrievable():
     assert retrieved.name == "Alice"
 ```
 
-- Test behavior users/callers care about
-- Use the public API only
-- Survive internal refactors
-- One logical assertion per test
-
-### Bad Tests
+### Bad
 
 ```python
 # BAD: Mocks internal collaborator, tests HOW not WHAT
@@ -64,19 +53,20 @@ Mock at **system boundaries** only:
 
 **Never mock your own classes/modules or internal collaborators.** If something is hard to test without mocking internals, redesign the interface.
 
-### TDD Workflow: Vertical Slices
+#### Designing for Mockability
 
-Do NOT write all tests first, then all implementation. That produces tests that verify _imagined_ behavior and are insensitive to real changes.
+At system boundaries, prefer SDK-style interfaces — one specific function per operation rather than a generic caller:
 
-Correct approach — one test, one implementation, repeat:
+```python
+# GOOD: Each function is independently mockable, returns one specific shape
+class EmailClient:
+    def send_welcome(self, to: str) -> None: ...
+    def send_password_reset(self, to: str, token: str) -> None: ...
 
+# BAD: Mocking requires conditional logic inside the mock
+class EmailClient:
+    def send(self, template: str, to: str, context: dict) -> None: ...
 ```
-RED→GREEN: test1→impl1
-RED→GREEN: test2→impl2
-RED→GREEN: test3→impl3
-```
-
-Each test responds to what you learned from the previous cycle. Never refactor while RED — get to GREEN first.
 
 ## Interface Design
 

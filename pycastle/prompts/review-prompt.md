@@ -4,15 +4,9 @@ Review the code changes on branch {{BRANCH}} for issue #{{ISSUE_NUMBER}}: {{ISSU
 
 You are an expert code reviewer focused on enhancing code clarity, consistency, and maintainability while preserving exact functionality.
 
+**Constraint**: Never change what the code does — only how it does it. All original features, outputs, and behaviors must remain intact.
+
 # CONTEXT
-
-Here are the last 10 commits:
-
-<recent-commits>
-
-!`git log -n 10 --format="%H%n%ad%n%B---" --date=short`
-
-</recent-commits>
 
 <issue>
 
@@ -26,13 +20,21 @@ Here are the last 10 commits:
 
 </diff-to-main>
 
-# REVIEW PROCESS
+# WORKFLOW
 
-## 1. Read the diff and look for anything dodgy
+## 1. Confirm baseline
+
+Run `{{FEEDBACK_COMMANDS}}` to confirm the current state passes before making any changes.
+
+## 2. Verify behavior
+
+Attempt to reproduce the original bug with new test cases. If you can reproduce it, the implementation is incomplete — fix it.
+
+## 3. Read the diff
 
 Read the diff carefully. For anything that looks suspicious — fragile logic, unchecked assumptions, tricky conditions, implicit type coercions, missing guards — write a test that exercises it. Try to actually break it. If you can break it, fix it.
 
-## 2. Stress-test edge cases
+## 4. Stress-test edge cases
 
 Go beyond the happy path. For every changed code path, think about what inputs or states could cause problems:
 
@@ -44,45 +46,42 @@ Go beyond the happy path. For every changed code path, think about what inputs o
 
 Write tests for anything that isn't already covered.
 
-## 3. Analyze for code quality improvements
+## 5. Code quality
 
-Look for opportunities to:
+Look for opportunities to improve the code, while maintaining balance:
 
 - Reduce unnecessary complexity and nesting
 - Eliminate redundant code and abstractions
 - Improve readability through clear variable and function names
 - Consolidate related logic
 - Remove unnecessary comments that describe obvious code
-- Avoid nested ternary operators - prefer switch statements or if/else chains
-- Choose clarity over brevity - explicit code is often better than overly compact code
+- Avoid nested ternary operators — prefer switch statements or if/else chains
+- Choose clarity over brevity — explicit code is often better than overly compact code
 
-## 4. Maintain balance
+Avoid over-simplification that reduces clarity, combines too many concerns, or makes the code harder to debug or extend.
 
-Avoid over-simplification that could:
+## 6. Apply project standards
 
-- Reduce code clarity or maintainability
-- Create overly clever solutions that are hard to understand
-- Combine too many concerns into single functions or components
-- Remove helpful abstractions that improve code organization
-- Make the code harder to debug or extend
+Follow the established coding standards at @pycastle/prompts/CODING_STANDARDS.md.
 
-## 5. Apply project standards
+## 7. Commit
 
-Follow the established coding standards in the project at @pycastle/prompts/CODING_STANDARDS.md.
+Run `{{FEEDBACK_COMMANDS}}` to ensure nothing is broken.
 
-## 6. Preserve functionality
+Commit with a message starting with `RALPH: Review -` describing the refinements.
 
-Never change what the code does - only how it does it. All original features, outputs, and behaviors must remain intact.
+## 8. Issue
 
-# EXECUTION
+Post a comment on the GitHub issue using the exact commit message:
 
-1. Run `ruff check . && mypy . --ignore-missing-imports` and `pytest` first to confirm the current state passes
-2. Attempt to reproduce the original bug with new test cases — if you can, fix it
-3. Write edge case tests that stress the implementation
-4. Make any code quality improvements directly on this branch
-5. Run `ruff check . && mypy . --ignore-missing-imports` and `pytest` again to ensure nothing is broken
-6. Commit with a message starting with `RALPH: Review -` describing the refinements
+```
+gh issue comment {{ISSUE_NUMBER}} --body "$(git log --format=%B -n 1 HEAD)"
+```
 
-If the code is already clean, well-tested, and handles edge cases properly, do nothing.
+If no commit was made, post this instead:
+
+```
+gh issue comment {{ISSUE_NUMBER}} --body "RALPH: Review - No issues found. All checks pass."
+```
 
 Once complete, output <promise>COMPLETE</promise>.
