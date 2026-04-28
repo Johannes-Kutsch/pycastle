@@ -434,6 +434,68 @@ def test_close_issue_with_parents_closes_chain_recursively():
     ]
 
 
+# ── get_open_issue_numbers() ─────────────────────────────────────────────────
+
+
+def test_get_open_issue_numbers_returns_list_of_integers():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"1\n2\n42\n", stderr=b""),
+    ):
+        assert svc.get_open_issue_numbers() == [1, 2, 42]
+
+
+def test_get_open_issue_numbers_returns_empty_list_when_no_open_issues():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
+    ):
+        assert svc.get_open_issue_numbers() == []
+
+
+def test_get_open_issue_numbers_includes_limit_flag():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
+    ) as m:
+        svc.get_open_issue_numbers()
+    cmd = m.call_args[0][0]
+    assert "--limit" in cmd
+
+
+def test_get_open_issue_numbers_raises_github_command_error_on_failure():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
+    ):
+        with pytest.raises(GithubCommandError):
+            svc.get_open_issue_numbers()
+
+
+def test_get_open_issue_numbers_raises_github_command_error_on_non_numeric_output():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"abc\n", stderr=b""),
+    ):
+        with pytest.raises(GithubCommandError):
+            svc.get_open_issue_numbers()
+
+
+def test_get_open_issue_numbers_raises_github_timeout_error_on_timeout():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
+    ):
+        with pytest.raises(GithubTimeoutError):
+            svc.get_open_issue_numbers()
+
+
 # ── close_completed_parent_issues() ──────────────────────────────────────────
 
 
@@ -530,3 +592,18 @@ def test_close_completed_parent_issues_does_not_close_issue_with_open_sub_issues
         if c[0][0][:3] == ["gh", "issue", "close"]
     ]
     assert closed == []
+
+
+def test_close_completed_parent_issues_propagates_error_from_sub_issues_api():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        side_effect=[
+            _run_ok(b"5\n"),  # get_open_issue_numbers() -> [5]
+            MagicMock(
+                returncode=1, stdout=b"", stderr=b"api error"
+            ),  # _get_all_sub_issues(5) fails
+        ],
+    ):
+        with pytest.raises(GithubCommandError):
+            svc.close_completed_parent_issues()
