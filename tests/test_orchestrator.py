@@ -672,3 +672,134 @@ def test_stage_overrides_are_independent(tmp_path):
     assert by_name["Reviewer #1"]["effort"] == ""
     assert by_name["Merger"]["model"] == "claude-opus-4-7"
     assert by_name["Merger"]["effort"] == "high"
+
+
+# ── Issue-95: parallel implementers with bounded concurrency ──────────────────
+
+
+def test_multiple_implementers_run_in_parallel(tmp_path):
+    """With MAX_PARALLEL >= N issues, all N implementers must be active simultaneously."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    active_implementers: set[str] = set()
+    max_concurrent = 0
+
+    async def _fake_run_agent(
+        name, prompt_file, mount_path, env, prompt_args=None, **kw
+    ):
+        nonlocal max_concurrent
+        if name == "Planner":
+            return "<plan>placeholder</plan>"
+        if "Implementer" in name:
+            active_implementers.add(name)
+            max_concurrent = max(max_concurrent, len(active_implementers))
+            await asyncio.sleep(0.05)
+            active_implementers.discard(name)
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    issues = [
+        {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
+        for i in range(1, 4)
+    ]
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch("pycastle.orchestrator.parse_plan", return_value=issues),
+        patch("pycastle.orchestrator.MAX_PARALLEL", 4),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    assert max_concurrent == 3, (
+        f"Expected all 3 implementers active simultaneously, max was {max_concurrent}"
+    )
+
+
+def test_concurrent_agents_never_exceed_max_parallel(tmp_path):
+    """The total number of concurrently active agents must never exceed MAX_PARALLEL."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    active_count = 0
+    max_active = 0
+    max_parallel = 3
+
+    async def _fake_run_agent(
+        name, prompt_file, mount_path, env, prompt_args=None, **kw
+    ):
+        nonlocal active_count, max_active
+        if name == "Planner":
+            return "<plan>placeholder</plan>"
+        active_count += 1
+        max_active = max(max_active, active_count)
+        await asyncio.sleep(0.01)
+        active_count -= 1
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    issues = [
+        {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
+        for i in range(1, 8)
+    ]
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch("pycastle.orchestrator.parse_plan", return_value=issues),
+        patch("pycastle.orchestrator.MAX_PARALLEL", max_parallel),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    assert max_active <= max_parallel, (
+        f"Active agents exceeded MAX_PARALLEL={max_parallel}: max observed={max_active}"
+    )
+
+
+def test_implementer_starts_while_reviewer_runs(tmp_path):
+    """A new Implementer must be able to start while a prior issue's Reviewer is running."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    events: list[str] = []
+
+    async def _fake_run_agent(
+        name, prompt_file, mount_path, env, prompt_args=None, **kw
+    ):
+        if name == "Planner":
+            return "<plan>placeholder</plan>"
+        events.append(f"start:{name}")
+        await asyncio.sleep(0.03)
+        events.append(f"end:{name}")
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    issues = [
+        {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
+        for i in range(1, 4)
+    ]
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch("pycastle.orchestrator.parse_plan", return_value=issues),
+        patch("pycastle.orchestrator.MAX_PARALLEL", 2),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    impl_3_start = next(
+        (i for i, e in enumerate(events) if e == "start:Implementer #3"), None
+    )
+    rev_1_end = next((i for i, e in enumerate(events) if e == "end:Reviewer #1"), None)
+
+    assert impl_3_start is not None, "Implementer #3 must start"
+    assert rev_1_end is not None, "Reviewer #1 must finish"
+    assert impl_3_start < rev_1_end, (
+        f"Implementer #3 must start before Reviewer #1 finishes; events={events}"
+    )
