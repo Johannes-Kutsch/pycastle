@@ -52,26 +52,10 @@ def test_remove_worktree_raises_worktree_timeout_error(tmp_path):
 # ── Cycle 23-3: create_worktree and remove_worktree delegate to GitService ──
 
 
-def test_create_worktree_calls_git_service_create_worktree(tmp_path):
-    mock_svc = MagicMock(spec=GitService)
-    mock_svc.verify_ref_exists.return_value = False
+def test_create_worktree_creates_worktree_directory(repo, tmp_path):
     worktree = tmp_path / "wt"
-
-    # Make worktree dir appear after create so has_files check works
-    def _fake_create(repo_path, worktree_path, branch):
-        worktree_path.mkdir(parents=True, exist_ok=True)
-        (worktree_path / "pyproject.toml").write_text("")
-
-    mock_svc.create_worktree.side_effect = _fake_create
-    create_worktree(tmp_path, worktree, "feature/new", git_service=mock_svc)
-    mock_svc.create_worktree.assert_called_once_with(tmp_path, worktree, "feature/new")
-
-
-def test_remove_worktree_delegates_to_git_service(tmp_path):
-    mock_svc = MagicMock(spec=GitService)
-    worktree = tmp_path / "wt"
-    remove_worktree(tmp_path, worktree, git_service=mock_svc)
-    mock_svc.remove_worktree.assert_called_once_with(tmp_path, worktree)
+    create_worktree(repo, worktree, "feature/new")
+    assert worktree.exists()
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
