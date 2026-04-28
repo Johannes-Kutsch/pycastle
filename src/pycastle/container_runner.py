@@ -58,17 +58,6 @@ def _is_usage_limit_line(line: str) -> bool:
     return any(p.lower() in line_lower for p in USAGE_LIMIT_PATTERNS)
 
 
-def _is_usage_limit_line(line: str) -> bool:
-    """Return True only if line is a plain-text usage-limit message, not JSON."""
-    try:
-        if isinstance(json.loads(line), dict):
-            return False
-    except json.JSONDecodeError:
-        pass
-    line_lower = line.lower()
-    return any(p.lower() in line_lower for p in USAGE_LIMIT_PATTERNS)
-
-
 def _format_stream_line(line: str) -> str | None:
     """Return a human-readable summary of a stream-json line, or None to suppress it."""
     try:
