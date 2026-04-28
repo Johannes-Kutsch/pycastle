@@ -673,6 +673,70 @@ def test_stage_overrides_are_independent(tmp_path):
     assert by_name["Merger"]["effort"] == "high"
 
 
+# ── Issue-100: stage parameter and CHECKS prompt arg ─────────────────────────
+
+
+def test_merger_receives_checks_prompt_arg_from_preflight_checks(tmp_path):
+    """Merger must receive CHECKS built from PREFLIGHT_CHECKS commands joined by ' && '."""
+    import asyncio
+    from pycastle.defaults.config import PREFLIGHT_CHECKS
+    from pycastle.orchestrator import run
+
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch(
+            "pycastle.orchestrator.parse_plan",
+            return_value=[{"number": 1, "title": "Fix", "branch": "issue/1"}],
+        ),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    merger_call = next(c for c in captured if c["name"] == "Merger")
+    expected_checks = " && ".join(cmd for _, cmd in PREFLIGHT_CHECKS)
+    assert merger_call["prompt_args"]["CHECKS"] == expected_checks
+
+
+def test_each_agent_passes_correct_stage_string(tmp_path):
+    """Planner, Implementer, Reviewer, and Merger must each pass the correct stage= string."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        captured.append({"name": name, "stage": kwargs.get("stage")})
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch(
+            "pycastle.orchestrator.parse_plan",
+            return_value=[{"number": 1, "title": "Fix", "branch": "issue/1"}],
+        ),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    by_name = {c["name"]: c for c in captured}
+    assert by_name["Planner"]["stage"] == "pre-planning"
+    assert by_name["Implementer #1"]["stage"] == "pre-implementation"
+    assert by_name["Reviewer #1"]["stage"] == "pre-review"
+    assert by_name["Merger"]["stage"] == "pre-merge"
+
+
 # ── Issue-95: parallel implementers with bounded concurrency ──────────────────
 
 
