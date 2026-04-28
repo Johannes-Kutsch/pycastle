@@ -125,7 +125,7 @@ class GitService:
         return result.stdout.decode("utf-8", errors="replace").strip()
 
     def create_worktree(
-        self, repo_path: Path, worktree_path: Path, branch: str
+        self, repo_path: Path, worktree_path: Path, branch: str, sha: str | None = None
     ) -> None:
         self._run(
             ["git", "worktree", "prune"],
@@ -143,7 +143,16 @@ class GitService:
         if self.verify_ref_exists(branch, repo_path):
             cmd = ["git", "worktree", "add", str(worktree_path), branch]
         else:
-            cmd = ["git", "worktree", "add", "-b", branch, str(worktree_path), "HEAD"]
+            start_point = sha if sha is not None else "HEAD"
+            cmd = [
+                "git",
+                "worktree",
+                "add",
+                "-b",
+                branch,
+                str(worktree_path),
+                start_point,
+            ]
 
         result = self._run(cmd, cwd=repo_path, capture_output=True)
         if result.returncode != 0:
