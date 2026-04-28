@@ -3,6 +3,7 @@ import contextlib
 import json
 import re
 import shutil
+import subprocess
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -22,6 +23,7 @@ from .config import (
 from .container_runner import run_agent
 from .errors import PreflightError
 from .git_service import GitService
+from .github_service import GithubService
 from .validate import validate_config
 
 
@@ -70,6 +72,28 @@ def _stage_for_agent(name: str) -> str:
     if name == "Merger":
         return "merge"
     return ""
+
+
+def _get_repo(repo_root: Path) -> str:
+    result = subprocess.run(
+        ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+        capture_output=True,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("Could not determine GitHub repo name via gh")
+    return result.stdout.decode("utf-8").strip()
+
+
+def _run_host_checks(
+    checks: list[tuple[str, str]],
+) -> list[tuple[str, str, str]]:
+    failures = []
+    for check_name, command in checks:
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            failures.append((check_name, command, result.stdout + result.stderr))
+    return failures
 
 
 def _format_feedback_commands(checks: list[str]) -> str:
@@ -202,23 +226,58 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
         for i in completed:
             print(f"  {i['branch']}")
 
-        merge_stage = STAGE_OVERRIDES.get("merge", {})
-        await run_agent(
-            name="Merger",
-            prompt_file=PROMPTS_DIR / "merge-prompt.md",
-            mount_path=repo_root,
-            env=env,
-            prompt_args={
-                "BRANCHES": "\n".join(f"- {i['branch']}" for i in completed),
-                "ISSUES": "\n".join(
-                    f"- #{i['number']}: {i['title']}" for i in completed
-                ),
-                "CHECKS": " && ".join(cmd for _, cmd in PREFLIGHT_CHECKS),
-            },
-            model=merge_stage.get("model", ""),
-            effort=merge_stage.get("effort", ""),
-            stage="pre-merge",
-        )
-        print("\nBranches merged.")
+        git_svc = GitService()
+        github_svc = GithubService(repo=_get_repo(repo_root))
+
+        conflict_issues: list[dict] = []
+        for issue in completed:
+            if git_svc.try_merge(repo_root, issue["branch"]):
+                github_svc.close_issue_with_parents(issue["number"])
+            else:
+                conflict_issues.append(issue)
+
+        clean_count = len(completed) - len(conflict_issues)
+        if clean_count > 0 and not conflict_issues:
+            check_failures = _run_host_checks(PREFLIGHT_CHECKS)
+            if check_failures:
+                bug_prompt = PROMPTS_DIR / "bug-report.md"
+                await asyncio.gather(
+                    *[
+                        run_agent(
+                            name=f"bug-report ({check_name})",
+                            prompt_file=bug_prompt,
+                            mount_path=repo_root,
+                            env=env,
+                            prompt_args={
+                                "CHECK_NAME": f"[post-merge] {check_name}",
+                                "COMMAND": command,
+                                "OUTPUT": output,
+                            },
+                            skip_preflight=True,
+                        )
+                        for check_name, command, output in check_failures
+                    ]
+                )
+                continue
+
+        if conflict_issues:
+            merge_stage = STAGE_OVERRIDES.get("merge", {})
+            await run_agent(
+                name="Merger",
+                prompt_file=PROMPTS_DIR / "merge-prompt.md",
+                mount_path=repo_root,
+                env=env,
+                prompt_args={
+                    "BRANCHES": "\n".join(f"- {i['branch']}" for i in conflict_issues),
+                    "ISSUES": "\n".join(
+                        f"- #{i['number']}: {i['title']}" for i in conflict_issues
+                    ),
+                    "CHECKS": " && ".join(cmd for _, cmd in PREFLIGHT_CHECKS),
+                },
+                model=merge_stage.get("model", ""),
+                effort=merge_stage.get("effort", ""),
+                stage="pre-merge",
+            )
+            print("\nBranches merged.")
 
     print("\nAll done.")
