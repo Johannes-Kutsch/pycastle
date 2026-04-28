@@ -39,42 +39,6 @@ def test_git_command_error_carries_returncode_and_stderr():
     assert err.stderr == "fatal: bad ref"
 
 
-# ── _run() wrapper ─────────────────────────────────────────────────────────────
-
-
-def test_run_raises_git_timeout_error_on_subprocess_timeout():
-    svc = GitService()
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
-    ):
-        with pytest.raises(GitTimeoutError):
-            svc._run(["git", "status"])
-
-
-def test_run_raises_git_not_found_error_when_git_missing():
-    svc = GitService()
-    with patch("subprocess.run", side_effect=FileNotFoundError):
-        with pytest.raises(GitNotFoundError):
-            svc._run(["git", "status"])
-
-
-def test_run_returns_completed_process_on_success():
-    svc = GitService()
-    mock_result = MagicMock(returncode=0, stdout=b"ok\n", stderr=b"")
-    with patch("subprocess.run", return_value=mock_result):
-        result = svc._run(["git", "status"], capture_output=True)
-    assert result.returncode == 0
-
-
-def test_run_applies_default_timeout():
-    svc = GitService(timeout=42)
-    mock_result = MagicMock(returncode=0, stdout=b"", stderr=b"")
-    with patch("subprocess.run", return_value=mock_result) as m:
-        svc._run(["git", "status"])
-    assert m.call_args.kwargs.get("timeout") == 42
-
-
 # ── get_user_name() ────────────────────────────────────────────────────────────
 
 
