@@ -474,3 +474,118 @@ def test_remove_worktree_raises_git_timeout_error_on_timeout(tmp_path):
     ):
         with pytest.raises(GitTimeoutError):
             svc.remove_worktree(tmp_path, tmp_path / "wt")
+
+
+# ── try_merge() ───────────────────────────────────────────────────────────────
+
+
+def _init_repo(path: Path) -> None:
+    """Initialise a bare-minimum git repo with one commit on main."""
+    subprocess.run(
+        ["git", "init", "-b", "main", str(path)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.com"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+    )
+    (path / "base.txt").write_text("base\n")
+    subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True
+    )
+
+
+def test_try_merge_returns_true_on_clean_merge(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    # create a branch with a non-conflicting change
+    subprocess.run(
+        ["git", "checkout", "-b", "feature"], cwd=repo, check=True, capture_output=True
+    )
+    (repo / "feature.txt").write_text("feature\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "feature commit"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "checkout", "main"], cwd=repo, check=True, capture_output=True
+    )
+
+    head_before = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True
+    ).stdout.strip()
+
+    svc = GitService()
+    result = svc.try_merge(repo, "feature")
+
+    head_after = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True
+    ).stdout.strip()
+
+    assert result is True
+    assert head_after != head_before
+
+
+def test_try_merge_returns_false_on_conflict_and_leaves_clean_state(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    # create a branch that edits the same file as main will edit
+    subprocess.run(
+        ["git", "checkout", "-b", "conflict-branch"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "base.txt").write_text("branch change\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "branch edit"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+    # also edit the same file on main so they conflict
+    subprocess.run(
+        ["git", "checkout", "main"], cwd=repo, check=True, capture_output=True
+    )
+    (repo / "base.txt").write_text("main change\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "main edit"], cwd=repo, check=True, capture_output=True
+    )
+
+    head_before = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True
+    ).stdout.strip()
+
+    svc = GitService()
+    result = svc.try_merge(repo, "conflict-branch")
+
+    head_after = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True
+    ).stdout.strip()
+
+    # verify repo is clean (no staged changes, no conflict markers)
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=repo, check=True, capture_output=True
+    ).stdout.strip()
+
+    assert result is False
+    assert head_after == head_before
+    assert status == b""

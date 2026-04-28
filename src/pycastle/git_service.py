@@ -154,6 +154,17 @@ class GitService:
                 stderr=stderr,
             )
 
+    def try_merge(self, repo_path: Path, branch: str) -> bool:
+        result = self._run(
+            ["git", "merge", "--no-edit", branch],
+            cwd=repo_path,
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            return True
+        self._run(["git", "merge", "--abort"], cwd=repo_path, capture_output=True)
+        return False
+
     def remove_worktree(self, repo_path: Path, worktree_path: Path) -> None:
         result = self._run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
