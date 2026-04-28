@@ -56,11 +56,12 @@ def main() -> None:
     config_file = dest / "config.py"
     image_name = re.sub(r"[^a-z0-9]+", "-", Path.cwd().name.lower()).strip("-")
     try:
-        _write_config_value(config_file, "DOCKER_IMAGE", image_name)
+        _write_config_value(config_file, "DOCKER_IMAGE_NAME", image_name)
     except Exception as e:
         click.echo(
             click.style(
-                f"Error: could not set DOCKER_IMAGE in {config_file} — {e}", fg="red"
+                f"Error: could not set DOCKER_IMAGE_NAME in {config_file} — {e}",
+                fg="red",
             ),
             err=True,
         )

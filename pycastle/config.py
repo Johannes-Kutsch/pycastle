@@ -1,12 +1,18 @@
-import re
 from pathlib import Path
 
+# --- Behaviour ---
 MAX_ITERATIONS = 10
 MAX_PARALLEL = 4
 WORKTREE_TIMEOUT = 30
 IDLE_TIMEOUT = 300
-DOCKER_IMAGE = "pycastle"
+
+# --- Docker ---
+DOCKER_IMAGE_NAME = "pycastle"
+
+# --- Labels ---
 ISSUE_LABEL = "ready-for-agent"
+
+# --- Paths ---
 PYCASTLE_DIR = Path("pycastle")
 PROMPTS_DIR = Path("pycastle/prompts")
 LOGS_DIR = Path("pycastle/logs")
@@ -14,9 +20,7 @@ WORKTREES_DIR = Path("worktrees")
 ENV_FILE = Path("pycastle/.env")
 DOCKERFILE = Path("pycastle/Dockerfile")
 
-PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
-SHELL_EXPR = re.compile(r"!`([^`]+)`")
-
+# --- Checks ---
 PREFLIGHT_CHECKS: list[tuple[str, str]] = [
     ("ruff", "ruff check ."),
     ("mypy", "mypy ."),
@@ -30,7 +34,7 @@ IMPLEMENT_CHECKS: list[str] = [
     "pytest",
 ]
 
-# Per-stage model and effort overrides.
+# --- Stage overrides ---
 # model shorthands: haiku, sonnet, opus  (leave empty to use the Claude CLI default)
 # effort values:    low, medium, high, xhigh, max    (leave empty to use the Claude CLI default)
 STAGE_OVERRIDES: dict[str, dict[str, str]] = {

@@ -10,30 +10,46 @@ import click
 
 from .git_service import GitService
 
+LABEL_BUG = "bug"
+LABEL_ENHANCEMENT = "enhancement"
+LABEL_NEED_INFO = "need-info"
+LABEL_NEEDS_TRIAGE = "needs-triage"
+LABEL_READY_FOR_AGENT = "ready-for-agent"
+LABEL_READY_FOR_HUMAN = "ready-for-human"
+LABEL_WONTFIX = "wontfix"
+
 LABELS = [
-    {"name": "bug", "description": "Something isn't working", "color": "d73a4a"},
-    {"name": "enhancement", "description": "New feature or request", "color": "0d9488"},
+    {"name": LABEL_BUG, "description": "Something isn't working", "color": "d73a4a"},
     {
-        "name": "need-info",
+        "name": LABEL_ENHANCEMENT,
+        "description": "New feature or request",
+        "color": "0d9488",
+    },
+    {
+        "name": LABEL_NEED_INFO,
         "description": "Waiting on reporter for more information",
         "color": "b03176",
     },
     {
-        "name": "needs-triage",
+        "name": LABEL_NEEDS_TRIAGE,
         "description": "Maintainer needs to evaluate this issue",
         "color": "d6b80d",
     },
     {
-        "name": "ready-for-agent",
+        "name": LABEL_READY_FOR_AGENT,
         "description": "Fully specified, ready for afk agent",
         "color": "0be348",
     },
     {
-        "name": "ready-for-human",
+        "name": LABEL_READY_FOR_HUMAN,
         "description": "Requires human implementation",
         "color": "5181b8",
     },
-    {"name": "wontfix", "description": "This will not be worked on", "color": "e1e4e8"},
+    {
+        "name": LABEL_WONTFIX,
+        "description": "This will not be worked on",
+        "color": "e1e4e8",
+    },
 ]
 
 _API = "https://api.github.com"

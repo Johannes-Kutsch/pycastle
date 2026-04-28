@@ -1,8 +1,10 @@
 import asyncio
+import re
 import sys
 from pathlib import Path
 
-from .config import PLACEHOLDER, SHELL_EXPR
+PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+SHELL_EXPR = re.compile(r"!`([^`]+)`")
 
 
 class PromptRenderError(Exception):
