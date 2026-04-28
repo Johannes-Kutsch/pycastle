@@ -356,6 +356,7 @@ async def run_agent(
     model: str = "",
     effort: str = "",
     git_service: GitService | None = None,
+    stage: str = "",
 ) -> str:
     print(f"\n[{name}] Started")
 
@@ -416,7 +417,9 @@ async def run_agent(
                                 mount_path=mount_path,
                                 env=env,
                                 prompt_args={
-                                    "CHECK_NAME": check_name,
+                                    "CHECK_NAME": f"[{stage}] {check_name}"
+                                    if stage
+                                    else check_name,
                                     "COMMAND": command,
                                     "OUTPUT": output,
                                 },
