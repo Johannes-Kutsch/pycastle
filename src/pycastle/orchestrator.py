@@ -27,6 +27,17 @@ from .github_service import GithubService
 from .validate import validate_config as _default_validate_config
 
 
+async def wait_for_clean_working_tree(repo_root: Path, git_svc: GitService) -> None:
+    if git_svc.is_working_tree_clean(repo_root):
+        return
+    print(
+        "Working tree has uncommitted changes. "
+        "Please commit or revert all local changes before the merge phase can proceed."
+    )
+    while not git_svc.is_working_tree_clean(repo_root):
+        await asyncio.sleep(10)
+
+
 def prune_orphan_worktrees(
     repo_root: Path, git_service: GitService | None = None
 ) -> None:
@@ -280,6 +291,8 @@ async def run(
 
         git_svc = git_service or GitService()
         github_svc = github_service or GithubService(repo=_get_repo(repo_root))
+
+        await wait_for_clean_working_tree(repo_root, git_svc)
 
         conflict_issues: list[dict] = []
         for issue in completed:
