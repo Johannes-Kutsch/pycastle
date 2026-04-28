@@ -1527,3 +1527,42 @@ def test_run_exits_loop_after_first_iteration_when_no_issues(tmp_path):
         f"has_open_issues_with_label must be called once (not looped); "
         f"called {mock_github.has_open_issues_with_label.call_count} times"
     )
+
+
+def test_run_prints_skip_message_when_no_ready_for_agent_issues(tmp_path, capsys):
+    """Early exit must print the expected skip message."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    mock_github = MagicMock()
+    mock_github.has_open_issues_with_label.return_value = False
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.GithubService", return_value=mock_github),
+        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    assert "No issues with label 'ready-for-agent' found. Skipping." in capsys.readouterr().out
+
+
+def test_run_prints_skip_message_when_planner_returns_no_issues(tmp_path, capsys):
+    """Post-planner empty-issues path must print the same skip message."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    mock_github = MagicMock()
+    mock_github.has_open_issues_with_label.return_value = True
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.run_agent", return_value="<plan>{\"issues\": []}</plan>"),
+        patch("pycastle.orchestrator.GithubService", return_value=mock_github),
+        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    assert "No issues with label 'ready-for-agent' found. Skipping." in capsys.readouterr().out
