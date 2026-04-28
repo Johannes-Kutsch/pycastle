@@ -296,7 +296,7 @@ def test_claude_service_error_message_is_preserved_in_config_validation_error():
 # ── validate_config: list-models is only called once (cached) ─────────────────
 
 
-def test_list_models_called_once_across_multiple_validations():
+def test_model_list_fetched_only_once_per_service_instance():
     from pycastle.validate import validate_config
 
     mock_service = _make_service()
@@ -307,7 +307,7 @@ def test_list_models_called_once_across_multiple_validations():
     mock_service.list_models.assert_called_once()
 
 
-def test_different_service_instances_cache_independently():
+def test_two_service_instances_each_fetch_model_list_independently():
     from pycastle.validate import validate_config
 
     service1 = _make_service(["claude-sonnet-4-6"])
