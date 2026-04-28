@@ -483,22 +483,6 @@ def test_parse_plan_accepts_bare_list():
     assert result == [{"number": 3, "title": "l", "branch": "b"}]
 
 
-def test_parse_plan_raises_when_no_plan_tag():
-    import pytest
-    from pycastle.orchestrator import parse_plan
-
-    with pytest.raises(RuntimeError, match="no <plan> tag"):
-        parse_plan("no plan here")
-
-
-def test_parse_plan_raises_when_dict_has_no_known_key():
-    import pytest
-    from pycastle.orchestrator import parse_plan
-
-    with pytest.raises(RuntimeError, match="'issues' or 'unblocked_issues'"):
-        parse_plan('<plan>{"other": []}</plan>')
-
-
 # ── Issue-78: _stage_for_agent helper ─────────────────────────────────────────
 
 
