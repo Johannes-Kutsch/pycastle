@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 from functools import lru_cache
 
-from .errors import ClaudeCliNotFoundError, ClaudeServiceError
+from .errors import ClaudeCliNotFoundError
 
 # claude CLI does not expose a list-models subcommand; this list is kept in sync manually.
 _KNOWN_MODELS: tuple[str, ...] = (
