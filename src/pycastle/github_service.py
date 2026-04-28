@@ -76,24 +76,7 @@ class GithubService:
             ) from None
 
     def get_open_sub_issues(self, number: int) -> list[int]:
-        result = self._run(
-            ["gh", "api", f"repos/{self.repo}/issues/{number}/sub_issues"],
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            raise GithubCommandError(
-                f"gh api repos/{self.repo}/issues/{number}/sub_issues failed",
-                returncode=result.returncode,
-                stderr=result.stderr.decode("utf-8", errors="replace").strip(),
-            )
-        try:
-            data: list[dict[str, object]] = json.loads(
-                result.stdout.decode("utf-8", errors="replace")
-            )
-        except json.JSONDecodeError as exc:
-            raise GithubCommandError(
-                f"gh api repos/{self.repo}/issues/{number}/sub_issues returned invalid JSON",
-            ) from exc
+        data = self._get_all_sub_issues(number)
         return [
             int(str(item["number"])) for item in data if item.get("state") == "open"
         ]
@@ -181,3 +164,66 @@ class GithubService:
         if open_siblings:
             return
         self.close_issue_with_parents(parent)
+
+    def get_open_issue_numbers(self) -> list[int]:
+        result = self._run(
+            [
+                "gh",
+                "issue",
+                "list",
+                "--repo",
+                self.repo,
+                "--state",
+                "open",
+                "--limit",
+                "1000",
+                "--json",
+                "number",
+                "--jq",
+                ".[].number",
+            ],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise GithubCommandError(
+                "gh issue list failed",
+                returncode=result.returncode,
+                stderr=result.stderr.decode("utf-8", errors="replace").strip(),
+            )
+        output = result.stdout.decode("utf-8", errors="replace").strip()
+        if not output:
+            return []
+        try:
+            return [int(line) for line in output.splitlines()]
+        except ValueError:
+            raise GithubCommandError(
+                f"gh issue list returned unexpected output: {output!r}",
+            ) from None
+
+    def _get_all_sub_issues(self, number: int) -> list[dict[str, object]]:
+        result = self._run(
+            ["gh", "api", f"repos/{self.repo}/issues/{number}/sub_issues"],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise GithubCommandError(
+                f"gh api repos/{self.repo}/issues/{number}/sub_issues failed",
+                returncode=result.returncode,
+                stderr=result.stderr.decode("utf-8", errors="replace").strip(),
+            )
+        try:
+            return json.loads(result.stdout.decode("utf-8", errors="replace"))
+        except json.JSONDecodeError as exc:
+            raise GithubCommandError(
+                f"gh api repos/{self.repo}/issues/{number}/sub_issues returned invalid JSON",
+            ) from exc
+
+    def close_completed_parent_issues(self) -> None:
+        changed = True
+        while changed:
+            changed = False
+            for issue_num in self.get_open_issue_numbers():
+                all_subs = self._get_all_sub_issues(issue_num)
+                if all_subs and all(s.get("state") == "closed" for s in all_subs):
+                    self.close_issue(issue_num)
+                    changed = True
