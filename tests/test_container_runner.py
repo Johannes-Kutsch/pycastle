@@ -11,6 +11,12 @@ from pycastle.container_runner import (
     run_agent,
 )
 from pycastle.errors import AgentTimeoutError
+from pycastle.git_service import (
+    GitCommandError,
+    GitNotFoundError,
+    GitService,
+    GitTimeoutError,
+)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -429,13 +435,11 @@ def _make_exec_logging_runner():
     return _Runner, exec_log
 
 
-def _git_mock(name="Alice", email="alice@example.com"):
-    def _check_output(cmd, **kw):
-        if "user.name" in cmd:
-            return f"{name}\n"
-        return f"{email}\n"
-
-    return _check_output
+def _make_git_service(name="Alice", email="alice@example.com") -> MagicMock:
+    mock = MagicMock(spec=GitService)
+    mock.get_user_name.return_value = name
+    mock.get_user_email.return_value = email
+    return mock
 
 
 def test_setup_injects_host_git_name(tmp_path):
@@ -443,13 +447,8 @@ def test_setup_injects_host_git_name(tmp_path):
     prompt.write_text("test")
     _Runner, exec_log = _make_exec_logging_runner()
 
-    with (
-        patch("pycastle.container_runner.ContainerRunner", _Runner),
-        patch(
-            "pycastle.container_runner.subprocess.check_output", side_effect=_git_mock()
-        ),
-    ):
-        _run(run_agent("Test", prompt, tmp_path, {}))
+    with patch("pycastle.container_runner.ContainerRunner", _Runner):
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     assert any(
         "git config --global user.name" in cmd and "Alice" in cmd for cmd in exec_log
@@ -461,18 +460,156 @@ def test_setup_injects_host_git_email(tmp_path):
     prompt.write_text("test")
     _Runner, exec_log = _make_exec_logging_runner()
 
-    with (
-        patch("pycastle.container_runner.ContainerRunner", _Runner),
-        patch(
-            "pycastle.container_runner.subprocess.check_output", side_effect=_git_mock()
-        ),
-    ):
-        _run(run_agent("Test", prompt, tmp_path, {}))
+    with patch("pycastle.container_runner.ContainerRunner", _Runner):
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
 
     assert any(
         "git config --global user.email" in cmd and "alice@example.com" in cmd
         for cmd in exec_log
     )
+
+
+# ── Issue 90: GitService injection error paths ────────────────────────────────
+
+
+def test_setup_propagates_git_command_error_from_get_user_name(tmp_path):
+    """When GitService.get_user_name() raises GitCommandError, _setup must propagate it."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    mock_git = MagicMock(spec=GitService)
+    mock_git.get_user_name.side_effect = GitCommandError("git config user.name failed")
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner),
+        pytest.raises(GitCommandError),
+    ):
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=mock_git))
+
+
+def test_setup_propagates_git_command_error_from_get_user_email(tmp_path):
+    """When GitService.get_user_email() raises GitCommandError, _setup must propagate it."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    mock_git = MagicMock(spec=GitService)
+    mock_git.get_user_name.return_value = "Alice"
+    mock_git.get_user_email.side_effect = GitCommandError(
+        "git config user.email failed"
+    )
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner),
+        pytest.raises(GitCommandError),
+    ):
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=mock_git))
+
+
+def test_setup_propagates_git_not_found_error(tmp_path):
+    """When git is not installed, GitNotFoundError must propagate from _setup."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    mock_git = MagicMock(spec=GitService)
+    mock_git.get_user_name.side_effect = GitNotFoundError("git executable not found")
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner),
+        pytest.raises(GitNotFoundError),
+    ):
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=mock_git))
+
+
+def test_setup_propagates_git_timeout_error(tmp_path):
+    """When the git command times out, GitTimeoutError must propagate from _setup."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    mock_git = MagicMock(spec=GitService)
+    mock_git.get_user_name.side_effect = GitTimeoutError("git command timed out")
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner),
+        pytest.raises(GitTimeoutError),
+    ):
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=mock_git))
+
+
+def test_setup_calls_get_user_name_on_git_service(tmp_path):
+    """_setup() must call git_service.get_user_name() exactly once."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+    mock_git = _make_git_service()
+
+    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=mock_git))
+
+    mock_git.get_user_name.assert_called_once()
+
+
+def test_setup_calls_get_user_email_on_git_service(tmp_path):
+    """_setup() must call git_service.get_user_email() exactly once."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+    mock_git = _make_git_service()
+
+    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+        _run(run_agent("Test", prompt, tmp_path, {}, git_service=mock_git))
+
+    mock_git.get_user_email.assert_called_once()
+
+
+# ── Issue 90: shell-safe quoting of git identity values ──────────────────────
+
+
+def test_setup_shell_quotes_git_name_containing_single_quote(tmp_path):
+    """A git user.name with a single quote (e.g. O'Brien) must produce a valid shell command."""
+    import shlex
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+    _Runner, exec_log = _make_exec_logging_runner()
+
+    with patch("pycastle.container_runner.ContainerRunner", _Runner):
+        _run(
+            run_agent(
+                "Test",
+                prompt,
+                tmp_path,
+                {},
+                git_service=_make_git_service(name="O'Brien"),
+            )
+        )
+
+    name_cmds = [cmd for cmd in exec_log if "user.name" in cmd]
+    assert name_cmds
+    parsed = shlex.split(name_cmds[0])
+    assert parsed[-1] == "O'Brien"
+
+
+def test_setup_shell_quotes_git_email_containing_single_quote(tmp_path):
+    """A git user.email with a single quote must produce a valid shell command."""
+    import shlex
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+    _Runner, exec_log = _make_exec_logging_runner()
+
+    with patch("pycastle.container_runner.ContainerRunner", _Runner):
+        _run(
+            run_agent(
+                "Test",
+                prompt,
+                tmp_path,
+                {},
+                git_service=_make_git_service(email="it's@example.com"),
+            )
+        )
+
+    email_cmds = [cmd for cmd in exec_log if "user.email" in cmd]
+    assert email_cmds
+    parsed = shlex.split(email_cmds[0])
+    assert parsed[-1] == "it's@example.com"
 
 
 # ── Cycle 23-4: run_streaming raises AgentTimeoutError on idle timeout ────────
