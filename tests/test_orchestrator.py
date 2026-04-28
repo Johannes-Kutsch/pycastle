@@ -810,8 +810,11 @@ def test_clean_merges_skip_merger(tmp_path):
     )
 
 
-def test_clean_merge_calls_close_issue_with_parents(tmp_path):
-    """Each cleanly-merged issue must be closed via close_issue_with_parents."""
+def test_clean_merge_calls_close_issue_per_issue_and_close_completed_parent_issues(
+    tmp_path,
+):
+    """Each cleanly-merged issue must be closed via close_issue(); close_completed_parent_issues()
+    must be called once after all merges."""
     issues = [
         {"number": 7, "title": "Fix A", "branch": "issue/7"},
         {"number": 8, "title": "Fix B", "branch": "issue/8"},
@@ -830,10 +833,11 @@ def test_clean_merge_calls_close_issue_with_parents(tmp_path):
         github_service=mock_github,
     )
 
-    closed = [
-        call.args[0] for call in mock_github.close_issue_with_parents.call_args_list
-    ]
+    closed = [call.args[0] for call in mock_github.close_issue.call_args_list]
     assert sorted(closed) == [7, 8], f"Expected issues 7 and 8 closed; got {closed}"
+    assert mock_github.close_completed_parent_issues.call_count == 1, (
+        "close_completed_parent_issues must be called once after all merges"
+    )
 
 
 def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
@@ -971,7 +975,7 @@ def test_post_merge_preflight_issue_uses_raw_check_name(tmp_path):
 
 
 def test_conflict_branch_does_not_close_issue(tmp_path):
-    """Conflicting branches must not be closed via close_issue_with_parents."""
+    """Conflicting branches must not be closed; only cleanly-merged issues must be closed."""
     issues = [
         {"number": 1, "title": "Clean", "branch": "issue/1"},
         {"number": 2, "title": "Conflict", "branch": "issue/2"},
@@ -990,9 +994,7 @@ def test_conflict_branch_does_not_close_issue(tmp_path):
         github_service=mock_github,
     )
 
-    closed = [
-        call.args[0] for call in mock_github.close_issue_with_parents.call_args_list
-    ]
+    closed = [call.args[0] for call in mock_github.close_issue.call_args_list]
     assert 2 not in closed, f"Conflict issue #2 must not be closed; closed: {closed}"
     assert 1 in closed, f"Clean issue #1 must be closed; closed: {closed}"
 
@@ -1815,4 +1817,49 @@ def test_afk_post_merge_fix_success_skips_preflight_next_iteration(tmp_path):
     )
     assert planner_skip_flags[1] is True, (
         "Next Planner must skip preflight when AFK post-merge fix passed second check"
+    )
+
+
+def test_post_merge_preflight_fix_calls_close_issue_and_close_completed_parent_issues(
+    tmp_path,
+):
+    """When an AFK post-merge preflight-fix issue merges, close_issue() must be called
+    for the fix issue and close_completed_parent_issues() must be called."""
+    check_call_count = [0]
+    mock_git = _make_git_svc(try_merge_side_effect=[True, True])
+    mock_git.get_head_sha.return_value = "sha"
+
+    mock_github = MagicMock(spec=GithubService)
+    mock_github.get_labels.return_value = ["ready-for-agent"]  # AFK
+    mock_github.get_issue_title.return_value = "Fix preflight"
+
+    def _run_host_checks(_):
+        check_call_count[0] += 1
+        if check_call_count[0] == 1:
+            return [("pytest", "pytest", "FAILED")]  # post-merge check fails
+        return []  # second check passes after fix
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        if "preflight-issue" in name:
+            return "<issue>55</issue>"
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=mock_git,
+        github_service=mock_github,
+        run_host_checks=_run_host_checks,
+    )
+
+    closed = [call.args[0] for call in mock_github.close_issue.call_args_list]
+    assert 55 in closed, (
+        f"Preflight fix issue #55 must be closed via close_issue; got {closed}"
+    )
+    assert mock_github.close_completed_parent_issues.call_count >= 2, (
+        "close_completed_parent_issues must be called after main merge and after preflight-fix merge"
     )
