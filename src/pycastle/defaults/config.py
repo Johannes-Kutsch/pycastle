@@ -35,6 +35,9 @@ IMPLEMENT_CHECKS: list[str] = [
     "pytest",
 ]
 
+# --- Usage limit detection ---
+USAGE_LIMIT_PATTERNS: list[str] = ["You've hit your", "Credit balance is too low"]
+
 # --- Stage overrides ---
 STAGE_OVERRIDES: dict[str, dict[str, str]] = {
     "plan": {"model": "", "effort": ""},
