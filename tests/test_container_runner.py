@@ -487,7 +487,9 @@ def test_setup_configures_git_identity_with_readonly_repo_mount():
 
     loop = asyncio.new_event_loop()
     try:
-        loop.run_until_complete(_setup("test", _Runner(), loop, 30.0, git_service=mock_git))
+        loop.run_until_complete(
+            _setup("test", _Runner(), loop, 30.0, git_service=mock_git)
+        )
     finally:
         loop.close()
 

@@ -1816,3 +1816,100 @@ def test_afk_post_merge_fix_success_skips_preflight_next_iteration(tmp_path):
     assert planner_skip_flags[1] is True, (
         "Next Planner must skip preflight when AFK post-merge fix passed second check"
     )
+
+
+# ── Issue-187: implementer and reviewer skip preflight ───────────────────────
+
+
+def test_implementer_invoked_with_skip_preflight_true(tmp_path):
+    """run_issue must pass skip_preflight=True to the implementer agent."""
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, skip_preflight=False, **kwargs):
+        captured.append({"name": name, "skip_preflight": skip_preflight})
+        return "<promise>COMPLETE</promise>"
+
+    issue = {"number": 1, "title": "Fix thing", "branch": "issue/1"}
+    asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+
+    impl_call = next(c for c in captured if "Implementer" in c["name"])
+    assert impl_call["skip_preflight"] is True, (
+        f"Implementer must receive skip_preflight=True; got {impl_call['skip_preflight']!r}"
+    )
+
+
+def test_reviewer_invoked_with_skip_preflight_true(tmp_path):
+    """run_issue must pass skip_preflight=True to the reviewer agent."""
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, skip_preflight=False, **kwargs):
+        captured.append({"name": name, "skip_preflight": skip_preflight})
+        return "<promise>COMPLETE</promise>"
+
+    issue = {"number": 1, "title": "Fix thing", "branch": "issue/1"}
+    asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+
+    rev_call = next(c for c in captured if "Reviewer" in c["name"])
+    assert rev_call["skip_preflight"] is True, (
+        f"Reviewer must receive skip_preflight=True; got {rev_call['skip_preflight']!r}"
+    )
+
+
+def test_planner_skip_preflight_controlled_by_caller(tmp_path):
+    """Planner skip_preflight must be controlled by the orchestrator, not hardcoded True."""
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, skip_preflight=False, **kwargs):
+        captured.append({"name": name, "skip_preflight": skip_preflight})
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+
+    mock_git = _make_git_svc(try_merge_side_effect=[True, True])
+    mock_git.get_head_sha.return_value = "any_sha"
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=mock_git,
+        github_service=_make_github_svc(),
+        run_host_checks=lambda _: [],
+        max_iterations=2,
+    )
+
+    planner_calls = [c for c in captured if c["name"] == "Planner"]
+    assert planner_calls[0]["skip_preflight"] is False, (
+        "Planner on cold startup must not skip preflight"
+    )
+    assert planner_calls[1]["skip_preflight"] is True, (
+        "Planner on second iteration (after clean post-merge) must skip preflight"
+    )
+
+
+def test_postmerge_preflight_issue_fixer_invoked_with_skip_preflight_true(tmp_path):
+    """preflight-issue agent spawned for post-merge failures must pass skip_preflight=True (no regression)."""
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, skip_preflight=False, **kwargs):
+        captured.append({"name": name, "skip_preflight": skip_preflight})
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        if "preflight-issue" in name:
+            return "<issue>55</issue>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+
+    failures = [("pytest", "pytest", "FAILED")]
+    with pytest.raises(SystemExit):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            git_service=_make_git_svc(try_merge_side_effect=[True]),
+            github_service=_make_github_svc_hitl(),
+            run_host_checks=lambda _: failures,
+        )
+
+    pf_calls = [c for c in captured if "preflight-issue" in c["name"]]
+    assert pf_calls, "preflight-issue agent must be spawned"
+    assert pf_calls[0]["skip_preflight"] is True, (
+        f"preflight-issue agent must receive skip_preflight=True; got {pf_calls[0]['skip_preflight']!r}"
+    )
