@@ -271,42 +271,40 @@ def test_run_issue_feedback_commands_formatted_from_implement_checks(tmp_path):
 
 
 def test_planner_preflight_error_spawns_no_implementers(tmp_path):
-    """A PreflightError from the planner must abort the run with no implementer agents spawned."""
+    """On pre-planning PreflightError with HITL verdict, no Implementer must be spawned."""
     implementer_names: list[str] = []
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
+        if "preflight-issue" in name:
+            return "<issue>77</issue>"
         implementer_names.append(name)
         return ""
 
-    _run(tmp_path, _fake_run_agent)
+    with pytest.raises(SystemExit):
+        _run(tmp_path, _fake_run_agent, github_service=_make_github_svc_hitl())
 
     assert implementer_names == [], (
-        f"Expected no implementers, got: {implementer_names}"
+        f"Expected no implementers on HITL verdict, got: {implementer_names}"
     )
 
 
-def test_planner_preflight_error_run_exits_cleanly(tmp_path):
-    """A PreflightError from the planner must not propagate out of run()."""
+def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
+    """HITL preflight failure must print a message referencing the filed issue number."""
 
     async def _fake_run_agent(name, **kwargs):
-        raise PreflightError([("ruff", "ruff check .", "E501")])
+        if name == "Planner":
+            raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
+        if "preflight-issue" in name:
+            return "<issue>88</issue>"
+        return ""
 
-    _run(tmp_path, _fake_run_agent)  # must not raise
-
-
-def test_planner_preflight_error_message_names_failed_checks(tmp_path, capsys):
-    """Aborting due to planner PreflightError must print the check name and command."""
-
-    async def _fake_run_agent(name, **kwargs):
-        raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
-
-    _run(tmp_path, _fake_run_agent)
+    with pytest.raises(SystemExit):
+        _run(tmp_path, _fake_run_agent, github_service=_make_github_svc_hitl())
 
     out = capsys.readouterr().out
-    assert "ruff" in out
-    assert "ruff check ." in out
+    assert "88" in out, f"Output must reference the filed issue number; got: {out!r}"
 
 
 # ── Cycle 52-2: implementer PreflightError → siblings complete ───────────────
@@ -911,58 +909,64 @@ def test_post_merge_checks_run_after_all_clean_merges(tmp_path):
     )
 
 
-def test_post_merge_check_failure_spawns_bug_report_not_merger(tmp_path):
-    """On post-merge check failure, bug-report is spawned and Merger is NOT spawned."""
+def test_post_merge_check_failure_spawns_preflight_issue_not_merger(tmp_path):
+    """On post-merge check failure, preflight-issue agent is spawned and Merger is NOT spawned."""
     agent_names: list[str] = []
 
     async def _fake_run_agent(name, **kwargs):
         agent_names.append(name)
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
+        if "preflight-issue" in name:
+            return "<issue>55</issue>"
         return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
     failures = [("pytest", "pytest", "FAILED tests/test_foo.py")]
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        git_service=_make_git_svc(try_merge_side_effect=[True]),
-        github_service=_make_github_svc(),
-        run_host_checks=lambda _: failures,
-    )
+    with pytest.raises(SystemExit):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            git_service=_make_git_svc(try_merge_side_effect=[True]),
+            github_service=_make_github_svc_hitl(),
+            run_host_checks=lambda _: failures,
+        )
 
     assert "Merger" not in agent_names, (
         f"Merger must not spawn on check failure; agents={agent_names}"
     )
-    bug_report_names = [n for n in agent_names if "bug-report" in n]
-    assert len(bug_report_names) >= 1, (
-        f"At least one bug-report agent expected; agents={agent_names}"
+    preflight_names = [n for n in agent_names if "preflight-issue" in n]
+    assert len(preflight_names) >= 1, (
+        f"At least one preflight-issue agent expected; agents={agent_names}"
     )
 
 
-def test_post_merge_bug_report_uses_post_merge_stage(tmp_path):
-    """Bug-report agents spawned on post-merge failure must use '[post-merge]' in CHECK_NAME."""
+def test_post_merge_preflight_issue_uses_raw_check_name(tmp_path):
+    """preflight-issue agent spawned on post-merge failure must use the raw CHECK_NAME."""
     captured: list[dict] = []
 
     async def _fake_run_agent(name, **kwargs):
         captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
+        if "preflight-issue" in name:
+            return "<issue>60</issue>"
         return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
     failures = [("pytest", "pytest", "FAILED")]
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        git_service=_make_git_svc(try_merge_side_effect=[True]),
-        github_service=_make_github_svc(),
-        run_host_checks=lambda _: failures,
-    )
+    with pytest.raises(SystemExit):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            git_service=_make_git_svc(try_merge_side_effect=[True]),
+            github_service=_make_github_svc_hitl(),
+            run_host_checks=lambda _: failures,
+        )
 
-    bug_calls = [c for c in captured if "bug-report" in c["name"]]
-    assert bug_calls, "Expected bug-report agent calls"
-    check_name = bug_calls[0]["prompt_args"].get("CHECK_NAME", "")
-    assert "[post-merge]" in check_name, (
-        f"CHECK_NAME must include '[post-merge]'; got {check_name!r}"
+    pf_calls = [c for c in captured if "preflight-issue" in c["name"]]
+    assert pf_calls, "Expected preflight-issue agent calls"
+    check_name = pf_calls[0]["prompt_args"].get("CHECK_NAME", "")
+    assert check_name == "pytest", (
+        f"CHECK_NAME must be raw check name 'pytest'; got {check_name!r}"
     )
 
 
@@ -1026,14 +1030,16 @@ def test_merger_receives_correct_issues_prompt_arg(tmp_path):
     )
 
 
-def test_multiple_check_failures_spawn_one_bug_report_each(tmp_path):
-    """Each post-merge check failure must spawn exactly one bug-report agent."""
+def test_post_merge_multiple_check_failures_only_first_acted_on(tmp_path):
+    """When multiple post-merge checks fail, only the first must spawn a preflight-issue agent."""
     agent_names: list[str] = []
 
     async def _fake_run_agent(name, **kwargs):
         agent_names.append(name)
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
+        if "preflight-issue" in name:
+            return "<issue>66</issue>"
         return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
     failures = [
@@ -1041,42 +1047,46 @@ def test_multiple_check_failures_spawn_one_bug_report_each(tmp_path):
         ("mypy", "mypy .", "error: Found 2 errors"),
         ("ruff", "ruff check .", "ruff: error"),
     ]
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        git_service=_make_git_svc(try_merge_side_effect=[True]),
-        github_service=_make_github_svc(),
-        run_host_checks=lambda _: failures,
+    with pytest.raises(SystemExit):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            git_service=_make_git_svc(try_merge_side_effect=[True]),
+            github_service=_make_github_svc_hitl(),
+            run_host_checks=lambda _: failures,
+        )
+
+    pf_agents = [n for n in agent_names if "preflight-issue" in n]
+    assert len(pf_agents) == 1, (
+        f"Exactly one preflight-issue agent expected; got {pf_agents}"
     )
 
-    bug_reports = [n for n in agent_names if "bug-report" in n]
-    assert len(bug_reports) == 3, (
-        f"Expected 3 bug-report agents (one per failure); got {bug_reports}"
-    )
 
-
-def test_bug_report_receives_correct_command_and_output(tmp_path):
-    """Bug-report prompt_args must include the exact COMMAND and OUTPUT from the failing check."""
+def test_preflight_issue_receives_correct_command_and_output(tmp_path):
+    """preflight-issue agent must receive exact COMMAND and OUTPUT from the failing check."""
     captured: list[dict] = []
 
     async def _fake_run_agent(name, **kwargs):
         captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
+        if "preflight-issue" in name:
+            return "<issue>70</issue>"
         return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
 
     failures = [("pytest", "pytest -x", "FAILED tests/test_bar.py::test_something")]
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        git_service=_make_git_svc(try_merge_side_effect=[True]),
-        github_service=_make_github_svc(),
-        run_host_checks=lambda _: failures,
-    )
+    with pytest.raises(SystemExit):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            git_service=_make_git_svc(try_merge_side_effect=[True]),
+            github_service=_make_github_svc_hitl(),
+            run_host_checks=lambda _: failures,
+        )
 
-    bug_calls = [c for c in captured if "bug-report" in c["name"]]
-    assert len(bug_calls) == 1
-    args = bug_calls[0]["prompt_args"]
+    pf_calls = [c for c in captured if "preflight-issue" in c["name"]]
+    assert len(pf_calls) == 1
+    args = pf_calls[0]["prompt_args"]
     assert args.get("COMMAND") == "pytest -x", (
         f"COMMAND must be 'pytest -x'; got {args.get('COMMAND')!r}"
     )
@@ -1518,33 +1528,36 @@ def test_preplanning_preflight_runs_on_cold_startup(tmp_path):
 
 
 def test_preplanning_preflight_reruns_after_post_merge_check_failure(tmp_path):
-    """When post-merge checks fail, the next iteration must run preflight again."""
+    """When the preflight-fix post-merge also fails, the next iteration must run preflight again."""
     planner_skip_flags: list[bool] = []
+    planner_call_count = [0]
 
     mock_git = _make_git_svc(try_merge_side_effect=[True, True])
     mock_git.get_head_sha.return_value = "some_sha"
 
-    first_call = [True]
-
-    def _failing_then_passing_checks(_):
-        if first_call[0]:
-            first_call[0] = False
-            return [("pytest", "pytest", "FAILED")]
-        return []
+    mock_github = MagicMock(spec=GithubService)
+    mock_github.get_labels.return_value = ["ready-for-agent"]  # AFK verdict
+    mock_github.get_issue_title.return_value = "Fix preflight"
 
     async def _fake_run_agent(name, skip_preflight=False, **kwargs):
         if name == "Planner":
             planner_skip_flags.append(skip_preflight)
+            planner_call_count[0] += 1
+            if planner_call_count[0] == 1:
+                return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+            return _plan_json([])  # second iteration: no issues → terminate
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        if "preflight-issue" in name:
+            return "<issue>90</issue>"
+        return ""
 
     _run(
         tmp_path,
         _fake_run_agent,
         git_service=mock_git,
-        github_service=_make_github_svc(),
-        run_host_checks=_failing_then_passing_checks,
+        github_service=mock_github,
+        run_host_checks=lambda _: [("pytest", "pytest", "FAILED")],  # always fails
         max_iterations=2,
     )
 
@@ -1553,7 +1566,7 @@ def test_preplanning_preflight_reruns_after_post_merge_check_failure(tmp_path):
     )
     assert planner_skip_flags[0] is False, "First iteration must run preflight"
     assert planner_skip_flags[1] is False, (
-        "Second iteration must run preflight again after post-merge check failure"
+        "Second iteration must run preflight again when preflight-fix post-merge also failed"
     )
 
 
@@ -1589,3 +1602,167 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
         assert call["sha"] == fake_sha, (
             f"Implementer {call['name']} must receive sha={fake_sha!r}; got {call['sha']!r}"
         )
+
+
+# ── Issue-176: preflight failure handling and HITL routing ────────────────────
+
+
+def _make_github_svc_afk():
+    """GithubService mock that returns AFK verdict (ready-for-agent) for any issue."""
+    mock = MagicMock(spec=GithubService)
+    mock.get_labels.return_value = ["bug", "ready-for-agent"]
+    mock.get_issue_title.return_value = "Preflight fix title"
+    return mock
+
+
+def _make_github_svc_hitl():
+    """GithubService mock that returns HITL verdict (ready-for-human) for any issue."""
+    mock = MagicMock(spec=GithubService)
+    mock.get_labels.return_value = ["bug", "ready-for-human"]
+    mock.get_issue_title.return_value = "Preflight fix title"
+    return mock
+
+
+def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
+    """On pre-planning preflight failure with AFK verdict, Planner must NOT be called again
+    and exactly one Implementer must be spawned for the preflight issue."""
+    agent_names: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        agent_names.append(name)
+        if name == "Planner":
+            raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
+        if "preflight-issue" in name:
+            return "<issue>42</issue>"
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        github_service=_make_github_svc_afk(),
+        max_iterations=1,
+    )
+
+    planner_calls = [n for n in agent_names if n == "Planner"]
+    implementer_calls = [n for n in agent_names if "Implementer" in n]
+    assert len(planner_calls) == 1, (
+        f"Planner called once (then errors); got {planner_calls}"
+    )
+    assert len(implementer_calls) == 1, (
+        f"Exactly one Implementer must be spawned for the preflight fix; got {implementer_calls}"
+    )
+
+
+def test_preflight_failure_hitl_exits_nonzero_no_implementer(tmp_path):
+    """On pre-planning preflight failure with HITL verdict, process must exit non-zero
+    and no Implementer must be spawned."""
+    implementer_calls: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            raise PreflightError([("ruff", "ruff check .", "E501")])
+        if "preflight-issue" in name:
+            return "<issue>99</issue>"
+        if "Implementer" in name:
+            implementer_calls.append(name)
+        return ""
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=_make_github_svc_hitl(),
+            max_iterations=1,
+        )
+
+    assert exc_info.value.code != 0, "Exit code must be non-zero for HITL"
+    assert implementer_calls == [], (
+        f"No Implementer must be spawned on HITL; got {implementer_calls}"
+    )
+
+
+def test_preflight_failure_only_first_check_acted_on(tmp_path):
+    """When multiple preflight checks fail, only the first (by order) must be acted on."""
+    preflight_issue_calls: list[dict] = []
+
+    async def _fake_run_agent(name, prompt_args=None, **kwargs):
+        if name == "Planner":
+            raise PreflightError(
+                [
+                    ("ruff", "ruff check .", "ruff error"),
+                    ("mypy", "mypy .", "mypy error"),
+                    ("pytest", "pytest", "pytest error"),
+                ]
+            )
+        if "preflight-issue" in name:
+            preflight_issue_calls.append(
+                {"name": name, "prompt_args": prompt_args or {}}
+            )
+            return "<issue>10</issue>"
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    with pytest.raises(SystemExit):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=_make_github_svc_hitl(),
+            max_iterations=1,
+        )
+
+    assert len(preflight_issue_calls) == 1, (
+        f"Only one preflight-issue agent must be spawned; got {len(preflight_issue_calls)}"
+    )
+    args = preflight_issue_calls[0]["prompt_args"]
+    assert args.get("CHECK_NAME") == "ruff", (
+        f"Must act on first check (ruff); got CHECK_NAME={args.get('CHECK_NAME')!r}"
+    )
+    assert args.get("COMMAND") == "ruff check .", (
+        f"Must use first check's command; got {args.get('COMMAND')!r}"
+    )
+
+
+def test_preplanning_and_postmerge_failures_use_same_handler(tmp_path):
+    """Both pre-planning and post-merge preflight failures must spawn a preflight-issue agent."""
+    preflight_issue_calls: list[str] = []
+    call_count = [0]
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            # First call: raise PreflightError; second call: return issues
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise PreflightError([("ruff", "ruff check .", "error")])
+            return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        if "preflight-issue" in name:
+            preflight_issue_calls.append(name)
+            return "<issue>50</issue>"
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    failures_returned = [True]
+
+    def _run_host_checks(_):
+        if failures_returned[0]:
+            failures_returned[0] = False
+            return [("pytest", "pytest", "FAILED")]
+        return []
+
+    with pytest.raises(SystemExit):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            git_service=_make_git_svc(try_merge_side_effect=[True, True]),
+            github_service=_make_github_svc_hitl(),
+            run_host_checks=_run_host_checks,
+            max_iterations=2,
+        )
+
+    assert len(preflight_issue_calls) >= 1, (
+        "preflight-issue agent must be spawned for both failure types"
+    )

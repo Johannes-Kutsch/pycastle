@@ -11,6 +11,7 @@ DOCKER_IMAGE_NAME = ""
 
 # --- Labels ---
 ISSUE_LABEL = "ready-for-agent"
+HITL_LABEL = "ready-for-human"
 
 # --- Paths ---
 PYCASTLE_DIR = Path("pycastle")

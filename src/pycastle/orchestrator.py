@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import (
+    HITL_LABEL,
     IMPLEMENT_CHECKS,
     ISSUE_LABEL,
     LOGS_DIR,
@@ -135,6 +136,40 @@ def _format_feedback_commands(checks: list[str]) -> str:
     return ", ".join(wrapped[:-1]) + " and " + wrapped[-1]
 
 
+async def _handle_preflight_failure(
+    failures: list[tuple[str, str, str]],
+    env: dict[str, str],
+    repo_root: Path,
+    github_svc: GithubService,
+    run_agent: Any,
+    hitl_label: str,
+) -> tuple[str, int]:
+    """Spawn preflight-issue agent for the first failing check, read HITL verdict.
+
+    Returns ('hitl', issue_number) or ('afk', issue_number).
+    """
+    check_name, command, output = failures[0]
+    agent_output = await run_agent(
+        name=f"preflight-issue ({check_name})",
+        prompt_file=PROMPTS_DIR / "preflight-issue.md",
+        mount_path=repo_root,
+        env=env,
+        prompt_args={"CHECK_NAME": check_name, "COMMAND": command, "OUTPUT": output},
+        skip_preflight=True,
+    )
+    text = _extract_text(agent_output)
+    match = re.search(r"<issue>(\d+)</issue>", text)
+    if not match:
+        raise RuntimeError(
+            "preflight-issue agent produced no <issue>NUMBER</issue> tag.\n\n" + text
+        )
+    issue_number = int(match.group(1))
+    labels = github_svc.get_labels(issue_number)
+    if hitl_label in labels:
+        return "hitl", issue_number
+    return "afk", issue_number
+
+
 async def run_issue(
     issue: dict,
     env: dict[str, str],
@@ -222,10 +257,21 @@ async def run(
     git_svc = git_service or GitService()
     _safe_sha: str | None = None
     _skip_preflight: bool = False
+    _lazy_github_svc: GithubService | None = None
+
+    def _get_github_svc() -> GithubService:
+        nonlocal _lazy_github_svc
+        if _lazy_github_svc is None:
+            _lazy_github_svc = github_service or GithubService(
+                repo=_get_repo(repo_root)
+            )
+        return _lazy_github_svc
+
     for iteration in range(1, _max_iterations + 1):
         print(f"\n=== Iteration {iteration}/{_max_iterations} ===\n")
 
         plan_stage = _stage_overrides.get("plan", {})
+        issues: list[dict] | None = None
         try:
             plan_output = await _run_agent(
                 name="Planner",
@@ -239,11 +285,22 @@ async def run(
                 skip_preflight=_skip_preflight,
             )
         except PreflightError as exc:
-            print("[Planner] Pre-flight failed — aborting run:")
-            for check_name, command, output in exc.failures:
-                print(f"  ✗ {check_name} ({command}): {output}")
-            return
-        issues = parse_plan(plan_output)
+            verdict, pf_num = await _handle_preflight_failure(
+                exc.failures, env, repo_root, _get_github_svc(), _run_agent, HITL_LABEL
+            )
+            if verdict == "hitl":
+                print(
+                    f"Preflight issue #{pf_num} requires human intervention. Exiting."
+                )
+                sys.exit(1)
+            pf_title = _get_github_svc().get_issue_title(pf_num)
+            issues = [
+                {"number": pf_num, "title": pf_title, "branch": f"issue/{pf_num}"}
+            ]
+            _skip_preflight = True  # skip SHA pinning — code was broken
+
+        if issues is None:
+            issues = parse_plan(plan_output)
 
         if not issues:
             print(f"No issues with label '{ISSUE_LABEL}' found. Skipping.")
@@ -305,14 +362,12 @@ async def run(
         for i in completed:
             print(f"  {i['branch']}")
 
-        github_svc = github_service or GithubService(repo=_get_repo(repo_root))
-
         await wait_for_clean_working_tree(repo_root, git_svc)
 
         conflict_issues: list[dict] = []
         for issue in completed:
             if git_svc.try_merge(repo_root, issue["branch"]):
-                github_svc.close_issue_with_parents(issue["number"])
+                _get_github_svc().close_issue_with_parents(issue["number"])
             else:
                 conflict_issues.append(issue)
 
@@ -323,24 +378,45 @@ async def run(
         if clean_count > 0 and not conflict_issues:
             check_failures = _run_host_checks(PREFLIGHT_CHECKS)
             if check_failures:
-                bug_prompt = PROMPTS_DIR / "preflight-issue.md"
-                await asyncio.gather(
-                    *[
-                        _run_agent(
-                            name=f"bug-report ({check_name})",
-                            prompt_file=bug_prompt,
-                            mount_path=repo_root,
-                            env=env,
-                            prompt_args={
-                                "CHECK_NAME": f"[post-merge] {check_name}",
-                                "COMMAND": command,
-                                "OUTPUT": output,
-                            },
-                            skip_preflight=True,
-                        )
-                        for check_name, command, output in check_failures
-                    ]
+                verdict, pf_num = await _handle_preflight_failure(
+                    check_failures,
+                    env,
+                    repo_root,
+                    _get_github_svc(),
+                    _run_agent,
+                    HITL_LABEL,
                 )
+                if verdict == "hitl":
+                    print(
+                        f"Preflight issue #{pf_num} requires human intervention. Exiting."
+                    )
+                    sys.exit(1)
+                pf_title = _get_github_svc().get_issue_title(pf_num)
+                pf_issue = {
+                    "number": pf_num,
+                    "title": pf_title,
+                    "branch": f"issue/{pf_num}",
+                }
+                pf_semaphore = asyncio.Semaphore(_max_parallel)
+                pf_completed = await run_issue(
+                    pf_issue,
+                    env,
+                    repo_root,
+                    _stage_overrides,
+                    pf_semaphore,
+                    run_agent=_run_agent,
+                    sha=None,
+                )
+                if pf_completed:
+                    pf_branch = f"issue/{pf_num}"
+                    await wait_for_clean_working_tree(repo_root, git_svc)
+                    if git_svc.try_merge(repo_root, pf_branch):
+                        _get_github_svc().close_issue_with_parents(pf_num)
+                        delete_merged_branches([pf_branch], repo_root, git_svc)
+                        second_failures = _run_host_checks(PREFLIGHT_CHECKS)
+                        if not second_failures:
+                            _safe_sha = git_svc.get_head_sha(repo_root)
+                            _skip_preflight = True
                 continue
             _safe_sha = git_svc.get_head_sha(repo_root)
             _skip_preflight = True
