@@ -408,8 +408,15 @@ async def run_agent(
     gitdir_overlay: Path | None = None
     try:
         if branch:
-            branch_slug = re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
-            worktree_host_path = mount_path / PYCASTLE_DIR / ".worktrees" / branch_slug
+            m = re.search(r"issue-(\d+)", branch)
+            worktree_name = (
+                f"issue-{m.group(1)}"
+                if m
+                else re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
+            )
+            worktree_host_path = (
+                mount_path / PYCASTLE_DIR / ".worktrees" / worktree_name
+            )
             create_worktree_fn(mount_path, worktree_host_path, branch, sha)
             gitdir_overlay = patch_gitdir_for_container(worktree_host_path)
 

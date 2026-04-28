@@ -185,6 +185,82 @@ def test_two_agents_run_concurrently(tmp_path):
         )
 
 
+# ── Issue 188: deterministic worktree names ───────────────────────────────────
+
+
+def test_run_agent_creates_worktree_at_issue_number_dir(tmp_path):
+    """run_agent with sandcastle/issue-N branch must create worktree at .worktrees/issue-N."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    created_paths: list = []
+
+    def fake_create(repo, wt, branch, sha=None):
+        created_paths.append(wt)
+
+    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="sandcastle/issue-42",
+                create_worktree_fn=fake_create,
+                remove_worktree_fn=_noop_remove,
+                git_service=_make_git_service(),
+            )
+        )
+
+    assert len(created_paths) == 1
+    assert created_paths[0].name == "issue-42"
+
+
+def test_run_agent_worktree_dir_is_issue_number_regardless_of_slug(tmp_path):
+    """Two branches for the same issue number must produce the same worktree dir."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    paths_a: list = []
+    paths_b: list = []
+
+    def make_capture(store):
+        def fake_create(repo, wt, branch, sha=None):
+            store.append(wt)
+
+        return fake_create
+
+    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="sandcastle/issue-182-halt-flag-worktree-preservation",
+                create_worktree_fn=make_capture(paths_a),
+                remove_worktree_fn=_noop_remove,
+                git_service=_make_git_service(),
+            )
+        )
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="sandcastle/issue-182-halt-flag-conditional-worktree-preservation",
+                create_worktree_fn=make_capture(paths_b),
+                remove_worktree_fn=_noop_remove,
+                git_service=_make_git_service(),
+            )
+        )
+
+    assert paths_a[0].name == "issue-182"
+    assert paths_b[0].name == "issue-182"
+    assert paths_a[0] == paths_b[0]
+
+
 # ── Cycle 15: worktree add must not run inside the container ─────────────────
 
 

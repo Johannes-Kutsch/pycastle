@@ -64,6 +64,15 @@ def test_planner_template_renders_without_error():
     assert_template_renders(prompt_file, {"ISSUE_LABEL": ISSUE_LABEL})
 
 
+def test_planner_template_does_not_instruct_branch_emission():
+    """Plan prompt must not ask the Planner to emit a branch field — branch is now computed in code."""
+    prompt_file = REPO_ROOT / PROMPTS_DIR / "plan-prompt.md"
+    content = prompt_file.read_text(encoding="utf-8")
+    assert '"branch"' not in content, (
+        "Plan prompt must not instruct the Planner to emit a branch field"
+    )
+
+
 # ── Cycle 4: Implementer template renders without error ───────────────────────
 
 

@@ -295,12 +295,18 @@ async def run(
                 sys.exit(1)
             pf_title = _get_github_svc().get_issue_title(pf_num)
             issues = [
-                {"number": pf_num, "title": pf_title, "branch": f"issue/{pf_num}"}
+                {
+                    "number": pf_num,
+                    "title": pf_title,
+                    "branch": f"sandcastle/issue-{pf_num}",
+                }
             ]
             _skip_preflight = True  # skip SHA pinning — code was broken
 
         if issues is None:
             issues = parse_plan(plan_output)
+            for issue in issues:
+                issue["branch"] = f"sandcastle/issue-{issue['number']}"
 
         if not issues:
             print(f"No issues with label '{ISSUE_LABEL}' found. Skipping.")
@@ -397,7 +403,7 @@ async def run(
                 pf_issue = {
                     "number": pf_num,
                     "title": pf_title,
-                    "branch": f"issue/{pf_num}",
+                    "branch": f"sandcastle/issue-{pf_num}",
                 }
                 pf_semaphore = asyncio.Semaphore(_max_parallel)
                 pf_completed = await run_issue(
