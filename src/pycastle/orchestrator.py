@@ -144,10 +144,7 @@ async def _handle_preflight_failure(
     run_agent: Any,
     hitl_label: str,
 ) -> tuple[str, int]:
-    """Spawn preflight-issue agent for the first failing check, read HITL verdict.
-
-    Returns ('hitl', issue_number) or ('afk', issue_number).
-    """
+    """Spawn preflight-issue agent for the first failing check; returns ('hitl'|'afk', issue_number)."""
     check_name, command, output = failures[0]
     agent_output = await run_agent(
         name=f"preflight-issue ({check_name})",
