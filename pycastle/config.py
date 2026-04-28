@@ -36,6 +36,6 @@ IMPLEMENT_CHECKS: list[str] = [
 STAGE_OVERRIDES: dict[str, dict[str, str]] = {
     "plan": {"model": "haiku", "effort": "low"},
     "implement": {"model": "haiku", "effort": "low"},
-    "review": {"model": "sonnet", "effort": "normal"},
+    "review": {"model": "sonnet", "effort": "low"},
     "merge": {"model": "haiku", "effort": "low"},
 }
