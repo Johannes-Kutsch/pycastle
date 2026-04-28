@@ -10,9 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .config import ISSUE_LABEL, LOGS_DIR, MAX_ITERATIONS, MAX_PARALLEL, PROMPTS_DIR
+from .config import IMPLEMENT_CHECKS, ISSUE_LABEL, LOGS_DIR, MAX_ITERATIONS, MAX_PARALLEL, PROMPTS_DIR, STAGE_OVERRIDES
 from .container_runner import run_agent
-from .defaults.config import IMPLEMENT_CHECKS, STAGE_OVERRIDES
 from .errors import PreflightError
 from .validate import validate_config
 

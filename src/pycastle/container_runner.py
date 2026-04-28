@@ -14,8 +14,7 @@ from pathlib import Path
 import docker
 from docker.models.containers import Container as DockerContainer
 
-from .config import DOCKER_IMAGE, LOGS_DIR, PYCASTLE_DIR
-from .defaults.config import IDLE_TIMEOUT, PREFLIGHT_CHECKS
+from .config import DOCKER_IMAGE, IDLE_TIMEOUT, LOGS_DIR, PREFLIGHT_CHECKS, PYCASTLE_DIR
 from .errors import (
     AgentTimeoutError,
     BranchCollisionError,

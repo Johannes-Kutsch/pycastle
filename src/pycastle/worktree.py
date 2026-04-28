@@ -6,7 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .defaults.config import WORKTREE_TIMEOUT
+from .config import WORKTREE_TIMEOUT
 from .errors import WorktreeError, WorktreeTimeoutError
 
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
