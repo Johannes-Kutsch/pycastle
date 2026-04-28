@@ -1685,12 +1685,12 @@ def test_format_stream_line_summarises_tool_use_block():
     assert _format_stream_line(line) == "(tool: Bash)"
 
 
-# ── Cycle 65-4: result line prints result text ────────────────────────────────
+# ── Cycle 65-4 / Issue 79: result line suppressed to prevent duplicate output ─
 
 
 def test_format_stream_line_returns_result_text():
     line = '{"type":"result","result":"Final answer here","session_id":"abc"}'
-    assert _format_stream_line(line) == "Final answer here"
+    assert _format_stream_line(line) is None
 
 
 # ── Cycle 65-5: non-JSON line returned verbatim ───────────────────────────────

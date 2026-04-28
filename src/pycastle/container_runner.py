@@ -52,8 +52,7 @@ def _format_stream_line(line: str) -> str | None:
     if line_type == "system":
         return None
     if line_type == "result":
-        result_text = obj.get("result", "")
-        return result_text if result_text else None
+        return None
     if line_type == "assistant":
         content = (obj.get("message") or {}).get("content", [])
         parts: list[str] = []
