@@ -272,6 +272,20 @@ def test_claude_service_error_converts_to_config_validation_error():
         validate_config(overrides, claude_service=mock_service)
 
 
+# ── validate_config: ClaudeServiceError message is preserved ─────────────────
+
+
+def test_claude_service_error_message_is_preserved_in_config_validation_error():
+    from pycastle.validate import validate_config
+
+    mock_service = MagicMock(spec=ClaudeService)
+    mock_service.list_models.side_effect = ClaudeServiceError("very specific error text")
+    overrides = {"plan": {"model": "sonnet", "effort": ""}}
+    with pytest.raises(ConfigValidationError) as exc_info:
+        validate_config(overrides, claude_service=mock_service)
+    assert "very specific error text" in str(exc_info.value)
+
+
 # ── validate_config: list-models is only called once (cached) ─────────────────
 
 
@@ -284,6 +298,34 @@ def test_list_models_called_once_across_multiple_validations():
     validate_config(overrides1, claude_service=mock_service)
     validate_config(overrides2, claude_service=mock_service)
     mock_service.list_models.assert_called_once()
+
+
+def test_different_service_instances_cache_independently():
+    from pycastle.validate import validate_config
+
+    service1 = _make_service(["claude-sonnet-4-6"])
+    service2 = _make_service(["claude-haiku-4-5-20251001"])
+    validate_config({"plan": {"model": "sonnet", "effort": ""}}, claude_service=service1)
+    validate_config({"plan": {"model": "haiku", "effort": ""}}, claude_service=service2)
+    service1.list_models.assert_called_once()
+    service2.list_models.assert_called_once()
+
+
+def test_service_error_is_not_cached_subsequent_call_succeeds():
+    from pycastle.validate import validate_config
+
+    mock_service = MagicMock(spec=ClaudeService)
+    mock_service.list_models.side_effect = ClaudeServiceError("transient failure")
+    overrides = {"plan": {"model": "sonnet", "effort": ""}}
+    with pytest.raises(ConfigValidationError):
+        validate_config(overrides, claude_service=mock_service)
+
+    mock_service.list_models.side_effect = None
+    mock_service.list_models.return_value = tuple(_FAKE_MODELS)
+    overrides = {"plan": {"model": "sonnet", "effort": ""}}
+    validate_config(overrides, claude_service=mock_service)
+    assert overrides["plan"]["model"] == "claude-sonnet-4-6"
+    assert mock_service.list_models.call_count == 2
 
 
 # ── validate_config: atomicity — no partial mutations on failure ──────────────
