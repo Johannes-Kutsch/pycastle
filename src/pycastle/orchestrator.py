@@ -203,6 +203,7 @@ async def run_issue(
         effort=impl_stage.get("effort", ""),
         stage="pre-implementation",
         sha=sha,
+        skip_preflight=True,
     )
     if "<promise>COMPLETE</promise>" not in _extract_text(result):
         return None
@@ -222,6 +223,7 @@ async def run_issue(
         model=rev_stage.get("model", ""),
         effort=rev_stage.get("effort", ""),
         stage="pre-review",
+        skip_preflight=True,
     )
     return issue
 
