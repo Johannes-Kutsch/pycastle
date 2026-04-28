@@ -53,6 +53,22 @@ def test_branch_collision_error_is_worktree_error():
     assert issubclass(BranchCollisionError, WorktreeError)
 
 
+# ── UsageLimitError ───────────────────────────────────────────────────────────
+
+
+def test_usage_limit_error_is_pycastle_error():
+    from pycastle.errors import UsageLimitError
+
+    assert issubclass(UsageLimitError, PycastleError)
+
+
+def test_usage_limit_error_carries_matched_line():
+    from pycastle.errors import UsageLimitError
+
+    err = UsageLimitError("You've hit your session limit")
+    assert str(err) == "You've hit your session limit"
+
+
 # ── PreflightError ────────────────────────────────────────────────────────────
 
 

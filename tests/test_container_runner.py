@@ -12,7 +12,7 @@ from pycastle.container_runner import (
     _format_stream_line,
     run_agent,
 )
-from pycastle.errors import AgentTimeoutError
+from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.git_service import (
     GitCommandError,
     GitNotFoundError,
@@ -1721,3 +1721,66 @@ def test_run_agent_accepts_stage_parameter(tmp_path):
         result = _run(run_agent("Test", prompt, tmp_path, {}, stage="pre-planning"))
 
     assert result == ""
+
+
+# ── Issue 180: UsageLimitError stream detection ───────────────────────────────
+
+
+def test_run_streaming_raises_usage_limit_error_on_session_limit_line(tmp_path):
+    runner = _streaming_runner(
+        "Agent",
+        [b"You've hit your session limit\n"],
+        tmp_path / "test.log",
+    )
+    with pytest.raises(UsageLimitError):
+        runner.run_streaming()
+
+
+def test_run_streaming_raises_usage_limit_error_case_insensitive(tmp_path):
+    runner = _streaming_runner(
+        "Agent",
+        [b"you've hit your session limit\n"],
+        tmp_path / "test.log",
+    )
+    with pytest.raises(UsageLimitError):
+        runner.run_streaming()
+
+
+def test_run_streaming_raises_usage_limit_error_on_credit_balance_line(tmp_path):
+    runner = _streaming_runner(
+        "Agent",
+        [b"Credit balance is too low for this request\n"],
+        tmp_path / "test.log",
+    )
+    with pytest.raises(UsageLimitError):
+        runner.run_streaming()
+
+
+def test_run_streaming_does_not_raise_for_normal_line(tmp_path):
+    runner = _streaming_runner(
+        "Agent",
+        [b"All good, processing normally\n"],
+        tmp_path / "test.log",
+    )
+    runner.run_streaming()
+
+
+def test_run_streaming_raises_when_pattern_split_across_chunks(tmp_path):
+    runner = _streaming_runner(
+        "Agent",
+        [b"You've hit ", b"your weekly limit\n"],
+        tmp_path / "test.log",
+    )
+    with pytest.raises(UsageLimitError):
+        runner.run_streaming()
+
+
+def test_run_streaming_error_carries_original_casing(tmp_path):
+    runner = _streaming_runner(
+        "Agent",
+        [b"YOU'VE HIT YOUR SESSION LIMIT\n"],
+        tmp_path / "test.log",
+    )
+    with pytest.raises(UsageLimitError) as exc_info:
+        runner.run_streaming()
+    assert str(exc_info.value) == "YOU'VE HIT YOUR SESSION LIMIT"
