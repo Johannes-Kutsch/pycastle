@@ -1,6 +1,6 @@
 import json
 import subprocess
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -158,6 +158,16 @@ def test_get_parent_raises_github_command_error_on_failure():
             svc.get_parent(5)
 
 
+def test_get_parent_raises_github_command_error_on_non_numeric_output():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"unexpected\n", stderr=b""),
+    ):
+        with pytest.raises(GithubCommandError):
+            svc.get_parent(5)
+
+
 def test_get_parent_raises_github_timeout_error_on_timeout():
     svc = GithubService("owner/repo")
     with patch(
@@ -228,6 +238,16 @@ def test_get_open_sub_issues_raises_github_command_error_on_failure():
             svc.get_open_sub_issues(5)
 
 
+def test_get_open_sub_issues_raises_github_command_error_on_invalid_json():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"not valid json", stderr=b""),
+    ):
+        with pytest.raises(GithubCommandError):
+            svc.get_open_sub_issues(5)
+
+
 def test_get_open_sub_issues_raises_github_timeout_error_on_timeout():
     svc = GithubService("owner/repo")
     with patch(
@@ -241,54 +261,64 @@ def test_get_open_sub_issues_raises_github_timeout_error_on_timeout():
 # ── close_issue_with_parents() ────────────────────────────────────────────────
 
 
-def test_close_issue_with_parents_closes_issue():
-    svc = GithubService("owner/repo")
-    with (
-        patch.object(svc, "close_issue") as mock_close,
-        patch.object(svc, "get_parent", return_value=None),
-    ):
-        svc.close_issue_with_parents(10)
-    mock_close.assert_called_once_with(10)
+def _run_ok(stdout: bytes = b"") -> MagicMock:
+    return MagicMock(returncode=0, stdout=stdout, stderr=b"")
 
 
 def test_close_issue_with_parents_stops_when_no_parent():
     svc = GithubService("owner/repo")
-    with (
-        patch.object(svc, "close_issue") as mock_close,
-        patch.object(svc, "get_parent", return_value=None),
-    ):
+    with patch("subprocess.run", side_effect=[
+        _run_ok(),          # close_issue(10)
+        _run_ok(b"null\n"), # get_parent(10) -> None
+    ]) as mock_run:
         svc.close_issue_with_parents(10)
-    assert mock_close.call_count == 1
+    closed = [c[0][0] for c in mock_run.call_args_list if c[0][0][:3] == ["gh", "issue", "close"]]
+    assert closed == [["gh", "issue", "close", "10"]]
 
 
 def test_close_issue_with_parents_closes_parent_when_all_siblings_done():
     svc = GithubService("owner/repo")
-    with (
-        patch.object(svc, "close_issue") as mock_close,
-        patch.object(svc, "get_parent", side_effect=[5, None]),
-        patch.object(svc, "get_open_sub_issues", return_value=[]),
-    ):
+    with patch("subprocess.run", side_effect=[
+        _run_ok(),          # close_issue(10)
+        _run_ok(b"5\n"),    # get_parent(10) -> 5
+        _run_ok(b"[]"),     # get_open_sub_issues(5) -> []
+        _run_ok(),          # close_issue(5)
+        _run_ok(b"null\n"), # get_parent(5) -> None
+    ]) as mock_run:
         svc.close_issue_with_parents(10)
-    assert mock_close.call_args_list == [call(10), call(5)]
+    closed = [c[0][0] for c in mock_run.call_args_list if c[0][0][:3] == ["gh", "issue", "close"]]
+    assert closed == [["gh", "issue", "close", "10"], ["gh", "issue", "close", "5"]]
 
 
 def test_close_issue_with_parents_skips_parent_when_siblings_still_open():
     svc = GithubService("owner/repo")
-    with (
-        patch.object(svc, "close_issue") as mock_close,
-        patch.object(svc, "get_parent", return_value=5),
-        patch.object(svc, "get_open_sub_issues", return_value=[11]),
-    ):
+    siblings = json.dumps([{"number": 11, "state": "open"}]).encode()
+    with patch("subprocess.run", side_effect=[
+        _run_ok(),         # close_issue(10)
+        _run_ok(b"5\n"),   # get_parent(10) -> 5
+        _run_ok(siblings), # get_open_sub_issues(5) -> [11]
+    ]) as mock_run:
         svc.close_issue_with_parents(10)
-    mock_close.assert_called_once_with(10)
+    closed = [c[0][0] for c in mock_run.call_args_list if c[0][0][:3] == ["gh", "issue", "close"]]
+    assert closed == [["gh", "issue", "close", "10"]]
 
 
 def test_close_issue_with_parents_closes_chain_recursively():
     svc = GithubService("owner/repo")
-    with (
-        patch.object(svc, "close_issue") as mock_close,
-        patch.object(svc, "get_parent", side_effect=[5, 3, None]),
-        patch.object(svc, "get_open_sub_issues", return_value=[]),
-    ):
+    with patch("subprocess.run", side_effect=[
+        _run_ok(),          # close_issue(10)
+        _run_ok(b"5\n"),    # get_parent(10) -> 5
+        _run_ok(b"[]"),     # get_open_sub_issues(5) -> []
+        _run_ok(),          # close_issue(5)
+        _run_ok(b"3\n"),    # get_parent(5) -> 3
+        _run_ok(b"[]"),     # get_open_sub_issues(3) -> []
+        _run_ok(),          # close_issue(3)
+        _run_ok(b"null\n"), # get_parent(3) -> None
+    ]) as mock_run:
         svc.close_issue_with_parents(10)
-    assert mock_close.call_args_list == [call(10), call(5), call(3)]
+    closed = [c[0][0] for c in mock_run.call_args_list if c[0][0][:3] == ["gh", "issue", "close"]]
+    assert closed == [
+        ["gh", "issue", "close", "10"],
+        ["gh", "issue", "close", "5"],
+        ["gh", "issue", "close", "3"],
+    ]
