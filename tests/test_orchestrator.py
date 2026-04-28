@@ -429,6 +429,49 @@ def test_run_validate_config_error_propagates_no_agents_started(tmp_path):
     assert agents_started == [], f"No agents must start; got {agents_started}"
 
 
+# ── parse_plan ────────────────────────────────────────────────────────────────
+
+
+def test_parse_plan_accepts_issues_dict():
+    from pycastle.orchestrator import parse_plan
+
+    output = '<plan>{"issues": [{"number": 1, "title": "t", "branch": "b"}]}</plan>'
+    result = parse_plan(output)
+    assert result == [{"number": 1, "title": "t", "branch": "b"}]
+
+
+def test_parse_plan_accepts_unblocked_issues_dict():
+    from pycastle.orchestrator import parse_plan
+
+    output = '<plan>{"unblocked_issues": [{"number": 2, "title": "u", "branch": "b"}]}</plan>'
+    result = parse_plan(output)
+    assert result == [{"number": 2, "title": "u", "branch": "b"}]
+
+
+def test_parse_plan_accepts_bare_list():
+    from pycastle.orchestrator import parse_plan
+
+    output = '<plan>[{"number": 3, "title": "l", "branch": "b"}]</plan>'
+    result = parse_plan(output)
+    assert result == [{"number": 3, "title": "l", "branch": "b"}]
+
+
+def test_parse_plan_raises_when_no_plan_tag():
+    import pytest
+    from pycastle.orchestrator import parse_plan
+
+    with pytest.raises(RuntimeError, match="no <plan> tag"):
+        parse_plan("no plan here")
+
+
+def test_parse_plan_raises_when_dict_has_no_known_key():
+    import pytest
+    from pycastle.orchestrator import parse_plan
+
+    with pytest.raises(RuntimeError, match="'issues' or 'unblocked_issues'"):
+        parse_plan('<plan>{"other": []}</plan>')
+
+
 # ── Issue-78: _stage_for_agent helper ─────────────────────────────────────────
 
 
