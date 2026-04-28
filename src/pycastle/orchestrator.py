@@ -264,7 +264,7 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
         if clean_count > 0 and not conflict_issues:
             check_failures = _run_host_checks(PREFLIGHT_CHECKS)
             if check_failures:
-                bug_prompt = PROMPTS_DIR / "bug-report.md"
+                bug_prompt = PROMPTS_DIR / "preflight-issue.md"
                 await asyncio.gather(
                     *[
                         run_agent(
