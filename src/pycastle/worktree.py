@@ -14,6 +14,7 @@ def create_worktree(
     repo_path: Path,
     worktree_path: Path,
     branch: str,
+    sha: str | None = None,
     git_service: GitService | None = None,
 ) -> None:
     svc = git_service or GitService()
@@ -24,7 +25,7 @@ def create_worktree(
             svc.remove_worktree(repo_path, worktree_path)
 
         try:
-            svc.create_worktree(repo_path, worktree_path, branch)
+            svc.create_worktree(repo_path, worktree_path, branch, sha)
         except GitCommandError as exc:
             raise WorktreeError(str(exc)) from exc
 
@@ -39,7 +40,7 @@ def create_worktree(
                 except GitCommandError as exc:
                     raise WorktreeError(str(exc)) from exc
                 try:
-                    svc.create_worktree(repo_path, worktree_path, branch)
+                    svc.create_worktree(repo_path, worktree_path, branch, sha)
                 except GitCommandError as exc:
                     raise WorktreeError(str(exc)) from exc
                 has_files = (worktree_path / "pyproject.toml").exists() or (

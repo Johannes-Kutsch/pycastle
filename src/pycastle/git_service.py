@@ -191,6 +191,14 @@ class GitService:
         lines = result.stdout.decode("utf-8", errors="replace").splitlines()
         return all(line.startswith("??") for line in lines)
 
+    def get_head_sha(self, repo_path: Path) -> str:
+        result = self._run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_path,
+            capture_output=True,
+        )
+        return result.stdout.decode("utf-8", errors="replace").strip()
+
     def remove_worktree(self, repo_path: Path, worktree_path: Path) -> None:
         result = self._run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],

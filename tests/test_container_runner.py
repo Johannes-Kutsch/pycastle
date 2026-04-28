@@ -67,7 +67,7 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _noop_create(repo, wt, branch):
+def _noop_create(repo, wt, branch, sha=None):
     pass
 
 
@@ -317,7 +317,7 @@ def test_host_worktree_removed_even_when_container_raises(tmp_path):
 
     worktree_dir = tmp_path / "pycastle" / ".worktrees" / "feature-test"
 
-    def fake_create(repo, wt, branch):
+    def fake_create(repo, wt, branch, sha=None):
         wt.mkdir(parents=True, exist_ok=True)
 
     def fake_remove(repo, wt):
@@ -353,7 +353,7 @@ def test_no_container_started_when_worktree_creation_fails(
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
-    def failing_create(repo, wt, branch):
+    def failing_create(repo, wt, branch, sha=None):
         raise RuntimeError("git worktree add failed")
 
     with pytest.raises(RuntimeError, match="worktree add failed"):
@@ -788,7 +788,7 @@ def test_worktree_cleanup_runs_even_when_container_cleanup_raises(tmp_path):
 
     worktree_dir = tmp_path / "pycastle" / ".worktrees" / "feature-test"
 
-    def fake_create(repo, wt, branch):
+    def fake_create(repo, wt, branch, sha=None):
         wt.mkdir(parents=True, exist_ok=True)
 
     def fake_remove(repo, wt):

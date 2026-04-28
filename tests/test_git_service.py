@@ -722,3 +722,26 @@ def test_is_working_tree_clean_ignores_untracked_files_alongside_tracked_changes
         ),
     ):
         assert svc.is_working_tree_clean(tmp_path) is False
+
+
+# ── get_head_sha() ────────────────────────────────────────────────────────────
+
+
+def test_get_head_sha_returns_current_head(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"abc1234567890\n"),
+    ):
+        sha = svc.get_head_sha(tmp_path)
+    assert sha == "abc1234567890"
+
+
+def test_get_head_sha_strips_whitespace(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"  deadbeef  \n"),
+    ):
+        sha = svc.get_head_sha(tmp_path)
+    assert sha == "deadbeef"
