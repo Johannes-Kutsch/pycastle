@@ -267,56 +267,84 @@ def _run_ok(stdout: bytes = b"") -> MagicMock:
 
 def test_close_issue_with_parents_stops_when_no_parent():
     svc = GithubService("owner/repo")
-    with patch("subprocess.run", side_effect=[
-        _run_ok(),          # close_issue(10)
-        _run_ok(b"null\n"), # get_parent(10) -> None
-    ]) as mock_run:
+    with patch(
+        "subprocess.run",
+        side_effect=[
+            _run_ok(),  # close_issue(10)
+            _run_ok(b"null\n"),  # get_parent(10) -> None
+        ],
+    ) as mock_run:
         svc.close_issue_with_parents(10)
-    closed = [c[0][0] for c in mock_run.call_args_list if c[0][0][:3] == ["gh", "issue", "close"]]
+    closed = [
+        c[0][0]
+        for c in mock_run.call_args_list
+        if c[0][0][:3] == ["gh", "issue", "close"]
+    ]
     assert closed == [["gh", "issue", "close", "10"]]
 
 
 def test_close_issue_with_parents_closes_parent_when_all_siblings_done():
     svc = GithubService("owner/repo")
-    with patch("subprocess.run", side_effect=[
-        _run_ok(),          # close_issue(10)
-        _run_ok(b"5\n"),    # get_parent(10) -> 5
-        _run_ok(b"[]"),     # get_open_sub_issues(5) -> []
-        _run_ok(),          # close_issue(5)
-        _run_ok(b"null\n"), # get_parent(5) -> None
-    ]) as mock_run:
+    with patch(
+        "subprocess.run",
+        side_effect=[
+            _run_ok(),  # close_issue(10)
+            _run_ok(b"5\n"),  # get_parent(10) -> 5
+            _run_ok(b"[]"),  # get_open_sub_issues(5) -> []
+            _run_ok(),  # close_issue(5)
+            _run_ok(b"null\n"),  # get_parent(5) -> None
+        ],
+    ) as mock_run:
         svc.close_issue_with_parents(10)
-    closed = [c[0][0] for c in mock_run.call_args_list if c[0][0][:3] == ["gh", "issue", "close"]]
+    closed = [
+        c[0][0]
+        for c in mock_run.call_args_list
+        if c[0][0][:3] == ["gh", "issue", "close"]
+    ]
     assert closed == [["gh", "issue", "close", "10"], ["gh", "issue", "close", "5"]]
 
 
 def test_close_issue_with_parents_skips_parent_when_siblings_still_open():
     svc = GithubService("owner/repo")
     siblings = json.dumps([{"number": 11, "state": "open"}]).encode()
-    with patch("subprocess.run", side_effect=[
-        _run_ok(),         # close_issue(10)
-        _run_ok(b"5\n"),   # get_parent(10) -> 5
-        _run_ok(siblings), # get_open_sub_issues(5) -> [11]
-    ]) as mock_run:
+    with patch(
+        "subprocess.run",
+        side_effect=[
+            _run_ok(),  # close_issue(10)
+            _run_ok(b"5\n"),  # get_parent(10) -> 5
+            _run_ok(siblings),  # get_open_sub_issues(5) -> [11]
+        ],
+    ) as mock_run:
         svc.close_issue_with_parents(10)
-    closed = [c[0][0] for c in mock_run.call_args_list if c[0][0][:3] == ["gh", "issue", "close"]]
+    closed = [
+        c[0][0]
+        for c in mock_run.call_args_list
+        if c[0][0][:3] == ["gh", "issue", "close"]
+    ]
     assert closed == [["gh", "issue", "close", "10"]]
 
 
 def test_close_issue_with_parents_closes_chain_recursively():
     svc = GithubService("owner/repo")
-    with patch("subprocess.run", side_effect=[
-        _run_ok(),          # close_issue(10)
-        _run_ok(b"5\n"),    # get_parent(10) -> 5
-        _run_ok(b"[]"),     # get_open_sub_issues(5) -> []
-        _run_ok(),          # close_issue(5)
-        _run_ok(b"3\n"),    # get_parent(5) -> 3
-        _run_ok(b"[]"),     # get_open_sub_issues(3) -> []
-        _run_ok(),          # close_issue(3)
-        _run_ok(b"null\n"), # get_parent(3) -> None
-    ]) as mock_run:
+    with patch(
+        "subprocess.run",
+        side_effect=[
+            _run_ok(),  # close_issue(10)
+            _run_ok(b"5\n"),  # get_parent(10) -> 5
+            _run_ok(b"[]"),  # get_open_sub_issues(5) -> []
+            _run_ok(),  # close_issue(5)
+            _run_ok(b"3\n"),  # get_parent(5) -> 3
+            _run_ok(b"[]"),  # get_open_sub_issues(3) -> []
+            _run_ok(),  # close_issue(3)
+            _run_ok(b"null\n"),  # get_parent(3) -> None
+        ],
+    ) as mock_run:
         svc.close_issue_with_parents(10)
-    closed = [c[0][0] for c in mock_run.call_args_list if c[0][0][:3] == ["gh", "issue", "close"]]
+    closed = [
+        c[0][0]
+        for c in mock_run.call_args_list
+        if c[0][0][:3] == ["gh", "issue", "close"]
+    ]
     assert closed == [
         ["gh", "issue", "close", "10"],
         ["gh", "issue", "close", "5"],

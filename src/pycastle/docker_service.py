@@ -26,7 +26,9 @@ class DockerService:
         cmd.append(str(context_dir))
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=timeout
+            )
         except FileNotFoundError as exc:
             raise DockerServiceError(
                 "docker not found; ensure it is installed and on PATH"

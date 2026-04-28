@@ -162,7 +162,9 @@ class GitService:
         )
         if result.returncode == 0:
             return True
-        abort = self._run(["git", "merge", "--abort"], cwd=repo_path, capture_output=True)
+        abort = self._run(
+            ["git", "merge", "--abort"], cwd=repo_path, capture_output=True
+        )
         if abort.returncode == 0:
             return False
         raise GitCommandError(

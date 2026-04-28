@@ -206,7 +206,13 @@ def test_invalid_effort_error_lists_valid_options():
     overrides = {"plan": {"model": "", "effort": "ultra"}}
     with pytest.raises(ConfigValidationError) as exc_info:
         validate_config(overrides, claude_service=_make_service())
-    assert set(exc_info.value.valid_options) == {"low", "medium", "high", "xhigh", "max"}
+    assert set(exc_info.value.valid_options) == {
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    }
 
 
 def test_valid_effort_values_pass():
