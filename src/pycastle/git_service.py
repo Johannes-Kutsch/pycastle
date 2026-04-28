@@ -173,6 +173,15 @@ class GitService:
             stderr=result.stderr.decode("utf-8", errors="replace").strip(),
         )
 
+    def is_working_tree_clean(self, repo_path: Path) -> bool:
+        result = self._run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_path,
+            capture_output=True,
+        )
+        lines = result.stdout.decode("utf-8", errors="replace").splitlines()
+        return all(line.startswith("??") for line in lines)
+
     def remove_worktree(self, repo_path: Path, worktree_path: Path) -> None:
         result = self._run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],

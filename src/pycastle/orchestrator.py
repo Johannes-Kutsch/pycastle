@@ -74,12 +74,9 @@ def parse_plan(output: str) -> list[dict]:
     if not match:
         raise RuntimeError("Planner produced no <plan> tag.\n\n" + text)
     data = json.loads(match.group(1))
-    if isinstance(data, list):
-        return data
-    for key in ("issues", "unblocked_issues"):
-        if key in data:
-            return data[key]
-    raise RuntimeError(f"Plan JSON has no 'issues' or 'unblocked_issues' key. Keys found: {list(data.keys())}")
+    if "issues" not in data:
+        raise RuntimeError(f"Plan JSON has no 'issues' key. Keys found: {list(data.keys())}")
+    return data["issues"]
 
 
 def _stage_for_agent(name: str) -> str:

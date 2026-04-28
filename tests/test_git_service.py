@@ -598,3 +598,57 @@ def test_try_merge_raises_git_timeout_error_on_timeout(tmp_path):
     ):
         with pytest.raises(GitTimeoutError):
             svc.try_merge(tmp_path, "feature")
+
+
+# ── is_working_tree_clean() ───────────────────────────────────────────────────
+
+
+def test_is_working_tree_clean_returns_true_on_clean_tree(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b""),
+    ):
+        assert svc.is_working_tree_clean(tmp_path) is True
+
+
+def test_is_working_tree_clean_returns_false_when_staged_changes_present(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"M  staged_file.py\n"),
+    ):
+        assert svc.is_working_tree_clean(tmp_path) is False
+
+
+def test_is_working_tree_clean_returns_false_when_unstaged_tracked_changes_present(
+    tmp_path,
+):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b" M unstaged_file.py\n"),
+    ):
+        assert svc.is_working_tree_clean(tmp_path) is False
+
+
+def test_is_working_tree_clean_returns_true_when_only_untracked_files_present(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"?? new_untracked.py\n"),
+    ):
+        assert svc.is_working_tree_clean(tmp_path) is True
+
+
+def test_is_working_tree_clean_ignores_untracked_files_alongside_tracked_changes(
+    tmp_path,
+):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(
+            returncode=0, stdout=b"?? untracked.py\n M tracked.py\n"
+        ),
+    ):
+        assert svc.is_working_tree_clean(tmp_path) is False
