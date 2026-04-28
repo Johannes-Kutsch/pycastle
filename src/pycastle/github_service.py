@@ -131,6 +131,25 @@ class GithubService:
                 f"gh issue list --label {label} returned unexpected output: {output!r}",
             ) from None
 
+    def get_issue_title(self, issue_number: int) -> str:
+        result = self._run(
+            [
+                "gh",
+                "api",
+                f"repos/{self.repo}/issues/{issue_number}",
+                "--jq",
+                ".title",
+            ],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise GithubCommandError(
+                f"gh api repos/{self.repo}/issues/{issue_number} failed",
+                returncode=result.returncode,
+                stderr=result.stderr.decode("utf-8", errors="replace").strip(),
+            )
+        return result.stdout.decode("utf-8", errors="replace").strip()
+
     def get_labels(self, issue_number: int) -> list[str]:
         result = self._run(
             [
