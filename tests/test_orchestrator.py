@@ -1517,6 +1517,46 @@ def test_preplanning_preflight_runs_on_cold_startup(tmp_path):
     )
 
 
+def test_preplanning_preflight_reruns_after_post_merge_check_failure(tmp_path):
+    """When post-merge checks fail, the next iteration must run preflight again."""
+    planner_skip_flags: list[bool] = []
+
+    mock_git = _make_git_svc(try_merge_side_effect=[True, True])
+    mock_git.get_head_sha.return_value = "some_sha"
+
+    first_call = [True]
+
+    def _failing_then_passing_checks(_):
+        if first_call[0]:
+            first_call[0] = False
+            return [("pytest", "pytest", "FAILED")]
+        return []
+
+    async def _fake_run_agent(name, skip_preflight=False, **kwargs):
+        if name == "Planner":
+            planner_skip_flags.append(skip_preflight)
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=mock_git,
+        github_service=_make_github_svc(),
+        run_host_checks=_failing_then_passing_checks,
+        max_iterations=2,
+    )
+
+    assert len(planner_skip_flags) == 2, (
+        f"Expected 2 Planner calls; got {len(planner_skip_flags)}"
+    )
+    assert planner_skip_flags[0] is False, "First iteration must run preflight"
+    assert planner_skip_flags[1] is False, (
+        "Second iteration must run preflight again after post-merge check failure"
+    )
+
+
 def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
     """The pinned SHA must be passed as sha= to run_agent for every implementer in the batch."""
     captured_calls: list[dict] = []

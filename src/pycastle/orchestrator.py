@@ -225,7 +225,6 @@ async def run(
     for iteration in range(1, _max_iterations + 1):
         print(f"\n=== Iteration {iteration}/{_max_iterations} ===\n")
 
-        _ran_preflight = not _skip_preflight
         plan_stage = _stage_overrides.get("plan", {})
         try:
             plan_output = await _run_agent(
@@ -244,15 +243,15 @@ async def run(
             for check_name, command, output in exc.failures:
                 print(f"  ✗ {check_name} ({command}): {output}")
             return
-        _skip_preflight = False
         issues = parse_plan(plan_output)
 
         if not issues:
             print(f"No issues with label '{ISSUE_LABEL}' found. Skipping.")
             break
 
-        if _ran_preflight:
+        if not _skip_preflight:
             _safe_sha = git_svc.get_head_sha(repo_root)
+        _skip_preflight = False
 
         print(f"Planning complete. {len(issues)} issue(s):")
         for issue in issues:

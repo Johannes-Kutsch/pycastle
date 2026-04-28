@@ -745,3 +745,13 @@ def test_get_head_sha_strips_whitespace(tmp_path):
     ):
         sha = svc.get_head_sha(tmp_path)
     assert sha == "deadbeef"
+
+
+def test_get_head_sha_returns_empty_string_on_git_failure(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=128, stdout=b""),
+    ):
+        sha = svc.get_head_sha(tmp_path)
+    assert sha == ""
