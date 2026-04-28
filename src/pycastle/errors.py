@@ -41,6 +41,14 @@ class ConfigValidationError(PycastleError):
         super().__init__(message)
 
 
+class DockerServiceError(PycastleError):
+    pass
+
+
+class DockerBuildError(DockerServiceError):
+    pass
+
+
 class PreflightError(PycastleError):
     def __init__(self, failures: list[tuple[str, str, str]]):
         self.failures = failures
