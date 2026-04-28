@@ -20,7 +20,7 @@ from .defaults.config import (  # noqa: F401
     WORKTREES_DIR,
 )
 
-_local = Path("pycastle/config.py")
+_local = Path(__file__).parent.parent.parent / "pycastle" / "config.py"
 if _local.exists():
     _spec = _util.spec_from_file_location("_pycastle_local_config", _local)
     if _spec is not None and _spec.loader is not None:

@@ -1207,8 +1207,12 @@ def test_merger_receives_correct_issues_prompt_arg(tmp_path):
     merger_calls = [c for c in captured if c["name"] == "Merger"]
     assert len(merger_calls) == 1
     issues_arg = merger_calls[0]["prompt_args"]["ISSUES"]
-    assert "#4" in issues_arg, f"Conflict issue #4 must appear in ISSUES; got {issues_arg!r}"
-    assert "#3" not in issues_arg, f"Clean issue #3 must not appear in ISSUES; got {issues_arg!r}"
+    assert "#4" in issues_arg, (
+        f"Conflict issue #4 must appear in ISSUES; got {issues_arg!r}"
+    )
+    assert "#3" not in issues_arg, (
+        f"Clean issue #3 must not appear in ISSUES; got {issues_arg!r}"
+    )
 
 
 def test_multiple_check_failures_spawn_one_bug_report_each(tmp_path):

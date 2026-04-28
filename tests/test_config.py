@@ -1,3 +1,5 @@
+import sys
+import subprocess
 import pycastle.defaults.config as defaults_config
 
 
@@ -48,3 +50,19 @@ def test_stage_overrides_defaults_are_empty_strings():
         entry = defaults_config.STAGE_OVERRIDES[stage]
         assert entry["model"] == ""
         assert entry["effort"] == ""
+
+
+def test_docker_image_name_loads_from_local_config_regardless_of_cwd(tmp_path):
+    """Config must resolve the local override via __file__, not the process CWD."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import pycastle.config; print(pycastle.config.DOCKER_IMAGE_NAME)",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == "pycastle"
