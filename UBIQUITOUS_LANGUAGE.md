@@ -62,11 +62,15 @@
 | **Implementer** | Agent role that runs during the implement phase; one Implementer per issue | coding agent, implementation agent |
 | **Reviewer** | Agent role that runs after an Implementer completes; validates changes before merge | review agent |
 | **Merger** | Agent role spawned during the merge phase only when at least one conflicting branch exists; integrates only the conflicting branches and closes their issues | merge agent, integration agent |
+| **preflight-issue agent** | Agent spawned when a quality check fails at the orchestrator level; explores the codebase to find root cause, evaluates whether HITL is required, files one structured GitHub issue, and outputs the issue number as `<issue>NUMBER</issue>`; always runs with skip_preflight enabled | bug-report agent, error reporter |
+| **HITL verdict** | The routing decision encoded in the preflight issue's label after the preflight-issue agent completes; `ready-for-agent` means the orchestrator spawns a single Implementer, `ready-for-human` means the orchestrator aborts | HITL decision, routing verdict |
+| **safe SHA** | The exact git commit SHA captured by the orchestrator after a passing preflight check; all Implementer worktrees in the current iteration are created from this SHA, guaranteeing they start from a verified-clean state | verified SHA, clean SHA |
+| **cold startup** | The state at the beginning of a fresh `pycastle run` when no post-merge check has run yet in the current process; always triggers a pre-planning preflight check | first iteration, fresh start |
+| **preflight-fix path** | The orchestrator routing when a preflight issue is AFK: skip the Planner, spawn one Implementer for the preflight issue, run the normal Reviewer → merge → post-merge check pipeline, then start a new iteration | preflight fast path |
 | **programmatic merge path** | Fast-path logic in the merge phase that runs `git merge --no-edit` directly via subprocess without spawning the Merger; used when all branches merge cleanly | fast path, direct merge |
 | **clean merge** | A `git merge --no-edit` that exits zero and requires no conflict resolution | conflict-free merge, successful merge |
 | **conflicting branch** | A branch whose `git merge --no-edit` exits non-zero; `git merge --abort` is run immediately and the branch is collected for the Merger | failed merge branch |
-| **post-merge check** | A quality check run on the host after all clean merges complete; uses the same PREFLIGHT_CHECKS commands as the Pre-flight phase | post-merge quality check, post-merge gate |
-| **bug-report agent** | On-demand agent spawned when a quality check fails; files one GitHub issue per failure with the check stage in the title; always runs with skip_preflight enabled | error reporter, bug filer |
+| **post-merge check** | A quality check run on the host after all clean merges complete; uses the same PREFLIGHT_CHECKS commands as the Pre-flight phase; on pass, repins the safe SHA; on fail, spawns the preflight-issue agent | post-merge quality check, post-merge gate |
 | **RALPH** | The required commit message prefix for all Implementer commits (e.g. `RALPH: fix auth bug`) | — |
 | **plan** | The structured JSON output by the Planner listing which issues to work on and the branch name for each | plan output, plan JSON |
 | **issue** | A GitHub issue labeled for agent processing, representing one unit of work | ticket, task, card |
@@ -93,7 +97,7 @@
 | **EXPLORATION section** | The section of the implement prompt that instructs the Implementer to read files before coding; scoped to files mentioned in the issue body — not a full repository survey | explore section, discovery section |
 | **FEEDBACK LOOPS section** | The section of the implement prompt that instructs the Implementer to run IMPLEMENT_CHECKS commands before committing | feedback section, pre-commit checks |
 | **`{{FEEDBACK_COMMANDS}}`** | Placeholder in the implement-prompt rendered at run time from `config.IMPLEMENT_CHECKS`; produces a backtick-formatted command list | — |
-| **bug-report.md** | Prompt used by the bug-report agent; receives `{{CHECK_NAME}}`, `{{COMMAND}}`, and `{{OUTPUT}}` placeholders; creates one GitHub issue titled `{{CHECK_NAME}} failed` with `bug` and `needs-triage` labels | error prompt, preflight prompt |
+| **preflight-issue.md** | Prompt used by the preflight-issue agent; receives `{{CHECK_NAME}}`, `{{COMMAND}}`, and `{{OUTPUT}}` placeholders; explores the codebase to find root cause, evaluates HITL, writes a structured issue body, applies configured labels (never `needs-triage`), and outputs `<issue>NUMBER</issue>` | bug-report.md, error prompt |
 | **`{{CHECKS}}`** | Placeholder in the merge-prompt rendered at run time from `config.PREFLIGHT_CHECKS`; injects quality check commands into the Merger agent's prompt | — |
 | **Explore subagent** | A Claude Code subagent spawned by the Implementer during the EXPLORATION section to read relevant files; token usage bounded by scoping to the issue body | explore agent, repo scanner |
 
@@ -103,14 +107,14 @@
 | --- | --- | --- |
 | **agent lifecycle phase** | One of four named stages (Setup, Pre-flight, Prepare, Work) within a single agent container run | step, stage |
 | **Setup phase** | First agent lifecycle phase: worktree creation, gitdir overlay creation, parent git dir mount wiring, container start, and git identity propagation | container setup, init phase |
-| **Pre-flight phase** | Second agent lifecycle phase: runs quality checks sequentially inside the container; on any failure spawns a bug-report agent per failing check then raises PreflightError | preflight, pre-flight check phase |
-| **quality check** | One command run during the Pre-flight phase or a post-merge check, as defined in PREFLIGHT_CHECKS; each runs independently so all failures are reported in a single pass | quality gate, check |
-| **check stage** | The lifecycle context prefix embedded in CHECK_NAME when a bug-report agent is spawned (e.g. `[pre-planning]`, `[post-merge]`); included in the filed GitHub issue title | stage prefix, phase prefix |
-| **pre-flight failure** | Result of a quality check returning non-zero during the Pre-flight phase | check failure |
-| **post-merge failure** | Result of a quality check returning non-zero during the post-merge check; triggers a bug-report agent with check stage `[post-merge]`; the Merger is not spawned | post-merge check failure |
+| **Pre-flight phase** | Second agent lifecycle phase: runs quality checks sequentially inside the container and returns a list of failure tuples to the orchestrator; does not spawn agents internally | preflight, pre-flight check phase |
+| **quality check** | One command run during the Pre-flight phase or a post-merge check, as defined in PREFLIGHT_CHECKS; each runs independently so all failures are collected in a single pass | quality gate, check |
+| **check stage** | The lifecycle context prefix embedded in CHECK_NAME when a preflight-issue agent is spawned (e.g. `[pre-planning]`, `[post-merge]`); included in the filed GitHub issue title | stage prefix, phase prefix |
+| **pre-flight failure** | Result of a quality check returning non-zero during the Pre-flight phase; returned as a failure tuple to the orchestrator | check failure |
+| **post-merge failure** | Result of a quality check returning non-zero during the post-merge check; triggers the preflight-issue agent with check stage `[post-merge]`; the Merger is not spawned | post-merge check failure |
 | **pre-existing failure** | A pre-flight failure that existed before the current agent's task began; root cause of scope creep | baseline failure |
 | **scope creep** | The behavior where an agent modifies files outside its assigned task scope, typically caused by inheriting pre-existing failures | overreach |
-| **skip_preflight** | Flag on `run_agent()` that bypasses the Pre-flight phase; always True for the bug-report agent; defaults to False for all other agents | — |
+| **skip_preflight** | Flag on `run_agent()` that bypasses the Pre-flight phase; always True for the preflight-issue agent; defaults to False for all other agents | — |
 | **Prepare phase** | Third agent lifecycle phase: dependency installation, prompt rendering, and prompt injection into the container | hook phase, pre-work |
 | **Work phase** | Fourth agent lifecycle phase: Claude Code invocation and streaming output collection | execution phase, run phase |
 | **git identity propagation** | Setup phase operation that reads the host `git user.name` and `git user.email` and configures them inside the container | git config injection, user setup |
@@ -132,8 +136,8 @@
 | **gitdir overlay** | A host temp file containing a corrected `gitdir:` path, mounted over the worktree's gitdir file inside the container so Linux git resolves the parent repo path correctly; needed only on Windows hosts | git file patch, gitdir patch |
 | **parent git dir mount** | A RW mount that binds `<host-repo>/.git` to `/.pycastle-parent-git` inside the container, giving the agent write access to worktree metadata without making the rest of the host repo writable | git dir mount, .git mount |
 | **`/.pycastle-parent-git`** | The deterministic container-internal path where the parent git dir mount is bound; referenced by the gitdir overlay | — |
-| **worktree setup** | Container initialization step that runs `git worktree add` on the host to create the worktree before the agent prompt is sent | worktree init, worktree creation |
-| **new-branch path** | The `git worktree add -b <branch> <path> HEAD` form used when the branch does not yet exist; `HEAD` must be passed explicitly on Windows Docker mounts | — |
+| **worktree setup** | Container initialization step that runs `git worktree add` on the host to create the worktree from the safe SHA before the agent prompt is sent | worktree init, worktree creation |
+| **new-branch path** | The `git worktree add -b <branch> <path> <safe-SHA>` form used when the branch does not yet exist; always branched from the pinned safe SHA rather than HEAD | — |
 | **existing-branch path** | The `git worktree add <path> <branch>` form used when the branch already exists | — |
 | **worktree contents check** | Guard step run after `git worktree add` that verifies `pyproject.toml` or `requirements.txt` is present; fails with the worktree path and directory listing if absent | checkout guard, file check |
 | **runtime injection** | The act of reading `~/.claude.json` from the host and writing it to `/home/agent/.claude.json` inside a container before the agent runs | baking in, build-time config |
@@ -142,7 +146,7 @@
 | **WorktreeError** | Error raised when a git worktree operation fails for a non-timeout reason | git error |
 | **WorktreeTimeoutError** | Error raised when a git worktree operation exceeds the worktree timeout | — |
 | **AgentTimeoutError** | Error raised when an agent produces no output for longer than the idle timeout | hung agent error |
-| **PreflightError** | Error raised by `run_agent()` after all bug-report agents have been spawned for pre-flight failures; signals callers to abort | preflight error |
+| **PreflightError** | Error raised by the orchestrator after a preflight-issue agent completes with a HITL verdict; signals that human intervention is required and the run cannot continue autonomously | preflight error |
 
 ## Service Abstraction & Dependency Injection
 
@@ -154,10 +158,10 @@
 | **Dependency injection** | Pattern of passing Service implementations to functions/classes that depend on them, enabling tests to inject mocks | Parameter injection, constructor injection |
 | **test fixture** | A pytest fixture that provides Default implementations for all Services; individual tests override for specific scenarios | Mock factory, test helper |
 | **Default implementation** | A Service implementation provided by a test fixture that returns deterministic values instead of making real subprocess calls | Mock, test double |
-| **GitService** | Service that encapsulates all git subprocess operations (config, worktree management, branch queries, remote info, programmatic merges) | Git wrapper, git provider |
+| **GitService** | Service that encapsulates all git subprocess operations (config, worktree management, branch queries, remote info, programmatic merges); worktree creation accepts an optional safe SHA | Git wrapper, git provider |
 | **ClaudeService** | Service that encapsulates the `claude list-models` subprocess call with process-lifetime caching | Claude wrapper, model provider |
 | **DockerService** | Service that encapsulates the `docker build` subprocess call with support for build args | Docker wrapper, build provider |
-| **GithubService** | Service that encapsulates `gh` CLI calls for GitHub issue operations: closing issues, querying parent issues, and listing open sub-issues | GitHub wrapper, gh provider |
+| **GithubService** | Service that encapsulates `gh` CLI calls for GitHub issue operations: closing issues, querying parent issues, listing open sub-issues, and reading issue labels | GitHub wrapper, gh provider |
 
 ## Test Anti-Patterns (Red Flags)
 
@@ -176,9 +180,36 @@
 - The **Planner** produces one plan per iteration listing only unblocked AFK issues; blockers and HITL issues are excluded via the dependency graph.
 - Each AFK issue in a plan is processed by exactly one **Implementer** followed by one **Reviewer**.
 - The **merge phase** attempts the programmatic merge path for every branch sequentially; the **Merger** is spawned at most once per iteration and only when conflicting branches exist.
-- A **post-merge check** runs on the host if any clean merges occurred; failure spawns a bug-report agent with check stage `[post-merge]` but does not spawn the Merger.
-- A **pre-flight failure** in the Planner's container raises PreflightError and aborts the entire orchestrator run; in an Implementer's container it raises PreflightError and skips only that issue.
-- The **bug-report agent** is spawned once per failing quality check (not once per run); always runs with skip_preflight to prevent circular failures.
+- A **post-merge check** runs on the host if any clean merges occurred; on pass, the **safe SHA** is repinned to the new HEAD; on fail, the **preflight-issue agent** is spawned with check stage `[post-merge]` and the Merger is not spawned.
+- A **pre-planning preflight** runs at **cold startup** and is skipped when the previous iteration ended with a passing post-merge check; on pass, the **safe SHA** is pinned to current HEAD.
+- The **preflight-issue agent** is spawned at most once per preflight failure session, acting on the first failing check by PREFLIGHT_CHECKS order; always runs with skip_preflight to prevent circular failures.
+- The **HITL verdict** is read by the orchestrator from the GitHub issue label after the **preflight-issue agent** completes; `ready-for-agent` triggers the **preflight-fix path**, `ready-for-human` raises **PreflightError** and exits with a non-zero code.
+- On the **preflight-fix path**, the Planner is skipped; one Implementer is spawned for the preflight issue, followed by one Reviewer, then a merge and post-merge check; a new iteration then begins from the post-merge check result.
+- All **Implementer** worktrees are created from the pinned **safe SHA**, never from HEAD directly; this guarantees every agent starts from a verified-clean state regardless of external commits that land on main after preflight passes.
+- The **Pre-flight phase** (agent lifecycle) runs quality checks inside the container and returns a list of failure tuples to the orchestrator; it never spawns agents internally.
 - An **orphan sweep** runs once at orchestrator startup; **collision detection** holds a per-branch lock for the full duration of each agent run.
 - Host mounts per container: host repo → RO at `/home/agent/repo`; worktree → RW at `/home/agent/workspace`; `<host-repo>/.git` → RW at `/.pycastle-parent-git`; on Windows, gitdir overlay → RO over `/home/agent/workspace/.git`.
 - A **Service** defines a Custom exception hierarchy so callers never handle raw subprocess exceptions; tests inject Default implementations from a test fixture and override per-test for error paths.
+
+## Example dialogue
+
+> **Dev:** "If ruff, mypy, and pytest all fail at startup, do we file three issues?"
+
+> **Domain expert:** "No — we pick the first failure by PREFLIGHT_CHECKS order and file exactly one issue via the **preflight-issue agent**. The agent explores the codebase, determines root cause, and decides the **HITL verdict**. The other failures surface in the next iteration's preflight."
+
+> **Dev:** "What if the agent isn't sure whether a human is needed?"
+
+> **Domain expert:** "It defaults to `ready-for-human`. The **HITL verdict** is read directly from the issue label — that label is the single source of truth. If it's `ready-for-human`, we raise **PreflightError** and exit. The operator goes to GitHub to see the filed issue."
+
+> **Dev:** "And if it's `ready-for-agent`, how does the Implementer know it's starting from a clean state?"
+
+> **Domain expert:** "The **safe SHA** was pinned when preflight passed. The Implementer's worktree is always created from that SHA — never from HEAD. So even if something lands on main between preflight and the Implementer spinning up, the agent starts from the verified-clean commit."
+
+> **Dev:** "After the preflight fix merges, do we re-run preflight before planning the next iteration?"
+
+> **Domain expert:** "No. The **post-merge check** repins the **safe SHA** on pass. That's the signal the next iteration uses — we don't run preflight twice back-to-back. We're in **cold startup** only on the very first iteration of a fresh run."
+
+## Flagged ambiguities
+
+- **"preflight"** appears in two distinct contexts: the **Pre-flight phase** (an agent lifecycle phase that runs inside a container and returns failure tuples) and the orchestrator-level **preflight check** (which the orchestrator runs before planning and after merges). These are related but distinct — the Pre-flight phase is the mechanism, the orchestrator-level check is the policy that decides when to run it and what to do with failures.
+- **"bug-report agent"** and **"bug-report.md"** are removed by the preflight refactor and replaced by **preflight-issue agent** and **preflight-issue.md**. Any reference to the bug-report agent in existing code, tests, or documentation refers to the old behavior.
