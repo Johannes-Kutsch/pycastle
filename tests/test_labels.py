@@ -1,8 +1,55 @@
 from unittest.mock import MagicMock
 
-
 from pycastle.git_service import GitCommandError, GitService, GitTimeoutError
-from pycastle.labels import _get_remote_repo
+from pycastle.labels import (
+    LABEL_BUG,
+    LABEL_ENHANCEMENT,
+    LABEL_NEED_INFO,
+    LABEL_NEEDS_TRIAGE,
+    LABEL_READY_FOR_AGENT,
+    LABEL_READY_FOR_HUMAN,
+    LABEL_WONTFIX,
+    LABELS,
+    _get_remote_repo,
+)
+
+
+# ── Cycle 2: Label name constants ─────────────────────────────────────────────
+
+
+def test_label_constants_exist():
+    assert LABEL_BUG == "bug"
+    assert LABEL_ENHANCEMENT == "enhancement"
+    assert LABEL_NEED_INFO == "need-info"
+    assert LABEL_NEEDS_TRIAGE == "needs-triage"
+    assert LABEL_READY_FOR_AGENT == "ready-for-agent"
+    assert LABEL_READY_FOR_HUMAN == "ready-for-human"
+    assert LABEL_WONTFIX == "wontfix"
+
+
+def test_labels_list_uses_constants():
+    names = {entry["name"] for entry in LABELS}
+    assert LABEL_BUG in names
+    assert LABEL_ENHANCEMENT in names
+    assert LABEL_NEED_INFO in names
+    assert LABEL_NEEDS_TRIAGE in names
+    assert LABEL_READY_FOR_AGENT in names
+    assert LABEL_READY_FOR_HUMAN in names
+    assert LABEL_WONTFIX in names
+
+
+def test_each_label_constant_matches_labels_entry():
+    label_names = {entry["name"] for entry in LABELS}
+    for constant in (
+        LABEL_BUG,
+        LABEL_ENHANCEMENT,
+        LABEL_NEED_INFO,
+        LABEL_NEEDS_TRIAGE,
+        LABEL_READY_FOR_AGENT,
+        LABEL_READY_FOR_HUMAN,
+        LABEL_WONTFIX,
+    ):
+        assert constant in label_names
 
 
 # ── Cycle 1: _get_remote_repo with injected GitService ───────────────────────

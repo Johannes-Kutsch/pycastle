@@ -14,7 +14,13 @@ from pathlib import Path
 import docker
 from docker.models.containers import Container as DockerContainer
 
-from .config import DOCKER_IMAGE, IDLE_TIMEOUT, LOGS_DIR, PREFLIGHT_CHECKS, PYCASTLE_DIR
+from .config import (
+    DOCKER_IMAGE_NAME,
+    IDLE_TIMEOUT,
+    LOGS_DIR,
+    PREFLIGHT_CHECKS,
+    PYCASTLE_DIR,
+)
 from .errors import (
     AgentTimeoutError,
     BranchCollisionError,
@@ -136,7 +142,7 @@ class ContainerRunner:
         }
 
         self._container = self._client.containers.run(
-            DOCKER_IMAGE,
+            DOCKER_IMAGE_NAME,
             detach=True,
             volumes=volumes,
             environment=self._container_env,

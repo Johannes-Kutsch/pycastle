@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from .config import DOCKERFILE, DOCKER_IMAGE
+from .config import DOCKERFILE, DOCKER_IMAGE_NAME
 from .docker_service import DockerService
 from .errors import DockerServiceError
 
@@ -21,7 +21,7 @@ def main(no_cache: bool = False, docker_service: DockerService | None = None) ->
 
     try:
         docker_service.build_image(
-            DOCKER_IMAGE,
+            DOCKER_IMAGE_NAME,
             DOCKERFILE,
             Path("."),
             no_cache=no_cache,

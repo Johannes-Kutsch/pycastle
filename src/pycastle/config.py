@@ -4,7 +4,7 @@ from pathlib import Path
 
 from .defaults.config import (  # noqa: F401
     DOCKERFILE,
-    DOCKER_IMAGE,
+    DOCKER_IMAGE_NAME,
     ENV_FILE,
     IDLE_TIMEOUT,
     IMPLEMENT_CHECKS,
@@ -12,11 +12,9 @@ from .defaults.config import (  # noqa: F401
     LOGS_DIR,
     MAX_ITERATIONS,
     MAX_PARALLEL,
-    PLACEHOLDER,
     PREFLIGHT_CHECKS,
     PROMPTS_DIR,
     PYCASTLE_DIR,
-    SHELL_EXPR,
     STAGE_OVERRIDES,
     WORKTREE_TIMEOUT,
     WORKTREES_DIR,

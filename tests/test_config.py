@@ -1,5 +1,20 @@
-
 import pycastle.defaults.config as defaults_config
+
+
+def test_docker_image_name_exists_in_defaults():
+    assert hasattr(defaults_config, "DOCKER_IMAGE_NAME")
+
+
+def test_docker_image_legacy_name_does_not_exist():
+    assert not hasattr(defaults_config, "DOCKER_IMAGE")
+
+
+def test_placeholder_not_in_defaults_config():
+    assert not hasattr(defaults_config, "PLACEHOLDER")
+
+
+def test_shell_expr_not_in_defaults_config():
+    assert not hasattr(defaults_config, "SHELL_EXPR")
 
 
 def test_stage_overrides_exists_in_defaults():
