@@ -17,10 +17,10 @@ A pre-flight check failed. File a GitHub issue for it — no diagnosis, no explo
 ## Steps
 
 1. Create a GitHub issue:
-   - Title: `[pre-flight] {{CHECK_NAME}} failed`
+   - Title: `{{CHECK_NAME}} failed`
    - Body: include the command and full output exactly as shown above
    ```
-   gh issue create --title "[pre-flight] {{CHECK_NAME}} failed" --body "$(cat <<'EOF'
+   gh issue create --title "{{CHECK_NAME}} failed" --body "$(cat <<'EOF'
    ## Pre-flight check failed
 
    **Command:** \`{{COMMAND}}\`

@@ -9,7 +9,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .config import IMPLEMENT_CHECKS, ISSUE_LABEL, LOGS_DIR, MAX_ITERATIONS, MAX_PARALLEL, PROMPTS_DIR, STAGE_OVERRIDES
+from .config import (
+    IMPLEMENT_CHECKS,
+    ISSUE_LABEL,
+    LOGS_DIR,
+    MAX_ITERATIONS,
+    MAX_PARALLEL,
+    PREFLIGHT_CHECKS,
+    PROMPTS_DIR,
+    STAGE_OVERRIDES,
+)
 from .container_runner import run_agent
 from .errors import PreflightError
 from .git_service import GitService
@@ -100,6 +109,7 @@ async def run_issue(
         branch=issue["branch"],
         model=impl_stage.get("model", ""),
         effort=impl_stage.get("effort", ""),
+        stage="pre-implementation",
     )
     if "<promise>COMPLETE</promise>" not in _extract_text(result):
         return None
@@ -117,6 +127,7 @@ async def run_issue(
         branch=issue["branch"],
         model=rev_stage.get("model", ""),
         effort=rev_stage.get("effort", ""),
+        stage="pre-review",
     )
     return issue
 
@@ -137,6 +148,7 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
                 prompt_args={"ISSUE_LABEL": ISSUE_LABEL},
                 model=plan_stage.get("model", ""),
                 effort=plan_stage.get("effort", ""),
+                stage="pre-planning",
             )
         except PreflightError as exc:
             print("[Planner] Pre-flight failed — aborting run:")
@@ -201,9 +213,11 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
                 "ISSUES": "\n".join(
                     f"- #{i['number']}: {i['title']}" for i in completed
                 ),
+                "CHECKS": " && ".join(cmd for _, cmd in PREFLIGHT_CHECKS),
             },
             model=merge_stage.get("model", ""),
             effort=merge_stage.get("effort", ""),
+            stage="pre-merge",
         )
         print("\nBranches merged.")
 

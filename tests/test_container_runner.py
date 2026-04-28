@@ -1699,3 +1699,82 @@ def test_format_stream_line_returns_none_for_unknown_type():
 def test_format_stream_line_returns_verbatim_for_json_array():
     line = '["not","a","dict"]'
     assert _format_stream_line(line) == line
+
+
+# ── Issue 100: stage parameter in run_agent ───────────────────────────────────
+
+
+def test_run_agent_accepts_stage_parameter(tmp_path):
+    """run_agent must accept a stage keyword argument without raising."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+        result = _run(run_agent("Test", prompt, tmp_path, {}, stage="pre-planning"))
+
+    assert result == ""
+
+
+def test_bug_report_check_name_includes_stage_prefix(tmp_path):
+    """When stage is set, bug-report agents must receive CHECK_NAME = '[{stage}] {check_name}'."""
+    from pycastle.errors import DockerError, PreflightError
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    class _RuffFailRunner:
+        def __init__(self, *args, **kwargs):
+            self.branch = None
+            self.env = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            if "ruff" in cmd:
+                raise DockerError("E501 line too long")
+            return ""
+
+        def run_streaming(self):
+            return ""
+
+    async def _fake_bug_report(*args, **kwargs):
+        return ""
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _RuffFailRunner),
+        patch(
+            "pycastle.container_runner.run_agent", side_effect=_fake_bug_report
+        ) as mock_spawn,
+        pytest.raises(PreflightError),
+    ):
+        _run(run_agent("Test", prompt, tmp_path, {}, stage="pre-implementation"))
+
+    call_kwargs = mock_spawn.call_args.kwargs
+    assert call_kwargs["prompt_args"]["CHECK_NAME"] == "[pre-implementation] ruff"
+
+
+def test_bug_report_check_name_without_stage_is_plain(tmp_path):
+    """When stage is empty (default), CHECK_NAME must be the plain check name."""
+    from pycastle.errors import PreflightError
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    async def _fake_bug_report(*args, **kwargs):
+        return ""
+
+    with (
+        patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner),
+        patch(
+            "pycastle.container_runner.run_agent", side_effect=_fake_bug_report
+        ) as mock_spawn,
+        pytest.raises(PreflightError),
+    ):
+        _run(run_agent("Test", prompt, tmp_path, {}))
+
+    call_kwargs = mock_spawn.call_args.kwargs
+    assert call_kwargs["prompt_args"]["CHECK_NAME"] == "ruff"
