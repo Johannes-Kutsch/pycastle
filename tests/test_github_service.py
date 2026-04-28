@@ -70,6 +70,13 @@ def test_close_issue_raises_github_timeout_error_on_timeout():
             svc.close_issue(1)
 
 
+def test_close_issue_raises_github_not_found_error_when_gh_missing():
+    svc = GithubService("owner/repo")
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        with pytest.raises(GithubNotFoundError):
+            svc.close_issue(1)
+
+
 # ── get_parent() ───────────────────────────────────────────────────────────────
 
 

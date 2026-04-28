@@ -71,6 +71,13 @@ def test_get_user_name_raises_git_timeout_error_on_timeout():
             svc.get_user_name()
 
 
+def test_get_user_name_raises_git_not_found_error_when_git_missing():
+    svc = GitService()
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        with pytest.raises(GitNotFoundError):
+            svc.get_user_name()
+
+
 def test_get_user_name_strips_trailing_newline():
     svc = GitService()
     with patch(
