@@ -296,6 +296,89 @@ def test_create_worktree_recreates_stale_ancestor_branch(git_repo, tmp_path):
     assert (worktree / "pyproject.toml").exists()
 
 
+# ── create_worktree: registered worktree reuse (issue #181) ──────────────────
+
+
+def test_create_worktree_reuses_registered_worktree(tmp_path):
+    """Path exists on disk AND is registered → svc.create_worktree not called."""
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    (worktree / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.verify_ref_exists.return_value = True
+    mock_svc.list_worktrees.return_value = [worktree]
+
+    create_worktree(tmp_path, worktree, "feature/reuse", git_service=mock_svc)
+
+    mock_svc.create_worktree.assert_not_called()
+    mock_svc.remove_worktree.assert_not_called()
+
+
+def test_create_worktree_reuse_still_checks_has_files(tmp_path):
+    """Registered worktree without project files still raises WorktreeError."""
+    from pycastle.errors import WorktreeError
+
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    # No pyproject.toml or requirements.txt
+
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.verify_ref_exists.return_value = True
+    mock_svc.list_worktrees.return_value = [worktree]
+    mock_svc.is_ancestor.return_value = False
+
+    with pytest.raises(WorktreeError, match="(?i)commit"):
+        create_worktree(
+            tmp_path, worktree, "feature/reuse-no-files", git_service=mock_svc
+        )
+
+    mock_svc.create_worktree.assert_not_called()
+
+
+def test_create_worktree_removes_orphan_directory(tmp_path):
+    """Path exists on disk but NOT registered → remove and recreate."""
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    (worktree / "leftover.txt").write_text("orphan")
+
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.verify_ref_exists.return_value = False
+    mock_svc.list_worktrees.return_value = []
+
+    def _fake_create(repo, wt, branch, sha=None):
+        wt.mkdir(exist_ok=True)
+        (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
+
+    mock_svc.create_worktree.side_effect = _fake_create
+
+    create_worktree(tmp_path, worktree, "feature/orphan", git_service=mock_svc)
+
+    mock_svc.remove_worktree.assert_called_once_with(tmp_path, worktree)
+    mock_svc.create_worktree.assert_called_once()
+
+
+def test_create_worktree_fresh_when_not_registered(tmp_path):
+    """Path does not exist and not registered → fresh create_worktree called."""
+    worktree = tmp_path / "wt"
+    # worktree does NOT exist on disk
+
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.verify_ref_exists.return_value = False
+    mock_svc.list_worktrees.return_value = []
+
+    def _fake_create(repo, wt, branch, sha=None):
+        wt.mkdir(exist_ok=True)
+        (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
+
+    mock_svc.create_worktree.side_effect = _fake_create
+
+    create_worktree(tmp_path, worktree, "feature/fresh", git_service=mock_svc)
+
+    mock_svc.remove_worktree.assert_not_called()
+    mock_svc.create_worktree.assert_called_once()
+
+
 # ── remove_worktree ───────────────────────────────────────────────────────────
 
 
