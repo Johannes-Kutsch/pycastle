@@ -15,6 +15,7 @@ class DockerService:
         *,
         no_cache: bool = False,
         python_version: str | None = None,
+        timeout: float | None = None,
     ) -> None:
         cmd = ["docker", "build"]
         if no_cache:
@@ -25,7 +26,7 @@ class DockerService:
         cmd.append(str(context_dir))
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         except FileNotFoundError as exc:
             raise DockerServiceError(
                 "docker not found; ensure it is installed and on PATH"
