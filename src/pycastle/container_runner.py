@@ -64,7 +64,7 @@ def _format_stream_line(line: str) -> str | None:
 
 
 def _build_claude_command(model: str = "", effort: str = "") -> str:
-    flags = "--print --verbose --dangerously-skip-permissions --output-format stream-json -p -"
+    flags = "--verbose --dangerously-skip-permissions --output-format stream-json -p -"
     if model:
         flags += f" --model {model}"
     if effort:
