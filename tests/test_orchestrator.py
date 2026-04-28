@@ -1,9 +1,44 @@
 import contextlib
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from pycastle.git_service import GitService
-from pycastle.orchestrator import prune_orphan_worktrees
+from pycastle.orchestrator import parse_plan, prune_orphan_worktrees
+
+
+# ── parse_plan unit tests ─────────────────────────────────────────────────────
+
+
+def _wrap(payload) -> str:
+    return f"<plan>{json.dumps(payload)}</plan>"
+
+
+def test_parse_plan_returns_list_directly_when_json_is_a_list():
+    issues = [{"number": 1, "branch": "b"}]
+    assert parse_plan(_wrap(issues)) == issues
+
+
+def test_parse_plan_returns_issues_key_when_present():
+    issues = [{"number": 2, "branch": "b"}]
+    assert parse_plan(_wrap({"issues": issues})) == issues
+
+
+def test_parse_plan_returns_unblocked_issues_key_as_fallback():
+    issues = [{"number": 3, "branch": "b"}]
+    assert parse_plan(_wrap({"unblocked_issues": issues})) == issues
+
+
+def test_parse_plan_raises_on_dict_with_no_known_key():
+    with pytest.raises(RuntimeError, match="Plan JSON has no 'issues' or 'unblocked_issues' key"):
+        parse_plan(_wrap({"other": []}))
+
+
+def test_parse_plan_raises_when_no_plan_tag():
+    with pytest.raises(RuntimeError, match="Planner produced no <plan> tag"):
+        parse_plan("no plan tag here")
 
 
 @contextlib.contextmanager
