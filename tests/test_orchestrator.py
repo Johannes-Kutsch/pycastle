@@ -1312,6 +1312,14 @@ def test_delete_merged_branches_continues_after_git_command_error(tmp_path):
     assert mock_svc.delete_branch.call_count == 2
 
 
+def test_delete_merged_branches_prints_warning_to_stderr_on_error(tmp_path, capsys):
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.is_ancestor.return_value = True
+    mock_svc.delete_branch.side_effect = GitCommandError("fail", returncode=1, stderr="")
+    delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc)
+    assert "issue/1" in capsys.readouterr().err
+
+
 def test_delete_merged_branches_prints_deleted_branch_name(tmp_path, capsys):
     mock_svc = MagicMock(spec=GitService)
     mock_svc.is_ancestor.return_value = True
