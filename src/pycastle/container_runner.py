@@ -417,7 +417,10 @@ async def run_agent(
                 )
                 if failures:
                     _bug_prompt = (
-                        Path(__file__).parent / "defaults" / "prompts" / "bug-report.md"
+                        Path(__file__).parent
+                        / "defaults"
+                        / "prompts"
+                        / "preflight-issue.md"
                     )
                     await asyncio.gather(
                         *[
