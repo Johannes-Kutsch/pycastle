@@ -143,6 +143,7 @@ async def run_issue(
     semaphore: asyncio.Semaphore | None = None,
     *,
     run_agent: Any | None = None,
+    sha: str | None = None,
 ) -> dict | None:
     _run_agent = run_agent or _default_run_agent
     overrides = overrides or {}
@@ -169,6 +170,7 @@ async def run_issue(
         model=impl_stage.get("model", ""),
         effort=impl_stage.get("effort", ""),
         stage="pre-implementation",
+        sha=sha,
     )
     if "<promise>COMPLETE</promise>" not in _extract_text(result):
         return None
@@ -217,6 +219,9 @@ async def run(
 
     _validate_config(_stage_overrides)
     prune_orphan_worktrees(repo_root)
+    git_svc = git_service or GitService()
+    _safe_sha: str | None = None
+    _skip_preflight: bool = False
     for iteration in range(1, _max_iterations + 1):
         print(f"\n=== Iteration {iteration}/{_max_iterations} ===\n")
 
@@ -231,6 +236,7 @@ async def run(
                 model=plan_stage.get("model", ""),
                 effort=plan_stage.get("effort", ""),
                 stage="pre-planning",
+                skip_preflight=_skip_preflight,
             )
         except PreflightError as exc:
             print("[Planner] Pre-flight failed — aborting run:")
@@ -243,6 +249,10 @@ async def run(
             print(f"No issues with label '{ISSUE_LABEL}' found. Skipping.")
             break
 
+        if not _skip_preflight:
+            _safe_sha = git_svc.get_head_sha(repo_root)
+        _skip_preflight = False
+
         print(f"Planning complete. {len(issues)} issue(s):")
         for issue in issues:
             print(f"  #{issue['number']}: {issue['title']} → {issue['branch']}")
@@ -252,7 +262,13 @@ async def run(
         results = await asyncio.gather(
             *[
                 run_issue(
-                    i, env, repo_root, _stage_overrides, semaphore, run_agent=_run_agent
+                    i,
+                    env,
+                    repo_root,
+                    _stage_overrides,
+                    semaphore,
+                    run_agent=_run_agent,
+                    sha=_safe_sha,
                 )
                 for i in issues
             ],
@@ -289,7 +305,6 @@ async def run(
         for i in completed:
             print(f"  {i['branch']}")
 
-        git_svc = git_service or GitService()
         github_svc = github_service or GithubService(repo=_get_repo(repo_root))
 
         await wait_for_clean_working_tree(repo_root, git_svc)
@@ -327,6 +342,8 @@ async def run(
                     ]
                 )
                 continue
+            _safe_sha = git_svc.get_head_sha(repo_root)
+            _skip_preflight = True
 
         if conflict_issues:
             merge_stage = _stage_overrides.get("merge", {})
