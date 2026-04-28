@@ -4,8 +4,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .errors import WorktreeError
-from .git_service import GitCommandError, GitService
+from .errors import WorktreeError, WorktreeTimeoutError
+from .git_service import GitCommandError, GitService, GitTimeoutError
 
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
 
@@ -17,44 +17,49 @@ def create_worktree(
     git_service: GitService | None = None,
 ) -> None:
     svc = git_service or GitService()
-
-    branch_exists = svc.verify_ref_exists(branch, repo_path)
-
-    if worktree_path.exists():
-        svc.remove_worktree(repo_path, worktree_path)
-
     try:
-        svc.create_worktree(repo_path, worktree_path, branch)
-    except GitCommandError as exc:
-        raise WorktreeError(str(exc)) from exc
+        branch_exists = svc.verify_ref_exists(branch, repo_path)
 
-    has_files = (worktree_path / "pyproject.toml").exists() or (
-        worktree_path / "requirements.txt"
-    ).exists()
-    if not has_files and branch_exists:
-        if svc.is_ancestor(branch, repo_path):
+        if worktree_path.exists():
             svc.remove_worktree(repo_path, worktree_path)
-            svc.delete_branch(branch, repo_path)
-            try:
-                svc.create_worktree(repo_path, worktree_path, branch)
-            except GitCommandError as exc:
-                raise WorktreeError(str(exc)) from exc
-            has_files = (worktree_path / "pyproject.toml").exists() or (
-                worktree_path / "requirements.txt"
-            ).exists()
 
-    if not has_files:
-        listing = (
-            "\n".join(sorted(p.name for p in worktree_path.iterdir()))
-            if worktree_path.exists()
-            else "(missing)"
-        )
-        svc.remove_worktree(repo_path, worktree_path)
-        raise WorktreeError(
-            f"No pyproject.toml or requirements.txt found in worktree {worktree_path}. "
-            f"Commit your project files before running agents. "
-            f"Worktree contents:\n{listing or '(empty)'}"
-        )
+        try:
+            svc.create_worktree(repo_path, worktree_path, branch)
+        except GitCommandError as exc:
+            raise WorktreeError(str(exc)) from exc
+
+        has_files = (worktree_path / "pyproject.toml").exists() or (
+            worktree_path / "requirements.txt"
+        ).exists()
+        if not has_files and branch_exists:
+            if svc.is_ancestor(branch, repo_path):
+                svc.remove_worktree(repo_path, worktree_path)
+                try:
+                    svc.delete_branch(branch, repo_path)
+                except GitCommandError as exc:
+                    raise WorktreeError(str(exc)) from exc
+                try:
+                    svc.create_worktree(repo_path, worktree_path, branch)
+                except GitCommandError as exc:
+                    raise WorktreeError(str(exc)) from exc
+                has_files = (worktree_path / "pyproject.toml").exists() or (
+                    worktree_path / "requirements.txt"
+                ).exists()
+
+        if not has_files:
+            listing = (
+                "\n".join(sorted(p.name for p in worktree_path.iterdir()))
+                if worktree_path.exists()
+                else "(missing)"
+            )
+            svc.remove_worktree(repo_path, worktree_path)
+            raise WorktreeError(
+                f"No pyproject.toml or requirements.txt found in worktree {worktree_path}. "
+                f"Commit your project files before running agents. "
+                f"Worktree contents:\n{listing or '(empty)'}"
+            )
+    except GitTimeoutError as exc:
+        raise WorktreeTimeoutError(str(exc)) from exc
 
 
 def remove_worktree(
@@ -63,7 +68,10 @@ def remove_worktree(
     git_service: GitService | None = None,
 ) -> None:
     svc = git_service or GitService()
-    svc.remove_worktree(repo_path, worktree_path)
+    try:
+        svc.remove_worktree(repo_path, worktree_path)
+    except GitTimeoutError as exc:
+        raise WorktreeTimeoutError(str(exc)) from exc
 
 
 def patch_gitdir_for_container(worktree_path: Path) -> Path | None:
