@@ -98,12 +98,17 @@ async def run_issue(
     )
     if "<promise>COMPLETE</promise>" not in _extract_text(result):
         return None
+    reviewer_prompt_args = {
+        "ISSUE_NUMBER": str(issue["number"]),
+        "ISSUE_TITLE": issue["title"],
+        "BRANCH": issue["branch"],
+    }
     await run_agent(
         name=f"Reviewer #{issue['number']}",
         prompt_file=PROMPTS_DIR / "review-prompt.md",
         mount_path=repo_root,
         env=env,
-        prompt_args=prompt_args,
+        prompt_args=reviewer_prompt_args,
         branch=issue["branch"],
         model=rev_stage.get("model", ""),
         effort=rev_stage.get("effort", ""),
