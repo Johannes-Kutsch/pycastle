@@ -75,7 +75,11 @@ def _format_feedback_commands(checks: list[str]) -> str:
 
 
 async def run_issue(
-    issue: dict, env: dict[str, str], repo_root: Path, overrides: dict | None = None
+    issue: dict,
+    env: dict[str, str],
+    repo_root: Path,
+    overrides: dict | None = None,
+    semaphore: asyncio.Semaphore | None = None,
 ) -> dict | None:
     overrides = overrides or {}
     impl_stage = overrides.get("implement", {})
@@ -86,7 +90,14 @@ async def run_issue(
         "BRANCH": issue["branch"],
         "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
     }
-    result = await run_agent(
+
+    async def _bounded_run_agent(**kwargs: object) -> str:
+        if semaphore is not None:
+            async with semaphore:
+                return await run_agent(**kwargs)  # type: ignore[arg-type]
+        return await run_agent(**kwargs)  # type: ignore[arg-type]
+
+    result = await _bounded_run_agent(
         name=f"Implementer #{issue['number']}",
         prompt_file=PROMPTS_DIR / "implement-prompt.md",
         mount_path=repo_root,
@@ -103,7 +114,7 @@ async def run_issue(
         "ISSUE_TITLE": issue["title"],
         "BRANCH": issue["branch"],
     }
-    await run_agent(
+    await _bounded_run_agent(
         name=f"Reviewer #{issue['number']}",
         prompt_file=PROMPTS_DIR / "review-prompt.md",
         mount_path=repo_root,
@@ -150,12 +161,9 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
 
         semaphore = asyncio.Semaphore(MAX_PARALLEL)
 
-        async def bounded(issue: dict) -> dict | None:
-            async with semaphore:
-                return await run_issue(issue, env, repo_root, STAGE_OVERRIDES)
-
         results = await asyncio.gather(
-            *[bounded(i) for i in issues], return_exceptions=True
+            *[run_issue(i, env, repo_root, STAGE_OVERRIDES, semaphore) for i in issues],
+            return_exceptions=True,
         )
 
         completed: list[dict] = []
