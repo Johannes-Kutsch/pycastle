@@ -1,9 +1,10 @@
 import asyncio
-from unittest.mock import patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from pycastle.container_runner import ContainerRunner, _setup
+from pycastle.git_service import GitService
 from pycastle.worktree import (
     create_worktree,
     patch_gitdir_for_container,
@@ -61,17 +62,15 @@ def test_setup_configures_git_identity_with_readonly_repo_mount(git_repo):
         worktree_host_path=worktree_path,
         gitdir_overlay=gitdir_overlay,
     )
+    mock_git = MagicMock(spec=GitService)
+    mock_git.get_user_name.return_value = "Test User"
+    mock_git.get_user_email.return_value = "test@example.com"
+
     loop = asyncio.new_event_loop()
     try:
-
-        def _mock_host_git(cmd, **kw):
-            return "Test User\n" if "user.name" in cmd else "test@example.com\n"
-
-        with patch(
-            "pycastle.container_runner.subprocess.check_output",
-            side_effect=_mock_host_git,
-        ):
-            loop.run_until_complete(_setup("integration-test", runner, loop, 30.0))
+        loop.run_until_complete(
+            _setup("integration-test", runner, loop, 30.0, git_service=mock_git)
+        )
 
         assert (
             runner.exec_simple("git config --global user.name", 10.0).strip()
