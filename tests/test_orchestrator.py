@@ -10,6 +10,7 @@ from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
 from pycastle.orchestrator import (
     _stage_for_agent,
+    branch_for,
     delete_merged_branches,
     parse_plan,
     prune_orphan_worktrees,
@@ -23,10 +24,8 @@ from pycastle.orchestrator import (
 
 
 def test_parse_plan_returns_issues_list():
-    output = '<plan>{"issues": [{"number": 1, "title": "Fix bug", "branch": "issue/1"}]}</plan>'
-    assert parse_plan(output) == [
-        {"number": 1, "title": "Fix bug", "branch": "issue/1"}
-    ]
+    output = '<plan>{"issues": [{"number": 1, "title": "Fix bug"}]}</plan>'
+    assert parse_plan(output) == [{"number": 1, "title": "Fix bug"}]
 
 
 def test_parse_plan_returns_empty_list_when_no_issues():
@@ -40,10 +39,8 @@ def test_parse_plan_raises_when_no_plan_tag():
 
 
 def test_parse_plan_returns_unblocked_issues_list():
-    output = '<plan>{"unblocked_issues": [{"number": 2, "title": "Do thing", "branch": "issue/2"}], "blocked_issues": [{"number": 3, "title": "Later"}]}</plan>'
-    assert parse_plan(output) == [
-        {"number": 2, "title": "Do thing", "branch": "issue/2"}
-    ]
+    output = '<plan>{"unblocked_issues": [{"number": 2, "title": "Do thing"}], "blocked_issues": [{"number": 3, "title": "Later"}]}</plan>'
+    assert parse_plan(output) == [{"number": 2, "title": "Do thing"}]
 
 
 def test_parse_plan_raises_descriptively_when_issues_key_missing():
@@ -52,6 +49,45 @@ def test_parse_plan_raises_descriptively_when_issues_key_missing():
         RuntimeError, match="'unblocked_issues'.*'issues'|'issues'.*'unblocked_issues'"
     ):
         parse_plan(output)
+
+
+# ── branch_for ───────────────────────────────────────────────────────────────
+
+
+def test_branch_for_returns_sandcastle_issue_format():
+    assert branch_for(193) == "sandcastle/issue-193"
+
+
+def test_branch_for_uses_issue_number():
+    assert branch_for(1) == "sandcastle/issue-1"
+    assert branch_for(42) == "sandcastle/issue-42"
+
+
+# ── Issue 193: run() works when planner omits branch field ───────────────────
+
+
+def test_run_does_not_crash_when_planner_omits_branch_field(tmp_path):
+    """run() must not KeyError when planner output has no 'branch' key in issues."""
+    dispatched: list[str] = []
+
+    async def _fake_run_agent(name, prompt_args=None, **kwargs):
+        if name == "Planner":
+            return (
+                '<plan>{"issues": [{"number": 193, "title": "Fix branch bug"}]}</plan>'
+            )
+        if "Implementer" in name:
+            dispatched.append((prompt_args or {}).get("BRANCH", ""))
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        github_service=_make_github_svc(),
+    )
+
+    assert dispatched == ["sandcastle/issue-193"]
 
 
 # ── Issue 188: deterministic branch names ────────────────────────────────────
@@ -63,7 +99,7 @@ def test_run_computes_branch_from_issue_number_not_planner_slug(tmp_path):
 
     async def _fake_run_agent(name, prompt_args=None, **kwargs):
         if name == "Planner":
-            return '<plan>{"issues": [{"number": 42, "title": "Fix thing", "branch": "sandcastle/issue-42-some-random-slug"}]}</plan>'
+            return '<plan>{"issues": [{"number": 42, "title": "Fix thing"}]}</plan>'
         if "Implementer" in name:
             captured_branches.append((prompt_args or {}).get("BRANCH", ""))
             return "<promise>COMPLETE</promise>"
@@ -130,7 +166,7 @@ def test_post_merge_preflight_fix_tries_merge_on_sandcastle_branch(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+            return _plan_json([{"number": 1, "title": "Fix"}])
         if "preflight-issue" in name:
             return "<issue>55</issue>"
         if "Implementer" in name:
@@ -276,9 +312,7 @@ def test_failed_agent_appends_traceback_to_errors_log(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return _plan_json(
-                [{"number": 1, "title": "Fix thing", "branch": "issue/1"}]
-            )
+            return _plan_json([{"number": 1, "title": "Fix thing"}])
         raise boom
 
     _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
@@ -295,9 +329,7 @@ def test_failed_agent_errors_log_has_timestamp_separator(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return _plan_json(
-                [{"number": 1, "title": "Fix thing", "branch": "issue/1"}]
-            )
+            return _plan_json([{"number": 1, "title": "Fix thing"}])
         raise RuntimeError("boom")
 
     _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
@@ -311,9 +343,7 @@ def test_failed_agent_prints_traceback_to_stderr(tmp_path, capsys):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return _plan_json(
-                [{"number": 1, "title": "Fix thing", "branch": "issue/1"}]
-            )
+            return _plan_json([{"number": 1, "title": "Fix thing"}])
         raise RuntimeError("stderr traceback check")
 
     _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
@@ -321,6 +351,27 @@ def test_failed_agent_prints_traceback_to_stderr(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "RuntimeError" in err
     assert "stderr traceback check" in err
+
+
+# ── Issue 193: run_issue derives branch from issue number ────────────────────
+
+
+def test_run_issue_uses_branch_for_when_issue_has_no_branch_key(tmp_path):
+    """run_issue must derive the branch via branch_for(number), not read issue['branch']."""
+    captured: dict = {}
+
+    async def _fake_run_agent(name, prompt_args=None, branch=None, **kw):
+        if "Implementer" in name:
+            captured["branch_kwarg"] = branch
+            captured["branch_prompt_arg"] = (prompt_args or {}).get("BRANCH")
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    issue = {"number": 7, "title": "Fix thing"}
+    asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+
+    assert captured["branch_kwarg"] == "sandcastle/issue-7"
+    assert captured["branch_prompt_arg"] == "sandcastle/issue-7"
 
 
 # ── Cycle 50-4: FEEDBACK_COMMANDS passed to implementer ──────────────────────
@@ -336,7 +387,7 @@ def test_run_issue_passes_feedback_commands_to_implementer(tmp_path):
         captured_args.append({"name": name, "prompt_args": prompt_args or {}})
         return "<promise>COMPLETE</promise>"
 
-    issue = {"number": 1, "title": "Fix thing", "branch": "issue/1"}
+    issue = {"number": 1, "title": "Fix thing"}
     asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
 
     implementer_call = next(a for a in captured_args if "Implementer" in a["name"])
@@ -355,7 +406,7 @@ def test_run_issue_feedback_commands_formatted_from_implement_checks(tmp_path):
         captured_args.append({"name": name, "prompt_args": prompt_args or {}})
         return "<promise>COMPLETE</promise>"
 
-    issue = {"number": 1, "title": "Fix thing", "branch": "issue/1"}
+    issue = {"number": 1, "title": "Fix thing"}
     asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
 
     implementer_call = next(a for a in captured_args if "Implementer" in a["name"])
@@ -412,8 +463,8 @@ def test_implementer_preflight_error_siblings_complete(tmp_path):
     completed_issues: list[int] = []
 
     issues = [
-        {"number": 1, "title": "Issue one", "branch": "issue/1"},
-        {"number": 2, "title": "Issue two", "branch": "issue/2"},
+        {"number": 1, "title": "Issue one"},
+        {"number": 2, "title": "Issue two"},
     ]
 
     async def _fake_run_agent(name, **kwargs):
@@ -443,9 +494,7 @@ def test_implementer_preflight_error_logs_check_details(tmp_path, capsys):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return _plan_json(
-                [{"number": 3, "title": "Fix types", "branch": "issue/3"}]
-            )
+            return _plan_json([{"number": 3, "title": "Fix types"}])
         raise PreflightError([("mypy", "mypy .", "error: Cannot find module")])
 
     logs_dir = tmp_path / "logs"
@@ -559,7 +608,7 @@ def test_implementer_receives_implement_stage_model_and_effort(tmp_path):
         )
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     stage_overrides = {
         "plan": {"model": "", "effort": ""},
@@ -591,7 +640,7 @@ def test_reviewer_receives_review_stage_model_and_effort(tmp_path):
         )
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     stage_overrides = {
         "plan": {"model": "", "effort": ""},
@@ -623,7 +672,7 @@ def test_merger_receives_merge_stage_model_and_effort(tmp_path):
         )
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     stage_overrides = {
         "plan": {"model": "", "effort": ""},
@@ -679,7 +728,7 @@ def test_stage_overrides_are_independent(tmp_path):
         )
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     stage_overrides = {
         "plan": {"model": "claude-haiku-4-5", "effort": "low"},
@@ -720,7 +769,7 @@ def test_merger_receives_checks_prompt_arg_from_preflight_checks(tmp_path):
         captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     _run(
         tmp_path,
@@ -742,7 +791,7 @@ def test_each_agent_passes_correct_stage_string(tmp_path):
         captured.append({"name": name, "stage": kwargs.get("stage")})
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     _run(
         tmp_path,
@@ -885,8 +934,8 @@ def test_clean_merges_skip_merger(tmp_path):
     agent_names: list[str] = []
 
     issues = [
-        {"number": 1, "title": "Fix A", "branch": "issue/1"},
-        {"number": 2, "title": "Fix B", "branch": "issue/2"},
+        {"number": 1, "title": "Fix A"},
+        {"number": 2, "title": "Fix B"},
     ]
 
     async def _fake_run_agent(name, **kwargs):
@@ -913,8 +962,8 @@ def test_clean_merge_calls_close_issue_per_issue_and_close_completed_parent_issu
     """Each cleanly-merged issue must be closed via close_issue(); close_completed_parent_issues()
     must be called once after all merges."""
     issues = [
-        {"number": 7, "title": "Fix A", "branch": "issue/7"},
-        {"number": 8, "title": "Fix B", "branch": "issue/8"},
+        {"number": 7, "title": "Fix A"},
+        {"number": 8, "title": "Fix B"},
     ]
 
     async def _fake_run_agent(name, **kwargs):
@@ -942,8 +991,8 @@ def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
     captured: list[dict] = []
 
     issues = [
-        {"number": 1, "title": "Clean", "branch": "issue/1"},
-        {"number": 2, "title": "Conflict", "branch": "issue/2"},
+        {"number": 1, "title": "Clean"},
+        {"number": 2, "title": "Conflict"},
     ]
 
     async def _fake_run_agent(name, **kwargs):
@@ -975,7 +1024,7 @@ def test_conflict_branch_skips_post_merge_checks(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Conflict", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Conflict"}])
 
     _run(
         tmp_path,
@@ -995,7 +1044,7 @@ def test_post_merge_checks_run_after_all_clean_merges(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     _run(
         tmp_path,
@@ -1020,7 +1069,7 @@ def test_post_merge_check_failure_spawns_preflight_issue_not_merger(tmp_path):
             return "<promise>COMPLETE</promise>"
         if "preflight-issue" in name:
             return "<issue>55</issue>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     failures = [("pytest", "pytest", "FAILED tests/test_foo.py")]
     with pytest.raises(SystemExit):
@@ -1051,7 +1100,7 @@ def test_post_merge_preflight_issue_uses_raw_check_name(tmp_path):
             return "<promise>COMPLETE</promise>"
         if "preflight-issue" in name:
             return "<issue>60</issue>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     failures = [("pytest", "pytest", "FAILED")]
     with pytest.raises(SystemExit):
@@ -1074,8 +1123,8 @@ def test_post_merge_preflight_issue_uses_raw_check_name(tmp_path):
 def test_conflict_branch_does_not_close_issue(tmp_path):
     """Conflicting branches must not be closed; only cleanly-merged issues must be closed."""
     issues = [
-        {"number": 1, "title": "Clean", "branch": "issue/1"},
-        {"number": 2, "title": "Conflict", "branch": "issue/2"},
+        {"number": 1, "title": "Clean"},
+        {"number": 2, "title": "Conflict"},
     ]
 
     async def _fake_run_agent(name, **kwargs):
@@ -1101,8 +1150,8 @@ def test_merger_receives_correct_issues_prompt_arg(tmp_path):
     captured: list[dict] = []
 
     issues = [
-        {"number": 3, "title": "Clean issue", "branch": "issue/3"},
-        {"number": 4, "title": "Conflict issue", "branch": "issue/4"},
+        {"number": 3, "title": "Clean issue"},
+        {"number": 4, "title": "Conflict issue"},
     ]
 
     async def _fake_run_agent(name, **kwargs):
@@ -1139,7 +1188,7 @@ def test_post_merge_multiple_check_failures_only_first_acted_on(tmp_path):
             return "<promise>COMPLETE</promise>"
         if "preflight-issue" in name:
             return "<issue>66</issue>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     failures = [
         ("pytest", "pytest", "FAILED tests/test_foo.py"),
@@ -1171,7 +1220,7 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
             return "<promise>COMPLETE</promise>"
         if "preflight-issue" in name:
             return "<issue>70</issue>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     failures = [("pytest", "pytest -x", "FAILED tests/test_bar.py::test_something")]
     with pytest.raises(SystemExit):
@@ -1252,7 +1301,7 @@ def test_clean_merged_branches_are_deleted_after_try_merge(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix A", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix A"}])
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=True)
     _run(
@@ -1271,7 +1320,7 @@ def test_conflict_branches_are_deleted_after_merger_agent(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 2, "title": "Conflict", "branch": "issue/2"}])
+        return _plan_json([{"number": 2, "title": "Conflict"}])
 
     mock_git = _make_git_svc(try_merge_side_effect=[False], is_ancestor=True)
     _run(
@@ -1290,7 +1339,7 @@ def test_non_ancestor_branch_not_deleted(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix A", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix A"}])
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=False)
     _run(
@@ -1309,7 +1358,7 @@ def test_delete_branch_error_does_not_abort_run(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix A", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix A"}])
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=True)
     mock_git.delete_branch.side_effect = GitCommandError(
@@ -1332,7 +1381,7 @@ def test_run_issue_returns_none_when_implementer_does_not_complete(tmp_path):
     async def _fake_run_agent(**kwargs):
         return "I tried but could not finish"
 
-    issue = {"number": 1, "title": "Fix thing", "branch": "issue/1"}
+    issue = {"number": 1, "title": "Fix thing"}
     result = asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
 
     assert result is None
@@ -1344,7 +1393,7 @@ def test_run_issue_returns_issue_when_implementer_completes(tmp_path):
     async def _fake_run_agent(**kwargs):
         return "<promise>COMPLETE</promise>"
 
-    issue = {"number": 2, "title": "Fix thing", "branch": "issue/2"}
+    issue = {"number": 2, "title": "Fix thing"}
     result = asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
 
     assert result == issue
@@ -1355,7 +1404,7 @@ def test_run_incomplete_implementers_skip_merge(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+            return _plan_json([{"number": 1, "title": "Fix"}])
         return ""  # implementer does not return COMPLETE
 
     mock_git = _make_git_svc()
@@ -1378,7 +1427,7 @@ def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+            return _plan_json([{"number": 1, "title": "Fix"}])
         raise RuntimeError("agent failed")
 
     _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
@@ -1473,7 +1522,7 @@ def test_run_calls_wait_for_clean_working_tree_before_try_merge(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     mock_git = _make_git_svc(try_merge_side_effect=[True])
     original_try_merge = mock_git.try_merge.side_effect
@@ -1521,7 +1570,7 @@ def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
         if "Implementer" in name:
             captured_shas.append(sha)
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     _run(
         tmp_path,
@@ -1554,7 +1603,7 @@ def test_safe_sha_repinned_after_passing_post_merge_check(tmp_path):
         if "Implementer" in name:
             captured_shas.append(sha)
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     _run(
         tmp_path,
@@ -1586,7 +1635,7 @@ def test_preplanning_preflight_skipped_when_post_merge_check_just_passed(tmp_pat
             planner_skip_flags.append(skip_preflight)
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     _run(
         tmp_path,
@@ -1643,7 +1692,7 @@ def test_preplanning_preflight_reruns_after_post_merge_check_failure(tmp_path):
             planner_skip_flags.append(skip_preflight)
             planner_call_count[0] += 1
             if planner_call_count[0] == 1:
-                return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+                return _plan_json([{"number": 1, "title": "Fix"}])
             return _plan_json([])  # second iteration: no issues → terminate
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
@@ -1678,8 +1727,8 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
     mock_git.get_head_sha.return_value = fake_sha
 
     issues = [
-        {"number": 1, "title": "Fix A", "branch": "issue/1"},
-        {"number": 2, "title": "Fix B", "branch": "issue/2"},
+        {"number": 1, "title": "Fix A"},
+        {"number": 2, "title": "Fix B"},
     ]
 
     async def _fake_run_agent(name, sha=None, **kwargs):
@@ -1892,7 +1941,7 @@ def test_afk_post_merge_fix_success_skips_preflight_next_iteration(tmp_path):
             planner_skip_flags.append(skip_preflight)
             planner_call_count[0] += 1
             if planner_call_count[0] == 1:
-                return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+                return _plan_json([{"number": 1, "title": "Fix"}])
             return _plan_json([])  # second iteration: no issues → terminate
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
@@ -1928,7 +1977,7 @@ def test_implementer_invoked_with_skip_preflight_true(tmp_path):
         captured.append({"name": name, "skip_preflight": skip_preflight})
         return "<promise>COMPLETE</promise>"
 
-    issue = {"number": 1, "title": "Fix thing", "branch": "issue/1"}
+    issue = {"number": 1, "title": "Fix thing"}
     asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
 
     impl_call = next(c for c in captured if "Implementer" in c["name"])
@@ -1945,7 +1994,7 @@ def test_reviewer_invoked_with_skip_preflight_true(tmp_path):
         captured.append({"name": name, "skip_preflight": skip_preflight})
         return "<promise>COMPLETE</promise>"
 
-    issue = {"number": 1, "title": "Fix thing", "branch": "issue/1"}
+    issue = {"number": 1, "title": "Fix thing"}
     asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
 
     rev_call = next(c for c in captured if "Reviewer" in c["name"])
@@ -1962,7 +2011,7 @@ def test_planner_skip_preflight_controlled_by_caller(tmp_path):
         captured.append({"name": name, "skip_preflight": skip_preflight})
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     mock_git = _make_git_svc(try_merge_side_effect=[True, True])
     mock_git.get_head_sha.return_value = "any_sha"
@@ -2006,7 +2055,7 @@ def test_post_merge_preflight_fix_calls_close_issue_and_close_completed_parent_i
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+            return _plan_json([{"number": 1, "title": "Fix"}])
         if "preflight-issue" in name:
             return "<issue>55</issue>"
         if "Implementer" in name:
@@ -2040,7 +2089,7 @@ def test_postmerge_preflight_issue_fixer_invoked_with_skip_preflight_true(tmp_pa
             return "<promise>COMPLETE</promise>"
         if "preflight-issue" in name:
             return "<issue>55</issue>"
-        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     failures = [("pytest", "pytest", "FAILED")]
     with pytest.raises(SystemExit):
