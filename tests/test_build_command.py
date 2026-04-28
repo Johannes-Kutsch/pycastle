@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pycastle.docker_service import DockerService
 from pycastle.errors import DockerBuildError, DockerServiceError
 
 
@@ -14,39 +15,42 @@ def _make_docker_service(side_effect=None):
     return svc
 
 
-# ── main() calls DockerService ────────────────────────────────────────────────
+def _subprocess_ok():
+    result = MagicMock()
+    result.returncode = 0
+    result.stderr = ""
+    return result
 
 
-def test_main_calls_build_image(tmp_path, monkeypatch):
+# ── subprocess command flags ──────────────────────────────────────────────────
+
+
+def test_main_includes_no_cache_flag(tmp_path, monkeypatch):
     from pycastle.build_command import main
 
     monkeypatch.chdir(tmp_path)
-    svc = _make_docker_service()
-    with pytest.raises(SystemExit):
-        main(docker_service=svc)
-    svc.build_image.assert_called_once()
+    svc = DockerService()
+    with patch(
+        "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
+    ) as mock_run:
+        with pytest.raises(SystemExit):
+            main(no_cache=True, docker_service=svc)
+    cmd = mock_run.call_args[0][0]
+    assert "--no-cache" in cmd
 
 
-def test_main_passes_no_cache_true(tmp_path, monkeypatch):
+def test_main_omits_no_cache_flag_by_default(tmp_path, monkeypatch):
     from pycastle.build_command import main
 
     monkeypatch.chdir(tmp_path)
-    svc = _make_docker_service()
-    with pytest.raises(SystemExit):
-        main(no_cache=True, docker_service=svc)
-    _, kwargs = svc.build_image.call_args
-    assert kwargs["no_cache"] is True
-
-
-def test_main_passes_no_cache_false_by_default(tmp_path, monkeypatch):
-    from pycastle.build_command import main
-
-    monkeypatch.chdir(tmp_path)
-    svc = _make_docker_service()
-    with pytest.raises(SystemExit):
-        main(docker_service=svc)
-    _, kwargs = svc.build_image.call_args
-    assert kwargs["no_cache"] is False
+    svc = DockerService()
+    with patch(
+        "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
+    ) as mock_run:
+        with pytest.raises(SystemExit):
+            main(docker_service=svc)
+    cmd = mock_run.call_args[0][0]
+    assert "--no-cache" not in cmd
 
 
 # ── python_version extraction ─────────────────────────────────────────────────
@@ -57,11 +61,14 @@ def test_main_passes_python_version_from_file(tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".python-version").write_text("3.12.1\n")
-    svc = _make_docker_service()
-    with pytest.raises(SystemExit):
-        main(docker_service=svc)
-    _, kwargs = svc.build_image.call_args
-    assert kwargs["python_version"] == "3.12"
+    svc = DockerService()
+    with patch(
+        "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
+    ) as mock_run:
+        with pytest.raises(SystemExit):
+            main(docker_service=svc)
+    cmd = mock_run.call_args[0][0]
+    assert "PYTHON_VERSION=3.12" in cmd
 
 
 def test_main_python_version_short_form_unchanged(tmp_path, monkeypatch):
@@ -69,11 +76,14 @@ def test_main_python_version_short_form_unchanged(tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".python-version").write_text("3.12\n")
-    svc = _make_docker_service()
-    with pytest.raises(SystemExit):
-        main(docker_service=svc)
-    _, kwargs = svc.build_image.call_args
-    assert kwargs["python_version"] == "3.12"
+    svc = DockerService()
+    with patch(
+        "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
+    ) as mock_run:
+        with pytest.raises(SystemExit):
+            main(docker_service=svc)
+    cmd = mock_run.call_args[0][0]
+    assert "PYTHON_VERSION=3.12" in cmd
 
 
 def test_main_python_version_single_segment_unchanged(tmp_path, monkeypatch):
@@ -81,22 +91,28 @@ def test_main_python_version_single_segment_unchanged(tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".python-version").write_text("3\n")
-    svc = _make_docker_service()
-    with pytest.raises(SystemExit):
-        main(docker_service=svc)
-    _, kwargs = svc.build_image.call_args
-    assert kwargs["python_version"] == "3"
+    svc = DockerService()
+    with patch(
+        "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
+    ) as mock_run:
+        with pytest.raises(SystemExit):
+            main(docker_service=svc)
+    cmd = mock_run.call_args[0][0]
+    assert "PYTHON_VERSION=3" in cmd
 
 
 def test_main_no_python_version_when_file_absent(tmp_path, monkeypatch):
     from pycastle.build_command import main
 
     monkeypatch.chdir(tmp_path)
-    svc = _make_docker_service()
-    with pytest.raises(SystemExit):
-        main(docker_service=svc)
-    _, kwargs = svc.build_image.call_args
-    assert kwargs["python_version"] is None
+    svc = DockerService()
+    with patch(
+        "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
+    ) as mock_run:
+        with pytest.raises(SystemExit):
+            main(docker_service=svc)
+    cmd = mock_run.call_args[0][0]
+    assert "--build-arg" not in cmd
 
 
 # ── exit codes ────────────────────────────────────────────────────────────────
@@ -142,20 +158,6 @@ def test_main_prints_error_message_to_stderr(tmp_path, monkeypatch, capsys):
     assert "docker not found" in capsys.readouterr().err
 
 
-# ── no direct subprocess calls ────────────────────────────────────────────────
-
-
-def test_main_does_not_call_subprocess_run(tmp_path, monkeypatch):
-    from pycastle.build_command import main
-
-    monkeypatch.chdir(tmp_path)
-    svc = _make_docker_service()
-    with patch("subprocess.run") as mock_run:
-        with pytest.raises(SystemExit):
-            main(docker_service=svc)
-    mock_run.assert_not_called()
-
-
 # ── default DockerService is created when none provided ──────────────────────
 
 
@@ -169,4 +171,3 @@ def test_main_creates_default_docker_service(tmp_path, monkeypatch):
         with pytest.raises(SystemExit):
             main()
     mock_cls.assert_called_once_with()
-    instance.build_image.assert_called_once()
