@@ -17,6 +17,12 @@ def test_shell_expr_not_in_defaults_config():
     assert not hasattr(defaults_config, "SHELL_EXPR")
 
 
+def test_issue_label_matches_label_ready_for_agent():
+    from pycastle.labels import LABEL_READY_FOR_AGENT
+
+    assert defaults_config.ISSUE_LABEL == LABEL_READY_FOR_AGENT
+
+
 def test_stage_overrides_exists_in_defaults():
     assert hasattr(defaults_config, "STAGE_OVERRIDES")
 

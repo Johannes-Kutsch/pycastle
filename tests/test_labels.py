@@ -38,20 +38,6 @@ def test_labels_list_uses_constants():
     assert LABEL_WONTFIX in names
 
 
-def test_each_label_constant_matches_labels_entry():
-    label_names = {entry["name"] for entry in LABELS}
-    for constant in (
-        LABEL_BUG,
-        LABEL_ENHANCEMENT,
-        LABEL_NEED_INFO,
-        LABEL_NEEDS_TRIAGE,
-        LABEL_READY_FOR_AGENT,
-        LABEL_READY_FOR_HUMAN,
-        LABEL_WONTFIX,
-    ):
-        assert constant in label_names
-
-
 # ── Cycle 1: _get_remote_repo with injected GitService ───────────────────────
 
 
