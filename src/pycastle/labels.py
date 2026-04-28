@@ -1,13 +1,14 @@
 import json
 import os
 import re
-import subprocess
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 
 import click
+
+from .git_service import GitService
 
 LABELS = [
     {"name": "bug", "description": "Something isn't working", "color": "d73a4a"},
@@ -38,14 +39,10 @@ LABELS = [
 _API = "https://api.github.com"
 
 
-def _get_remote_repo() -> tuple[str, str] | None:
+def _get_remote_repo(git_service: GitService | None = None) -> tuple[str, str] | None:
+    svc = git_service or GitService()
     try:
-        url = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
+        url = svc.get_remote_url("origin")
         if "github.com" not in url:
             return None
         path = (
@@ -75,8 +72,10 @@ def _gh(
         return e.code, None
 
 
-def _resolve_repo(token: str) -> tuple[str, str] | None:
-    remote = _get_remote_repo()
+def _resolve_repo(
+    token: str, git_service: GitService | None = None
+) -> tuple[str, str] | None:
+    remote = _get_remote_repo(git_service)
     if remote:
         owner, repo = remote
         if click.confirm(f"Target repo {owner}/{repo}?", default=True):
@@ -92,8 +91,10 @@ def _resolve_repo(token: str) -> tuple[str, str] | None:
     return owner, repo
 
 
-def create_labels_interactive(token: str) -> None:
-    resolved = _resolve_repo(token)
+def create_labels_interactive(
+    token: str, git_service: GitService | None = None
+) -> None:
+    resolved = _resolve_repo(token, git_service)
     if not resolved:
         return
     owner, repo = resolved
