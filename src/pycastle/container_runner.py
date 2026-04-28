@@ -40,6 +40,11 @@ from .worktree import (
 )
 
 _branch_locks: dict[str, asyncio.Lock] = {}
+_usage_limit_halt: asyncio.Event = asyncio.Event()
+
+
+def reset_usage_limit_flag() -> None:
+    _usage_limit_halt.clear()
 
 
 def _format_stream_line(line: str) -> str | None:
@@ -374,6 +379,9 @@ async def run_agent(
     create_worktree_fn: Callable[[Path, Path, str, str | None], None] = create_worktree,
     remove_worktree_fn: Callable[[Path, Path], None] = remove_worktree,
 ) -> str:
+    if _usage_limit_halt.is_set():
+        return ""
+
     print(f"\n[{name}] Started")
 
     lock: asyncio.Lock | None = None
@@ -407,11 +415,18 @@ async def run_agent(
             model=model,
             effort=effort,
         )
+        preserve_worktree = [False]
+
         async with AsyncExitStack() as stack:
             if gitdir_overlay:
                 stack.callback(gitdir_overlay.unlink, missing_ok=True)
             if worktree_host_path:
-                stack.callback(remove_worktree_fn, mount_path, worktree_host_path)
+
+                def _cond_remove_worktree():
+                    if not preserve_worktree[0]:
+                        remove_worktree_fn(mount_path, worktree_host_path)
+
+                stack.callback(_cond_remove_worktree)
             stack.callback(runner.__exit__, None, None, None)
             await _setup(name, runner, loop, exec_timeout, git_service)
             await _prepare(
@@ -423,7 +438,12 @@ async def run_agent(
                 )
                 if failures:
                     raise PreflightError(failures)
-            return await _work(name, runner, loop)
+            try:
+                return await _work(name, runner, loop)
+            except UsageLimitError:
+                _usage_limit_halt.set()
+                preserve_worktree[0] = True
+                raise
     finally:
         if lock is not None and lock.locked():
             lock.release()
