@@ -178,6 +178,7 @@ async def run_issue(
         "ISSUE_NUMBER": str(issue["number"]),
         "ISSUE_TITLE": issue["title"],
         "BRANCH": issue["branch"],
+        "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
     }
     await _bounded_run_agent(
         name=f"Reviewer #{issue['number']}",
