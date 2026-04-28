@@ -2,8 +2,8 @@ import contextlib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from pycastle.git_service import GitService
-from pycastle.orchestrator import prune_orphan_worktrees
+from pycastle.git_service import GitCommandError, GitService
+from pycastle.orchestrator import delete_merged_branches, prune_orphan_worktrees
 
 
 @contextlib.contextmanager
@@ -1282,3 +1282,130 @@ def test_bug_report_receives_correct_command_and_output(tmp_path):
     assert args.get("OUTPUT") == "FAILED tests/test_bar.py::test_something", (
         f"OUTPUT mismatch; got {args.get('OUTPUT')!r}"
     )
+
+
+# ── Issue-150: delete_merged_branches ────────────────────────────────────────
+
+
+def test_delete_merged_branches_deletes_ancestor_branch(tmp_path):
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.is_ancestor.return_value = True
+    delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc)
+    mock_svc.delete_branch.assert_called_once_with("issue/1", tmp_path)
+
+
+def test_delete_merged_branches_skips_non_ancestor_branch(tmp_path):
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.is_ancestor.return_value = False
+    delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc)
+    mock_svc.delete_branch.assert_not_called()
+
+
+def test_delete_merged_branches_continues_after_git_command_error(tmp_path):
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.is_ancestor.return_value = True
+    mock_svc.delete_branch.side_effect = [
+        GitCommandError("fail", returncode=1, stderr=""),
+        None,
+    ]
+    delete_merged_branches(["issue/1", "issue/2"], tmp_path, git_service=mock_svc)
+    assert mock_svc.delete_branch.call_count == 2
+
+
+def test_delete_merged_branches_prints_deleted_branch_name(tmp_path, capsys):
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.is_ancestor.return_value = True
+    delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc)
+    assert "issue/1" in capsys.readouterr().out
+
+
+def test_delete_merged_branches_uses_injected_git_service(tmp_path):
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.is_ancestor.return_value = True
+    delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc)
+    mock_svc.is_ancestor.assert_called_once_with("issue/1", tmp_path)
+
+
+def test_clean_merged_branches_are_deleted_after_try_merge(tmp_path):
+    """Branches merged cleanly via try_merge must be deleted after the merge loop."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    issues = [{"number": 1, "title": "Fix A", "branch": "issue/1"}]
+    ctx = _make_merge_test_patches(
+        tmp_path, issues=issues, try_merge_side_effect=[True]
+    )
+    with ctx(_fake_run_agent) as (mock_git, _):
+        mock_git.is_ancestor.return_value = True
+        asyncio.run(run({}, tmp_path))
+
+    mock_git.delete_branch.assert_called_with("issue/1", tmp_path)
+
+
+def test_conflict_branches_are_deleted_after_merger_agent(tmp_path):
+    """Branches resolved by the Merger agent must be deleted after it returns."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    issues = [{"number": 2, "title": "Conflict", "branch": "issue/2"}]
+    ctx = _make_merge_test_patches(
+        tmp_path, issues=issues, try_merge_side_effect=[False]
+    )
+    with ctx(_fake_run_agent) as (mock_git, _):
+        mock_git.is_ancestor.return_value = True
+        asyncio.run(run({}, tmp_path))
+
+    mock_git.delete_branch.assert_called_with("issue/2", tmp_path)
+
+
+def test_non_ancestor_branch_not_deleted(tmp_path):
+    """A branch that is not an ancestor of HEAD must not be deleted."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    issues = [{"number": 1, "title": "Fix A", "branch": "issue/1"}]
+    ctx = _make_merge_test_patches(
+        tmp_path, issues=issues, try_merge_side_effect=[True]
+    )
+    with ctx(_fake_run_agent) as (mock_git, _):
+        mock_git.is_ancestor.return_value = False
+        asyncio.run(run({}, tmp_path))
+
+    mock_git.delete_branch.assert_not_called()
+
+
+def test_delete_branch_error_does_not_abort_run(tmp_path):
+    """A GitCommandError on delete_branch must not propagate out of run()."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return "<plan>placeholder</plan>"
+
+    issues = [{"number": 1, "title": "Fix A", "branch": "issue/1"}]
+    ctx = _make_merge_test_patches(
+        tmp_path, issues=issues, try_merge_side_effect=[True]
+    )
+    with ctx(_fake_run_agent) as (mock_git, _):
+        mock_git.is_ancestor.return_value = True
+        mock_git.delete_branch.side_effect = GitCommandError(
+            "fail", returncode=1, stderr=""
+        )
+        asyncio.run(run({}, tmp_path))  # must not raise
