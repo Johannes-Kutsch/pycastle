@@ -2,8 +2,37 @@ import contextlib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from pycastle.git_service import GitCommandError, GitService
-from pycastle.orchestrator import delete_merged_branches, prune_orphan_worktrees
+from pycastle.orchestrator import delete_merged_branches, parse_plan, prune_orphan_worktrees
+
+
+# ── parse_plan ────────────────────────────────────────────────────────────────
+
+
+def test_parse_plan_returns_issues_list():
+    output = '<plan>{"issues": [{"number": 1, "title": "Fix bug", "branch": "issue/1"}]}</plan>'
+    assert parse_plan(output) == [{"number": 1, "title": "Fix bug", "branch": "issue/1"}]
+
+
+def test_parse_plan_returns_empty_list_when_no_issues():
+    output = '<plan>{"issues": []}</plan>'
+    assert parse_plan(output) == []
+
+
+def test_parse_plan_raises_when_no_plan_tag():
+    with pytest.raises(RuntimeError, match="no <plan> tag"):
+        parse_plan("some output with no plan tag")
+
+
+def test_parse_plan_raises_descriptively_when_issues_key_missing():
+    output = '<plan>{"something_else": []}</plan>'
+    with pytest.raises(RuntimeError, match="no 'issues' key"):
+        parse_plan(output)
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
 
 
 @contextlib.contextmanager
