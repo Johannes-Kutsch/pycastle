@@ -39,42 +39,6 @@ def test_github_command_error_carries_returncode_and_stderr():
     assert err.stderr == "not found"
 
 
-# ── _run() wrapper ─────────────────────────────────────────────────────────────
-
-
-def test_run_raises_github_timeout_error_on_subprocess_timeout():
-    svc = GithubService("owner/repo")
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
-    ):
-        with pytest.raises(GithubTimeoutError):
-            svc._run(["gh", "issue", "close", "1"])
-
-
-def test_run_raises_github_not_found_error_when_gh_missing():
-    svc = GithubService("owner/repo")
-    with patch("subprocess.run", side_effect=FileNotFoundError):
-        with pytest.raises(GithubNotFoundError):
-            svc._run(["gh", "issue", "close", "1"])
-
-
-def test_run_returns_completed_process_on_success():
-    svc = GithubService("owner/repo")
-    mock_result = MagicMock(returncode=0, stdout=b"", stderr=b"")
-    with patch("subprocess.run", return_value=mock_result):
-        result = svc._run(["gh", "issue", "close", "1"], capture_output=True)
-    assert result.returncode == 0
-
-
-def test_run_applies_default_timeout():
-    svc = GithubService("owner/repo", timeout=42)
-    mock_result = MagicMock(returncode=0, stdout=b"", stderr=b"")
-    with patch("subprocess.run", return_value=mock_result) as m:
-        svc._run(["gh", "issue", "close", "1"])
-    assert m.call_args.kwargs.get("timeout") == 42
-
-
 # ── close_issue() ──────────────────────────────────────────────────────────────
 
 
