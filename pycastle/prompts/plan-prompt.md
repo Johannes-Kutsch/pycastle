@@ -26,10 +26,13 @@ If the issue appears to be a PRD and it has implementation issues which link to 
 
 # OUTPUT
 
-Output your plan as a JSON object wrapped in `<plan>` tags:
+Output your plan as a JSON object wrapped in `<plan>` tags with two keys:
+
+- `unblocked_issues`: issues ready to work on now (include a `branch` field for each)
+- `blocked_issues`: issues that cannot be started yet (omit the `branch` field)
 
 <plan>
-{"issues": [{"number": 42, "title": "Fix auth bug", "branch": "sandcastle/issue-42-fix-auth-bug"}]}
+{"unblocked_issues": [{"number": 42, "title": "Fix auth bug", "branch": "sandcastle/issue-42-fix-auth-bug"}], "blocked_issues": [{"number": 43, "title": "Add OAuth flow"}]}
 </plan>
 
-Include only unblocked issues. If every issue is blocked, include the single highest-priority candidate (the one with the fewest or weakest dependencies).
+If every issue is blocked, place the single highest-priority candidate (fewest or weakest dependencies) in `unblocked_issues` and the rest in `blocked_issues`.

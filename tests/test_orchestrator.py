@@ -26,9 +26,14 @@ def test_parse_plan_raises_when_no_plan_tag():
         parse_plan("some output with no plan tag")
 
 
+def test_parse_plan_returns_unblocked_issues_list():
+    output = '<plan>{"unblocked_issues": [{"number": 2, "title": "Do thing", "branch": "issue/2"}], "blocked_issues": [{"number": 3, "title": "Later"}]}</plan>'
+    assert parse_plan(output) == [{"number": 2, "title": "Do thing", "branch": "issue/2"}]
+
+
 def test_parse_plan_raises_descriptively_when_issues_key_missing():
     output = '<plan>{"something_else": []}</plan>'
-    with pytest.raises(RuntimeError, match="no 'issues' key"):
+    with pytest.raises(RuntimeError, match="'unblocked_issues'.*'issues'|'issues'.*'unblocked_issues'"):
         parse_plan(output)
 
 
