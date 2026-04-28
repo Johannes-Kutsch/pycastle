@@ -1,7 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -15,6 +15,7 @@ from pycastle.orchestrator import (
     prune_orphan_worktrees,
     run,
     run_issue,
+    wait_for_clean_working_tree,
 )
 
 
@@ -1274,3 +1275,119 @@ def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
     _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
 
     assert (logs_dir / "errors.log").exists()
+# ── Issue-167: dirty-tree polling guard ───────────────────────────────────────
+
+
+def test_wait_for_clean_working_tree_proceeds_immediately_when_clean(tmp_path):
+    """Clean working tree must return without sleeping."""
+    import asyncio
+
+    mock_git = MagicMock(spec=GitService)
+    mock_git.is_working_tree_clean.return_value = True
+
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        asyncio.run(wait_for_clean_working_tree(tmp_path, mock_git))
+
+    mock_sleep.assert_not_called()
+
+
+def test_wait_for_clean_working_tree_prints_no_message_when_clean(tmp_path, capsys):
+    """No output must be produced when the tree is already clean."""
+    import asyncio
+
+    mock_git = MagicMock(spec=GitService)
+    mock_git.is_working_tree_clean.return_value = True
+
+    asyncio.run(wait_for_clean_working_tree(tmp_path, mock_git))
+
+    assert capsys.readouterr().out == ""
+
+
+def test_wait_for_clean_working_tree_prints_exactly_one_message_when_dirty(
+    tmp_path, capsys
+):
+    """Exactly one non-empty message line must be printed when the tree is dirty."""
+    import asyncio
+
+    mock_git = MagicMock(spec=GitService)
+    mock_git.is_working_tree_clean.side_effect = [False, False, True]
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        asyncio.run(wait_for_clean_working_tree(tmp_path, mock_git))
+
+    non_empty_lines = [
+        line for line in capsys.readouterr().out.splitlines() if line.strip()
+    ]
+    assert len(non_empty_lines) == 1
+
+
+def test_wait_for_clean_working_tree_polls_every_10_seconds(tmp_path):
+    """Each poll cycle must sleep exactly 10 seconds."""
+    import asyncio
+
+    mock_git = MagicMock(spec=GitService)
+    # Initial check: False; while loop: False → sleep, False → sleep, True → exit
+    mock_git.is_working_tree_clean.side_effect = [False, False, False, True]
+
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        asyncio.run(wait_for_clean_working_tree(tmp_path, mock_git))
+
+    assert mock_sleep.call_count == 2
+    assert all(call.args[0] == 10 for call in mock_sleep.call_args_list)
+
+
+def test_wait_for_clean_working_tree_proceeds_once_clean(tmp_path):
+    """Must stop polling and return as soon as the tree becomes clean."""
+    import asyncio
+
+    mock_git = MagicMock(spec=GitService)
+    # Initial: False → print; loop: False → sleep, True → exit
+    mock_git.is_working_tree_clean.side_effect = [False, False, True]
+
+    sleep_calls = []
+
+    async def _fake_sleep(n):
+        sleep_calls.append(n)
+
+    with patch("asyncio.sleep", side_effect=_fake_sleep):
+        asyncio.run(wait_for_clean_working_tree(tmp_path, mock_git))
+
+    assert sleep_calls == [10]
+
+
+def test_run_calls_wait_for_clean_working_tree_before_try_merge(tmp_path):
+    """wait_for_clean_working_tree must be called before any try_merge call."""
+    call_order: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 1, "title": "Fix", "branch": "issue/1"}])
+
+    mock_git = _make_git_svc(try_merge_side_effect=[True])
+    original_try_merge = mock_git.try_merge.side_effect
+
+    def _tracking_try_merge(repo_path, branch):
+        call_order.append("try_merge")
+        return original_try_merge(repo_path, branch)
+
+    mock_git.try_merge.side_effect = _tracking_try_merge
+
+    async def _fake_wait(repo_root, git_svc):
+        call_order.append("wait")
+
+    with patch(
+        "pycastle.orchestrator.wait_for_clean_working_tree", side_effect=_fake_wait
+    ):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            git_service=mock_git,
+            github_service=_make_github_svc(),
+        )
+
+    assert "wait" in call_order, "wait_for_clean_working_tree must be called"
+    assert "try_merge" in call_order, "try_merge must be called"
+    assert call_order.index("wait") < call_order.index("try_merge"), (
+        f"wait must precede try_merge; order={call_order}"
+    )
