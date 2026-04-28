@@ -183,6 +183,12 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
     for iteration in range(1, MAX_ITERATIONS + 1):
         print(f"\n=== Iteration {iteration}/{MAX_ITERATIONS} ===\n")
 
+        github_svc = GithubService(repo=_get_repo(repo_root))
+
+        if not github_svc.has_open_issues_with_label(ISSUE_LABEL):
+            print(f"No issues with label '{ISSUE_LABEL}' found. Skipping.")
+            break
+
         plan_stage = STAGE_OVERRIDES.get("plan", {})
         try:
             plan_output = await run_agent(
@@ -203,7 +209,7 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
         issues = parse_plan(plan_output)
 
         if not issues:
-            print("No issues to work on. Exiting.")
+            print(f"No issues with label '{ISSUE_LABEL}' found. Skipping.")
             break
 
         print(f"Planning complete. {len(issues)} issue(s):")
@@ -248,7 +254,6 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
             print(f"  {i['branch']}")
 
         git_svc = GitService()
-        github_svc = GithubService(repo=_get_repo(repo_root))
 
         conflict_issues: list[dict] = []
         for issue in completed:
