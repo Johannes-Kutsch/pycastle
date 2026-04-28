@@ -589,3 +589,41 @@ def test_try_merge_returns_false_on_conflict_and_leaves_clean_state(tmp_path):
     assert result is False
     assert head_after == head_before
     assert status == b""
+
+
+def test_try_merge_raises_git_command_error_on_nonexistent_branch(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    svc = GitService()
+    with pytest.raises(GitCommandError):
+        svc.try_merge(repo, "does-not-exist")
+
+
+def test_try_merge_already_up_to_date_returns_true(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    subprocess.run(
+        ["git", "checkout", "-b", "stale"], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "checkout", "main"], cwd=repo, check=True, capture_output=True
+    )
+
+    svc = GitService()
+    result = svc.try_merge(repo, "stale")
+
+    assert result is True
+
+
+def test_try_merge_raises_git_timeout_error_on_timeout(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    ):
+        with pytest.raises(GitTimeoutError):
+            svc.try_merge(tmp_path, "feature")
