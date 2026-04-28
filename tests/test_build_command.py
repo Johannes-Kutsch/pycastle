@@ -132,6 +132,16 @@ def test_main_exits_one_on_docker_build_error(tmp_path, monkeypatch):
     assert exc_info.value.code == 1
 
 
+def test_main_prints_error_message_to_stderr(tmp_path, monkeypatch, capsys):
+    from pycastle.build_command import main
+
+    monkeypatch.chdir(tmp_path)
+    svc = _make_docker_service(side_effect=DockerServiceError("docker not found"))
+    with pytest.raises(SystemExit):
+        main(docker_service=svc)
+    assert "docker not found" in capsys.readouterr().err
+
+
 # ── no direct subprocess calls ────────────────────────────────────────────────
 
 
