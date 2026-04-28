@@ -5,7 +5,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.git_service import GitCommandError, GitService
-from pycastle.orchestrator import delete_merged_branches, parse_plan, prune_orphan_worktrees
+from pycastle.orchestrator import (
+    delete_merged_branches,
+    parse_plan,
+    prune_orphan_worktrees,
+)
 
 
 # ── parse_plan ────────────────────────────────────────────────────────────────
@@ -13,7 +17,9 @@ from pycastle.orchestrator import delete_merged_branches, parse_plan, prune_orph
 
 def test_parse_plan_returns_issues_list():
     output = '<plan>{"issues": [{"number": 1, "title": "Fix bug", "branch": "issue/1"}]}</plan>'
-    assert parse_plan(output) == [{"number": 1, "title": "Fix bug", "branch": "issue/1"}]
+    assert parse_plan(output) == [
+        {"number": 1, "title": "Fix bug", "branch": "issue/1"}
+    ]
 
 
 def test_parse_plan_returns_empty_list_when_no_issues():
@@ -28,12 +34,16 @@ def test_parse_plan_raises_when_no_plan_tag():
 
 def test_parse_plan_returns_unblocked_issues_list():
     output = '<plan>{"unblocked_issues": [{"number": 2, "title": "Do thing", "branch": "issue/2"}], "blocked_issues": [{"number": 3, "title": "Later"}]}</plan>'
-    assert parse_plan(output) == [{"number": 2, "title": "Do thing", "branch": "issue/2"}]
+    assert parse_plan(output) == [
+        {"number": 2, "title": "Do thing", "branch": "issue/2"}
+    ]
 
 
 def test_parse_plan_raises_descriptively_when_issues_key_missing():
     output = '<plan>{"something_else": []}</plan>'
-    with pytest.raises(RuntimeError, match="'unblocked_issues'.*'issues'|'issues'.*'unblocked_issues'"):
+    with pytest.raises(
+        RuntimeError, match="'unblocked_issues'.*'issues'|'issues'.*'unblocked_issues'"
+    ):
         parse_plan(output)
 
 
@@ -128,6 +138,8 @@ def test_run_calls_prune_before_iteration_loop(tmp_path):
         patch("pycastle.orchestrator.prune_orphan_worktrees", side_effect=_fake_prune),
         patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
         patch("pycastle.orchestrator.parse_plan", return_value=[]),
+        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
+        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
     ):
         asyncio.run(run({}, tmp_path))
 
@@ -157,6 +169,8 @@ def _make_failing_run(tmp_path, exc: Exception):
                 "pycastle.orchestrator.parse_plan",
                 return_value=[{"number": 1, "title": "Fix thing", "branch": "issue/1"}],
             ),
+            patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
+            patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
         ):
             asyncio.run(run({}, tmp_path))
 
@@ -277,6 +291,8 @@ def test_planner_preflight_error_spawns_no_implementers(tmp_path):
     with (
         patch("pycastle.orchestrator.prune_orphan_worktrees"),
         patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
+        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
     ):
         asyncio.run(run({}, tmp_path))
 
@@ -299,6 +315,8 @@ def test_planner_preflight_error_run_exits_cleanly(tmp_path):
     with (
         patch("pycastle.orchestrator.prune_orphan_worktrees"),
         patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
+        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
     ):
         asyncio.run(run({}, tmp_path))  # must not raise
 
@@ -317,6 +335,8 @@ def test_planner_preflight_error_message_names_failed_checks(tmp_path, capsys):
     with (
         patch("pycastle.orchestrator.prune_orphan_worktrees"),
         patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
+        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
     ):
         asyncio.run(run({}, tmp_path))
 
@@ -388,6 +408,8 @@ def test_implementer_preflight_error_logs_check_details(tmp_path, capsys):
             return_value=[{"number": 3, "title": "Fix types", "branch": "issue/3"}],
         ),
         patch("pycastle.orchestrator.LOGS_DIR", tmp_path),
+        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
+        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
     ):
         asyncio.run(run({}, tmp_path))
 
@@ -422,6 +444,8 @@ def test_run_calls_validate_config_before_any_agent(tmp_path):
         patch("pycastle.orchestrator.validate_config", side_effect=_fake_validate),
         patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
         patch("pycastle.orchestrator.parse_plan", return_value=[]),
+        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
+        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
     ):
         asyncio.run(run({}, tmp_path))
 
@@ -511,6 +535,8 @@ def test_planner_receives_plan_stage_model_and_effort(tmp_path):
         patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
         patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
         patch("pycastle.orchestrator.parse_plan", return_value=[]),
+        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
+        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
     ):
         asyncio.run(run({}, tmp_path))
 
@@ -665,6 +691,8 @@ def test_empty_stage_override_passes_empty_strings(tmp_path):
         patch("pycastle.orchestrator.STAGE_OVERRIDES", stage_overrides),
         patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
         patch("pycastle.orchestrator.parse_plan", return_value=[]),
+        patch("pycastle.orchestrator.GithubService", return_value=MagicMock()),
+        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
     ):
         asyncio.run(run({}, tmp_path))
 
@@ -1341,7 +1369,9 @@ def test_delete_merged_branches_continues_after_git_command_error(tmp_path):
 def test_delete_merged_branches_prints_warning_to_stderr_on_error(tmp_path, capsys):
     mock_svc = MagicMock(spec=GitService)
     mock_svc.is_ancestor.return_value = True
-    mock_svc.delete_branch.side_effect = GitCommandError("fail", returncode=1, stderr="")
+    mock_svc.delete_branch.side_effect = GitCommandError(
+        "fail", returncode=1, stderr=""
+    )
     delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc)
     assert "issue/1" in capsys.readouterr().err
 
@@ -1443,3 +1473,57 @@ def test_delete_branch_error_does_not_abort_run(tmp_path):
             "fail", returncode=1, stderr=""
         )
         asyncio.run(run({}, tmp_path))  # must not raise
+
+
+# ── Issue-162: early exit when no ready-for-agent issues ─────────────────────
+
+
+def test_run_skips_agent_when_no_ready_for_agent_issues(tmp_path):
+    """run_agent must never be called when has_open_issues_with_label returns False."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    agent_names: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        agent_names.append(name)
+        return ""
+
+    mock_github = MagicMock()
+    mock_github.has_open_issues_with_label.return_value = False
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.run_agent", side_effect=_fake_run_agent),
+        patch("pycastle.orchestrator.GithubService", return_value=mock_github),
+        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    assert agent_names == [], (
+        f"No agents must be called when no issues found; got: {agent_names}"
+    )
+
+
+def test_run_exits_loop_after_first_iteration_when_no_issues(tmp_path):
+    """Loop must break after first iteration when no issues found (not loop again)."""
+    import asyncio
+    from pycastle.orchestrator import run
+
+    mock_github = MagicMock()
+    mock_github.has_open_issues_with_label.return_value = False
+
+    with (
+        patch("pycastle.orchestrator.prune_orphan_worktrees"),
+        patch("pycastle.orchestrator.validate_config"),
+        patch("pycastle.orchestrator.GithubService", return_value=mock_github),
+        patch("pycastle.orchestrator._get_repo", return_value="owner/repo"),
+        patch("pycastle.orchestrator.MAX_ITERATIONS", 3),
+    ):
+        asyncio.run(run({}, tmp_path))
+
+    assert mock_github.has_open_issues_with_label.call_count == 1, (
+        f"has_open_issues_with_label must be called once (not looped); "
+        f"called {mock_github.has_open_issues_with_label.call_count} times"
+    )
