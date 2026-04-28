@@ -35,7 +35,7 @@ IMPLEMENT_CHECKS: list[str] = [
 # effort values:    low, normal, high    (leave empty to use the Claude CLI default)
 STAGE_OVERRIDES: dict[str, dict[str, str]] = {
     "plan": {"model": "haiku", "effort": "low"},
-    "implement": {"model": "haiku", "effort": "low"},
-    "review": {"model": "sonnet", "effort": "low"},
+    "implement": {"model": "sonnet", "effort": "medium"},
+    "review": {"model": "sonnet", "effort": "medium"},
     "merge": {"model": "haiku", "effort": "low"},
 }
