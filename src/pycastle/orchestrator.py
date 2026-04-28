@@ -20,11 +20,11 @@ from .config import (
     PROMPTS_DIR,
     STAGE_OVERRIDES,
 )
-from .container_runner import run_agent
+from .container_runner import run_agent as _default_run_agent
 from .errors import PreflightError
 from .git_service import GitCommandError, GitService
 from .github_service import GithubService
-from .validate import validate_config
+from .validate import validate_config as _default_validate_config
 
 
 def prune_orphan_worktrees(
@@ -106,7 +106,7 @@ def _get_repo(repo_root: Path) -> str:
     return result.stdout.decode("utf-8").strip()
 
 
-def _run_host_checks(
+def _run_host_checks_impl(
     checks: list[tuple[str, str]],
 ) -> list[tuple[str, str, str]]:
     failures = []
@@ -130,7 +130,10 @@ async def run_issue(
     repo_root: Path,
     overrides: dict | None = None,
     semaphore: asyncio.Semaphore | None = None,
+    *,
+    run_agent: Any | None = None,
 ) -> dict | None:
+    _run_agent = run_agent or _default_run_agent
     overrides = overrides or {}
     impl_stage = overrides.get("implement", {})
     rev_stage = overrides.get("review", {})
@@ -143,7 +146,7 @@ async def run_issue(
 
     async def _bounded_run_agent(**kwargs: Any) -> str:
         async with semaphore or contextlib.nullcontext():
-            return await run_agent(**kwargs)
+            return await _run_agent(**kwargs)
 
     result = await _bounded_run_agent(
         name=f"Implementer #{issue['number']}",
@@ -177,15 +180,38 @@ async def run_issue(
     return issue
 
 
-async def run(env: dict[str, str], repo_root: Path) -> None:
-    validate_config(STAGE_OVERRIDES)
-    prune_orphan_worktrees(repo_root)
-    for iteration in range(1, MAX_ITERATIONS + 1):
-        print(f"\n=== Iteration {iteration}/{MAX_ITERATIONS} ===\n")
+async def run(
+    env: dict[str, str],
+    repo_root: Path,
+    *,
+    run_agent: Any | None = None,
+    validate_config: Any | None = None,
+    git_service: GitService | None = None,
+    github_service: GithubService | None = None,
+    run_host_checks: Any | None = None,
+    stage_overrides: dict | None = None,
+    max_parallel: int | None = None,
+    max_iterations: int | None = None,
+    logs_dir: Path | None = None,
+) -> None:
+    _run_agent = run_agent or _default_run_agent
+    _validate_config = validate_config or _default_validate_config
+    _stage_overrides = (
+        stage_overrides if stage_overrides is not None else STAGE_OVERRIDES
+    )
+    _max_parallel = max_parallel if max_parallel is not None else MAX_PARALLEL
+    _max_iterations = max_iterations if max_iterations is not None else MAX_ITERATIONS
+    _logs_dir = logs_dir if logs_dir is not None else LOGS_DIR
+    _run_host_checks = run_host_checks or _run_host_checks_impl
 
-        plan_stage = STAGE_OVERRIDES.get("plan", {})
+    _validate_config(_stage_overrides)
+    prune_orphan_worktrees(repo_root)
+    for iteration in range(1, _max_iterations + 1):
+        print(f"\n=== Iteration {iteration}/{_max_iterations} ===\n")
+
+        plan_stage = _stage_overrides.get("plan", {})
         try:
-            plan_output = await run_agent(
+            plan_output = await _run_agent(
                 name="Planner",
                 prompt_file=PROMPTS_DIR / "plan-prompt.md",
                 mount_path=repo_root,
@@ -210,10 +236,15 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
         for issue in issues:
             print(f"  #{issue['number']}: {issue['title']} → {issue['branch']}")
 
-        semaphore = asyncio.Semaphore(MAX_PARALLEL)
+        semaphore = asyncio.Semaphore(_max_parallel)
 
         results = await asyncio.gather(
-            *[run_issue(i, env, repo_root, STAGE_OVERRIDES, semaphore) for i in issues],
+            *[
+                run_issue(
+                    i, env, repo_root, _stage_overrides, semaphore, run_agent=_run_agent
+                )
+                for i in issues
+            ],
             return_exceptions=True,
         )
 
@@ -232,8 +263,8 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
                 timestamp = datetime.now(timezone.utc).isoformat()
                 entry = f"--- {timestamp} ---\n{tb}\n"
                 print(entry, file=sys.stderr)
-                LOGS_DIR.mkdir(parents=True, exist_ok=True)
-                with open(LOGS_DIR / "errors.log", "a", encoding="utf-8") as f:
+                _logs_dir.mkdir(parents=True, exist_ok=True)
+                with open(_logs_dir / "errors.log", "a", encoding="utf-8") as f:
                     f.write(entry)
                 print(f"  ✗ #{issue['number']} ({issue['branch']}) failed: {result}")
             elif result is not None:
@@ -247,8 +278,8 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
         for i in completed:
             print(f"  {i['branch']}")
 
-        git_svc = GitService()
-        github_svc = GithubService(repo=_get_repo(repo_root))
+        git_svc = git_service or GitService()
+        github_svc = github_service or GithubService(repo=_get_repo(repo_root))
 
         conflict_issues: list[dict] = []
         for issue in completed:
@@ -267,7 +298,7 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
                 bug_prompt = PROMPTS_DIR / "bug-report.md"
                 await asyncio.gather(
                     *[
-                        run_agent(
+                        _run_agent(
                             name=f"bug-report ({check_name})",
                             prompt_file=bug_prompt,
                             mount_path=repo_root,
@@ -285,8 +316,8 @@ async def run(env: dict[str, str], repo_root: Path) -> None:
                 continue
 
         if conflict_issues:
-            merge_stage = STAGE_OVERRIDES.get("merge", {})
-            await run_agent(
+            merge_stage = _stage_overrides.get("merge", {})
+            await _run_agent(
                 name="Merger",
                 prompt_file=PROMPTS_DIR / "merge-prompt.md",
                 mount_path=repo_root,
