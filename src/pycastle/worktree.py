@@ -21,13 +21,19 @@ def create_worktree(
     try:
         branch_exists = svc.verify_ref_exists(branch, repo_path)
 
+        needs_create = True
         if worktree_path.exists():
-            svc.remove_worktree(repo_path, worktree_path)
+            registered = svc.list_worktrees(repo_path)
+            if worktree_path in registered:
+                needs_create = False
+            else:
+                svc.remove_worktree(repo_path, worktree_path)
 
-        try:
-            svc.create_worktree(repo_path, worktree_path, branch, sha)
-        except GitCommandError as exc:
-            raise WorktreeError(str(exc)) from exc
+        if needs_create:
+            try:
+                svc.create_worktree(repo_path, worktree_path, branch, sha)
+            except GitCommandError as exc:
+                raise WorktreeError(str(exc)) from exc
 
         has_files = (worktree_path / "pyproject.toml").exists() or (
             worktree_path / "requirements.txt"
