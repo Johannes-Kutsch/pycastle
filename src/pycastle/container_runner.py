@@ -21,6 +21,7 @@ from .config import (
     LOGS_DIR,
     PREFLIGHT_CHECKS,
     PYCASTLE_DIR,
+    USAGE_LIMIT_PATTERNS,
 )
 from .errors import (
     AgentTimeoutError,
@@ -28,6 +29,7 @@ from .errors import (
     DockerError,
     DockerTimeoutError,
     PreflightError,
+    UsageLimitError,
 )
 from .git_service import GitService
 from .worktree import (
@@ -256,6 +258,10 @@ class ContainerRunner:
                     line_buf += text
                     while "\n" in line_buf:
                         line, line_buf = line_buf.split("\n", 1)
+                        line_lower = line.lower()
+                        for pattern in USAGE_LIMIT_PATTERNS:
+                            if pattern.lower() in line_lower:
+                                raise UsageLimitError(line)
                         formatted = _format_stream_line(line)
                         if formatted is not None:
                             print(f"[{self.name}] {formatted}", flush=True)
