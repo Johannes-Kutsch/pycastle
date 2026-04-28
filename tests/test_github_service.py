@@ -362,6 +362,50 @@ def test_has_open_issues_with_label_raises_github_timeout_error_on_timeout():
             svc.has_open_issues_with_label("ready-for-agent")
 
 
+# ── get_labels() ──────────────────────────────────────────────────────────────
+
+
+def test_get_labels_returns_label_names():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(
+            returncode=0, stdout=b"bug\nready-for-agent\n", stderr=b""
+        ),
+    ):
+        result = svc.get_labels(42)
+    assert result == ["bug", "ready-for-agent"]
+
+
+def test_get_labels_returns_empty_list_when_no_labels():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
+    ):
+        assert svc.get_labels(42) == []
+
+
+def test_get_labels_raises_github_command_error_on_failure():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
+    ):
+        with pytest.raises(GithubCommandError):
+            svc.get_labels(42)
+
+
+def test_get_labels_raises_github_timeout_error_on_timeout():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
+    ):
+        with pytest.raises(GithubTimeoutError):
+            svc.get_labels(42)
+
+
 def test_close_issue_with_parents_closes_chain_recursively():
     svc = GithubService("owner/repo")
     with patch(

@@ -5,7 +5,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.git_service import GitCommandError, GitService
-from pycastle.orchestrator import delete_merged_branches, parse_plan, prune_orphan_worktrees
+from pycastle.orchestrator import (
+    delete_merged_branches,
+    parse_plan,
+    prune_orphan_worktrees,
+)
 
 
 # ── parse_plan ────────────────────────────────────────────────────────────────
@@ -13,7 +17,9 @@ from pycastle.orchestrator import delete_merged_branches, parse_plan, prune_orph
 
 def test_parse_plan_returns_issues_list():
     output = '<plan>{"issues": [{"number": 1, "title": "Fix bug", "branch": "issue/1"}]}</plan>'
-    assert parse_plan(output) == [{"number": 1, "title": "Fix bug", "branch": "issue/1"}]
+    assert parse_plan(output) == [
+        {"number": 1, "title": "Fix bug", "branch": "issue/1"}
+    ]
 
 
 def test_parse_plan_returns_empty_list_when_no_issues():
@@ -28,12 +34,16 @@ def test_parse_plan_raises_when_no_plan_tag():
 
 def test_parse_plan_returns_unblocked_issues_list():
     output = '<plan>{"unblocked_issues": [{"number": 2, "title": "Do thing", "branch": "issue/2"}], "blocked_issues": [{"number": 3, "title": "Later"}]}</plan>'
-    assert parse_plan(output) == [{"number": 2, "title": "Do thing", "branch": "issue/2"}]
+    assert parse_plan(output) == [
+        {"number": 2, "title": "Do thing", "branch": "issue/2"}
+    ]
 
 
 def test_parse_plan_raises_descriptively_when_issues_key_missing():
     output = '<plan>{"something_else": []}</plan>'
-    with pytest.raises(RuntimeError, match="'unblocked_issues'.*'issues'|'issues'.*'unblocked_issues'"):
+    with pytest.raises(
+        RuntimeError, match="'unblocked_issues'.*'issues'|'issues'.*'unblocked_issues'"
+    ):
         parse_plan(output)
 
 
@@ -1341,7 +1351,9 @@ def test_delete_merged_branches_continues_after_git_command_error(tmp_path):
 def test_delete_merged_branches_prints_warning_to_stderr_on_error(tmp_path, capsys):
     mock_svc = MagicMock(spec=GitService)
     mock_svc.is_ancestor.return_value = True
-    mock_svc.delete_branch.side_effect = GitCommandError("fail", returncode=1, stderr="")
+    mock_svc.delete_branch.side_effect = GitCommandError(
+        "fail", returncode=1, stderr=""
+    )
     delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc)
     assert "issue/1" in capsys.readouterr().err
 
