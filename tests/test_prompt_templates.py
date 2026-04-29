@@ -103,6 +103,46 @@ def test_implementer_template_renders_without_error():
     assert_template_renders(prompt_file, args)
 
 
+# ── Cycle 4b: Implementer step 0 detects prior run state ─────────────────────
+
+
+def _get_step0_section(content: str) -> str:
+    step0_pos = content.find("### 0.")
+    step1_pos = content.find("### 1.")
+    assert step0_pos != -1, "implement-prompt.md must contain a ### 0. step"
+    assert step0_pos < step1_pos, "step 0 must appear before step 1"
+    return content[step0_pos:step1_pos]
+
+
+def test_implementer_step0_runs_git_log_before_any_other_step():
+    prompt_file = REPO_ROOT / PROMPTS_DIR / "implement-prompt.md"
+    content = prompt_file.read_text(encoding="utf-8")
+    step0 = _get_step0_section(content)
+    assert "git log main..HEAD --oneline" in step0
+
+
+def test_implementer_step0_emits_complete_promise_when_commits_found():
+    prompt_file = REPO_ROOT / PROMPTS_DIR / "implement-prompt.md"
+    content = prompt_file.read_text(encoding="utf-8")
+    step0 = _get_step0_section(content)
+    assert "<promise>COMPLETE</promise>" in step0
+
+
+def test_implementer_step0_instructs_continue_from_uncommitted_changes():
+    prompt_file = REPO_ROOT / PROMPTS_DIR / "implement-prompt.md"
+    content = prompt_file.read_text(encoding="utf-8")
+    step0 = _get_step0_section(content)
+    assert "git status" in step0
+    assert "continue" in step0.lower()
+
+
+def test_implementer_step0_falls_through_to_step1_when_clean():
+    prompt_file = REPO_ROOT / PROMPTS_DIR / "implement-prompt.md"
+    content = prompt_file.read_text(encoding="utf-8")
+    step0 = _get_step0_section(content)
+    assert "step 1" in step0.lower() or "fall through" in step0.lower()
+
+
 # ── Cycle 5: Reviewer template renders without error ─────────────────────────
 
 
