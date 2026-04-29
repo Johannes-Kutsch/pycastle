@@ -265,3 +265,30 @@ def test_build_command_empty_docker_image_name_does_not_call_docker(
         )
 
     svc.build_image.assert_not_called()
+
+
+# ── Issue 223: success message on build ──────────────────────────────────────
+
+
+def test_main_prints_success_message_to_stdout_on_success(
+    tmp_path, monkeypatch, capsys
+):
+    from pycastle.build_command import main
+
+    monkeypatch.chdir(tmp_path)
+    svc = _make_docker_service()
+    with pytest.raises(SystemExit):
+        main(docker_service=svc)
+    out = capsys.readouterr().out
+    assert "Build complete" in out
+
+
+def test_main_does_not_print_success_message_on_failure(tmp_path, monkeypatch, capsys):
+    from pycastle.build_command import main
+
+    monkeypatch.chdir(tmp_path)
+    svc = _make_docker_service(side_effect=DockerServiceError("build failed"))
+    with pytest.raises(SystemExit):
+        main(docker_service=svc)
+    out = capsys.readouterr().out
+    assert "Build complete" not in out
