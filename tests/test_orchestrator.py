@@ -327,7 +327,9 @@ def test_failed_agent_appends_traceback_to_errors_log(tmp_path):
             return _plan_json([{"number": 1, "title": "Fix thing"}])
         raise boom
 
-    _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
+    _run(
+        tmp_path, _fake_run_agent, github_service=_make_github_svc(), logs_dir=logs_dir
+    )
 
     content = errors_log.read_text()
     assert "RuntimeError" in content
@@ -344,7 +346,9 @@ def test_failed_agent_errors_log_has_timestamp_separator(tmp_path):
             return _plan_json([{"number": 1, "title": "Fix thing"}])
         raise RuntimeError("boom")
 
-    _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
+    _run(
+        tmp_path, _fake_run_agent, github_service=_make_github_svc(), logs_dir=logs_dir
+    )
 
     assert "---" in errors_log.read_text()
 
@@ -358,7 +362,9 @@ def test_failed_agent_prints_traceback_to_stderr(tmp_path, capsys):
             return _plan_json([{"number": 1, "title": "Fix thing"}])
         raise RuntimeError("stderr traceback check")
 
-    _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
+    _run(
+        tmp_path, _fake_run_agent, github_service=_make_github_svc(), logs_dir=logs_dir
+    )
 
     err = capsys.readouterr().err
     assert "RuntimeError" in err
@@ -511,7 +517,9 @@ def test_implementer_preflight_error_logs_check_details(tmp_path, capsys):
 
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir()
-    _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
+    _run(
+        tmp_path, _fake_run_agent, github_service=_make_github_svc(), logs_dir=logs_dir
+    )
 
     out = capsys.readouterr().out
     assert "mypy" in out
@@ -535,7 +543,12 @@ def test_run_calls_validate_config_before_any_agent(tmp_path):
         call_order.append("agent")
         return _plan_json([])
 
-    _run(tmp_path, _fake_run_agent, validate_config=_fake_validate)
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        validate_config=_fake_validate,
+        github_service=_make_github_svc(),
+    )
 
     assert call_order[0] == "validate", f"validate must be first; got {call_order}"
 
@@ -603,7 +616,12 @@ def test_planner_receives_plan_stage_model_and_effort(tmp_path):
         "merge": {"model": "", "effort": ""},
     }
 
-    _run(tmp_path, _fake_run_agent, stage_overrides=stage_overrides)
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        stage_overrides=stage_overrides,
+        github_service=_make_github_svc(),
+    )
 
     planner_call = next(c for c in captured if c["name"] == "Planner")
     assert planner_call["model"] == "claude-haiku-4-5"
@@ -723,7 +741,12 @@ def test_empty_stage_override_passes_empty_strings(tmp_path):
         "merge": {"model": "", "effort": ""},
     }
 
-    _run(tmp_path, _fake_run_agent, stage_overrides=stage_overrides)
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        stage_overrides=stage_overrides,
+        github_service=_make_github_svc(),
+    )
 
     planner_call = next(c for c in captured if c["name"] == "Planner")
     assert planner_call["model"] == ""
@@ -1513,7 +1536,9 @@ def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
             return _plan_json([{"number": 1, "title": "Fix"}])
         raise RuntimeError("agent failed")
 
-    _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
+    _run(
+        tmp_path, _fake_run_agent, github_service=_make_github_svc(), logs_dir=logs_dir
+    )
 
     assert (logs_dir / "errors.log").exists()
 
@@ -1750,7 +1775,7 @@ def test_preplanning_preflight_runs_on_cold_startup(tmp_path):
             return _plan_json([])
         return ""
 
-    _run(tmp_path, _fake_run_agent)
+    _run(tmp_path, _fake_run_agent, github_service=_make_github_svc())
 
     assert len(planner_calls) == 1, f"Expected 1 Planner call; got {len(planner_calls)}"
     assert planner_calls[0]["skip_preflight"] is False, (
@@ -2204,7 +2229,7 @@ def test_usage_limit_error_exits_with_code_1(tmp_path):
         raise UsageLimitError("You've hit your session limit")
 
     with pytest.raises(SystemExit) as exc_info:
-        _run(tmp_path, _fake_run_agent)
+        _run(tmp_path, _fake_run_agent, github_service=_make_github_svc())
 
     assert exc_info.value.code == 1
 
@@ -2219,7 +2244,7 @@ def test_usage_limit_error_prints_resume_message_to_stderr(tmp_path, capsys):
         raise UsageLimitError("You've hit your session limit")
 
     with pytest.raises(SystemExit):
-        _run(tmp_path, _fake_run_agent)
+        _run(tmp_path, _fake_run_agent, github_service=_make_github_svc())
 
     err = capsys.readouterr().err
     assert (
@@ -2245,7 +2270,9 @@ def test_usage_limit_error_awaits_sibling_tasks(tmp_path):
         return "<promise>COMPLETE</promise>"
 
     with pytest.raises(SystemExit):
-        _run(tmp_path, _fake_run_agent, max_parallel=4)
+        _run(
+            tmp_path, _fake_run_agent, github_service=_make_github_svc(), max_parallel=4
+        )
 
     assert any("Implementer #2" in n for n in completed_agents), (
         f"Sibling Implementer #2 must complete before exit; completed={completed_agents}"
@@ -2266,7 +2293,12 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
         raise UsageLimitError("You've hit your session limit")
 
     with pytest.raises(SystemExit):
-        _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=_make_github_svc(),
+            logs_dir=logs_dir,
+        )
 
     assert not errors_log.exists() or errors_log.read_text() == "", (
         "UsageLimitError must not be written to errors.log"
@@ -2290,7 +2322,9 @@ def test_usage_limit_error_alongside_regular_exception_exits_with_code_1(
             raise RuntimeError("unrelated failure")
 
     with pytest.raises(SystemExit) as exc_info:
-        _run(tmp_path, _fake_run_agent, max_parallel=4)
+        _run(
+            tmp_path, _fake_run_agent, github_service=_make_github_svc(), max_parallel=4
+        )
 
     assert exc_info.value.code == 1
     err = capsys.readouterr().err
@@ -2335,4 +2369,74 @@ def test_usage_limit_error_in_post_merge_preflight_exits_with_code_1(tmp_path, c
     assert (
         "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume."
         in err
+    )
+
+
+# ── Issue-194: skip Planner when no ready-for-agent issues exist ──────────────
+
+
+def test_planner_not_invoked_when_no_ready_for_agent_issues(tmp_path):
+    """Planner must not be spawned when has_open_issues_with_label returns False."""
+    agent_names: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        agent_names.append(name)
+        return ""
+
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.return_value = False
+
+    _run(tmp_path, _fake_run_agent, github_service=mock_github)
+
+    assert "Planner" not in agent_names, (
+        f"Planner must not be invoked when no ready-for-agent issues exist; agents={agent_names}"
+    )
+
+
+def test_skip_message_emitted_before_any_agent_when_no_issues(tmp_path, capsys):
+    """'No issues with label ... found. Skipping.' must be printed and no agent must run."""
+    agent_names: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        agent_names.append(name)
+        return ""
+
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.return_value = False
+
+    _run(tmp_path, _fake_run_agent, github_service=mock_github)
+
+    out = capsys.readouterr().out
+    assert "No issues with label" in out and "found. Skipping." in out, (
+        f"Skip message not printed; stdout={out!r}"
+    )
+    assert agent_names == [], (
+        f"No agents must run when there are no matching issues; got {agent_names}"
+    )
+
+
+def test_planner_invoked_when_ready_for_agent_issues_exist(tmp_path):
+    """Planner must be spawned when has_open_issues_with_label returns True."""
+    agent_names: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        agent_names.append(name)
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Do thing"}])
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.return_value = True
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        github_service=mock_github,
+    )
+
+    assert "Planner" in agent_names, (
+        f"Planner must be invoked when ready-for-agent issues exist; agents={agent_names}"
     )
