@@ -8,7 +8,7 @@ from pycastle import StageOverride
 
 # --- Docker ---
 # Name for the Docker image built by `pycastle build`.
-docker_image_name = ""
+docker_image_name = "pycastle"
 
 # --- Labels ---
 # issue_label = "ready-for-agent"
