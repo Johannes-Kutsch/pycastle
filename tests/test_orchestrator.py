@@ -1123,7 +1123,7 @@ def test_implementer_starts_while_reviewer_runs(tmp_path):
         _fake_run_agent,
         git_service=_make_git_svc(),
         github_service=_make_github_svc(),
-        cfg=Config(max_parallel=2, max_iterations=1),
+        cfg=Config(max_parallel=3, max_iterations=1),
     )
 
     impl_3_start = next(
@@ -3272,12 +3272,89 @@ def test_handle_preflight_failure_returns_typed_failure_when_no_issue_tag(tmp_pa
     assert isinstance(result, IssueNumberParseFailure)
 
 
-# ── Issue-236: Sequential mode (max_parallel = 1) ─────────────────────────────
+# ── Issue-245: Unified orchestrator loop (plan slicing) ───────────────────────
 
 
-def test_sequential_mode_second_issue_receives_post_merge_sha(tmp_path):
-    """In sequential mode, the Implementer for issue N+1 receives the HEAD SHA
-    produced by issue N's merge, not the original pre-planning SHA."""
+def test_plan_is_sliced_to_max_parallel(tmp_path):
+    """When the planner returns more issues than max_parallel, only max_parallel
+    issues are passed to implement_phase."""
+    implementer_calls: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return AgentIncomplete(
+                partial_output=_plan_json(
+                    [
+                        {"number": 1, "title": "Issue One"},
+                        {"number": 2, "title": "Issue Two"},
+                        {"number": 3, "title": "Issue Three"},
+                    ]
+                )
+            )
+        if "Implementer" in name:
+            implementer_calls.append(name)
+            return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return AgentIncomplete(partial_output="")
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True, True]),
+        github_service=_make_github_svc(),
+        cfg=Config(max_parallel=2, max_iterations=1),
+    )
+
+    assert len([c for c in implementer_calls if "Implementer" in c]) == 2, (
+        "Only 2 issues should be implemented when max_parallel=2 and planner returns 3"
+    )
+    assert not any("Implementer #3" in c for c in implementer_calls), (
+        "Issue #3 must not be implemented when sliced to max_parallel=2"
+    )
+
+
+def test_max_parallel_1_processes_one_issue_per_iteration(tmp_path):
+    """With max_parallel=1, each iteration processes exactly one issue before
+    replanning in the next iteration."""
+    planner_calls = [0]
+    implementer_calls: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            planner_calls[0] += 1
+            if planner_calls[0] == 1:
+                return AgentIncomplete(
+                    partial_output=_plan_json(
+                        [
+                            {"number": 1, "title": "Issue One"},
+                            {"number": 2, "title": "Issue Two"},
+                        ]
+                    )
+                )
+            return AgentIncomplete(
+                partial_output=_plan_json([{"number": 2, "title": "Issue Two"}])
+            )
+        if "Implementer" in name:
+            implementer_calls.append(name)
+            return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return AgentIncomplete(partial_output="")
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True, True]),
+        github_service=_make_github_svc(),
+        cfg=Config(max_parallel=1, max_iterations=2),
+    )
+
+    assert planner_calls[0] == 2, "Planner must be called once per iteration"
+    assert implementer_calls == ["Implementer #1", "Implementer #2"], (
+        "Issue #1 must be processed in iteration 1, issue #2 in iteration 2"
+    )
+
+
+def test_max_parallel_1_second_iteration_receives_post_merge_sha(tmp_path):
+    """With max_parallel=1, the implementer in iteration 2 receives the HEAD SHA
+    captured after iteration 1's merge — not the original pre-planning SHA."""
     sha_captured: dict[int, object] = {}
     get_head_sha_calls = [0]
 
@@ -3287,15 +3364,22 @@ def test_sequential_mode_second_issue_receives_post_merge_sha(tmp_path):
             return "initial-sha"
         return "post-merge-sha"
 
-    async def _fake_run_agent(name, sha=None, prompt_args=None, **kwargs):
+    planner_calls = [0]
+
+    async def _fake_run_agent(name, sha=None, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json(
-                    [
-                        {"number": 1, "title": "Issue One"},
-                        {"number": 2, "title": "Issue Two"},
-                    ]
+            planner_calls[0] += 1
+            if planner_calls[0] == 1:
+                return AgentIncomplete(
+                    partial_output=_plan_json(
+                        [
+                            {"number": 1, "title": "Issue One"},
+                            {"number": 2, "title": "Issue Two"},
+                        ]
+                    )
                 )
+            return AgentIncomplete(
+                partial_output=_plan_json([{"number": 2, "title": "Issue Two"}])
             )
         if "Implementer #1" in name:
             sha_captured[1] = sha
@@ -3313,82 +3397,18 @@ def test_sequential_mode_second_issue_receives_post_merge_sha(tmp_path):
         _fake_run_agent,
         git_service=git_svc,
         github_service=_make_github_svc(),
-        cfg=Config(max_parallel=1, max_iterations=1),
+        cfg=Config(max_parallel=1, max_iterations=2),
     )
 
     assert sha_captured[1] == "initial-sha"
-    assert sha_captured[2] == "post-merge-sha"
-
-
-def test_sequential_mode_skips_failed_issue_and_continues(tmp_path):
-    """In sequential mode, a failed first issue (non-success result) does not
-    prevent the second issue from being processed."""
-    implementer_calls: list[str] = []
-
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json(
-                    [
-                        {"number": 1, "title": "Issue One"},
-                        {"number": 2, "title": "Issue Two"},
-                    ]
-                )
-            )
-        if "Implementer #1" in name:
-            implementer_calls.append(name)
-            return AgentIncomplete(
-                partial_output=""
-            )  # non-success → run_issue returns None
-        if "Implementer #2" in name:
-            implementer_calls.append(name)
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
-
-    git_svc = _make_git_svc(try_merge_side_effect=[True])
-
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        git_service=git_svc,
-        github_service=_make_github_svc(),
-        cfg=Config(max_parallel=1, max_iterations=1),
-    )
-
-    assert "Implementer #1" in implementer_calls
-    assert "Implementer #2" in implementer_calls, (
-        "Second issue must be processed even though first issue failed"
+    assert sha_captured[2] == "post-merge-sha", (
+        "Issue #2 must receive the post-merge SHA from iteration 1"
     )
 
 
-def test_sequential_mode_console_output_identifies_sequential_mode(tmp_path, capsys):
-    """When max_parallel=1, run() must print a message identifying sequential mode."""
-
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Issue One"}])
-            )
-        if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
-
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        git_service=_make_git_svc(try_merge_side_effect=[True]),
-        github_service=_make_github_svc(),
-        cfg=Config(max_parallel=1, max_iterations=1),
-    )
-
-    out = capsys.readouterr().out
-    assert "sequential" in out.lower(), (
-        f"Expected 'sequential' in output when max_parallel=1; got: {out!r}"
-    )
-
-
-def test_parallel_mode_behavior_unchanged_when_max_parallel_greater_than_one(tmp_path):
-    """When max_parallel > 1, all issues are implemented before any merge occurs."""
+def test_all_issues_up_to_max_parallel_implemented_before_merge(tmp_path):
+    """With max_parallel > 1, all issues up to max_parallel are implemented
+    before any merge occurs."""
     merge_calls_before_second_impl: list[bool] = []
     merge_called = [False]
 
@@ -3427,52 +3447,5 @@ def test_parallel_mode_behavior_unchanged_when_max_parallel_greater_than_one(tmp
     )
 
     assert merge_calls_before_second_impl == [False], (
-        "In parallel mode, Implementer #2 must start before any merge occurs"
-    )
-
-
-def test_sequential_mode_skipped_issue_does_not_advance_sha(tmp_path):
-    """When issue 1 is skipped (non-success), issue 2 must receive the same initial
-    SHA — a skip must not advance current_sha to a post-merge value."""
-    sha_captured: dict[int, object] = {}
-    get_head_sha_call_count = [0]
-
-    def _get_head_sha(_repo_root):
-        get_head_sha_call_count[0] += 1
-        if get_head_sha_call_count[0] == 1:
-            return "initial-sha"
-        return "post-merge-sha"
-
-    async def _fake_run_agent(name, sha=None, **kwargs):
-        if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json(
-                    [
-                        {"number": 1, "title": "Issue One"},
-                        {"number": 2, "title": "Issue Two"},
-                    ]
-                )
-            )
-        if "Implementer #1" in name:
-            sha_captured[1] = sha
-            return AgentIncomplete(partial_output="")  # non-success → skip
-        if "Implementer #2" in name:
-            sha_captured[2] = sha
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
-
-    git_svc = _make_git_svc(try_merge_side_effect=[True])
-    git_svc.get_head_sha.side_effect = _get_head_sha
-
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        git_service=git_svc,
-        github_service=_make_github_svc(),
-        cfg=Config(max_parallel=1, max_iterations=1),
-    )
-
-    assert sha_captured[1] == "initial-sha"
-    assert sha_captured[2] == "initial-sha", (
-        "Skipped issue must not advance SHA; issue 2 should still see the initial SHA"
+        "Implementer #2 must start before any merge occurs"
     )
