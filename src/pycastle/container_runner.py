@@ -451,11 +451,18 @@ async def run_agent(
                 except BaseException as e:
                     exc = e
                 if worktree_host_path and not _token.wants_worktree_preserved:
+                    _svc = git_service or GitService()
+                    _dirty = False
                     try:
-                        remove_worktree_fn(mount_path, worktree_host_path)
-                    except BaseException as e:
-                        if exc is None:
-                            exc = e
+                        _dirty = not _svc.is_working_tree_clean(worktree_host_path)
+                    except Exception:
+                        _dirty = True
+                    if not _dirty:
+                        try:
+                            remove_worktree_fn(mount_path, worktree_host_path)
+                        except BaseException as e:
+                            if exc is None:
+                                exc = e
                 if gitdir_overlay:
                     gitdir_overlay.unlink(missing_ok=True)
                 if exc is not None:
