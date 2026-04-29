@@ -97,7 +97,7 @@ def test_implementer_template_renders_without_error():
     args = {
         "ISSUE_NUMBER": "42",
         "ISSUE_TITLE": "Fix the thing",
-        "BRANCH": "sandcastle/issue-42-fix-the-thing",
+        "BRANCH": "pycastle/issue-42-fix-the-thing",
         "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
     }
     assert_template_renders(prompt_file, args)
@@ -111,7 +111,7 @@ def test_reviewer_template_renders_without_error():
     args = {
         "ISSUE_NUMBER": "42",
         "ISSUE_TITLE": "Fix the thing",
-        "BRANCH": "sandcastle/issue-42-fix-the-thing",
+        "BRANCH": "pycastle/issue-42-fix-the-thing",
         "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
     }
     assert_template_renders(prompt_file, args)

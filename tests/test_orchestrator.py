@@ -199,13 +199,13 @@ def test_strip_stale_blocker_refs_does_not_mutate_input():
 # ── branch_for ───────────────────────────────────────────────────────────────
 
 
-def test_branch_for_returns_sandcastle_issue_format():
-    assert branch_for(193) == "sandcastle/issue-193"
+def test_branch_for_returns_pycastle_issue_format():
+    assert branch_for(193) == "pycastle/issue-193"
 
 
 def test_branch_for_uses_issue_number():
-    assert branch_for(1) == "sandcastle/issue-1"
-    assert branch_for(42) == "sandcastle/issue-42"
+    assert branch_for(1) == "pycastle/issue-1"
+    assert branch_for(42) == "pycastle/issue-42"
 
 
 # ── Issue 193: run() works when planner omits branch field ───────────────────
@@ -232,14 +232,14 @@ def test_run_does_not_crash_when_planner_omits_branch_field(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    assert dispatched == ["sandcastle/issue-193"]
+    assert dispatched == ["pycastle/issue-193"]
 
 
 # ── Issue 188: deterministic branch names ────────────────────────────────────
 
 
 def test_run_computes_branch_from_issue_number_not_planner_slug(tmp_path):
-    """After parse_plan, each issue branch must be sandcastle/issue-N, ignoring planner slug."""
+    """After parse_plan, each issue branch must be pycastle/issue-N, ignoring planner slug."""
     captured_branches: list[str] = []
 
     async def _fake_run_agent(name, prompt_args=None, **kwargs):
@@ -259,13 +259,13 @@ def test_run_computes_branch_from_issue_number_not_planner_slug(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    assert captured_branches == ["sandcastle/issue-42"], (
-        f"Expected branch sandcastle/issue-42; got {captured_branches}"
+    assert captured_branches == ["pycastle/issue-42"], (
+        f"Expected branch pycastle/issue-42; got {captured_branches}"
     )
 
 
-def test_preflight_issue_branch_uses_sandcastle_format(tmp_path):
-    """A preflight fix issue must use branch sandcastle/issue-N, not issue/N."""
+def test_preflight_issue_branch_uses_pycastle_format(tmp_path):
+    """A preflight fix issue must use branch pycastle/issue-N, not issue/N."""
     captured_branches: list[str] = []
 
     async def _fake_run_agent(name, prompt_args=None, branch=None, **kwargs):
@@ -285,8 +285,8 @@ def test_preflight_issue_branch_uses_sandcastle_format(tmp_path):
         github_service=_make_github_svc_afk(),
     )
 
-    assert captured_branches == ["sandcastle/issue-77"], (
-        f"Expected sandcastle/issue-77; got {captured_branches}"
+    assert captured_branches == ["pycastle/issue-77"], (
+        f"Expected pycastle/issue-77; got {captured_branches}"
     )
 
 
@@ -489,8 +489,8 @@ def test_run_issue_uses_branch_for_when_issue_has_no_branch_key(tmp_path):
     issue = {"number": 7, "title": "Fix thing"}
     asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
 
-    assert captured["branch_kwarg"] == "sandcastle/issue-7"
-    assert captured["branch_prompt_arg"] == "sandcastle/issue-7"
+    assert captured["branch_kwarg"] == "pycastle/issue-7"
+    assert captured["branch_prompt_arg"] == "pycastle/issue-7"
 
 
 # ── Cycle 50-4: FEEDBACK_COMMANDS passed to implementer ──────────────────────
@@ -1148,8 +1148,8 @@ def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
         f"Expected exactly one Merger call; got {merger_calls}"
     )
     branches_arg = merger_calls[0]["prompt_args"]["BRANCHES"]
-    assert "sandcastle/issue-2" in branches_arg
-    assert "sandcastle/issue-1" not in branches_arg
+    assert "pycastle/issue-2" in branches_arg
+    assert "pycastle/issue-1" not in branches_arg
 
 
 def test_conflict_branch_closed_after_merger_agent(tmp_path):
@@ -1385,7 +1385,7 @@ def test_clean_merged_branches_are_deleted_after_try_merge(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    mock_git.delete_branch.assert_called_with("sandcastle/issue-1", tmp_path)
+    mock_git.delete_branch.assert_called_with("pycastle/issue-1", tmp_path)
 
 
 def test_conflict_branches_are_deleted_after_merger_agent(tmp_path):
@@ -1406,7 +1406,7 @@ def test_conflict_branches_are_deleted_after_merger_agent(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    mock_git.delete_branch.assert_called_with("sandcastle/issue-2", tmp_path)
+    mock_git.delete_branch.assert_called_with("pycastle/issue-2", tmp_path)
 
 
 def test_non_ancestor_branch_not_deleted(tmp_path):
@@ -2676,7 +2676,7 @@ def test_merge_phase_deletes_clean_branches(tmp_path):
     )
     asyncio.run(merge_phase([issue], deps))
 
-    mock_git.delete_branch.assert_called_with("sandcastle/issue-3", tmp_path)
+    mock_git.delete_branch.assert_called_with("pycastle/issue-3", tmp_path)
 
 
 def test_merge_phase_clean_merge_calls_close_completed_parent_issues(tmp_path):
@@ -2778,7 +2778,7 @@ def test_run_full_iteration_cold_path(git_repo):
     """run() executes a full iteration: preflight→plan→implement→merge, and closes the issue."""
     import subprocess
 
-    branch = "sandcastle/issue-1"
+    branch = "pycastle/issue-1"
     subprocess.run(
         ["git", "-C", str(git_repo), "checkout", "-b", branch],
         check=True,

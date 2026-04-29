@@ -79,7 +79,7 @@
 | **blocker** | An issue that must be resolved before another can be worked on | dependency, prerequisite |
 | **dependency graph** | The set of blocker relationships between issues, analyzed by the Planner to determine the safe working set for an iteration | issue graph, dependency map |
 | **worktree** | An isolated git working tree created on the host for a single issue and bind-mounted into the agent container | workspace, branch dir |
-| **branch** | A git branch name assigned to an issue inside the plan; follows the pattern `sandcastle/issue-<n>-<slug>` | feature branch, issue branch |
+| **branch** | A git branch name assigned to an issue inside the plan; follows the pattern `pycastle/issue-<n>-<slug>` | feature branch, issue branch |
 | **orphan worktree** | A worktree directory under `.pycastle/.worktrees/` no longer registered in git, typically left by a crashed agent run | stale worktree, leftover worktree |
 | **orphan sweep** | Startup operation that cross-references `.pycastle/.worktrees/` against `git worktree list --porcelain` and deletes unregistered directories | worktree cleanup, stale cleanup |
 | **collision detection** | Mechanism that prevents two parallel agents from simultaneously creating worktrees for the same branch, implemented as a per-branch async lock | — |
