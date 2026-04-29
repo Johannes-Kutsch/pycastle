@@ -13,8 +13,12 @@ _FILES = [
     "prompts/implement-prompt.md",
     "prompts/review-prompt.md",
     "prompts/merge-prompt.md",
-    "prompts/CODING_STANDARDS.md",
     "prompts/preflight-issue.md",
+    "prompts/standards/tests.md",
+    "prompts/standards/mocking.md",
+    "prompts/standards/interfaces.md",
+    "prompts/standards/deep-modules.md",
+    "prompts/standards/refactoring.md",
 ]
 
 _ENV_TEMPLATE = "ANTHROPIC_API_KEY=\nCLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"

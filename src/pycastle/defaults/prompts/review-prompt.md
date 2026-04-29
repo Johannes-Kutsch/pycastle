@@ -36,13 +36,13 @@ Read the diff carefully. For anything that looks suspicious — fragile logic, u
 
 ## 4. Enforce test standards
 
-Identify all test files modified in the diff. For each, scan for red flags as defined in `@pycastle/prompts/CODING_STANDARDS.md`:
+Identify all test files modified in the diff. For each, scan for red flags using the standards below:
 
-- Mocking internal collaborators (your own classes/modules)
-- Testing private methods (prefixed with `_`)
-- Asserting on call counts/order of internal calls
-- Test name describes HOW not WHAT — also check that names use the domain glossary from `CONTEXT.md`, not vague or off-glossary terms
-- Verifying through external means instead of the interface
+{{TESTING_STANDARDS}}
+
+{{MOCKING_STANDARDS}}
+
+Also check that test names use the domain glossary from `CONTEXT.md`, not vague or off-glossary terms.
 
 For each red-flag test:
 
@@ -72,29 +72,24 @@ Look for opportunities to improve the code, while maintaining balance:
 - Improve readability through clear variable and function names
 - Consolidate related logic
 - Remove unnecessary comments that describe obvious code
-- Avoid nested ternary operators — prefer switch statements or if/else chains
+- Avoid nested ternary operators — prefer if/else chains
 - Choose clarity over brevity — explicit code is often better than overly compact code
 
-Structural design smells to check for:
+Structural design smells and interface design checks:
 
-- Feature envy → move logic to where data lives
-- Primitive obsession → introduce value objects
-- Long methods → break into private helpers
-- Shallow modules → combine or deepen
+{{REFACTORING_STANDARDS}}
 
-Interface design checks:
+{{INTERFACES_STANDARDS}}
 
-- New interfaces should accept dependencies rather than create them
-- Functions should return results rather than produce side effects
-- New interfaces should have a small surface area (deep modules)
+{{DEEP_MODULES_STANDARDS}}
 
 Avoid over-simplification that reduces clarity, combines too many concerns, or makes the code harder to debug or extend.
 
 ## 7. Apply project standards
 
-Follow the established coding standards at @pycastle/prompts/CODING_STANDARDS.md.
-
 Check that the implementation respects any ADRs in `docs/adr/` that touch the area being changed. Flag violations as issues to fix before committing.
+
+Standards were applied at each step above — no separate standards file reference needed.
 
 ## 8. Commit
 

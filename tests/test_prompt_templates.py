@@ -93,12 +93,15 @@ def test_planner_template_does_not_instruct_branch_emission():
 
 
 def test_implementer_template_renders_without_error():
+    from pycastle.prompt_utils import load_standards
+
     prompt_file = REPO_ROOT / PROMPTS_DIR / "implement-prompt.md"
     args = {
         "ISSUE_NUMBER": "42",
         "ISSUE_TITLE": "Fix the thing",
         "BRANCH": "pycastle/issue-42-fix-the-thing",
         "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
+        **load_standards(REPO_ROOT / PROMPTS_DIR),
     }
     assert_template_renders(prompt_file, args)
 
@@ -149,12 +152,15 @@ def test_implementer_step0_falls_through_to_step1_when_clean(implementer_step0: 
 
 
 def test_reviewer_template_renders_without_error():
+    from pycastle.prompt_utils import load_standards
+
     prompt_file = REPO_ROOT / PROMPTS_DIR / "review-prompt.md"
     args = {
         "ISSUE_NUMBER": "42",
         "ISSUE_TITLE": "Fix the thing",
         "BRANCH": "pycastle/issue-42-fix-the-thing",
         "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
+        **load_standards(REPO_ROOT / PROMPTS_DIR),
     }
     assert_template_renders(prompt_file, args)
 

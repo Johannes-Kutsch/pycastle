@@ -26,6 +26,7 @@ from .container_runner import run_agent as _default_run_agent
 from .errors import PreflightError
 from .git_service import GitCommandError, GitService
 from .github_service import GithubService
+from .prompt_utils import load_standards
 from .validate import validate_config as _default_validate_config
 
 
@@ -306,11 +307,13 @@ async def run_issue(
     cfg = cfg if cfg is not None else _cfg
     _run_agent = run_agent or _default_run_agent
     _branch = branch_for(issue["number"])
+    _standards = load_standards(cfg.prompts_dir)
     prompt_args = {
         "ISSUE_NUMBER": str(issue["number"]),
         "ISSUE_TITLE": issue["title"],
         "BRANCH": _branch,
         "FEEDBACK_COMMANDS": _format_feedback_commands(cfg.implement_checks),
+        **_standards,
     }
 
     async def _bounded_run_agent(**kwargs: Any) -> Any:
@@ -341,6 +344,7 @@ async def run_issue(
         "ISSUE_TITLE": issue["title"],
         "BRANCH": _branch,
         "FEEDBACK_COMMANDS": _format_feedback_commands(cfg.implement_checks),
+        **_standards,
     }
     review_result = await _bounded_run_agent(
         name=f"Reviewer #{issue['number']}",
