@@ -84,6 +84,23 @@ def branch_for(issue_number: int) -> str:
     return f"sandcastle/issue-{issue_number}"
 
 
+def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
+    open_numbers = {i["number"] for i in issues}
+    result = []
+    for issue in issues:
+        body = issue.get("body") or ""
+        lines = body.splitlines()
+        cleaned = []
+        for line in lines:
+            if re.search(r"blocked\s+by\s+#\d+", line, re.IGNORECASE):
+                refs = {int(m) for m in re.findall(r"#(\d+)", line)}
+                if refs.isdisjoint(open_numbers):
+                    continue
+            cleaned.append(line)
+        result.append({**issue, "body": "\n".join(cleaned)})
+    return result
+
+
 def parse_plan(output: str) -> list[dict]:
     text = _extract_text(output)
     match = re.search(r"<plan>([\s\S]*?)</plan>", text)
