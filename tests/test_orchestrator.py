@@ -19,6 +19,7 @@ from pycastle.orchestrator import (
     branch_for,
     delete_merged_branches,
     parse_plan,
+    plan_phase,
     preflight_phase,
     prune_orphan_worktrees,
     run,
@@ -2366,21 +2367,6 @@ def test_preflight_phase_hitl_exits(tmp_path):
         asyncio.run(preflight_phase(deps))
 
 
-def test_preflight_phase_success_sets_plan_output(tmp_path):
-    """When the Planner succeeds, preflight_phase must return plan_output in state with issues=None."""
-    plan = _plan_json([{"number": 5, "title": "Do thing"}])
-
-    async def _fake_run_agent(name, **kwargs):
-        return plan
-
-    deps = _make_deps(tmp_path, _fake_run_agent)
-    state = asyncio.run(preflight_phase(deps))
-
-    assert state.plan_output == plan
-    assert state.issues is None
-    assert state.worktree_sha == "defaultsha"
-
-
 def test_preflight_phase_afk_issues_populated(tmp_path):
     """On AFK preflight failure, state.issues must contain the fix issue number and title."""
 
@@ -2394,3 +2380,56 @@ def test_preflight_phase_afk_issues_populated(tmp_path):
     state = asyncio.run(preflight_phase(deps))
 
     assert state.issues == [{"number": 77, "title": "Preflight fix title"}]
+
+
+# ── Issue-208: plan_phase ─────────────────────────────────────────────────────
+
+
+def test_plan_phase_success_returns_parsed_issues(tmp_path):
+    """plan_phase must return PlanResult with parsed issues from the Planner output."""
+    expected = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    plan_json_output = f"<plan>{json.dumps({'issues': expected})}</plan>"
+
+    async def _fake_run_agent(name, **kwargs):
+        return plan_json_output
+
+    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc())
+    state = IterationState(worktree_sha="sha123")
+    result = asyncio.run(plan_phase(state, deps))
+
+    assert result.issues == expected
+
+
+def test_plan_phase_passes_open_issues_json_with_stale_blocker_refs_stripped(tmp_path):
+    """plan_phase must pass OPEN_ISSUES_JSON to the Planner with stale blocker refs stripped."""
+    open_issues = [
+        {"number": 10, "title": "Issue", "body": "Blocked by #99\nOther content"}
+    ]
+    github_svc = _make_github_svc()
+    github_svc.get_open_issues.return_value = open_issues
+
+    captured: dict = {}
+
+    async def _fake_run_agent(name, prompt_args=None, **kwargs):
+        captured["prompt_args"] = prompt_args or {}
+        return '<plan>{"issues": []}</plan>'
+
+    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=github_svc)
+    state = IterationState(worktree_sha="sha123")
+    asyncio.run(plan_phase(state, deps))
+
+    received = json.loads(captured["prompt_args"]["OPEN_ISSUES_JSON"])
+    assert received[0]["body"] == "Other content"
+
+
+def test_plan_phase_raises_when_no_plan_tag(tmp_path):
+    """plan_phase must raise RuntimeError when Planner output contains no <plan> tag."""
+
+    async def _fake_run_agent(name, **kwargs):
+        return "no plan tag in this output"
+
+    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc())
+    state = IterationState(worktree_sha="sha123")
+
+    with pytest.raises(RuntimeError, match="no <plan> tag"):
+        asyncio.run(plan_phase(state, deps))
