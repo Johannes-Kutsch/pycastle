@@ -2670,3 +2670,42 @@ def test_run_passes_plan_override_model_and_effort_from_cfg(tmp_path):
 
     assert captured_planner.get("model") == "claude-haiku-4-5"
     assert captured_planner.get("effort") == "low"
+
+
+def test_run_applies_validate_config_model_resolution_to_agent_calls(tmp_path):
+    """Model resolution from validate_config must reach the agent, not the raw cfg value.
+
+    validate_config mutates the overrides dict in-place (e.g. "haiku" → "claude-haiku-4-5").
+    The resolved values must be propagated back into cfg before any agent is called.
+    """
+    captured_model: list[str] = []
+
+    def _resolving_validate(overrides):
+        if overrides.get("plan", {}).get("model") == "haiku":
+            overrides["plan"]["model"] = "claude-haiku-4-5"
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            captured_model.append(kwargs.get("model", ""))
+            return _plan_json([])
+        return ""
+
+    asyncio.run(
+        run(
+            {},
+            tmp_path,
+            cfg=Config(
+                max_iterations=1,
+                max_parallel=4,
+                plan_override=StageOverride(model="haiku"),
+            ),
+            run_agent=_fake_run_agent,
+            validate_config=_resolving_validate,
+            github_service=_make_github_svc(),
+            run_host_checks=lambda _: [],
+        )
+    )
+
+    assert captured_model == ["claude-haiku-4-5"], (
+        "validate_config model resolution must be propagated to the agent call"
+    )

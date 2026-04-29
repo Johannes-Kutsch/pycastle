@@ -1,17 +1,18 @@
 import asyncio
 import contextlib
+import dataclasses
 import json
 import re
 import shutil
 import subprocess
 import sys
 import traceback
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from collections.abc import Sequence
 from typing import Any
 
-from .config import Config, config as _cfg
+from .config import Config, StageOverride, config as _cfg
 from .container_runner import run_agent as _default_run_agent
 from .errors import PreflightError, UsageLimitError
 from .git_service import GitCommandError, GitService
@@ -258,25 +259,37 @@ async def run(
     _validate_config = validate_config or _default_validate_config
     _run_host_checks = run_host_checks or _run_host_checks_impl
 
-    _validate_config(
-        {
-            "plan": {
-                "model": cfg.plan_override.model,
-                "effort": cfg.plan_override.effort,
-            },
-            "implement": {
-                "model": cfg.implement_override.model,
-                "effort": cfg.implement_override.effort,
-            },
-            "review": {
-                "model": cfg.review_override.model,
-                "effort": cfg.review_override.effort,
-            },
-            "merge": {
-                "model": cfg.merge_override.model,
-                "effort": cfg.merge_override.effort,
-            },
-        }
+    _overrides = {
+        "plan": {"model": cfg.plan_override.model, "effort": cfg.plan_override.effort},
+        "implement": {
+            "model": cfg.implement_override.model,
+            "effort": cfg.implement_override.effort,
+        },
+        "review": {
+            "model": cfg.review_override.model,
+            "effort": cfg.review_override.effort,
+        },
+        "merge": {
+            "model": cfg.merge_override.model,
+            "effort": cfg.merge_override.effort,
+        },
+    }
+    _validate_config(_overrides)
+    cfg = dataclasses.replace(
+        cfg,
+        plan_override=StageOverride(
+            model=_overrides["plan"]["model"], effort=_overrides["plan"]["effort"]
+        ),
+        implement_override=StageOverride(
+            model=_overrides["implement"]["model"],
+            effort=_overrides["implement"]["effort"],
+        ),
+        review_override=StageOverride(
+            model=_overrides["review"]["model"], effort=_overrides["review"]["effort"]
+        ),
+        merge_override=StageOverride(
+            model=_overrides["merge"]["model"], effort=_overrides["merge"]["effort"]
+        ),
     )
     prune_orphan_worktrees(repo_root)
     git_svc = git_service or GitService()
