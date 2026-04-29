@@ -2540,23 +2540,6 @@ def test_implement_phase_usage_limit_propagates(tmp_path):
     assert exc_info.value.code == 1
 
 
-def test_implement_phase_preflight_error_goes_to_errors(tmp_path):
-    """implement_phase must put PreflightFailure returned by run_agent into result.errors."""
-    issues = [{"number": 1, "title": "Fix A"}]
-
-    async def _fake_run_agent(name, **kwargs):
-        return PreflightFailure(failures=(("mypy", "mypy .", "error: missing module"),))
-
-    deps = _make_deps(tmp_path, _fake_run_agent)
-    state = IterationState(worktree_sha="abc123")
-    result = asyncio.run(implement_phase(issues, state, deps))
-
-    assert result.completed == []
-    assert len(result.errors) == 1
-    assert result.errors[0][0] == issues[0]
-    assert isinstance(result.errors[0][1], PreflightFailure)
-
-
 def test_implement_phase_preflight_failure_goes_to_errors(tmp_path):
     """implement_phase must put PreflightFailure returned by run_agent into result.errors."""
     issues = [{"number": 1, "title": "Fix A"}]
