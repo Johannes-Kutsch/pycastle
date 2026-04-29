@@ -234,7 +234,7 @@ async def preflight_phase(deps: Deps) -> IterationState:
                 deps.cfg.prompts_dir,
             )
         except IssueParseError as parse_exc:
-            raise RuntimeError(str(parse_exc)) from None
+            raise RuntimeError(str(parse_exc)) from parse_exc
         if verdict == "hitl":
             print(f"Preflight issue #{pf_num} requires human intervention. Exiting.")
             sys.exit(1)
