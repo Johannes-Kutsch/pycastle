@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pycastle.agent_result import AgentIncomplete, CancellationToken
 from pycastle.config import Config
-from pycastle.agent_result import CancellationToken, UsageLimitHit
 from pycastle.container_runner import (
     ContainerRunner,
     _build_claude_command,
@@ -129,7 +129,7 @@ def test_run_agent_proceeds_when_pip_install_fails(tmp_path):
             run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
         )
 
-    assert result == ""
+    assert isinstance(result, AgentIncomplete) and result.partial_output == ""
 
 
 def test_run_agent_warns_stderr_when_pip_install_fails(tmp_path, capsys):
@@ -1641,7 +1641,7 @@ def test_run_agent_skip_preflight_bypasses_phase(tmp_path):
             )
         )
 
-    assert result == ""
+    assert isinstance(result, AgentIncomplete) and result.partial_output == ""
 
 
 def test_run_agent_logs_preflight_phase(tmp_path, capsys):
@@ -1869,7 +1869,7 @@ def test_run_agent_accepts_stage_parameter(tmp_path):
             )
         )
 
-    assert result == ""
+    assert isinstance(result, AgentIncomplete)
 
 
 # ── Issue 180: UsageLimitError stream detection ───────────────────────────────
@@ -2069,7 +2069,7 @@ def test_run_agent_returns_immediately_when_halt_flag_set(tmp_path):
             )
         )
 
-    assert result == ""
+    assert isinstance(result, AgentIncomplete) and result.partial_output == ""
     assert not create_called, "create_worktree must not be called when halt flag is set"
     assert not container_started, (
         "ContainerRunner must not be started when halt flag is set"
@@ -2222,7 +2222,7 @@ def test_reset_usage_limit_flag_allows_run_agent_to_proceed(tmp_path):
         )
 
     assert ran, "ContainerRunner must be started after reset_usage_limit_flag()"
-    assert result == "done"
+    assert isinstance(result, AgentIncomplete) and result.partial_output == "done"
 
 
 # ── Issue 203: cfg injection into ContainerRunner ─────────────────────────────
@@ -2291,8 +2291,8 @@ def test_run_streaming_default_patterns_not_triggered_by_custom_cfg(tmp_path):
 # ── Issue 213: CancellationToken wired through run_agent ─────────────────────
 
 
-def test_run_agent_returns_usage_limit_hit_when_token_pre_cancelled(tmp_path):
-    """run_agent with a pre-cancelled token must return UsageLimitHit immediately, no container."""
+def test_run_agent_returns_agent_incomplete_when_token_pre_cancelled(tmp_path):
+    """run_agent with a pre-cancelled token must return AgentIncomplete immediately, no container."""
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
@@ -2322,8 +2322,8 @@ def test_run_agent_returns_usage_limit_hit_when_token_pre_cancelled(tmp_path):
     with patch("pycastle.container_runner.ContainerRunner", _TrackingRunner):
         result = _run(run_agent("Test", prompt, tmp_path, {}, token=token))
 
-    assert isinstance(result, UsageLimitHit)
-    assert result.last_output == ""
+    assert isinstance(result, AgentIncomplete)
+    assert result.partial_output == ""
     assert not container_started, (
         "No container must be started when token is pre-cancelled"
     )

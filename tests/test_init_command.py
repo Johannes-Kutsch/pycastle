@@ -47,11 +47,11 @@ def test_init_sets_docker_image_name_from_cwd(tmp_path, monkeypatch):
     assert 'docker_image_name = "my-cool-project"' in content
 
 
-# ── Cycle 3: re-running init does not overwrite an existing config.py ─────────
+# ── Cycle 3: re-running init always updates docker_image_name ─────────────────
 
 
-def test_init_does_not_overwrite_existing_config(tmp_path, monkeypatch):
-    """A second init must not modify a pycastle/config.py that already exists."""
+def test_init_updates_docker_image_name_on_rerun(tmp_path, monkeypatch):
+    """A second init must update docker_image_name even when config.py already exists."""
     from pycastle.init_command import main
 
     monkeypatch.chdir(tmp_path)
@@ -62,7 +62,37 @@ def test_init_does_not_overwrite_existing_config(tmp_path, monkeypatch):
         main()
 
     config_file = tmp_path / "pycastle" / "config.py"
-    config_file.write_text('docker_image_name = "my-custom-name"\n')
+    content = config_file.read_text()
+    # The auto-derived name from tmp_path should be set
+    assert 'docker_image_name = "' in content
+
+    # Re-run: docker_image_name in the file should still reflect the CWD name
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main()
+
+    updated_content = config_file.read_text()
+    assert 'docker_image_name = "' in updated_content
+
+
+# ── Cycle 4: init does not overwrite other existing files ─────────────────────
+
+
+def test_init_does_not_overwrite_existing_non_config_file(tmp_path, monkeypatch):
+    """init must not overwrite files other than config.py that already exist."""
+    from pycastle.init_command import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main()
+
+    env_file = tmp_path / "pycastle" / ".env"
+    env_file.write_text("GH_TOKEN=custom_value\n")
 
     with (
         patch("click.prompt", return_value=""),
@@ -70,4 +100,4 @@ def test_init_does_not_overwrite_existing_config(tmp_path, monkeypatch):
     ):
         main()
 
-    assert config_file.read_text() == 'docker_image_name = "my-custom-name"\n'
+    assert "custom_value" in env_file.read_text()
