@@ -3019,6 +3019,42 @@ def test_merge_phase_original_exception_propagates_when_cleanup_also_raises(tmp_
         asyncio.run(merge_phase([issue], deps))
 
 
+def test_merge_phase_fast_forwards_before_sandbox_branch_deleted(tmp_path):
+    """fast_forward_branch must be called before delete_branch(MERGE_SANDBOX) removes the sandbox."""
+    issue = {"number": 19, "title": "Conflict"}
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+    mock_git.get_current_branch.return_value = "main"
+
+    call_order: list[str] = []
+
+    mock_git.fast_forward_branch.side_effect = lambda *a, **kw: call_order.append(
+        "fast_forward"
+    )
+
+    def _track_delete(branch: str, *args: object, **kwargs: object) -> None:
+        if branch == MERGE_SANDBOX:
+            call_order.append("delete_sandbox")
+
+    mock_git.delete_branch.side_effect = _track_delete
+
+    async def _fake_run_agent(name, **kwargs):
+        return AgentSuccess(output="")
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=_make_github_svc(),
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    asyncio.run(merge_phase([issue], deps))
+
+    assert "fast_forward" in call_order
+    assert "delete_sandbox" in call_order
+    assert call_order.index("fast_forward") < call_order.index("delete_sandbox")
+
+
 def test_run_full_iteration_cold_path(git_repo):
     """run() executes a full iteration: preflight→plan→implement→merge, and closes the issue."""
     import subprocess

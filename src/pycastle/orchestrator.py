@@ -445,6 +445,10 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                 effort=deps.cfg.merge_override.effort,
                 stage="pre-merge",
             )
+            if isinstance(merger_result, AgentSuccess):
+                deps.git_svc.fast_forward_branch(
+                    deps.repo_root, target_branch, MERGE_SANDBOX
+                )
         finally:
             try:
                 deps.git_svc.remove_worktree(deps.repo_root, _sandbox_worktree)
@@ -459,10 +463,6 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                 print(
                     f"Warning: could not delete sandbox branch: {exc}", file=sys.stderr
                 )
-        if isinstance(merger_result, AgentSuccess):
-            deps.git_svc.fast_forward_branch(
-                deps.repo_root, target_branch, MERGE_SANDBOX
-            )
         print("\nBranches merged.")
         delete_merged_branches(
             [branch_for(i["number"]) for i in conflict_issues],
