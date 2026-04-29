@@ -18,6 +18,7 @@ from .agent_result import (
     CancellationToken,
     IssueNumberParseFailure,
     PlanParseFailure,
+    PreflightFailure,
     UsageLimitHit,
 )
 from .config import Config, StageOverride, config as _cfg
@@ -52,7 +53,7 @@ class PlanResult:
 @dataclasses.dataclass
 class ImplementResult:
     completed: list[dict]
-    errors: list[tuple[dict, Exception]]
+    errors: list[tuple[dict, Exception | PreflightFailure]]
 
 
 @dataclasses.dataclass
@@ -298,7 +299,7 @@ async def run_issue(
     cfg: Config | None = None,
     run_agent: Any | None = None,
     sha: str | None = None,
-) -> dict | UsageLimitHit | None:
+) -> dict | UsageLimitHit | PreflightFailure | None:
     cfg = cfg if cfg is not None else _cfg
     _run_agent = run_agent or _default_run_agent
     _branch = branch_for(issue["number"])
@@ -327,6 +328,8 @@ async def run_issue(
         skip_preflight=True,
     )
     if isinstance(result, UsageLimitHit):
+        return result
+    if isinstance(result, PreflightFailure):
         return result
     if not isinstance(result, AgentSuccess):
         return None
@@ -385,9 +388,9 @@ async def implement_phase(
         )
         sys.exit(1)
     completed: list[dict] = []
-    errors: list[tuple[dict, Exception]] = []
+    errors: list[tuple[dict, Exception | PreflightFailure]] = []
     for issue, result in zip(issues, results):
-        if isinstance(result, Exception):
+        if isinstance(result, (Exception, PreflightFailure)):
             errors.append((issue, result))
         elif isinstance(result, dict):
             completed.append(issue)
@@ -532,25 +535,28 @@ async def run(
         impl_result = await implement_phase(issues, state, deps, token=token)
 
         for issue, error in impl_result.errors:
-            if isinstance(error, PreflightError):
-                print(
-                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) pre-flight failed:"
-                )
-                for check_name, command, output in error.failures:
-                    print(f"    ✗ {check_name} ({command}): {output}")
-            else:
-                tb = "".join(
-                    traceback.format_exception(type(error), error, error.__traceback__)
-                )
-                timestamp = datetime.now(timezone.utc).isoformat()
-                entry = f"--- {timestamp} ---\n{tb}\n"
-                print(entry, file=sys.stderr)
-                cfg.logs_dir.mkdir(parents=True, exist_ok=True)
-                with open(cfg.logs_dir / "errors.log", "a", encoding="utf-8") as f:
-                    f.write(entry)
-                print(
-                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}"
-                )
+            match error:
+                case PreflightFailure(failures=fs):
+                    print(
+                        f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) pre-flight failed:"
+                    )
+                    for check_name, command, output in fs:
+                        print(f"    ✗ {check_name} ({command}): {output}")
+                case _:
+                    tb = "".join(
+                        traceback.format_exception(
+                            type(error), error, error.__traceback__
+                        )
+                    )
+                    timestamp = datetime.now(timezone.utc).isoformat()
+                    entry = f"--- {timestamp} ---\n{tb}\n"
+                    print(entry, file=sys.stderr)
+                    cfg.logs_dir.mkdir(parents=True, exist_ok=True)
+                    with open(cfg.logs_dir / "errors.log", "a", encoding="utf-8") as f:
+                        f.write(entry)
+                    print(
+                        f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}"
+                    )
 
         completed = impl_result.completed
 
