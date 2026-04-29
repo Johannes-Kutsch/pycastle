@@ -78,7 +78,7 @@ def load_config(
                     raise ValueError(f"Unknown config key: {k!r}")
                 kwargs[k] = v
 
-    if overrides:
+    if overrides is not None:
         for k, v in overrides.items():
             if k not in valid_fields:
                 raise ValueError(f"Unknown config key: {k!r}")

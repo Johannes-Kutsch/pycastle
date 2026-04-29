@@ -53,3 +53,33 @@ def test_config_is_frozen():
     cfg = Config()
     with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
         cfg.max_parallel = 99  # type: ignore[misc]
+
+
+def test_overrides_take_precedence_over_local_file(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text("max_parallel = 4\n")
+    cfg = load_config(repo_root=tmp_path, overrides={"max_parallel": 99})
+    assert cfg.max_parallel == 99
+
+
+def test_load_config_applies_stage_override_from_local_file(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pycastle.config import StageOverride\n"
+        'plan_override = StageOverride(model="haiku", effort="low")\n'
+    )
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.plan_override.model == "haiku"
+    assert cfg.plan_override.effort == "low"
+
+
+def test_load_config_with_empty_overrides_dict(tmp_path):
+    cfg = load_config(repo_root=tmp_path, overrides={})
+    assert cfg.max_parallel == 1
+
+
+def test_module_level_config_singleton_picks_up_local_override():
+    from pycastle.config import config
+
+    assert config.docker_image_name == "pycastle"
+    assert config.max_parallel == 4
