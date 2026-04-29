@@ -422,15 +422,22 @@ async def run(
                     "title": pf_title,
                 }
                 pf_semaphore = asyncio.Semaphore(_max_parallel)
-                pf_completed = await run_issue(
-                    pf_issue,
-                    env,
-                    repo_root,
-                    _stage_overrides,
-                    pf_semaphore,
-                    run_agent=_run_agent,
-                    sha=None,
-                )
+                try:
+                    pf_completed = await run_issue(
+                        pf_issue,
+                        env,
+                        repo_root,
+                        _stage_overrides,
+                        pf_semaphore,
+                        run_agent=_run_agent,
+                        sha=None,
+                    )
+                except UsageLimitError:
+                    print(
+                        "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
                 if pf_completed:
                     pf_branch = f"sandcastle/issue-{pf_num}"
                     await wait_for_clean_working_tree(repo_root, git_svc)

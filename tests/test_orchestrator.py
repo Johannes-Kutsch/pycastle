@@ -2188,3 +2188,68 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
     assert not errors_log.exists() or errors_log.read_text() == "", (
         "UsageLimitError must not be written to errors.log"
     )
+
+
+def test_usage_limit_error_alongside_regular_exception_exits_with_code_1(
+    tmp_path, capsys
+):
+    """When one task raises UsageLimitError and another raises a regular exception, exit cleanly with code 1."""
+    from pycastle.errors import UsageLimitError
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json(
+                [{"number": 1, "title": "Limit"}, {"number": 2, "title": "Other"}]
+            )
+        if "Implementer #1" in name:
+            raise UsageLimitError("session limit")
+        if "Implementer #2" in name:
+            raise RuntimeError("unrelated failure")
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run(tmp_path, _fake_run_agent, max_parallel=4)
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert (
+        "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume."
+        in err
+    )
+
+
+def test_usage_limit_error_in_post_merge_preflight_exits_with_code_1(tmp_path, capsys):
+    """UsageLimitError raised in the post-merge preflight run_issue must exit with code 1."""
+    from pycastle.errors import UsageLimitError
+
+    mock_git = _make_git_svc(try_merge_side_effect=[True])
+    mock_git.get_head_sha.return_value = "sha"
+    mock_github = MagicMock(spec=GithubService)
+    mock_github.get_labels.return_value = ["ready-for-agent"]  # AFK
+    mock_github.get_issue_title.return_value = "Fix preflight"
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix"}])
+        if "preflight-issue" in name:
+            return "<issue>55</issue>"
+        if name == "Implementer #1":
+            return "<promise>COMPLETE</promise>"
+        if name == "Reviewer #1":
+            return ""
+        raise UsageLimitError("session limit during preflight fix")
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            git_service=mock_git,
+            github_service=mock_github,
+            run_host_checks=lambda _: [("pytest", "pytest", "FAILED")],
+        )
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert (
+        "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume."
+        in err
+    )
