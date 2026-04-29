@@ -306,7 +306,13 @@ async def run(
                 prompt_file=PROMPTS_DIR / "plan-prompt.md",
                 mount_path=repo_root,
                 env=env,
-                prompt_args={"ISSUE_LABEL": ISSUE_LABEL},
+                prompt_args={
+                    "OPEN_ISSUES_JSON": json.dumps(
+                        strip_stale_blocker_refs(
+                            _get_github_svc().get_open_issues(ISSUE_LABEL)
+                        )
+                    )
+                },
                 model=plan_stage.get("model", ""),
                 effort=plan_stage.get("effort", ""),
                 stage="pre-planning",

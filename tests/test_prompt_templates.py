@@ -4,7 +4,6 @@ import pytest
 
 from pycastle.defaults.config import (
     IMPLEMENT_CHECKS,
-    ISSUE_LABEL,
     PREFLIGHT_CHECKS,
     PROMPTS_DIR,
 )
@@ -61,7 +60,7 @@ def test_merger_template_fails_without_checks_arg():
 
 def test_planner_template_renders_without_error():
     prompt_file = REPO_ROOT / PROMPTS_DIR / "plan-prompt.md"
-    assert_template_renders(prompt_file, {"ISSUE_LABEL": ISSUE_LABEL})
+    assert_template_renders(prompt_file, {"OPEN_ISSUES_JSON": "[]"})
 
 
 def test_planner_template_does_not_instruct_branch_emission():
