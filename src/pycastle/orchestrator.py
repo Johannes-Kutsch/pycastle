@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .agent_result import CancellationToken
 from .config import Config, StageOverride, config as _cfg
 from .container_runner import run_agent as _default_run_agent
 from .errors import PreflightError, UsageLimitError
@@ -257,6 +258,7 @@ async def run_issue(
     repo_root: Path,
     semaphore: asyncio.Semaphore | None = None,
     *,
+    token: CancellationToken,
     cfg: Config | None = None,
     run_agent: Any | None = None,
     sha: str | None = None,
@@ -271,9 +273,9 @@ async def run_issue(
         "FEEDBACK_COMMANDS": _format_feedback_commands(cfg.implement_checks),
     }
 
-    async def _bounded_run_agent(**kwargs: Any) -> str:
+    async def _bounded_run_agent(**kwargs: Any) -> Any:
         async with semaphore or contextlib.nullcontext():
-            return await _run_agent(**kwargs)
+            return await _run_agent(**kwargs, token=token)
 
     result = await _bounded_run_agent(
         name=f"Implementer #{issue['number']}",
@@ -312,8 +314,13 @@ async def run_issue(
 
 
 async def implement_phase(
-    issues: list[dict], state: IterationState, deps: Deps
+    issues: list[dict],
+    state: IterationState,
+    deps: Deps,
+    *,
+    token: CancellationToken | None = None,
 ) -> ImplementResult:
+    _token = token if token is not None else CancellationToken()
     semaphore = asyncio.Semaphore(deps.cfg.max_parallel)
     results = await asyncio.gather(
         *[
@@ -322,6 +329,7 @@ async def implement_phase(
                 deps.env,
                 deps.repo_root,
                 semaphore,
+                token=_token,
                 cfg=deps.cfg,
                 run_agent=deps.run_agent,
                 sha=state.worktree_sha,
@@ -476,8 +484,9 @@ async def run(
                 f"  #{issue['number']}: {issue['title']} → {branch_for(issue['number'])}"
             )
 
+        token = CancellationToken()
         try:
-            impl_result = await implement_phase(issues, state, deps)
+            impl_result = await implement_phase(issues, state, deps, token=token)
         except UsageLimitError:
             print(
                 "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume.",
