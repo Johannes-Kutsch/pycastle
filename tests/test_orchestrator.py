@@ -2878,6 +2878,28 @@ def test_merge_phase_deletes_sandbox_branch_after_successful_fast_forward(tmp_pa
     mock_git.delete_branch.assert_any_call(MERGE_SANDBOX, tmp_path)
 
 
+def test_merge_phase_does_not_fast_forward_when_merger_fails(tmp_path):
+    """When the Merger agent does not succeed, fast_forward_branch must not be called."""
+    issue = {"number": 13, "title": "Conflict"}
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+    mock_git.get_current_branch.return_value = "main"
+
+    async def _fake_run_agent(name, **kwargs):
+        return AgentIncomplete(partial_output="")
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=_make_github_svc(),
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    asyncio.run(merge_phase([issue], deps))
+
+    mock_git.fast_forward_branch.assert_not_called()
+
+
 def test_run_full_iteration_cold_path(git_repo):
     """run() executes a full iteration: preflight→plan→implement→merge, and closes the issue."""
     import subprocess
