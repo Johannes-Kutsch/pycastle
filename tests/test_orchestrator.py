@@ -2489,3 +2489,42 @@ def test_implement_phase_partial_completion(tmp_path):
     assert len(result.errors) == 1
     assert result.errors[0][0] == issues[1]
     assert isinstance(result.errors[0][1], RuntimeError)
+
+
+def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
+    """When one issue raises UsageLimitError, sibling tasks must complete before the error propagates."""
+    from pycastle.errors import UsageLimitError
+
+    completed_agents: list[str] = []
+    issues = [{"number": 1, "title": "Fail"}, {"number": 2, "title": "Pass"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer #1" in name:
+            raise UsageLimitError("session limit hit")
+        completed_agents.append(name)
+        return "<promise>COMPLETE</promise>"
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    state = IterationState(worktree_sha="abc123")
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(implement_phase(issues, state, deps))
+
+    assert any("Implementer #2" in n for n in completed_agents), (
+        f"Sibling Implementer #2 must complete before error propagates; completed={completed_agents}"
+    )
+
+
+def test_implement_phase_no_complete_tag_not_in_completed_or_errors(tmp_path):
+    """When run_issue returns None (implementer gave no COMPLETE tag), issue is dropped from both lists."""
+    issues = [{"number": 1, "title": "Fix A"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        return "some response without the complete tag"
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    state = IterationState(worktree_sha="abc123")
+    result = asyncio.run(implement_phase(issues, state, deps))
+
+    assert result.completed == []
+    assert result.errors == []
