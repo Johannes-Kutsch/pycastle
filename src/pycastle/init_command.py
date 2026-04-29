@@ -37,7 +37,6 @@ def main() -> None:
     dest = Path("pycastle")
     pkg = files("pycastle").joinpath("defaults")
 
-    written: set[Path] = set()
     for rel in _FILES:
         target = dest / rel
         if target.exists():
@@ -48,7 +47,6 @@ def main() -> None:
             src = src / part
         try:
             target.write_bytes(src.read_bytes())
-            written.add(target)
         except Exception as e:
             click.echo(
                 click.style(f"Error: could not write {target} — {e}", fg="red"),
@@ -56,29 +54,27 @@ def main() -> None:
             )
             sys.exit(1)
 
+    config_file = dest / "config.py"
+    image_name = re.sub(r"[^a-z0-9]+", "-", Path.cwd().name.lower()).strip("-")
+    try:
+        _write_config_value(config_file, "docker_image_name", image_name)
+    except Exception as e:
+        click.echo(
+            click.style(
+                f"Error: could not set docker_image_name in {config_file} — {e}",
+                fg="red",
+            ),
+            err=True,
+        )
+        sys.exit(1)
+
     env_file = dest / ".env"
     if not env_file.exists():
         try:
             env_file.write_text(_ENV_TEMPLATE)
-            written.add(env_file)
         except Exception as e:
             click.echo(
                 click.style(f"Error: could not write {env_file} — {e}", fg="red"),
-                err=True,
-            )
-            sys.exit(1)
-
-    config_file = dest / "config.py"
-    if config_file in written:
-        image_name = re.sub(r"[^a-z0-9]+", "-", Path.cwd().name.lower()).strip("-")
-        try:
-            _write_config_value(config_file, "docker_image_name", image_name)
-        except Exception as e:
-            click.echo(
-                click.style(
-                    f"Error: could not set docker_image_name in {config_file} — {e}",
-                    fg="red",
-                ),
                 err=True,
             )
             sys.exit(1)
