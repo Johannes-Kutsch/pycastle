@@ -12,12 +12,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .agent_output_protocol import IssueParseError, PlanParseError, parse_issue_number
+from .agent_output_protocol import parse_plan as _parse_plan
 from .agent_result import (
     AgentIncomplete,
     AgentSuccess,
     CancellationToken,
-    IssueNumberParseFailure,
-    PlanParseFailure,
     PreflightFailure,
     UsageLimitHit,
 )
@@ -101,20 +101,6 @@ def delete_merged_branches(
             print(f"Warning: could not delete branch {branch!r}: {e}", file=sys.stderr)
 
 
-def _extract_text(output: str) -> str:
-    for line in output.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict) and obj.get("type") == "result":
-            return obj.get("result", output)
-    return output
-
-
 MERGE_SANDBOX = "pycastle/merge-sandbox"
 
 
@@ -137,33 +123,6 @@ def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
             cleaned.append(line)
         result.append({**issue, "body": "\n".join(cleaned)})
     return result
-
-
-def parse_plan(output: str) -> list[dict] | PlanParseFailure:
-    text = _extract_text(output)
-    match = re.search(r"<plan>([\s\S]*?)</plan>", text)
-    if not match:
-        return PlanParseFailure(
-            raw_output=text,
-            detail="Planner produced no <plan> tag.",
-        )
-    try:
-        data = json.loads(match.group(1))
-    except json.JSONDecodeError as exc:
-        return PlanParseFailure(
-            raw_output=text,
-            detail=f"Planner produced malformed JSON inside <plan> tag: {exc}",
-        )
-    if "unblocked_issues" in data:
-        raw = data["unblocked_issues"]
-    elif "issues" in data:
-        raw = data["issues"]
-    else:
-        return PlanParseFailure(
-            raw_output=text,
-            detail=f"Plan JSON has no 'unblocked_issues' or 'issues' key. Keys found: {list(data.keys())}",
-        )
-    return [{"number": i["number"], "title": i["title"]} for i in raw]
 
 
 def _stage_for_agent(name: str) -> str:
@@ -204,7 +163,7 @@ async def _handle_preflight_failure(
     run_agent: Any,
     hitl_label: str,
     prompts_dir: Path,
-) -> tuple[str, int] | IssueNumberParseFailure:
+) -> tuple[str, int]:
     """Spawn preflight-issue agent for the first failing check; returns ('hitl'|'afk', issue_number)."""
     check_name, command, output = failures[0]
     agent_result = await run_agent(
@@ -221,14 +180,7 @@ async def _handle_preflight_failure(
         raw_text = agent_result.partial_output
     else:
         raw_text = str(agent_result)
-    text = _extract_text(raw_text)
-    match = re.search(r"<issue>(\d+)</issue>", text)
-    if not match:
-        return IssueNumberParseFailure(
-            raw_output=text,
-            detail="preflight-issue agent produced no <issue>NUMBER</issue> tag.",
-        )
-    issue_number = int(match.group(1))
+    _label, issue_number = parse_issue_number(raw_text)
     labels = github_svc.get_labels(issue_number)
     if hitl_label in labels:
         return "hitl", issue_number
@@ -258,10 +210,11 @@ async def plan_phase(state: IterationState, deps: Deps) -> PlanResult:
         plan_text = plan_result.partial_output
     else:
         plan_text = str(plan_result)
-    parsed = parse_plan(plan_text)
-    if isinstance(parsed, PlanParseFailure):
-        raise RuntimeError(parsed.detail)
-    return PlanResult(issues=parsed)
+    try:
+        issues = _parse_plan(plan_text)
+    except PlanParseError as exc:
+        raise RuntimeError(str(exc)) from exc
+    return PlanResult(issues=issues)
 
 
 async def preflight_phase(deps: Deps) -> IterationState:
@@ -270,18 +223,18 @@ async def preflight_phase(deps: Deps) -> IterationState:
     try:
         plan_result = await plan_phase(state, deps)
     except PreflightError as exc:
-        preflight_result = await _handle_preflight_failure(
-            exc.failures,
-            deps.env,
-            deps.repo_root,
-            deps.github_svc,
-            deps.run_agent,
-            deps.cfg.hitl_label,
-            deps.cfg.prompts_dir,
-        )
-        if isinstance(preflight_result, IssueNumberParseFailure):
-            raise RuntimeError(preflight_result.detail) from None
-        verdict, pf_num = preflight_result
+        try:
+            verdict, pf_num = await _handle_preflight_failure(
+                exc.failures,
+                deps.env,
+                deps.repo_root,
+                deps.github_svc,
+                deps.run_agent,
+                deps.cfg.hitl_label,
+                deps.cfg.prompts_dir,
+            )
+        except IssueParseError as parse_exc:
+            raise RuntimeError(str(parse_exc)) from None
         if verdict == "hitl":
             print(f"Preflight issue #{pf_num} requires human intervention. Exiting.")
             sys.exit(1)

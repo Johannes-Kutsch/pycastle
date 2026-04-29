@@ -28,7 +28,6 @@ from pycastle.orchestrator import (
     delete_merged_branches,
     implement_phase,
     merge_phase,
-    parse_plan,
     plan_phase,
     preflight_phase,
     prune_orphan_worktrees,
@@ -75,62 +74,6 @@ def test_merge_result_stores_clean_and_conflicts():
     result = MergeResult(clean=[{"number": 1}], conflicts=[{"number": 2}])
     assert result.clean == [{"number": 1}]
     assert result.conflicts == [{"number": 2}]
-
-
-# ── parse_plan ────────────────────────────────────────────────────────────────
-
-
-def test_parse_plan_returns_issues_list():
-    output = '<plan>{"issues": [{"number": 1, "title": "Fix bug"}]}</plan>'
-    assert parse_plan(output) == [{"number": 1, "title": "Fix bug"}]
-
-
-def test_parse_plan_returns_empty_list_when_no_issues():
-    output = '<plan>{"issues": []}</plan>'
-    assert parse_plan(output) == []
-
-
-def test_parse_plan_failure_is_typed_when_no_plan_tag():
-    from pycastle.agent_result import PlanParseFailure
-
-    result = parse_plan("some output with no plan tag")
-    assert isinstance(result, PlanParseFailure)
-    assert "no <plan> tag" in result.detail
-
-
-def test_parse_plan_returns_unblocked_issues_list():
-    output = '<plan>{"unblocked_issues": [{"number": 2, "title": "Do thing"}], "blocked_issues": [{"number": 3, "title": "Later"}]}</plan>'
-    assert parse_plan(output) == [{"number": 2, "title": "Do thing"}]
-
-
-def test_parse_plan_failure_is_typed_when_issues_key_missing():
-    from pycastle.agent_result import PlanParseFailure
-
-    output = '<plan>{"something_else": []}</plan>'
-    result = parse_plan(output)
-    assert isinstance(result, PlanParseFailure)
-    assert "unblocked_issues" in result.detail or "issues" in result.detail
-
-
-def test_parse_plan_failure_is_typed_when_json_is_malformed():
-    from pycastle.agent_result import PlanParseFailure
-
-    output = "<plan>this is not valid json</plan>"
-    result = parse_plan(output)
-    assert isinstance(result, PlanParseFailure)
-    assert "malformed JSON" in result.detail
-
-
-def test_parse_plan_issues_have_no_branch_key():
-    output = '<plan>{"issues": [{"number": 5, "title": "Add feature", "branch": "stale/branch"}]}</plan>'
-    issues = parse_plan(output)
-    assert all("branch" not in issue for issue in issues)
-
-
-def test_parse_plan_unblocked_issues_have_no_branch_key():
-    output = '<plan>{"unblocked_issues": [{"number": 6, "title": "Add feature", "branch": "stale/branch"}]}</plan>'
-    issues = parse_plan(output)
-    assert all("branch" not in issue for issue in issues)
 
 
 # ── strip_stale_blocker_refs ──────────────────────────────────────────────────
@@ -279,7 +222,9 @@ def test_preflight_issue_branch_uses_pycastle_format(tmp_path):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501")])
         if "preflight-issue" in name:
-            return AgentIncomplete(partial_output="<issue>77</issue>")
+            return AgentIncomplete(
+                partial_output='<issue label="ready-for-agent">77</issue>'
+            )
         if "Implementer" in name:
             captured_branches.append((prompt_args or {}).get("BRANCH", ""))
             return AgentSuccess(output="<promise>COMPLETE</promise>")
@@ -618,7 +563,9 @@ def test_planner_preflight_error_spawns_no_implementers(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
-        return AgentIncomplete(partial_output="<issue>77</issue>")
+        return AgentIncomplete(
+            partial_output='<issue label="ready-for-agent">77</issue>'
+        )
 
     deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc_hitl())
 
@@ -632,7 +579,9 @@ def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
-        return AgentIncomplete(partial_output="<issue>88</issue>")
+        return AgentIncomplete(
+            partial_output='<issue label="ready-for-agent">88</issue>'
+        )
 
     deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc_hitl())
 
@@ -1369,7 +1318,9 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
                 [("pytest", "pytest -x", "FAILED tests/test_bar.py::test_something")]
             )
         if "preflight-issue" in name:
-            return AgentIncomplete(partial_output="<issue>70</issue>")
+            return AgentIncomplete(
+                partial_output='<issue label="ready-for-agent">70</issue>'
+            )
         if "Implementer" in name:
             return AgentSuccess(output="<promise>COMPLETE</promise>")
         return AgentIncomplete(partial_output="")
@@ -1834,7 +1785,9 @@ def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
         if "preflight-issue" in name:
-            return AgentIncomplete(partial_output="<issue>42</issue>")
+            return AgentIncomplete(
+                partial_output='<issue label="ready-for-agent">42</issue>'
+            )
         if "Implementer" in name:
             return AgentSuccess(output="<promise>COMPLETE</promise>")
         return AgentIncomplete(partial_output="")
@@ -1865,7 +1818,9 @@ def test_preflight_failure_hitl_exits_nonzero_no_implementer(tmp_path):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501")])
         if "preflight-issue" in name:
-            return AgentIncomplete(partial_output="<issue>99</issue>")
+            return AgentIncomplete(
+                partial_output='<issue label="ready-for-agent">99</issue>'
+            )
         if "Implementer" in name:
             implementer_calls.append(name)
         return AgentIncomplete(partial_output="")
@@ -1900,7 +1855,9 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
             preflight_issue_calls.append(
                 {"name": name, "prompt_args": prompt_args or {}}
             )
-            return AgentIncomplete(partial_output="<issue>10</issue>")
+            return AgentIncomplete(
+                partial_output='<issue label="ready-for-agent">10</issue>'
+            )
         if "Implementer" in name:
             return AgentSuccess(output="<promise>COMPLETE</promise>")
         return AgentIncomplete(partial_output="")
@@ -2450,7 +2407,9 @@ def test_preflight_phase_captures_sha_before_checks(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501")])
-        return AgentIncomplete(partial_output="<issue>42</issue>")
+        return AgentIncomplete(
+            partial_output='<issue label="ready-for-agent">42</issue>'
+        )
 
     deps = _make_deps(
         tmp_path, _fake_run_agent, git_svc=mock_git, github_svc=_make_github_svc_afk()
@@ -2468,7 +2427,9 @@ def test_preflight_phase_failure_spawns_fix_and_preserves_sha(tmp_path):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501")])
         fix_agents_spawned.append(name)
-        return AgentIncomplete(partial_output="<issue>77</issue>")
+        return AgentIncomplete(
+            partial_output='<issue label="ready-for-agent">77</issue>'
+        )
 
     deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc_afk())
     state = asyncio.run(preflight_phase(deps))
@@ -2485,7 +2446,9 @@ def test_preflight_phase_hitl_exits(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501")])
-        return AgentIncomplete(partial_output="<issue>88</issue>")
+        return AgentIncomplete(
+            partial_output='<issue label="ready-for-agent">88</issue>'
+        )
 
     deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc_hitl())
 
@@ -2499,7 +2462,9 @@ def test_preflight_phase_afk_issues_populated(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501")])
-        return AgentIncomplete(partial_output="<issue>77</issue>")
+        return AgentIncomplete(
+            partial_output='<issue label="ready-for-agent">77</issue>'
+        )
 
     github_svc = _make_github_svc_afk()
     deps = _make_deps(tmp_path, _fake_run_agent, github_svc=github_svc)
@@ -3246,30 +3211,30 @@ def test_implement_phase_usage_limit_hit_not_counted_as_completed(tmp_path):
     assert result.errors == [], "UsageLimitHit must not appear in errors"
 
 
-# ── Issue-214: IssueNumberParseFailure from _handle_preflight_failure ──────────
+# ── Issue-214: IssueParseError from _handle_preflight_failure ──────────────────
 
 
-def test_handle_preflight_failure_returns_typed_failure_when_no_issue_tag(tmp_path):
-    """_handle_preflight_failure returns IssueNumberParseFailure when agent output has no <issue>N</issue> tag."""
-    from pycastle.agent_result import IssueNumberParseFailure
+def test_handle_preflight_failure_raises_issue_parse_error_when_no_issue_tag(tmp_path):
+    """_handle_preflight_failure raises IssueParseError when agent output has no <issue label="...">N</issue> tag."""
+    from pycastle.agent_output_protocol import IssueParseError
     from pycastle.orchestrator import _handle_preflight_failure
 
     async def _fake_run_agent(**kwargs):
         return AgentIncomplete(partial_output="no issue tag here")
 
     github_svc = _make_github_svc()
-    result = asyncio.run(
-        _handle_preflight_failure(
-            [("ruff", "ruff check .", "E501")],
-            {},
-            tmp_path,
-            github_svc,
-            _fake_run_agent,
-            "hitl",
-            tmp_path,
+    with pytest.raises(IssueParseError):
+        asyncio.run(
+            _handle_preflight_failure(
+                [("ruff", "ruff check .", "E501")],
+                {},
+                tmp_path,
+                github_svc,
+                _fake_run_agent,
+                "hitl",
+                tmp_path,
+            )
         )
-    )
-    assert isinstance(result, IssueNumberParseFailure)
 
 
 # ── Issue-245: Unified orchestrator loop (plan slicing) ───────────────────────
