@@ -333,6 +333,8 @@ async def run(
             print(f"No issues with label '{cfg.issue_label}' found. Skipping.")
             break
 
+        _worktree_sha = git_svc.get_head_sha(repo_root)
+
         issues: list[dict] | None = None
         try:
             plan_output = await _run_agent(
@@ -379,8 +381,6 @@ async def run(
         if not issues:
             print(f"No issues with label '{cfg.issue_label}' found. Skipping.")
             break
-
-        _worktree_sha = git_svc.get_head_sha(repo_root)
 
         print(f"Planning complete. {len(issues)} issue(s):")
         for issue in issues:
@@ -462,59 +462,6 @@ async def run(
             branch_for(i["number"]) for i in completed if i not in conflict_issues
         ]
         delete_merged_branches(clean_branches, repo_root, git_svc)
-
-        clean_count = len(completed) - len(conflict_issues)
-        if clean_count > 0 and not conflict_issues:
-            check_failures = _run_host_checks(cfg.preflight_checks)
-            if check_failures:
-                verdict, pf_num = await _handle_preflight_failure(
-                    check_failures,
-                    env,
-                    repo_root,
-                    _get_github_svc(),
-                    _run_agent,
-                    cfg.hitl_label,
-                    cfg.prompts_dir,
-                )
-                if verdict == "hitl":
-                    print(
-                        f"Preflight issue #{pf_num} requires human intervention. Exiting."
-                    )
-                    sys.exit(1)
-                pf_title = _get_github_svc().get_issue_title(pf_num)
-                pf_issue = {
-                    "number": pf_num,
-                    "title": pf_title,
-                }
-                pf_semaphore = asyncio.Semaphore(cfg.max_parallel)
-                try:
-                    pf_completed = await run_issue(
-                        pf_issue,
-                        env,
-                        repo_root,
-                        pf_semaphore,
-                        cfg=cfg,
-                        run_agent=_run_agent,
-                        sha=None,
-                    )
-                except UsageLimitError:
-                    print(
-                        "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume.",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
-                if pf_completed:
-                    pf_branch = branch_for(pf_num)
-                    await wait_for_clean_working_tree(repo_root, git_svc)
-                    if git_svc.try_merge(repo_root, pf_branch):
-                        _get_github_svc().close_issue(pf_num)
-                        _get_github_svc().close_completed_parent_issues()
-                        delete_merged_branches([pf_branch], repo_root, git_svc)
-                        second_failures = _run_host_checks(cfg.preflight_checks)
-                        if not second_failures:
-                            _worktree_sha = git_svc.get_head_sha(repo_root)
-                continue
-            _worktree_sha = git_svc.get_head_sha(repo_root)
 
         if conflict_issues:
             await _run_agent(
