@@ -311,6 +311,37 @@ async def run_issue(
     return issue
 
 
+async def implement_phase(
+    issues: list[dict], state: IterationState, deps: Deps
+) -> ImplementResult:
+    semaphore = asyncio.Semaphore(deps.cfg.max_parallel)
+    results = await asyncio.gather(
+        *[
+            run_issue(
+                i,
+                deps.env,
+                deps.repo_root,
+                semaphore,
+                cfg=deps.cfg,
+                run_agent=deps.run_agent,
+                sha=state.worktree_sha,
+            )
+            for i in issues
+        ],
+        return_exceptions=True,
+    )
+    if any(isinstance(r, UsageLimitError) for r in results):
+        raise UsageLimitError("Usage limit reached during implement phase")
+    completed: list[dict] = []
+    errors: list[tuple[dict, Exception]] = []
+    for issue, result in zip(issues, results):
+        if isinstance(result, Exception):
+            errors.append((issue, result))
+        elif result is not None:
+            completed.append(issue)
+    return ImplementResult(completed=completed, errors=errors)
+
+
 async def run(
     env: dict[str, str],
     repo_root: Path,
@@ -399,44 +430,25 @@ async def run(
                 f"  #{issue['number']}: {issue['title']} → {branch_for(issue['number'])}"
             )
 
-        semaphore = asyncio.Semaphore(cfg.max_parallel)
-
-        results = await asyncio.gather(
-            *[
-                run_issue(
-                    i,
-                    env,
-                    repo_root,
-                    semaphore,
-                    cfg=cfg,
-                    run_agent=_run_agent,
-                    sha=_worktree_sha,
-                )
-                for i in issues
-            ],
-            return_exceptions=True,
-        )
-
-        if any(isinstance(r, UsageLimitError) for r in results):
+        try:
+            impl_result = await implement_phase(issues, state, deps)
+        except UsageLimitError:
             print(
                 "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume.",
                 file=sys.stderr,
             )
             sys.exit(1)
 
-        completed: list[dict] = []
-        for issue, result in zip(issues, results):
-            if isinstance(result, PreflightError):
+        for issue, error in impl_result.errors:
+            if isinstance(error, PreflightError):
                 print(
                     f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) pre-flight failed:"
                 )
-                for check_name, command, output in result.failures:
+                for check_name, command, output in error.failures:
                     print(f"    ✗ {check_name} ({command}): {output}")
-            elif isinstance(result, Exception):
+            else:
                 tb = "".join(
-                    traceback.format_exception(
-                        type(result), result, result.__traceback__
-                    )
+                    traceback.format_exception(type(error), error, error.__traceback__)
                 )
                 timestamp = datetime.now(timezone.utc).isoformat()
                 entry = f"--- {timestamp} ---\n{tb}\n"
@@ -445,10 +457,10 @@ async def run(
                 with open(cfg.logs_dir / "errors.log", "a", encoding="utf-8") as f:
                     f.write(entry)
                 print(
-                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {result}"
+                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}"
                 )
-            elif result is not None:
-                completed.append(issue)
+
+        completed = impl_result.completed
 
         if not completed:
             print("No commits produced. Nothing to merge.")

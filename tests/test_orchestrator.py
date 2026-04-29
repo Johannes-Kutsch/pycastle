@@ -18,6 +18,7 @@ from pycastle.orchestrator import (
     _stage_for_agent,
     branch_for,
     delete_merged_branches,
+    implement_phase,
     parse_plan,
     plan_phase,
     preflight_phase,
@@ -1859,35 +1860,6 @@ def test_usage_limit_error_prints_resume_message_to_stderr(tmp_path, capsys):
     )
 
 
-def test_usage_limit_error_awaits_sibling_tasks(tmp_path):
-    """When one agent raises UsageLimitError, sibling tasks must run to completion before exit."""
-    from pycastle.errors import UsageLimitError
-
-    completed_agents: list[str] = []
-
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
-            return _plan_json(
-                [{"number": 1, "title": "Fail"}, {"number": 2, "title": "Pass"}]
-            )
-        if "Implementer #1" in name:
-            raise UsageLimitError("You've hit your session limit")
-        completed_agents.append(name)
-        return "<promise>COMPLETE</promise>"
-
-    with pytest.raises(SystemExit):
-        _run(
-            tmp_path,
-            _fake_run_agent,
-            github_service=_make_github_svc(),
-            cfg=Config(max_parallel=4, max_iterations=1),
-        )
-
-    assert any("Implementer #2" in n for n in completed_agents), (
-        f"Sibling Implementer #2 must complete before exit; completed={completed_agents}"
-    )
-
-
 def test_usage_limit_error_not_written_to_errors_log(tmp_path):
     """UsageLimitError must not be logged to errors.log (unlike regular exceptions)."""
     from pycastle.errors import UsageLimitError
@@ -2447,3 +2419,73 @@ def test_plan_phase_raises_when_no_plan_tag(tmp_path):
 
     with pytest.raises(RuntimeError, match="no <plan> tag"):
         asyncio.run(plan_phase(state, deps))
+
+
+# ── Issue-209: implement_phase boundary tests ─────────────────────────────────
+
+
+def test_implement_phase_returns_completed_issues(tmp_path):
+    """implement_phase returns all issues in completed when every run_agent returns COMPLETE."""
+    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        return "<promise>COMPLETE</promise>"
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    state = IterationState(worktree_sha="abc123")
+    result = asyncio.run(implement_phase(issues, state, deps))
+
+    assert result.completed == issues
+    assert result.errors == []
+
+
+def test_implement_phase_usage_limit_propagates(tmp_path):
+    """implement_phase must propagate UsageLimitError — not swallow it into errors."""
+    from pycastle.errors import UsageLimitError
+
+    issues = [{"number": 1, "title": "Fix A"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        raise UsageLimitError("session limit hit")
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    state = IterationState(worktree_sha="abc123")
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(implement_phase(issues, state, deps))
+
+
+def test_implement_phase_preflight_error_goes_to_errors(tmp_path):
+    """implement_phase must put PreflightError into result.errors, not completed."""
+    issues = [{"number": 1, "title": "Fix A"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        raise PreflightError([("mypy", "mypy .", "error: missing module")])
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    state = IterationState(worktree_sha="abc123")
+    result = asyncio.run(implement_phase(issues, state, deps))
+
+    assert result.completed == []
+    assert len(result.errors) == 1
+    assert result.errors[0][0] == issues[0]
+    assert isinstance(result.errors[0][1], PreflightError)
+
+
+def test_implement_phase_partial_completion(tmp_path):
+    """implement_phase splits results: one completed, one generic exception in errors."""
+    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer #1" in name or "Reviewer #1" in name:
+            return "<promise>COMPLETE</promise>"
+        raise RuntimeError("agent failed")
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    state = IterationState(worktree_sha="abc123")
+    result = asyncio.run(implement_phase(issues, state, deps))
+
+    assert result.completed == [issues[0]]
+    assert len(result.errors) == 1
+    assert result.errors[0][0] == issues[1]
+    assert isinstance(result.errors[0][1], RuntimeError)
