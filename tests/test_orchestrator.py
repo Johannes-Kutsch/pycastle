@@ -2382,6 +2382,20 @@ def test_preflight_phase_afk_issues_populated(tmp_path):
     assert state.issues == [{"number": 77, "title": "Preflight fix title"}]
 
 
+def test_preflight_phase_success_sets_issues(tmp_path):
+    """On success, preflight_phase must return state.issues populated with parsed plan issues."""
+    expected = [{"number": 5, "title": "Do thing"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        return _plan_json(expected)
+
+    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc())
+    state = asyncio.run(preflight_phase(deps))
+
+    assert state.issues == expected
+    assert state.worktree_sha == "defaultsha"
+
+
 # ── Issue-208: plan_phase ─────────────────────────────────────────────────────
 
 
