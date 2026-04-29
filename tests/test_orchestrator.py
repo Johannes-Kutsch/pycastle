@@ -541,6 +541,74 @@ def test_run_issue_feedback_commands_formatted_from_implement_checks(tmp_path):
         assert f"`{cmd}`" in feedback_commands
 
 
+# ── Cycle 242-1: standards keys in Implementer prompt_args ───────────────────
+
+
+def test_run_issue_passes_standards_to_implementer(tmp_path):
+    """run_issue must include all five standards keys in Implementer prompt_args."""
+    captured_args: list[dict] = []
+
+    async def _fake_run_agent(
+        name, prompt_file, mount_path, env, prompt_args=None, **kw
+    ):
+        captured_args.append({"name": name, "prompt_args": prompt_args or {}})
+        return AgentSuccess(output="<promise>COMPLETE</promise>")
+
+    standards_dir = tmp_path / "standards"
+    standards_dir.mkdir(parents=True)
+    (standards_dir / "tests.md").write_text("testing content")
+    (standards_dir / "mocking.md").write_text("mocking content")
+    (standards_dir / "interfaces.md").write_text("interfaces content")
+    (standards_dir / "deep-modules.md").write_text("deep modules content")
+    (standards_dir / "refactoring.md").write_text("refactoring content")
+
+    cfg = Config(max_parallel=1, max_iterations=1, prompts_dir=tmp_path)
+    issue = {"number": 1, "title": "Fix thing"}
+    asyncio.run(run_issue(issue, {}, tmp_path, cfg=cfg, run_agent=_fake_run_agent))
+
+    implementer_call = next(a for a in captured_args if "Implementer" in a["name"])
+    args = implementer_call["prompt_args"]
+    assert args["TESTING_STANDARDS"] == "testing content"
+    assert args["MOCKING_STANDARDS"] == "mocking content"
+    assert args["INTERFACES_STANDARDS"] == "interfaces content"
+    assert args["DEEP_MODULES_STANDARDS"] == "deep modules content"
+    assert args["REFACTORING_STANDARDS"] == "refactoring content"
+
+
+# ── Cycle 242-2: standards keys in Reviewer prompt_args ──────────────────────
+
+
+def test_run_issue_passes_standards_to_reviewer(tmp_path):
+    """run_issue must include all five standards keys in Reviewer prompt_args."""
+    captured_args: list[dict] = []
+
+    async def _fake_run_agent(
+        name, prompt_file, mount_path, env, prompt_args=None, **kw
+    ):
+        captured_args.append({"name": name, "prompt_args": prompt_args or {}})
+        return AgentSuccess(output="<promise>COMPLETE</promise>")
+
+    standards_dir = tmp_path / "standards"
+    standards_dir.mkdir(parents=True)
+    (standards_dir / "tests.md").write_text("testing content")
+    (standards_dir / "mocking.md").write_text("mocking content")
+    (standards_dir / "interfaces.md").write_text("interfaces content")
+    (standards_dir / "deep-modules.md").write_text("deep modules content")
+    (standards_dir / "refactoring.md").write_text("refactoring content")
+
+    cfg = Config(max_parallel=1, max_iterations=1, prompts_dir=tmp_path)
+    issue = {"number": 1, "title": "Fix thing"}
+    asyncio.run(run_issue(issue, {}, tmp_path, cfg=cfg, run_agent=_fake_run_agent))
+
+    reviewer_call = next(a for a in captured_args if "Reviewer" in a["name"])
+    args = reviewer_call["prompt_args"]
+    assert args["TESTING_STANDARDS"] == "testing content"
+    assert args["MOCKING_STANDARDS"] == "mocking content"
+    assert args["INTERFACES_STANDARDS"] == "interfaces content"
+    assert args["DEEP_MODULES_STANDARDS"] == "deep modules content"
+    assert args["REFACTORING_STANDARDS"] == "refactoring content"
+
+
 # ── Cycle 52-1: planner PreflightError → HITL exits ─────────────────────────
 
 

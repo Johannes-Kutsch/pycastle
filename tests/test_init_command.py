@@ -24,7 +24,6 @@ def test_init_creates_all_scaffold_files(tmp_path, monkeypatch):
     assert (scaffold / "prompts" / "implement-prompt.md").exists()
     assert (scaffold / "prompts" / "review-prompt.md").exists()
     assert (scaffold / "prompts" / "merge-prompt.md").exists()
-    assert (scaffold / "prompts" / "CODING_STANDARDS.md").exists()
 
 
 # ── Cycle 2: docker_image_name is set to the inferred project name ────────────
@@ -123,6 +122,45 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
     assert cfg.implement_override == StageOverride(model="sonnet", effort="medium")
     assert cfg.review_override == StageOverride(model="sonnet", effort="high")
     assert cfg.merge_override == StageOverride(model="sonnet", effort="medium")
+
+
+# ── Cycle 4: init does not overwrite other existing files ─────────────────────
+
+
+# ── Cycle 242-3: init scaffolds five standards files ─────────────────────────
+
+
+def test_init_scaffolds_five_standards_files(tmp_path, monkeypatch):
+    """init must copy all five standards files into pycastle/prompts/standards/."""
+    from pycastle.init_command import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main()
+
+    standards = tmp_path / "pycastle" / "prompts" / "standards"
+    assert (standards / "tests.md").exists()
+    assert (standards / "mocking.md").exists()
+    assert (standards / "interfaces.md").exists()
+    assert (standards / "deep-modules.md").exists()
+    assert (standards / "refactoring.md").exists()
+
+
+def test_init_does_not_scaffold_coding_standards(tmp_path, monkeypatch):
+    """init must not scaffold the deleted CODING_STANDARDS.md."""
+    from pycastle.init_command import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main()
+
+    assert not (tmp_path / "pycastle" / "prompts" / "CODING_STANDARDS.md").exists()
 
 
 # ── Cycle 4: init does not overwrite other existing files ─────────────────────

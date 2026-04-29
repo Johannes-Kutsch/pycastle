@@ -34,7 +34,24 @@ Attempt to reproduce the original bug with new test cases. If you can reproduce 
 
 Read the diff carefully. For anything that looks suspicious — fragile logic, unchecked assumptions, tricky conditions, implicit type coercions, missing guards — write a test that exercises it. Try to actually break it. If you can break it, fix it.
 
-## 4. Stress-test edge cases
+## 4. Enforce test standards
+
+Identify all test files modified in the diff. For each, scan for red flags using the standards below:
+
+{{TESTING_STANDARDS}}
+
+{{MOCKING_STANDARDS}}
+
+Also check that test names use the domain glossary from `CONTEXT.md`, not vague or off-glossary terms.
+
+For each red-flag test:
+
+1. **Refactor first** — rewrite it to exercise the same behavior through the public interface
+2. **Delete as last resort** — only if no public behavior can validate it
+
+Run `{{FEEDBACK_COMMANDS}}` after any changes.
+
+## 5. Stress-test edge cases
 
 Go beyond the happy path. For every changed code path, think about what inputs or states could cause problems:
 
@@ -46,7 +63,7 @@ Go beyond the happy path. For every changed code path, think about what inputs o
 
 Write tests for anything that isn't already covered.
 
-## 5. Code quality
+## 6. Code quality
 
 Look for opportunities to improve the code, while maintaining balance:
 
@@ -55,22 +72,32 @@ Look for opportunities to improve the code, while maintaining balance:
 - Improve readability through clear variable and function names
 - Consolidate related logic
 - Remove unnecessary comments that describe obvious code
-- Avoid nested ternary operators — prefer switch statements or if/else chains
+- Avoid nested ternary operators — prefer if/else chains
 - Choose clarity over brevity — explicit code is often better than overly compact code
+
+Structural design smells and interface design checks:
+
+{{REFACTORING_STANDARDS}}
+
+{{INTERFACES_STANDARDS}}
+
+{{DEEP_MODULES_STANDARDS}}
 
 Avoid over-simplification that reduces clarity, combines too many concerns, or makes the code harder to debug or extend.
 
-## 6. Apply project standards
+## 7. Apply project standards
 
-Follow the established coding standards at @pycastle/prompts/CODING_STANDARDS.md.
+Check that the implementation respects any ADRs in `docs/adr/` that touch the area being changed. Flag violations as issues to fix before committing.
 
-## 7. Commit
+Standards were applied at each step above — no separate standards file reference needed.
+
+## 8. Commit
 
 Run `{{FEEDBACK_COMMANDS}}` to ensure nothing is broken.
 
 Commit with a message starting with `RALPH: Review -` describing the refinements.
 
-## 8. Issue
+## 9. Issue
 
 Post a comment on the GitHub issue using the exact commit message:
 

@@ -22,8 +22,6 @@ Only work on the issue specified. Work on branch {{BRANCH}}.
 
 Explore only the files mentioned in the issue body and the test files that directly touch those files. Do not survey the full repository.
 
-If you need project coding standards, read `pycastle/prompts/CODING_STANDARDS.md`.
-
 Use the domain glossary in `CONTEXT.md` so that test names and interface vocabulary match the project's language. Respect any ADRs that touch the area you're changing.
 
 ### 3. Behaviors
@@ -32,10 +30,11 @@ From the issue, derive a prioritized list of behaviors to test. Most critical pa
 
 **You can't test everything.** Focus on critical paths and complex logic — not every possible edge case.
 
-Before writing any code, consider:
-- What should the public interface look like?
-- Are there opportunities for deep modules (small interface, deep implementation)?
-- Are the interfaces designed for testability (accept dependencies, return results)?
+Before writing any code, consider the following interface design and deep module guidelines:
+
+{{INTERFACES_STANDARDS}}
+
+{{DEEP_MODULES_STANDARDS}}
 
 ### 4. Tracer Bullet
 
@@ -63,8 +62,11 @@ Rules:
 - Only enough code to pass current test
 - Don't anticipate future tests
 - Keep tests focused on observable behavior
-- If you feel the urge to test a private method or internal collaborator, stop. Write the red test at the public interface for the behavior you're implementing. Get to GREEN with flat code first, then extract private helpers during refactor — no new tests needed for the helpers.
 - Run `{{FEEDBACK_COMMANDS}}` after each GREEN
+
+{{TESTING_STANDARDS}}
+
+{{MOCKING_STANDARDS}}
 
 Checklist per cycle:
 
@@ -80,13 +82,9 @@ Checklist per cycle:
 
 After all tests pass, look for refactor candidates:
 
-- [ ] Extract duplication
-- [ ] Long methods → break into private helpers (keep tests on public interface)
-- [ ] Deepen modules (move complexity behind simple interfaces)
-- [ ] Feature envy → move logic to where data lives
-- [ ] Primitive obsession → introduce value objects
+{{REFACTORING_STANDARDS}}
+
 - [ ] Apply SOLID principles where natural
-- [ ] Consider what new code reveals about existing code
 - [ ] Run `{{FEEDBACK_COMMANDS}}` after each refactor step
 
 **Never refactor while RED.** Get to GREEN first.
