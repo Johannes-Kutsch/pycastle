@@ -18,10 +18,11 @@ from .agent_result import (
     CancellationToken,
     IssueNumberParseFailure,
     PlanParseFailure,
+    UsageLimitHit,
 )
 from .config import Config, StageOverride, config as _cfg
 from .container_runner import run_agent as _default_run_agent
-from .errors import PreflightError, UsageLimitError
+from .errors import PreflightError
 from .git_service import GitCommandError, GitService
 from .github_service import GithubService
 from .validate import validate_config as _default_validate_config
@@ -297,7 +298,7 @@ async def run_issue(
     cfg: Config | None = None,
     run_agent: Any | None = None,
     sha: str | None = None,
-) -> dict | None:
+) -> dict | UsageLimitHit | None:
     cfg = cfg if cfg is not None else _cfg
     _run_agent = run_agent or _default_run_agent
     _branch = branch_for(issue["number"])
@@ -325,6 +326,8 @@ async def run_issue(
         sha=sha,
         skip_preflight=True,
     )
+    if isinstance(result, UsageLimitHit):
+        return result
     if not isinstance(result, AgentSuccess):
         return None
     reviewer_prompt_args = {
@@ -333,7 +336,7 @@ async def run_issue(
         "BRANCH": _branch,
         "FEEDBACK_COMMANDS": _format_feedback_commands(cfg.implement_checks),
     }
-    await _bounded_run_agent(
+    review_result = await _bounded_run_agent(
         name=f"Reviewer #{issue['number']}",
         prompt_file=cfg.prompts_dir / "review-prompt.md",
         mount_path=repo_root,
@@ -345,6 +348,8 @@ async def run_issue(
         stage="pre-review",
         skip_preflight=True,
     )
+    if isinstance(review_result, UsageLimitHit):
+        return review_result
     return issue
 
 
@@ -373,14 +378,18 @@ async def implement_phase(
         ],
         return_exceptions=True,
     )
-    if any(isinstance(r, UsageLimitError) for r in results):
-        raise UsageLimitError("Usage limit reached during implement phase")
+    if any(isinstance(r, UsageLimitHit) for r in results):
+        print(
+            "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     completed: list[dict] = []
     errors: list[tuple[dict, Exception]] = []
     for issue, result in zip(issues, results):
         if isinstance(result, Exception):
             errors.append((issue, result))
-        elif result is not None:
+        elif isinstance(result, dict):
             completed.append(issue)
     return ImplementResult(completed=completed, errors=errors)
 
@@ -520,14 +529,7 @@ async def run(
             )
 
         token = CancellationToken()
-        try:
-            impl_result = await implement_phase(issues, state, deps, token=token)
-        except UsageLimitError:
-            print(
-                "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+        impl_result = await implement_phase(issues, state, deps, token=token)
 
         for issue, error in impl_result.errors:
             if isinstance(error, PreflightError):
