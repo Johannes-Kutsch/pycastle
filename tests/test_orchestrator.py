@@ -16,6 +16,7 @@ from pycastle.orchestrator import (
     prune_orphan_worktrees,
     run,
     run_issue,
+    strip_stale_blocker_refs,
     wait_for_clean_working_tree,
 )
 
@@ -61,6 +62,76 @@ def test_parse_plan_unblocked_issues_have_no_branch_key():
     output = '<plan>{"unblocked_issues": [{"number": 6, "title": "Add feature", "branch": "stale/branch"}]}</plan>'
     issues = parse_plan(output)
     assert all("branch" not in issue for issue in issues)
+
+
+# ── strip_stale_blocker_refs ──────────────────────────────────────────────────
+
+
+def test_strip_stale_blocker_refs_removes_line_referencing_closed_blocker():
+    issues = [
+        {
+            "number": 10,
+            "title": "Fix bug",
+            "body": "Do stuff.\nBlocked by #99\nMore stuff.",
+        }
+    ]
+    result = strip_stale_blocker_refs(issues)
+    assert result[0]["body"] == "Do stuff.\nMore stuff."
+
+
+def test_strip_stale_blocker_refs_handles_none_body():
+    issues = [{"number": 10, "title": "Fix bug", "body": None}]
+    result = strip_stale_blocker_refs(issues)
+    assert result[0]["body"] == ""
+
+
+def test_strip_stale_blocker_refs_preserves_line_referencing_open_blocker():
+    issues = [
+        {"number": 10, "title": "Fix bug", "body": "Blocked by #20"},
+        {"number": 20, "title": "Dep", "body": ""},
+    ]
+    result = strip_stale_blocker_refs(issues)
+    assert result[0]["body"] == "Blocked by #20"
+
+
+def test_strip_stale_blocker_refs_multi_number_line_kept_when_any_open():
+    issues = [
+        {"number": 10, "title": "Fix bug", "body": "Blocked by #20 and #30"},
+        {"number": 20, "title": "Dep", "body": ""},
+    ]
+    result = strip_stale_blocker_refs(issues)
+    assert result[0]["body"] == "Blocked by #20 and #30"
+
+
+def test_strip_stale_blocker_refs_multi_number_line_stripped_when_all_closed():
+    issues = [
+        {"number": 10, "title": "Fix bug", "body": "Blocked by #88 and #99"},
+    ]
+    result = strip_stale_blocker_refs(issues)
+    assert result[0]["body"] == ""
+
+
+def test_strip_stale_blocker_refs_case_insensitive():
+    issues = [{"number": 10, "title": "Fix bug", "body": "blocked by #99"}]
+    result = strip_stale_blocker_refs(issues)
+    assert result[0]["body"] == ""
+
+
+def test_strip_stale_blocker_refs_case_insensitive_all_caps():
+    issues = [{"number": 10, "title": "Fix bug", "body": "BLOCKED BY #99"}]
+    result = strip_stale_blocker_refs(issues)
+    assert result[0]["body"] == ""
+
+
+def test_strip_stale_blocker_refs_empty_list():
+    assert strip_stale_blocker_refs([]) == []
+
+
+def test_strip_stale_blocker_refs_does_not_mutate_input():
+    original_body = "Blocked by #99\nKeep this."
+    issues = [{"number": 10, "title": "Fix bug", "body": original_body}]
+    strip_stale_blocker_refs(issues)
+    assert issues[0]["body"] == original_body
 
 
 # ── branch_for ───────────────────────────────────────────────────────────────
