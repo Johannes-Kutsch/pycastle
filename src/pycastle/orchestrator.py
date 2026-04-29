@@ -114,6 +114,9 @@ def _extract_text(output: str) -> str:
     return output
 
 
+MERGE_SANDBOX = "pycastle/merge-sandbox"
+
+
 def branch_for(issue_number: int) -> str:
     return f"pycastle/issue-{issue_number}"
 
@@ -422,6 +425,7 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
             prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
             mount_path=deps.repo_root,
             env=deps.env,
+            branch=MERGE_SANDBOX,
             prompt_args={
                 "BRANCHES": "\n".join(
                     f"- {branch_for(i['number'])}" for i in conflict_issues
