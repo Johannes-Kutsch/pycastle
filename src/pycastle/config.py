@@ -4,11 +4,9 @@ import types
 from pathlib import Path
 from typing import Any
 
+from pycastle._types import StageOverride
 
-@dataclasses.dataclass(frozen=True)
-class StageOverride:
-    model: str = ""
-    effort: str = ""
+__all__ = ["StageOverride"]
 
 
 @dataclasses.dataclass(frozen=True)

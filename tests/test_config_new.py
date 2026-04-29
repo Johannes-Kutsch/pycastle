@@ -65,7 +65,7 @@ def test_overrides_take_precedence_over_local_file(tmp_path):
 def test_load_config_applies_stage_override_from_local_file(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(
-        "from pycastle.config import StageOverride\n"
+        "from pycastle import StageOverride\n"
         'plan_override = StageOverride(model="haiku", effort="low")\n'
     )
     cfg = load_config(repo_root=tmp_path)
@@ -94,3 +94,21 @@ def test_load_config_without_repo_root_uses_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = load_config()
     assert cfg.docker_image_name == "myapp"
+
+
+def test_load_config_applies_stage_override_from_local_file_using_package_import(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pycastle import StageOverride\n"
+        'plan_override = StageOverride(model="opus", effort="max")\n'
+    )
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.plan_override.model == "opus"
+    assert cfg.plan_override.effort == "max"
+
+
+def test_stage_override_importable_from_package_top_level():
+    from pycastle import StageOverride as TopLevelStageOverride
+    from pycastle.config import StageOverride as ConfigStageOverride
+
+    assert TopLevelStageOverride is ConfigStageOverride

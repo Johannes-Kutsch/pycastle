@@ -1,4 +1,4 @@
-from pycastle.config import StageOverride
+from pycastle import StageOverride
 
 # --- Behaviour ---
 # max_iterations = 10
