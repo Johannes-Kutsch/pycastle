@@ -3,8 +3,7 @@ from unittest.mock import MagicMock
 from pycastle.git_service import GitCommandError, GitService, GitTimeoutError
 from pycastle.labels import (
     LABEL_BUG,
-    LABEL_ENHANCEMENT,
-    LABEL_NEED_INFO,
+    LABEL_NEEDS_INFO,
     LABEL_NEEDS_TRIAGE,
     LABEL_READY_FOR_AGENT,
     LABEL_READY_FOR_HUMAN,
@@ -19,8 +18,7 @@ from pycastle.labels import (
 
 def test_label_constants_exist():
     assert LABEL_BUG == "bug"
-    assert LABEL_ENHANCEMENT == "enhancement"
-    assert LABEL_NEED_INFO == "need-info"
+    assert LABEL_NEEDS_INFO == "needs-info"
     assert LABEL_NEEDS_TRIAGE == "needs-triage"
     assert LABEL_READY_FOR_AGENT == "ready-for-agent"
     assert LABEL_READY_FOR_HUMAN == "ready-for-human"
@@ -30,8 +28,7 @@ def test_label_constants_exist():
 def test_labels_list_uses_constants():
     names = {entry["name"] for entry in LABELS}
     assert LABEL_BUG in names
-    assert LABEL_ENHANCEMENT in names
-    assert LABEL_NEED_INFO in names
+    assert LABEL_NEEDS_INFO in names
     assert LABEL_NEEDS_TRIAGE in names
     assert LABEL_READY_FOR_AGENT in names
     assert LABEL_READY_FOR_HUMAN in names

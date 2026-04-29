@@ -11,8 +11,7 @@ import click
 from .git_service import GitService
 
 LABEL_BUG = "bug"
-LABEL_ENHANCEMENT = "enhancement"
-LABEL_NEED_INFO = "need-info"
+LABEL_NEEDS_INFO = "needs-info"
 LABEL_NEEDS_TRIAGE = "needs-triage"
 LABEL_READY_FOR_AGENT = "ready-for-agent"
 LABEL_READY_FOR_HUMAN = "ready-for-human"
@@ -21,12 +20,7 @@ LABEL_WONTFIX = "wontfix"
 LABELS = [
     {"name": LABEL_BUG, "description": "Something isn't working", "color": "d73a4a"},
     {
-        "name": LABEL_ENHANCEMENT,
-        "description": "New feature or request",
-        "color": "0d9488",
-    },
-    {
-        "name": LABEL_NEED_INFO,
+        "name": LABEL_NEEDS_INFO,
         "description": "Waiting on reporter for more information",
         "color": "b03176",
     },

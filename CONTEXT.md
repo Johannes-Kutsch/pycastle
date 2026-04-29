@@ -42,7 +42,7 @@
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **label** | A GitHub issue classification marker with a name, description, and hex color | tag, category |
-| **canonical label set** | The seven labels hardcoded in the pycastle package: `bug`, `enhancement`, `need-info`, `needs-triage`, `ready-for-agent`, `ready-for-human`, `wontfix` | default labels, label config |
+| **canonical label set** | The six labels hardcoded in the pycastle package: `bug`, `needs-info`, `needs-triage`, `ready-for-agent`, `ready-for-human`, `wontfix` | default labels, label config |
 | **label reset** | The option to delete all existing labels in a repo before creating the canonical label set | label wipe, clean labels |
 | **issue label** | The specific label value (default: `ready-for-agent`) that marks a GitHub issue as eligible for agent processing | trigger label, agent label |
 
