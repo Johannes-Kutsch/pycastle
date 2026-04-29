@@ -218,6 +218,38 @@ class GithubService:
                 f"gh api repos/{self.repo}/issues/{number}/sub_issues returned invalid JSON",
             ) from exc
 
+    def get_open_issues(self, label: str) -> list[dict[str, object]]:
+        result = self._run(
+            [
+                "gh",
+                "issue",
+                "list",
+                "--repo",
+                self.repo,
+                "--state",
+                "open",
+                "--label",
+                label,
+                "--json",
+                "number,title,body,labels,comments",
+                "--jq",
+                "[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]",
+            ],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise GithubCommandError(
+                f"gh issue list --label {label} failed",
+                returncode=result.returncode,
+                stderr=result.stderr.decode("utf-8", errors="replace").strip(),
+            )
+        try:
+            return json.loads(result.stdout.decode("utf-8", errors="replace"))
+        except json.JSONDecodeError as exc:
+            raise GithubCommandError(
+                f"gh issue list --label {label} returned invalid JSON",
+            ) from exc
+
     def close_completed_parent_issues(self) -> None:
         changed = True
         while changed:

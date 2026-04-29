@@ -607,3 +607,92 @@ def test_close_completed_parent_issues_propagates_error_from_sub_issues_api():
     ):
         with pytest.raises(GithubCommandError):
             svc.close_completed_parent_issues()
+
+
+# ── get_open_issues() ─────────────────────────────────────────────────────────
+
+
+def test_get_open_issues_returns_correctly_shaped_list():
+    svc = GithubService("owner/repo")
+    payload = json.dumps(
+        [
+            {
+                "number": 42,
+                "title": "Fix bug",
+                "body": "Some body",
+                "labels": ["bug", "ready-for-agent"],
+                "comments": ["First comment", "Second comment"],
+            }
+        ]
+    ).encode()
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=payload, stderr=b""),
+    ):
+        result = svc.get_open_issues("ready-for-agent")
+    assert len(result) == 1
+    issue = result[0]
+    assert issue["number"] == 42
+    assert issue["title"] == "Fix bug"
+    assert issue["body"] == "Some body"
+    assert issue["labels"] == ["bug", "ready-for-agent"]
+    assert issue["comments"] == ["First comment", "Second comment"]
+
+
+def test_get_open_issues_passes_correct_command_args():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"[]", stderr=b""),
+    ) as m:
+        svc.get_open_issues("my-label")
+    cmd = m.call_args[0][0]
+    assert "--repo" in cmd
+    assert "owner/repo" in cmd
+    assert "--state" in cmd
+    assert "open" in cmd
+    assert "--label" in cmd
+    assert "my-label" in cmd
+    assert "--jq" in cmd
+    jq_expr = cmd[cmd.index("--jq") + 1]
+    assert "labels[].name" in jq_expr
+    assert "comments[].body" in jq_expr
+
+
+def test_get_open_issues_returns_empty_list_when_no_issues():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"[]", stderr=b""),
+    ):
+        assert svc.get_open_issues("ready-for-agent") == []
+
+
+def test_get_open_issues_raises_github_command_error_on_nonzero_exit():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
+    ):
+        with pytest.raises(GithubCommandError):
+            svc.get_open_issues("ready-for-agent")
+
+
+def test_get_open_issues_raises_github_command_error_on_invalid_json():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"not valid json", stderr=b""),
+    ):
+        with pytest.raises(GithubCommandError):
+            svc.get_open_issues("ready-for-agent")
+
+
+def test_get_open_issues_raises_github_timeout_error_on_timeout():
+    svc = GithubService("owner/repo")
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
+    ):
+        with pytest.raises(GithubTimeoutError):
+            svc.get_open_issues("ready-for-agent")
