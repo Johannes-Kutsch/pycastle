@@ -2599,6 +2599,101 @@ def test_merge_phase_deletes_clean_branches(tmp_path):
     mock_git.delete_branch.assert_called_with("sandcastle/issue-3", tmp_path)
 
 
+def test_merge_phase_clean_merge_calls_close_completed_parent_issues(tmp_path):
+    """merge_phase must call close_completed_parent_issues when at least one issue merges cleanly."""
+    issue = {"number": 4, "title": "Clean parent"}
+    mock_github = _make_github_svc()
+    mock_git = _make_git_svc(try_merge_side_effect=[True])
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=mock_github,
+        run_agent=AsyncMock(return_value=""),
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    asyncio.run(merge_phase([issue], deps))
+
+    mock_github.close_completed_parent_issues.assert_called_once()
+
+
+def test_merge_phase_all_conflicts_calls_close_completed_parent_issues_via_conflict_path(
+    tmp_path,
+):
+    """All-conflict path must still call close_completed_parent_issues after the Merger runs."""
+    issue = {"number": 5, "title": "All conflict"}
+    mock_github = _make_github_svc()
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=mock_github,
+        run_agent=AsyncMock(return_value=""),
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    asyncio.run(merge_phase([issue], deps))
+
+    mock_github.close_completed_parent_issues.assert_called_once()
+    mock_github.close_issue.assert_called_once_with(5)
+
+
+def test_merge_phase_conflict_closes_issue_after_merger(tmp_path):
+    """merge_phase must call close_issue for each conflict issue after the Merger agent runs."""
+    issue = {"number": 6, "title": "Conflict close"}
+    mock_github = _make_github_svc()
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+    agent_order: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        agent_order.append(name)
+        return ""
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=mock_github,
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    asyncio.run(merge_phase([issue], deps))
+
+    assert agent_order == ["Merger"]
+    mock_github.close_issue.assert_called_once_with(6)
+
+
+def test_merge_phase_mixed_partitions_clean_and_conflict(tmp_path):
+    """merge_phase with mixed results must partition issues into clean and conflicts correctly."""
+    clean_issue = {"number": 7, "title": "Clean"}
+    conflict_issue = {"number": 8, "title": "Conflict"}
+    mock_github = _make_github_svc()
+    mock_git = _make_git_svc(try_merge_side_effect=[True, False])
+    merger_calls: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        merger_calls.append(name)
+        return ""
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=mock_github,
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    result = asyncio.run(merge_phase([clean_issue, conflict_issue], deps))
+
+    assert result.clean == [clean_issue]
+    assert result.conflicts == [conflict_issue]
+    assert "Merger" in merger_calls
+    mock_github.close_issue.assert_any_call(7)
+    mock_github.close_issue.assert_any_call(8)
+
+
 def test_run_full_iteration_cold_path(git_repo):
     """run() executes a full iteration: preflight→plan→implement→merge, and closes the issue."""
     import subprocess
