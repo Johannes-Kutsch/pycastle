@@ -77,6 +77,54 @@ def test_init_updates_docker_image_name_on_rerun(tmp_path, monkeypatch):
     assert 'docker_image_name = "' in updated_content
 
 
+# ── Cycle 5: scaffolded config.py contains StageOverride import and overrides ──
+
+
+def test_init_config_contains_stage_override_import_and_defaults(tmp_path, monkeypatch):
+    """Scaffolded config.py must import StageOverride and define all four stage overrides."""
+    from pycastle.init_command import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main()
+
+    content = (tmp_path / "pycastle" / "config.py").read_text()
+    assert "from pycastle.config import StageOverride" in content
+    assert 'plan_override = StageOverride(model="haiku", effort="low")' in content
+    assert (
+        'implement_override = StageOverride(model="sonnet", effort="medium")' in content
+    )
+    assert 'review_override = StageOverride(model="sonnet", effort="high")' in content
+    assert 'merge_override = StageOverride(model="sonnet", effort="medium")' in content
+
+
+# ── Cycle 6: load_config from scaffolded project returns correct StageOverride values ──
+
+
+def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
+    tmp_path, monkeypatch
+):
+    """load_config on a freshly scaffolded project must return the expected StageOverride values."""
+    from pycastle.config import StageOverride, load_config
+    from pycastle.init_command import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main()
+
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.plan_override == StageOverride(model="haiku", effort="low")
+    assert cfg.implement_override == StageOverride(model="sonnet", effort="medium")
+    assert cfg.review_override == StageOverride(model="sonnet", effort="high")
+    assert cfg.merge_override == StageOverride(model="sonnet", effort="medium")
+
+
 # ── Cycle 4: init does not overwrite other existing files ─────────────────────
 
 
