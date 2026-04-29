@@ -8,6 +8,7 @@ import pytest
 
 from pycastle.agent_result import (
     AgentIncomplete,
+    AgentSuccess,
     CancellationToken,
     PreflightFailure,
     UsageLimitHit,
@@ -2472,3 +2473,84 @@ def test_run_agent_returns_preflight_failure_when_checks_fail(tmp_path):
 
     assert isinstance(result, PreflightFailure)
     assert result.failures == (("mypy", "mypy .", "error: Cannot find module"),)
+
+
+# ── Issue 248: completion detection via is_complete() ────────────────────────
+
+
+class _CompleteRunner:
+    def __init__(self, *args, output="", **kwargs):
+        self.branch = None
+        self.env = {}
+        self._output = output
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def exec_simple(self, cmd, timeout=None):
+        return ""
+
+    def run_streaming(self):
+        return self._output
+
+
+def test_run_agent_returns_agent_success_when_output_contains_complete_tag(tmp_path):
+    """run_agent must return AgentSuccess when the output contains the COMPLETE promise tag."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    complete_output = "done <promise>COMPLETE</promise>"
+
+    class _Runner(_CompleteRunner):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._output = complete_output
+
+    with patch("pycastle.container_runner.ContainerRunner", _Runner):
+        result = _run(
+            run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
+        )
+
+    assert isinstance(result, AgentSuccess)
+    assert result.output == complete_output
+
+
+def test_run_agent_returns_agent_incomplete_when_no_complete_tag(tmp_path):
+    """run_agent must return AgentIncomplete when the output lacks the COMPLETE promise tag."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with patch("pycastle.container_runner.ContainerRunner", _CompleteRunner):
+        result = _run(
+            run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
+        )
+
+    assert isinstance(result, AgentIncomplete)
+    assert result.partial_output == ""
+
+
+def test_run_agent_returns_agent_success_with_ndjson_complete_tag(tmp_path):
+    """run_agent must return AgentSuccess when COMPLETE promise is inside a JSON result envelope."""
+    import json
+
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    ndjson_output = json.dumps(
+        {"type": "result", "result": "<promise>COMPLETE</promise>"}
+    )
+
+    class _Runner(_CompleteRunner):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._output = ndjson_output
+
+    with patch("pycastle.container_runner.ContainerRunner", _Runner):
+        result = _run(
+            run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
+        )
+
+    assert isinstance(result, AgentSuccess)
