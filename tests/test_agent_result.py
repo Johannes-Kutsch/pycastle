@@ -47,15 +47,21 @@ def test_agent_incomplete_is_frozen():
 
 
 def test_preflight_failure_stores_failures():
-    failures = [("check", "cmd", "output")]
+    failures = (("check", "cmd", "output"),)
     result = PreflightFailure(failures=failures)
     assert result.failures == failures
 
 
 def test_preflight_failure_is_frozen():
-    result = PreflightFailure(failures=[])
+    result = PreflightFailure(failures=())
     with pytest.raises(dataclasses.FrozenInstanceError):
-        result.failures = []  # type: ignore[misc]
+        result.failures = ()  # type: ignore[misc]
+
+
+def test_preflight_failure_failures_are_immutable():
+    result = PreflightFailure(failures=(("check", "cmd", "output"),))
+    with pytest.raises(TypeError):
+        result.failures[0] = ("x", "y", "z")  # type: ignore[index]
 
 
 # ── UsageLimitHit ─────────────────────────────────────────────────────────────
@@ -124,7 +130,7 @@ def test_agent_result_covers_all_variants():
     variants: list[AgentResult] = [
         AgentSuccess(output="ok"),
         AgentIncomplete(partial_output="partial"),
-        PreflightFailure(failures=[]),
+        PreflightFailure(failures=()),
         UsageLimitHit(last_output=""),
         PlanParseFailure(raw_output="", detail=""),
         IssueNumberParseFailure(raw_output="", detail=""),
@@ -167,3 +173,17 @@ def test_cancellation_token_second_cancel_is_idempotent():
     token.cancel()  # second call without preserve should not clear it
     assert token.is_cancelled
     assert token.wants_worktree_preserved
+
+
+def test_cancellation_token_cancel_with_preserve_after_plain_cancel_is_idempotent():
+    token = CancellationToken()
+    token.cancel()
+    token.cancel(preserve_worktree=True)  # second call should not set preserve
+    assert token.is_cancelled
+    assert not token.wants_worktree_preserved
+
+
+def test_cancellation_token_constructor_takes_no_arguments():
+    token = CancellationToken()
+    assert not token.is_cancelled
+    assert not token.wants_worktree_preserved
