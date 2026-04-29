@@ -40,7 +40,7 @@ def reset_usage_limit_flag() -> None:
     _usage_limit_halt.clear()
 
 
-def _is_usage_limit_line(line: str) -> bool:
+def _is_usage_limit_line(line: str, patterns: tuple[str, ...]) -> bool:
     """Return True only if line is a plain-text usage-limit message, not JSON."""
     try:
         if isinstance(json.loads(line), dict):
@@ -48,7 +48,7 @@ def _is_usage_limit_line(line: str) -> bool:
     except json.JSONDecodeError:
         pass
     line_lower = line.lower()
-    return any(p.lower() in line_lower for p in _cfg.usage_limit_patterns)
+    return any(p.lower() in line_lower for p in patterns)
 
 
 def _format_stream_line(line: str) -> str | None:
@@ -269,7 +269,7 @@ class ContainerRunner:
                     line_buf += text
                     while "\n" in line_buf:
                         line, line_buf = line_buf.split("\n", 1)
-                        if _is_usage_limit_line(line):
+                        if _is_usage_limit_line(line, self._cfg.usage_limit_patterns):
                             raise UsageLimitError(line)
                         formatted = _format_stream_line(line)
                         if formatted is not None:
