@@ -1187,8 +1187,8 @@ def test_conflict_merge_calls_close_completed_parent_issues(tmp_path):
         github_service=mock_github,
     )
 
-    assert mock_github.close_completed_parent_issues.call_count >= 1, (
-        "close_completed_parent_issues must be called after conflict merge"
+    assert mock_github.close_completed_parent_issues.call_count == 1, (
+        "close_completed_parent_issues must be called exactly once after conflict merge"
     )
 
 
@@ -1219,6 +1219,34 @@ def test_merger_does_not_receive_issues_prompt_arg(tmp_path):
     assert "ISSUES" not in merger_calls[0]["prompt_args"], (
         "Merger must not receive an ISSUES prompt arg"
     )
+
+
+def test_multiple_conflict_issues_all_closed_after_merger(tmp_path):
+    """Each conflict issue must be individually closed when there are multiple conflicts."""
+    issues = [
+        {"number": 10, "title": "Conflict A"},
+        {"number": 11, "title": "Conflict B"},
+        {"number": 12, "title": "Conflict C"},
+    ]
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
+
+    mock_github = _make_github_svc()
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[False, False, False]),
+        github_service=mock_github,
+    )
+
+    closed = [call.args[0] for call in mock_github.close_issue.call_args_list]
+    assert 10 in closed, f"Conflict issue #10 must be closed; closed: {closed}"
+    assert 11 in closed, f"Conflict issue #11 must be closed; closed: {closed}"
+    assert 12 in closed, f"Conflict issue #12 must be closed; closed: {closed}"
+    assert mock_github.close_completed_parent_issues.call_count == 1
 
 
 def test_post_merge_multiple_check_failures_only_first_acted_on(tmp_path):
