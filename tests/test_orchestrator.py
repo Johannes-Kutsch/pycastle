@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from pycastle.agent_result import CancellationToken, UsageLimitHit
 from pycastle.config import Config, StageOverride
 from pycastle.errors import ConfigValidationError, PreflightError
 from pycastle.git_service import GitCommandError, GitService
@@ -465,7 +466,11 @@ def test_run_issue_uses_branch_for_when_issue_has_no_branch_key(tmp_path):
         return ""
 
     issue = {"number": 7, "title": "Fix thing"}
-    asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+    asyncio.run(
+        run_issue(
+            issue, {}, tmp_path, run_agent=_fake_run_agent, token=CancellationToken()
+        )
+    )
 
     assert captured["branch_kwarg"] == "sandcastle/issue-7"
     assert captured["branch_prompt_arg"] == "sandcastle/issue-7"
@@ -485,7 +490,11 @@ def test_run_issue_passes_feedback_commands_to_implementer(tmp_path):
         return "<promise>COMPLETE</promise>"
 
     issue = {"number": 1, "title": "Fix thing"}
-    asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+    asyncio.run(
+        run_issue(
+            issue, {}, tmp_path, run_agent=_fake_run_agent, token=CancellationToken()
+        )
+    )
 
     implementer_call = next(a for a in captured_args if "Implementer" in a["name"])
     assert "FEEDBACK_COMMANDS" in implementer_call["prompt_args"]
@@ -504,7 +513,11 @@ def test_run_issue_feedback_commands_formatted_from_implement_checks(tmp_path):
         return "<promise>COMPLETE</promise>"
 
     issue = {"number": 1, "title": "Fix thing"}
-    asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+    asyncio.run(
+        run_issue(
+            issue, {}, tmp_path, run_agent=_fake_run_agent, token=CancellationToken()
+        )
+    )
 
     implementer_call = next(a for a in captured_args if "Implementer" in a["name"])
     feedback_commands = implementer_call["prompt_args"]["FEEDBACK_COMMANDS"]
@@ -1412,7 +1425,11 @@ def test_run_issue_returns_none_when_implementer_does_not_complete(tmp_path):
         return "I tried but could not finish"
 
     issue = {"number": 1, "title": "Fix thing"}
-    result = asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+    result = asyncio.run(
+        run_issue(
+            issue, {}, tmp_path, run_agent=_fake_run_agent, token=CancellationToken()
+        )
+    )
 
     assert result is None
 
@@ -1424,7 +1441,11 @@ def test_run_issue_returns_issue_when_implementer_completes(tmp_path):
         return "<promise>COMPLETE</promise>"
 
     issue = {"number": 2, "title": "Fix thing"}
-    result = asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+    result = asyncio.run(
+        run_issue(
+            issue, {}, tmp_path, run_agent=_fake_run_agent, token=CancellationToken()
+        )
+    )
 
     assert result == issue
 
@@ -1799,7 +1820,11 @@ def test_implementer_invoked_with_skip_preflight_true(tmp_path):
         return "<promise>COMPLETE</promise>"
 
     issue = {"number": 1, "title": "Fix thing"}
-    asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+    asyncio.run(
+        run_issue(
+            issue, {}, tmp_path, run_agent=_fake_run_agent, token=CancellationToken()
+        )
+    )
 
     impl_call = next(c for c in captured if "Implementer" in c["name"])
     assert impl_call["skip_preflight"] is True, (
@@ -1816,7 +1841,11 @@ def test_reviewer_invoked_with_skip_preflight_true(tmp_path):
         return "<promise>COMPLETE</promise>"
 
     issue = {"number": 1, "title": "Fix thing"}
-    asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+    asyncio.run(
+        run_issue(
+            issue, {}, tmp_path, run_agent=_fake_run_agent, token=CancellationToken()
+        )
+    )
 
     rev_call = next(c for c in captured if "Reviewer" in c["name"])
     assert rev_call["skip_preflight"] is True, (
@@ -2744,3 +2773,59 @@ def test_run_full_iteration_cold_path(git_repo):
     assert 1 in closed_issues, (
         f"Issue #1 must be closed after merge; closed={closed_issues}"
     )
+
+
+# ── Issue 213: CancellationToken wired through run_issue / orchestrator.run ───
+
+
+def test_run_issue_requires_token_keyword_argument(tmp_path):
+    """run_issue must require token as a keyword-only argument (TypeError if omitted)."""
+    with pytest.raises(TypeError):
+        asyncio.run(run_issue({"number": 1, "title": "Fix thing"}, {}, tmp_path))
+
+
+def test_orchestrator_run_passes_cancellation_token_to_run_issue(tmp_path):
+    """orchestrator.run() must create a CancellationToken and pass it to run_issue via implement_phase."""
+    received_tokens: list[CancellationToken] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix thing"}])
+        token = kwargs.get("token")
+        if token is not None:
+            received_tokens.append(token)
+        return ""
+
+    mock_github = _make_github_svc()
+
+    asyncio.run(
+        run(
+            {},
+            tmp_path,
+            run_agent=_fake_run_agent,
+            validate_config=lambda _: None,
+            github_service=mock_github,
+            cfg=Config(max_parallel=1, max_iterations=1),
+        )
+    )
+
+    assert received_tokens, (
+        "run_agent must receive a token when called from orchestrator.run()"
+    )
+    assert isinstance(received_tokens[0], CancellationToken)
+    assert not received_tokens[0].is_cancelled
+
+
+def test_run_issue_returns_none_when_implementer_returns_usage_limit_hit(tmp_path):
+    """run_issue must return None (not crash) when the implementer returns UsageLimitHit."""
+
+    async def _fake_run_agent(**kwargs):
+        return UsageLimitHit(last_output="")
+
+    issue = {"number": 1, "title": "Fix thing"}
+    result = asyncio.run(
+        run_issue(
+            issue, {}, tmp_path, run_agent=_fake_run_agent, token=CancellationToken()
+        )
+    )
+    assert result is None
