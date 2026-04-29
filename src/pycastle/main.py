@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 from dotenv import load_dotenv
 
-from .config import ENV_FILE
+from .config import Config, config as _cfg
 
 _ENV_KEYS = (
     "ANTHROPIC_API_KEY",
@@ -16,8 +16,8 @@ _ENV_KEYS = (
 )
 
 
-def _load_env() -> dict[str, str]:
-    load_dotenv(ENV_FILE)
+def _load_env(cfg: Config = _cfg) -> dict[str, str]:
+    load_dotenv(cfg.env_file)
     env = {k: v for k in _ENV_KEYS if (v := os.getenv(k))}
     claude_json = Path.home() / ".claude.json"
     if claude_json.exists():
