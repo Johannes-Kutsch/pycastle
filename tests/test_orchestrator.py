@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pycastle.agent_result import AgentIncomplete, AgentSuccess, UsageLimitHit
+from pycastle.agent_result import (
+    AgentIncomplete,
+    AgentSuccess,
+    PreflightFailure,
+    UsageLimitHit,
+)
 from pycastle.config import Config, StageOverride
 from pycastle.errors import ConfigValidationError, PreflightError
 from pycastle.git_service import GitCommandError, GitService
@@ -569,11 +574,11 @@ def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
     assert "88" in out, f"Output must reference the filed issue number; got: {out!r}"
 
 
-# ── Cycle 52-2: implementer PreflightError → siblings complete ───────────────
+# ── Cycle 52-2: implementer PreflightFailure → siblings complete ─────────────
 
 
 def test_implementer_preflight_error_siblings_complete(tmp_path):
-    """An implementer PreflightError must not prevent sibling issues from completing."""
+    """An implementer PreflightFailure must not prevent sibling issues from completing."""
     completed_issues: list[int] = []
 
     issues = [
@@ -585,7 +590,7 @@ def test_implementer_preflight_error_siblings_complete(tmp_path):
         if name == "Planner":
             return AgentIncomplete(partial_output=_plan_json(issues))
         if name == "Implementer #1":
-            raise PreflightError([("ruff", "ruff check .", "E501")])
+            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "Implementer" in name:
             completed_issues.append(int(name.split("#")[1]))
             return AgentSuccess(output="<promise>COMPLETE</promise>")
@@ -604,14 +609,16 @@ def test_implementer_preflight_error_siblings_complete(tmp_path):
 
 
 def test_implementer_preflight_error_logs_check_details(tmp_path, capsys):
-    """An implementer PreflightError must print the failed check name and command to stdout."""
+    """An implementer PreflightFailure must print the failed check name and command to stdout."""
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             return AgentIncomplete(
                 partial_output=_plan_json([{"number": 3, "title": "Fix types"}])
             )
-        raise PreflightError([("mypy", "mypy .", "error: Cannot find module")])
+        return PreflightFailure(
+            failures=(("mypy", "mypy .", "error: Cannot find module"),)
+        )
 
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir()
@@ -2534,11 +2541,11 @@ def test_implement_phase_usage_limit_propagates(tmp_path):
 
 
 def test_implement_phase_preflight_error_goes_to_errors(tmp_path):
-    """implement_phase must put PreflightError into result.errors, not completed."""
+    """implement_phase must put PreflightFailure returned by run_agent into result.errors."""
     issues = [{"number": 1, "title": "Fix A"}]
 
     async def _fake_run_agent(name, **kwargs):
-        raise PreflightError([("mypy", "mypy .", "error: missing module")])
+        return PreflightFailure(failures=(("mypy", "mypy .", "error: missing module"),))
 
     deps = _make_deps(tmp_path, _fake_run_agent)
     state = IterationState(worktree_sha="abc123")
@@ -2547,7 +2554,24 @@ def test_implement_phase_preflight_error_goes_to_errors(tmp_path):
     assert result.completed == []
     assert len(result.errors) == 1
     assert result.errors[0][0] == issues[0]
-    assert isinstance(result.errors[0][1], PreflightError)
+    assert isinstance(result.errors[0][1], PreflightFailure)
+
+
+def test_implement_phase_preflight_failure_goes_to_errors(tmp_path):
+    """implement_phase must put PreflightFailure returned by run_agent into result.errors."""
+    issues = [{"number": 1, "title": "Fix A"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        return PreflightFailure(failures=(("mypy", "mypy .", "error: missing module"),))
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    state = IterationState(worktree_sha="abc123")
+    result = asyncio.run(implement_phase(issues, state, deps))
+
+    assert result.completed == []
+    assert len(result.errors) == 1
+    assert result.errors[0][0] == issues[0]
+    assert isinstance(result.errors[0][1], PreflightFailure)
 
 
 def test_implement_phase_partial_completion(tmp_path):
