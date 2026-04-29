@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pycastle.agent_result import CancellationToken
+from pycastle.agent_result import CancellationToken, UsageLimitHit
 from pycastle.config import Config, StageOverride
 from pycastle.errors import ConfigValidationError, PreflightError
 from pycastle.git_service import GitCommandError, GitService
@@ -2814,3 +2814,18 @@ def test_orchestrator_run_passes_cancellation_token_to_run_issue(tmp_path):
     )
     assert isinstance(received_tokens[0], CancellationToken)
     assert not received_tokens[0].is_cancelled
+
+
+def test_run_issue_returns_none_when_implementer_returns_usage_limit_hit(tmp_path):
+    """run_issue must return None (not crash) when the implementer returns UsageLimitHit."""
+
+    async def _fake_run_agent(**kwargs):
+        return UsageLimitHit(last_output="")
+
+    issue = {"number": 1, "title": "Fix thing"}
+    result = asyncio.run(
+        run_issue(
+            issue, {}, tmp_path, run_agent=_fake_run_agent, token=CancellationToken()
+        )
+    )
+    assert result is None
