@@ -92,7 +92,7 @@ def test_init_config_contains_stage_override_import_and_defaults(tmp_path, monke
         main()
 
     content = (tmp_path / "pycastle" / "config.py").read_text()
-    assert "from pycastle.config import StageOverride" in content
+    assert "from pycastle import StageOverride" in content
     assert 'plan_override = StageOverride(model="haiku", effort="low")' in content
     assert (
         'implement_override = StageOverride(model="sonnet", effort="medium")' in content
