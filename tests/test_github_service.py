@@ -653,6 +653,7 @@ def test_get_open_issues_passes_correct_command_args():
     assert "open" in cmd
     assert "--label" in cmd
     assert "my-label" in cmd
+    assert "--json" in cmd
     assert "--jq" in cmd
     jq_expr = cmd[cmd.index("--jq") + 1]
     assert "labels[].name" in jq_expr
