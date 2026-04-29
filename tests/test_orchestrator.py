@@ -105,6 +105,15 @@ def test_parse_plan_failure_is_typed_when_issues_key_missing():
     assert "unblocked_issues" in result.detail or "issues" in result.detail
 
 
+def test_parse_plan_failure_is_typed_when_json_is_malformed():
+    from pycastle.agent_result import PlanParseFailure
+
+    output = "<plan>this is not valid json</plan>"
+    result = parse_plan(output)
+    assert isinstance(result, PlanParseFailure)
+    assert "malformed JSON" in result.detail
+
+
 def test_parse_plan_issues_have_no_branch_key():
     output = '<plan>{"issues": [{"number": 5, "title": "Add feature", "branch": "stale/branch"}]}</plan>'
     issues = parse_plan(output)

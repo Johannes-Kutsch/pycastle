@@ -9,13 +9,14 @@ _FILES = [
     ".gitignore",
     "config.py",
     "Dockerfile",
-    ".env",
     "prompts/plan-prompt.md",
     "prompts/implement-prompt.md",
     "prompts/review-prompt.md",
     "prompts/merge-prompt.md",
     "prompts/CODING_STANDARDS.md",
 ]
+
+_ENV_TEMPLATE = "ANTHROPIC_API_KEY=\nCLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
 
 
 def _write_env_key(env_file: Path, key: str, value: str) -> None:
@@ -56,11 +57,11 @@ def main() -> None:
     config_file = dest / "config.py"
     image_name = re.sub(r"[^a-z0-9]+", "-", Path.cwd().name.lower()).strip("-")
     try:
-        _write_config_value(config_file, "DOCKER_IMAGE_NAME", image_name)
+        _write_config_value(config_file, "docker_image_name", image_name)
     except Exception as e:
         click.echo(
             click.style(
-                f"Error: could not set DOCKER_IMAGE_NAME in {config_file} — {e}",
+                f"Error: could not set docker_image_name in {config_file} — {e}",
                 fg="red",
             ),
             err=True,
@@ -68,6 +69,15 @@ def main() -> None:
         sys.exit(1)
 
     env_file = dest / ".env"
+    if not env_file.exists():
+        try:
+            env_file.write_text(_ENV_TEMPLATE)
+        except Exception as e:
+            click.echo(
+                click.style(f"Error: could not write {env_file} — {e}", fg="red"),
+                err=True,
+            )
+            sys.exit(1)
 
     gh_token = click.prompt(
         "GitHub token (press Enter to skip)",
