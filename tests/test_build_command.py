@@ -211,3 +211,57 @@ def test_build_command_uses_dockerfile_from_cfg(tmp_path, monkeypatch):
         )
 
     assert svc.build_image.call_args[0][1] == custom_df
+
+
+# ── Issue 222: empty docker_image_name guard ──────────────────────────────────
+
+
+def test_build_command_exits_one_when_docker_image_name_is_empty(tmp_path, monkeypatch):
+    from pycastle.build_command import main
+
+    monkeypatch.chdir(tmp_path)
+    svc = MagicMock()
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            docker_service=svc,
+            cfg=Config(docker_image_name="", dockerfile=Path("Dockerfile")),
+        )
+
+    assert exc_info.value.code == 1
+
+
+def test_build_command_empty_docker_image_name_prints_helpful_message(
+    tmp_path, monkeypatch, capsys
+):
+    from pycastle.build_command import main
+
+    monkeypatch.chdir(tmp_path)
+    svc = MagicMock()
+
+    with pytest.raises(SystemExit):
+        main(
+            docker_service=svc,
+            cfg=Config(docker_image_name="", dockerfile=Path("Dockerfile")),
+        )
+
+    err = capsys.readouterr().err
+    assert "docker_image_name" in err
+    assert "pycastle init" in err
+
+
+def test_build_command_empty_docker_image_name_does_not_call_docker(
+    tmp_path, monkeypatch
+):
+    from pycastle.build_command import main
+
+    monkeypatch.chdir(tmp_path)
+    svc = MagicMock()
+
+    with pytest.raises(SystemExit):
+        main(
+            docker_service=svc,
+            cfg=Config(docker_image_name="", dockerfile=Path("Dockerfile")),
+        )
+
+    svc.build_image.assert_not_called()

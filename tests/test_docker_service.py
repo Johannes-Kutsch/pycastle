@@ -237,3 +237,13 @@ def test_build_image_accepts_string_paths(tmp_path):
             str(tmp_path),
         )
     assert mock_run.called
+
+
+# ── Issue 222: empty image_name guard ────────────────────────────────────────
+
+
+def test_build_image_raises_on_empty_image_name(tmp_path):
+    from pycastle.docker_service import DockerService
+
+    with pytest.raises(ValueError, match="image_name"):
+        DockerService().build_image("", tmp_path / "Dockerfile", tmp_path)

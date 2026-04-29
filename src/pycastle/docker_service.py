@@ -17,6 +17,8 @@ class DockerService:
         python_version: str | None = None,
         timeout: float | None = None,
     ) -> None:
+        if not image_name:
+            raise ValueError("image_name must not be empty")
         cmd = ["docker", "build"]
         if no_cache:
             cmd.append("--no-cache")
