@@ -5,7 +5,7 @@ import subprocess
 import pytest
 
 
-def pytest_configure(config):
+def pytest_configure():
     os.chdir(pathlib.Path(__file__).parent.parent)
 
 
