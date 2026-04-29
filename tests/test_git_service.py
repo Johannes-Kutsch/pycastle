@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pycastle.config import Config
 from pycastle.git_service import (
     GitCommandError,
     GitNotFoundError,
@@ -37,6 +38,19 @@ def test_git_command_error_carries_returncode_and_stderr():
     err = GitCommandError("msg", returncode=128, stderr="fatal: bad ref")
     assert err.returncode == 128
     assert err.stderr == "fatal: bad ref"
+
+
+# ── Config injection ───────────────────────────────────────────────────────────
+
+
+def test_git_service_uses_worktree_timeout_from_injected_config():
+    svc = GitService(cfg=Config(worktree_timeout=1))
+    assert svc.timeout == 1
+
+
+def test_git_service_default_constructor_uses_config_singleton_timeout():
+    svc = GitService()
+    assert svc.timeout == 30
 
 
 # ── get_user_name() ────────────────────────────────────────────────────────────

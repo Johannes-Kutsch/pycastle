@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pycastle.config import Config
 from pycastle.github_service import (
     GithubCommandError,
     GithubNotFoundError,
@@ -37,6 +38,19 @@ def test_github_command_error_carries_returncode_and_stderr():
     err = GithubCommandError("msg", returncode=1, stderr="not found")
     assert err.returncode == 1
     assert err.stderr == "not found"
+
+
+# ── Config injection ───────────────────────────────────────────────────────────
+
+
+def test_github_service_uses_worktree_timeout_from_injected_config():
+    svc = GithubService("owner/repo", cfg=Config(worktree_timeout=1))
+    assert svc.timeout == 1
+
+
+def test_github_service_default_constructor_uses_config_singleton_timeout():
+    svc = GithubService("owner/repo")
+    assert svc.timeout == 30
 
 
 # ── close_issue() ──────────────────────────────────────────────────────────────

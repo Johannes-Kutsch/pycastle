@@ -2,7 +2,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .config import WORKTREE_TIMEOUT
+from .config import Config, config as _cfg
 
 
 class GitServiceError(RuntimeError):
@@ -25,8 +25,8 @@ class GitNotFoundError(GitServiceError):
 
 
 class GitService:
-    def __init__(self, timeout: int = WORKTREE_TIMEOUT) -> None:
-        self.timeout = timeout
+    def __init__(self, cfg: Config = _cfg) -> None:
+        self.timeout = cfg.worktree_timeout
 
     def _run(
         self, cmd: list[str], cwd: Path | None = None, **kwargs: object

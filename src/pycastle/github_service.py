@@ -1,7 +1,7 @@
 import json
 import subprocess
 
-from .config import WORKTREE_TIMEOUT
+from .config import Config, config as _cfg
 
 
 class GithubServiceError(RuntimeError):
@@ -24,9 +24,9 @@ class GithubNotFoundError(GithubServiceError):
 
 
 class GithubService:
-    def __init__(self, repo: str, timeout: int = WORKTREE_TIMEOUT) -> None:
+    def __init__(self, repo: str, cfg: Config = _cfg) -> None:
         self.repo = repo
-        self.timeout = timeout
+        self.timeout = cfg.worktree_timeout
 
     def _run(self, cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
         kwargs.setdefault("timeout", self.timeout)
