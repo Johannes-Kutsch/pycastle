@@ -92,7 +92,7 @@ def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
         lines = body.splitlines()
         cleaned = []
         for line in lines:
-            if re.search(r"[Bb]locked\s+by\s+#\d+", line):
+            if re.search(r"blocked\s+by\s+#\d+", line, re.IGNORECASE):
                 refs = {int(m) for m in re.findall(r"#(\d+)", line)}
                 if refs.isdisjoint(open_numbers):
                     continue

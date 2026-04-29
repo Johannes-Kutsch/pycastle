@@ -117,6 +117,16 @@ def test_strip_stale_blocker_refs_case_insensitive():
     assert result[0]["body"] == ""
 
 
+def test_strip_stale_blocker_refs_case_insensitive_all_caps():
+    issues = [{"number": 10, "title": "Fix bug", "body": "BLOCKED BY #99"}]
+    result = strip_stale_blocker_refs(issues)
+    assert result[0]["body"] == ""
+
+
+def test_strip_stale_blocker_refs_empty_list():
+    assert strip_stale_blocker_refs([]) == []
+
+
 def test_strip_stale_blocker_refs_does_not_mutate_input():
     original_body = "Blocked by #99\nKeep this."
     issues = [{"number": 10, "title": "Fix bug", "body": original_body}]
