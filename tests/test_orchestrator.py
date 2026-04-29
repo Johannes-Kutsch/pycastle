@@ -2829,6 +2829,55 @@ def test_merge_phase_merger_mount_path_is_repo_root(tmp_path):
     assert captured.get("mount_path") == tmp_path
 
 
+# ── Issue-227: Propagate sandbox merge result to target branch ────────────────
+
+
+def test_merge_phase_fast_forwards_target_branch_after_successful_merger(tmp_path):
+    """After Merger succeeds, merge_phase must call fast_forward_branch with MERGE_SANDBOX as source."""
+    issue = {"number": 11, "title": "Conflict"}
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+    mock_git.get_current_branch.return_value = "main"
+
+    async def _fake_run_agent(name, **kwargs):
+        return AgentSuccess(output="")
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=_make_github_svc(),
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    asyncio.run(merge_phase([issue], deps))
+
+    mock_git.fast_forward_branch.assert_called_once_with(
+        tmp_path, "main", MERGE_SANDBOX
+    )
+
+
+def test_merge_phase_deletes_sandbox_branch_after_successful_fast_forward(tmp_path):
+    """After a successful fast-forward, merge_phase must delete the MERGE_SANDBOX branch."""
+    issue = {"number": 12, "title": "Conflict"}
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+    mock_git.get_current_branch.return_value = "main"
+
+    async def _fake_run_agent(name, **kwargs):
+        return AgentSuccess(output="")
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=_make_github_svc(),
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    asyncio.run(merge_phase([issue], deps))
+
+    mock_git.delete_branch.assert_any_call(MERGE_SANDBOX, tmp_path)
+
+
 def test_run_full_iteration_cold_path(git_repo):
     """run() executes a full iteration: preflight→plan→implement→merge, and closes the issue."""
     import subprocess
