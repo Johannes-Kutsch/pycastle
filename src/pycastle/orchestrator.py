@@ -359,6 +359,49 @@ async def run_issue(
     return issue
 
 
+async def sequential_iteration(
+    issues: list[dict],
+    state: IterationState,
+    deps: Deps,
+    *,
+    token: CancellationToken | None = None,
+) -> None:
+    current_sha = state.worktree_sha
+    for issue in issues:
+        try:
+            result = await run_issue(
+                issue,
+                deps.env,
+                deps.repo_root,
+                None,
+                token=token,
+                cfg=deps.cfg,
+                run_agent=deps.run_agent,
+                sha=current_sha,
+            )
+        except Exception as exc:
+            tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            timestamp = datetime.now(timezone.utc).isoformat()
+            entry = f"--- {timestamp} ---\n{tb}\n"
+            print(entry, file=sys.stderr)
+            deps.cfg.logs_dir.mkdir(parents=True, exist_ok=True)
+            with open(deps.cfg.logs_dir / "errors.log", "a", encoding="utf-8") as f:
+                f.write(entry)
+            print(f"  ✗ #{issue['number']} failed; skipping and continuing.")
+            continue
+        if isinstance(result, UsageLimitHit):
+            print(
+                "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if not isinstance(result, dict):
+            print(f"  ✗ #{issue['number']} skipped; continuing with next issue.")
+            continue
+        await merge_phase([result], deps)
+        current_sha = deps.git_svc.get_head_sha(deps.repo_root)
+
+
 async def implement_phase(
     issues: list[dict],
     state: IterationState,
@@ -550,6 +593,15 @@ async def run(
             )
 
         token = CancellationToken()
+
+        if cfg.max_parallel == 1:
+            print(
+                "Sequential mode active (max_parallel = 1): "
+                "implement → review → merge per issue."
+            )
+            await sequential_iteration(issues, state, deps, token=token)
+            continue
+
         impl_result = await implement_phase(issues, state, deps, token=token)
 
         for issue, error in impl_result.errors:
