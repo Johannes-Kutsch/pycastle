@@ -2246,3 +2246,42 @@ def test_container_runner_constructs_without_cfg_using_default_logs_dir():
 
     runner = ContainerRunner("task", Path("/fake"), {}, docker_client=MagicMock())
     assert runner._log_path.parent == singleton.logs_dir
+
+
+def test_run_streaming_uses_usage_limit_patterns_from_cfg(tmp_path):
+    """Custom usage_limit_patterns injected via cfg must trigger UsageLimitError."""
+    runner = ContainerRunner(
+        "test",
+        Path("/fake"),
+        {},
+        docker_client=MagicMock(),
+        cfg=Config(usage_limit_patterns=("CUSTOM_LIMIT_SENTINEL",)),
+    )
+    runner._log_path = tmp_path / "test.log"
+    mock_result = MagicMock()
+    mock_result.output = iter([b"CUSTOM_LIMIT_SENTINEL reached\n"])
+    runner._container = MagicMock()
+    runner._container.exec_run.return_value = mock_result
+
+    with pytest.raises(UsageLimitError):
+        runner.run_streaming()
+
+
+def test_run_streaming_default_patterns_not_triggered_by_custom_cfg(tmp_path):
+    """Default usage_limit_patterns must not trigger when cfg overrides them."""
+    runner = ContainerRunner(
+        "test",
+        Path("/fake"),
+        {},
+        docker_client=MagicMock(),
+        cfg=Config(usage_limit_patterns=("CUSTOM_LIMIT_SENTINEL",)),
+    )
+    runner._log_path = tmp_path / "test.log"
+    mock_result = MagicMock()
+    # Default pattern "You've hit your" should NOT trigger with the custom cfg
+    mock_result.output = iter([b"You've hit your session limit\n"])
+    runner._container = MagicMock()
+    runner._container.exec_run.return_value = mock_result
+
+    result = runner.run_streaming()
+    assert "You've hit your session limit" in result
