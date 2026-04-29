@@ -8,7 +8,6 @@ from pycastle.agent_result import (
     AgentSuccess,
     CancellationToken,
     PreflightFailure,
-    PromiseParseFailure,
     UsageLimitHit,
 )
 
@@ -76,21 +75,6 @@ def test_usage_limit_hit_is_frozen():
         result.last_output = "other"  # type: ignore[misc]
 
 
-# ── PromiseParseFailure ───────────────────────────────────────────────────────
-
-
-def test_promise_parse_failure_stores_fields():
-    result = PromiseParseFailure(raw_output="x", detail="no promise tag")
-    assert result.raw_output == "x"
-    assert result.detail == "no promise tag"
-
-
-def test_promise_parse_failure_is_frozen():
-    result = PromiseParseFailure(raw_output="x", detail="d")
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        result.detail = "other"  # type: ignore[misc]
-
-
 # ── AgentResult union ─────────────────────────────────────────────────────────
 
 
@@ -100,9 +84,8 @@ def test_agent_result_covers_all_variants():
         AgentIncomplete(partial_output="partial"),
         PreflightFailure(failures=()),
         UsageLimitHit(last_output=""),
-        PromiseParseFailure(raw_output="", detail=""),
     ]
-    assert len(variants) == 5
+    assert len(variants) == 4
 
 
 # ── CancellationToken ─────────────────────────────────────────────────────────

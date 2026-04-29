@@ -15,6 +15,7 @@ from pathlib import Path
 import docker
 from docker.models.containers import Container as DockerContainer
 
+from . import agent_output_protocol
 from .agent_result import (
     AgentIncomplete,
     AgentSuccess,
@@ -484,7 +485,7 @@ async def run_agent(
             except UsageLimitError:
                 _token.cancel(preserve_worktree=True)
                 return UsageLimitHit(last_output=output)
-            if "<promise>COMPLETE</promise>" in output:
+            if agent_output_protocol.is_complete(output):
                 return AgentSuccess(output=output)
             return AgentIncomplete(partial_output=output)
     finally:
