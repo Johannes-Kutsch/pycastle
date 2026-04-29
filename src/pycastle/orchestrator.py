@@ -155,17 +155,6 @@ def _get_repo(repo_root: Path) -> str:
     return result.stdout.decode("utf-8").strip()
 
 
-def _run_host_checks_impl(
-    checks: Sequence[tuple[str, str]],
-) -> list[tuple[str, str, str]]:
-    failures = []
-    for check_name, command in checks:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
-        if result.returncode != 0:
-            failures.append((check_name, command, result.stdout + result.stderr))
-    return failures
-
-
 def _format_feedback_commands(checks: Sequence[str]) -> str:
     wrapped = [f"`{cmd}`" for cmd in checks]
     if len(wrapped) <= 1:
@@ -273,13 +262,11 @@ async def run(
     validate_config: Any | None = None,
     git_service: GitService | None = None,
     github_service: GithubService | None = None,
-    run_host_checks: Any | None = None,
     cfg: Config | None = None,
 ) -> None:
     cfg = cfg if cfg is not None else _cfg
     _run_agent = run_agent or _default_run_agent
     _validate_config = validate_config or _default_validate_config
-    _run_host_checks = run_host_checks or _run_host_checks_impl
 
     _overrides = {
         "plan": {"model": cfg.plan_override.model, "effort": cfg.plan_override.effort},
