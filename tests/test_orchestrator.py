@@ -298,6 +298,7 @@ def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
 def _make_github_svc():
     mock = MagicMock(spec=GithubService)
     mock.has_open_issues_with_label.return_value = True
+    mock.get_open_issues.return_value = []
     return mock
 
 
@@ -2512,4 +2513,53 @@ def test_planner_invoked_when_ready_for_agent_issues_exist(tmp_path):
 
     assert "Planner" in agent_names, (
         f"Planner must be invoked when ready-for-agent issues exist; agents={agent_names}"
+    )
+
+
+# ── Issue-200: planner receives OPEN_ISSUES_JSON (not ISSUE_LABEL) ────────────
+
+
+def test_planner_receives_open_issues_json_not_issue_label(tmp_path):
+    """run() must pass OPEN_ISSUES_JSON (not ISSUE_LABEL) in planner prompt_args.
+
+    The value must have stale blocker references stripped: an issue body containing
+    'Blocked by #99' where #99 is absent from the open issues list must not appear
+    in the serialised JSON passed to the planner.
+    """
+    captured_planner_args: dict = {}
+
+    async def _fake_run_agent(name, prompt_args=None, **kwargs):
+        if name == "Planner":
+            captured_planner_args.update(prompt_args or {})
+            return _plan_json([{"number": 1, "title": "Fix"}])
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Fix thing",
+            "body": "Blocked by #99\nDo the work.",
+            "labels": [],
+            "comments": [],
+        }
+    ]
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        github_service=mock_github,
+    )
+
+    assert "OPEN_ISSUES_JSON" in captured_planner_args, (
+        "Planner must receive OPEN_ISSUES_JSON in prompt_args"
+    )
+    assert "ISSUE_LABEL" not in captured_planner_args, (
+        "Planner must not receive ISSUE_LABEL in prompt_args"
+    )
+    assert "Blocked by #99" not in captured_planner_args["OPEN_ISSUES_JSON"], (
+        "Stale blocker reference must be stripped from OPEN_ISSUES_JSON"
     )
