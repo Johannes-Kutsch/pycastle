@@ -420,7 +420,8 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
     )
 
     if conflict_issues:
-        await deps.run_agent(
+        target_branch = deps.git_svc.get_current_branch(deps.repo_root)
+        merger_result = await deps.run_agent(
             name="Merger",
             prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
             mount_path=deps.repo_root,
@@ -436,6 +437,11 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
             effort=deps.cfg.merge_override.effort,
             stage="pre-merge",
         )
+        if isinstance(merger_result, AgentSuccess):
+            deps.git_svc.fast_forward_branch(
+                deps.repo_root, target_branch, MERGE_SANDBOX
+            )
+            deps.git_svc.delete_branch(MERGE_SANDBOX, deps.repo_root)
         print("\nBranches merged.")
         delete_merged_branches(
             [branch_for(i["number"]) for i in conflict_issues],
