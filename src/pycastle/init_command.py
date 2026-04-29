@@ -14,6 +14,7 @@ _FILES = [
     "prompts/review-prompt.md",
     "prompts/merge-prompt.md",
     "prompts/CODING_STANDARDS.md",
+    "prompts/preflight-issue.md",
 ]
 
 _ENV_TEMPLATE = "ANTHROPIC_API_KEY=\nCLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"

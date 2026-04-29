@@ -49,6 +49,7 @@ pycastle = [
     "defaults/prompts/review-prompt.md",
     "defaults/prompts/merge-prompt.md",
     "defaults/prompts/CODING_STANDARDS.md",
+    "defaults/prompts/preflight-issue.md",
 ]
 
 [tool.pytest.ini_options]
