@@ -2007,6 +2007,94 @@ def test_run_streaming_does_not_raise_for_json_line_containing_usage_limit_phras
     runner.run_streaming()  # must not raise
 
 
+# ── Issue 232: JSON result line with 429 not caught ───────────────────────────
+
+
+def test_run_streaming_raises_usage_limit_error_on_json_result_with_429(tmp_path):
+    """A JSON result line with api_error_status 429 must raise UsageLimitError."""
+    import json
+
+    json_line = json.dumps(
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": True,
+            "api_error_status": 429,
+            "result": "You've hit your limit · resets 4:30pm (UTC)",
+        }
+    )
+    runner = _streaming_runner(
+        "Agent",
+        [(json_line + "\n").encode()],
+        tmp_path / "test.log",
+    )
+    with pytest.raises(UsageLimitError):
+        runner.run_streaming()
+
+
+def test_run_streaming_raises_usage_limit_error_on_json_result_matching_pattern(
+    tmp_path,
+):
+    """A JSON result line whose result field matches a usage_limit_pattern raises UsageLimitError."""
+    import json
+
+    json_line = json.dumps(
+        {
+            "type": "result",
+            "is_error": True,
+            "api_error_status": 503,
+            "result": "You've hit your session limit",
+        }
+    )
+    runner = _streaming_runner(
+        "Agent",
+        [(json_line + "\n").encode()],
+        tmp_path / "test.log",
+    )
+    with pytest.raises(UsageLimitError):
+        runner.run_streaming()
+
+
+def test_run_streaming_does_not_raise_for_successful_json_result(tmp_path):
+    """A normal JSON result line (no error) must not raise UsageLimitError."""
+    import json
+
+    json_line = json.dumps(
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": False,
+            "result": "Task completed successfully.",
+        }
+    )
+    runner = _streaming_runner(
+        "Agent",
+        [(json_line + "\n").encode()],
+        tmp_path / "test.log",
+    )
+    runner.run_streaming()  # must not raise
+
+
+def test_run_streaming_does_not_crash_on_json_result_with_null_result_field(tmp_path):
+    """A JSON result error with result=null must not raise AttributeError or UsageLimitError."""
+    import json
+
+    json_line = json.dumps(
+        {
+            "type": "result",
+            "is_error": True,
+            "api_error_status": 503,
+            "result": None,
+        }
+    )
+    runner = _streaming_runner(
+        "Agent",
+        [(json_line + "\n").encode()],
+        tmp_path / "test.log",
+    )
+    runner.run_streaming()  # must not raise
+
+
 # ── Issue 182: halt flag + conditional worktree preservation ──────────────────
 
 
