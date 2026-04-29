@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from pycastle.agent_output_protocol import (
@@ -15,8 +17,6 @@ from pycastle.agent_output_protocol import (
 
 
 def test_parse_plan_unwraps_ndjson_result():
-    import json
-
     envelope = json.dumps(
         {
             "type": "result",
@@ -66,6 +66,21 @@ def test_parse_plan_raises_when_neither_key_present():
         parse_plan('<plan>{"other_key": []}</plan>')
 
 
+def test_parse_plan_raises_when_json_is_not_a_dict():
+    with pytest.raises(PlanParseError):
+        parse_plan("<plan>[]</plan>")
+
+
+def test_parse_plan_raises_when_issues_is_not_iterable():
+    with pytest.raises(PlanParseError):
+        parse_plan('<plan>{"issues": 42}</plan>')
+
+
+def test_parse_plan_raises_when_issue_items_missing_required_keys():
+    with pytest.raises(PlanParseError):
+        parse_plan('<plan>{"issues": [{}]}</plan>')
+
+
 def test_parse_plan_error_is_agent_output_protocol_error():
     with pytest.raises(AgentOutputProtocolError):
         parse_plan("no plan tag here")
@@ -99,8 +114,6 @@ def test_parse_issue_number_raises_when_content_not_integer():
 
 
 def test_parse_issue_number_unwraps_ndjson():
-    import json
-
     envelope = json.dumps(
         {"type": "result", "result": '<issue label="ready-for-human">7</issue>'}
     )
@@ -137,9 +150,12 @@ def test_is_complete_never_raises_on_arbitrary_input():
     assert is_complete("<promise></promise>") is False
 
 
-def test_is_complete_unwraps_ndjson():
-    import json
+def test_is_complete_falls_back_to_raw_when_result_field_is_null():
+    envelope = json.dumps({"type": "result", "result": None})
+    assert is_complete(envelope) is False
 
+
+def test_is_complete_unwraps_ndjson():
     envelope = json.dumps({"type": "result", "result": "<promise>COMPLETE</promise>"})
     assert is_complete(envelope) is True
 
