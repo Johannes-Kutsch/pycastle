@@ -225,7 +225,9 @@ def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
 
 
 def _make_github_svc():
-    return MagicMock(spec=GithubService)
+    mock = MagicMock(spec=GithubService)
+    mock.has_open_issues_with_label.return_value = True
+    return mock
 
 
 def _run(
