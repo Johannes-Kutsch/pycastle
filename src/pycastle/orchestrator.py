@@ -23,7 +23,6 @@ from .validate import validate_config as _default_validate_config
 @dataclasses.dataclass(frozen=True)
 class IterationState:
     worktree_sha: str | None = None
-    plan_output: str | None = None
     issues: list[dict] | None = None
 
 
@@ -206,25 +205,31 @@ async def _handle_preflight_failure(
     return "afk", issue_number
 
 
+async def plan_phase(state: IterationState, deps: Deps) -> PlanResult:
+    plan_output = await deps.run_agent(
+        name="Planner",
+        prompt_file=deps.cfg.prompts_dir / "plan-prompt.md",
+        mount_path=deps.repo_root,
+        env=deps.env,
+        prompt_args={
+            "OPEN_ISSUES_JSON": json.dumps(
+                strip_stale_blocker_refs(
+                    deps.github_svc.get_open_issues(deps.cfg.issue_label)
+                )
+            )
+        },
+        model=deps.cfg.plan_override.model,
+        effort=deps.cfg.plan_override.effort,
+        stage="pre-planning",
+    )
+    return PlanResult(issues=parse_plan(plan_output))
+
+
 async def preflight_phase(deps: Deps) -> IterationState:
     sha = deps.git_svc.get_head_sha(deps.repo_root)
+    state = IterationState(worktree_sha=sha)
     try:
-        plan_output = await deps.run_agent(
-            name="Planner",
-            prompt_file=deps.cfg.prompts_dir / "plan-prompt.md",
-            mount_path=deps.repo_root,
-            env=deps.env,
-            prompt_args={
-                "OPEN_ISSUES_JSON": json.dumps(
-                    strip_stale_blocker_refs(
-                        deps.github_svc.get_open_issues(deps.cfg.issue_label)
-                    )
-                )
-            },
-            model=deps.cfg.plan_override.model,
-            effort=deps.cfg.plan_override.effort,
-            stage="pre-planning",
-        )
+        plan_result = await plan_phase(state, deps)
     except PreflightError as exc:
         verdict, pf_num = await _handle_preflight_failure(
             exc.failures,
@@ -243,7 +248,7 @@ async def preflight_phase(deps: Deps) -> IterationState:
             worktree_sha=sha,
             issues=[{"number": pf_num, "title": pf_title}],
         )
-    return IterationState(worktree_sha=sha, plan_output=plan_output)
+    return IterationState(worktree_sha=sha, issues=plan_result.issues)
 
 
 async def run_issue(
@@ -382,12 +387,7 @@ async def run(
         )
         state = await preflight_phase(deps)
         _worktree_sha = state.worktree_sha
-
-        if state.issues is not None:
-            issues: list[dict] = state.issues
-        else:
-            assert state.plan_output is not None
-            issues = parse_plan(state.plan_output)
+        issues: list[dict] = state.issues or []
 
         if not issues:
             print(f"No issues with label '{cfg.issue_label}' found. Skipping.")
