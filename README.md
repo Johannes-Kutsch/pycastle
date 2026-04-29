@@ -13,6 +13,7 @@ pip install pycastle
 - Python 3.11.3 or later
 - Docker (daemon must be running)
 - A valid `ANTHROPIC_API_KEY` environment variable (or a `.env` file in your project root)
+- A GitHub repository with a `GH_TOKEN` environment variable that has issue read/write access
 
 ## CLI Commands
 
@@ -32,14 +33,84 @@ Builds the Docker image defined in `pycastle/Dockerfile`. Pass `--no-cache` to f
 pycastle build [--no-cache]
 ```
 
+### `pycastle labels`
+
+Creates the standard label set on your GitHub repository. These labels drive the triage workflow that feeds issues into the agent pipeline (see [The `ready-for-agent` label](#the-ready-for-agent-label) below).
+
+```bash
+pycastle labels
+```
+
 ### `pycastle run`
 
-Reads a GitHub issue number and orchestrates a full agent pipeline inside Docker: a planner drafts an implementation plan, one or more implementer agents write the code on isolated git worktrees, a reviewer checks each implementation, and a merger integrates the approved changes. Progress is streamed to your terminal in real time.
+Runs the full agent pipeline. The pipeline iterates up to `max_iterations` times, each time picking up whatever `ready-for-agent` issues remain open. Progress is streamed to your terminal in real time.
 
 ```bash
 pycastle run
 ```
 
+## How the pipeline works
+
+Each iteration of `pycastle run` moves through five phases in order.
+
+### 1. Pre-flight
+
+Before any agent work starts, pycastle runs the configured preflight checks inside Docker (default: `ruff check .`, `mypy .`, `pytest`). If all checks pass the pipeline continues normally.
+
+If a check fails, a **preflight-issue agent** is spawned. It analyses the failure and creates a GitHub issue describing what needs to be fixed. The issue is labelled either `ready-for-agent` (the fix can be automated) or `ready-for-human` (a human must intervene). If the issue is `ready-for-human`, pycastle exits immediately so you can investigate. If it is `ready-for-agent`, the issue is queued as the sole work item for this iteration and the pipeline continues.
+
+You can skip preflight entirely by setting `skip_preflight = True` in `pycastle/config.py` — useful while the codebase is still being bootstrapped.
+
+### 2. Planner
+
+The **planner agent** reads all open GitHub issues labelled `ready-for-agent`. It evaluates dependencies (issues can declare `blocked by #N` in their body), filters out issues that are still blocked, and emits a `<plan>` JSON block listing the unblocked issues to tackle this iteration. Only the issues selected by the planner proceed to the next phase.
+
+### 3. Implementer(s)
+
+For each planned issue, pycastle spawns an **implementer agent** in a dedicated git worktree on a branch named `sandcastle/issue-<N>`. The agent reads the issue, writes the code, and continuously runs the implement checks (`ruff check --fix`, `ruff format --check`, `mypy .`, `pytest` by default) until they pass. When the agent is satisfied it emits `<promise>COMPLETE</promise>`; if it cannot complete the issue it exits without that tag and the issue is skipped this iteration.
+
+Multiple implementer agents can run in parallel (controlled by `max_parallel` in `config.py`).
+
+### 4. Reviewer
+
+Immediately after each implementer signals completion, a **reviewer agent** inspects the same branch. The reviewer re-runs the checks, reads the diff, and pushes any corrections directly onto the branch before handing off to the merge phase.
+
+### 5. Merging
+
+Once all implementer/reviewer pairs have finished, pycastle attempts to fast-forward merge each completed branch into the default branch:
+
+- **No conflict** — the branch is merged automatically and the worktree is cleaned up.
+- **Conflict** — the conflicting branches are handed to a **merger agent**, which resolves the conflicts manually, re-runs the preflight checks, and commits the result.
+
+After merging, the corresponding GitHub issue is closed. If an issue is a child of a parent/epic issue and all sibling issues are now closed, the parent issue is closed too. Merged branches are deleted.
+
+If the working tree has uncommitted changes when the merge phase begins, pycastle waits (polling every 10 seconds) until the tree is clean before proceeding.
+
+## The `ready-for-agent` label
+
+`ready-for-agent` is the entry point into the automated pipeline. The planner only considers issues that carry this label. The intended workflow is:
+
+1. A new issue arrives labelled `needs-triage`.
+2. A maintainer (or a separate triage agent) evaluates it and either closes it, marks it `need-info`, `wontfix`, or — once it is fully specified with a clear acceptance criterion — relabels it `ready-for-agent`.
+3. On the next `pycastle run`, the planner picks it up and the automated pipeline takes over.
+
+Marking an issue `ready-for-agent` is a deliberate gate: it signals that the issue has enough detail for an agent to implement it without further clarification.
+
+The companion label `ready-for-human` is used for issues that are too ambiguous, require access to external systems, or have failed preflight in a way that needs manual diagnosis. These issues are never picked up by the planner.
+
 ## Configuration
 
-All runtime configuration lives in `pycastle/config.py`. Key settings include the GitHub repository, the Docker image name, agent model selection, and flags such as `skip_preflight`. Edit this file after running `pycastle init` to tailor the pipeline to your project.
+All runtime configuration lives in `pycastle/config.py`. Key settings:
+
+| Setting | Default | Description |
+|---|---|---|
+| `max_iterations` | `10` | How many plan→implement→merge loops to run |
+| `max_parallel` | `1` | Maximum concurrent implementer agents |
+| `issue_label` | `ready-for-agent` | Label the planner filters on |
+| `hitl_label` | `ready-for-human` | Label that triggers a human-intervention exit |
+| `preflight_checks` | ruff, mypy, pytest | Commands run before planning |
+| `implement_checks` | ruff fix, mypy, pytest | Commands the implementer must pass |
+| `skip_preflight` | `False` | Set to `True` to bypass preflight entirely |
+| `plan_override` / `implement_override` / `review_override` / `merge_override` | — | Per-stage model and effort overrides |
+
+Edit `pycastle/config.py` (created by `pycastle init`) to tailor these to your project.
