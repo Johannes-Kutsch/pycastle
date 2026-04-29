@@ -1,45 +1,31 @@
 from pathlib import Path
 
+from pycastle.config import StageOverride
+
 # --- Behaviour ---
-MAX_ITERATIONS = 10
-MAX_PARALLEL = 4
-WORKTREE_TIMEOUT = 30
-IDLE_TIMEOUT = 300
+max_iterations = 10
+max_parallel = 4
+worktree_timeout = 30
+idle_timeout = 300
 
 # --- Docker ---
-DOCKER_IMAGE_NAME = "pycastle"
+docker_image_name = "pycastle"
 
 # --- Labels ---
-ISSUE_LABEL = "ready-for-agent"
+issue_label = "ready-for-agent"
 
 # --- Paths ---
-PYCASTLE_DIR = Path("pycastle")
-PROMPTS_DIR = Path("pycastle/prompts")
-LOGS_DIR = Path("pycastle/logs")
-WORKTREES_DIR = Path("worktrees")
-ENV_FILE = Path("pycastle/.env")
-DOCKERFILE = Path("pycastle/Dockerfile")
-
-# --- Checks ---
-PREFLIGHT_CHECKS: list[tuple[str, str]] = [
-    ("ruff", "ruff check ."),
-    ("mypy", "mypy ."),
-    ("pytest", "pytest"),
-]
-
-IMPLEMENT_CHECKS: list[str] = [
-    "ruff check --fix",
-    "ruff format --check",
-    "mypy .",
-    "pytest",
-]
+pycastle_dir = Path("pycastle")
+prompts_dir = Path("pycastle/prompts")
+logs_dir = Path("pycastle/logs")
+worktrees_dir = Path("worktrees")
+env_file = Path("pycastle/.env")
+dockerfile = Path("pycastle/Dockerfile")
 
 # --- Stage overrides ---
 # model shorthands: haiku, sonnet, opus  (leave empty to use the Claude CLI default)
 # effort values:    low, medium, high, xhigh, max    (leave empty to use the Claude CLI default)
-STAGE_OVERRIDES: dict[str, dict[str, str]] = {
-    "plan": {"model": "haiku", "effort": "low"},
-    "implement": {"model": "sonnet", "effort": "medium"},
-    "review": {"model": "sonnet", "effort": "high"},
-    "merge": {"model": "sonnet", "effort": "medium"},
-}
+plan_override = StageOverride(model="haiku", effort="low")
+implement_override = StageOverride(model="sonnet", effort="medium")
+review_override = StageOverride(model="sonnet", effort="high")
+merge_override = StageOverride(model="sonnet", effort="medium")

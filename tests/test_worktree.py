@@ -17,13 +17,13 @@ from pycastle.worktree import (
 
 
 def test_worktree_timeout_constant_exists():
-    from pycastle.defaults.config import WORKTREE_TIMEOUT
+    from pycastle.config import WORKTREE_TIMEOUT
 
     assert WORKTREE_TIMEOUT == 30
 
 
 def test_idle_timeout_constant_exists():
-    from pycastle.defaults.config import IDLE_TIMEOUT
+    from pycastle.config import IDLE_TIMEOUT
 
     assert IDLE_TIMEOUT == 300
 

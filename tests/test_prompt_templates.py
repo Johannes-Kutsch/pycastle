@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from pycastle.defaults.config import (
+from pycastle.config import (
     IMPLEMENT_CHECKS,
     ISSUE_LABEL,
     PREFLIGHT_CHECKS,
