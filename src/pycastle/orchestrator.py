@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .agent_result import CancellationToken
+from .agent_result import CancellationToken, UsageLimitHit
 from .config import Config, StageOverride, config as _cfg
 from .container_runner import run_agent as _default_run_agent
 from .errors import PreflightError, UsageLimitError
@@ -290,6 +290,8 @@ async def run_issue(
         sha=sha,
         skip_preflight=True,
     )
+    if isinstance(result, UsageLimitHit):
+        return None
     if "<promise>COMPLETE</promise>" not in _extract_text(result):
         return None
     reviewer_prompt_args = {
