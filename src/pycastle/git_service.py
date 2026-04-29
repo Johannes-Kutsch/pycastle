@@ -199,6 +199,40 @@ class GitService:
         )
         return result.stdout.decode("utf-8", errors="replace").strip()
 
+    def get_current_branch(self, repo_path: Path) -> str:
+        result = self._run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_path,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise GitCommandError(
+                "git rev-parse --abbrev-ref HEAD failed",
+                returncode=result.returncode,
+                stderr=result.stderr.decode("utf-8", errors="replace").strip(),
+            )
+        return result.stdout.decode("utf-8", errors="replace").strip()
+
+    def fast_forward_branch(self, repo_path: Path, target: str, source: str) -> None:
+        checkout = self._run(
+            ["git", "checkout", target], cwd=repo_path, capture_output=True
+        )
+        if checkout.returncode != 0:
+            raise GitCommandError(
+                f"git checkout {target!r} failed",
+                returncode=checkout.returncode,
+                stderr=checkout.stderr.decode("utf-8", errors="replace").strip(),
+            )
+        result = self._run(
+            ["git", "merge", "--ff-only", source], cwd=repo_path, capture_output=True
+        )
+        if result.returncode != 0:
+            raise GitCommandError(
+                f"git merge --ff-only {source!r} failed",
+                returncode=result.returncode,
+                stderr=result.stderr.decode("utf-8", errors="replace").strip(),
+            )
+
     def remove_worktree(self, repo_path: Path, worktree_path: Path) -> None:
         result = self._run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
