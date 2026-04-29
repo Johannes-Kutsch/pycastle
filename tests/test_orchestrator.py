@@ -3304,7 +3304,7 @@ def test_plan_is_sliced_to_max_parallel(tmp_path):
         cfg=Config(max_parallel=2, max_iterations=1),
     )
 
-    assert len([c for c in implementer_calls if "Implementer" in c]) == 2, (
+    assert len(implementer_calls) == 2, (
         "Only 2 issues should be implemented when max_parallel=2 and planner returns 3"
     )
     assert not any("Implementer #3" in c for c in implementer_calls), (
@@ -3403,6 +3403,48 @@ def test_max_parallel_1_second_iteration_receives_post_merge_sha(tmp_path):
     assert sha_captured[1] == "initial-sha"
     assert sha_captured[2] == "post-merge-sha", (
         "Issue #2 must receive the post-merge SHA from iteration 1"
+    )
+
+
+def test_max_parallel_1_failed_issue_does_not_prevent_next_iteration(tmp_path):
+    """With max_parallel=1, if issue #1 fails in iteration 1, iteration 2 still
+    processes issue #2."""
+    implementer_calls: list[str] = []
+    planner_calls = [0]
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            planner_calls[0] += 1
+            if planner_calls[0] == 1:
+                return AgentIncomplete(
+                    partial_output=_plan_json(
+                        [
+                            {"number": 1, "title": "Issue One"},
+                            {"number": 2, "title": "Issue Two"},
+                        ]
+                    )
+                )
+            return AgentIncomplete(
+                partial_output=_plan_json([{"number": 2, "title": "Issue Two"}])
+            )
+        if "Implementer" in name:
+            implementer_calls.append(name)
+            if "Implementer #1" in name:
+                return AgentIncomplete(partial_output="")  # non-success → skip
+            return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return AgentIncomplete(partial_output="")
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        github_service=_make_github_svc(),
+        cfg=Config(max_parallel=1, max_iterations=2),
+    )
+
+    assert "Implementer #1" in implementer_calls
+    assert "Implementer #2" in implementer_calls, (
+        "Issue #2 must be processed in iteration 2 even though issue #1 failed in iteration 1"
     )
 
 
