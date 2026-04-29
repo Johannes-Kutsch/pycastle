@@ -57,6 +57,12 @@ def test_parse_plan_issues_have_no_branch_key():
     assert all("branch" not in issue for issue in issues)
 
 
+def test_parse_plan_unblocked_issues_have_no_branch_key():
+    output = '<plan>{"unblocked_issues": [{"number": 6, "title": "Add feature", "branch": "stale/branch"}]}</plan>'
+    issues = parse_plan(output)
+    assert all("branch" not in issue for issue in issues)
+
+
 # ── branch_for ───────────────────────────────────────────────────────────────
 
 
