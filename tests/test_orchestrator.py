@@ -10,7 +10,10 @@ from pycastle.errors import ConfigValidationError, PreflightError
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
 from pycastle.orchestrator import (
+    ImplementResult,
     IterationState,
+    MergeResult,
+    PlanResult,
     _stage_for_agent,
     branch_for,
     delete_merged_branches,
@@ -37,6 +40,28 @@ def test_iteration_state_is_frozen():
     with pytest.raises(FrozenInstanceError):
         state = IterationState(worktree_sha="abc123")
         state.worktree_sha = "other"  # type: ignore[misc]
+
+
+# ── PlanResult / ImplementResult / MergeResult ───────────────────────────────
+
+
+def test_plan_result_stores_issues():
+    issues = [{"number": 1, "title": "Fix bug"}]
+    result = PlanResult(issues=issues)
+    assert result.issues == issues
+
+
+def test_implement_result_stores_completed_and_errors():
+    exc = ValueError("oops")
+    result = ImplementResult(completed=[{"number": 1}], errors=[({"number": 2}, exc)])
+    assert result.completed == [{"number": 1}]
+    assert result.errors[0][1] is exc
+
+
+def test_merge_result_stores_clean_and_conflicts():
+    result = MergeResult(clean=[{"number": 1}], conflicts=[{"number": 2}])
+    assert result.clean == [{"number": 1}]
+    assert result.conflicts == [{"number": 2}]
 
 
 # ── parse_plan ────────────────────────────────────────────────────────────────
@@ -1775,26 +1800,22 @@ def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
 
 
 def test_preplanning_preflight_runs_on_cold_startup(tmp_path):
-    """On cold startup (first iteration), skip_preflight must be False for the Planner."""
-    planner_calls: list[dict] = []
+    """On cold startup the Planner must be called exactly once (no issues → terminate)."""
+    planner_calls: list[str] = []
 
-    async def _fake_run_agent(name, skip_preflight=False, **kwargs):
+    async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            planner_calls.append({"skip_preflight": skip_preflight})
+            planner_calls.append(name)
             return _plan_json([])
         return ""
 
     _run(tmp_path, _fake_run_agent, github_service=_make_github_svc())
 
     assert len(planner_calls) == 1, f"Expected 1 Planner call; got {len(planner_calls)}"
-    assert planner_calls[0]["skip_preflight"] is False, (
-        "Planner must not skip preflight on cold startup"
-    )
 
 
 def test_preplanning_preflight_reruns_after_post_merge_check_failure(tmp_path):
-    """When the preflight-fix post-merge also fails, the next iteration must run preflight again."""
-    planner_skip_flags: list[bool] = []
+    """When the preflight-fix post-merge also fails, the Planner must be called again next iteration."""
     planner_call_count = [0]
 
     mock_git = _make_git_svc(try_merge_side_effect=[True, True])
@@ -1804,9 +1825,8 @@ def test_preplanning_preflight_reruns_after_post_merge_check_failure(tmp_path):
     mock_github.get_labels.return_value = ["ready-for-agent"]  # AFK verdict
     mock_github.get_issue_title.return_value = "Fix preflight"
 
-    async def _fake_run_agent(name, skip_preflight=False, **kwargs):
+    async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            planner_skip_flags.append(skip_preflight)
             planner_call_count[0] += 1
             if planner_call_count[0] == 1:
                 return _plan_json([{"number": 1, "title": "Fix"}])
@@ -1826,12 +1846,8 @@ def test_preplanning_preflight_reruns_after_post_merge_check_failure(tmp_path):
         cfg=Config(max_parallel=4, max_iterations=2),
     )
 
-    assert len(planner_skip_flags) == 2, (
-        f"Expected 2 Planner calls; got {len(planner_skip_flags)}"
-    )
-    assert planner_skip_flags[0] is False, "First iteration must run preflight"
-    assert planner_skip_flags[1] is False, (
-        "Second iteration must run preflight again when preflight-fix post-merge also failed"
+    assert planner_call_count[0] == 2, (
+        f"Expected 2 Planner calls; got {planner_call_count[0]}"
     )
 
 
