@@ -1,3 +1,5 @@
+from pycastle.config import StageOverride
+
 # --- Behaviour ---
 # max_iterations = 10
 # max_parallel = 1
@@ -38,7 +40,7 @@ docker_image_name = ""
 # --- Stage overrides ---
 # model shorthands: haiku, sonnet, opus  (leave empty to use the Claude CLI default)
 # effort values:    low, medium, high, xhigh, max    (leave empty to use the Claude CLI default)
-# plan_override = StageOverride(model="", effort="")
-# implement_override = StageOverride(model="", effort="")
-# review_override = StageOverride(model="", effort="")
-# merge_override = StageOverride(model="", effort="")
+plan_override = StageOverride(model="haiku", effort="low")
+implement_override = StageOverride(model="sonnet", effort="medium")
+review_override = StageOverride(model="sonnet", effort="high")
+merge_override = StageOverride(model="sonnet", effort="medium")
