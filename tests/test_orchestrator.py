@@ -487,7 +487,7 @@ def test_run_issue_passes_feedback_commands_to_implementer(tmp_path):
 
 def test_run_issue_feedback_commands_formatted_from_implement_checks(tmp_path):
     """FEEDBACK_COMMANDS must be formatted from IMPLEMENT_CHECKS with backtick wrapping."""
-    from pycastle.defaults.config import IMPLEMENT_CHECKS
+    from pycastle.config import IMPLEMENT_CHECKS
 
     captured_args: list[dict] = []
 
@@ -869,7 +869,7 @@ def test_stage_overrides_are_independent(tmp_path):
 
 def test_merger_receives_checks_prompt_arg_from_preflight_checks(tmp_path):
     """Merger must receive CHECKS built from PREFLIGHT_CHECKS commands joined by ' && '."""
-    from pycastle.defaults.config import PREFLIGHT_CHECKS
+    from pycastle.config import PREFLIGHT_CHECKS
 
     captured: list[dict] = []
 
