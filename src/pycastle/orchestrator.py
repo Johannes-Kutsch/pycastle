@@ -8,19 +8,10 @@ import sys
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Any
 
-from .config import (
-    HITL_LABEL,
-    IMPLEMENT_CHECKS,
-    ISSUE_LABEL,
-    LOGS_DIR,
-    MAX_ITERATIONS,
-    MAX_PARALLEL,
-    PREFLIGHT_CHECKS,
-    PROMPTS_DIR,
-    STAGE_OVERRIDES,
-)
+from .config import Config, config as _cfg
 from .container_runner import run_agent as _default_run_agent
 from .errors import PreflightError, UsageLimitError
 from .git_service import GitCommandError, GitService
@@ -142,7 +133,7 @@ def _get_repo(repo_root: Path) -> str:
 
 
 def _run_host_checks_impl(
-    checks: list[tuple[str, str]],
+    checks: Sequence[tuple[str, str]],
 ) -> list[tuple[str, str, str]]:
     failures = []
     for check_name, command in checks:
@@ -152,7 +143,7 @@ def _run_host_checks_impl(
     return failures
 
 
-def _format_feedback_commands(checks: list[str]) -> str:
+def _format_feedback_commands(checks: Sequence[str]) -> str:
     wrapped = [f"`{cmd}`" for cmd in checks]
     if len(wrapped) <= 1:
         return "".join(wrapped)
@@ -166,12 +157,13 @@ async def _handle_preflight_failure(
     github_svc: GithubService,
     run_agent: Any,
     hitl_label: str,
+    prompts_dir: Path,
 ) -> tuple[str, int]:
     """Spawn preflight-issue agent for the first failing check; returns ('hitl'|'afk', issue_number)."""
     check_name, command, output = failures[0]
     agent_output = await run_agent(
         name=f"preflight-issue ({check_name})",
-        prompt_file=PROMPTS_DIR / "preflight-issue.md",
+        prompt_file=prompts_dir / "preflight-issue.md",
         mount_path=repo_root,
         env=env,
         prompt_args={"CHECK_NAME": check_name, "COMMAND": command, "OUTPUT": output},
@@ -194,22 +186,20 @@ async def run_issue(
     issue: dict,
     env: dict[str, str],
     repo_root: Path,
-    overrides: dict | None = None,
     semaphore: asyncio.Semaphore | None = None,
     *,
+    cfg: Config | None = None,
     run_agent: Any | None = None,
     sha: str | None = None,
 ) -> dict | None:
+    cfg = cfg if cfg is not None else _cfg
     _run_agent = run_agent or _default_run_agent
-    overrides = overrides or {}
-    impl_stage = overrides.get("implement", {})
-    rev_stage = overrides.get("review", {})
     _branch = branch_for(issue["number"])
     prompt_args = {
         "ISSUE_NUMBER": str(issue["number"]),
         "ISSUE_TITLE": issue["title"],
         "BRANCH": _branch,
-        "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
+        "FEEDBACK_COMMANDS": _format_feedback_commands(cfg.implement_checks),
     }
 
     async def _bounded_run_agent(**kwargs: Any) -> str:
@@ -218,13 +208,13 @@ async def run_issue(
 
     result = await _bounded_run_agent(
         name=f"Implementer #{issue['number']}",
-        prompt_file=PROMPTS_DIR / "implement-prompt.md",
+        prompt_file=cfg.prompts_dir / "implement-prompt.md",
         mount_path=repo_root,
         env=env,
         prompt_args=prompt_args,
         branch=_branch,
-        model=impl_stage.get("model", ""),
-        effort=impl_stage.get("effort", ""),
+        model=cfg.implement_override.model,
+        effort=cfg.implement_override.effort,
         stage="pre-implementation",
         sha=sha,
         skip_preflight=True,
@@ -235,17 +225,17 @@ async def run_issue(
         "ISSUE_NUMBER": str(issue["number"]),
         "ISSUE_TITLE": issue["title"],
         "BRANCH": _branch,
-        "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
+        "FEEDBACK_COMMANDS": _format_feedback_commands(cfg.implement_checks),
     }
     await _bounded_run_agent(
         name=f"Reviewer #{issue['number']}",
-        prompt_file=PROMPTS_DIR / "review-prompt.md",
+        prompt_file=cfg.prompts_dir / "review-prompt.md",
         mount_path=repo_root,
         env=env,
         prompt_args=reviewer_prompt_args,
         branch=_branch,
-        model=rev_stage.get("model", ""),
-        effort=rev_stage.get("effort", ""),
+        model=cfg.review_override.model,
+        effort=cfg.review_override.effort,
         stage="pre-review",
         skip_preflight=True,
     )
@@ -261,22 +251,33 @@ async def run(
     git_service: GitService | None = None,
     github_service: GithubService | None = None,
     run_host_checks: Any | None = None,
-    stage_overrides: dict | None = None,
-    max_parallel: int | None = None,
-    max_iterations: int | None = None,
-    logs_dir: Path | None = None,
+    cfg: Config | None = None,
 ) -> None:
+    cfg = cfg if cfg is not None else _cfg
     _run_agent = run_agent or _default_run_agent
     _validate_config = validate_config or _default_validate_config
-    _stage_overrides = (
-        stage_overrides if stage_overrides is not None else STAGE_OVERRIDES
-    )
-    _max_parallel = max_parallel if max_parallel is not None else MAX_PARALLEL
-    _max_iterations = max_iterations if max_iterations is not None else MAX_ITERATIONS
-    _logs_dir = logs_dir if logs_dir is not None else LOGS_DIR
     _run_host_checks = run_host_checks or _run_host_checks_impl
 
-    _validate_config(_stage_overrides)
+    _validate_config(
+        {
+            "plan": {
+                "model": cfg.plan_override.model,
+                "effort": cfg.plan_override.effort,
+            },
+            "implement": {
+                "model": cfg.implement_override.model,
+                "effort": cfg.implement_override.effort,
+            },
+            "review": {
+                "model": cfg.review_override.model,
+                "effort": cfg.review_override.effort,
+            },
+            "merge": {
+                "model": cfg.merge_override.model,
+                "effort": cfg.merge_override.effort,
+            },
+        }
+    )
     prune_orphan_worktrees(repo_root)
     git_svc = git_service or GitService()
     _safe_sha: str | None = None
@@ -291,36 +292,41 @@ async def run(
             )
         return _lazy_github_svc
 
-    for iteration in range(1, _max_iterations + 1):
-        print(f"\n=== Iteration {iteration}/{_max_iterations} ===\n")
+    for iteration in range(1, cfg.max_iterations + 1):
+        print(f"\n=== Iteration {iteration}/{cfg.max_iterations} ===\n")
 
-        if not _get_github_svc().has_open_issues_with_label(ISSUE_LABEL):
-            print(f"No issues with label '{ISSUE_LABEL}' found. Skipping.")
+        if not _get_github_svc().has_open_issues_with_label(cfg.issue_label):
+            print(f"No issues with label '{cfg.issue_label}' found. Skipping.")
             break
 
-        plan_stage = _stage_overrides.get("plan", {})
         issues: list[dict] | None = None
         try:
             plan_output = await _run_agent(
                 name="Planner",
-                prompt_file=PROMPTS_DIR / "plan-prompt.md",
+                prompt_file=cfg.prompts_dir / "plan-prompt.md",
                 mount_path=repo_root,
                 env=env,
                 prompt_args={
                     "OPEN_ISSUES_JSON": json.dumps(
                         strip_stale_blocker_refs(
-                            _get_github_svc().get_open_issues(ISSUE_LABEL)
+                            _get_github_svc().get_open_issues(cfg.issue_label)
                         )
                     )
                 },
-                model=plan_stage.get("model", ""),
-                effort=plan_stage.get("effort", ""),
+                model=cfg.plan_override.model,
+                effort=cfg.plan_override.effort,
                 stage="pre-planning",
                 skip_preflight=_skip_preflight,
             )
         except PreflightError as exc:
             verdict, pf_num = await _handle_preflight_failure(
-                exc.failures, env, repo_root, _get_github_svc(), _run_agent, HITL_LABEL
+                exc.failures,
+                env,
+                repo_root,
+                _get_github_svc(),
+                _run_agent,
+                cfg.hitl_label,
+                cfg.prompts_dir,
             )
             if verdict == "hitl":
                 print(
@@ -340,7 +346,7 @@ async def run(
             issues = parse_plan(plan_output)
 
         if not issues:
-            print(f"No issues with label '{ISSUE_LABEL}' found. Skipping.")
+            print(f"No issues with label '{cfg.issue_label}' found. Skipping.")
             break
 
         if not _skip_preflight:
@@ -353,7 +359,7 @@ async def run(
                 f"  #{issue['number']}: {issue['title']} → {branch_for(issue['number'])}"
             )
 
-        semaphore = asyncio.Semaphore(_max_parallel)
+        semaphore = asyncio.Semaphore(cfg.max_parallel)
 
         results = await asyncio.gather(
             *[
@@ -361,8 +367,8 @@ async def run(
                     i,
                     env,
                     repo_root,
-                    _stage_overrides,
                     semaphore,
+                    cfg=cfg,
                     run_agent=_run_agent,
                     sha=_safe_sha,
                 )
@@ -395,8 +401,8 @@ async def run(
                 timestamp = datetime.now(timezone.utc).isoformat()
                 entry = f"--- {timestamp} ---\n{tb}\n"
                 print(entry, file=sys.stderr)
-                _logs_dir.mkdir(parents=True, exist_ok=True)
-                with open(_logs_dir / "errors.log", "a", encoding="utf-8") as f:
+                cfg.logs_dir.mkdir(parents=True, exist_ok=True)
+                with open(cfg.logs_dir / "errors.log", "a", encoding="utf-8") as f:
                     f.write(entry)
                 print(
                     f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {result}"
@@ -430,7 +436,7 @@ async def run(
 
         clean_count = len(completed) - len(conflict_issues)
         if clean_count > 0 and not conflict_issues:
-            check_failures = _run_host_checks(PREFLIGHT_CHECKS)
+            check_failures = _run_host_checks(cfg.preflight_checks)
             if check_failures:
                 verdict, pf_num = await _handle_preflight_failure(
                     check_failures,
@@ -438,7 +444,8 @@ async def run(
                     repo_root,
                     _get_github_svc(),
                     _run_agent,
-                    HITL_LABEL,
+                    cfg.hitl_label,
+                    cfg.prompts_dir,
                 )
                 if verdict == "hitl":
                     print(
@@ -450,14 +457,14 @@ async def run(
                     "number": pf_num,
                     "title": pf_title,
                 }
-                pf_semaphore = asyncio.Semaphore(_max_parallel)
+                pf_semaphore = asyncio.Semaphore(cfg.max_parallel)
                 try:
                     pf_completed = await run_issue(
                         pf_issue,
                         env,
                         repo_root,
-                        _stage_overrides,
                         pf_semaphore,
+                        cfg=cfg,
                         run_agent=_run_agent,
                         sha=None,
                     )
@@ -474,7 +481,7 @@ async def run(
                         _get_github_svc().close_issue(pf_num)
                         _get_github_svc().close_completed_parent_issues()
                         delete_merged_branches([pf_branch], repo_root, git_svc)
-                        second_failures = _run_host_checks(PREFLIGHT_CHECKS)
+                        second_failures = _run_host_checks(cfg.preflight_checks)
                         if not second_failures:
                             _safe_sha = git_svc.get_head_sha(repo_root)
                             _skip_preflight = True
@@ -483,20 +490,19 @@ async def run(
             _skip_preflight = True
 
         if conflict_issues:
-            merge_stage = _stage_overrides.get("merge", {})
             await _run_agent(
                 name="Merger",
-                prompt_file=PROMPTS_DIR / "merge-prompt.md",
+                prompt_file=cfg.prompts_dir / "merge-prompt.md",
                 mount_path=repo_root,
                 env=env,
                 prompt_args={
                     "BRANCHES": "\n".join(
                         f"- {branch_for(i['number'])}" for i in conflict_issues
                     ),
-                    "CHECKS": " && ".join(cmd for _, cmd in PREFLIGHT_CHECKS),
+                    "CHECKS": " && ".join(cmd for _, cmd in cfg.preflight_checks),
                 },
-                model=merge_stage.get("model", ""),
-                effort=merge_stage.get("effort", ""),
+                model=cfg.merge_override.model,
+                effort=cfg.merge_override.effort,
                 stage="pre-merge",
             )
             print("\nBranches merged.")
