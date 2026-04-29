@@ -2189,3 +2189,150 @@ def test_postmerge_preflight_issue_fixer_invoked_with_skip_preflight_true(tmp_pa
     assert pf_calls[0]["skip_preflight"] is True, (
         f"preflight-issue agent must receive skip_preflight=True; got {pf_calls[0]['skip_preflight']!r}"
     )
+
+
+# ── Issue-183: orchestrator exit handling for usage-limit shutdown ─────────────
+
+
+def test_usage_limit_error_exits_with_code_1(tmp_path):
+    """When UsageLimitError is raised by an agent task, orchestrator must exit with code 1."""
+    from pycastle.errors import UsageLimitError
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("You've hit your session limit")
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run(tmp_path, _fake_run_agent)
+
+    assert exc_info.value.code == 1
+
+
+def test_usage_limit_error_prints_resume_message_to_stderr(tmp_path, capsys):
+    """When UsageLimitError is raised by an agent task, the resume message must be printed to stderr."""
+    from pycastle.errors import UsageLimitError
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("You've hit your session limit")
+
+    with pytest.raises(SystemExit):
+        _run(tmp_path, _fake_run_agent)
+
+    err = capsys.readouterr().err
+    assert (
+        "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume."
+        in err
+    )
+
+
+def test_usage_limit_error_awaits_sibling_tasks(tmp_path):
+    """When one agent raises UsageLimitError, sibling tasks must run to completion before exit."""
+    from pycastle.errors import UsageLimitError
+
+    completed_agents: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json(
+                [{"number": 1, "title": "Fail"}, {"number": 2, "title": "Pass"}]
+            )
+        if "Implementer #1" in name:
+            raise UsageLimitError("You've hit your session limit")
+        completed_agents.append(name)
+        return "<promise>COMPLETE</promise>"
+
+    with pytest.raises(SystemExit):
+        _run(tmp_path, _fake_run_agent, max_parallel=4)
+
+    assert any("Implementer #2" in n for n in completed_agents), (
+        f"Sibling Implementer #2 must complete before exit; completed={completed_agents}"
+    )
+
+
+def test_usage_limit_error_not_written_to_errors_log(tmp_path):
+    """UsageLimitError must not be logged to errors.log (unlike regular exceptions)."""
+    from pycastle.errors import UsageLimitError
+
+    logs_dir = tmp_path / "pycastle" / "logs"
+    logs_dir.mkdir(parents=True)
+    errors_log = logs_dir / "errors.log"
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("You've hit your session limit")
+
+    with pytest.raises(SystemExit):
+        _run(tmp_path, _fake_run_agent, logs_dir=logs_dir)
+
+    assert not errors_log.exists() or errors_log.read_text() == "", (
+        "UsageLimitError must not be written to errors.log"
+    )
+
+
+def test_usage_limit_error_alongside_regular_exception_exits_with_code_1(
+    tmp_path, capsys
+):
+    """When one task raises UsageLimitError and another raises a regular exception, exit cleanly with code 1."""
+    from pycastle.errors import UsageLimitError
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json(
+                [{"number": 1, "title": "Limit"}, {"number": 2, "title": "Other"}]
+            )
+        if "Implementer #1" in name:
+            raise UsageLimitError("session limit")
+        if "Implementer #2" in name:
+            raise RuntimeError("unrelated failure")
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run(tmp_path, _fake_run_agent, max_parallel=4)
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert (
+        "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume."
+        in err
+    )
+
+
+def test_usage_limit_error_in_post_merge_preflight_exits_with_code_1(tmp_path, capsys):
+    """UsageLimitError raised in the post-merge preflight run_issue must exit with code 1."""
+    from pycastle.errors import UsageLimitError
+
+    mock_git = _make_git_svc(try_merge_side_effect=[True])
+    mock_git.get_head_sha.return_value = "sha"
+    mock_github = MagicMock(spec=GithubService)
+    mock_github.get_labels.return_value = ["ready-for-agent"]  # AFK
+    mock_github.get_issue_title.return_value = "Fix preflight"
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix"}])
+        if "preflight-issue" in name:
+            return "<issue>55</issue>"
+        if name == "Implementer #1":
+            return "<promise>COMPLETE</promise>"
+        if name == "Reviewer #1":
+            return ""
+        raise UsageLimitError("session limit during preflight fix")
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            git_service=mock_git,
+            github_service=mock_github,
+            run_host_checks=lambda _: [("pytest", "pytest", "FAILED")],
+        )
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert (
+        "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume."
+        in err
+    )

@@ -22,7 +22,7 @@ from .config import (
     STAGE_OVERRIDES,
 )
 from .container_runner import run_agent as _default_run_agent
-from .errors import PreflightError
+from .errors import PreflightError, UsageLimitError
 from .git_service import GitCommandError, GitService
 from .github_service import GithubService
 from .validate import validate_config as _default_validate_config
@@ -344,6 +344,13 @@ async def run(
             return_exceptions=True,
         )
 
+        if any(isinstance(r, UsageLimitError) for r in results):
+            print(
+                "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
         completed: list[dict] = []
         for issue, result in zip(issues, results):
             if isinstance(result, PreflightError):
@@ -417,15 +424,22 @@ async def run(
                     "title": pf_title,
                 }
                 pf_semaphore = asyncio.Semaphore(_max_parallel)
-                pf_completed = await run_issue(
-                    pf_issue,
-                    env,
-                    repo_root,
-                    _stage_overrides,
-                    pf_semaphore,
-                    run_agent=_run_agent,
-                    sha=None,
-                )
+                try:
+                    pf_completed = await run_issue(
+                        pf_issue,
+                        env,
+                        repo_root,
+                        _stage_overrides,
+                        pf_semaphore,
+                        run_agent=_run_agent,
+                        sha=None,
+                    )
+                except UsageLimitError:
+                    print(
+                        "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
                 if pf_completed:
                     pf_branch = branch_for(pf_num)
                     await wait_for_clean_working_tree(repo_root, git_svc)
