@@ -2364,3 +2364,33 @@ def test_preflight_phase_hitl_exits(tmp_path):
 
     with pytest.raises(SystemExit):
         asyncio.run(preflight_phase(deps))
+
+
+def test_preflight_phase_success_sets_plan_output(tmp_path):
+    """When the Planner succeeds, preflight_phase must return plan_output in state with issues=None."""
+    plan = _plan_json([{"number": 5, "title": "Do thing"}])
+
+    async def _fake_run_agent(name, **kwargs):
+        return plan
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    state = asyncio.run(preflight_phase(deps))
+
+    assert state.plan_output == plan
+    assert state.issues is None
+    assert state.worktree_sha == "defaultsha"
+
+
+def test_preflight_phase_afk_issues_populated(tmp_path):
+    """On AFK preflight failure, state.issues must contain the fix issue number and title."""
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            raise PreflightError([("ruff", "ruff check .", "E501")])
+        return "<issue>77</issue>"
+
+    github_svc = _make_github_svc_afk()
+    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=github_svc)
+    state = asyncio.run(preflight_phase(deps))
+
+    assert state.issues == [{"number": 77, "title": "Preflight fix title"}]
