@@ -91,12 +91,14 @@ def parse_plan(output: str) -> list[dict]:
         raise RuntimeError("Planner produced no <plan> tag.\n\n" + text)
     data = json.loads(match.group(1))
     if "unblocked_issues" in data:
-        return data["unblocked_issues"]
-    if "issues" in data:
-        return data["issues"]
-    raise RuntimeError(
-        f"Plan JSON has no 'unblocked_issues' or 'issues' key. Keys found: {list(data.keys())}"
-    )
+        raw = data["unblocked_issues"]
+    elif "issues" in data:
+        raw = data["issues"]
+    else:
+        raise RuntimeError(
+            f"Plan JSON has no 'unblocked_issues' or 'issues' key. Keys found: {list(data.keys())}"
+        )
+    return [{"number": i["number"], "title": i["title"]} for i in raw]
 
 
 def _stage_for_agent(name: str) -> str:
@@ -425,7 +427,7 @@ async def run(
                     sha=None,
                 )
                 if pf_completed:
-                    pf_branch = f"sandcastle/issue-{pf_num}"
+                    pf_branch = branch_for(pf_num)
                     await wait_for_clean_working_tree(repo_root, git_svc)
                     if git_svc.try_merge(repo_root, pf_branch):
                         _get_github_svc().close_issue(pf_num)

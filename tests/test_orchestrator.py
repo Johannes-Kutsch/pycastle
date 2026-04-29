@@ -51,6 +51,12 @@ def test_parse_plan_raises_descriptively_when_issues_key_missing():
         parse_plan(output)
 
 
+def test_parse_plan_issues_have_no_branch_key():
+    output = '<plan>{"issues": [{"number": 5, "title": "Add feature", "branch": "stale/branch"}]}</plan>'
+    issues = parse_plan(output)
+    assert all("branch" not in issue for issue in issues)
+
+
 # ── branch_for ───────────────────────────────────────────────────────────────
 
 
