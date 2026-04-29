@@ -2900,6 +2900,125 @@ def test_merge_phase_does_not_fast_forward_when_merger_fails(tmp_path):
     mock_git.fast_forward_branch.assert_not_called()
 
 
+# ── Issue-228: sandbox worktree/branch cleanup on Merger failure ───────────────
+
+
+def test_merge_phase_removes_sandbox_worktree_when_run_agent_raises(tmp_path):
+    """When Merger run_agent() raises, remove_worktree() must still be called for the sandbox worktree."""
+    issue = {"number": 14, "title": "Conflict"}
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+    mock_git.get_current_branch.return_value = "main"
+
+    async def _fake_run_agent(name, **kwargs):
+        raise RuntimeError("agent crashed")
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=_make_github_svc(),
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    with pytest.raises(RuntimeError, match="agent crashed"):
+        asyncio.run(merge_phase([issue], deps))
+
+    sandbox_worktree = tmp_path / "pycastle" / ".worktrees" / "pycastle-merge-sandbox"
+    mock_git.remove_worktree.assert_called_once_with(tmp_path, sandbox_worktree)
+
+
+def test_merge_phase_deletes_sandbox_branch_when_merger_returns_incomplete(tmp_path):
+    """When Merger returns AgentIncomplete, delete_branch(MERGE_SANDBOX) must still be called."""
+    issue = {"number": 15, "title": "Conflict"}
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+    mock_git.get_current_branch.return_value = "main"
+
+    async def _fake_run_agent(name, **kwargs):
+        return AgentIncomplete(partial_output="")
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=_make_github_svc(),
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    asyncio.run(merge_phase([issue], deps))
+
+    mock_git.delete_branch.assert_any_call(MERGE_SANDBOX, tmp_path)
+    mock_git.fast_forward_branch.assert_not_called()
+
+
+def test_merge_phase_deletes_sandbox_branch_when_merger_returns_usage_limit(tmp_path):
+    """When Merger returns UsageLimitHit, delete_branch(MERGE_SANDBOX) must still be called."""
+    issue = {"number": 16, "title": "Conflict"}
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+    mock_git.get_current_branch.return_value = "main"
+
+    async def _fake_run_agent(name, **kwargs):
+        return UsageLimitHit(last_output="")
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=_make_github_svc(),
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    asyncio.run(merge_phase([issue], deps))
+
+    mock_git.delete_branch.assert_any_call(MERGE_SANDBOX, tmp_path)
+    mock_git.fast_forward_branch.assert_not_called()
+
+
+def test_merge_phase_deletes_sandbox_branch_when_run_agent_raises(tmp_path):
+    """When Merger run_agent() raises, delete_branch(MERGE_SANDBOX) must still be called."""
+    issue = {"number": 18, "title": "Conflict"}
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+    mock_git.get_current_branch.return_value = "main"
+
+    async def _fake_run_agent(name, **kwargs):
+        raise RuntimeError("agent crashed")
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=_make_github_svc(),
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    with pytest.raises(RuntimeError):
+        asyncio.run(merge_phase([issue], deps))
+
+    mock_git.delete_branch.assert_any_call(MERGE_SANDBOX, tmp_path)
+
+
+def test_merge_phase_original_exception_propagates_when_cleanup_also_raises(tmp_path):
+    """When run_agent() raises and cleanup methods also raise, the original exception propagates."""
+    issue = {"number": 17, "title": "Conflict"}
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+    mock_git.get_current_branch.return_value = "main"
+    mock_git.remove_worktree.side_effect = RuntimeError("worktree removal failed")
+    mock_git.delete_branch.side_effect = GitCommandError("delete branch failed")
+
+    async def _fake_run_agent(name, **kwargs):
+        raise RuntimeError("original agent error")
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=_make_github_svc(),
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    with pytest.raises(RuntimeError, match="original agent error"):
+        asyncio.run(merge_phase([issue], deps))
+
+
 def test_run_full_iteration_cold_path(git_repo):
     """run() executes a full iteration: preflight→plan→implement→merge, and closes the issue."""
     import subprocess

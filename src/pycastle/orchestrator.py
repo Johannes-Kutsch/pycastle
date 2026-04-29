@@ -421,27 +421,48 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
 
     if conflict_issues:
         target_branch = deps.git_svc.get_current_branch(deps.repo_root)
-        merger_result = await deps.run_agent(
-            name="Merger",
-            prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
-            mount_path=deps.repo_root,
-            env=deps.env,
-            branch=MERGE_SANDBOX,
-            prompt_args={
-                "BRANCHES": "\n".join(
-                    f"- {branch_for(i['number'])}" for i in conflict_issues
-                ),
-                "CHECKS": " && ".join(cmd for _, cmd in deps.cfg.preflight_checks),
-            },
-            model=deps.cfg.merge_override.model,
-            effort=deps.cfg.merge_override.effort,
-            stage="pre-merge",
+        _sandbox_worktree = (
+            deps.repo_root
+            / deps.cfg.pycastle_dir
+            / ".worktrees"
+            / re.sub(r"[^a-z0-9]+", "-", MERGE_SANDBOX.lower()).strip("-")
         )
+        merger_result: Any = None
+        try:
+            merger_result = await deps.run_agent(
+                name="Merger",
+                prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
+                mount_path=deps.repo_root,
+                env=deps.env,
+                branch=MERGE_SANDBOX,
+                prompt_args={
+                    "BRANCHES": "\n".join(
+                        f"- {branch_for(i['number'])}" for i in conflict_issues
+                    ),
+                    "CHECKS": " && ".join(cmd for _, cmd in deps.cfg.preflight_checks),
+                },
+                model=deps.cfg.merge_override.model,
+                effort=deps.cfg.merge_override.effort,
+                stage="pre-merge",
+            )
+        finally:
+            try:
+                deps.git_svc.remove_worktree(deps.repo_root, _sandbox_worktree)
+            except Exception as exc:
+                print(
+                    f"Warning: could not remove sandbox worktree: {exc}",
+                    file=sys.stderr,
+                )
+            try:
+                deps.git_svc.delete_branch(MERGE_SANDBOX, deps.repo_root)
+            except Exception as exc:
+                print(
+                    f"Warning: could not delete sandbox branch: {exc}", file=sys.stderr
+                )
         if isinstance(merger_result, AgentSuccess):
             deps.git_svc.fast_forward_branch(
                 deps.repo_root, target_branch, MERGE_SANDBOX
             )
-            deps.git_svc.delete_branch(MERGE_SANDBOX, deps.repo_root)
         print("\nBranches merged.")
         delete_merged_branches(
             [branch_for(i["number"]) for i in conflict_issues],
