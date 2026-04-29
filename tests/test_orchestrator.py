@@ -2714,7 +2714,7 @@ def test_run_full_iteration_cold_path(git_repo):
         capture_output=True,
     )
     subprocess.run(
-        ["git", "-C", str(git_repo), "checkout", "master"],
+        ["git", "-C", str(git_repo), "checkout", "main"],
         check=True,
         capture_output=True,
     )
