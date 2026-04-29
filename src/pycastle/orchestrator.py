@@ -342,6 +342,54 @@ async def implement_phase(
     return ImplementResult(completed=completed, errors=errors)
 
 
+async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
+    await wait_for_clean_working_tree(deps.repo_root, deps.git_svc)
+
+    conflict_issues: list[dict] = []
+    for issue in completed:
+        if deps.git_svc.try_merge(deps.repo_root, branch_for(issue["number"])):
+            deps.github_svc.close_issue(issue["number"])
+        else:
+            conflict_issues.append(issue)
+
+    clean_issues = [i for i in completed if i not in conflict_issues]
+
+    if clean_issues:
+        deps.github_svc.close_completed_parent_issues()
+
+    delete_merged_branches(
+        [branch_for(i["number"]) for i in clean_issues], deps.repo_root, deps.git_svc
+    )
+
+    if conflict_issues:
+        await deps.run_agent(
+            name="Merger",
+            prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
+            mount_path=deps.repo_root,
+            env=deps.env,
+            prompt_args={
+                "BRANCHES": "\n".join(
+                    f"- {branch_for(i['number'])}" for i in conflict_issues
+                ),
+                "CHECKS": " && ".join(cmd for _, cmd in deps.cfg.preflight_checks),
+            },
+            model=deps.cfg.merge_override.model,
+            effort=deps.cfg.merge_override.effort,
+            stage="pre-merge",
+        )
+        print("\nBranches merged.")
+        delete_merged_branches(
+            [branch_for(i["number"]) for i in conflict_issues],
+            deps.repo_root,
+            deps.git_svc,
+        )
+        for issue in conflict_issues:
+            deps.github_svc.close_issue(issue["number"])
+        deps.github_svc.close_completed_parent_issues()
+
+    return MergeResult(clean=clean_issues, conflicts=conflict_issues)
+
+
 async def run(
     env: dict[str, str],
     repo_root: Path,
@@ -390,7 +438,6 @@ async def run(
     )
     prune_orphan_worktrees(repo_root)
     git_svc = git_service or GitService()
-    _worktree_sha: str | None = None
     _lazy_github_svc: GithubService | None = None
 
     def _get_github_svc() -> GithubService:
@@ -417,7 +464,6 @@ async def run(
             cfg=cfg,
         )
         state = await preflight_phase(deps)
-        _worktree_sha = state.worktree_sha
         issues: list[dict] = state.issues or []
 
         if not issues:
@@ -470,44 +516,6 @@ async def run(
         for i in completed:
             print(f"  {branch_for(i['number'])}")
 
-        await wait_for_clean_working_tree(repo_root, git_svc)
-
-        conflict_issues: list[dict] = []
-        for issue in completed:
-            if git_svc.try_merge(repo_root, branch_for(issue["number"])):
-                _get_github_svc().close_issue(issue["number"])
-            else:
-                conflict_issues.append(issue)
-        if len(completed) > len(conflict_issues):
-            _get_github_svc().close_completed_parent_issues()
-
-        clean_branches = [
-            branch_for(i["number"]) for i in completed if i not in conflict_issues
-        ]
-        delete_merged_branches(clean_branches, repo_root, git_svc)
-
-        if conflict_issues:
-            await _run_agent(
-                name="Merger",
-                prompt_file=cfg.prompts_dir / "merge-prompt.md",
-                mount_path=repo_root,
-                env=env,
-                prompt_args={
-                    "BRANCHES": "\n".join(
-                        f"- {branch_for(i['number'])}" for i in conflict_issues
-                    ),
-                    "CHECKS": " && ".join(cmd for _, cmd in cfg.preflight_checks),
-                },
-                model=cfg.merge_override.model,
-                effort=cfg.merge_override.effort,
-                stage="pre-merge",
-            )
-            print("\nBranches merged.")
-            delete_merged_branches(
-                [branch_for(i["number"]) for i in conflict_issues], repo_root, git_svc
-            )
-            for issue in conflict_issues:
-                _get_github_svc().close_issue(issue["number"])
-            _get_github_svc().close_completed_parent_issues()
+        await merge_phase(completed, deps)
 
     print("\nAll done.")
