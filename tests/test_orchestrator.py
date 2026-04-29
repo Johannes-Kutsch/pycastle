@@ -17,6 +17,7 @@ from pycastle.errors import ConfigValidationError, PreflightError
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
 from pycastle.orchestrator import (
+    MERGE_SANDBOX,
     Deps,
     ImplementResult,
     IterationState,
@@ -2801,7 +2802,7 @@ def test_merge_phase_merger_receives_sandbox_branch(tmp_path):
     )
     asyncio.run(merge_phase([issue], deps))
 
-    assert captured.get("branch") == "pycastle/merge-sandbox"
+    assert captured.get("branch") == MERGE_SANDBOX
 
 
 def test_merge_phase_merger_mount_path_is_repo_root(tmp_path):
