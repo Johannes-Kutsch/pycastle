@@ -13,6 +13,13 @@ def main(
     docker_service: DockerService | None = None,
     cfg: Config = _cfg,
 ) -> None:
+    if not cfg.docker_image_name:
+        print(
+            "docker_image_name is not set. Run `pycastle init` to configure your project.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     if docker_service is None:
         docker_service = DockerService()
 
