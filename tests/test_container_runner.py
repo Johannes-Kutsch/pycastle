@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pycastle.agent_result import AgentIncomplete
 from pycastle.config import Config
 from pycastle.container_runner import (
     ContainerRunner,
@@ -128,7 +129,7 @@ def test_run_agent_proceeds_when_pip_install_fails(tmp_path):
             run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
         )
 
-    assert result == ""
+    assert isinstance(result, AgentIncomplete) and result.partial_output == ""
 
 
 def test_run_agent_warns_stderr_when_pip_install_fails(tmp_path, capsys):
@@ -1640,7 +1641,7 @@ def test_run_agent_skip_preflight_bypasses_phase(tmp_path):
             )
         )
 
-    assert result == ""
+    assert isinstance(result, AgentIncomplete) and result.partial_output == ""
 
 
 def test_run_agent_logs_preflight_phase(tmp_path, capsys):
@@ -1868,7 +1869,7 @@ def test_run_agent_accepts_stage_parameter(tmp_path):
             )
         )
 
-    assert result == ""
+    assert isinstance(result, AgentIncomplete)
 
 
 # ── Issue 180: UsageLimitError stream detection ───────────────────────────────
@@ -2068,7 +2069,7 @@ def test_run_agent_returns_immediately_when_halt_flag_set(tmp_path):
             )
         )
 
-    assert result == ""
+    assert isinstance(result, AgentIncomplete) and result.partial_output == ""
     assert not create_called, "create_worktree must not be called when halt flag is set"
     assert not container_started, (
         "ContainerRunner must not be started when halt flag is set"
@@ -2221,7 +2222,7 @@ def test_reset_usage_limit_flag_allows_run_agent_to_proceed(tmp_path):
         )
 
     assert ran, "ContainerRunner must be started after reset_usage_limit_flag()"
-    assert result == "done"
+    assert isinstance(result, AgentIncomplete) and result.partial_output == "done"
 
 
 # ── Issue 203: cfg injection into ContainerRunner ─────────────────────────────

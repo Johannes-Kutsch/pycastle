@@ -15,6 +15,7 @@ from pathlib import Path
 import docker
 from docker.models.containers import Container as DockerContainer
 
+from .agent_result import AgentIncomplete, AgentSuccess
 from .config import Config, config as _cfg
 from .errors import (
     AgentTimeoutError,
@@ -382,9 +383,9 @@ async def run_agent(
     sha: str | None = None,
     create_worktree_fn: Callable[[Path, Path, str, str | None], None] = create_worktree,
     remove_worktree_fn: Callable[[Path, Path], None] = remove_worktree,
-) -> str:
+) -> AgentSuccess | AgentIncomplete:
     if _usage_limit_halt.is_set():
-        return ""
+        return AgentIncomplete(partial_output="")
 
     print(f"\n[{name}] Started")
 
@@ -450,11 +451,14 @@ async def run_agent(
                 if failures:
                     raise PreflightError(failures)
             try:
-                return await _work(name, runner, loop)
+                output = await _work(name, runner, loop)
             except UsageLimitError:
                 _usage_limit_halt.set()
                 preserve_worktree[0] = True
                 raise
+            if "<promise>COMPLETE</promise>" in output:
+                return AgentSuccess(output=output)
+            return AgentIncomplete(partial_output=output)
     finally:
         if lock is not None and lock.locked():
             lock.release()

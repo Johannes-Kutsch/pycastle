@@ -12,6 +12,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .agent_result import (
+    AgentIncomplete,
+    AgentSuccess,
+    IssueNumberParseFailure,
+    PlanParseFailure,
+)
 from .config import Config, StageOverride, config as _cfg
 from .container_runner import run_agent as _default_run_agent
 from .errors import PreflightError, UsageLimitError
@@ -126,19 +132,23 @@ def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
     return result
 
 
-def parse_plan(output: str) -> list[dict]:
+def parse_plan(output: str) -> list[dict] | PlanParseFailure:
     text = _extract_text(output)
     match = re.search(r"<plan>([\s\S]*?)</plan>", text)
     if not match:
-        raise RuntimeError("Planner produced no <plan> tag.\n\n" + text)
+        return PlanParseFailure(
+            raw_output=text,
+            detail="Planner produced no <plan> tag.",
+        )
     data = json.loads(match.group(1))
     if "unblocked_issues" in data:
         raw = data["unblocked_issues"]
     elif "issues" in data:
         raw = data["issues"]
     else:
-        raise RuntimeError(
-            f"Plan JSON has no 'unblocked_issues' or 'issues' key. Keys found: {list(data.keys())}"
+        return PlanParseFailure(
+            raw_output=text,
+            detail=f"Plan JSON has no 'unblocked_issues' or 'issues' key. Keys found: {list(data.keys())}",
         )
     return [{"number": i["number"], "title": i["title"]} for i in raw]
 
@@ -181,10 +191,10 @@ async def _handle_preflight_failure(
     run_agent: Any,
     hitl_label: str,
     prompts_dir: Path,
-) -> tuple[str, int]:
+) -> tuple[str, int] | IssueNumberParseFailure:
     """Spawn preflight-issue agent for the first failing check; returns ('hitl'|'afk', issue_number)."""
     check_name, command, output = failures[0]
-    agent_output = await run_agent(
+    agent_result = await run_agent(
         name=f"preflight-issue ({check_name})",
         prompt_file=prompts_dir / "preflight-issue.md",
         mount_path=repo_root,
@@ -192,11 +202,18 @@ async def _handle_preflight_failure(
         prompt_args={"CHECK_NAME": check_name, "COMMAND": command, "OUTPUT": output},
         skip_preflight=True,
     )
-    text = _extract_text(agent_output)
+    if isinstance(agent_result, AgentSuccess):
+        raw_text = agent_result.output
+    elif isinstance(agent_result, AgentIncomplete):
+        raw_text = agent_result.partial_output
+    else:
+        raw_text = str(agent_result)
+    text = _extract_text(raw_text)
     match = re.search(r"<issue>(\d+)</issue>", text)
     if not match:
-        raise RuntimeError(
-            "preflight-issue agent produced no <issue>NUMBER</issue> tag.\n\n" + text
+        return IssueNumberParseFailure(
+            raw_output=text,
+            detail="preflight-issue agent produced no <issue>NUMBER</issue> tag.",
         )
     issue_number = int(match.group(1))
     labels = github_svc.get_labels(issue_number)
@@ -206,7 +223,7 @@ async def _handle_preflight_failure(
 
 
 async def plan_phase(state: IterationState, deps: Deps) -> PlanResult:
-    plan_output = await deps.run_agent(
+    plan_result = await deps.run_agent(
         name="Planner",
         prompt_file=deps.cfg.prompts_dir / "plan-prompt.md",
         mount_path=deps.repo_root,
@@ -222,7 +239,16 @@ async def plan_phase(state: IterationState, deps: Deps) -> PlanResult:
         effort=deps.cfg.plan_override.effort,
         stage="pre-planning",
     )
-    return PlanResult(issues=parse_plan(plan_output))
+    if isinstance(plan_result, AgentSuccess):
+        plan_text = plan_result.output
+    elif isinstance(plan_result, AgentIncomplete):
+        plan_text = plan_result.partial_output
+    else:
+        plan_text = str(plan_result)
+    parsed = parse_plan(plan_text)
+    if isinstance(parsed, PlanParseFailure):
+        raise RuntimeError(parsed.detail)
+    return PlanResult(issues=parsed)
 
 
 async def preflight_phase(deps: Deps) -> IterationState:
@@ -231,7 +257,7 @@ async def preflight_phase(deps: Deps) -> IterationState:
     try:
         plan_result = await plan_phase(state, deps)
     except PreflightError as exc:
-        verdict, pf_num = await _handle_preflight_failure(
+        preflight_result = await _handle_preflight_failure(
             exc.failures,
             deps.env,
             deps.repo_root,
@@ -240,6 +266,9 @@ async def preflight_phase(deps: Deps) -> IterationState:
             deps.cfg.hitl_label,
             deps.cfg.prompts_dir,
         )
+        if isinstance(preflight_result, IssueNumberParseFailure):
+            raise RuntimeError(preflight_result.detail) from None
+        verdict, pf_num = preflight_result
         if verdict == "hitl":
             print(f"Preflight issue #{pf_num} requires human intervention. Exiting.")
             sys.exit(1)
@@ -271,7 +300,7 @@ async def run_issue(
         "FEEDBACK_COMMANDS": _format_feedback_commands(cfg.implement_checks),
     }
 
-    async def _bounded_run_agent(**kwargs: Any) -> str:
+    async def _bounded_run_agent(**kwargs: Any) -> Any:
         async with semaphore or contextlib.nullcontext():
             return await _run_agent(**kwargs)
 
@@ -288,7 +317,7 @@ async def run_issue(
         sha=sha,
         skip_preflight=True,
     )
-    if "<promise>COMPLETE</promise>" not in _extract_text(result):
+    if not isinstance(result, AgentSuccess):
         return None
     reviewer_prompt_args = {
         "ISSUE_NUMBER": str(issue["number"]),
