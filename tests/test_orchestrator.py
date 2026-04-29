@@ -1,5 +1,6 @@
 import asyncio
 import json
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -2846,6 +2847,48 @@ def test_complete_check_inside_run_agent_incomplete(tmp_path):
     issue = {"number": 1, "title": "Fix thing"}
     result = asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
     assert result is None
+
+
+# ── Issue-215: run_issue reviewer UsageLimitHit propagation ──────────────────
+
+
+def test_run_issue_returns_usage_limit_hit_when_reviewer_hits_limit(tmp_path):
+    """run_issue must return UsageLimitHit when the reviewer (not the implementer) hits the usage limit."""
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return UsageLimitHit(last_output="")
+
+    issue = {"number": 1, "title": "Fix thing"}
+    result = asyncio.run(run_issue(issue, {}, tmp_path, run_agent=_fake_run_agent))
+
+    assert isinstance(result, UsageLimitHit)
+
+
+def test_implement_phase_usage_limit_hit_not_counted_as_completed(tmp_path):
+    """UsageLimitHit results must not appear in completed even when sys.exit is patched to not exit."""
+    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    exit_calls: list[int] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Implementer #1":
+            return UsageLimitHit(last_output="")
+        return AgentSuccess(output="<promise>COMPLETE</promise>")
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    state = IterationState(worktree_sha="abc123")
+
+    with patch("pycastle.orchestrator.sys") as mock_sys:
+        mock_sys.exit.side_effect = lambda code: exit_calls.append(code)
+        mock_sys.stderr = sys.stderr
+        result = asyncio.run(implement_phase(issues, state, deps))
+
+    assert exit_calls == [1], "sys.exit(1) must be called"
+    assert result.completed == [{"number": 2, "title": "Fix B"}], (
+        "Only the non-UsageLimitHit issue must appear in completed"
+    )
+    assert result.errors == [], "UsageLimitHit must not appear in errors"
 
 
 # ── Issue-214: IssueNumberParseFailure from _handle_preflight_failure ──────────

@@ -389,7 +389,7 @@ async def implement_phase(
     for issue, result in zip(issues, results):
         if isinstance(result, Exception):
             errors.append((issue, result))
-        elif result is not None:
+        elif isinstance(result, dict):
             completed.append(issue)
     return ImplementResult(completed=completed, errors=errors)
 
