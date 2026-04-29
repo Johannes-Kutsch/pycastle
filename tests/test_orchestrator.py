@@ -2903,8 +2903,8 @@ def test_merge_phase_does_not_fast_forward_when_merger_fails(tmp_path):
 # ── Issue-228: sandbox worktree/branch cleanup on Merger failure ───────────────
 
 
-def test_merge_phase_removes_sandbox_worktree_when_run_agent_raises(tmp_path):
-    """When Merger run_agent() raises, remove_worktree() must still be called for the sandbox worktree."""
+def test_merge_phase_propagates_exception_when_run_agent_raises(tmp_path):
+    """When Merger run_agent() raises, merge_phase must propagate the exception."""
     issue = {"number": 14, "title": "Conflict"}
     mock_git = _make_git_svc(try_merge_side_effect=[False])
     mock_git.get_current_branch.return_value = "main"
@@ -2923,8 +2923,7 @@ def test_merge_phase_removes_sandbox_worktree_when_run_agent_raises(tmp_path):
     with pytest.raises(RuntimeError, match="agent crashed"):
         asyncio.run(merge_phase([issue], deps))
 
-    sandbox_worktree = tmp_path / "pycastle" / ".worktrees" / "pycastle-merge-sandbox"
-    mock_git.remove_worktree.assert_called_once_with(tmp_path, sandbox_worktree)
+    mock_git.delete_branch.assert_any_call(MERGE_SANDBOX, tmp_path)
 
 
 def test_merge_phase_deletes_sandbox_branch_when_merger_returns_incomplete(tmp_path):
@@ -2996,12 +2995,13 @@ def test_merge_phase_deletes_sandbox_branch_when_run_agent_raises(tmp_path):
     mock_git.delete_branch.assert_any_call(MERGE_SANDBOX, tmp_path)
 
 
-def test_merge_phase_original_exception_propagates_when_cleanup_also_raises(tmp_path):
-    """When run_agent() raises and cleanup methods also raise, the original exception propagates."""
+def test_merge_phase_original_exception_propagates_when_branch_deletion_also_raises(
+    tmp_path,
+):
+    """When run_agent() raises and branch deletion also raises, the original exception propagates."""
     issue = {"number": 17, "title": "Conflict"}
     mock_git = _make_git_svc(try_merge_side_effect=[False])
     mock_git.get_current_branch.return_value = "main"
-    mock_git.remove_worktree.side_effect = RuntimeError("worktree removal failed")
     mock_git.delete_branch.side_effect = GitCommandError("delete branch failed")
 
     async def _fake_run_agent(name, **kwargs):
