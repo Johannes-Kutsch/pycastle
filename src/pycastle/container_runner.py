@@ -15,6 +15,7 @@ from pathlib import Path
 import docker
 from docker.models.containers import Container as DockerContainer
 
+from .agent_result import CancellationToken, UsageLimitHit
 from .config import Config, config as _cfg
 from .errors import (
     AgentTimeoutError,
@@ -382,7 +383,12 @@ async def run_agent(
     sha: str | None = None,
     create_worktree_fn: Callable[[Path, Path, str, str | None], None] = create_worktree,
     remove_worktree_fn: Callable[[Path, Path], None] = remove_worktree,
-) -> str:
+    *,
+    token: CancellationToken | None = None,
+) -> str | UsageLimitHit:
+    _token = token if token is not None else CancellationToken()
+    if _token.is_cancelled:
+        return UsageLimitHit(last_output="")
     if _usage_limit_halt.is_set():
         return ""
 

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.config import Config
+from pycastle.agent_result import CancellationToken, UsageLimitHit
 from pycastle.container_runner import (
     ContainerRunner,
     _build_claude_command,
@@ -2285,3 +2286,44 @@ def test_run_streaming_default_patterns_not_triggered_by_custom_cfg(tmp_path):
 
     result = runner.run_streaming()
     assert "You've hit your session limit" in result
+
+
+# ── Issue 213: CancellationToken wired through run_agent ─────────────────────
+
+
+def test_run_agent_returns_usage_limit_hit_when_token_pre_cancelled(tmp_path):
+    """run_agent with a pre-cancelled token must return UsageLimitHit immediately, no container."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    container_started = []
+
+    class _TrackingRunner:
+        def __init__(self, *args, **kwargs):
+            container_started.append(True)
+            self.branch = None
+            self.env = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            return ""
+
+        def run_streaming(self):
+            return ""
+
+    token = CancellationToken()
+    token.cancel()
+
+    with patch("pycastle.container_runner.ContainerRunner", _TrackingRunner):
+        result = _run(run_agent("Test", prompt, tmp_path, {}, token=token))
+
+    assert isinstance(result, UsageLimitHit)
+    assert result.last_output == ""
+    assert not container_started, (
+        "No container must be started when token is pre-cancelled"
+    )
