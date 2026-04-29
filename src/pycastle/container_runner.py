@@ -49,9 +49,10 @@ def _is_usage_limit_line(line: str, patterns: tuple[str, ...]) -> bool:
             if obj.get("type") == "result" and obj.get("is_error"):
                 if obj.get("api_error_status") == 429:
                     return True
-                result_text = obj.get("result", "")
-                result_lower = result_text.lower()
-                if any(p.lower() in result_lower for p in patterns):
+                result_text = obj.get("result")
+                if isinstance(result_text, str) and any(
+                    p.lower() in result_text.lower() for p in patterns
+                ):
                     return True
             return False
     except json.JSONDecodeError:
