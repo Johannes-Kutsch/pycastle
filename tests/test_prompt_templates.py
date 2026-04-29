@@ -63,6 +63,23 @@ def test_planner_template_renders_without_error():
     assert_template_renders(prompt_file, {"OPEN_ISSUES_JSON": "[]"})
 
 
+def test_planner_template_fails_without_open_issues_json_arg():
+    prompt_file = REPO_ROOT / PROMPTS_DIR / "plan-prompt.md"
+    with pytest.raises(PromptRenderError, match="OPEN_ISSUES_JSON"):
+        assert_template_renders(prompt_file, {})
+
+
+def test_planner_template_does_not_contain_issue_label_or_shell_expression():
+    prompt_file = REPO_ROOT / PROMPTS_DIR / "plan-prompt.md"
+    content = prompt_file.read_text(encoding="utf-8")
+    assert "{{ISSUE_LABEL}}" not in content, (
+        "plan-prompt.md must not contain {{ISSUE_LABEL}} — use {{OPEN_ISSUES_JSON}}"
+    )
+    assert "!`" not in content, (
+        "plan-prompt.md must not contain inline shell expressions — use {{OPEN_ISSUES_JSON}}"
+    )
+
+
 def test_planner_template_does_not_instruct_branch_emission():
     """Plan prompt must not ask the Planner to emit a branch field — branch is now computed in code."""
     prompt_file = REPO_ROOT / PROMPTS_DIR / "plan-prompt.md"
