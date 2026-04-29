@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 import subprocess
 from unittest.mock import MagicMock, patch
@@ -8,6 +9,7 @@ from pycastle.errors import WorktreeTimeoutError
 from pycastle.git_service import GitService, GitTimeoutError
 from pycastle.worktree import (
     create_worktree,
+    managed_worktree,
     patch_gitdir_for_container,
     remove_worktree,
 )
@@ -483,3 +485,67 @@ def test_patch_gitdir_noop_on_non_windows(tmp_path):
 
     assert result is None
     assert (worktree / ".git").read_text() == original
+
+
+# ── Issue-229: managed_worktree context manager ───────────────────────────────
+
+
+def _make_managed_worktree_mock_svc(tmp_path):
+    """Return a mock GitService that creates files when create_worktree is called."""
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.verify_ref_exists.return_value = False
+    mock_svc.list_worktrees.return_value = []
+
+    def _fake_create(repo, wt, branch, sha=None):
+        wt.mkdir(exist_ok=True)
+        (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
+
+    mock_svc.create_worktree.side_effect = _fake_create
+    return mock_svc
+
+
+def test_managed_worktree_creates_worktree_on_enter(tmp_path):
+    """managed_worktree must create the worktree directory before yielding."""
+    wt_path = tmp_path / "wt"
+    mock_svc = _make_managed_worktree_mock_svc(tmp_path)
+
+    async def _run():
+        async with managed_worktree(
+            tmp_path, wt_path, "feature/test", git_service=mock_svc
+        ):
+            assert wt_path.exists()
+
+    asyncio.run(_run())
+
+
+def test_managed_worktree_removes_worktree_on_exit(tmp_path):
+    """managed_worktree must call remove_worktree after the body exits (success path)."""
+    wt_path = tmp_path / "wt"
+    mock_svc = _make_managed_worktree_mock_svc(tmp_path)
+
+    async def _run():
+        async with managed_worktree(
+            tmp_path, wt_path, "feature/test", git_service=mock_svc
+        ):
+            pass
+
+    asyncio.run(_run())
+
+    mock_svc.remove_worktree.assert_called_once_with(tmp_path, wt_path)
+
+
+def test_managed_worktree_removes_worktree_on_exception(tmp_path):
+    """managed_worktree must call remove_worktree even when the body raises."""
+    wt_path = tmp_path / "wt"
+    mock_svc = _make_managed_worktree_mock_svc(tmp_path)
+
+    async def _run():
+        with pytest.raises(RuntimeError, match="body error"):
+            async with managed_worktree(
+                tmp_path, wt_path, "feature/test", git_service=mock_svc
+            ):
+                raise RuntimeError("body error")
+
+    asyncio.run(_run())
+
+    mock_svc.remove_worktree.assert_called_once_with(tmp_path, wt_path)

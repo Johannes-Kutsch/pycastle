@@ -9,7 +9,7 @@ import sys
 import tarfile
 import threading
 from collections.abc import Callable
-from contextlib import AsyncExitStack
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import docker
@@ -431,17 +431,24 @@ async def run_agent(
             effort=effort,
         )
 
-        async with AsyncExitStack() as stack:
-            if gitdir_overlay:
-                stack.callback(gitdir_overlay.unlink, missing_ok=True)
-            if worktree_host_path:
-
-                def _cond_remove_worktree():
-                    if not _token.wants_worktree_preserved:
+        @asynccontextmanager
+        async def _worktree_lifecycle():
+            try:
+                yield
+            finally:
+                if gitdir_overlay:
+                    gitdir_overlay.unlink(missing_ok=True)
+                exc: BaseException | None = None
+                if worktree_host_path and not _token.wants_worktree_preserved:
+                    try:
                         remove_worktree_fn(mount_path, worktree_host_path)
+                    except BaseException as e:
+                        exc = e
+                runner.__exit__(None, None, None)
+                if exc is not None:
+                    raise exc
 
-                stack.callback(_cond_remove_worktree)
-            stack.callback(runner.__exit__, None, None, None)
+        async with _worktree_lifecycle():
             await _setup(name, runner, loop, exec_timeout, git_service)
             await _prepare(
                 name, runner, loop, exec_timeout, prompt_file, prompt_args or {}

@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from .errors import WorktreeError, WorktreeTimeoutError
@@ -79,6 +80,21 @@ def remove_worktree(
         svc.remove_worktree(repo_path, worktree_path)
     except GitTimeoutError as exc:
         raise WorktreeTimeoutError(str(exc)) from exc
+
+
+@asynccontextmanager
+async def managed_worktree(
+    repo_path: Path,
+    worktree_path: Path,
+    branch: str,
+    sha: str | None = None,
+    git_service: GitService | None = None,
+):
+    create_worktree(repo_path, worktree_path, branch, sha, git_service)
+    try:
+        yield worktree_path
+    finally:
+        remove_worktree(repo_path, worktree_path, git_service)
 
 
 def patch_gitdir_for_container(worktree_path: Path) -> Path | None:

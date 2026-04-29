@@ -421,12 +421,6 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
 
     if conflict_issues:
         target_branch = deps.git_svc.get_current_branch(deps.repo_root)
-        _sandbox_worktree = (
-            deps.repo_root
-            / deps.cfg.pycastle_dir
-            / ".worktrees"
-            / re.sub(r"[^a-z0-9]+", "-", MERGE_SANDBOX.lower()).strip("-")
-        )
         merger_result: Any = None
         try:
             merger_result = await deps.run_agent(
@@ -450,13 +444,6 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                     deps.repo_root, target_branch, MERGE_SANDBOX
                 )
         finally:
-            try:
-                deps.git_svc.remove_worktree(deps.repo_root, _sandbox_worktree)
-            except Exception as exc:
-                print(
-                    f"Warning: could not remove sandbox worktree: {exc}",
-                    file=sys.stderr,
-                )
             try:
                 deps.git_svc.delete_branch(MERGE_SANDBOX, deps.repo_root)
             except Exception as exc:
