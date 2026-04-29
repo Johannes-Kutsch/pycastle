@@ -308,7 +308,6 @@ def _run(
     validate_config=None,
     git_service=None,
     github_service=None,
-    run_host_checks=None,
     cfg=None,
 ):
     asyncio.run(
@@ -319,7 +318,6 @@ def _run(
             validate_config=validate_config or (lambda _: None),
             git_service=git_service,
             github_service=github_service,
-            run_host_checks=run_host_checks or (lambda _: []),
             cfg=cfg if cfg is not None else Config(max_parallel=4, max_iterations=1),
         )
     )
@@ -1262,7 +1260,6 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
         _run(
             tmp_path,
             _fake_run_agent,
-            git_service=_make_git_svc(try_merge_side_effect=[True]),
             github_service=_make_github_svc_hitl(),
         )
 
@@ -2094,7 +2091,6 @@ def test_run_stops_after_max_iterations_from_cfg(tmp_path):
             run_agent=_fake_run_agent,
             validate_config=lambda _: None,
             github_service=_make_github_svc(),
-            run_host_checks=lambda _: [],
         )
     )
 
@@ -2129,7 +2125,6 @@ def test_run_limits_concurrency_to_max_parallel_from_cfg(tmp_path):
             validate_config=lambda _: None,
             git_service=_make_git_svc(),
             github_service=_make_github_svc(),
-            run_host_checks=lambda _: [],
         )
     )
 
@@ -2149,7 +2144,6 @@ def test_run_with_no_cfg_completes_using_module_singleton(tmp_path):
             run_agent=_fake_run_agent,
             validate_config=lambda _: None,
             github_service=_make_github_svc(),
-            run_host_checks=lambda _: [],
         )
     )
 
@@ -2177,7 +2171,6 @@ def test_run_passes_plan_override_model_and_effort_from_cfg(tmp_path):
             run_agent=_fake_run_agent,
             validate_config=lambda _: None,
             github_service=_make_github_svc(),
-            run_host_checks=lambda _: [],
         )
     )
 
@@ -2215,7 +2208,6 @@ def test_run_applies_validate_config_model_resolution_to_agent_calls(tmp_path):
             run_agent=_fake_run_agent,
             validate_config=_resolving_validate,
             github_service=_make_github_svc(),
-            run_host_checks=lambda _: [],
         )
     )
 
@@ -2266,21 +2258,44 @@ def test_worktree_sha_set_at_iteration_start(tmp_path):
     )
 
 
-def test_no_host_checks_run_after_merge(tmp_path):
-    """After a clean plan→implement→merge cycle, run_host_checks must never be called."""
-    host_checks_called = []
+def test_worktree_sha_refreshed_each_iteration(tmp_path):
+    """get_head_sha must be called before each Planner call across multiple iterations."""
+    call_order: list[str] = []
+    planner_count = [0]
+
+    mock_git = _make_git_svc(try_merge_side_effect=[True])
+    mock_git.get_head_sha.side_effect = lambda _: (
+        call_order.append("get_head_sha") or "sha"
+    )
 
     async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            planner_count[0] += 1
+            call_order.append(f"Planner-{planner_count[0]}")
+            if planner_count[0] == 1:
+                return _plan_json([{"number": 1, "title": "Fix"}])
+            return _plan_json([])
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix"}])
+        return ""
 
     _run(
         tmp_path,
         _fake_run_agent,
-        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        git_service=mock_git,
         github_service=_make_github_svc(),
-        run_host_checks=lambda _: host_checks_called.append(True) or [],
+        cfg=Config(max_parallel=4, max_iterations=2),
     )
 
-    assert host_checks_called == [], "run_host_checks must not be called after merge"
+    sha_indices = [i for i, e in enumerate(call_order) if e == "get_head_sha"]
+    planner_indices = [i for i, e in enumerate(call_order) if e.startswith("Planner")]
+    assert len(sha_indices) == 2, (
+        f"get_head_sha must be called once per iteration; order={call_order}"
+    )
+    assert len(planner_indices) == 2, (
+        f"Planner must be called twice; order={call_order}"
+    )
+    for sha_idx, planner_idx in zip(sha_indices, planner_indices):
+        assert sha_idx < planner_idx, (
+            f"get_head_sha must precede Planner each iteration; order={call_order}"
+        )
