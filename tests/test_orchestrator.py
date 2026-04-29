@@ -3214,27 +3214,21 @@ def test_implement_phase_usage_limit_hit_not_counted_as_completed(tmp_path):
 # ── Issue-214: IssueParseError from _handle_preflight_failure ──────────────────
 
 
-def test_handle_preflight_failure_raises_issue_parse_error_when_no_issue_tag(tmp_path):
-    """_handle_preflight_failure raises IssueParseError when agent output has no <issue label="...">N</issue> tag."""
-    from pycastle.agent_output_protocol import IssueParseError
-    from pycastle.orchestrator import _handle_preflight_failure
+def test_preflight_phase_raises_runtime_error_when_preflight_issue_agent_produces_no_issue_tag(
+    tmp_path,
+):
+    """preflight_phase must raise RuntimeError when the preflight-issue agent returns output
+    with no valid <issue label="...">N</issue> tag."""
 
-    async def _fake_run_agent(**kwargs):
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            raise PreflightError([("ruff", "ruff check .", "E501")])
         return AgentIncomplete(partial_output="no issue tag here")
 
-    github_svc = _make_github_svc()
-    with pytest.raises(IssueParseError):
-        asyncio.run(
-            _handle_preflight_failure(
-                [("ruff", "ruff check .", "E501")],
-                {},
-                tmp_path,
-                github_svc,
-                _fake_run_agent,
-                "hitl",
-                tmp_path,
-            )
-        )
+    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc_afk())
+
+    with pytest.raises(RuntimeError, match="issue"):
+        asyncio.run(preflight_phase(deps))
 
 
 # ── Issue-245: Unified orchestrator loop (plan slicing) ───────────────────────
