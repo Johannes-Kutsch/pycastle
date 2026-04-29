@@ -96,7 +96,9 @@ def test_load_config_without_repo_root_uses_cwd(tmp_path, monkeypatch):
     assert cfg.docker_image_name == "myapp"
 
 
-def test_load_config_applies_stage_override_from_local_file_using_package_import(tmp_path):
+def test_load_config_applies_stage_override_from_local_file_using_package_import(
+    tmp_path,
+):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(
         "from pycastle import StageOverride\n"
