@@ -972,6 +972,51 @@ def test_container_cleanup_runs_even_when_worktree_cleanup_raises(tmp_path):
     assert len(container_exit_calls) == 1
 
 
+# ── Cycle 25-C: container stops before worktree is removed ───────────────────
+
+
+def test_container_stops_before_worktree_is_removed(tmp_path):
+    """Container must be stopped before the worktree is removed."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    call_order: list[str] = []
+
+    class _OrderTrackingRunner:
+        def __init__(self, *_, **__):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            call_order.append("container_exit")
+
+        def exec_simple(self, cmd, timeout=None):
+            return ""
+
+        def run_streaming(self):
+            return "<promise>COMPLETE</promise>"
+
+    def tracking_remove(repo, wt):
+        call_order.append("worktree_remove")
+
+    with patch("pycastle.container_runner.ContainerRunner", _OrderTrackingRunner):
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/test",
+                create_worktree_fn=_noop_create,
+                remove_worktree_fn=tracking_remove,
+            )
+        )
+
+    assert call_order == ["container_exit", "worktree_remove"]
+
+
 # ── Cycle 32-3: gitdir temp file cleaned up after run_agent ──────────────────
 
 

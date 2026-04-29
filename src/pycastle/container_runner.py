@@ -436,15 +436,19 @@ async def run_agent(
             try:
                 yield
             finally:
-                if gitdir_overlay:
-                    gitdir_overlay.unlink(missing_ok=True)
                 exc: BaseException | None = None
+                try:
+                    runner.__exit__(None, None, None)
+                except BaseException as e:
+                    exc = e
                 if worktree_host_path and not _token.wants_worktree_preserved:
                     try:
                         remove_worktree_fn(mount_path, worktree_host_path)
                     except BaseException as e:
-                        exc = e
-                runner.__exit__(None, None, None)
+                        if exc is None:
+                            exc = e
+                if gitdir_overlay:
+                    gitdir_overlay.unlink(missing_ok=True)
                 if exc is not None:
                     raise exc
 
