@@ -52,8 +52,9 @@
 | --- | --- | --- |
 | **agent** | A Claude Code instance running inside an isolated Docker container | bot, worker |
 | **orchestrator** | The main loop that coordinates agent phases across GitHub issues | runner, coordinator |
-| **iteration** | One complete 3-phase loop (plan → implement+review → merge); up to MAX_ITERATIONS per `pycastle run` invocation | cycle, round, pipeline |
+| **iteration** | One complete plan-bounded loop ending after all planned issues have been attempted; up to MAX_ITERATIONS per `pycastle run` invocation; in parallel mode a single merge phase closes the iteration, in sequential mode each issue gets its own merge before the next starts | cycle, round, pipeline |
 | **3-phase loop** | The structure of one iteration: plan phase, implement+review phase, merge phase | pipeline, workflow |
+| **sequential mode** | The orchestration behavior that auto-activates when `max_parallel = 1`; within one iteration each issue is processed individually — implement → review → merge — with the safe SHA re-pinned from HEAD after each merge before the next issue starts; eliminates the merge conflicts that arise from parallel branches sharing the same base SHA | serial mode, one-at-a-time mode |
 | **plan phase** | Phase where the Planner analyzes open issues and produces a plan | planning step |
 | **implement phase** | Phase where Implementers fix individual issues in isolated worktrees | coding step |
 | **review phase** | Phase where the Reviewer checks an Implementer's changes before merge | code review step |
@@ -186,6 +187,7 @@
 - The **HITL verdict** is read by the orchestrator from the GitHub issue label after the **preflight-issue agent** completes; `ready-for-agent` triggers the **preflight-fix path**, `ready-for-human` raises **PreflightError** and exits with a non-zero code.
 - On the **preflight-fix path**, the Planner is skipped; one Implementer is spawned for the preflight issue, followed by one Reviewer, then a merge and post-merge check; a new iteration then begins from the post-merge check result.
 - All **Implementer** worktrees are created from the pinned **safe SHA**, never from HEAD directly; this guarantees every agent starts from a verified-clean state regardless of external commits that land on main after preflight passes.
+- In **sequential mode** (`max_parallel = 1`), the iteration processes issues one by one: after each issue's merge the safe SHA is re-pinned to the new HEAD, and the next Implementer starts from that SHA; a failed issue is skipped (remains `ready-for-agent`) and the queue continues; the Merger remains available as a fallback for unexpected conflicts; no additional pre-flight checks run between issues.
 - The **Pre-flight phase** (agent lifecycle) runs quality checks inside the container and returns a list of failure tuples to the orchestrator; it never spawns agents internally.
 - An **orphan sweep** runs once at orchestrator startup; **collision detection** holds a per-branch lock for the full duration of each agent run.
 - Host mounts per container: host repo → RO at `/home/agent/repo`; worktree → RW at `/home/agent/workspace`; `<host-repo>/.git` → RW at `/.pycastle-parent-git`; on Windows, gitdir overlay → RO over `/home/agent/workspace/.git`.
