@@ -2777,6 +2777,57 @@ def test_merge_phase_mixed_partitions_clean_and_conflict(tmp_path):
     mock_github.close_issue.assert_any_call(8)
 
 
+# ── Issue 226: Merger runs in isolated sandbox worktree ──────────────────────
+
+
+def test_merge_phase_merger_receives_sandbox_branch(tmp_path):
+    """merge_phase must pass branch='pycastle/merge-sandbox' to the Merger's run_agent()."""
+    issue = {"number": 9, "title": "Conflict"}
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+    captured: dict = {}
+
+    async def _fake_run_agent(name, branch=None, **kwargs):
+        if name == "Merger":
+            captured["branch"] = branch
+        return AgentIncomplete(partial_output="")
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=_make_github_svc(),
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    asyncio.run(merge_phase([issue], deps))
+
+    assert captured.get("branch") == "pycastle/merge-sandbox"
+
+
+def test_merge_phase_merger_mount_path_is_repo_root(tmp_path):
+    """merge_phase must pass mount_path=repo_root to Merger so run_agent derives the worktree from it."""
+    issue = {"number": 10, "title": "Conflict"}
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+    captured: dict = {}
+
+    async def _fake_run_agent(name, mount_path=None, **kwargs):
+        if name == "Merger":
+            captured["mount_path"] = mount_path
+        return AgentIncomplete(partial_output="")
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=_make_github_svc(),
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    asyncio.run(merge_phase([issue], deps))
+
+    assert captured.get("mount_path") == tmp_path
+
+
 def test_run_full_iteration_cold_path(git_repo):
     """run() executes a full iteration: preflight→plan→implement→merge, and closes the issue."""
     import subprocess
