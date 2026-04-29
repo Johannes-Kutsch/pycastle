@@ -140,7 +140,13 @@ def parse_plan(output: str) -> list[dict] | PlanParseFailure:
             raw_output=text,
             detail="Planner produced no <plan> tag.",
         )
-    data = json.loads(match.group(1))
+    try:
+        data = json.loads(match.group(1))
+    except json.JSONDecodeError as exc:
+        return PlanParseFailure(
+            raw_output=text,
+            detail=f"Planner produced malformed JSON inside <plan> tag: {exc}",
+        )
     if "unblocked_issues" in data:
         raw = data["unblocked_issues"]
     elif "issues" in data:
