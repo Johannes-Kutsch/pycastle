@@ -292,3 +292,14 @@ def test_main_does_not_print_success_message_on_failure(tmp_path, monkeypatch, c
         main(docker_service=svc)
     out = capsys.readouterr().out
     assert "Build complete" not in out
+
+
+def test_main_success_message_not_on_stderr(tmp_path, monkeypatch, capsys):
+    from pycastle.build_command import main
+
+    monkeypatch.chdir(tmp_path)
+    svc = _make_docker_service()
+    with pytest.raises(SystemExit):
+        main(docker_service=svc)
+    err = capsys.readouterr().err
+    assert "Build complete" not in err
