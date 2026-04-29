@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from pycastle.config import Config, StageOverride
 from pycastle.errors import ConfigValidationError, PreflightError
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
@@ -219,7 +220,6 @@ def test_preflight_issue_branch_uses_sandcastle_format(tmp_path):
         _fake_run_agent,
         git_service=_make_git_svc(try_merge_side_effect=[True]),
         github_service=_make_github_svc_afk(),
-        max_iterations=1,
     )
 
     assert captured_branches == ["sandcastle/issue-77"], (
@@ -310,10 +310,7 @@ def _run(
     git_service=None,
     github_service=None,
     run_host_checks=None,
-    stage_overrides=None,
-    max_parallel=4,
-    max_iterations=1,
-    logs_dir=None,
+    cfg=None,
 ):
     asyncio.run(
         run(
@@ -324,10 +321,7 @@ def _run(
             git_service=git_service,
             github_service=github_service,
             run_host_checks=run_host_checks or (lambda _: []),
-            stage_overrides=stage_overrides,
-            max_parallel=max_parallel,
-            max_iterations=max_iterations,
-            logs_dir=logs_dir,
+            cfg=cfg if cfg is not None else Config(max_parallel=4, max_iterations=1),
         )
     )
 
@@ -402,7 +396,10 @@ def test_failed_agent_appends_traceback_to_errors_log(tmp_path):
         raise boom
 
     _run(
-        tmp_path, _fake_run_agent, github_service=_make_github_svc(), logs_dir=logs_dir
+        tmp_path,
+        _fake_run_agent,
+        github_service=_make_github_svc(),
+        cfg=Config(max_parallel=4, max_iterations=1, logs_dir=logs_dir),
     )
 
     content = errors_log.read_text()
@@ -421,7 +418,10 @@ def test_failed_agent_errors_log_has_timestamp_separator(tmp_path):
         raise RuntimeError("boom")
 
     _run(
-        tmp_path, _fake_run_agent, github_service=_make_github_svc(), logs_dir=logs_dir
+        tmp_path,
+        _fake_run_agent,
+        github_service=_make_github_svc(),
+        cfg=Config(max_parallel=4, max_iterations=1, logs_dir=logs_dir),
     )
 
     assert "---" in errors_log.read_text()
@@ -437,7 +437,10 @@ def test_failed_agent_prints_traceback_to_stderr(tmp_path, capsys):
         raise RuntimeError("stderr traceback check")
 
     _run(
-        tmp_path, _fake_run_agent, github_service=_make_github_svc(), logs_dir=logs_dir
+        tmp_path,
+        _fake_run_agent,
+        github_service=_make_github_svc(),
+        cfg=Config(max_parallel=4, max_iterations=1, logs_dir=logs_dir),
     )
 
     err = capsys.readouterr().err
@@ -592,7 +595,10 @@ def test_implementer_preflight_error_logs_check_details(tmp_path, capsys):
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir()
     _run(
-        tmp_path, _fake_run_agent, github_service=_make_github_svc(), logs_dir=logs_dir
+        tmp_path,
+        _fake_run_agent,
+        github_service=_make_github_svc(),
+        cfg=Config(max_parallel=4, max_iterations=1, logs_dir=logs_dir),
     )
 
     out = capsys.readouterr().out
@@ -683,18 +689,15 @@ def test_planner_receives_plan_stage_model_and_effort(tmp_path):
         )
         return _plan_json([])
 
-    stage_overrides = {
-        "plan": {"model": "claude-haiku-4-5", "effort": "low"},
-        "implement": {"model": "", "effort": ""},
-        "review": {"model": "", "effort": ""},
-        "merge": {"model": "", "effort": ""},
-    }
-
     _run(
         tmp_path,
         _fake_run_agent,
-        stage_overrides=stage_overrides,
         github_service=_make_github_svc(),
+        cfg=Config(
+            max_parallel=4,
+            max_iterations=1,
+            plan_override=StageOverride(model="claude-haiku-4-5", effort="low"),
+        ),
     )
 
     planner_call = next(c for c in captured if c["name"] == "Planner")
@@ -714,19 +717,16 @@ def test_implementer_receives_implement_stage_model_and_effort(tmp_path):
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix"}])
 
-    stage_overrides = {
-        "plan": {"model": "", "effort": ""},
-        "implement": {"model": "claude-sonnet-4-6", "effort": "high"},
-        "review": {"model": "", "effort": ""},
-        "merge": {"model": "", "effort": ""},
-    }
-
     _run(
         tmp_path,
         _fake_run_agent,
-        stage_overrides=stage_overrides,
         git_service=_make_git_svc(),
         github_service=_make_github_svc(),
+        cfg=Config(
+            max_parallel=4,
+            max_iterations=1,
+            implement_override=StageOverride(model="claude-sonnet-4-6", effort="high"),
+        ),
     )
 
     impl_call = next(c for c in captured if "Implementer" in c["name"])
@@ -746,19 +746,16 @@ def test_reviewer_receives_review_stage_model_and_effort(tmp_path):
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix"}])
 
-    stage_overrides = {
-        "plan": {"model": "", "effort": ""},
-        "implement": {"model": "", "effort": ""},
-        "review": {"model": "claude-haiku-4-5", "effort": "normal"},
-        "merge": {"model": "", "effort": ""},
-    }
-
     _run(
         tmp_path,
         _fake_run_agent,
-        stage_overrides=stage_overrides,
         git_service=_make_git_svc(),
         github_service=_make_github_svc(),
+        cfg=Config(
+            max_parallel=4,
+            max_iterations=1,
+            review_override=StageOverride(model="claude-haiku-4-5", effort="normal"),
+        ),
     )
 
     rev_call = next(c for c in captured if "Reviewer" in c["name"])
@@ -778,19 +775,16 @@ def test_merger_receives_merge_stage_model_and_effort(tmp_path):
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix"}])
 
-    stage_overrides = {
-        "plan": {"model": "", "effort": ""},
-        "implement": {"model": "", "effort": ""},
-        "review": {"model": "", "effort": ""},
-        "merge": {"model": "claude-opus-4-7", "effort": "low"},
-    }
-
     _run(
         tmp_path,
         _fake_run_agent,
-        stage_overrides=stage_overrides,
         git_service=_make_git_svc(try_merge_side_effect=[False]),
         github_service=_make_github_svc(),
+        cfg=Config(
+            max_parallel=4,
+            max_iterations=1,
+            merge_override=StageOverride(model="claude-opus-4-7", effort="low"),
+        ),
     )
 
     merger_call = next(c for c in captured if c["name"] == "Merger")
@@ -808,17 +802,9 @@ def test_empty_stage_override_passes_empty_strings(tmp_path):
         )
         return _plan_json([])
 
-    stage_overrides = {
-        "plan": {"model": "", "effort": ""},
-        "implement": {"model": "", "effort": ""},
-        "review": {"model": "", "effort": ""},
-        "merge": {"model": "", "effort": ""},
-    }
-
     _run(
         tmp_path,
         _fake_run_agent,
-        stage_overrides=stage_overrides,
         github_service=_make_github_svc(),
     )
 
@@ -839,19 +825,21 @@ def test_stage_overrides_are_independent(tmp_path):
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix"}])
 
-    stage_overrides = {
-        "plan": {"model": "claude-haiku-4-5", "effort": "low"},
-        "implement": {"model": "claude-sonnet-4-6", "effort": "normal"},
-        "review": {"model": "claude-haiku-4-5", "effort": ""},
-        "merge": {"model": "claude-opus-4-7", "effort": "high"},
-    }
-
     _run(
         tmp_path,
         _fake_run_agent,
-        stage_overrides=stage_overrides,
         git_service=_make_git_svc(try_merge_side_effect=[False]),
         github_service=_make_github_svc(),
+        cfg=Config(
+            max_parallel=4,
+            max_iterations=1,
+            plan_override=StageOverride(model="claude-haiku-4-5", effort="low"),
+            implement_override=StageOverride(
+                model="claude-sonnet-4-6", effort="normal"
+            ),
+            review_override=StageOverride(model="claude-haiku-4-5", effort=""),
+            merge_override=StageOverride(model="claude-opus-4-7", effort="high"),
+        ),
     )
 
     by_name = {c["name"]: c for c in captured}
@@ -948,7 +936,7 @@ def test_multiple_implementers_run_in_parallel(tmp_path):
         _fake_run_agent,
         git_service=_make_git_svc(),
         github_service=_make_github_svc(),
-        max_parallel=4,
+        cfg=Config(max_parallel=4, max_iterations=1),
     )
 
     assert max_concurrent == 3, (
@@ -986,7 +974,7 @@ def test_concurrent_agents_never_exceed_max_parallel(tmp_path):
         _fake_run_agent,
         git_service=_make_git_svc(),
         github_service=_make_github_svc(),
-        max_parallel=max_parallel,
+        cfg=Config(max_parallel=max_parallel, max_iterations=1),
     )
 
     assert max_active <= max_parallel, (
@@ -1020,7 +1008,7 @@ def test_implementer_starts_while_reviewer_runs(tmp_path):
         _fake_run_agent,
         git_service=_make_git_svc(),
         github_service=_make_github_svc(),
-        max_parallel=2,
+        cfg=Config(max_parallel=2, max_iterations=1),
     )
 
     impl_3_start = next(
@@ -1611,7 +1599,10 @@ def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
         raise RuntimeError("agent failed")
 
     _run(
-        tmp_path, _fake_run_agent, github_service=_make_github_svc(), logs_dir=logs_dir
+        tmp_path,
+        _fake_run_agent,
+        github_service=_make_github_svc(),
+        cfg=Config(max_parallel=4, max_iterations=1, logs_dir=logs_dir),
     )
 
     assert (logs_dir / "errors.log").exists()
@@ -1793,7 +1784,7 @@ def test_safe_sha_repinned_after_passing_post_merge_check(tmp_path):
         git_service=mock_git,
         github_service=_make_github_svc(),
         run_host_checks=lambda _: [],
-        max_iterations=2,
+        cfg=Config(max_parallel=4, max_iterations=2),
     )
 
     assert len(captured_shas) == 2, f"Expected 2 implementer calls; got {captured_shas}"
@@ -1825,7 +1816,7 @@ def test_preplanning_preflight_skipped_when_post_merge_check_just_passed(tmp_pat
         git_service=mock_git,
         github_service=_make_github_svc(),
         run_host_checks=lambda _: [],
-        max_iterations=2,
+        cfg=Config(max_parallel=4, max_iterations=2),
     )
 
     assert len(planner_skip_flags) == 2, (
@@ -1888,7 +1879,7 @@ def test_preplanning_preflight_reruns_after_post_merge_check_failure(tmp_path):
         git_service=mock_git,
         github_service=mock_github,
         run_host_checks=lambda _: [("pytest", "pytest", "FAILED")],  # always fails
-        max_iterations=2,
+        cfg=Config(max_parallel=4, max_iterations=2),
     )
 
     assert len(planner_skip_flags) == 2, (
@@ -1973,7 +1964,6 @@ def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
         _fake_run_agent,
         git_service=_make_git_svc(try_merge_side_effect=[True]),
         github_service=_make_github_svc_afk(),
-        max_iterations=1,
     )
 
     planner_calls = [n for n in agent_names if n == "Planner"]
@@ -2005,7 +1995,6 @@ def test_preflight_failure_hitl_exits_nonzero_no_implementer(tmp_path):
             tmp_path,
             _fake_run_agent,
             github_service=_make_github_svc_hitl(),
-            max_iterations=1,
         )
 
     assert exc_info.value.code != 0, "Exit code must be non-zero for HITL"
@@ -2041,7 +2030,6 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
             tmp_path,
             _fake_run_agent,
             github_service=_make_github_svc_hitl(),
-            max_iterations=1,
         )
 
     assert len(preflight_issue_calls) == 1, (
@@ -2090,7 +2078,6 @@ def test_preplanning_and_postmerge_failures_use_same_handler(tmp_path):
             git_service=mock_git,
             github_service=mock_github,
             run_host_checks=lambda _: [("pytest", "pytest", "FAILED")],
-            max_iterations=1,
         )
 
     assert len(preflight_issue_calls) == 2, (
@@ -2137,7 +2124,7 @@ def test_afk_post_merge_fix_success_skips_preflight_next_iteration(tmp_path):
         git_service=mock_git,
         github_service=mock_github,
         run_host_checks=_run_host_checks,
-        max_iterations=2,
+        cfg=Config(max_parallel=4, max_iterations=2),
     )
 
     assert len(planner_skip_flags) == 2, (
@@ -2204,7 +2191,7 @@ def test_planner_skip_preflight_controlled_by_caller(tmp_path):
         git_service=mock_git,
         github_service=_make_github_svc(),
         run_host_checks=lambda _: [],
-        max_iterations=2,
+        cfg=Config(max_parallel=4, max_iterations=2),
     )
 
     planner_calls = [c for c in captured if c["name"] == "Planner"]
@@ -2345,7 +2332,10 @@ def test_usage_limit_error_awaits_sibling_tasks(tmp_path):
 
     with pytest.raises(SystemExit):
         _run(
-            tmp_path, _fake_run_agent, github_service=_make_github_svc(), max_parallel=4
+            tmp_path,
+            _fake_run_agent,
+            github_service=_make_github_svc(),
+            cfg=Config(max_parallel=4, max_iterations=1),
         )
 
     assert any("Implementer #2" in n for n in completed_agents), (
@@ -2371,7 +2361,7 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
             tmp_path,
             _fake_run_agent,
             github_service=_make_github_svc(),
-            logs_dir=logs_dir,
+            cfg=Config(max_parallel=4, max_iterations=1, logs_dir=logs_dir),
         )
 
     assert not errors_log.exists() or errors_log.read_text() == "", (
@@ -2397,7 +2387,10 @@ def test_usage_limit_error_alongside_regular_exception_exits_with_code_1(
 
     with pytest.raises(SystemExit) as exc_info:
         _run(
-            tmp_path, _fake_run_agent, github_service=_make_github_svc(), max_parallel=4
+            tmp_path,
+            _fake_run_agent,
+            github_service=_make_github_svc(),
+            cfg=Config(max_parallel=4, max_iterations=1),
         )
 
     assert exc_info.value.code == 1
@@ -2563,3 +2556,117 @@ def test_planner_receives_open_issues_json_not_issue_label(tmp_path):
     assert "Blocked by #99" not in captured_planner_args["OPEN_ISSUES_JSON"], (
         "Stale blocker reference must be stripped from OPEN_ISSUES_JSON"
     )
+
+
+# ── Issue-204: cfg injection ──────────────────────────────────────────────────
+
+
+def test_run_stops_after_max_iterations_from_cfg(tmp_path):
+    """run() with cfg=Config(max_iterations=2) must stop after 2 iteration cycles."""
+    planner_calls = [0]
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            planner_calls[0] += 1
+            if planner_calls[0] < 2:
+                return _plan_json([{"number": 1, "title": "Fix"}])
+            return _plan_json([])
+        return ""
+
+    asyncio.run(
+        run(
+            {},
+            tmp_path,
+            cfg=Config(max_iterations=2, max_parallel=4),
+            run_agent=_fake_run_agent,
+            validate_config=lambda _: None,
+            github_service=_make_github_svc(),
+            run_host_checks=lambda _: [],
+        )
+    )
+
+    assert planner_calls[0] == 2, f"Expected 2 planner calls; got {planner_calls[0]}"
+
+
+def test_run_limits_concurrency_to_max_parallel_from_cfg(tmp_path):
+    """run() with cfg=Config(max_parallel=2) must not exceed 2 concurrent implementers."""
+    active_count = 0
+    max_active = 0
+
+    async def _fake_run_agent(name, **kwargs):
+        nonlocal active_count, max_active
+        if name == "Planner":
+            return _plan_json(
+                [{"number": i, "title": f"Issue {i}"} for i in range(1, 6)]
+            )
+        active_count += 1
+        max_active = max(max_active, active_count)
+        await asyncio.sleep(0.01)
+        active_count -= 1
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    asyncio.run(
+        run(
+            {},
+            tmp_path,
+            cfg=Config(max_parallel=2, max_iterations=1),
+            run_agent=_fake_run_agent,
+            validate_config=lambda _: None,
+            git_service=_make_git_svc(),
+            github_service=_make_github_svc(),
+            run_host_checks=lambda _: [],
+        )
+    )
+
+    assert max_active <= 2, f"Expected at most 2 concurrent; max was {max_active}"
+
+
+def test_run_with_no_cfg_completes_using_module_singleton(tmp_path):
+    """run() with no cfg argument must complete using the module singleton without error."""
+
+    async def _fake_run_agent(name, **kwargs):
+        return _plan_json([])
+
+    asyncio.run(
+        run(
+            {},
+            tmp_path,
+            run_agent=_fake_run_agent,
+            validate_config=lambda _: None,
+            github_service=_make_github_svc(),
+            run_host_checks=lambda _: [],
+        )
+    )
+
+
+def test_run_passes_plan_override_model_and_effort_from_cfg(tmp_path):
+    """run() with cfg.plan_override must pass its model and effort to the Planner agent."""
+    captured_planner: dict = {}
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            captured_planner["model"] = kwargs.get("model")
+            captured_planner["effort"] = kwargs.get("effort")
+            return _plan_json([])
+        return ""
+
+    asyncio.run(
+        run(
+            {},
+            tmp_path,
+            cfg=Config(
+                max_iterations=1,
+                max_parallel=4,
+                plan_override=StageOverride(model="claude-haiku-4-5", effort="low"),
+            ),
+            run_agent=_fake_run_agent,
+            validate_config=lambda _: None,
+            github_service=_make_github_svc(),
+            run_host_checks=lambda _: [],
+        )
+    )
+
+    assert captured_planner.get("model") == "claude-haiku-4-5"
+    assert captured_planner.get("effort") == "low"
