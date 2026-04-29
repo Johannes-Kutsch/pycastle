@@ -28,7 +28,8 @@ def _unwrap(output: str) -> str:
         except json.JSONDecodeError:
             continue
         if isinstance(obj, dict) and obj.get("type") == "result":
-            return obj.get("result", output)
+            result = obj.get("result")
+            return result if isinstance(result, str) else output
     return output
 
 
@@ -43,6 +44,8 @@ def parse_plan(output: str) -> list[dict]:
         raise PlanParseError(
             f"Planner produced malformed JSON inside <plan> tag: {exc}"
         ) from exc
+    if not isinstance(data, dict):
+        raise PlanParseError(f"Plan JSON must be an object, got {type(data).__name__}.")
     if "unblocked_issues" in data:
         raw = data["unblocked_issues"]
     elif "issues" in data:
@@ -51,7 +54,12 @@ def parse_plan(output: str) -> list[dict]:
         raise PlanParseError(
             f"Plan JSON has no 'unblocked_issues' or 'issues' key. Keys found: {list(data.keys())}"
         )
-    return [{"number": i["number"], "title": i["title"]} for i in raw]
+    try:
+        return [{"number": i["number"], "title": i["title"]} for i in raw]
+    except (KeyError, TypeError) as exc:
+        raise PlanParseError(
+            f"Plan JSON issues list has unexpected structure: {exc}"
+        ) from exc
 
 
 def parse_issue_number(output: str) -> tuple[str, int]:
@@ -65,8 +73,8 @@ def parse_issue_number(output: str) -> tuple[str, int]:
     raw_number = match.group(2)
     try:
         number = int(raw_number)
-    except ValueError:
-        raise IssueParseError(f"{raw_number!r} is not a valid issue number.")
+    except ValueError as exc:
+        raise IssueParseError(f"{raw_number!r} is not a valid issue number.") from exc
     return label, number
 
 
