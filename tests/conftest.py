@@ -6,7 +6,9 @@ import pytest
 @pytest.fixture
 def git_repo(tmp_path):
     """Minimal git repo with one commit, ready for worktree operations."""
-    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "init", "-b", "main", str(tmp_path)], check=True, capture_output=True
+    )
     subprocess.run(
         ["git", "-C", str(tmp_path), "config", "user.email", "test@test.com"],
         check=True,
