@@ -22,19 +22,7 @@ class UsageLimitHit:
     last_output: str
 
 
-@dataclass(frozen=True)
-class PromiseParseFailure:
-    raw_output: str
-    detail: str
-
-
-AgentResult = (
-    AgentSuccess
-    | AgentIncomplete
-    | PreflightFailure
-    | UsageLimitHit
-    | PromiseParseFailure
-)
+AgentResult = AgentSuccess | AgentIncomplete | PreflightFailure | UsageLimitHit
 
 
 @dataclass
