@@ -10,6 +10,7 @@ from pycastle.errors import ConfigValidationError, PreflightError
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
 from pycastle.orchestrator import (
+    Deps,
     ImplementResult,
     IterationState,
     MergeResult,
@@ -18,6 +19,7 @@ from pycastle.orchestrator import (
     branch_for,
     delete_merged_branches,
     parse_plan,
+    preflight_phase,
     prune_orphan_worktrees,
     run,
     run_issue,
@@ -507,27 +509,21 @@ def test_run_issue_feedback_commands_formatted_from_implement_checks(tmp_path):
         assert f"`{cmd}`" in feedback_commands
 
 
-# ── Cycle 52-1: planner PreflightError → no implementers spawned ─────────────
+# ── Cycle 52-1: planner PreflightError → HITL exits ─────────────────────────
 
 
 def test_planner_preflight_error_spawns_no_implementers(tmp_path):
-    """On pre-planning PreflightError with HITL verdict, no Implementer must be spawned."""
-    implementer_names: list[str] = []
+    """On pre-planning PreflightError with HITL verdict, preflight_phase must exit immediately."""
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
-        if "preflight-issue" in name:
-            return "<issue>77</issue>"
-        implementer_names.append(name)
-        return ""
+        return "<issue>77</issue>"
+
+    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc_hitl())
 
     with pytest.raises(SystemExit):
-        _run(tmp_path, _fake_run_agent, github_service=_make_github_svc_hitl())
-
-    assert implementer_names == [], (
-        f"Expected no implementers on HITL verdict, got: {implementer_names}"
-    )
+        asyncio.run(preflight_phase(deps))
 
 
 def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
@@ -536,12 +532,12 @@ def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
-        if "preflight-issue" in name:
-            return "<issue>88</issue>"
-        return ""
+        return "<issue>88</issue>"
+
+    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc_hitl())
 
     with pytest.raises(SystemExit):
-        _run(tmp_path, _fake_run_agent, github_service=_make_github_svc_hitl())
+        asyncio.run(preflight_phase(deps))
 
     out = capsys.readouterr().out
     assert "88" in out, f"Output must reference the filed issue number; got: {out!r}"
@@ -2299,3 +2295,72 @@ def test_worktree_sha_refreshed_each_iteration(tmp_path):
         assert sha_idx < planner_idx, (
             f"get_head_sha must precede Planner each iteration; order={call_order}"
         )
+
+
+# ── Issue-207: preflight_phase boundary tests ─────────────────────────────────
+
+
+def _make_deps(tmp_path, run_agent_fn, *, git_svc=None, github_svc=None, cfg=None):
+    mock_git = git_svc or MagicMock(spec=GitService)
+    if git_svc is None:
+        mock_git.get_head_sha.return_value = "defaultsha"
+    return Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=github_svc or _make_github_svc_afk(),
+        run_agent=run_agent_fn,
+        cfg=cfg or Config(max_parallel=4, max_iterations=1),
+    )
+
+
+def test_preflight_phase_captures_sha_before_checks(tmp_path):
+    """preflight_phase must capture HEAD SHA into IterationState.worktree_sha before running checks."""
+    fake_sha = "deadbeef123"
+    mock_git = MagicMock(spec=GitService)
+    mock_git.get_head_sha.return_value = fake_sha
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            raise PreflightError([("ruff", "ruff check .", "E501")])
+        return "<issue>42</issue>"
+
+    deps = _make_deps(
+        tmp_path, _fake_run_agent, git_svc=mock_git, github_svc=_make_github_svc_afk()
+    )
+    state = asyncio.run(preflight_phase(deps))
+
+    assert state.worktree_sha == fake_sha
+
+
+def test_preflight_phase_failure_spawns_fix_and_preserves_sha(tmp_path):
+    """On AFK preflight failure, preflight_phase must spawn a fix issue and preserve worktree_sha."""
+    fix_agents_spawned: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            raise PreflightError([("ruff", "ruff check .", "E501")])
+        fix_agents_spawned.append(name)
+        return "<issue>77</issue>"
+
+    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc_afk())
+    state = asyncio.run(preflight_phase(deps))
+
+    assert any("preflight-issue" in n for n in fix_agents_spawned), (
+        f"Fix-issue agent must be spawned; got {fix_agents_spawned}"
+    )
+    assert state.worktree_sha is not None
+
+
+def test_preflight_phase_hitl_exits(tmp_path):
+    """On HITL preflight failure, preflight_phase must raise SystemExit."""
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            raise PreflightError([("ruff", "ruff check .", "E501")])
+        return "<issue>88</issue>"
+
+    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc_hitl())
+
+    with pytest.raises(SystemExit):
+        asyncio.run(preflight_phase(deps))

@@ -23,6 +23,18 @@ from .validate import validate_config as _default_validate_config
 @dataclasses.dataclass(frozen=True)
 class IterationState:
     worktree_sha: str | None = None
+    plan_output: str | None = None
+    issues: list[dict] | None = None
+
+
+@dataclasses.dataclass
+class Deps:
+    env: dict[str, str]
+    repo_root: Path
+    git_svc: GitService
+    github_svc: GithubService
+    run_agent: Any
+    cfg: Config
 
 
 @dataclasses.dataclass
@@ -194,6 +206,46 @@ async def _handle_preflight_failure(
     return "afk", issue_number
 
 
+async def preflight_phase(deps: Deps) -> IterationState:
+    sha = deps.git_svc.get_head_sha(deps.repo_root)
+    try:
+        plan_output = await deps.run_agent(
+            name="Planner",
+            prompt_file=deps.cfg.prompts_dir / "plan-prompt.md",
+            mount_path=deps.repo_root,
+            env=deps.env,
+            prompt_args={
+                "OPEN_ISSUES_JSON": json.dumps(
+                    strip_stale_blocker_refs(
+                        deps.github_svc.get_open_issues(deps.cfg.issue_label)
+                    )
+                )
+            },
+            model=deps.cfg.plan_override.model,
+            effort=deps.cfg.plan_override.effort,
+            stage="pre-planning",
+        )
+    except PreflightError as exc:
+        verdict, pf_num = await _handle_preflight_failure(
+            exc.failures,
+            deps.env,
+            deps.repo_root,
+            deps.github_svc,
+            deps.run_agent,
+            deps.cfg.hitl_label,
+            deps.cfg.prompts_dir,
+        )
+        if verdict == "hitl":
+            print(f"Preflight issue #{pf_num} requires human intervention. Exiting.")
+            sys.exit(1)
+        pf_title = deps.github_svc.get_issue_title(pf_num)
+        return IterationState(
+            worktree_sha=sha,
+            issues=[{"number": pf_num, "title": pf_title}],
+        )
+    return IterationState(worktree_sha=sha, plan_output=plan_output)
+
+
 async def run_issue(
     issue: dict,
     env: dict[str, str],
@@ -320,50 +372,22 @@ async def run(
             print(f"No issues with label '{cfg.issue_label}' found. Skipping.")
             break
 
-        _worktree_sha = git_svc.get_head_sha(repo_root)
+        deps = Deps(
+            env=env,
+            repo_root=repo_root,
+            git_svc=git_svc,
+            github_svc=_get_github_svc(),
+            run_agent=_run_agent,
+            cfg=cfg,
+        )
+        state = await preflight_phase(deps)
+        _worktree_sha = state.worktree_sha
 
-        issues: list[dict] | None = None
-        try:
-            plan_output = await _run_agent(
-                name="Planner",
-                prompt_file=cfg.prompts_dir / "plan-prompt.md",
-                mount_path=repo_root,
-                env=env,
-                prompt_args={
-                    "OPEN_ISSUES_JSON": json.dumps(
-                        strip_stale_blocker_refs(
-                            _get_github_svc().get_open_issues(cfg.issue_label)
-                        )
-                    )
-                },
-                model=cfg.plan_override.model,
-                effort=cfg.plan_override.effort,
-                stage="pre-planning",
-            )
-        except PreflightError as exc:
-            verdict, pf_num = await _handle_preflight_failure(
-                exc.failures,
-                env,
-                repo_root,
-                _get_github_svc(),
-                _run_agent,
-                cfg.hitl_label,
-                cfg.prompts_dir,
-            )
-            if verdict == "hitl":
-                print(
-                    f"Preflight issue #{pf_num} requires human intervention. Exiting."
-                )
-                sys.exit(1)
-            pf_title = _get_github_svc().get_issue_title(pf_num)
-            issues = [
-                {
-                    "number": pf_num,
-                    "title": pf_title,
-                }
-            ]
-        if issues is None:
-            issues = parse_plan(plan_output)
+        if state.issues is not None:
+            issues: list[dict] = state.issues
+        else:
+            assert state.plan_output is not None
+            issues = parse_plan(state.plan_output)
 
         if not issues:
             print(f"No issues with label '{cfg.issue_label}' found. Skipping.")
