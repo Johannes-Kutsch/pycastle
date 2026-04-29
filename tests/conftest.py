@@ -1,6 +1,12 @@
+import os
+import pathlib
 import subprocess
 
 import pytest
+
+
+def pytest_configure(config):
+    os.chdir(pathlib.Path(__file__).parent.parent)
 
 
 @pytest.fixture
