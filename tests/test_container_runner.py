@@ -194,7 +194,7 @@ def test_two_agents_run_concurrently(tmp_path):
 
 
 def test_run_agent_creates_worktree_at_issue_number_dir(tmp_path):
-    """run_agent with sandcastle/issue-N branch must create worktree at .worktrees/issue-N."""
+    """run_agent with pycastle/issue-N branch must create worktree at .worktrees/issue-N."""
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
@@ -210,7 +210,7 @@ def test_run_agent_creates_worktree_at_issue_number_dir(tmp_path):
                 prompt,
                 tmp_path,
                 {},
-                branch="sandcastle/issue-42",
+                branch="pycastle/issue-42",
                 create_worktree_fn=fake_create,
                 remove_worktree_fn=_noop_remove,
                 git_service=_make_git_service(),
@@ -242,7 +242,7 @@ def test_run_agent_worktree_dir_is_issue_number_regardless_of_slug(tmp_path):
                 prompt,
                 tmp_path,
                 {},
-                branch="sandcastle/issue-182-halt-flag-worktree-preservation",
+                branch="pycastle/issue-182-halt-flag-worktree-preservation",
                 create_worktree_fn=make_capture(paths_a),
                 remove_worktree_fn=_noop_remove,
                 git_service=_make_git_service(),
@@ -254,7 +254,7 @@ def test_run_agent_worktree_dir_is_issue_number_regardless_of_slug(tmp_path):
                 prompt,
                 tmp_path,
                 {},
-                branch="sandcastle/issue-182-halt-flag-conditional-worktree-preservation",
+                branch="pycastle/issue-182-halt-flag-conditional-worktree-preservation",
                 create_worktree_fn=make_capture(paths_b),
                 remove_worktree_fn=_noop_remove,
                 git_service=_make_git_service(),

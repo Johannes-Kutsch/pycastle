@@ -67,7 +67,7 @@ The **planner agent** reads all open GitHub issues labelled `ready-for-agent`. I
 
 ### 3. Implementer(s)
 
-For each planned issue, pycastle spawns an **implementer agent** in a dedicated git worktree on a branch named `sandcastle/issue-<N>`. The agent reads the issue, writes the code, and continuously runs the implement checks (`ruff check --fix`, `ruff format --check`, `mypy .`, `pytest` by default) until they pass. When the agent is satisfied it emits `<promise>COMPLETE</promise>`; if it cannot complete the issue it exits without that tag and the issue is skipped this iteration.
+For each planned issue, pycastle spawns an **implementer agent** in a dedicated git worktree on a branch named `pycastle/issue-<N>`. The agent reads the issue, writes the code, and continuously runs the implement checks (`ruff check --fix`, `ruff format --check`, `mypy .`, `pytest` by default) until they pass. When the agent is satisfied it emits `<promise>COMPLETE</promise>`; if it cannot complete the issue it exits without that tag and the issue is skipped this iteration.
 
 Multiple implementer agents can run in parallel (controlled by `max_parallel` in `config.py`).
 
