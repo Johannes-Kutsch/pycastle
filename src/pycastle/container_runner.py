@@ -15,7 +15,12 @@ from pathlib import Path
 import docker
 from docker.models.containers import Container as DockerContainer
 
-from .agent_result import AgentIncomplete, AgentSuccess, CancellationToken
+from .agent_result import (
+    AgentIncomplete,
+    AgentSuccess,
+    CancellationToken,
+    UsageLimitHit,
+)
 from .config import Config, config as _cfg
 from .errors import (
     AgentTimeoutError,
@@ -34,11 +39,6 @@ from .worktree import (
 )
 
 _branch_locks: dict[str, asyncio.Lock] = {}
-_usage_limit_halt: asyncio.Event = asyncio.Event()
-
-
-def reset_usage_limit_flag() -> None:
-    _usage_limit_halt.clear()
 
 
 def _is_usage_limit_line(line: str, patterns: tuple[str, ...]) -> bool:
@@ -385,12 +385,10 @@ async def run_agent(
     remove_worktree_fn: Callable[[Path, Path], None] = remove_worktree,
     *,
     token: CancellationToken | None = None,
-) -> AgentSuccess | AgentIncomplete:
+) -> AgentSuccess | AgentIncomplete | UsageLimitHit:
     _token = token if token is not None else CancellationToken()
     if _token.is_cancelled:
-        return AgentIncomplete(partial_output="")
-    if _usage_limit_halt.is_set():
-        return AgentIncomplete(partial_output="")
+        return UsageLimitHit(last_output="")
 
     print(f"\n[{name}] Started")
 
@@ -432,7 +430,6 @@ async def run_agent(
             model=model,
             effort=effort,
         )
-        preserve_worktree = [False]
 
         async with AsyncExitStack() as stack:
             if gitdir_overlay:
@@ -440,7 +437,7 @@ async def run_agent(
             if worktree_host_path:
 
                 def _cond_remove_worktree():
-                    if not preserve_worktree[0]:
+                    if not _token.wants_worktree_preserved:
                         remove_worktree_fn(mount_path, worktree_host_path)
 
                 stack.callback(_cond_remove_worktree)
@@ -455,12 +452,12 @@ async def run_agent(
                 )
                 if failures:
                     raise PreflightError(failures)
+            output = ""
             try:
                 output = await _work(name, runner, loop)
             except UsageLimitError:
-                _usage_limit_halt.set()
-                preserve_worktree[0] = True
-                raise
+                _token.cancel(preserve_worktree=True)
+                return UsageLimitHit(last_output=output)
             if "<promise>COMPLETE</promise>" in output:
                 return AgentSuccess(output=output)
             return AgentIncomplete(partial_output=output)
