@@ -42,9 +42,17 @@ _branch_locks: dict[str, asyncio.Lock] = {}
 
 
 def _is_usage_limit_line(line: str, patterns: tuple[str, ...]) -> bool:
-    """Return True only if line is a plain-text usage-limit message, not JSON."""
+    """Return True if line signals a usage limit — plain-text or a JSON result error."""
     try:
-        if isinstance(json.loads(line), dict):
+        obj = json.loads(line)
+        if isinstance(obj, dict):
+            if obj.get("type") == "result" and obj.get("is_error"):
+                if obj.get("api_error_status") == 429:
+                    return True
+                result_text = obj.get("result", "")
+                result_lower = result_text.lower()
+                if any(p.lower() in result_lower for p in patterns):
+                    return True
             return False
     except json.JSONDecodeError:
         pass
