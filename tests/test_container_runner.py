@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pycastle.config import Config
 from pycastle.container_runner import (
     ContainerRunner,
     _build_claude_command,
@@ -53,9 +54,12 @@ def _streaming_runner(name: str, chunks: list, log_path) -> ContainerRunner:
     return runner
 
 
-def _fake_runner(exit_code=0, stdout=b"", stderr=b""):
+def _fake_runner(exit_code=0, stdout=b"", stderr=b"", cfg=None):
     """ContainerRunner with mocked Docker container."""
-    runner = ContainerRunner("test", Path("/fake"), {}, docker_client=MagicMock())
+    kwargs: dict = {"docker_client": MagicMock()}
+    if cfg is not None:
+        kwargs["cfg"] = cfg
+    runner = ContainerRunner("test", Path("/fake"), {}, **kwargs)
     mock_result = MagicMock()
     mock_result.exit_code = exit_code
     mock_result.output = (stdout, stderr)
@@ -264,9 +268,8 @@ def test_run_agent_worktree_dir_is_issue_number_regardless_of_slug(tmp_path):
 # ── Cycle 15: worktree add must not run inside the container ─────────────────
 
 
-@patch("pycastle.container_runner.LOGS_DIR")
 @patch("pycastle.container_runner.docker")
-def test_worktree_add_not_called_inside_container(mock_docker, mock_logs_dir, tmp_path):
+def test_worktree_add_not_called_inside_container(mock_docker, tmp_path):
     """When worktree_host_path is provided, ContainerRunner must not exec worktree add."""
     mock_container = MagicMock()
     mock_docker.from_env.return_value.containers.run.return_value = mock_container
@@ -276,7 +279,12 @@ def test_worktree_add_not_called_inside_container(mock_docker, mock_logs_dir, tm
     worktree_path.mkdir()
 
     runner = ContainerRunner(
-        "test", tmp_path, {}, branch="feature/test", worktree_host_path=worktree_path
+        "test",
+        tmp_path,
+        {},
+        branch="feature/test",
+        worktree_host_path=worktree_path,
+        cfg=Config(logs_dir=tmp_path / "logs"),
     )
     runner.__enter__()
     runner.__exit__(None, None, None)
@@ -293,9 +301,8 @@ def test_worktree_add_not_called_inside_container(mock_docker, mock_logs_dir, tm
 # ── Cycle 16: implementer mounts worktree dir at /home/agent/workspace ────────
 
 
-@patch("pycastle.container_runner.LOGS_DIR")
 @patch("pycastle.container_runner.docker")
-def test_implementer_mounts_worktree_at_workspace(mock_docker, mock_logs_dir, tmp_path):
+def test_implementer_mounts_worktree_at_workspace(mock_docker, tmp_path):
     """When worktree_host_path is provided the container must bind it at /home/agent/workspace."""
     mock_container = MagicMock()
     mock_docker.from_env.return_value.containers.run.return_value = mock_container
@@ -305,7 +312,12 @@ def test_implementer_mounts_worktree_at_workspace(mock_docker, mock_logs_dir, tm
     worktree_path.mkdir()
 
     runner = ContainerRunner(
-        "test", tmp_path, {}, branch="feature/test", worktree_host_path=worktree_path
+        "test",
+        tmp_path,
+        {},
+        branch="feature/test",
+        worktree_host_path=worktree_path,
+        cfg=Config(logs_dir=tmp_path / "logs"),
     )
     runner.__enter__()
     runner.__exit__(None, None, None)
@@ -327,11 +339,8 @@ def test_implementer_mounts_worktree_at_workspace(mock_docker, mock_logs_dir, tm
 # ── Cycle 32-2: gitdir overlay bound at /home/agent/workspace/.git ───────────
 
 
-@patch("pycastle.container_runner.LOGS_DIR")
 @patch("pycastle.container_runner.docker")
-def test_container_mounts_gitdir_overlay_at_workspace_git(
-    mock_docker, mock_logs_dir, tmp_path
-):
+def test_container_mounts_gitdir_overlay_at_workspace_git(mock_docker, tmp_path):
     """When gitdir_overlay is set, ContainerRunner must bind-mount it at /home/agent/workspace/.git."""
     mock_container = MagicMock()
     mock_docker.from_env.return_value.containers.run.return_value = mock_container
@@ -348,6 +357,7 @@ def test_container_mounts_gitdir_overlay_at_workspace_git(
         branch="feature/test",
         worktree_host_path=worktree_path,
         gitdir_overlay=overlay_file,
+        cfg=Config(logs_dir=tmp_path / "logs"),
     )
     runner.__enter__()
     runner.__exit__(None, None, None)
@@ -425,11 +435,8 @@ def test_host_worktree_removed_even_when_container_raises(tmp_path):
 # ── Cycle 8: no container is started when host-side worktree creation fails ───
 
 
-@patch("pycastle.container_runner.LOGS_DIR")
 @patch("pycastle.container_runner.docker")
-def test_no_container_started_when_worktree_creation_fails(
-    mock_docker, mock_logs_dir, tmp_path
-):
+def test_no_container_started_when_worktree_creation_fails(mock_docker, tmp_path):
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
@@ -732,15 +739,14 @@ def _never_yields():
 
 
 def test_run_streaming_raises_agent_timeout_error_when_idle(tmp_path):
-    runner = _fake_runner()
+    runner = _fake_runner(cfg=Config(idle_timeout=0.05))
     mock_result = MagicMock()
     mock_result.output = _never_yields()
     runner._container.exec_run.return_value = mock_result
     runner._log_path = tmp_path / "test.log"
 
-    with patch("pycastle.container_runner.IDLE_TIMEOUT", 0.05):
-        with pytest.raises(AgentTimeoutError):
-            runner.run_streaming()
+    with pytest.raises(AgentTimeoutError):
+        runner.run_streaming()
 
 
 # ── Cycle 23-5: branch collision lock ────────────────────────────────────────
@@ -1368,9 +1374,8 @@ def test_run_streaming_prints_lines_from_separate_chunks(tmp_path, capsys):
 # ── Cycle 37-1: parent .git mounted rw at /.pycastle-parent-git ──────────────
 
 
-@patch("pycastle.container_runner.LOGS_DIR")
 @patch("pycastle.container_runner.docker")
-def test_container_mounts_parent_git_rw(mock_docker, mock_logs_dir, tmp_path):
+def test_container_mounts_parent_git_rw(mock_docker, tmp_path):
     """When worktree_host_path is set, <mount_path>/.git must be bound at /.pycastle-parent-git with mode rw."""
     mock_container = MagicMock()
     mock_docker.from_env.return_value.containers.run.return_value = mock_container
@@ -1379,7 +1384,12 @@ def test_container_mounts_parent_git_rw(mock_docker, mock_logs_dir, tmp_path):
     worktree_path.mkdir()
 
     runner = ContainerRunner(
-        "test", tmp_path, {}, branch="feature/test", worktree_host_path=worktree_path
+        "test",
+        tmp_path,
+        {},
+        branch="feature/test",
+        worktree_host_path=worktree_path,
+        cfg=Config(logs_dir=tmp_path / "logs"),
     )
     runner.__enter__()
     runner.__exit__(None, None, None)
@@ -2212,3 +2222,66 @@ def test_reset_usage_limit_flag_allows_run_agent_to_proceed(tmp_path):
 
     assert ran, "ContainerRunner must be started after reset_usage_limit_flag()"
     assert result == "done"
+
+
+# ── Issue 203: cfg injection into ContainerRunner ─────────────────────────────
+
+
+def test_container_runner_uses_custom_logs_dir_from_cfg(tmp_path):
+    """ContainerRunner with cfg=Config(logs_dir=...) must set _log_path under that dir."""
+    custom_logs = tmp_path / "my_logs"
+    runner = ContainerRunner(
+        "my-task",
+        Path("/fake"),
+        {},
+        docker_client=MagicMock(),
+        cfg=Config(logs_dir=custom_logs),
+    )
+    assert runner._log_path.parent == custom_logs
+
+
+def test_container_runner_constructs_without_cfg_using_default_logs_dir():
+    """ContainerRunner with no cfg must construct without error and use the default logs_dir."""
+    from pycastle.config import config as singleton
+
+    runner = ContainerRunner("task", Path("/fake"), {}, docker_client=MagicMock())
+    assert runner._log_path.parent == singleton.logs_dir
+
+
+def test_run_streaming_uses_usage_limit_patterns_from_cfg(tmp_path):
+    """Custom usage_limit_patterns injected via cfg must trigger UsageLimitError."""
+    runner = ContainerRunner(
+        "test",
+        Path("/fake"),
+        {},
+        docker_client=MagicMock(),
+        cfg=Config(usage_limit_patterns=("CUSTOM_LIMIT_SENTINEL",)),
+    )
+    runner._log_path = tmp_path / "test.log"
+    mock_result = MagicMock()
+    mock_result.output = iter([b"CUSTOM_LIMIT_SENTINEL reached\n"])
+    runner._container = MagicMock()
+    runner._container.exec_run.return_value = mock_result
+
+    with pytest.raises(UsageLimitError):
+        runner.run_streaming()
+
+
+def test_run_streaming_default_patterns_not_triggered_by_custom_cfg(tmp_path):
+    """Default usage_limit_patterns must not trigger when cfg overrides them."""
+    runner = ContainerRunner(
+        "test",
+        Path("/fake"),
+        {},
+        docker_client=MagicMock(),
+        cfg=Config(usage_limit_patterns=("CUSTOM_LIMIT_SENTINEL",)),
+    )
+    runner._log_path = tmp_path / "test.log"
+    mock_result = MagicMock()
+    # Default pattern "You've hit your" should NOT trigger with the custom cfg
+    mock_result.output = iter([b"You've hit your session limit\n"])
+    runner._container = MagicMock()
+    runner._container.exec_run.return_value = mock_result
+
+    result = runner.run_streaming()
+    assert "You've hit your session limit" in result
