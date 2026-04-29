@@ -20,6 +20,28 @@ from .github_service import GithubService
 from .validate import validate_config as _default_validate_config
 
 
+@dataclasses.dataclass(frozen=True)
+class IterationState:
+    worktree_sha: str | None = None
+
+
+@dataclasses.dataclass
+class PlanResult:
+    issues: list[dict]
+
+
+@dataclasses.dataclass
+class ImplementResult:
+    completed: list[dict]
+    errors: list[tuple[dict, Exception]]
+
+
+@dataclasses.dataclass
+class MergeResult:
+    clean: list[dict]
+    conflicts: list[dict]
+
+
 async def wait_for_clean_working_tree(repo_root: Path, git_svc: GitService) -> None:
     if git_svc.is_working_tree_clean(repo_root):
         return
@@ -293,8 +315,7 @@ async def run(
     )
     prune_orphan_worktrees(repo_root)
     git_svc = git_service or GitService()
-    _safe_sha: str | None = None
-    _skip_preflight: bool = False
+    _worktree_sha: str | None = None
     _lazy_github_svc: GithubService | None = None
 
     def _get_github_svc() -> GithubService:
@@ -329,7 +350,6 @@ async def run(
                 model=cfg.plan_override.model,
                 effort=cfg.plan_override.effort,
                 stage="pre-planning",
-                skip_preflight=_skip_preflight,
             )
         except PreflightError as exc:
             verdict, pf_num = await _handle_preflight_failure(
@@ -353,8 +373,6 @@ async def run(
                     "title": pf_title,
                 }
             ]
-            _skip_preflight = True  # skip SHA pinning — code was broken
-
         if issues is None:
             issues = parse_plan(plan_output)
 
@@ -362,9 +380,7 @@ async def run(
             print(f"No issues with label '{cfg.issue_label}' found. Skipping.")
             break
 
-        if not _skip_preflight:
-            _safe_sha = git_svc.get_head_sha(repo_root)
-        _skip_preflight = False
+        _worktree_sha = git_svc.get_head_sha(repo_root)
 
         print(f"Planning complete. {len(issues)} issue(s):")
         for issue in issues:
@@ -383,7 +399,7 @@ async def run(
                     semaphore,
                     cfg=cfg,
                     run_agent=_run_agent,
-                    sha=_safe_sha,
+                    sha=_worktree_sha,
                 )
                 for i in issues
             ],
@@ -496,11 +512,9 @@ async def run(
                         delete_merged_branches([pf_branch], repo_root, git_svc)
                         second_failures = _run_host_checks(cfg.preflight_checks)
                         if not second_failures:
-                            _safe_sha = git_svc.get_head_sha(repo_root)
-                            _skip_preflight = True
+                            _worktree_sha = git_svc.get_head_sha(repo_root)
                 continue
-            _safe_sha = git_svc.get_head_sha(repo_root)
-            _skip_preflight = True
+            _worktree_sha = git_svc.get_head_sha(repo_root)
 
         if conflict_issues:
             await _run_agent(

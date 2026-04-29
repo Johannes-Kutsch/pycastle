@@ -10,6 +10,7 @@ from pycastle.errors import ConfigValidationError, PreflightError
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
 from pycastle.orchestrator import (
+    IterationState,
     _stage_for_agent,
     branch_for,
     delete_merged_branches,
@@ -20,6 +21,22 @@ from pycastle.orchestrator import (
     strip_stale_blocker_refs,
     wait_for_clean_working_tree,
 )
+
+
+# ── IterationState ───────────────────────────────────────────────────────────
+
+
+def test_iteration_state_defaults_to_none():
+    state = IterationState()
+    assert state.worktree_sha is None
+
+
+def test_iteration_state_is_frozen():
+    from dataclasses import FrozenInstanceError
+
+    with pytest.raises(FrozenInstanceError):
+        state = IterationState(worktree_sha="abc123")
+        state.worktree_sha = "other"  # type: ignore[misc]
 
 
 # ── parse_plan ────────────────────────────────────────────────────────────────
@@ -1757,79 +1774,6 @@ def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
     )
 
 
-def test_safe_sha_repinned_after_passing_post_merge_check(tmp_path):
-    """After post-merge checks pass, _safe_sha must be repinned to the new HEAD SHA for next iteration."""
-    captured_shas: list[str | None] = []
-    shas = ["first_sha", "post_merge_sha", "second_iter_sha"]
-    sha_index = [0]
-
-    mock_git = _make_git_svc(try_merge_side_effect=[True, True])
-
-    def _get_head_sha(_repo_root):
-        sha = shas[sha_index[0]]
-        sha_index[0] += 1
-        return sha
-
-    mock_git.get_head_sha.side_effect = _get_head_sha
-
-    async def _fake_run_agent(name, sha=None, **kwargs):
-        if "Implementer" in name:
-            captured_shas.append(sha)
-            return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix"}])
-
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        git_service=mock_git,
-        github_service=_make_github_svc(),
-        run_host_checks=lambda _: [],
-        cfg=Config(max_parallel=4, max_iterations=2),
-    )
-
-    assert len(captured_shas) == 2, f"Expected 2 implementer calls; got {captured_shas}"
-    assert captured_shas[0] == "first_sha", (
-        f"First implementer must use pre-planning SHA; got {captured_shas[0]!r}"
-    )
-    assert captured_shas[1] == "post_merge_sha", (
-        f"Second implementer must use post-merge repinned SHA; got {captured_shas[1]!r}"
-    )
-
-
-def test_preplanning_preflight_skipped_when_post_merge_check_just_passed(tmp_path):
-    """When post-merge check passed in previous iteration, skip_preflight=True must be passed to Planner."""
-    planner_skip_flags: list[bool] = []
-
-    mock_git = _make_git_svc(try_merge_side_effect=[True, True])
-    mock_git.get_head_sha.return_value = "any_sha"
-
-    async def _fake_run_agent(name, skip_preflight=False, sha=None, **kwargs):
-        if name == "Planner":
-            planner_skip_flags.append(skip_preflight)
-        if "Implementer" in name:
-            return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix"}])
-
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        git_service=mock_git,
-        github_service=_make_github_svc(),
-        run_host_checks=lambda _: [],
-        cfg=Config(max_parallel=4, max_iterations=2),
-    )
-
-    assert len(planner_skip_flags) == 2, (
-        f"Expected 2 Planner calls; got {len(planner_skip_flags)}"
-    )
-    assert planner_skip_flags[0] is False, (
-        "First iteration must run preflight (cold startup)"
-    )
-    assert planner_skip_flags[1] is True, (
-        "Second iteration must skip preflight when post-merge check just passed"
-    )
-
-
 def test_preplanning_preflight_runs_on_cold_startup(tmp_path):
     """On cold startup (first iteration), skip_preflight must be False for the Planner."""
     planner_calls: list[dict] = []
@@ -2086,55 +2030,6 @@ def test_preplanning_and_postmerge_failures_use_same_handler(tmp_path):
     )
 
 
-def test_afk_post_merge_fix_success_skips_preflight_next_iteration(tmp_path):
-    """When AFK post-merge fix merges and its second check passes, the next Planner must skip preflight."""
-    planner_skip_flags: list[bool] = []
-    planner_call_count = [0]
-    check_call_count = [0]
-
-    mock_git = _make_git_svc(try_merge_side_effect=[True, True])
-    mock_git.get_head_sha.return_value = "fix_sha"
-
-    mock_github = MagicMock(spec=GithubService)
-    mock_github.get_labels.return_value = ["ready-for-agent"]  # AFK
-    mock_github.get_issue_title.return_value = "Fix preflight"
-
-    def _run_host_checks(_):
-        check_call_count[0] += 1
-        if check_call_count[0] == 1:
-            return [("pytest", "pytest", "FAILED")]  # post-merge check fails
-        return []  # second check (after AFK fix) passes
-
-    async def _fake_run_agent(name, skip_preflight=False, **kwargs):
-        if name == "Planner":
-            planner_skip_flags.append(skip_preflight)
-            planner_call_count[0] += 1
-            if planner_call_count[0] == 1:
-                return _plan_json([{"number": 1, "title": "Fix"}])
-            return _plan_json([])  # second iteration: no issues → terminate
-        if "Implementer" in name:
-            return "<promise>COMPLETE</promise>"
-        if "preflight-issue" in name:
-            return "<issue>99</issue>"
-        return ""
-
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        git_service=mock_git,
-        github_service=mock_github,
-        run_host_checks=_run_host_checks,
-        cfg=Config(max_parallel=4, max_iterations=2),
-    )
-
-    assert len(planner_skip_flags) == 2, (
-        f"Expected 2 Planner calls; got {len(planner_skip_flags)}"
-    )
-    assert planner_skip_flags[1] is True, (
-        "Next Planner must skip preflight when AFK post-merge fix passed second check"
-    )
-
-
 # ── Issue-187: implementer and reviewer skip preflight ───────────────────────
 
 
@@ -2169,37 +2064,6 @@ def test_reviewer_invoked_with_skip_preflight_true(tmp_path):
     rev_call = next(c for c in captured if "Reviewer" in c["name"])
     assert rev_call["skip_preflight"] is True, (
         f"Reviewer must receive skip_preflight=True; got {rev_call['skip_preflight']!r}"
-    )
-
-
-def test_planner_skip_preflight_controlled_by_caller(tmp_path):
-    """Planner skip_preflight must be controlled by the orchestrator, not hardcoded True."""
-    captured: list[dict] = []
-
-    async def _fake_run_agent(name, skip_preflight=False, **kwargs):
-        captured.append({"name": name, "skip_preflight": skip_preflight})
-        if "Implementer" in name:
-            return "<promise>COMPLETE</promise>"
-        return _plan_json([{"number": 1, "title": "Fix"}])
-
-    mock_git = _make_git_svc(try_merge_side_effect=[True, True])
-    mock_git.get_head_sha.return_value = "any_sha"
-
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        git_service=mock_git,
-        github_service=_make_github_svc(),
-        run_host_checks=lambda _: [],
-        cfg=Config(max_parallel=4, max_iterations=2),
-    )
-
-    planner_calls = [c for c in captured if c["name"] == "Planner"]
-    assert planner_calls[0]["skip_preflight"] is False, (
-        "Planner on cold startup must not skip preflight"
-    )
-    assert planner_calls[1]["skip_preflight"] is True, (
-        "Planner on second iteration (after clean post-merge) must skip preflight"
     )
 
 
