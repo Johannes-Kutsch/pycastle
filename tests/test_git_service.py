@@ -388,25 +388,19 @@ def test_create_worktree_raises_git_timeout_error_on_timeout(tmp_path):
             svc.create_worktree(tmp_path, tmp_path / "wt", "feature/new")
 
 
-def test_create_worktree_continues_after_silent_remove_failure(tmp_path):
+def test_create_worktree_raises_git_command_error_when_remove_fails(tmp_path):
     svc = GitService()
     worktree = tmp_path / "wt"
     worktree.mkdir()
-    captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
-        captured.append(list(cmd))
         if "remove" in cmd and "worktree" in cmd:
             return MagicMock(returncode=1, stdout=b"", stderr=b"not a worktree")
-        if "rev-parse" in cmd:
-            return MagicMock(returncode=1, stdout=b"", stderr=b"")
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
     with patch("subprocess.run", side_effect=fake_run):
-        svc.create_worktree(tmp_path, worktree, "feature/new")
-
-    cmds_str = [" ".join(c) for c in captured]
-    assert any("worktree add" in c for c in cmds_str)
+        with pytest.raises(GitCommandError):
+            svc.create_worktree(tmp_path, worktree, "feature/new")
 
 
 def test_create_worktree_removes_existing_dir_before_add(tmp_path):

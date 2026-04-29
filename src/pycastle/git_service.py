@@ -134,11 +134,17 @@ class GitService:
         )
 
         if worktree_path.exists():
-            self._run(
+            result = self._run(
                 ["git", "worktree", "remove", "--force", str(worktree_path)],
                 cwd=repo_path,
                 capture_output=True,
             )
+            if result.returncode != 0:
+                raise GitCommandError(
+                    f"git worktree remove --force {str(worktree_path)!r} failed",
+                    returncode=result.returncode,
+                    stderr=result.stderr.decode("utf-8", errors="replace").strip(),
+                )
 
         if self.verify_ref_exists(branch, repo_path):
             cmd = ["git", "worktree", "add", str(worktree_path), branch]
