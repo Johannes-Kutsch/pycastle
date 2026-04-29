@@ -1120,8 +1120,8 @@ def test_post_merge_preflight_issue_uses_raw_check_name(tmp_path):
     )
 
 
-def test_conflict_branch_does_not_close_issue(tmp_path):
-    """Conflicting branches must not be closed; only cleanly-merged issues must be closed."""
+def test_conflict_branch_closed_after_merger_agent(tmp_path):
+    """Conflicting branches must be closed by the orchestrator after the Merger agent returns."""
     issues = [
         {"number": 1, "title": "Clean"},
         {"number": 2, "title": "Conflict"},
@@ -1141,12 +1141,59 @@ def test_conflict_branch_does_not_close_issue(tmp_path):
     )
 
     closed = [call.args[0] for call in mock_github.close_issue.call_args_list]
-    assert 2 not in closed, f"Conflict issue #2 must not be closed; closed: {closed}"
-    assert 1 in closed, f"Clean issue #1 must be closed; closed: {closed}"
+    assert 2 in closed, (
+        f"Conflict issue #2 must be closed after Merger; closed: {closed}"
+    )
+    assert 1 in closed, f"Clean issue #1 must also be closed; closed: {closed}"
 
 
-def test_merger_receives_correct_issues_prompt_arg(tmp_path):
-    """Merger ISSUES prompt arg must list only the conflicting issues, not clean ones."""
+# ── Issue-190: merge prompt must not contain close-issues instructions ────────
+
+
+def test_merge_prompt_has_no_close_issues_section():
+    """The merge prompt must not instruct the Merger to close GitHub issues."""
+    from pycastle.config import PROMPTS_DIR
+
+    merge_prompt = (PROMPTS_DIR / "merge-prompt.md").read_text()
+    assert "CLOSE ISSUES" not in merge_prompt, (
+        "merge-prompt.md must not contain a CLOSE ISSUES section"
+    )
+
+
+def test_merge_prompt_has_no_issues_placeholder():
+    """The merge prompt must not reference the {{ISSUES}} variable."""
+    from pycastle.config import PROMPTS_DIR
+
+    merge_prompt = (PROMPTS_DIR / "merge-prompt.md").read_text()
+    assert "{{ISSUES}}" not in merge_prompt, (
+        "merge-prompt.md must not contain the {{ISSUES}} placeholder"
+    )
+
+
+def test_conflict_merge_calls_close_completed_parent_issues(tmp_path):
+    """After conflict branches are merged, close_completed_parent_issues must be called once."""
+    issues = [{"number": 5, "title": "Conflict"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
+
+    mock_github = _make_github_svc()
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[False]),
+        github_service=mock_github,
+    )
+
+    assert mock_github.close_completed_parent_issues.call_count >= 1, (
+        "close_completed_parent_issues must be called after conflict merge"
+    )
+
+
+def test_merger_does_not_receive_issues_prompt_arg(tmp_path):
+    """Merger must not receive an ISSUES prompt arg — issue closing is the orchestrator's job."""
     captured: list[dict] = []
 
     issues = [
@@ -1169,12 +1216,8 @@ def test_merger_receives_correct_issues_prompt_arg(tmp_path):
 
     merger_calls = [c for c in captured if c["name"] == "Merger"]
     assert len(merger_calls) == 1
-    issues_arg = merger_calls[0]["prompt_args"]["ISSUES"]
-    assert "#4" in issues_arg, (
-        f"Conflict issue #4 must appear in ISSUES; got {issues_arg!r}"
-    )
-    assert "#3" not in issues_arg, (
-        f"Clean issue #3 must not appear in ISSUES; got {issues_arg!r}"
+    assert "ISSUES" not in merger_calls[0]["prompt_args"], (
+        "Merger must not receive an ISSUES prompt arg"
     )
 
 

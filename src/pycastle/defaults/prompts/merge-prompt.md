@@ -13,12 +13,6 @@ For each branch:
 
 After all branches are merged, make a single commit summarizing the merge.
 
-# CLOSE ISSUES
-
-For each branch that was merged, close its issue. If there are any parent issues (such as PRD's) which closing the issue would complete, close those too.
-
-Here are all the issues:
-
-{{ISSUES}}
+# OUTPUT
 
 Once you've merged everything you can, output <promise>COMPLETE</promise>.

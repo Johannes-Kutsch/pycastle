@@ -450,9 +450,6 @@ async def run(
                     "BRANCHES": "\n".join(
                         f"- {branch_for(i['number'])}" for i in conflict_issues
                     ),
-                    "ISSUES": "\n".join(
-                        f"- #{i['number']}: {i['title']}" for i in conflict_issues
-                    ),
                     "CHECKS": " && ".join(cmd for _, cmd in PREFLIGHT_CHECKS),
                 },
                 model=merge_stage.get("model", ""),
@@ -463,5 +460,8 @@ async def run(
             delete_merged_branches(
                 [branch_for(i["number"]) for i in conflict_issues], repo_root, git_svc
             )
+            for issue in conflict_issues:
+                _get_github_svc().close_issue(issue["number"])
+            _get_github_svc().close_completed_parent_issues()
 
     print("\nAll done.")
