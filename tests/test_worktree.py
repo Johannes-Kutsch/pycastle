@@ -381,6 +381,35 @@ def test_create_worktree_fresh_when_not_registered(tmp_path):
     mock_svc.create_worktree.assert_called_once()
 
 
+# ── Issue 240 Fix 1: non-ancestor branch with no project files ───────────────
+
+
+def test_create_worktree_raises_without_removing_when_non_ancestor_has_no_files(
+    tmp_path,
+):
+    """WorktreeError raised immediately (no remove_worktree) when branch has unique commits but no project files."""
+    from pycastle.errors import WorktreeError
+
+    worktree = tmp_path / "wt"
+
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.verify_ref_exists.return_value = True
+    mock_svc.list_worktrees.return_value = []
+
+    def _fake_create(repo, wt, branch, sha=None):
+        wt.mkdir(exist_ok=True)
+
+    mock_svc.create_worktree.side_effect = _fake_create
+    mock_svc.is_ancestor.return_value = False
+
+    with pytest.raises(WorktreeError, match="(?i)unique commit"):
+        create_worktree(
+            tmp_path, worktree, "feature/unique-commits", git_service=mock_svc
+        )
+
+    mock_svc.remove_worktree.assert_not_called()
+
+
 # ── remove_worktree ───────────────────────────────────────────────────────────
 
 
