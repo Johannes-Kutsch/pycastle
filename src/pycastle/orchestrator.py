@@ -113,7 +113,7 @@ def _extract_text(output: str) -> str:
 
 
 def branch_for(issue_number: int) -> str:
-    return f"sandcastle/issue-{issue_number}"
+    return f"pycastle/issue-{issue_number}"
 
 
 def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
