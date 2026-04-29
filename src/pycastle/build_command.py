@@ -3,12 +3,16 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from .config import DOCKERFILE, DOCKER_IMAGE_NAME
+from .config import Config, config as _cfg
 from .docker_service import DockerService
 from .errors import DockerServiceError
 
 
-def main(no_cache: bool = False, docker_service: DockerService | None = None) -> None:
+def main(
+    no_cache: bool = False,
+    docker_service: DockerService | None = None,
+    cfg: Config = _cfg,
+) -> None:
     if docker_service is None:
         docker_service = DockerService()
 
@@ -21,8 +25,8 @@ def main(no_cache: bool = False, docker_service: DockerService | None = None) ->
 
     try:
         docker_service.build_image(
-            DOCKER_IMAGE_NAME,
-            DOCKERFILE,
+            cfg.docker_image_name,
+            cfg.dockerfile,
             Path("."),
             no_cache=no_cache,
             python_version=python_version,

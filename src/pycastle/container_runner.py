@@ -15,14 +15,7 @@ from pathlib import Path
 import docker
 from docker.models.containers import Container as DockerContainer
 
-from .config import (
-    DOCKER_IMAGE_NAME,
-    IDLE_TIMEOUT,
-    LOGS_DIR,
-    PREFLIGHT_CHECKS,
-    PYCASTLE_DIR,
-    USAGE_LIMIT_PATTERNS,
-)
+from .config import Config, config as _cfg
 from .errors import (
     AgentTimeoutError,
     BranchCollisionError,
@@ -55,7 +48,7 @@ def _is_usage_limit_line(line: str) -> bool:
     except json.JSONDecodeError:
         pass
     line_lower = line.lower()
-    return any(p.lower() in line_lower for p in USAGE_LIMIT_PATTERNS)
+    return any(p.lower() in line_lower for p in _cfg.usage_limit_patterns)
 
 
 def _format_stream_line(line: str) -> str | None:
@@ -108,6 +101,7 @@ class ContainerRunner:
         model: str = "",
         effort: str = "",
         docker_client=None,
+        cfg: Config = _cfg,
     ):
         self.name = name
         self.mount_path = mount_path
@@ -117,12 +111,13 @@ class ContainerRunner:
         self.gitdir_overlay = gitdir_overlay
         self.model = model
         self.effort = effort
+        self._cfg = cfg
         self._client = docker_client if docker_client is not None else docker.from_env()
         self._container: DockerContainer | None = None
         self._container_env: dict[str, str] = {}
         self._prompt: str = ""
         slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-        self._log_path = LOGS_DIR / f"{slug}.log"
+        self._log_path = self._cfg.logs_dir / f"{slug}.log"
         self._worktree_path = "/home/agent/workspace"
 
     @property
@@ -132,7 +127,7 @@ class ContainerRunner:
         return self._container
 
     def __enter__(self) -> "ContainerRunner":
-        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        self._cfg.logs_dir.mkdir(parents=True, exist_ok=True)
         repo_path = str(self.mount_path.resolve()).replace("\\", "/")
 
         if self.worktree_host_path:
@@ -161,7 +156,7 @@ class ContainerRunner:
         }
 
         self._container = self._client.containers.run(
-            DOCKER_IMAGE_NAME,
+            self._cfg.docker_image_name,
             detach=True,
             volumes=volumes,
             environment=self._container_env,
@@ -260,10 +255,10 @@ class ContainerRunner:
             with open(self._log_path, "wb") as log:
                 while True:
                     try:
-                        chunk = q.get(timeout=IDLE_TIMEOUT)
+                        chunk = q.get(timeout=self._cfg.idle_timeout)
                     except queue.Empty:
                         raise AgentTimeoutError(
-                            f"Agent idle for more than {IDLE_TIMEOUT}s"
+                            f"Agent idle for more than {self._cfg.idle_timeout}s"
                         )
                     if chunk is _sentinel:
                         break
@@ -415,7 +410,7 @@ async def run_agent(
                 else re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
             )
             worktree_host_path = (
-                mount_path / PYCASTLE_DIR / ".worktrees" / worktree_name
+                mount_path / _cfg.pycastle_dir / ".worktrees" / worktree_name
             )
             create_worktree_fn(mount_path, worktree_host_path, branch, sha)
             gitdir_overlay = patch_gitdir_for_container(worktree_host_path)
@@ -450,7 +445,7 @@ async def run_agent(
             )
             if not skip_preflight:
                 failures = await _preflight(
-                    name, runner, loop, exec_timeout, PREFLIGHT_CHECKS
+                    name, runner, loop, exec_timeout, list(_cfg.preflight_checks)
                 )
                 if failures:
                     raise PreflightError(failures)
