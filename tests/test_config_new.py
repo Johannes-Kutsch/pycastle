@@ -1,0 +1,55 @@
+import dataclasses
+
+import pytest
+
+from pycastle.config import Config, StageOverride, load_config
+
+
+def test_load_config_returns_defaults_when_no_local_file(tmp_path):
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.max_parallel == 1
+    assert cfg.issue_label == "ready-for-agent"
+
+
+def test_load_config_applies_local_file_override(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text("max_parallel = 4\n")
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.max_parallel == 4
+
+
+def test_load_config_raises_for_unknown_key_in_local_file(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text("max_paralell = 4\n")
+    with pytest.raises(ValueError, match="max_paralell"):
+        load_config(repo_root=tmp_path)
+
+
+def test_load_config_applies_in_process_overrides(tmp_path):
+    cfg = load_config(repo_root=tmp_path, overrides={"max_parallel": 4})
+    assert cfg.max_parallel == 4
+
+
+def test_load_config_raises_for_unknown_override_key(tmp_path):
+    with pytest.raises(ValueError, match="no_such_key"):
+        load_config(repo_root=tmp_path, overrides={"no_such_key": 99})
+
+
+def test_config_and_stage_override_are_constructable_inline():
+    override = StageOverride(model="haiku", effort="low")
+    cfg = Config(max_parallel=4, plan_override=override)
+    assert cfg.max_parallel == 4
+    assert cfg.plan_override.model == "haiku"
+
+
+def test_dataclasses_replace_works_on_config():
+    cfg = Config()
+    updated = dataclasses.replace(cfg, max_parallel=8)
+    assert updated.max_parallel == 8
+    assert cfg.max_parallel == 1  # original unchanged
+
+
+def test_config_is_frozen():
+    cfg = Config()
+    with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
+        cfg.max_parallel = 99  # type: ignore[misc]

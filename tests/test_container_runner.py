@@ -1446,14 +1446,14 @@ def test_run_agent_does_not_write_claude_settings_json(tmp_path):
 
 
 def test_preflight_checks_contains_ruff_mypy_pytest():
-    from pycastle.defaults.config import PREFLIGHT_CHECKS
+    from pycastle.config import PREFLIGHT_CHECKS
 
     names = [name for name, _ in PREFLIGHT_CHECKS]
     assert names == ["ruff", "mypy", "pytest"]
 
 
 def test_preflight_checks_commands():
-    from pycastle.defaults.config import PREFLIGHT_CHECKS
+    from pycastle.config import PREFLIGHT_CHECKS
 
     cmds = {name: cmd for name, cmd in PREFLIGHT_CHECKS}
     assert cmds["ruff"] == "ruff check ."
@@ -1462,7 +1462,7 @@ def test_preflight_checks_commands():
 
 
 def test_implement_checks_contains_expected_commands():
-    from pycastle.defaults.config import IMPLEMENT_CHECKS
+    from pycastle.config import IMPLEMENT_CHECKS
 
     assert IMPLEMENT_CHECKS == [
         "ruff check --fix",
