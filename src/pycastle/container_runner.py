@@ -19,6 +19,7 @@ from .agent_result import (
     AgentIncomplete,
     AgentSuccess,
     CancellationToken,
+    PreflightFailure,
     UsageLimitHit,
 )
 from .config import Config, config as _cfg
@@ -27,7 +28,6 @@ from .errors import (
     BranchCollisionError,
     DockerError,
     DockerTimeoutError,
-    PreflightError,
     UsageLimitError,
 )
 from .git_service import GitService
@@ -385,7 +385,7 @@ async def run_agent(
     remove_worktree_fn: Callable[[Path, Path], None] = remove_worktree,
     *,
     token: CancellationToken | None = None,
-) -> AgentSuccess | AgentIncomplete | UsageLimitHit:
+) -> AgentSuccess | AgentIncomplete | PreflightFailure | UsageLimitHit:
     _token = token if token is not None else CancellationToken()
     if _token.is_cancelled:
         return UsageLimitHit(last_output="")
@@ -451,7 +451,7 @@ async def run_agent(
                     name, runner, loop, exec_timeout, list(_cfg.preflight_checks)
                 )
                 if failures:
-                    raise PreflightError(failures)
+                    return PreflightFailure(failures=tuple(failures))
             output = ""
             try:
                 output = await _work(name, runner, loop)

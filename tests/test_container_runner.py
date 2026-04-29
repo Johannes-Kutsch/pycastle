@@ -6,7 +6,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pycastle.agent_result import AgentIncomplete, CancellationToken, UsageLimitHit
+from pycastle.agent_result import (
+    AgentIncomplete,
+    CancellationToken,
+    PreflightFailure,
+    UsageLimitHit,
+)
 from pycastle.config import Config
 from pycastle.container_runner import (
     ContainerRunner,
@@ -1590,34 +1595,30 @@ class _PreflightFailRunner:
         return ""
 
 
-def test_run_agent_raises_preflight_error_when_check_fails(tmp_path):
-    from pycastle.errors import PreflightError
-
+def test_run_agent_returns_preflight_failure_when_check_fails(tmp_path):
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
-    with (
-        patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner),
-        pytest.raises(PreflightError) as exc_info,
-    ):
-        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
+    with patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner):
+        result = _run(
+            run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
+        )
 
-    assert len(exc_info.value.failures) >= 1
+    assert isinstance(result, PreflightFailure)
+    assert len(result.failures) >= 1
 
 
-def test_run_agent_preflight_error_carries_correct_tuple(tmp_path):
-    from pycastle.errors import PreflightError
-
+def test_run_agent_preflight_failure_carries_correct_tuple(tmp_path):
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
-    with (
-        patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner),
-        pytest.raises(PreflightError) as exc_info,
-    ):
-        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
+    with patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner):
+        result = _run(
+            run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
+        )
 
-    name, cmd, output = exc_info.value.failures[0]
+    assert isinstance(result, PreflightFailure)
+    name, cmd, output = result.failures[0]
     assert name == "ruff"
     assert cmd == "ruff check ."
     assert "E501" in output
@@ -1667,26 +1668,23 @@ def test_prepare_runs_before_preflight(tmp_path, capsys):
 # ── Cycle 51-1: no agents spawned on preflight failure ───────────────────────
 
 
-def test_no_agent_spawned_when_single_preflight_check_fails(tmp_path):
-    """When preflight returns one failure, run_agent must NOT spawn any agent."""
-    from pycastle.errors import PreflightError
-
+def test_run_agent_stops_after_single_preflight_failure(tmp_path):
+    """When preflight returns one failure, run_agent must return PreflightFailure without running work."""
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
-    with (
-        patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner),
-        patch("pycastle.container_runner.run_agent") as mock_spawn,
-        pytest.raises(PreflightError),
-    ):
-        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
+    with patch("pycastle.container_runner.ContainerRunner", _PreflightFailRunner):
+        result = _run(
+            run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
+        )
 
-    mock_spawn.assert_not_called()
+    assert isinstance(result, PreflightFailure)
+    assert len(result.failures) == 1
 
 
-def test_no_agent_spawned_when_multiple_preflight_checks_fail(tmp_path):
-    """When preflight returns multiple failures, run_agent must still not spawn any agent."""
-    from pycastle.errors import DockerError, PreflightError
+def test_run_agent_stops_after_multiple_preflight_failures(tmp_path):
+    """When preflight returns multiple failures, run_agent must return PreflightFailure with all failures."""
+    from pycastle.errors import DockerError
 
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
@@ -1710,14 +1708,13 @@ def test_no_agent_spawned_when_multiple_preflight_checks_fail(tmp_path):
         def run_streaming(self):
             return ""
 
-    with (
-        patch("pycastle.container_runner.ContainerRunner", _TwoFailureRunner),
-        patch("pycastle.container_runner.run_agent") as mock_spawn,
-        pytest.raises(PreflightError),
-    ):
-        _run(run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service()))
+    with patch("pycastle.container_runner.ContainerRunner", _TwoFailureRunner):
+        result = _run(
+            run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
+        )
 
-    mock_spawn.assert_not_called()
+    assert isinstance(result, PreflightFailure)
+    assert len(result.failures) == 2
 
 
 # ── Cycle 65-1: assistant text content extracted for terminal ─────────────────
@@ -2222,3 +2219,24 @@ def test_run_agent_returns_usage_limit_hit_when_token_pre_cancelled(tmp_path):
     assert not container_started, (
         "No container must be started when token is pre-cancelled"
     )
+
+
+# ── Issue 216: PreflightError → PreflightFailure return ──────────────────────
+
+
+def test_run_agent_returns_preflight_failure_when_checks_fail(tmp_path):
+    """run_agent must return PreflightFailure when preflight checks fail, never raise."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    async def _fake_preflight(*args, **kwargs):
+        return [("mypy", "mypy .", "error: Cannot find module")]
+
+    with patch("pycastle.container_runner._preflight", _fake_preflight):
+        with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+            result = _run(
+                run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
+            )
+
+    assert isinstance(result, PreflightFailure)
+    assert result.failures == (("mypy", "mypy .", "error: Cannot find module"),)
