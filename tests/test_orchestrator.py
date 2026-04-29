@@ -19,6 +19,7 @@ from pycastle.orchestrator import (
     branch_for,
     delete_merged_branches,
     implement_phase,
+    merge_phase,
     parse_plan,
     plan_phase,
     preflight_phase,
@@ -2528,3 +2529,123 @@ def test_implement_phase_no_complete_tag_not_in_completed_or_errors(tmp_path):
 
     assert result.completed == []
     assert result.errors == []
+
+
+# ── Issue-210: merge_phase boundary tests ─────────────────────────────────────
+
+
+def test_merge_phase_clean_merge_closes_issue(tmp_path):
+    """merge_phase with a clean try_merge must close the issue and include it in result.clean."""
+    issue = {"number": 1, "title": "Fix thing"}
+    mock_github = _make_github_svc()
+    mock_git = _make_git_svc(try_merge_side_effect=[True])
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=mock_github,
+        run_agent=AsyncMock(return_value=""),
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    result = asyncio.run(merge_phase([issue], deps))
+
+    mock_github.close_issue.assert_called_once_with(1)
+    assert result.clean == [issue]
+    assert result.conflicts == []
+
+
+def test_merge_phase_conflict_spawns_merger_agent_and_populates_conflicts(tmp_path):
+    """merge_phase with a conflicting try_merge must spawn Merger and put issue in result.conflicts."""
+    issue = {"number": 2, "title": "Conflict thing"}
+    mock_github = _make_github_svc()
+    mock_git = _make_git_svc(try_merge_side_effect=[False])
+    merger_calls: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        merger_calls.append(name)
+        return ""
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=mock_github,
+        run_agent=_fake_run_agent,
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    result = asyncio.run(merge_phase([issue], deps))
+
+    assert "Merger" in merger_calls
+    assert result.conflicts == [issue]
+    assert result.clean == []
+
+
+def test_merge_phase_deletes_clean_branches(tmp_path):
+    """merge_phase must call delete_merged_branches with clean branch names."""
+    issue = {"number": 3, "title": "Clean"}
+    mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=True)
+
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=mock_git,
+        github_svc=_make_github_svc(),
+        run_agent=AsyncMock(return_value=""),
+        cfg=Config(max_parallel=4, max_iterations=1),
+    )
+    asyncio.run(merge_phase([issue], deps))
+
+    mock_git.delete_branch.assert_called_with("sandcastle/issue-3", tmp_path)
+
+
+def test_run_full_iteration_cold_path(git_repo):
+    """run() executes a full iteration: preflight→plan→implement→merge, and closes the issue."""
+    import subprocess
+
+    branch = "sandcastle/issue-1"
+    subprocess.run(
+        ["git", "-C", str(git_repo), "checkout", "-b", branch],
+        check=True,
+        capture_output=True,
+    )
+    (git_repo / "feature.txt").write_text("feature")
+    subprocess.run(
+        ["git", "-C", str(git_repo), "add", "."], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "-C", str(git_repo), "commit", "-m", "add feature"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(git_repo), "checkout", "master"],
+        check=True,
+        capture_output=True,
+    )
+
+    closed_issues: list[int] = []
+    mock_github = _make_github_svc()
+    mock_github.close_issue.side_effect = lambda n: closed_issues.append(n)
+
+    async def _fake_run_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix thing"}])
+        if "Implementer" in name:
+            return "<promise>COMPLETE</promise>"
+        return ""
+
+    asyncio.run(
+        run(
+            {},
+            git_repo,
+            run_agent=_fake_run_agent,
+            validate_config=lambda _: None,
+            github_service=mock_github,
+            cfg=Config(max_parallel=4, max_iterations=1),
+        )
+    )
+
+    assert 1 in closed_issues, (
+        f"Issue #1 must be closed after merge; closed={closed_issues}"
+    )
