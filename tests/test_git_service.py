@@ -769,3 +769,108 @@ def test_get_head_sha_returns_empty_string_on_git_failure(tmp_path):
     ):
         sha = svc.get_head_sha(tmp_path)
     assert sha == ""
+
+
+# ── get_current_branch() ──────────────────────────────────────────────────────
+
+
+def test_get_current_branch_returns_branch_name(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"main\n", stderr=b""),
+    ):
+        branch = svc.get_current_branch(tmp_path)
+    assert branch == "main"
+
+
+def test_get_current_branch_strips_whitespace(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(
+            returncode=0, stdout=b"  feature-branch  \n", stderr=b""
+        ),
+    ):
+        branch = svc.get_current_branch(tmp_path)
+    assert branch == "feature-branch"
+
+
+def test_get_current_branch_raises_git_command_error_on_failure(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(
+            returncode=128, stdout=b"", stderr=b"fatal: not a git repository"
+        ),
+    ):
+        with pytest.raises(GitCommandError):
+            svc.get_current_branch(tmp_path)
+
+
+def test_get_current_branch_raises_git_timeout_error_on_timeout(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    ):
+        with pytest.raises(GitTimeoutError):
+            svc.get_current_branch(tmp_path)
+
+
+# ── fast_forward_branch() ─────────────────────────────────────────────────────
+
+
+def test_fast_forward_branch_runs_ff_only_merge(tmp_path):
+    svc = GitService()
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        svc.fast_forward_branch(tmp_path, "main", "pycastle/merge-sandbox")
+
+    assert any(
+        "--ff-only" in cmd and "pycastle/merge-sandbox" in cmd for cmd in captured
+    )
+
+
+def test_fast_forward_branch_raises_git_command_error_on_merge_failure(tmp_path):
+    svc = GitService()
+
+    def fake_run(cmd, **kwargs):
+        if "--ff-only" in cmd:
+            return MagicMock(
+                returncode=1, stdout=b"", stderr=b"Not possible to fast-forward"
+            )
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        with pytest.raises(GitCommandError):
+            svc.fast_forward_branch(tmp_path, "main", "pycastle/merge-sandbox")
+
+
+def test_fast_forward_branch_raises_git_command_error_on_checkout_failure(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(
+            returncode=1,
+            stdout=b"",
+            stderr=b"error: pathspec 'main' did not match any file(s)",
+        ),
+    ):
+        with pytest.raises(GitCommandError):
+            svc.fast_forward_branch(tmp_path, "main", "pycastle/merge-sandbox")
+
+
+def test_fast_forward_branch_raises_git_timeout_error_on_timeout(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    ):
+        with pytest.raises(GitTimeoutError):
+            svc.fast_forward_branch(tmp_path, "main", "pycastle/merge-sandbox")
