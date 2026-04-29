@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pycastle.agent_result import AgentIncomplete, AgentSuccess
+from pycastle.agent_result import AgentIncomplete, AgentSuccess, UsageLimitHit
 from pycastle.config import Config, StageOverride
 from pycastle.errors import ConfigValidationError, PreflightError
 from pycastle.git_service import GitCommandError, GitService
@@ -1884,19 +1884,18 @@ def test_reviewer_invoked_with_skip_preflight_true(tmp_path):
     )
 
 
-# ── Issue-183: orchestrator exit handling for usage-limit shutdown ─────────────
+# ── Issue-183/215: orchestrator exit handling for usage-limit shutdown ────────
 
 
-def test_usage_limit_error_exits_with_code_1(tmp_path):
-    """When UsageLimitError is raised by an agent task, orchestrator must exit with code 1."""
-    from pycastle.errors import UsageLimitError
+def test_usage_limit_hit_exits_with_code_1(tmp_path):
+    """When run_agent returns UsageLimitHit, orchestrator must exit with code 1."""
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             return AgentIncomplete(
                 partial_output=_plan_json([{"number": 1, "title": "Fix"}])
             )
-        raise UsageLimitError("You've hit your session limit")
+        return UsageLimitHit(last_output="")
 
     with pytest.raises(SystemExit) as exc_info:
         _run(tmp_path, _fake_run_agent, github_service=_make_github_svc())
@@ -1904,16 +1903,15 @@ def test_usage_limit_error_exits_with_code_1(tmp_path):
     assert exc_info.value.code == 1
 
 
-def test_usage_limit_error_prints_resume_message_to_stderr(tmp_path, capsys):
-    """When UsageLimitError is raised by an agent task, the resume message must be printed to stderr."""
-    from pycastle.errors import UsageLimitError
+def test_usage_limit_hit_prints_resume_message_to_stderr(tmp_path, capsys):
+    """When run_agent returns UsageLimitHit, the resume message must be printed to stderr."""
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             return AgentIncomplete(
                 partial_output=_plan_json([{"number": 1, "title": "Fix"}])
             )
-        raise UsageLimitError("You've hit your session limit")
+        return UsageLimitHit(last_output="")
 
     with pytest.raises(SystemExit):
         _run(tmp_path, _fake_run_agent, github_service=_make_github_svc())
@@ -1925,10 +1923,8 @@ def test_usage_limit_error_prints_resume_message_to_stderr(tmp_path, capsys):
     )
 
 
-def test_usage_limit_error_not_written_to_errors_log(tmp_path):
-    """UsageLimitError must not be logged to errors.log (unlike regular exceptions)."""
-    from pycastle.errors import UsageLimitError
-
+def test_usage_limit_hit_not_written_to_errors_log(tmp_path):
+    """UsageLimitHit must not be logged to errors.log (unlike regular exceptions)."""
     logs_dir = tmp_path / "pycastle" / "logs"
     logs_dir.mkdir(parents=True)
     errors_log = logs_dir / "errors.log"
@@ -1938,7 +1934,7 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
             return AgentIncomplete(
                 partial_output=_plan_json([{"number": 1, "title": "Fix"}])
             )
-        raise UsageLimitError("You've hit your session limit")
+        return UsageLimitHit(last_output="")
 
     with pytest.raises(SystemExit):
         _run(
@@ -1949,15 +1945,14 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
         )
 
     assert not errors_log.exists() or errors_log.read_text() == "", (
-        "UsageLimitError must not be written to errors.log"
+        "UsageLimitHit must not be written to errors.log"
     )
 
 
-def test_usage_limit_error_alongside_regular_exception_exits_with_code_1(
+def test_usage_limit_hit_alongside_regular_exception_exits_with_code_1(
     tmp_path, capsys
 ):
-    """When one task raises UsageLimitError and another raises a regular exception, exit cleanly with code 1."""
-    from pycastle.errors import UsageLimitError
+    """When one task returns UsageLimitHit and another raises a regular exception, exit with code 1."""
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
@@ -1967,7 +1962,7 @@ def test_usage_limit_error_alongside_regular_exception_exits_with_code_1(
                 )
             )
         if "Implementer #1" in name:
-            raise UsageLimitError("session limit")
+            return UsageLimitHit(last_output="")
         if "Implementer #2" in name:
             raise RuntimeError("unrelated failure")
 
@@ -2520,20 +2515,20 @@ def test_implement_phase_returns_completed_issues(tmp_path):
     assert result.errors == []
 
 
-def test_implement_phase_usage_limit_propagates(tmp_path):
-    """implement_phase must propagate UsageLimitError — not swallow it into errors."""
-    from pycastle.errors import UsageLimitError
-
+def test_implement_phase_usage_limit_exits(tmp_path):
+    """implement_phase must call sys.exit(1) when run_agent returns UsageLimitHit."""
     issues = [{"number": 1, "title": "Fix A"}]
 
     async def _fake_run_agent(name, **kwargs):
-        raise UsageLimitError("session limit hit")
+        return UsageLimitHit(last_output="")
 
     deps = _make_deps(tmp_path, _fake_run_agent)
     state = IterationState(worktree_sha="abc123")
 
-    with pytest.raises(UsageLimitError):
+    with pytest.raises(SystemExit) as exc_info:
         asyncio.run(implement_phase(issues, state, deps))
+
+    assert exc_info.value.code == 1
 
 
 def test_implement_phase_preflight_error_goes_to_errors(tmp_path):
@@ -2573,26 +2568,24 @@ def test_implement_phase_partial_completion(tmp_path):
 
 
 def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
-    """When one issue raises UsageLimitError, sibling tasks must complete before the error propagates."""
-    from pycastle.errors import UsageLimitError
-
+    """When one issue returns UsageLimitHit, sibling tasks must complete before sys.exit."""
     completed_agents: list[str] = []
     issues = [{"number": 1, "title": "Fail"}, {"number": 2, "title": "Pass"}]
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer #1" in name:
-            raise UsageLimitError("session limit hit")
+            return UsageLimitHit(last_output="")
         completed_agents.append(name)
         return AgentSuccess(output="<promise>COMPLETE</promise>")
 
     deps = _make_deps(tmp_path, _fake_run_agent)
     state = IterationState(worktree_sha="abc123")
 
-    with pytest.raises(UsageLimitError):
+    with pytest.raises(SystemExit):
         asyncio.run(implement_phase(issues, state, deps))
 
     assert any("Implementer #2" in n for n in completed_agents), (
-        f"Sibling Implementer #2 must complete before error propagates; completed={completed_agents}"
+        f"Sibling Implementer #2 must complete before exit; completed={completed_agents}"
     )
 
 
