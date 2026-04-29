@@ -2075,6 +2075,26 @@ def test_run_streaming_does_not_raise_for_successful_json_result(tmp_path):
     runner.run_streaming()  # must not raise
 
 
+def test_run_streaming_does_not_crash_on_json_result_with_null_result_field(tmp_path):
+    """A JSON result error with result=null must not raise AttributeError or UsageLimitError."""
+    import json
+
+    json_line = json.dumps(
+        {
+            "type": "result",
+            "is_error": True,
+            "api_error_status": 503,
+            "result": None,
+        }
+    )
+    runner = _streaming_runner(
+        "Agent",
+        [(json_line + "\n").encode()],
+        tmp_path / "test.log",
+    )
+    runner.run_streaming()  # must not raise
+
+
 # ── Issue 182: halt flag + conditional worktree preservation ──────────────────
 
 
