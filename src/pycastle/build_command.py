@@ -42,4 +42,5 @@ def main(
         print(str(exc), file=sys.stderr)
         sys.exit(1)
 
+    print("Build complete.")
     sys.exit(0)
