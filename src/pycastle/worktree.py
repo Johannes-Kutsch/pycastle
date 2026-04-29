@@ -40,19 +40,23 @@ def create_worktree(
             worktree_path / "requirements.txt"
         ).exists()
         if not has_files and branch_exists:
-            if svc.is_ancestor(branch, repo_path):
-                svc.remove_worktree(repo_path, worktree_path)
-                try:
-                    svc.delete_branch(branch, repo_path)
-                except GitCommandError as exc:
-                    raise WorktreeError(str(exc)) from exc
-                try:
-                    svc.create_worktree(repo_path, worktree_path, branch, sha)
-                except GitCommandError as exc:
-                    raise WorktreeError(str(exc)) from exc
-                has_files = (worktree_path / "pyproject.toml").exists() or (
-                    worktree_path / "requirements.txt"
-                ).exists()
+            if not svc.is_ancestor(branch, repo_path):
+                raise WorktreeError(
+                    f"Branch {branch!r} has unique commits not yet on the base branch. "
+                    f"Merge or remove these commits before retrying."
+                )
+            svc.remove_worktree(repo_path, worktree_path)
+            try:
+                svc.delete_branch(branch, repo_path)
+            except GitCommandError as exc:
+                raise WorktreeError(str(exc)) from exc
+            try:
+                svc.create_worktree(repo_path, worktree_path, branch, sha)
+            except GitCommandError as exc:
+                raise WorktreeError(str(exc)) from exc
+            has_files = (worktree_path / "pyproject.toml").exists() or (
+                worktree_path / "requirements.txt"
+            ).exists()
 
         if not has_files:
             listing = (

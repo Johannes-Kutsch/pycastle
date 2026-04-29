@@ -966,6 +966,7 @@ def test_container_cleanup_runs_even_when_worktree_cleanup_raises(tmp_path):
                 branch="feature/test",
                 create_worktree_fn=_noop_create,
                 remove_worktree_fn=failing_remove,
+                git_service=_make_git_service(),
             )
         )
 
@@ -1011,6 +1012,7 @@ def test_container_stops_before_worktree_is_removed(tmp_path):
                 branch="feature/test",
                 create_worktree_fn=_noop_create,
                 remove_worktree_fn=tracking_remove,
+                git_service=_make_git_service(),
             )
         )
 
@@ -2351,6 +2353,103 @@ def test_run_agent_returns_usage_limit_hit_when_token_pre_cancelled(tmp_path):
     assert result.last_output == ""
     assert not container_started, (
         "No container must be started when token is pre-cancelled"
+    )
+
+
+# ── Issue 240 Fix 2: dirty worktree preservation in _worktree_lifecycle ──────
+
+
+def test_worktree_removed_when_working_tree_is_clean(tmp_path):
+    """remove_worktree_fn must still be called when the working tree is clean."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    remove_called = []
+
+    def fake_remove(repo, wt):
+        remove_called.append(True)
+
+    mock_git = _make_git_service()
+    mock_git.is_working_tree_clean.return_value = True
+
+    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/clean-tree",
+                create_worktree_fn=_noop_create,
+                remove_worktree_fn=fake_remove,
+                git_service=mock_git,
+            )
+        )
+
+    assert remove_called, "remove_worktree_fn must be called when working tree is clean"
+
+
+def test_worktree_not_removed_when_is_working_tree_clean_raises(tmp_path):
+    """remove_worktree_fn must be skipped (fail-safe) when is_working_tree_clean raises."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    remove_called = []
+
+    def fake_remove(repo, wt):
+        remove_called.append(True)
+
+    mock_git = _make_git_service()
+    mock_git.is_working_tree_clean.side_effect = RuntimeError("git status failed")
+
+    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/clean-check-raises",
+                create_worktree_fn=_noop_create,
+                remove_worktree_fn=fake_remove,
+                git_service=mock_git,
+            )
+        )
+
+    assert not remove_called, (
+        "remove_worktree_fn must not be called when is_working_tree_clean raises"
+    )
+
+
+def test_worktree_not_removed_when_working_tree_is_dirty(tmp_path):
+    """remove_worktree_fn must be skipped when the worktree has uncommitted agent changes."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    remove_called = []
+
+    def fake_remove(repo, wt):
+        remove_called.append(True)
+
+    mock_git = _make_git_service()
+    mock_git.is_working_tree_clean.return_value = False
+
+    with patch("pycastle.container_runner.ContainerRunner", _PhaseLogRunner):
+        _run(
+            run_agent(
+                "test",
+                prompt,
+                tmp_path,
+                {},
+                branch="feature/dirty-tree",
+                create_worktree_fn=_noop_create,
+                remove_worktree_fn=fake_remove,
+                git_service=mock_git,
+            )
+        )
+
+    assert not remove_called, (
+        "remove_worktree_fn must not be called when working tree is dirty"
     )
 
 
