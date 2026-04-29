@@ -43,7 +43,7 @@ def create_worktree(
             if not svc.is_ancestor(branch, repo_path):
                 raise WorktreeError(
                     f"Branch {branch!r} has unique commits not yet on the base branch. "
-                    f"Merge or remove these commits before retrying."
+                    "Merge or remove these commits before retrying."
                 )
             svc.remove_worktree(repo_path, worktree_path)
             try:
