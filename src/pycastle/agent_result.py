@@ -23,18 +23,6 @@ class UsageLimitHit:
 
 
 @dataclass(frozen=True)
-class PlanParseFailure:
-    raw_output: str
-    detail: str
-
-
-@dataclass(frozen=True)
-class IssueNumberParseFailure:
-    raw_output: str
-    detail: str
-
-
-@dataclass(frozen=True)
 class PromiseParseFailure:
     raw_output: str
     detail: str
@@ -45,8 +33,6 @@ AgentResult = (
     | AgentIncomplete
     | PreflightFailure
     | UsageLimitHit
-    | PlanParseFailure
-    | IssueNumberParseFailure
     | PromiseParseFailure
 )
 

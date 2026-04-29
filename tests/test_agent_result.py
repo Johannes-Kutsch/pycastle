@@ -7,8 +7,6 @@ from pycastle.agent_result import (
     AgentResult,
     AgentSuccess,
     CancellationToken,
-    IssueNumberParseFailure,
-    PlanParseFailure,
     PreflightFailure,
     PromiseParseFailure,
     UsageLimitHit,
@@ -78,36 +76,6 @@ def test_usage_limit_hit_is_frozen():
         result.last_output = "other"  # type: ignore[misc]
 
 
-# ── PlanParseFailure ──────────────────────────────────────────────────────────
-
-
-def test_plan_parse_failure_stores_fields():
-    result = PlanParseFailure(raw_output="x", detail="missing tag")
-    assert result.raw_output == "x"
-    assert result.detail == "missing tag"
-
-
-def test_plan_parse_failure_is_frozen():
-    result = PlanParseFailure(raw_output="x", detail="d")
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        result.raw_output = "y"  # type: ignore[misc]
-
-
-# ── IssueNumberParseFailure ───────────────────────────────────────────────────
-
-
-def test_issue_number_parse_failure_stores_fields():
-    result = IssueNumberParseFailure(raw_output="x", detail="no issue tag")
-    assert result.raw_output == "x"
-    assert result.detail == "no issue tag"
-
-
-def test_issue_number_parse_failure_is_frozen():
-    result = IssueNumberParseFailure(raw_output="x", detail="d")
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        result.detail = "other"  # type: ignore[misc]
-
-
 # ── PromiseParseFailure ───────────────────────────────────────────────────────
 
 
@@ -132,11 +100,9 @@ def test_agent_result_covers_all_variants():
         AgentIncomplete(partial_output="partial"),
         PreflightFailure(failures=()),
         UsageLimitHit(last_output=""),
-        PlanParseFailure(raw_output="", detail=""),
-        IssueNumberParseFailure(raw_output="", detail=""),
         PromiseParseFailure(raw_output="", detail=""),
     ]
-    assert len(variants) == 7
+    assert len(variants) == 5
 
 
 # ── CancellationToken ─────────────────────────────────────────────────────────
