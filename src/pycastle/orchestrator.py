@@ -277,6 +277,10 @@ async def run(
     for iteration in range(1, _max_iterations + 1):
         print(f"\n=== Iteration {iteration}/{_max_iterations} ===\n")
 
+        if not _get_github_svc().has_open_issues_with_label(ISSUE_LABEL):
+            print(f"No issues with label '{ISSUE_LABEL}' found. Skipping.")
+            break
+
         plan_stage = _stage_overrides.get("plan", {})
         issues: list[dict] | None = None
         try:
