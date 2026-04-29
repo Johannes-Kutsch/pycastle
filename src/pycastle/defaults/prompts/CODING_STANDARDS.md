@@ -49,7 +49,8 @@ Mock at **system boundaries** only:
 
 - External APIs (HTTP calls, email, etc.)
 - Time/randomness (`freezegun`, `unittest.mock`)
-- File system or databases when a real instance isn't practical
+- File system when a real instance isn't practical
+- Databases when a real instance isn't practical — prefer a test DB over a mock
 
 **Never mock your own classes/modules or internal collaborators.** If something is hard to test without mocking internals, redesign the interface.
 
