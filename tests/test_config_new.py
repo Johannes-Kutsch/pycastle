@@ -83,3 +83,14 @@ def test_module_level_config_singleton_picks_up_local_override():
 
     assert config.docker_image_name == "pycastle"
     assert config.max_parallel == 4
+
+
+# ── Issue 222: load_config without repo_root uses CWD ────────────────────────
+
+
+def test_load_config_without_repo_root_uses_cwd(tmp_path, monkeypatch):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text('docker_image_name = "myapp"\n')
+    monkeypatch.chdir(tmp_path)
+    cfg = load_config()
+    assert cfg.docker_image_name == "myapp"

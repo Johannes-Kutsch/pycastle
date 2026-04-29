@@ -62,7 +62,7 @@ def load_config(
     kwargs: dict[str, Any] = {}
     valid_fields = {f.name for f in dataclasses.fields(Config)}
 
-    root = repo_root if repo_root is not None else Path(__file__).parent.parent.parent
+    root = repo_root if repo_root is not None else Path.cwd()
     local = root / "pycastle" / "config.py"
     if local.exists():
         spec = importlib.util.spec_from_file_location("_pycastle_local_config", local)
