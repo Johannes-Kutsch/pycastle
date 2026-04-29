@@ -102,6 +102,17 @@
 | **`{{CHECKS}}`** | Placeholder in the merge-prompt rendered at run time from `config.PREFLIGHT_CHECKS`; injects quality check commands into the Merger agent's prompt | — |
 | **Explore subagent** | A Claude Code subagent spawned by the Implementer during the EXPLORATION section to read relevant files; token usage bounded by scoping to the issue body | explore agent, repo scanner |
 
+## Agent Output Protocol
+
+| Term | Definition | Aliases to avoid |
+| --- | --- | --- |
+| **agent output protocol** | The contract between prompts and the orchestrator: the set of XML tags agents emit to signal structured output (`<plan>`, `<issue>`, `<promise>`), plus the module that owns parsing and extraction of those tags | output format, agent tags, agent signals |
+| **`<plan>` tag** | XML tag emitted by the Planner containing a JSON payload listing unblocked issues for the current iteration; extracted by the agent output protocol module | plan output, plan block |
+| **`<issue>` tag** | XML tag emitted by the preflight-issue agent containing the GitHub issue number it filed; extracted by the agent output protocol module | issue output, issue number tag |
+| **`<promise>COMPLETE</promise>`** | XML tag emitted by Implementers, Reviewers, and the Merger to declare that their work phase is complete; detected by the agent output protocol module | done signal, completion tag |
+| **`AgentOutputProtocolError`** | Base exception raised by the agent output protocol module when a required tag is missing or malformed; subclassed by `PlanParseError` and `IssueParseError` | parse error, protocol error |
+| **Claude streaming envelope** | The NDJSON format Claude Code uses for structured output; lines are JSON objects and the agent's final result is carried in the `{"type": "result", "result": "..."}` line; unwrapped internally by the agent output protocol module before tag extraction | streaming format, NDJSON output |
+
 ## Agent Lifecycle
 
 | Term | Definition | Aliases to avoid |
