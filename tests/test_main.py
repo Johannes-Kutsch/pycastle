@@ -1,6 +1,9 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+from click.testing import CliRunner
 
 from pycastle.config import Config
+from pycastle.errors import ConfigValidationError
 
 
 # ── Issue 203: cfg injection into _load_env ───────────────────────────────────
@@ -16,3 +19,110 @@ def test_load_env_calls_load_dotenv_with_cfg_env_file(tmp_path):
         _load_env(cfg=Config(env_file=custom_env))
 
     mock_dotenv.assert_called_once_with(custom_env)
+
+
+# ── Issue 309: load_config() called at entry in CLI commands ──────────────────
+
+
+def test_build_cmd_exits_one_on_invalid_config(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "pycastle.main.load_config", side_effect=ConfigValidationError("bad model")
+    ):
+        result = CliRunner().invoke(cli, ["build"])
+    assert result.exit_code == 1
+
+
+def test_build_cmd_shows_config_error_message(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "pycastle.main.load_config", side_effect=ConfigValidationError("bad model")
+    ):
+        result = CliRunner().invoke(cli, ["build"])
+    assert "bad model" in result.output
+
+
+def test_labels_cmd_exits_one_on_invalid_config(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "pycastle.main.load_config", side_effect=ConfigValidationError("bad effort")
+    ):
+        result = CliRunner().invoke(cli, ["labels"])
+    assert result.exit_code == 1
+
+
+def test_labels_cmd_shows_config_error_message(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "pycastle.main.load_config", side_effect=ConfigValidationError("bad effort")
+    ):
+        result = CliRunner().invoke(cli, ["labels"])
+    assert "bad effort" in result.output
+
+
+def test_run_cmd_exits_one_on_invalid_config(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "pycastle.main.load_config", side_effect=ConfigValidationError("bad model")
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+    assert result.exit_code == 1
+
+
+def test_run_cmd_shows_config_error_message(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "pycastle.main.load_config", side_effect=ConfigValidationError("bad model")
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+    assert "bad model" in result.output
+
+
+def test_build_cmd_uses_config_docker_image_name(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(docker_image_name="custom-img")
+    fake_svc = MagicMock()
+
+    with patch("pycastle.main.load_config", return_value=cfg):
+        with patch("pycastle.build_command.DockerService", return_value=fake_svc):
+            CliRunner().invoke(cli, ["build"])
+
+    assert fake_svc.build_image.call_args[0][0] == "custom-img"
+
+
+def test_labels_cmd_creates_labels_with_config_issue_label(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(issue_label="custom-ready")
+    posted: list = []
+
+    def fake_gh(method, path, token, data=None):
+        if method == "POST":
+            posted.append(data)
+        return (201, None)
+
+    monkeypatch.setenv("GH_TOKEN", "test-token")
+    monkeypatch.setattr("pycastle.labels.click.prompt", lambda *a, **kw: "owner/repo")
+    monkeypatch.setattr("pycastle.labels.click.confirm", lambda *a, **kw: False)
+
+    with patch("pycastle.main.load_config", return_value=cfg):
+        with patch("pycastle.labels._gh", fake_gh):
+            CliRunner().invoke(cli, ["labels"])
+
+    label_names = {entry["name"] for entry in posted}
+    assert "custom-ready" in label_names
