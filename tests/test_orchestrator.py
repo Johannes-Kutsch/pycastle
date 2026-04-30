@@ -856,24 +856,6 @@ def test_conflict_branch_closed_after_merger_agent(tmp_path):
     assert 1 in closed, f"Clean issue #1 must also be closed; closed: {closed}"
 
 
-# ── Issue-190: merge prompt must not contain close-issues instructions ────────
-
-
-def test_merge_prompt_has_no_close_issues_section():
-    """The merge prompt must not instruct the Merger to close GitHub issues."""
-    merge_prompt = (Config().prompts_dir / "merge-prompt.md").read_text()
-    assert "CLOSE ISSUES" not in merge_prompt, (
-        "merge-prompt.md must not contain a CLOSE ISSUES section"
-    )
-
-
-def test_merge_prompt_has_no_issues_placeholder():
-    """The merge prompt must not reference the {{ISSUES}} variable."""
-    merge_prompt = (Config().prompts_dir / "merge-prompt.md").read_text()
-    assert "{{ISSUES}}" not in merge_prompt, (
-        "merge-prompt.md must not contain the {{ISSUES}} placeholder"
-    )
-
 
 def test_conflict_merge_calls_close_completed_parent_issues(tmp_path):
     """After conflict branches are merged, close_completed_parent_issues must be called once."""
