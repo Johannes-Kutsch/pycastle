@@ -6,6 +6,9 @@ from difflib import get_close_matches
 from functools import lru_cache
 from typing import Any
 
+from pycastle._types import StageOverride
+from pycastle.config.loader import Config
+
 _VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 _MODEL_RE = re.compile(r"^claude-(haiku|sonnet|opus)-(.+)$")
 
@@ -66,8 +69,7 @@ def _resolve_shorthand(shorthand: str, models: tuple[str, ...]) -> str:
     )
 
 
-def validate_config(cfg: Any, claude_service: Any) -> Any:
-    from pycastle._types import StageOverride
+def validate_config(cfg: Config, claude_service: Any) -> Config:
     from pycastle.errors import ConfigValidationError
 
     overrides = {
