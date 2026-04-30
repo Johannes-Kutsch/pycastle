@@ -63,8 +63,7 @@ def _unwrap(output: str) -> str:
     return output
 
 
-def parse_plan(output: str) -> list[dict]:
-    text = _unwrap(output)
+def _extract_planner_output(text: str) -> PlannerOutput:
     match = re.search(r"<plan>([\s\S]*?)</plan>", text)
     if not match:
         raise PlanParseError("Planner produced no <plan> tag.")
@@ -85,15 +84,16 @@ def parse_plan(output: str) -> list[dict]:
             f"Plan JSON has no 'unblocked_issues' or 'issues' key. Keys found: {list(data.keys())}"
         )
     try:
-        return [{"number": i["number"], "title": i["title"]} for i in raw]
+        return PlannerOutput(
+            issues=[{"number": i["number"], "title": i["title"]} for i in raw]
+        )
     except (KeyError, TypeError) as exc:
         raise PlanParseError(
             f"Plan JSON issues list has unexpected structure: {exc}"
         ) from exc
 
 
-def parse_issue_number(output: str) -> tuple[str, int]:
-    text = _unwrap(output)
+def _extract_issue_output(text: str) -> IssueOutput:
     match = re.search(r'<issue\s+label="([^"]+)">(\S+)</issue>', text)
     if not match:
         raise IssueParseError(
@@ -105,7 +105,27 @@ def parse_issue_number(output: str) -> tuple[str, int]:
         number = int(raw_number)
     except ValueError as exc:
         raise IssueParseError(f"{raw_number!r} is not a valid issue number.") from exc
-    return label, number
+    return IssueOutput(label=label, number=number)
+
+
+def parse(output: str, role: AgentRole) -> AgentOutput:
+    text = _unwrap(output)
+    if not re.search(r"<promise>COMPLETE</promise>", text):
+        raise PromiseParseError("Agent produced no <promise>COMPLETE</promise> tag.")
+    if role == AgentRole.PLANNER:
+        return _extract_planner_output(text)
+    if role == AgentRole.PREFLIGHT_ISSUE:
+        return _extract_issue_output(text)
+    return CompletionOutput()
+
+
+def parse_plan(output: str) -> list[dict]:
+    return _extract_planner_output(_unwrap(output)).issues
+
+
+def parse_issue_number(output: str) -> tuple[str, int]:
+    out = _extract_issue_output(_unwrap(output))
+    return out.label, out.number
 
 
 def is_complete(output: str) -> bool:
