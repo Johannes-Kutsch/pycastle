@@ -228,6 +228,71 @@ def test_sandbox_branch_deleted_when_run_agent_raises(deps, git_svc, run_agent):
     assert "pycastle/merge-sandbox" in deleted
 
 
+# ── Worktree lifecycle ────────────────────────────────────────────────────────
+
+
+def test_conflict_creates_worktree_at_merge_sandbox(deps, git_svc):
+    git_svc.try_merge.return_value = False
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+    expected_path = (
+        deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "merge-sandbox"
+    )
+    git_svc.create_worktree.assert_called_once_with(
+        deps.repo_root,
+        expected_path,
+        "pycastle/merge-sandbox",
+        git_svc.get_head_sha.return_value,
+    )
+
+
+def test_merger_receives_worktree_path_as_mount(deps, git_svc, run_agent):
+    git_svc.try_merge.return_value = False
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+    merger_calls = [
+        c for c in run_agent.call_args_list if c.kwargs.get("name") == "Merger"
+    ]
+    assert len(merger_calls) == 1
+    expected_path = (
+        deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "merge-sandbox"
+    )
+    assert merger_calls[0].kwargs["mount_path"] == expected_path
+
+
+def test_merger_has_no_branch_argument(deps, git_svc, run_agent):
+    git_svc.try_merge.return_value = False
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+    merger_calls = [
+        c for c in run_agent.call_args_list if c.kwargs.get("name") == "Merger"
+    ]
+    assert len(merger_calls) == 1
+    assert "branch" not in merger_calls[0].kwargs
+
+
+def test_worktree_removed_after_merger(deps, git_svc):
+    git_svc.try_merge.return_value = False
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+    expected_path = (
+        deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "merge-sandbox"
+    )
+    git_svc.remove_worktree.assert_called_once_with(deps.repo_root, expected_path)
+
+
+def test_worktree_removed_when_run_agent_raises(deps, git_svc, run_agent):
+    git_svc.try_merge.return_value = False
+    run_agent.side_effect = RuntimeError("agent crashed")
+    issues = [{"number": 1, "title": "Conflict"}]
+    with pytest.raises(RuntimeError, match="agent crashed"):
+        _run(issues, deps)
+    expected_path = (
+        deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "merge-sandbox"
+    )
+    git_svc.remove_worktree.assert_called_once_with(deps.repo_root, expected_path)
+
+
 # ── Empty input ───────────────────────────────────────────────────────────────
 
 
