@@ -22,19 +22,22 @@ def test_recording_status_display_satisfies_protocol() -> None:
 # ── NullStatusDisplay behaviour ───────────────────────────────────────────────
 
 
-def test_null_add_agent_does_not_raise() -> None:
+def test_null_add_agent_is_silent(capsys) -> None:
     d = NullStatusDisplay()
     d.add_agent("implementer-1", "Setup", Path("/tmp/agent.log"))
+    assert capsys.readouterr().out == ""
 
 
-def test_null_update_phase_does_not_raise() -> None:
+def test_null_update_phase_is_silent(capsys) -> None:
     d = NullStatusDisplay()
     d.update_phase("implementer-1", "Work")
+    assert capsys.readouterr().out == ""
 
 
-def test_null_remove_agent_does_not_raise() -> None:
+def test_null_remove_agent_is_silent(capsys) -> None:
     d = NullStatusDisplay()
     d.remove_agent("implementer-1")
+    assert capsys.readouterr().out == ""
 
 
 def test_null_print_delegates_to_builtins(capsys) -> None:
@@ -75,6 +78,12 @@ def test_recording_captures_print() -> None:
     d = RecordingStatusDisplay()
     d.print("Planning complete.")
     assert d.calls == [("print", "Planning complete.")]
+
+
+def test_recording_print_produces_no_stdout(capsys) -> None:
+    d = RecordingStatusDisplay()
+    d.print("Planning complete.")
+    assert capsys.readouterr().out == ""
 
 
 def test_recording_accumulates_multiple_calls() -> None:
