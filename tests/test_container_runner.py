@@ -1249,45 +1249,36 @@ def test_run_agent_defaults_model_and_effort_to_empty_string(tmp_path):
 # ── Issue 250: docker_client injection into run_agent ────────────────────────
 
 
-def test_run_agent_passes_docker_client_to_container_runner(tmp_path):
-    """run_agent with docker_client kwarg must forward it to ContainerRunner."""
+def test_run_agent_uses_injected_docker_client(tmp_path):
+    """Injected docker_client is used for container operations instead of docker.from_env()."""
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
     mock_client = MagicMock()
-    captured: dict = {}
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
 
-    class _CapturingRunner:
-        def __init__(self, *args, docker_client=None, **kwargs):
-            self.branch = None
-            self.env = {}
-            captured["docker_client"] = docker_client
+    def _exec_run_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            r = MagicMock()
+            r.output = iter([b""])
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
 
-        def __enter__(self):
-            return self
+    mock_container.exec_run.side_effect = _exec_run_side_effect
 
-        def __exit__(self, *_):
-            pass
-
-        def exec_simple(self, cmd, timeout=None):
-            return ""
-
-        def run_streaming(self):
-            return ""
-
-    with patch("pycastle.container_runner.ContainerRunner", _CapturingRunner):
-        _run(
-            run_agent(
-                "Test",
-                prompt,
-                tmp_path,
-                {},
-                docker_client=mock_client,
-                git_service=_make_git_service(),
-            )
+    _run(
+        run_agent(
+            "Test",
+            prompt,
+            tmp_path,
+            {},
+            docker_client=mock_client,
+            git_service=_make_git_service(),
         )
+    )
 
-    assert captured["docker_client"] is mock_client
+    mock_client.containers.run.assert_called_once()
 
 
 def test_run_streaming_includes_model_flag_when_set(tmp_path):
