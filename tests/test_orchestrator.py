@@ -856,7 +856,6 @@ def test_conflict_branch_closed_after_merger_agent(tmp_path):
     assert 1 in closed, f"Clean issue #1 must also be closed; closed: {closed}"
 
 
-
 def test_conflict_merge_calls_close_completed_parent_issues(tmp_path):
     """After conflict branches are merged, close_completed_parent_issues must be called once."""
     issues = [{"number": 5, "title": "Conflict"}]
