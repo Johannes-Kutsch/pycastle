@@ -61,7 +61,14 @@ async def _handle_preflight_failure(
         name=f"preflight-issue ({check_name})",
         prompt_file=deps.cfg.prompts_dir / "preflight-issue.md",
         mount_path=mount_path,
-        prompt_args={"CHECK_NAME": check_name, "COMMAND": command, "OUTPUT": output},
+        prompt_args={
+            "CHECK_NAME": check_name,
+            "COMMAND": command,
+            "OUTPUT": output,
+            "BUG_LABEL": deps.cfg.bug_label,
+            "ISSUE_LABEL": deps.cfg.issue_label,
+            "HITL_LABEL": deps.cfg.hitl_label,
+        },
         skip_preflight=True,
     )
     if isinstance(agent_result, PreflightFailure):
