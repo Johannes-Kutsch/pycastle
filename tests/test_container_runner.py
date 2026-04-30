@@ -2253,27 +2253,11 @@ def test_container_cleaned_up_on_usage_limit(tmp_path):
     )
 
 
-# ── Issue 249: log_path public property ──────────────────────────────────────
-
-
-def test_container_runner_log_path_property_returns_path_under_logs_dir(tmp_path):
-    """ContainerRunner must expose log_path as a public property returning Path."""
-    custom_logs = tmp_path / "logs"
-    runner = ContainerRunner(
-        "my-task",
-        Path("/fake"),
-        {},
-        docker_client=MagicMock(),
-        cfg=Config(logs_dir=custom_logs),
-    )
-    assert runner.log_path.parent == custom_logs
-
-
 # ── Issue 203: cfg injection into ContainerRunner ─────────────────────────────
 
 
 def test_container_runner_uses_custom_logs_dir_from_cfg(tmp_path):
-    """ContainerRunner with cfg=Config(logs_dir=...) must set _log_path under that dir."""
+    """ContainerRunner with cfg=Config(logs_dir=...) must set log_path under that dir."""
     custom_logs = tmp_path / "my_logs"
     runner = ContainerRunner(
         "my-task",
