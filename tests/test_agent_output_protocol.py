@@ -371,3 +371,18 @@ def test_parse_issue_parse_error_message_includes_output_tail():
     with pytest.raises(IssueParseError) as exc_info:
         parse(long_output, AgentRole.PREFLIGHT_ISSUE)
     assert "distinctive-issue-tail" in str(exc_info.value)
+
+
+def test_parse_promise_parse_error_tail_excludes_content_before_300_char_window():
+    prefix = "SHOULD-NOT-APPEAR"
+    output = prefix + "x" * 300
+    with pytest.raises(PromiseParseError) as exc_info:
+        parse(output, AgentRole.IMPLEMENTER)
+    assert "SHOULD-NOT-APPEAR" not in str(exc_info.value)
+
+
+def test_parse_issue_parse_error_tail_includes_full_output_when_shorter_than_300_chars():
+    short_output = "SHORT-DISTINCTIVE-CONTENT"
+    with pytest.raises(IssueParseError) as exc_info:
+        parse(short_output, AgentRole.PREFLIGHT_ISSUE)
+    assert "SHORT-DISTINCTIVE-CONTENT" in str(exc_info.value)
