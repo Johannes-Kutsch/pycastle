@@ -1,3 +1,4 @@
+import dataclasses
 import json
 
 import pytest
@@ -194,6 +195,14 @@ def test_agent_role_has_all_five_members():
     }
 
 
+def test_agent_role_values_are_snake_case_strings():
+    assert AgentRole.PLANNER.value == "planner"
+    assert AgentRole.PREFLIGHT_ISSUE.value == "preflight_issue"
+    assert AgentRole.IMPLEMENTER.value == "implementer"
+    assert AgentRole.REVIEWER.value == "reviewer"
+    assert AgentRole.MERGER.value == "merger"
+
+
 # ── PlannerOutput ─────────────────────────────────────────────────────────────
 
 
@@ -205,7 +214,7 @@ def test_planner_output_stores_issues():
 
 def test_planner_output_is_frozen():
     out = PlannerOutput(issues=[])
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         out.issues = []  # type: ignore[misc]
 
 
@@ -220,7 +229,7 @@ def test_issue_output_stores_label_and_number():
 
 def test_issue_output_is_frozen():
     out = IssueOutput(label="x", number=1)
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         out.number = 2  # type: ignore[misc]
 
 
@@ -234,7 +243,7 @@ def test_completion_output_is_instantiable():
 
 def test_completion_output_is_frozen():
     out = CompletionOutput()
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         out.foo = "bar"  # type: ignore[attr-defined]
 
 
