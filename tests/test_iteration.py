@@ -311,6 +311,6 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
 
     planner_calls = [n for n in agent_names if n == "Planner"]
     implementer_calls = [n for n in agent_names if "Implementer" in n]
-    assert len(planner_calls) == 1, "Planner called once (raises PreflightError)"
+    assert len(planner_calls) == 1, "Planner called once (returns PreflightFailure)"
     assert len(implementer_calls) == 1, "Exactly one Implementer for the fix issue"
     assert implementer_calls[0] == "Implementer #77"
