@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from rich.console import Console
+
 from pycastle.iteration._deps import (
     NullStatusDisplay,
     RecordingStatusDisplay,
@@ -8,11 +10,88 @@ from pycastle.iteration._deps import (
 from pycastle.rich_status_display import RichStatusDisplay
 
 
-# ── NullStatusDisplay protocol conformance ────────────────────────────────────
+# ── RichStatusDisplay protocol conformance ────────────────────────────────────
 
 
 def test_rich_status_display_satisfies_protocol() -> None:
     assert isinstance(RichStatusDisplay(), StatusDisplay)
+
+
+# ── RichStatusDisplay behaviour ───────────────────────────────────────────────
+
+
+def test_rich_stop_when_no_agents_added_is_safe() -> None:
+    d = RichStatusDisplay()
+    d.stop()
+
+
+def test_rich_stop_is_idempotent() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Setup", Path("/tmp/planner.log"))
+    d.remove_agent("Planner")
+    d.stop()
+
+
+def test_rich_update_phase_for_unknown_agent_is_safe() -> None:
+    d = RichStatusDisplay()
+    d.update_phase("never-added", "Work")
+
+
+def test_rich_remove_unknown_agent_is_safe() -> None:
+    d = RichStatusDisplay()
+    d.remove_agent("never-added")
+
+
+def test_rich_print_outputs_message(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("hello world")
+    assert "hello world" in capsys.readouterr().out
+
+
+def test_rich_agents_render_sorted_by_phase_rank() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Merger", "Work", Path("/tmp/merger.log"))
+    d.add_agent("Reviewer #5", "Work", Path("/tmp/rev5.log"))
+    d.add_agent("Implementer #5", "Work", Path("/tmp/impl5.log"))
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert output.find("Planner") < output.find("Implementer #5")
+    assert output.find("Implementer #5") < output.find("Reviewer #5")
+    assert output.find("Reviewer #5") < output.find("Merger")
+    d.stop()
+
+
+def test_rich_implementers_render_sorted_by_issue_number() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Implementer #42", "Work", Path("/tmp/impl42.log"))
+    d.add_agent("Implementer #7", "Work", Path("/tmp/impl7.log"))
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert output.find("Implementer #7") < output.find("Implementer #42")
+    d.stop()
+
+
+def test_rich_unknown_agent_sorts_after_known_phases() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Unknown-agent", "Work", Path("/tmp/unknown.log"))
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert output.find("Planner") < output.find("Unknown-agent")
+    d.stop()
+
+
+# ── NullStatusDisplay protocol conformance ────────────────────────────────────
 
 
 def test_null_status_display_satisfies_protocol() -> None:

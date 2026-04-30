@@ -92,18 +92,6 @@ def _get_repo(repo_root: Path) -> str:
     return result.stdout.decode("utf-8").strip()
 
 
-def _stage_for_agent(name: str) -> str:
-    if name == "Planner":
-        return "plan"
-    if name.startswith("Implementer"):
-        return "implement"
-    if name.startswith("Reviewer"):
-        return "review"
-    if name == "Merger":
-        return "merge"
-    return ""
-
-
 async def wait_for_clean_working_tree(
     repo_root: Path,
     git_svc: GitService,
