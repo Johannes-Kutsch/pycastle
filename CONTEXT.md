@@ -123,7 +123,7 @@
 | **Setup phase** | First agent lifecycle phase: worktree creation, gitdir overlay creation, parent git dir mount wiring, container start, and git identity propagation | container setup, init phase |
 | **Pre-flight phase** | Second agent lifecycle phase: runs quality checks sequentially inside the container and returns a list of failure tuples to the orchestrator; does not spawn agents internally | preflight, pre-flight check phase |
 | **quality check** | One command run during the Pre-flight phase or a post-merge check, as defined in PREFLIGHT_CHECKS; each runs independently so all failures are collected in a single pass | quality gate, check |
-| **check stage** | The lifecycle context prefix embedded in CHECK_NAME when a preflight-issue agent is spawned (e.g. `[pre-planning]`, `[post-merge]`); included in the filed GitHub issue title | stage prefix, phase prefix |
+| **check stage** | The lifecycle context prefix embedded in CHECK_NAME when a preflight-issue agent is spawned (e.g. `[plan-sandbox]`, `[post-merge]`); included in the filed GitHub issue title | stage prefix, phase prefix |
 | **pre-flight failure** | Result of a quality check returning non-zero during the Pre-flight phase; returned as a failure tuple to the orchestrator | check failure |
 | **post-merge failure** | Result of a quality check returning non-zero during the post-merge check; triggers the preflight-issue agent with check stage `[post-merge]`; the Merger is not spawned | post-merge check failure |
 | **pre-existing failure** | A pre-flight failure that existed before the current agent's task began; root cause of scope creep | baseline failure |
