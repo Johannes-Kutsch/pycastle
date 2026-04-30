@@ -19,6 +19,7 @@ from . import agent_output_protocol
 from .agent_result import (
     AgentIncomplete,
     AgentSuccess,
+    AgentTimeoutHit,
     CancellationToken,
     PreflightFailure,
     UsageLimitHit,
@@ -181,7 +182,9 @@ class ContainerRunner:
                             "mode": "ro",
                         }
                 else:
-                    volumes = {repo_path: {"bind": "/home/agent/workspace", "mode": "rw"}}
+                    volumes = {
+                        repo_path: {"bind": "/home/agent/workspace", "mode": "rw"}
+                    }
             else:
                 volumes = {repo_path: {"bind": "/home/agent/workspace", "mode": "rw"}}
         working_dir = "/home/agent/workspace"
@@ -438,7 +441,11 @@ async def run_agent(
     docker_client=None,
     *,
     token: CancellationToken | None = None,
-) -> AgentSuccess | AgentIncomplete | PreflightFailure | UsageLimitHit:
+    cfg: Config | None = None,
+) -> (
+    AgentSuccess | AgentIncomplete | PreflightFailure | UsageLimitHit | AgentTimeoutHit
+):
+    _run_cfg = cfg if cfg is not None else _cfg
     _token = token if token is not None else CancellationToken()
     if _token.is_cancelled:
         return UsageLimitHit(last_output="")
@@ -467,7 +474,7 @@ async def run_agent(
                 else re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
             )
             worktree_host_path = (
-                mount_path / _cfg.pycastle_dir / ".worktrees" / worktree_name
+                mount_path / _run_cfg.pycastle_dir / ".worktrees" / worktree_name
             )
             create_worktree_fn(mount_path, worktree_host_path, branch, sha)
             gitdir_overlay = patch_gitdir_for_container(worktree_host_path)
@@ -519,16 +526,28 @@ async def run_agent(
             )
             if not skip_preflight:
                 failures = await _preflight(
-                    name, runner, loop, exec_timeout, list(_cfg.preflight_checks)
+                    name, runner, loop, exec_timeout, list(_run_cfg.preflight_checks)
                 )
                 if failures:
                     return PreflightFailure(failures=tuple(failures))
             output = ""
-            try:
-                output = await _work(name, runner, loop)
-            except UsageLimitError:
-                _token.cancel(preserve_worktree=True)
-                return UsageLimitHit(last_output=output)
+            retries_left = _run_cfg.timeout_retries
+            while True:
+                try:
+                    output = await _work(name, runner, loop)
+                    break
+                except AgentTimeoutError:
+                    if retries_left <= 0:
+                        return AgentTimeoutHit(last_output=output)
+                    restart_num = _run_cfg.timeout_retries - retries_left + 1
+                    print(
+                        f"[{name}] Timeout — restarting"
+                        f" (attempt {restart_num}/{_run_cfg.timeout_retries})"
+                    )
+                    retries_left -= 1
+                except UsageLimitError:
+                    _token.cancel(preserve_worktree=True)
+                    return UsageLimitHit(last_output=output)
             if agent_output_protocol.is_complete(output):
                 return AgentSuccess(output=output)
             return AgentIncomplete(partial_output=output)

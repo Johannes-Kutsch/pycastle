@@ -6,10 +6,12 @@ from typing import Any
 
 from ..agent_result import (
     AgentSuccess,
+    AgentTimeoutHit,
     CancellationToken,
     PreflightFailure,
     UsageLimitHit,
 )
+from ..errors import AgentTimeoutError
 from ..prompt_utils import load_standards
 from ._deps import Deps
 
@@ -71,6 +73,10 @@ async def run_issue(
         return result
     if isinstance(result, PreflightFailure):
         return result
+    if isinstance(result, AgentTimeoutHit):
+        raise AgentTimeoutError(
+            f"Implementer #{issue['number']} timed out after all retries"
+        )
     if not isinstance(result, AgentSuccess):
         return None
 
@@ -90,6 +96,10 @@ async def run_issue(
     )
     if isinstance(review_result, UsageLimitHit):
         return review_result
+    if isinstance(review_result, AgentTimeoutHit):
+        raise AgentTimeoutError(
+            f"Reviewer #{issue['number']} timed out after all retries"
+        )
     return issue
 
 
