@@ -361,3 +361,48 @@ def test_parse_planner_accepts_unblocked_issues_key():
     result = parse(output, AgentRole.PLANNER)
     assert isinstance(result, PlannerOutput)
     assert result.issues == [{"number": 3, "title": "Y"}]
+
+
+def test_parse_empty_string_raises_promise_parse_error():
+    with pytest.raises(PromiseParseError):
+        parse("", AgentRole.IMPLEMENTER)
+
+
+def test_parse_planner_with_malformed_json_raises_plan_parse_error():
+    with pytest.raises(PlanParseError, match="malformed JSON"):
+        parse("<promise>COMPLETE</promise><plan>not json</plan>", AgentRole.PLANNER)
+
+
+def test_parse_planner_with_empty_issues_returns_empty_planner_output():
+    output = '<promise>COMPLETE</promise><plan>{"issues": []}</plan>'
+    result = parse(output, AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == []
+
+
+def test_parse_preflight_issue_with_non_integer_raises_issue_parse_error():
+    output = '<promise>COMPLETE</promise><issue label="ready-for-agent">abc</issue>'
+    with pytest.raises(IssueParseError, match="not a valid issue number"):
+        parse(output, AgentRole.PREFLIGHT_ISSUE)
+
+
+def test_parse_unwraps_ndjson_envelope_for_preflight_issue():
+    envelope = json.dumps(
+        {
+            "type": "result",
+            "result": '<promise>COMPLETE</promise><issue label="ready-for-agent">99</issue>',
+        }
+    )
+    result = parse(envelope, AgentRole.PREFLIGHT_ISSUE)
+    assert isinstance(result, IssueOutput)
+    assert result.number == 99
+
+
+def test_parse_raises_promise_parse_error_for_reviewer_without_promise():
+    with pytest.raises(PromiseParseError):
+        parse("reviewed but forgot promise", AgentRole.REVIEWER)
+
+
+def test_parse_raises_promise_parse_error_for_merger_without_promise():
+    with pytest.raises(PromiseParseError):
+        parse("merged but forgot promise", AgentRole.MERGER)
