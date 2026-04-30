@@ -6,12 +6,9 @@ from typing import Any
 from ..agent_result import AgentSuccess
 from ..git_service import GitCommandError
 from ._deps import Deps
+from .implement import branch_for
 
 MERGE_SANDBOX = "pycastle/merge-sandbox"
-
-
-def branch_for(issue_number: int) -> str:
-    return f"pycastle/issue-{issue_number}"
 
 
 @dataclasses.dataclass

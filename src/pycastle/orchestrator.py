@@ -1,3 +1,5 @@
+import asyncio
+import dataclasses
 import shutil
 import subprocess
 import sys
@@ -94,8 +96,6 @@ def _stage_for_agent(name: str) -> str:
 
 
 async def wait_for_clean_working_tree(repo_root: Path, git_svc: GitService) -> None:
-    import asyncio
-
     if git_svc.is_working_tree_clean(repo_root):
         return
     print(
@@ -136,8 +136,6 @@ async def run(
         },
     }
     _validate_config(_overrides)
-    import dataclasses
-
     cfg = dataclasses.replace(
         cfg,
         plan_override=StageOverride(
