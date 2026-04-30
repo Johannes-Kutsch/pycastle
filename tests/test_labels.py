@@ -1,38 +1,28 @@
 from unittest.mock import MagicMock
 
 from pycastle.git_service import GitCommandError, GitService, GitTimeoutError
-from pycastle.labels import (
-    LABEL_BUG,
-    LABEL_NEEDS_INFO,
-    LABEL_NEEDS_TRIAGE,
-    LABEL_READY_FOR_AGENT,
-    LABEL_READY_FOR_HUMAN,
-    LABEL_WONTFIX,
-    LABELS,
-    _get_remote_repo,
-)
+from pycastle.labels import LABELS, _get_remote_repo
 
 
-# ── Cycle 2: Label name constants ─────────────────────────────────────────────
+# ── LABELS list ────────────────────────────────────────────────────────────────
 
 
-def test_label_constants_exist():
-    assert LABEL_BUG == "bug"
-    assert LABEL_NEEDS_INFO == "needs-info"
-    assert LABEL_NEEDS_TRIAGE == "needs-triage"
-    assert LABEL_READY_FOR_AGENT == "ready-for-agent"
-    assert LABEL_READY_FOR_HUMAN == "ready-for-human"
-    assert LABEL_WONTFIX == "wontfix"
+def test_labels_contains_exactly_three_entries():
+    assert len(LABELS) == 3
 
 
-def test_labels_list_uses_constants():
+def test_labels_contains_bug_issue_and_hitl():
     names = {entry["name"] for entry in LABELS}
-    assert LABEL_BUG in names
-    assert LABEL_NEEDS_INFO in names
-    assert LABEL_NEEDS_TRIAGE in names
-    assert LABEL_READY_FOR_AGENT in names
-    assert LABEL_READY_FOR_HUMAN in names
-    assert LABEL_WONTFIX in names
+    assert "bug" in names
+    assert "ready-for-agent" in names
+    assert "ready-for-human" in names
+
+
+def test_labels_does_not_contain_removed_labels():
+    names = {entry["name"] for entry in LABELS}
+    assert "needs-info" not in names
+    assert "needs-triage" not in names
+    assert "wontfix" not in names
 
 
 # ── Cycle 1: _get_remote_repo with injected GitService ───────────────────────

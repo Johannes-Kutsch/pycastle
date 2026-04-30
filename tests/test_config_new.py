@@ -42,6 +42,11 @@ def test_load_config_returns_defaults_when_no_local_file(tmp_path):
     assert cfg.issue_label == "ready-for-agent"
 
 
+def test_config_has_bug_label_default():
+    cfg = Config()
+    assert cfg.bug_label == "bug"
+
+
 def test_load_config_applies_local_file_override(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text("max_parallel = 4\n")

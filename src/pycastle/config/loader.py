@@ -18,6 +18,7 @@ class Config:
     worktree_timeout: int = 30
     idle_timeout: int = 300
     docker_image_name: str = ""
+    bug_label: str = "bug"
     issue_label: str = "ready-for-agent"
     hitl_label: str = "ready-for-human"
     pycastle_dir: Path = dataclasses.field(default_factory=lambda: Path("pycastle"))
