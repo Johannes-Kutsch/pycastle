@@ -1,11 +1,17 @@
 """Tests for AgentRunner and FakeAgentRunner."""
 
 import asyncio
+import threading
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.agent_result import PreflightFailure
+from pycastle.agent_result import CancellationToken, PreflightFailure
+from pycastle.agent_runner import AgentRunner
+from pycastle.config import Config
+from pycastle.errors import AgentTimeoutError, BranchCollisionError, UsageLimitError
+from pycastle.git_service import GitCommandError, GitService
 from pycastle.iteration._deps import FakeAgentRunner
 
 
@@ -209,3 +215,424 @@ def test_fake_agent_runner_side_effect_can_be_synchronous():
     )
 
     assert result == "sync result"
+
+
+# ── AgentRunner: helpers ──────────────────────────────────────────────────────
+
+
+def _make_docker_client(chunks: list[bytes]) -> MagicMock:
+    """Mock docker client whose streaming exec_run replays the given byte chunks."""
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            result = MagicMock()
+            result.output = iter(chunks)
+            return result
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    return mock_client
+
+
+def _make_git_service() -> MagicMock:
+    svc = MagicMock(spec=GitService)
+    svc.get_user_name.return_value = "Alice"
+    svc.get_user_email.return_value = "alice@example.com"
+    svc.is_working_tree_clean.return_value = True
+    return svc
+
+
+def _never_yields():
+    """Generator that blocks forever without yielding — simulates a hung agent stream."""
+    e = threading.Event()
+    e.wait()
+    yield  # make this a generator
+
+
+# ── AgentRunner: run() return values ─────────────────────────────────────────
+
+
+def test_agent_runner_run_returns_agent_output(tmp_path):
+    mock_client = _make_docker_client([b"agent output\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test prompt")
+
+    result = asyncio.run(
+        runner.run(
+            name="Test", prompt_file=prompt, mount_path=tmp_path, skip_preflight=True
+        )
+    )
+
+    assert result == "agent output\n"
+
+
+def test_agent_runner_run_returns_preflight_failure_when_check_fails(tmp_path):
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            r = MagicMock()
+            r.output = iter([b""])
+            return r
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if "ruff check" in cmd:
+            return MagicMock(exit_code=1, output=(b"E501 line too long", b""))
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test prompt")
+
+    result = asyncio.run(
+        runner.run(name="Test", prompt_file=prompt, mount_path=tmp_path)
+    )
+
+    assert isinstance(result, PreflightFailure)
+    assert len(result.failures) == 1
+    name, cmd, output = result.failures[0]
+    assert name == "ruff"
+    assert "E501" in output
+
+
+def test_agent_runner_run_skips_preflight_when_skip_preflight_true(tmp_path):
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            r = MagicMock()
+            r.output = iter([b"done\n"])
+            return r
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if "ruff check" in cmd:
+            return MagicMock(exit_code=1, output=(b"E501 line too long", b""))
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test prompt")
+
+    result = asyncio.run(
+        runner.run(
+            name="Test", prompt_file=prompt, mount_path=tmp_path, skip_preflight=True
+        )
+    )
+
+    assert isinstance(result, str)
+
+
+# ── AgentRunner: error propagation ───────────────────────────────────────────
+
+
+def test_agent_runner_run_raises_usage_limit_error_when_token_pre_cancelled(tmp_path):
+    token = CancellationToken()
+    token.cancel()
+    mock_client = _make_docker_client([b"output\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test prompt")
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(
+            runner.run(
+                name="Test", prompt_file=prompt, mount_path=tmp_path, token=token
+            )
+        )
+
+    mock_client.containers.run.assert_not_called()
+
+
+def test_agent_runner_run_cancels_token_and_raises_on_usage_limit_in_stream(tmp_path):
+    mock_client = _make_docker_client([b"You've hit your session limit\n"])
+    token = CancellationToken()
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test prompt")
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(
+            runner.run(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+                token=token,
+            )
+        )
+
+    assert token.is_cancelled
+    assert token.wants_worktree_preserved
+
+
+def test_agent_runner_run_raises_branch_collision_for_concurrent_same_branch(tmp_path):
+    mock_client = _make_docker_client([b"output\n"])
+    mock_git = _make_git_service()
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test prompt")
+
+    async def _two_on_same_branch():
+        return await asyncio.gather(
+            runner.run(
+                name="A1",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                branch="feature/collision",
+                skip_preflight=True,
+            ),
+            runner.run(
+                name="A2",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                branch="feature/collision",
+                skip_preflight=True,
+            ),
+            return_exceptions=True,
+        )
+
+    results = asyncio.run(_two_on_same_branch())
+    errors = [r for r in results if isinstance(r, Exception)]
+    assert any(isinstance(e, BranchCollisionError) for e in errors)
+
+
+def test_agent_runner_run_raises_agent_timeout_error_when_retries_exhausted(tmp_path):
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            r = MagicMock()
+            r.output = _never_yields()
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    cfg = Config(logs_dir=tmp_path, idle_timeout=0.01, timeout_retries=0)
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test prompt")
+
+    with pytest.raises(AgentTimeoutError):
+        asyncio.run(
+            runner.run(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+            )
+        )
+
+
+def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    stream_call_count = {"n": 0}
+
+    def exec_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            stream_call_count["n"] += 1
+            r = MagicMock()
+            r.output = (
+                _never_yields() if stream_call_count["n"] == 1 else iter([b"done\n"])
+            )
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    cfg = Config(logs_dir=tmp_path, idle_timeout=0.01, timeout_retries=1)
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test prompt")
+
+    result = asyncio.run(
+        runner.run(
+            name="Test", prompt_file=prompt, mount_path=tmp_path, skip_preflight=True
+        )
+    )
+
+    assert result == "done\n"
+
+
+# ── AgentRunner: worktree lifecycle ──────────────────────────────────────────
+
+
+def test_agent_runner_creates_worktree_at_issue_path(tmp_path):
+    mock_git = _make_git_service()
+    mock_client = _make_docker_client([b"done\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    asyncio.run(
+        runner.run(
+            name="Test",
+            prompt_file=prompt,
+            mount_path=tmp_path,
+            branch="pycastle/issue-42",
+            skip_preflight=True,
+        )
+    )
+
+    worktree_path = mock_git.create_worktree.call_args[0][1]
+    assert worktree_path.name == "issue-42"
+
+
+def test_agent_runner_sanitizes_branch_name_for_worktree_path(tmp_path):
+    mock_git = _make_git_service()
+    mock_client = _make_docker_client([b"done\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    asyncio.run(
+        runner.run(
+            name="Test",
+            prompt_file=prompt,
+            mount_path=tmp_path,
+            branch="feature/My Cool Branch",
+            skip_preflight=True,
+        )
+    )
+
+    worktree_path = mock_git.create_worktree.call_args[0][1]
+    assert worktree_path.name == "feature-my-cool-branch"
+
+
+def test_agent_runner_removes_worktree_when_clean(tmp_path):
+    mock_git = _make_git_service()
+    mock_git.is_working_tree_clean.return_value = True
+    mock_client = _make_docker_client([b"done\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    asyncio.run(
+        runner.run(
+            name="Test",
+            prompt_file=prompt,
+            mount_path=tmp_path,
+            branch="feature/test",
+            skip_preflight=True,
+        )
+    )
+
+    mock_git.remove_worktree.assert_called_once()
+
+
+def test_agent_runner_preserves_worktree_when_dirty(tmp_path):
+    mock_git = _make_git_service()
+    mock_git.is_working_tree_clean.return_value = False
+    mock_client = _make_docker_client([b"done\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    asyncio.run(
+        runner.run(
+            name="Test",
+            prompt_file=prompt,
+            mount_path=tmp_path,
+            branch="feature/test",
+            skip_preflight=True,
+        )
+    )
+
+    mock_git.remove_worktree.assert_not_called()
+
+
+def test_agent_runner_preserves_worktree_on_usage_limit(tmp_path):
+    mock_git = _make_git_service()
+    mock_client = _make_docker_client([b"You've hit your session limit\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(
+            runner.run(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                branch="feature/test",
+                skip_preflight=True,
+            )
+        )
+
+    mock_git.remove_worktree.assert_not_called()
+
+
+def test_agent_runner_does_not_start_container_when_create_worktree_fails(tmp_path):
+    mock_git = _make_git_service()
+    mock_git.create_worktree.side_effect = RuntimeError("git worktree add failed")
+    mock_client = _make_docker_client([b"done\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with pytest.raises(RuntimeError, match="worktree add failed"):
+        asyncio.run(
+            runner.run(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                branch="feature/test",
+                skip_preflight=True,
+            )
+        )
+
+    mock_client.containers.run.assert_not_called()
+
+
+def test_agent_runner_propagates_git_user_name_error(tmp_path):
+    mock_git = _make_git_service()
+    mock_git.get_user_name.side_effect = GitCommandError("git config user.name failed")
+    mock_client = _make_docker_client([b"done\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with pytest.raises(GitCommandError):
+        asyncio.run(
+            runner.run(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+            )
+        )
