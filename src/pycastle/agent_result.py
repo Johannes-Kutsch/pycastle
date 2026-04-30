@@ -22,7 +22,14 @@ class UsageLimitHit:
     last_output: str
 
 
-AgentResult = AgentSuccess | AgentIncomplete | PreflightFailure | UsageLimitHit
+@dataclass(frozen=True)
+class AgentTimeoutHit:
+    last_output: str
+
+
+AgentResult = (
+    AgentSuccess | AgentIncomplete | PreflightFailure | UsageLimitHit | AgentTimeoutHit
+)
 
 
 @dataclass
