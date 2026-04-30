@@ -689,3 +689,91 @@ def test_agent_runner_remove_agent_called_on_error(tmp_path):
         )
 
     assert ("remove_agent", "Test") in display.calls
+
+
+# ── AgentRunner: run_preflight ────────────────────────────────────────────────
+
+
+def _make_preflight_docker_client(exit_code: int = 0, stdout: bytes = b"") -> MagicMock:
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+    mock_container.exec_run.return_value = MagicMock(
+        exit_code=exit_code, output=(stdout, b"")
+    )
+    return mock_client
+
+
+def test_agent_runner_run_preflight_returns_empty_list_when_no_checks_configured(
+    tmp_path,
+):
+    mock_client = _make_preflight_docker_client()
+    cfg = Config(logs_dir=tmp_path, preflight_checks=())
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == []
+
+
+def test_agent_runner_run_preflight_returns_empty_list_when_all_checks_pass(tmp_path):
+    mock_client = _make_preflight_docker_client(exit_code=0)
+    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == []
+
+
+def test_agent_runner_run_preflight_returns_failure_tuple_when_check_fails(tmp_path):
+    mock_client = _make_preflight_docker_client(
+        exit_code=1, stdout=b"E501 line too long"
+    )
+    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert len(result) == 1
+    check_name, command, output = result[0]
+    assert check_name == "ruff"
+    assert command == "ruff check ."
+    assert "E501" in output
+
+
+def test_agent_runner_run_preflight_collects_all_failures_when_multiple_checks_fail(
+    tmp_path,
+):
+    mock_client = _make_preflight_docker_client(exit_code=1, stdout=b"check failed")
+    cfg = Config(
+        logs_dir=tmp_path,
+        preflight_checks=(("ruff", "ruff check ."), ("mypy", "mypy .")),
+    )
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert len(result) == 2
+    assert result[0][0] == "ruff"
+    assert result[1][0] == "mypy"
+
+
+def test_agent_runner_run_preflight_stops_container_after_checks_pass(tmp_path):
+    mock_client = _make_preflight_docker_client()
+    cfg = Config(logs_dir=tmp_path)
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    mock_client.containers.run.return_value.stop.assert_called()
+
+
+def test_agent_runner_run_preflight_stops_container_when_check_fails(tmp_path):
+    mock_client = _make_preflight_docker_client(exit_code=1, stdout=b"check failed")
+    cfg = Config(logs_dir=tmp_path, preflight_checks=(("lint", "lint ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    mock_client.containers.run.return_value.stop.assert_called()
