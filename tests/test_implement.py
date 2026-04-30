@@ -1,8 +1,16 @@
 import asyncio
 from unittest.mock import MagicMock
 
-from pycastle.agent_result import AgentSuccess, PreflightFailure, UsageLimitHit
+import pytest
+
+from pycastle.agent_result import (
+    AgentSuccess,
+    AgentTimeoutHit,
+    PreflightFailure,
+    UsageLimitHit,
+)
 from pycastle.config import Config, config as _cfg
+from pycastle.errors import AgentTimeoutError
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
 from pycastle.iteration._deps import Deps, RecordingLogger
@@ -355,3 +363,73 @@ def test_run_issue_returns_issue_when_implementer_completes(tmp_path):
     result = asyncio.run(run_issue(issue, deps))
 
     assert result == issue
+
+
+# ── Cycle 274: AgentTimeoutHit propagation through implement layer ────────────
+
+
+def test_run_issue_raises_agent_timeout_error_when_implementer_exhausts_retries(
+    tmp_path,
+):
+    """When implementer returns AgentTimeoutHit, run_issue must raise AgentTimeoutError."""
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return AgentTimeoutHit(last_output="partial work")
+        return AgentSuccess(output="<promise>COMPLETE</promise>")
+
+    issue = {"number": 5, "title": "Fix thing"}
+    deps = _make_deps(tmp_path, _fake_run_agent)
+
+    with pytest.raises(AgentTimeoutError):
+        asyncio.run(run_issue(issue, deps))
+
+
+def test_run_issue_raises_agent_timeout_error_when_reviewer_exhausts_retries(tmp_path):
+    """When reviewer returns AgentTimeoutHit, run_issue must raise AgentTimeoutError."""
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return AgentTimeoutHit(last_output="")
+
+    issue = {"number": 5, "title": "Fix thing"}
+    deps = _make_deps(tmp_path, _fake_run_agent)
+
+    with pytest.raises(AgentTimeoutError):
+        asyncio.run(run_issue(issue, deps))
+
+
+def test_implement_phase_implementer_timeout_tracked_as_error(tmp_path):
+    """When implementer exhausts retries, implement_phase tracks the issue in errors."""
+    issues = [{"number": 3, "title": "Fix C"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return AgentTimeoutHit(last_output="")
+        return AgentSuccess(output="<promise>COMPLETE</promise>")
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    result = asyncio.run(implement_phase(issues, None, deps))
+
+    assert result.completed == []
+    assert len(result.errors) == 1
+    assert result.errors[0][0] == issues[0]
+    assert isinstance(result.errors[0][1], AgentTimeoutError)
+
+
+def test_implement_phase_reviewer_timeout_does_not_complete_issue(tmp_path):
+    """When reviewer exhausts retries, the issue must not appear in completed."""
+    issues = [{"number": 4, "title": "Fix D"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return AgentTimeoutHit(last_output="")
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    result = asyncio.run(implement_phase(issues, None, deps))
+
+    assert result.completed == []
+    assert len(result.errors) == 1
+    assert isinstance(result.errors[0][1], AgentTimeoutError)
