@@ -59,13 +59,13 @@
 | **implement phase** | Phase where Implementers fix individual issues in isolated worktrees | coding step |
 | **review phase** | Phase where the Reviewer checks an Implementer's changes before merge | code review step |
 | **merge phase** | Phase where completed branches are integrated into the main branch, issues are closed, and — when conflicts exist — the Merger is spawned | integration step |
-| **Planner** | Agent role that runs during the plan phase; outputs a plan | planning agent |
+| **Planner** | Agent role that runs during the plan phase; runs in a clean checkout of the safe SHA so it sees the same committed state that Implementers will start from; outputs a plan | planning agent |
 | **Implementer** | Agent role that runs during the implement phase; one Implementer per issue | coding agent, implementation agent |
 | **Reviewer** | Agent role that runs after an Implementer completes; validates changes before merge | review agent |
 | **Merger** | Agent role spawned during the merge phase only when at least one conflicting branch exists; integrates only the conflicting branches and closes their issues | merge agent, integration agent |
 | **preflight-issue agent** | Agent spawned when a quality check fails at the orchestrator level; explores the codebase to find root cause, evaluates whether HITL is required, files one structured GitHub issue, and outputs the issue number as `<issue>NUMBER</issue>`; always runs with skip_preflight enabled | bug-report agent, error reporter |
 | **HITL verdict** | The routing decision encoded in the preflight issue's label after the preflight-issue agent completes; `ready-for-agent` means the orchestrator spawns a single Implementer, `ready-for-human` means the orchestrator aborts | HITL decision, routing verdict |
-| **safe SHA** | The exact git commit SHA captured by the orchestrator after a passing preflight check; all Implementer worktrees in the current iteration are created from this SHA, guaranteeing they start from a verified-clean state | verified SHA, clean SHA |
+| **safe SHA** | The exact git commit SHA captured by the orchestrator after a passing preflight check; the Planner and all Implementer worktrees in the current iteration are created from this SHA, guaranteeing every agent sees the same verified-clean committed state | verified SHA, clean SHA |
 | **cold startup** | The state at the beginning of a fresh `pycastle run` when no post-merge check has run yet in the current process; always triggers a pre-planning preflight check | first iteration, fresh start |
 | **preflight-fix path** | The orchestrator routing when a preflight issue is AFK: skip the Planner, spawn one Implementer for the preflight issue, run the normal Reviewer → merge → post-merge check pipeline, then start a new iteration | preflight fast path |
 | **programmatic merge path** | Fast-path logic in the merge phase that runs `git merge --no-edit` directly via subprocess without spawning the Merger; used when all branches merge cleanly | fast path, direct merge |
