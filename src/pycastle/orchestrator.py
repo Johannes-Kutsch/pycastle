@@ -123,7 +123,7 @@ async def run(
     git_service: GitService | None = None,
     github_service: GithubService | None = None,
 ) -> None:
-    cfg = load_config(repo_root=repo_root, validate=True, claude_service=claude_service)
+    cfg = load_config(repo_root=repo_root, claude_service=claude_service)
     _run_agent = run_agent or _default_run_agent
     prune_orphan_worktrees(repo_root)
     git_svc = git_service or GitService()

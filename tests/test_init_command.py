@@ -107,6 +107,9 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
     tmp_path, monkeypatch
 ):
     """load_config on a freshly scaffolded project must return the expected StageOverride values."""
+    from unittest.mock import MagicMock
+
+    from pycastle.claude_service import ClaudeService
     from pycastle.config import StageOverride, load_config
     from pycastle.init_command import main
 
@@ -117,11 +120,25 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
     ):
         main()
 
-    cfg = load_config(repo_root=tmp_path)
-    assert cfg.plan_override == StageOverride(model="haiku", effort="low")
-    assert cfg.implement_override == StageOverride(model="sonnet", effort="medium")
-    assert cfg.review_override == StageOverride(model="sonnet", effort="high")
-    assert cfg.merge_override == StageOverride(model="sonnet", effort="medium")
+    svc = MagicMock(spec=ClaudeService)
+    svc.list_models.return_value = (
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-6",
+        "claude-opus-4-7",
+    )
+    cfg = load_config(repo_root=tmp_path, claude_service=svc)
+    assert cfg.plan_override == StageOverride(
+        model="claude-haiku-4-5-20251001", effort="low"
+    )
+    assert cfg.implement_override == StageOverride(
+        model="claude-sonnet-4-6", effort="medium"
+    )
+    assert cfg.review_override == StageOverride(
+        model="claude-sonnet-4-6", effort="high"
+    )
+    assert cfg.merge_override == StageOverride(
+        model="claude-sonnet-4-6", effort="medium"
+    )
 
 
 # ── Cycle 4: init does not overwrite other existing files ─────────────────────

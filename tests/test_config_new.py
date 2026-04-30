@@ -27,15 +27,6 @@ def _make_service(models: tuple[str, ...] = _FAKE_MODELS) -> ClaudeService:
     return mock
 
 
-@pytest.fixture(autouse=True)
-def _clear_model_cache():
-    from pycastle.config import _fetch_models
-
-    _fetch_models.cache_clear()
-    yield
-    _fetch_models.cache_clear()
-
-
 def test_load_config_returns_defaults_when_no_local_file(tmp_path):
     cfg = load_config(repo_root=tmp_path)
     assert cfg.max_parallel == 1
@@ -111,8 +102,8 @@ def test_load_config_applies_stage_override_from_local_file(tmp_path):
         "from pycastle import StageOverride\n"
         'plan_override = StageOverride(model="haiku", effort="low")\n'
     )
-    cfg = load_config(repo_root=tmp_path)
-    assert cfg.plan_override.model == "haiku"
+    cfg = load_config(repo_root=tmp_path, claude_service=_make_service())
+    assert cfg.plan_override.model == "claude-haiku-4-5-20251001"
     assert cfg.plan_override.effort == "low"
 
 
@@ -140,8 +131,8 @@ def test_load_config_applies_stage_override_from_local_file_using_package_import
         "from pycastle import StageOverride\n"
         'plan_override = StageOverride(model="opus", effort="max")\n'
     )
-    cfg = load_config(repo_root=tmp_path)
-    assert cfg.plan_override.model == "opus"
+    cfg = load_config(repo_root=tmp_path, claude_service=_make_service())
+    assert cfg.plan_override.model == "claude-opus-4-7"
     assert cfg.plan_override.effort == "max"
 
 
@@ -181,20 +172,20 @@ def test_config_module_does_not_export_uppercase_aliases():
         assert not hasattr(cfg_mod, name), f"config.py should not export {name!r}"
 
 
-# ── load_config(validate=True): model shorthand resolution ───────────────────
+# ── load_config: model shorthand resolution ───────────────────
 
 
-def test_load_config_validate_resolves_model_shorthand(tmp_path):
+def test_load_config_resolves_model_shorthand(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(
         "from pycastle import StageOverride\n"
         'plan_override = StageOverride(model="sonnet", effort="")\n'
     )
-    cfg = load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+    cfg = load_config(repo_root=tmp_path, claude_service=_make_service())
     assert cfg.plan_override.model == "claude-sonnet-4-6"
 
 
-def test_load_config_validate_resolves_all_four_stage_overrides(tmp_path):
+def test_load_config_resolves_all_four_stage_overrides(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(
         "from pycastle import StageOverride\n"
@@ -203,33 +194,14 @@ def test_load_config_validate_resolves_all_four_stage_overrides(tmp_path):
         'review_override = StageOverride(model="opus", effort="")\n'
         'merge_override = StageOverride(model="haiku", effort="")\n'
     )
-    cfg = load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+    cfg = load_config(repo_root=tmp_path, claude_service=_make_service())
     assert cfg.plan_override.model == "claude-haiku-4-5-20251001"
     assert cfg.implement_override.model == "claude-sonnet-4-6"
     assert cfg.review_override.model == "claude-opus-4-7"
     assert cfg.merge_override.model == "claude-haiku-4-5-20251001"
 
 
-# ── load_config(validate=False): no subprocess calls ─────────────────────────
-
-
-def test_load_config_default_does_not_call_claude(tmp_path):
-    svc = _make_service()
-    load_config(repo_root=tmp_path, validate=False, claude_service=svc)
-    svc.list_models.assert_not_called()
-
-
-def test_load_config_default_leaves_shorthands_unresolved(tmp_path):
-    (tmp_path / "pycastle").mkdir()
-    (tmp_path / "pycastle" / "config.py").write_text(
-        "from pycastle import StageOverride\n"
-        'plan_override = StageOverride(model="sonnet", effort="")\n'
-    )
-    cfg = load_config(repo_root=tmp_path)
-    assert cfg.plan_override.model == "sonnet"
-
-
-# ── load_config(validate=True): invalid model raises ConfigValidationError ───
+# ── load_config: invalid model raises ConfigValidationError ───
 
 
 def test_load_config_validate_invalid_model_raises(tmp_path):
@@ -239,7 +211,7 @@ def test_load_config_validate_invalid_model_raises(tmp_path):
         'plan_override = StageOverride(model="gpt4", effort="")\n'
     )
     with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+        load_config(repo_root=tmp_path, claude_service=_make_service())
     assert exc_info.value.invalid_value == "gpt4"
 
 
@@ -250,7 +222,7 @@ def test_load_config_validate_invalid_model_error_has_suggestion(tmp_path):
         'plan_override = StageOverride(model="sonnit", effort="")\n'
     )
     with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+        load_config(repo_root=tmp_path, claude_service=_make_service())
     assert exc_info.value.suggestion == "sonnet"
 
 
@@ -261,11 +233,11 @@ def test_load_config_validate_invalid_model_error_lists_valid_options(tmp_path):
         'plan_override = StageOverride(model="unknown", effort="")\n'
     )
     with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+        load_config(repo_root=tmp_path, claude_service=_make_service())
     assert set(exc_info.value.valid_options) == {"haiku", "sonnet", "opus"}
 
 
-# ── load_config(validate=True): invalid effort raises ConfigValidationError ───
+# ── load_config: invalid effort raises ConfigValidationError ───
 
 
 def test_load_config_validate_invalid_effort_raises(tmp_path):
@@ -275,7 +247,7 @@ def test_load_config_validate_invalid_effort_raises(tmp_path):
         'plan_override = StageOverride(model="", effort="ultra")\n'
     )
     with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+        load_config(repo_root=tmp_path, claude_service=_make_service())
     assert exc_info.value.invalid_value == "ultra"
 
 
@@ -286,7 +258,7 @@ def test_load_config_validate_invalid_effort_has_suggestion(tmp_path):
         'plan_override = StageOverride(model="", effort="hih")\n'
     )
     with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+        load_config(repo_root=tmp_path, claude_service=_make_service())
     assert exc_info.value.suggestion == "high"
 
 
@@ -298,13 +270,11 @@ def test_load_config_validate_valid_efforts_pass(tmp_path):
             "from pycastle import StageOverride\n"
             f'plan_override = StageOverride(model="", effort="{effort}")\n'
         )
-        cfg = load_config(
-            repo_root=tmp_path, validate=True, claude_service=_make_service()
-        )
+        cfg = load_config(repo_root=tmp_path, claude_service=_make_service())
         assert cfg.plan_override.effort == effort
 
 
-# ── load_config(validate=True): ClaudeService errors → ConfigValidationError ─
+# ── load_config: ClaudeService errors → ConfigValidationError ─
 
 
 def test_load_config_validate_cli_not_found_raises_config_validation_error(tmp_path):
@@ -316,7 +286,7 @@ def test_load_config_validate_cli_not_found_raises_config_validation_error(tmp_p
     svc = MagicMock(spec=ClaudeService)
     svc.list_models.side_effect = ClaudeCliNotFoundError("claude CLI not found")
     with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, validate=True, claude_service=svc)
+        load_config(repo_root=tmp_path, claude_service=svc)
     assert "claude" in str(exc_info.value).lower()
 
 
@@ -329,7 +299,7 @@ def test_load_config_validate_service_error_message_preserved(tmp_path):
     svc = MagicMock(spec=ClaudeService)
     svc.list_models.side_effect = ClaudeServiceError("very specific error text")
     with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, validate=True, claude_service=svc)
+        load_config(repo_root=tmp_path, claude_service=svc)
     assert "very specific error text" in str(exc_info.value)
 
 
@@ -342,10 +312,10 @@ def test_load_config_validate_timeout_raises_config_validation_error(tmp_path):
     svc = MagicMock(spec=ClaudeService)
     svc.list_models.side_effect = ClaudeTimeoutError("timed out")
     with pytest.raises(ConfigValidationError):
-        load_config(repo_root=tmp_path, validate=True, claude_service=svc)
+        load_config(repo_root=tmp_path, claude_service=svc)
 
 
-# ── load_config(validate=True): lru_cache on _fetch_models ───────────────────
+# ── load_config: lru_cache on _fetch_models ───────────────────
 
 
 def test_load_config_validate_model_list_fetched_only_once(tmp_path):
@@ -356,26 +326,26 @@ def test_load_config_validate_model_list_fetched_only_once(tmp_path):
         "from pycastle import StageOverride\n"
         'plan_override = StageOverride(model="sonnet", effort="")\n'
     )
-    load_config(repo_root=tmp_path, validate=True, claude_service=svc)
+    load_config(repo_root=tmp_path, claude_service=svc)
     config_dir.joinpath("config.py").write_text(
         "from pycastle import StageOverride\n"
         'implement_override = StageOverride(model="haiku", effort="")\n'
     )
-    load_config(repo_root=tmp_path, validate=True, claude_service=svc)
+    load_config(repo_root=tmp_path, claude_service=svc)
     svc.list_models.assert_called_once()
 
 
-# ── load_config(validate=True): empty model/effort bypass validation ──────────
+# ── load_config: empty model/effort bypass validation ──────────
 
 
 def test_load_config_validate_empty_model_skips_resolution(tmp_path):
     svc = _make_service()
-    cfg = load_config(repo_root=tmp_path, validate=True, claude_service=svc)
+    cfg = load_config(repo_root=tmp_path, claude_service=svc)
     assert cfg.plan_override.model == ""
     svc.list_models.assert_not_called()
 
 
-# ── load_config(validate=True): idempotency ──────────────────────────────────
+# ── load_config: idempotency ──────────────────────────────────
 
 
 def test_load_config_validate_already_resolved_full_id_accepted(tmp_path):
@@ -384,11 +354,11 @@ def test_load_config_validate_already_resolved_full_id_accepted(tmp_path):
         "from pycastle import StageOverride\n"
         'plan_override = StageOverride(model="claude-sonnet-4-6", effort="")\n'
     )
-    cfg = load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+    cfg = load_config(repo_root=tmp_path, claude_service=_make_service())
     assert cfg.plan_override.model == "claude-sonnet-4-6"
 
 
-# ── load_config(validate=True): atomicity ────────────────────────────────────
+# ── load_config: atomicity ────────────────────────────────────
 
 
 def test_load_config_validate_valid_model_with_invalid_effort_raises_effort_error(
@@ -400,7 +370,7 @@ def test_load_config_validate_valid_model_with_invalid_effort_raises_effort_erro
         'plan_override = StageOverride(model="sonnet", effort="badeffort")\n'
     )
     with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+        load_config(repo_root=tmp_path, claude_service=_make_service())
     assert exc_info.value.invalid_value == "badeffort"
 
 
@@ -412,7 +382,7 @@ def test_load_config_validate_atomicity_no_partial_resolution(tmp_path):
         'implement_override = StageOverride(model="badmodel", effort="")\n'
     )
     with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+        load_config(repo_root=tmp_path, claude_service=_make_service())
     assert exc_info.value.invalid_value == "badmodel"
 
 
@@ -442,7 +412,7 @@ def test_config_validation_error_defaults_are_empty():
     assert err.valid_options == []
 
 
-# ── load_config(validate=True): semver resolution ────────────────────────────
+# ── load_config: semver resolution ────────────────────────────
 
 
 def test_load_config_validate_highest_semver_wins_for_shorthand(tmp_path):
@@ -452,9 +422,7 @@ def test_load_config_validate_highest_semver_wins_for_shorthand(tmp_path):
         "from pycastle import StageOverride\n"
         'plan_override = StageOverride(model="sonnet", effort="")\n'
     )
-    cfg = load_config(
-        repo_root=tmp_path, validate=True, claude_service=_make_service(models)
-    )
+    cfg = load_config(repo_root=tmp_path, claude_service=_make_service(models))
     assert cfg.plan_override.model == "claude-sonnet-4-6"
 
 
@@ -465,13 +433,11 @@ def test_load_config_validate_newest_patch_wins_over_older_minor(tmp_path):
         "from pycastle import StageOverride\n"
         'plan_override = StageOverride(model="haiku", effort="")\n'
     )
-    cfg = load_config(
-        repo_root=tmp_path, validate=True, claude_service=_make_service(models)
-    )
+    cfg = load_config(repo_root=tmp_path, claude_service=_make_service(models))
     assert cfg.plan_override.model == "claude-haiku-4-5-20251001"
 
 
-# ── load_config(validate=True): additional error cases ───────────────────────
+# ── load_config: additional error cases ───────────────────────
 
 
 def test_load_config_validate_invalid_effort_lists_valid_options(tmp_path):
@@ -481,7 +447,7 @@ def test_load_config_validate_invalid_effort_lists_valid_options(tmp_path):
         'plan_override = StageOverride(model="", effort="ultra")\n'
     )
     with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+        load_config(repo_root=tmp_path, claude_service=_make_service())
     assert set(exc_info.value.valid_options) == {
         "low",
         "medium",
@@ -500,7 +466,7 @@ def test_load_config_validate_command_error_raises_config_validation_error(tmp_p
     svc = MagicMock(spec=ClaudeService)
     svc.list_models.side_effect = ClaudeCommandError("exit 127")
     with pytest.raises(ConfigValidationError):
-        load_config(repo_root=tmp_path, validate=True, claude_service=svc)
+        load_config(repo_root=tmp_path, claude_service=svc)
 
 
 def test_load_config_validate_no_parseable_models_empty_valid_options(tmp_path):
@@ -512,7 +478,6 @@ def test_load_config_validate_no_parseable_models_empty_valid_options(tmp_path):
     with pytest.raises(ConfigValidationError) as exc_info:
         load_config(
             repo_root=tmp_path,
-            validate=True,
             claude_service=_make_service(("gpt-4", "gpt-3.5-turbo")),
         )
     assert exc_info.value.invalid_value == "sonnet"
@@ -526,7 +491,7 @@ def test_load_config_validate_full_looking_unknown_id_raises(tmp_path):
         'plan_override = StageOverride(model="claude-haiku-99-0", effort="")\n'
     )
     with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+        load_config(repo_root=tmp_path, claude_service=_make_service())
     assert exc_info.value.invalid_value == "claude-haiku-99-0"
 
 
@@ -539,11 +504,11 @@ def test_load_config_validate_service_error_not_cached_retry_succeeds(tmp_path):
     svc = MagicMock(spec=ClaudeService)
     svc.list_models.side_effect = ClaudeServiceError("transient")
     with pytest.raises(ConfigValidationError):
-        load_config(repo_root=tmp_path, validate=True, claude_service=svc)
+        load_config(repo_root=tmp_path, claude_service=svc)
 
     svc.list_models.side_effect = None
     svc.list_models.return_value = _FAKE_MODELS
-    cfg = load_config(repo_root=tmp_path, validate=True, claude_service=svc)
+    cfg = load_config(repo_root=tmp_path, claude_service=svc)
     assert cfg.plan_override.model == "claude-sonnet-4-6"
     assert svc.list_models.call_count == 2
 
@@ -556,7 +521,7 @@ def test_load_config_validate_two_services_fetch_independently(tmp_path):
         "from pycastle import StageOverride\n"
         'plan_override = StageOverride(model="sonnet", effort="")\n'
     )
-    cfg1 = load_config(repo_root=tmp_path, validate=True, claude_service=svc1)
+    cfg1 = load_config(repo_root=tmp_path, claude_service=svc1)
     assert cfg1.plan_override.model == "claude-sonnet-4-6"
     svc1.list_models.assert_called_once()
 
@@ -564,7 +529,7 @@ def test_load_config_validate_two_services_fetch_independently(tmp_path):
         "from pycastle import StageOverride\n"
         'plan_override = StageOverride(model="haiku", effort="")\n'
     )
-    cfg2 = load_config(repo_root=tmp_path, validate=True, claude_service=svc2)
+    cfg2 = load_config(repo_root=tmp_path, claude_service=svc2)
     assert cfg2.plan_override.model == "claude-haiku-4-5-20251001"
     svc2.list_models.assert_called_once()
 
@@ -577,7 +542,7 @@ def test_load_config_validate_multiple_empty_models_no_claude_call(tmp_path):
         'implement_override = StageOverride(model="", effort="")\n'
     )
     svc = _make_service()
-    load_config(repo_root=tmp_path, validate=True, claude_service=svc)
+    load_config(repo_root=tmp_path, claude_service=svc)
     svc.list_models.assert_not_called()
 
 
@@ -629,7 +594,6 @@ def test_load_config_validate_empty_models_tuple_raises_for_any_shorthand(tmp_pa
     with pytest.raises(ConfigValidationError) as exc_info:
         load_config(
             repo_root=tmp_path,
-            validate=True,
             claude_service=_make_service(()),
         )
     assert exc_info.value.invalid_value == "sonnet"
@@ -645,7 +609,6 @@ def test_load_config_validate_non_claude_models_only_raises_for_shorthand(tmp_pa
     with pytest.raises(ConfigValidationError) as exc_info:
         load_config(
             repo_root=tmp_path,
-            validate=True,
             claude_service=_make_service(("gpt-4o", "gemini-pro")),
         )
     assert exc_info.value.valid_options == []
@@ -658,5 +621,5 @@ def test_load_config_validate_effort_error_names_the_stage(tmp_path):
         'implement_override = StageOverride(model="", effort="turbo")\n'
     )
     with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+        load_config(repo_root=tmp_path, claude_service=_make_service())
     assert "implement" in str(exc_info.value)

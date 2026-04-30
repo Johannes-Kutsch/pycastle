@@ -60,7 +60,6 @@ def load_config(
     repo_root: Path | None = None,
     overrides: dict[str, Any] | None = None,
     *,
-    validate: bool = False,
     claude_service: Any | None = None,
 ) -> Config:
     """Load defaults, apply project-local pycastle/config.py, then apply any extra overrides."""
@@ -90,11 +89,10 @@ def load_config(
             kwargs[k] = v
 
     cfg = Config(**kwargs)
-    if validate:
-        from pycastle.claude_service import ClaudeService
 
-        from .validator import validate_config
+    from pycastle.claude_service import ClaudeService
 
-        cs = claude_service if claude_service is not None else ClaudeService()
-        cfg = validate_config(cfg, cs)
-    return cfg
+    from .validator import validate_config
+
+    cs = claude_service if claude_service is not None else ClaudeService()
+    return validate_config(cfg, cs)
