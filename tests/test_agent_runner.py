@@ -636,3 +636,56 @@ def test_agent_runner_propagates_git_user_name_error(tmp_path):
                 skip_preflight=True,
             )
         )
+
+
+# ── Issue 310: remove_agent lifecycle ────────────────────────────────────────
+
+
+def test_agent_runner_remove_agent_called_on_success(tmp_path):
+    from pycastle.iteration._deps import RecordingStatusDisplay
+
+    mock_client = _make_docker_client([b"done\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test prompt")
+    display = RecordingStatusDisplay()
+
+    asyncio.run(
+        runner.run(
+            name="Test",
+            prompt_file=prompt,
+            mount_path=tmp_path,
+            skip_preflight=True,
+            status_display=display,
+        )
+    )
+
+    assert ("remove_agent", "Test") in display.calls
+
+
+def test_agent_runner_remove_agent_called_on_error(tmp_path):
+    from pycastle.iteration._deps import RecordingStatusDisplay
+
+    git_svc = _make_git_service()
+    git_svc.get_user_name.side_effect = RuntimeError("git failure")
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), git_svc, docker_client=MagicMock()
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test prompt")
+    display = RecordingStatusDisplay()
+
+    with pytest.raises(RuntimeError, match="git failure"):
+        asyncio.run(
+            runner.run(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+                status_display=display,
+            )
+        )
+
+    assert ("remove_agent", "Test") in display.calls

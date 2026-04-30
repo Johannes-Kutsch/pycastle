@@ -27,6 +27,7 @@ class AgentRunnerProtocol(Protocol):
         effort: str = "",
         stage: str = "",
         token: CancellationToken | None = None,
+        status_display=None,
     ) -> str | PreflightFailure: ...
 
 
@@ -58,12 +59,16 @@ class AgentRunner:
         effort: str = "",
         stage: str = "",
         token: CancellationToken | None = None,
+        status_display=None,
     ) -> str | PreflightFailure:
+        if status_display is None:
+            from .iteration._deps import NullStatusDisplay
+
+            status_display = NullStatusDisplay()
+
         _token = token if token is not None else CancellationToken()
         if _token.is_cancelled:
             raise UsageLimitError("Agent cancelled due to usage limit")
-
-        print(f"\n[{name}] Started")
 
         lock: asyncio.Lock | None = None
         if branch:
@@ -139,11 +144,20 @@ class AgentRunner:
                         raise exc
 
             async with _worktree_lifecycle():
-                await _setup(name, runner, loop, None, self._git_service, self._cfg)
-                await _prepare(name, runner, loop, None, prompt_file, prompt_args or {})
+                await _setup(
+                    name, runner, loop, None, self._git_service, self._cfg, status_display
+                )
+                await _prepare(
+                    name, runner, loop, None, prompt_file, prompt_args or {}, status_display
+                )
                 if not skip_preflight:
                     failures = await _preflight(
-                        name, runner, loop, None, list(self._cfg.preflight_checks)
+                        name,
+                        runner,
+                        loop,
+                        None,
+                        list(self._cfg.preflight_checks),
+                        status_display,
                     )
                     if failures:
                         return PreflightFailure(failures=tuple(failures))
@@ -151,13 +165,13 @@ class AgentRunner:
                 retries_left = self._cfg.timeout_retries
                 while True:
                     try:
-                        output = await _work(name, runner, loop)
+                        output = await _work(name, runner, loop, status_display)
                         break
                     except AgentTimeoutError:
                         if retries_left <= 0:
                             raise
                         restart_num = self._cfg.timeout_retries - retries_left + 1
-                        print(
+                        status_display.print(
                             f"[{name}] Timeout — restarting"
                             f" (attempt {restart_num}/{self._cfg.timeout_retries})"
                         )
@@ -167,5 +181,6 @@ class AgentRunner:
                         raise
                 return output
         finally:
+            status_display.remove_agent(name)
             if lock is not None and lock.locked():
                 lock.release()
