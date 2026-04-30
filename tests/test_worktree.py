@@ -381,6 +381,52 @@ def test_create_worktree_fresh_when_not_registered(tmp_path):
     mock_svc.create_worktree.assert_called_once()
 
 
+def test_create_worktree_git_command_error_raises_worktree_error(tmp_path):
+    """GitCommandError from svc.create_worktree is wrapped as WorktreeError."""
+    from pycastle.errors import WorktreeError
+    from pycastle.git_service import GitCommandError
+
+    worktree = tmp_path / "wt"
+
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.verify_ref_exists.return_value = False
+    mock_svc.list_worktrees.return_value = []
+    mock_svc.create_worktree.side_effect = GitCommandError("git died")
+
+    with pytest.raises(WorktreeError, match="git died"):
+        create_worktree(tmp_path, worktree, "feature/broken", git_service=mock_svc)
+
+
+# ── Registered worktree without project files: no recreation attempt ─────────
+
+
+def test_create_worktree_registered_no_files_raises_immediately(tmp_path):
+    """Registered worktree without project files raises WorktreeError immediately.
+
+    The stale-branch recreation path only applies to freshly-created worktrees.
+    A worktree that is already registered is reported as broken rather than
+    silently rebuilt, even when the branch would qualify as a stale ancestor.
+    """
+    from pycastle.errors import WorktreeError
+
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.verify_ref_exists.return_value = True
+    mock_svc.list_worktrees.return_value = [worktree]
+    mock_svc.is_ancestor.return_value = True  # would qualify for recreation
+
+    with pytest.raises(WorktreeError, match="(?i)commit"):
+        create_worktree(
+            tmp_path, worktree, "feature/registered-no-files", git_service=mock_svc
+        )
+
+    mock_svc.is_ancestor.assert_not_called()
+    mock_svc.delete_branch.assert_not_called()
+    mock_svc.create_worktree.assert_not_called()
+
+
 # ── Issue 240 Fix 1: non-ancestor branch with no project files ───────────────
 
 
