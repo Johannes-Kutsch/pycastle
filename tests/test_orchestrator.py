@@ -1768,6 +1768,7 @@ def test_run_with_empty_repo_root_completes(tmp_path):
     _run(
         tmp_path,
         _fake_run_agent,
+        git_service=_make_git_svc(),
         github_service=_make_github_svc(),
     )
 
