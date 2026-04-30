@@ -983,20 +983,18 @@ def test_setup_calls_add_agent_with_name_and_log_path(tmp_path):
     runner = _unstarted_runner("implementer-42", tmp_path)
     display = RecordingStatusDisplay()
 
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(
-            _setup(
-                "implementer-42",
-                runner,
-                loop,
-                None,
-                git_service=_make_git_service(),
-                status_display=display,
-            )
+    async def _run():
+        loop = asyncio.get_event_loop()
+        await _setup(
+            "implementer-42",
+            runner,
+            loop,
+            None,
+            git_service=_make_git_service(),
+            status_display=display,
         )
-    finally:
-        loop.close()
+
+    asyncio.run(_run())
 
     add_calls = [c for c in display.calls if c[0] == "add_agent"]
     assert len(add_calls) == 1
@@ -1024,21 +1022,19 @@ def test_setup_creates_log_file_before_calling_add_agent(tmp_path):
             pass
 
     runner = _unstarted_runner("implementer-42", tmp_path)
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(
-            _setup(
-                "implementer-42",
-                runner,
-                loop,
-                None,
-                git_service=_make_git_service(),
-                status_display=_CheckDisplay(),
-            )
-        )
-    finally:
-        loop.close()
 
+    async def _run():
+        loop = asyncio.get_event_loop()
+        await _setup(
+            "implementer-42",
+            runner,
+            loop,
+            None,
+            git_service=_make_git_service(),
+            status_display=_CheckDisplay(),
+        )
+
+    asyncio.run(_run())
     assert log_existed == [True]
 
 
@@ -1049,14 +1045,11 @@ def test_work_calls_update_phase_work(tmp_path):
     runner = _streaming_runner("implementer-42", [b"done\n"], tmp_path)
     display = RecordingStatusDisplay()
 
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(
-            _work("implementer-42", runner, loop, status_display=display)
-        )
-    finally:
-        loop.close()
+    async def _run():
+        loop = asyncio.get_event_loop()
+        await _work("implementer-42", runner, loop, status_display=display)
 
+    asyncio.run(_run())
     assert ("update_phase", "implementer-42", "Work") in display.calls
 
 
@@ -1067,16 +1060,13 @@ def test_work_produces_no_stdout(tmp_path, capsys):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
     runner = _streaming_runner("implementer-42", [json_line], tmp_path)
 
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(
-            _work(
-                "implementer-42", runner, loop, status_display=RecordingStatusDisplay()
-            )
+    async def _run():
+        loop = asyncio.get_event_loop()
+        await _work(
+            "implementer-42", runner, loop, status_display=RecordingStatusDisplay()
         )
-    finally:
-        loop.close()
 
+    asyncio.run(_run())
     assert capsys.readouterr().out == ""
 
 

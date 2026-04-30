@@ -313,7 +313,6 @@ class ContainerRunner:
                         line, line_buf = line_buf.split("\n", 1)
                         if _is_usage_limit_line(line, self._cfg.usage_limit_patterns):
                             raise UsageLimitError(line)
-                        _format_stream_line(line)
         finally:
             try:
                 self._active_container.exec_run(
