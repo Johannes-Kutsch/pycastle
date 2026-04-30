@@ -132,6 +132,10 @@ class ContainerRunner:
         self._worktree_path = "/home/agent/workspace"
 
     @property
+    def log_path(self) -> Path:
+        return self._log_path
+
+    @property
     def _active_container(self) -> DockerContainer:
         if self._container is None:
             raise DockerError("Container not started")
