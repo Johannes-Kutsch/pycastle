@@ -2292,7 +2292,7 @@ def test_container_cleaned_up_on_usage_limit(tmp_path):
 
 
 def test_container_runner_uses_custom_logs_dir_from_cfg(tmp_path):
-    """ContainerRunner with cfg=Config(logs_dir=...) must set _log_path under that dir."""
+    """ContainerRunner with cfg=Config(logs_dir=...) must set log_path under that dir."""
     custom_logs = tmp_path / "my_logs"
     runner = ContainerRunner(
         "my-task",
@@ -2301,7 +2301,7 @@ def test_container_runner_uses_custom_logs_dir_from_cfg(tmp_path):
         docker_client=MagicMock(),
         cfg=Config(logs_dir=custom_logs),
     )
-    assert runner._log_path.parent == custom_logs
+    assert runner.log_path.parent == custom_logs
 
 
 def test_container_runner_constructs_without_cfg_using_default_logs_dir():
@@ -2309,7 +2309,7 @@ def test_container_runner_constructs_without_cfg_using_default_logs_dir():
     from pycastle.config import config as singleton
 
     runner = ContainerRunner("task", Path("/fake"), {}, docker_client=MagicMock())
-    assert runner._log_path.parent == singleton.logs_dir
+    assert runner.log_path.parent == singleton.logs_dir
 
 
 def test_run_streaming_uses_usage_limit_patterns_from_cfg(tmp_path):
