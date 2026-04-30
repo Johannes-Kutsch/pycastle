@@ -199,7 +199,7 @@
 ## Relationships
 
 - **STAGE_OVERRIDES** has exactly four entries, one per orchestration phase (`plan`, `implement`, `review`, `merge`); each entry has independent `model` and `effort` fields — an empty string for either means CLI default (no flag injected).
-- **validate_config** runs once at `orchestrator.run()` start; queries `claude list-models` once per process (cached); after completion, all non-empty `model` entries in STAGE_OVERRIDES contain full model IDs, not shorthands.
+- **validate_config** is called internally by `load_config()` before it returns; queries `claude list-models` once per process (cached by `ClaudeService`); returns a new immutable `Config` via `dataclasses.replace` with all non-empty `model` entries resolved to full model IDs.
 - The **Planner** produces one plan per iteration listing only unblocked AFK issues; blockers and HITL issues are excluded via the dependency graph.
 - Each AFK issue in a plan is processed by exactly one **Implementer** followed by one **Reviewer**.
 - The **merge phase** attempts the programmatic merge path for every branch sequentially; the **Merger** is spawned at most once per iteration and only when conflicting branches exist.
