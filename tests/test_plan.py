@@ -4,7 +4,7 @@ import json
 import pytest
 from unittest.mock import MagicMock
 
-from pycastle.agent_result import AgentIncomplete, AgentSuccess
+from pycastle.agent_result import AgentIncomplete, AgentSuccess, UsageLimitHit
 from pycastle.config import Config
 from pycastle.errors import PreflightError
 from pycastle.git_service import GitService
@@ -14,7 +14,7 @@ from pycastle.iteration.plan import (
     PlanAFK,
     PlanHITL,
     PlanReady,
-    _handle_preflight_failure,
+    PlanUsageLimit,
     plan_phase,
     strip_stale_blocker_refs,
 )
@@ -180,6 +180,38 @@ def test_plan_phase_returns_ready_when_planner_returns_agent_success(
     assert result.issues == expected
 
 
+# ── plan_phase: UsageLimitHit ─────────────────────────────────────────────────
+
+
+def test_plan_phase_returns_usage_limit_when_planner_hits_usage_limit(
+    tmp_path, git_svc, github_svc, logger
+):
+    async def run_agent(name, **kwargs):
+        return UsageLimitHit(last_output="token ceiling reached")
+
+    deps = _make_deps(
+        tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(plan_phase(deps))
+
+    assert isinstance(result, PlanUsageLimit)
+
+
+def test_plan_phase_removes_worktree_when_planner_hits_usage_limit(
+    tmp_path, git_svc, github_svc, logger
+):
+    async def run_agent(name, **kwargs):
+        return UsageLimitHit(last_output="")
+
+    deps = _make_deps(
+        tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    asyncio.run(plan_phase(deps))
+
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-planning"
+    git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
+
+
 # ── plan_phase: PlanParseError ────────────────────────────────────────────────
 
 
@@ -289,40 +321,6 @@ def test_plan_phase_raises_runtime_error_when_preflight_agent_returns_no_issue_t
 
     with pytest.raises(RuntimeError, match="issue"):
         asyncio.run(plan_phase(deps))
-
-
-# ── _handle_preflight_failure: mount_path forwarding ─────────────────────────
-
-
-def test_handle_preflight_failure_forwards_mount_path_to_run_agent(
-    tmp_path, git_svc, github_svc, logger
-):
-    custom_mount = tmp_path / "pre-planning"
-    custom_mount.mkdir()
-    assert custom_mount != tmp_path  # mount_path differs from repo_root
-
-    captured: dict = {}
-
-    async def run_agent(name, mount_path=None, **kwargs):
-        captured[name] = mount_path
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-agent">7</issue>'
-        )
-
-    github_svc.get_labels.return_value = ["ready-for-agent"]
-
-    deps = _make_deps(
-        tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
-    asyncio.run(
-        _handle_preflight_failure(
-            [("ruff", "ruff check .", "E501")], deps, custom_mount
-        )
-    )
-
-    agent_name = next(k for k in captured if "preflight-issue" in k)
-    assert captured[agent_name] == custom_mount
-    assert captured[agent_name] != tmp_path
 
 
 # ── plan_phase: pre-planning worktree ────────────────────────────────────────
@@ -453,6 +451,3 @@ def test_plan_phase_passes_worktree_path_to_preflight_issue_agent(
     preflight_agent = next(k for k in captured if "preflight-issue" in k)
     assert captured[preflight_agent] == expected_worktree
     assert captured[preflight_agent] != tmp_path
-
-
-# ── _handle_preflight_failure: mount_path forwarding ─────────────────────────

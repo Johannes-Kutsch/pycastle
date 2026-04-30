@@ -6,7 +6,7 @@ from typing import TypeAlias
 
 from ..agent_output_protocol import IssueParseError, PlanParseError, parse_issue_number
 from ..agent_output_protocol import parse_plan as _parse_plan
-from ..agent_result import AgentIncomplete, AgentSuccess
+from ..agent_result import AgentIncomplete, AgentSuccess, UsageLimitHit
 from ..errors import PreflightError
 from ._deps import Deps
 
@@ -46,7 +46,12 @@ class PlanAFK:
     issues: list[dict]
 
 
-PlanResult: TypeAlias = PlanReady | PlanHITL | PlanAFK
+@dataclasses.dataclass(frozen=True)
+class PlanUsageLimit:
+    pass
+
+
+PlanResult: TypeAlias = PlanReady | PlanHITL | PlanAFK | PlanUsageLimit
 
 
 async def _handle_preflight_failure(
@@ -114,6 +119,9 @@ async def plan_phase(deps: Deps) -> PlanResult:
             return PlanAFK(
                 worktree_sha=sha, issues=[{"number": pf_num, "title": pf_title}]
             )
+
+        if isinstance(raw, UsageLimitHit):
+            return PlanUsageLimit()
 
         if isinstance(raw, AgentSuccess):
             plan_text = raw.output
