@@ -20,7 +20,7 @@ from .iteration import (
     Done,
     run_iteration,
 )
-from .iteration._deps import Deps as IterationDeps, NullStatusDisplay
+from .iteration._deps import Deps as IterationDeps, NullStatusDisplay, StatusDisplay
 
 
 class FileLogger:
@@ -58,15 +58,19 @@ def prune_orphan_worktrees(
 
 
 def delete_merged_branches(
-    branches: list[str], repo_root: Path, git_service: GitService | None = None
+    branches: list[str],
+    repo_root: Path,
+    git_service: GitService | None = None,
+    status_display: StatusDisplay | None = None,
 ) -> None:
     svc = git_service or GitService()
+    sd = status_display or NullStatusDisplay()
     for branch in branches:
         if not svc.is_ancestor(branch, repo_root):
             continue
         try:
             svc.delete_branch(branch, repo_root)
-            print(f"Deleted merged branch: {branch}")
+            sd.print(f"Deleted merged branch: {branch}")
         except GitCommandError as e:
             print(f"Warning: could not delete branch {branch!r}: {e}", file=sys.stderr)
 
@@ -94,10 +98,15 @@ def _stage_for_agent(name: str) -> str:
     return ""
 
 
-async def wait_for_clean_working_tree(repo_root: Path, git_svc: GitService) -> None:
+async def wait_for_clean_working_tree(
+    repo_root: Path,
+    git_svc: GitService,
+    status_display: StatusDisplay | None = None,
+) -> None:
     if git_svc.is_working_tree_clean(repo_root):
         return
-    print(
+    sd = status_display or NullStatusDisplay()
+    sd.print(
         "Working tree has uncommitted changes. "
         "Please commit or revert all local changes before the merge phase can proceed."
     )
@@ -118,6 +127,7 @@ async def run(
     _run_agent = run_agent or _default_run_agent
     prune_orphan_worktrees(repo_root)
     git_svc = git_service or GitService()
+    status_display: StatusDisplay = NullStatusDisplay()
     _lazy_github_svc: GithubService | None = None
 
     def _get_github_svc() -> GithubService:
@@ -129,10 +139,12 @@ async def run(
         return _lazy_github_svc
 
     for iteration in range(1, cfg.max_iterations + 1):
-        print(f"\n=== Iteration {iteration}/{cfg.max_iterations} ===\n")
+        status_display.print(f"\n=== Iteration {iteration}/{cfg.max_iterations} ===\n")
 
         if not _get_github_svc().has_open_issues_with_label(cfg.issue_label):
-            print(f"No issues with label '{cfg.issue_label}' found. Skipping.")
+            status_display.print(
+                f"No issues with label '{cfg.issue_label}' found. Skipping."
+            )
             break
 
         deps = IterationDeps(
@@ -143,13 +155,15 @@ async def run(
             run_agent=_run_agent,
             cfg=cfg,
             logger=FileLogger(cfg.logs_dir),
-            status_display=NullStatusDisplay(),
+            status_display=status_display,
         )
         outcome = await run_iteration(deps)
 
         match outcome:
             case Done():
-                print(f"No issues with label '{cfg.issue_label}' found. Skipping.")
+                status_display.print(
+                    f"No issues with label '{cfg.issue_label}' found. Skipping."
+                )
                 break
             case AbortedHITL():
                 sys.exit(1)
@@ -163,4 +177,4 @@ async def run(
             case Continue():
                 pass
 
-    print("\nAll done.")
+    status_display.print("\nAll done.")
