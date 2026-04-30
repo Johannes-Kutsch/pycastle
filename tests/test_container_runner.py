@@ -1312,7 +1312,6 @@ def test_run_streaming_includes_model_flag_when_set(tmp_path):
     runner = _streaming_runner("Agent", [b"done\n"], tmp_path)
     runner.model = "claude-sonnet-4-6"
     runner.effort = ""
-    runner.write_file = MagicMock()
     runner.run_streaming()
 
     streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
@@ -1324,7 +1323,6 @@ def test_run_streaming_includes_effort_flag_when_set(tmp_path):
     runner = _streaming_runner("Agent", [b"done\n"], tmp_path)
     runner.model = ""
     runner.effort = "high"
-    runner.write_file = MagicMock()
     runner.run_streaming()
 
     streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
