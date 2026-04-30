@@ -2,7 +2,7 @@ import dataclasses
 import enum
 import json
 import re
-from typing import TypeAlias
+from typing import Literal, TypeAlias, overload
 
 
 class AgentRole(enum.Enum):
@@ -100,17 +100,25 @@ def _extract_issue_output(text: str) -> IssueOutput:
     try:
         data = json.loads(match.group(1))
     except json.JSONDecodeError as exc:
-        raise IssueParseError(
-            f"Malformed JSON inside <issue> tag: {exc}"
-        ) from exc
+        raise IssueParseError(f"Malformed JSON inside <issue> tag: {exc}") from exc
     try:
         number = int(data["number"])
         labels = [str(label) for label in data["labels"]]
     except (KeyError, TypeError, ValueError) as exc:
-        raise IssueParseError(
-            f"<issue> JSON has unexpected structure: {exc}"
-        ) from exc
+        raise IssueParseError(f"<issue> JSON has unexpected structure: {exc}") from exc
     return IssueOutput(labels=labels, number=number)
+
+
+@overload
+def parse(output: str, role: Literal[AgentRole.PLANNER]) -> PlannerOutput: ...
+
+
+@overload
+def parse(output: str, role: Literal[AgentRole.PREFLIGHT_ISSUE]) -> IssueOutput: ...
+
+
+@overload
+def parse(output: str, role: AgentRole) -> AgentOutput: ...
 
 
 def parse(output: str, role: AgentRole) -> AgentOutput:
