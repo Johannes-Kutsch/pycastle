@@ -336,3 +336,14 @@ def test_assert_complete_error_message_includes_output_tail():
     with pytest.raises(PromiseParseError) as exc_info:
         assert_complete(long_output)
     assert "no tag" in str(exc_info.value)
+
+
+def test_assert_complete_raises_on_empty_string():
+    with pytest.raises(PromiseParseError):
+        assert_complete("")
+
+
+def test_assert_complete_raises_when_ndjson_result_is_null():
+    envelope = json.dumps({"type": "result", "result": None})
+    with pytest.raises(PromiseParseError):
+        assert_complete(envelope)
