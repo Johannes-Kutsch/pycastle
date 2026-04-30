@@ -1,5 +1,7 @@
 import asyncio
+import dataclasses
 import shutil
+import tempfile
 import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -49,28 +51,38 @@ def test_container_runner_init_calls_docker_from_env_when_no_client_given():
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 
-def _streaming_runner(name: str, chunks: list, log_path) -> ContainerRunner:
+def _streaming_runner(name: str, chunks: list, tmp_path: Path) -> ContainerRunner:
     """ContainerRunner whose run_streaming replays the given byte chunks."""
-    runner = ContainerRunner(name, Path("/fake"), {}, docker_client=MagicMock())
-    runner._log_path = log_path
+    mock_client = MagicMock()
     mock_result = MagicMock()
     mock_result.output = iter(chunks)
-    runner._container = MagicMock()
-    runner._container.exec_run.return_value = mock_result
+    mock_client.containers.run.return_value.exec_run.return_value = mock_result
+    runner = ContainerRunner(
+        name,
+        Path("/fake"),
+        {},
+        docker_client=mock_client,
+        cfg=Config(logs_dir=tmp_path),
+    )
+    runner.__enter__()
     return runner
 
 
 def _fake_runner(exit_code=0, stdout=b"", stderr=b"", cfg=None):
     """ContainerRunner with mocked Docker container."""
-    kwargs: dict = {"docker_client": MagicMock()}
-    if cfg is not None:
-        kwargs["cfg"] = cfg
-    runner = ContainerRunner("test", Path("/fake"), {}, **kwargs)
+    mock_client = MagicMock()
     mock_result = MagicMock()
     mock_result.exit_code = exit_code
     mock_result.output = (stdout, stderr)
-    runner._container = MagicMock()
-    runner._container.exec_run.return_value = mock_result
+    mock_client.containers.run.return_value.exec_run.return_value = mock_result
+    if cfg is not None:
+        effective_cfg = dataclasses.replace(cfg, logs_dir=Path(tempfile.mkdtemp()))
+    else:
+        effective_cfg = Config(logs_dir=Path(tempfile.mkdtemp()))
+    runner = ContainerRunner(
+        "test", Path("/fake"), {}, docker_client=mock_client, cfg=effective_cfg
+    )
+    runner.__enter__()
     return runner
 
 
@@ -834,14 +846,14 @@ def test_run_agent_different_branches_both_succeed(tmp_path):
 
 
 def test_run_streaming_prefixes_complete_lines_in_stdout(tmp_path, capsys):
-    runner = _streaming_runner("TestAgent", [b"hello world\n"], tmp_path / "test.log")
+    runner = _streaming_runner("TestAgent", [b"hello world\n"], tmp_path)
     runner.run_streaming()
     assert "[TestAgent] hello world" in capsys.readouterr().out
 
 
 def test_run_streaming_prefixes_each_line_separately(tmp_path, capsys):
     """Multiple lines in a single chunk must each get their own prefix."""
-    runner = _streaming_runner("Bot", [b"line one\nline two\n"], tmp_path / "test.log")
+    runner = _streaming_runner("Bot", [b"line one\nline two\n"], tmp_path)
     runner.run_streaming()
     out = capsys.readouterr().out
     assert "[Bot] line one" in out
@@ -850,7 +862,7 @@ def test_run_streaming_prefixes_each_line_separately(tmp_path, capsys):
 
 def test_run_streaming_handles_chunks_split_across_newlines(tmp_path, capsys):
     """A line split across two chunks must be assembled before prefixing."""
-    runner = _streaming_runner("Bot", [b"hel", b"lo\n"], tmp_path / "test.log")
+    runner = _streaming_runner("Bot", [b"hel", b"lo\n"], tmp_path)
     runner.run_streaming()
     assert "[Bot] hello" in capsys.readouterr().out
 
@@ -859,19 +871,17 @@ def test_run_streaming_handles_chunks_split_across_newlines(tmp_path, capsys):
 
 
 def test_run_streaming_log_file_is_raw_unprefixed(tmp_path):
-    log_path = tmp_path / "test.log"
-    runner = _streaming_runner("TestAgent", [b"hello world\n"], log_path)
+    runner = _streaming_runner("TestAgent", [b"hello world\n"], tmp_path)
     runner.run_streaming()
-    assert log_path.read_text() == "hello world\n"
-    assert "[TestAgent]" not in log_path.read_text()
+    assert runner._log_path.read_text() == "hello world\n"
+    assert "[TestAgent]" not in runner._log_path.read_text()
 
 
 def test_run_streaming_log_file_contains_full_raw_output(tmp_path):
     """Log file must capture all raw bytes, including multi-chunk output."""
-    log_path = tmp_path / "test.log"
-    runner = _streaming_runner("Bot", [b"line one\n", b"line two\n"], log_path)
+    runner = _streaming_runner("Bot", [b"line one\n", b"line two\n"], tmp_path)
     runner.run_streaming()
-    content = log_path.read_text()
+    content = runner._log_path.read_text()
     assert content == "line one\nline two\n"
 
 
@@ -1283,7 +1293,7 @@ def test_run_agent_uses_injected_docker_client(tmp_path):
 
 def test_run_streaming_includes_model_flag_when_set(tmp_path):
     """run_streaming must pass --model to exec_run when model is set on runner."""
-    runner = _streaming_runner("Agent", [b"done\n"], tmp_path / "test.log")
+    runner = _streaming_runner("Agent", [b"done\n"], tmp_path)
     runner.model = "claude-sonnet-4-6"
     runner.effort = ""
     runner.write_file = MagicMock()
@@ -1295,7 +1305,7 @@ def test_run_streaming_includes_model_flag_when_set(tmp_path):
 
 def test_run_streaming_includes_effort_flag_when_set(tmp_path):
     """run_streaming must pass --effort to exec_run when effort is set on runner."""
-    runner = _streaming_runner("Agent", [b"done\n"], tmp_path / "test.log")
+    runner = _streaming_runner("Agent", [b"done\n"], tmp_path)
     runner.model = ""
     runner.effort = "high"
     runner.write_file = MagicMock()
@@ -1361,7 +1371,7 @@ def test_build_claude_command_does_not_embed_large_prompt():
 
 
 def test_run_streaming_command_includes_required_flags(tmp_path):
-    runner = _streaming_runner("TestAgent", [b"output\n"], tmp_path / "test.log")
+    runner = _streaming_runner("TestAgent", [b"output\n"], tmp_path)
     runner._prompt = "test prompt"
     runner.write_file = MagicMock()
     runner.run_streaming()
@@ -1377,7 +1387,7 @@ def test_run_streaming_command_includes_required_flags(tmp_path):
 
 
 def test_run_streaming_writes_prompt_to_temp_file(tmp_path):
-    runner = _streaming_runner("Agent", [b"output\n"], tmp_path / "test.log")
+    runner = _streaming_runner("Agent", [b"output\n"], tmp_path)
     runner._prompt = "my test prompt"
     runner.write_file = MagicMock()
     runner.run_streaming()
@@ -1388,7 +1398,7 @@ def test_run_streaming_writes_prompt_to_temp_file(tmp_path):
 
 
 def test_run_streaming_command_redirects_stdin_from_temp_file(tmp_path):
-    runner = _streaming_runner("Agent", [b"output\n"], tmp_path / "test.log")
+    runner = _streaming_runner("Agent", [b"output\n"], tmp_path)
     runner._prompt = "test"
     runner.write_file = MagicMock()
     runner.run_streaming()
@@ -1400,7 +1410,7 @@ def test_run_streaming_command_redirects_stdin_from_temp_file(tmp_path):
 
 
 def test_run_streaming_cleans_up_temp_prompt_file(tmp_path):
-    runner = _streaming_runner("Agent", [b"output\n"], tmp_path / "test.log")
+    runner = _streaming_runner("Agent", [b"output\n"], tmp_path)
     runner._prompt = "test"
     runner.write_file = MagicMock()
     runner.run_streaming()
@@ -1450,9 +1460,7 @@ def test_prepare_does_not_call_write_file(tmp_path):
 
 def test_run_streaming_prints_lines_from_separate_chunks(tmp_path, capsys):
     """Lines arriving in separate chunks must each be printed, not buffered until the end."""
-    runner = _streaming_runner(
-        "Bot", [b"line one\n", b"line two\n"], tmp_path / "test.log"
-    )
+    runner = _streaming_runner("Bot", [b"line one\n", b"line two\n"], tmp_path)
     runner.run_streaming()
     out = capsys.readouterr().out
     assert "[Bot] line one" in out
@@ -1855,7 +1863,7 @@ def test_format_stream_line_returns_plain_text_verbatim():
 def test_run_streaming_terminal_shows_text_not_raw_json(tmp_path, capsys):
     """Terminal must show extracted text, not the raw JSON envelope."""
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working on it"}]}}\n'
-    runner = _streaming_runner("Planner", [json_line], tmp_path / "test.log")
+    runner = _streaming_runner("Planner", [json_line], tmp_path)
     runner.run_streaming()
     out = capsys.readouterr().out
     assert "Working on it" in out
@@ -1865,7 +1873,7 @@ def test_run_streaming_terminal_shows_text_not_raw_json(tmp_path, capsys):
 def test_run_streaming_suppresses_system_init_line(tmp_path, capsys):
     """System init JSON must produce no terminal output at all."""
     json_line = b'{"type":"system","subtype":"init","session_id":"s1","tools":[]}\n'
-    runner = _streaming_runner("Planner", [json_line], tmp_path / "test.log")
+    runner = _streaming_runner("Planner", [json_line], tmp_path)
     runner.run_streaming()
     out = capsys.readouterr().out
     assert out == ""
@@ -1874,10 +1882,9 @@ def test_run_streaming_suppresses_system_init_line(tmp_path, capsys):
 def test_run_streaming_log_file_unchanged_for_json_lines(tmp_path):
     """Log file must still contain the raw, unmodified JSON bytes."""
     raw = b'{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}\n'
-    log_path = tmp_path / "test.log"
-    runner = _streaming_runner("Planner", [raw], log_path)
+    runner = _streaming_runner("Planner", [raw], tmp_path)
     runner.run_streaming()
-    assert log_path.read_bytes() == raw
+    assert runner._log_path.read_bytes() == raw
 
 
 # ── Cycle 65-7: _format_stream_line edge cases ───────────────────────────────
@@ -1958,7 +1965,7 @@ def test_run_streaming_raises_usage_limit_error_on_session_limit_line(tmp_path):
     runner = _streaming_runner(
         "Agent",
         [b"You've hit your session limit\n"],
-        tmp_path / "test.log",
+        tmp_path,
     )
     with pytest.raises(UsageLimitError):
         runner.run_streaming()
@@ -1968,7 +1975,7 @@ def test_run_streaming_raises_usage_limit_error_case_insensitive(tmp_path):
     runner = _streaming_runner(
         "Agent",
         [b"you've hit your session limit\n"],
-        tmp_path / "test.log",
+        tmp_path,
     )
     with pytest.raises(UsageLimitError):
         runner.run_streaming()
@@ -1978,7 +1985,7 @@ def test_run_streaming_raises_usage_limit_error_on_credit_balance_line(tmp_path)
     runner = _streaming_runner(
         "Agent",
         [b"Credit balance is too low for this request\n"],
-        tmp_path / "test.log",
+        tmp_path,
     )
     with pytest.raises(UsageLimitError):
         runner.run_streaming()
@@ -1988,7 +1995,7 @@ def test_run_streaming_does_not_raise_for_normal_line(tmp_path):
     runner = _streaming_runner(
         "Agent",
         [b"All good, processing normally\n"],
-        tmp_path / "test.log",
+        tmp_path,
     )
     runner.run_streaming()
 
@@ -1997,7 +2004,7 @@ def test_run_streaming_raises_when_pattern_split_across_chunks(tmp_path):
     runner = _streaming_runner(
         "Agent",
         [b"You've hit ", b"your weekly limit\n"],
-        tmp_path / "test.log",
+        tmp_path,
     )
     with pytest.raises(UsageLimitError):
         runner.run_streaming()
@@ -2007,7 +2014,7 @@ def test_run_streaming_error_carries_original_casing(tmp_path):
     runner = _streaming_runner(
         "Agent",
         [b"YOU'VE HIT YOUR SESSION LIMIT\n"],
-        tmp_path / "test.log",
+        tmp_path,
     )
     with pytest.raises(UsageLimitError) as exc_info:
         runner.run_streaming()
@@ -2040,7 +2047,7 @@ def test_run_streaming_does_not_raise_for_json_line_containing_usage_limit_phras
     runner = _streaming_runner(
         "Agent",
         [(json_line + "\n").encode()],
-        tmp_path / "test.log",
+        tmp_path,
     )
     runner.run_streaming()  # must not raise
 
@@ -2064,7 +2071,7 @@ def test_run_streaming_raises_usage_limit_error_on_json_result_with_429(tmp_path
     runner = _streaming_runner(
         "Agent",
         [(json_line + "\n").encode()],
-        tmp_path / "test.log",
+        tmp_path,
     )
     with pytest.raises(UsageLimitError):
         runner.run_streaming()
@@ -2087,7 +2094,7 @@ def test_run_streaming_raises_usage_limit_error_on_json_result_matching_pattern(
     runner = _streaming_runner(
         "Agent",
         [(json_line + "\n").encode()],
-        tmp_path / "test.log",
+        tmp_path,
     )
     with pytest.raises(UsageLimitError):
         runner.run_streaming()
@@ -2108,7 +2115,7 @@ def test_run_streaming_does_not_raise_for_successful_json_result(tmp_path):
     runner = _streaming_runner(
         "Agent",
         [(json_line + "\n").encode()],
-        tmp_path / "test.log",
+        tmp_path,
     )
     runner.run_streaming()  # must not raise
 
@@ -2128,7 +2135,7 @@ def test_run_streaming_does_not_crash_on_json_result_with_null_result_field(tmp_
     runner = _streaming_runner(
         "Agent",
         [(json_line + "\n").encode()],
-        tmp_path / "test.log",
+        tmp_path,
     )
     runner.run_streaming()  # must not raise
 
