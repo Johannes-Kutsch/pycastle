@@ -20,7 +20,7 @@ from .iteration import (
     Done,
     run_iteration,
 )
-from .iteration._deps import Deps as IterationDeps
+from .iteration._deps import Deps as IterationDeps, NullStatusDisplay
 
 
 class FileLogger:
@@ -143,6 +143,7 @@ async def run(
             run_agent=_run_agent,
             cfg=cfg,
             logger=FileLogger(cfg.logs_dir),
+            status_display=NullStatusDisplay(),
         )
         outcome = await run_iteration(deps)
 

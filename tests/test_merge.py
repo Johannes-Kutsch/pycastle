@@ -6,7 +6,7 @@ import pytest
 from pycastle.config import Config
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
-from pycastle.iteration._deps import Deps, RecordingLogger
+from pycastle.iteration._deps import Deps, NullStatusDisplay, RecordingLogger
 from pycastle.iteration.merge import MergeResult, merge_phase
 
 
@@ -41,6 +41,7 @@ def deps(tmp_path, git_svc, github_svc, run_agent):
         run_agent=run_agent,
         cfg=Config(),
         logger=RecordingLogger(),
+        status_display=NullStatusDisplay(),
     )
 
 

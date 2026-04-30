@@ -11,7 +11,7 @@ from pycastle.errors import UsageLimitError
 from pycastle.config import Config
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
-from pycastle.iteration._deps import Deps, RecordingLogger
+from pycastle.iteration._deps import Deps, NullStatusDisplay, RecordingLogger
 from pycastle.iteration.plan import (
     PlanAFK,
     PlanHITL,
@@ -53,6 +53,7 @@ def _make_deps(tmp_path, run_agent_fn, *, git_svc, github_svc, logger):
         run_agent=run_agent_fn,
         cfg=Config(max_parallel=4, max_iterations=1),
         logger=logger,
+        status_display=NullStatusDisplay(),
     )
 
 

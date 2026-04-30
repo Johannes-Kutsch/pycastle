@@ -10,7 +10,7 @@ from pycastle.config import Config, config as _cfg
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
-from pycastle.iteration._deps import Deps, RecordingLogger
+from pycastle.iteration._deps import Deps, NullStatusDisplay, RecordingLogger
 from pycastle.iteration.implement import (
     ImplementResult,
     branch_for,
@@ -28,6 +28,7 @@ def _make_deps(tmp_path, run_agent_fn, logger=None) -> Deps:
         run_agent=run_agent_fn,
         cfg=Config(max_parallel=4, max_iterations=1),
         logger=logger or RecordingLogger(),
+        status_display=NullStatusDisplay(),
     )
 
 

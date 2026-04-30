@@ -18,7 +18,7 @@ from pycastle.iteration import (
     Done,
     run_iteration,
 )
-from pycastle.iteration._deps import Deps, RecordingLogger
+from pycastle.iteration._deps import Deps, NullStatusDisplay, RecordingLogger
 
 
 def _plan_json(issues: list[dict]) -> str:
@@ -64,6 +64,7 @@ def _make_deps(
         run_agent=run_agent_fn,
         cfg=cfg or Config(max_parallel=4, max_iterations=1),
         logger=logger,
+        status_display=NullStatusDisplay(),
     )
 
 
