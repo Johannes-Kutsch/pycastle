@@ -223,7 +223,6 @@ def test_plan_phase_raises_runtime_error_when_no_plan_tag(
 def test_plan_phase_returns_hitl_on_hitl_preflight_verdict(tmp_path, git_svc, logger):
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
-    github_svc.get_labels.return_value = ["ready-for-human"]
 
     async def run_agent(name, **kwargs):
         if name == "Planner":
@@ -260,13 +259,33 @@ def test_plan_phase_returns_hitl_when_preflight_agent_includes_promise_tag(
     assert result.issue_number == 99
 
 
+def test_plan_phase_hitl_verdict_from_agent_output_not_github_labels(
+    tmp_path, git_svc, logger
+):
+    """HITL verdict comes from IssueOutput.label in agent output, not from github_svc.get_labels."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+
+    async def run_agent(name, **kwargs):
+        if name == "Planner":
+            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
+        return '<promise>COMPLETE</promise><issue label="ready-for-human">33</issue>'
+
+    deps = _make_deps(
+        tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(plan_phase(deps))
+
+    assert isinstance(result, PlanHITL)
+    github_svc.get_labels.assert_not_called()
+
+
 # ── plan_phase: AFK routing ───────────────────────────────────────────────────
 
 
 def test_plan_phase_returns_afk_on_afk_preflight_verdict(tmp_path, git_svc, logger):
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
-    github_svc.get_labels.return_value = ["ready-for-agent"]
     github_svc.get_issue_title.return_value = "Fix preflight issue"
 
     async def run_agent(name, **kwargs):
@@ -371,7 +390,6 @@ def test_plan_phase_removes_worktree_after_successful_planning(
 def test_plan_phase_removes_worktree_when_preflight_fails(tmp_path, git_svc, logger):
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
-    github_svc.get_labels.return_value = ["ready-for-agent"]
     github_svc.get_issue_title.return_value = "Preflight issue"
 
     async def run_agent(name, **kwargs):
@@ -411,7 +429,6 @@ def test_plan_phase_passes_worktree_path_to_preflight_issue_agent(
 ):
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
-    github_svc.get_labels.return_value = ["ready-for-agent"]
     github_svc.get_issue_title.return_value = "Preflight issue"
     captured: dict = {}
 
@@ -454,7 +471,6 @@ def test_plan_phase_preflight_failure_only_first_check_spawns_agent(
 ):
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
-    github_svc.get_labels.return_value = ["ready-for-agent"]
     github_svc.get_issue_title.return_value = "Preflight fix"
     captured_args: list[dict] = []
 

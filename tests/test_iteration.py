@@ -93,7 +93,6 @@ def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, l
     """run_iteration returns AbortedHITL when plan_phase returns PlanHITL."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
-    github_svc.get_labels.return_value = ["ready-for-human"]
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
@@ -113,7 +112,6 @@ def test_run_iteration_aborted_hitl_carries_issue_number(tmp_path, git_svc, logg
     """AbortedHITL must carry the issue number filed by the preflight-issue agent."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
-    github_svc.get_labels.return_value = ["ready-for-human"]
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
@@ -137,7 +135,6 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
     """run_iteration must return AbortedHITL instead of calling sys.exit on HITL verdict."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
-    github_svc.get_labels.return_value = ["ready-for-human"]
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
@@ -257,7 +254,6 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
     plan_phase returns PlanAFK (preflight failure with AFK verdict)."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
-    github_svc.get_labels.return_value = ["ready-for-agent"]
     github_svc.get_issue_title.return_value = "Preflight fix"
 
     async def _fake_agent(name, **kwargs):
@@ -286,7 +282,6 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
     filed fix issue (not invoke the Planner a second time)."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
-    github_svc.get_labels.return_value = ["ready-for-agent"]
     github_svc.get_issue_title.return_value = "Preflight fix"
 
     agent_names: list[str] = []

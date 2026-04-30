@@ -36,7 +36,7 @@ async def run_issue(
     *,
     token: CancellationToken | None = None,
     sha: str | None = None,
-) -> dict | PreflightFailure | None:
+) -> dict | PreflightFailure:
     _branch = branch_for(issue["number"])
     _standards = load_standards(deps.cfg.prompts_dir)
     prompt_args = {
