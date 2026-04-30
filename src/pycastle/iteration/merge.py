@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from ..agent_output_protocol import assert_complete
+from ..agent_result import PreflightFailure
 from ..git_service import GitCommandError
 from ._deps import Deps
 from .implement import branch_for
@@ -99,8 +100,11 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                 effort=deps.cfg.merge_override.effort,
                 stage="pre-merge",
             )
-            if isinstance(merger_result, str):
-                assert_complete(merger_result)
+            if isinstance(merger_result, PreflightFailure):
+                raise RuntimeError(
+                    "Merger preflight checks failed; merge did not complete"
+                )
+            assert_complete(merger_result)
             deps.git_svc.fast_forward_branch(
                 deps.repo_root, target_branch, MERGE_SANDBOX
             )

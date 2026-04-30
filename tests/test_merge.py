@@ -239,6 +239,42 @@ def test_incomplete_merger_raises_and_does_not_fast_forward(
     git_svc.fast_forward_branch.assert_not_called()
 
 
+def test_preflight_failure_from_merger_raises_and_does_not_fast_forward(
+    tmp_path, git_svc, github_svc
+):
+    from pycastle.agent_result import PreflightFailure
+
+    git_svc.try_merge.return_value = False
+    failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
+    fake = FakeAgentRunner([failure])
+    local_deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    issues = [{"number": 1, "title": "Conflict"}]
+    with pytest.raises(RuntimeError, match="preflight"):
+        _run(issues, local_deps)
+    git_svc.fast_forward_branch.assert_not_called()
+
+
+def test_preflight_failure_from_merger_still_removes_worktree(
+    tmp_path, git_svc, github_svc
+):
+    from pycastle.agent_result import PreflightFailure
+
+    git_svc.try_merge.return_value = False
+    failure = PreflightFailure(failures=(("mypy", "mypy .", "error"),))
+    fake = FakeAgentRunner([failure])
+    local_deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    issues = [{"number": 1, "title": "Conflict"}]
+    with pytest.raises(RuntimeError):
+        _run(issues, local_deps)
+    expected_path = (
+        local_deps.repo_root
+        / local_deps.cfg.pycastle_dir
+        / ".worktrees"
+        / "merge-sandbox"
+    )
+    git_svc.remove_worktree.assert_called_once_with(local_deps.repo_root, expected_path)
+
+
 # ── Exception safety ──────────────────────────────────────────────────────────
 
 
