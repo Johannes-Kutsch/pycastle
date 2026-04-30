@@ -198,7 +198,7 @@ def test_plan_phase_removes_worktree_when_planner_hits_usage_limit(
     with pytest.raises(RuntimeError):
         asyncio.run(plan_phase(deps))
 
-    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-planning"
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
 
 
@@ -313,7 +313,7 @@ def test_plan_phase_raises_runtime_error_when_preflight_agent_returns_no_issue_t
         asyncio.run(plan_phase(deps))
 
 
-# ── plan_phase: pre-planning worktree ────────────────────────────────────────
+# ── plan_phase: plan-sandbox worktree ────────────────────────────────────────
 
 
 def test_plan_phase_calls_checkout_detached_with_head_sha(
@@ -330,7 +330,7 @@ def test_plan_phase_calls_checkout_detached_with_head_sha(
     )
     asyncio.run(plan_phase(deps))
 
-    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-planning"
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
     git_svc.checkout_detached.assert_called_once_with(
         tmp_path, expected_worktree, "abc123"
     )
@@ -352,7 +352,7 @@ def test_plan_phase_passes_worktree_path_as_mount_path_to_planner(
     )
     asyncio.run(plan_phase(deps))
 
-    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-planning"
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
     assert captured["Planner"] == expected_worktree
     assert captured["Planner"] != tmp_path
 
@@ -371,7 +371,7 @@ def test_plan_phase_removes_worktree_after_successful_planning(
     )
     asyncio.run(plan_phase(deps))
 
-    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-planning"
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
 
 
@@ -393,7 +393,7 @@ def test_plan_phase_removes_worktree_when_preflight_fails(tmp_path, git_svc, log
     )
     asyncio.run(plan_phase(deps))
 
-    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-planning"
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
 
 
@@ -411,7 +411,7 @@ def test_plan_phase_removes_worktree_when_planner_raises(
     with pytest.raises(RuntimeError, match="unexpected crash"):
         asyncio.run(plan_phase(deps))
 
-    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-planning"
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
 
 
@@ -437,7 +437,7 @@ def test_plan_phase_passes_worktree_path_to_preflight_issue_agent(
     )
     asyncio.run(plan_phase(deps))
 
-    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-planning"
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
     preflight_agent = next(k for k in captured if "preflight-issue" in k)
     assert captured[preflight_agent] == expected_worktree
     assert captured[preflight_agent] != tmp_path
@@ -530,5 +530,5 @@ def test_plan_phase_removes_worktree_when_preflight_issue_agent_hits_usage_limit
     with pytest.raises(RuntimeError):
         asyncio.run(plan_phase(deps))
 
-    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-planning"
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)

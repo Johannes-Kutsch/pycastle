@@ -84,7 +84,7 @@ async def plan_phase(deps: Deps) -> PlanResult:
         return PlanReady(worktree_sha=sha, issues=[])
 
     worktree_path = (
-        deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "pre-planning"
+        deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "plan-sandbox"
     )
     deps.git_svc.checkout_detached(deps.repo_root, worktree_path, sha)
 
@@ -97,7 +97,7 @@ async def plan_phase(deps: Deps) -> PlanResult:
             prompt_args={"OPEN_ISSUES_JSON": json.dumps(open_issues)},
             model=deps.cfg.plan_override.model,
             effort=deps.cfg.plan_override.effort,
-            stage="pre-planning",
+            stage="plan-sandbox",
         )
 
         if isinstance(raw, PreflightFailure):
