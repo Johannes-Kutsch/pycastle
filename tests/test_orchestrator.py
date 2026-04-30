@@ -259,6 +259,42 @@ def test_prune_orphan_worktrees_noop_when_dir_missing(tmp_path):
     prune_orphan_worktrees(tmp_path)  # no exception — no git_service needed
 
 
+# ── Issue 298: delete .worktrees dir when it becomes empty ───────────────────
+
+
+def test_prune_orphan_worktrees_removes_parent_when_empty(tmp_path):
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+    orphan = worktrees_dir / "orphan-branch"
+    orphan.mkdir()
+
+    prune_orphan_worktrees(tmp_path, git_service=_make_git_service_for_prune([]))
+
+    assert not worktrees_dir.exists()
+
+
+def test_prune_orphan_worktrees_keeps_parent_when_active_children_remain(tmp_path):
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+    orphan = worktrees_dir / "orphan"
+    orphan.mkdir()
+    active = worktrees_dir / "active-branch"
+    active.mkdir()
+
+    prune_orphan_worktrees(tmp_path, git_service=_make_git_service_for_prune([active]))
+
+    assert worktrees_dir.exists()
+
+
+def test_prune_orphan_worktrees_removes_parent_when_already_empty(tmp_path):
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+
+    prune_orphan_worktrees(tmp_path, git_service=_make_git_service_for_prune([]))
+
+    assert not worktrees_dir.exists()
+
+
 # ── Cycle 24-C1/C2: error logging on agent failure ───────────────────────────
 
 

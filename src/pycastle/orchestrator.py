@@ -57,6 +57,8 @@ def prune_orphan_worktrees(
     for child in worktrees_dir.iterdir():
         if str(child.resolve()) not in active and child.is_dir():
             shutil.rmtree(child)
+    if not any(worktrees_dir.iterdir()):
+        worktrees_dir.rmdir()
 
 
 def delete_merged_branches(
