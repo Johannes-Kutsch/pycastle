@@ -77,8 +77,7 @@ def create_worktree(
                 return
             svc.remove_worktree(repo_path, worktree_path)
 
-        with _wrap_git_errors():
-            svc.create_worktree(repo_path, worktree_path, branch, sha)
+        svc.create_worktree(repo_path, worktree_path, branch, sha)
 
         if not _has_project_files(worktree_path) and branch_exists:
             _recreate_stale_branch(svc, repo_path, worktree_path, branch, sha)
