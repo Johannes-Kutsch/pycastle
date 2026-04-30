@@ -33,3 +33,7 @@ Output your plan as a JSON object wrapped in `<plan>` tags:
 </plan>
 
 Include only unblocked issues. If every issue is blocked, include the single highest-priority candidate (the one with the fewest or weakest dependencies).
+
+If multiple unblocked issues seem to be working on the same part of the codebase, only include the highest priority one to prevent merge conflicts.
+
+When you are not sure which issue has a higher priority, choose the one with the lowest issue number.
