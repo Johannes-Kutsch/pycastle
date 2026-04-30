@@ -15,7 +15,6 @@ from pycastle.iteration.plan import (
     PlanHITL,
     PlanReady,
     PlanUsageLimit,
-    _handle_preflight_failure,
     plan_phase,
     strip_stale_blocker_refs,
 )
@@ -324,40 +323,6 @@ def test_plan_phase_raises_runtime_error_when_preflight_agent_returns_no_issue_t
         asyncio.run(plan_phase(deps))
 
 
-# ── _handle_preflight_failure: mount_path forwarding ─────────────────────────
-
-
-def test_handle_preflight_failure_forwards_mount_path_to_run_agent(
-    tmp_path, git_svc, github_svc, logger
-):
-    custom_mount = tmp_path / "pre-planning"
-    custom_mount.mkdir()
-    assert custom_mount != tmp_path  # mount_path differs from repo_root
-
-    captured: dict = {}
-
-    async def run_agent(name, mount_path=None, **kwargs):
-        captured[name] = mount_path
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-agent">7</issue>'
-        )
-
-    github_svc.get_labels.return_value = ["ready-for-agent"]
-
-    deps = _make_deps(
-        tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
-    asyncio.run(
-        _handle_preflight_failure(
-            [("ruff", "ruff check .", "E501")], deps, custom_mount
-        )
-    )
-
-    agent_name = next(k for k in captured if "preflight-issue" in k)
-    assert captured[agent_name] == custom_mount
-    assert captured[agent_name] != tmp_path
-
-
 # ── plan_phase: pre-planning worktree ────────────────────────────────────────
 
 
@@ -486,6 +451,3 @@ def test_plan_phase_passes_worktree_path_to_preflight_issue_agent(
     preflight_agent = next(k for k in captured if "preflight-issue" in k)
     assert captured[preflight_agent] == expected_worktree
     assert captured[preflight_agent] != tmp_path
-
-
-# ── _handle_preflight_failure: mount_path forwarding ─────────────────────────
