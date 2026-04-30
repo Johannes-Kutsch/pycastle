@@ -9,12 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.agent_result import (
-    AgentIncomplete,
-    AgentSuccess,
-    AgentTimeoutHit,
     CancellationToken,
     PreflightFailure,
-    UsageLimitHit,
 )
 from pycastle.config import Config
 from pycastle.container_runner import (
@@ -23,7 +19,7 @@ from pycastle.container_runner import (
     _format_stream_line,
     run_agent,
 )
-from pycastle.errors import AgentTimeoutError, UsageLimitError
+from pycastle.errors import AgentTimeoutError, BranchCollisionError, UsageLimitError
 from pycastle.git_service import (
     GitCommandError,
     GitNotFoundError,
@@ -147,7 +143,7 @@ def test_run_agent_proceeds_when_pip_install_fails(tmp_path):
             run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
         )
 
-    assert isinstance(result, AgentIncomplete) and result.partial_output == ""
+    assert result == ""
 
 
 def test_run_agent_warns_stderr_when_pip_install_fails(tmp_path, capsys):
@@ -788,8 +784,6 @@ def test_run_streaming_raises_agent_timeout_error_when_idle(tmp_path):
 
 
 def test_second_run_agent_on_same_branch_raises_branch_collision_error(tmp_path):
-    from pycastle.errors import BranchCollisionError
-
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
@@ -1659,7 +1653,7 @@ def test_run_agent_skip_preflight_bypasses_phase(tmp_path):
             )
         )
 
-    assert isinstance(result, AgentIncomplete) and result.partial_output == ""
+    assert result == ""
 
 
 def test_run_agent_logs_preflight_phase(tmp_path, capsys):
@@ -1882,7 +1876,7 @@ def test_run_agent_accepts_stage_parameter(tmp_path):
             )
         )
 
-    assert isinstance(result, AgentIncomplete)
+    assert isinstance(result, str)
 
 
 # ── Issue 180: UsageLimitError stream detection ───────────────────────────────
@@ -2122,30 +2116,30 @@ def test_worktree_removed_for_non_usage_limit_exception(tmp_path):
     )
 
 
-# ── Issue 215: run_agent catches UsageLimitError, cancels token, returns UsageLimitHit ──
+# ── Issue 215: run_agent catches UsageLimitError, cancels token, re-raises ───
 
 
-def test_usage_limit_cancels_token_and_returns_usage_limit_hit(tmp_path):
-    """run_agent must catch UsageLimitError, cancel token with preserve_worktree=True, and return UsageLimitHit."""
+def test_usage_limit_cancels_token_and_raises_usage_limit_error(tmp_path):
+    """run_agent must catch UsageLimitError, cancel token with preserve_worktree=True, and re-raise."""
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
     token = CancellationToken()
     with patch("pycastle.container_runner.ContainerRunner", _UsageLimitRunner):
-        result = _run(
-            run_agent(
-                "test",
-                prompt,
-                tmp_path,
-                {},
-                create_worktree_fn=_noop_create,
-                remove_worktree_fn=_noop_remove,
-                git_service=_make_git_service(),
-                token=token,
+        with pytest.raises(UsageLimitError):
+            _run(
+                run_agent(
+                    "test",
+                    prompt,
+                    tmp_path,
+                    {},
+                    create_worktree_fn=_noop_create,
+                    remove_worktree_fn=_noop_remove,
+                    git_service=_make_git_service(),
+                    token=token,
+                )
             )
-        )
 
-    assert isinstance(result, UsageLimitHit)
     assert token.is_cancelled
     assert token.wants_worktree_preserved
 
@@ -2161,18 +2155,19 @@ def test_usage_limit_preserves_worktree(tmp_path):
         remove_called.append(True)
 
     with patch("pycastle.container_runner.ContainerRunner", _UsageLimitRunner):
-        _run(
-            run_agent(
-                "test",
-                prompt,
-                tmp_path,
-                {},
-                branch="feature/preserve",
-                create_worktree_fn=_noop_create,
-                remove_worktree_fn=fake_remove,
-                git_service=_make_git_service(),
+        with pytest.raises(UsageLimitError):
+            _run(
+                run_agent(
+                    "test",
+                    prompt,
+                    tmp_path,
+                    {},
+                    branch="feature/preserve",
+                    create_worktree_fn=_noop_create,
+                    remove_worktree_fn=fake_remove,
+                    git_service=_make_git_service(),
+                )
             )
-        )
 
     assert not remove_called, (
         "remove_worktree must NOT be called when UsageLimitError occurs"
@@ -2204,18 +2199,19 @@ def test_container_cleaned_up_on_usage_limit(tmp_path):
             raise UsageLimitError("You've hit your session limit")
 
     with patch("pycastle.container_runner.ContainerRunner", _UsageLimitWithTracking):
-        _run(
-            run_agent(
-                "test",
-                prompt,
-                tmp_path,
-                {},
-                branch="feature/container-cleanup",
-                create_worktree_fn=_noop_create,
-                remove_worktree_fn=_noop_remove,
-                git_service=_make_git_service(),
+        with pytest.raises(UsageLimitError):
+            _run(
+                run_agent(
+                    "test",
+                    prompt,
+                    tmp_path,
+                    {},
+                    branch="feature/container-cleanup",
+                    create_worktree_fn=_noop_create,
+                    remove_worktree_fn=_noop_remove,
+                    git_service=_make_git_service(),
+                )
             )
-        )
 
     assert len(container_exit_calls) == 1, (
         "container __exit__ must be called on UsageLimitError"
@@ -2288,8 +2284,8 @@ def test_run_streaming_default_patterns_not_triggered_by_custom_cfg(tmp_path):
 # ── Issue 213: CancellationToken wired through run_agent ─────────────────────
 
 
-def test_run_agent_returns_usage_limit_hit_when_token_pre_cancelled(tmp_path):
-    """run_agent with a pre-cancelled token must return UsageLimitHit immediately, no container."""
+def test_run_agent_raises_usage_limit_error_when_token_pre_cancelled(tmp_path):
+    """run_agent with a pre-cancelled token must raise UsageLimitError immediately, no container."""
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
@@ -2317,10 +2313,9 @@ def test_run_agent_returns_usage_limit_hit_when_token_pre_cancelled(tmp_path):
     token.cancel()
 
     with patch("pycastle.container_runner.ContainerRunner", _TrackingRunner):
-        result = _run(run_agent("Test", prompt, tmp_path, {}, token=token))
+        with pytest.raises(UsageLimitError):
+            _run(run_agent("Test", prompt, tmp_path, {}, token=token))
 
-    assert isinstance(result, UsageLimitHit)
-    assert result.last_output == ""
     assert not container_started, (
         "No container must be started when token is pre-cancelled"
     )
@@ -2444,7 +2439,7 @@ def test_run_agent_returns_preflight_failure_when_checks_fail(tmp_path):
     assert result.failures == (("mypy", "mypy .", "error: Cannot find module"),)
 
 
-# ── Issue 248: completion detection via is_complete() ────────────────────────
+# ── Issue 248: run_agent returns raw output string ───────────────────────────
 
 
 class _CompleteRunner:
@@ -2466,8 +2461,8 @@ class _CompleteRunner:
         return self._output
 
 
-def test_run_agent_returns_agent_success_when_output_contains_complete_tag(tmp_path):
-    """run_agent must return AgentSuccess when the output contains the COMPLETE promise tag."""
+def test_run_agent_returns_raw_output_string_containing_complete_tag(tmp_path):
+    """run_agent must return the raw output string when the agent completes."""
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
@@ -2483,12 +2478,11 @@ def test_run_agent_returns_agent_success_when_output_contains_complete_tag(tmp_p
             run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
         )
 
-    assert isinstance(result, AgentSuccess)
-    assert result.output == complete_output
+    assert result == complete_output
 
 
-def test_run_agent_returns_agent_incomplete_when_no_complete_tag(tmp_path):
-    """run_agent must return AgentIncomplete when the output lacks the COMPLETE promise tag."""
+def test_run_agent_returns_empty_string_when_no_complete_tag(tmp_path):
+    """run_agent must return the raw output string even when no COMPLETE tag is present."""
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
@@ -2497,12 +2491,11 @@ def test_run_agent_returns_agent_incomplete_when_no_complete_tag(tmp_path):
             run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
         )
 
-    assert isinstance(result, AgentIncomplete)
-    assert result.partial_output == ""
+    assert result == ""
 
 
-def test_run_agent_returns_agent_success_with_ndjson_complete_tag(tmp_path):
-    """run_agent must return AgentSuccess when COMPLETE promise is inside a JSON result envelope."""
+def test_run_agent_returns_raw_string_with_ndjson_output(tmp_path):
+    """run_agent must return the raw output string for NDJSON-formatted output."""
     import json
 
     prompt = tmp_path / "p.md"
@@ -2522,7 +2515,7 @@ def test_run_agent_returns_agent_success_with_ndjson_complete_tag(tmp_path):
             run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
         )
 
-    assert isinstance(result, AgentSuccess)
+    assert result == ndjson_output
 
 
 # ── Cycle 274: AgentTimeoutError restarts agent on same worktree ──────────────
@@ -2589,47 +2582,46 @@ def test_run_agent_retries_work_on_timeout_and_succeeds(tmp_path):
             )
         )
 
-    assert isinstance(result, AgentSuccess)
+    assert isinstance(result, str)
+    assert "<promise>COMPLETE</promise>" in result
 
 
-def test_run_agent_returns_agent_timeout_hit_when_all_retries_exhausted(tmp_path):
-    """When all retries are exhausted, run_agent returns AgentTimeoutHit instead of raising."""
+def test_run_agent_raises_agent_timeout_error_when_all_retries_exhausted(tmp_path):
+    """When all retries are exhausted, run_agent raises AgentTimeoutError."""
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
     with patch("pycastle.container_runner.ContainerRunner", _AlwaysTimesOutRunner):
-        result = _run(
-            run_agent(
-                "Test",
-                prompt,
-                tmp_path,
-                {},
-                git_service=_make_git_service(),
-                cfg=Config(timeout_retries=1),
+        with pytest.raises(AgentTimeoutError):
+            _run(
+                run_agent(
+                    "Test",
+                    prompt,
+                    tmp_path,
+                    {},
+                    git_service=_make_git_service(),
+                    cfg=Config(timeout_retries=1),
+                )
             )
-        )
-
-    assert isinstance(result, AgentTimeoutHit)
 
 
-def test_run_agent_returns_agent_timeout_hit_immediately_when_retries_zero(tmp_path):
-    """When timeout_retries=0, the first timeout returns AgentTimeoutHit without restarting."""
+def test_run_agent_raises_agent_timeout_error_immediately_when_retries_zero(tmp_path):
+    """When timeout_retries=0, the first timeout raises AgentTimeoutError without restarting."""
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
     with patch("pycastle.container_runner.ContainerRunner", _AlwaysTimesOutRunner):
-        result = _run(
-            run_agent(
-                "Test",
-                prompt,
-                tmp_path,
-                {},
-                git_service=_make_git_service(),
-                cfg=Config(timeout_retries=0),
+        with pytest.raises(AgentTimeoutError):
+            _run(
+                run_agent(
+                    "Test",
+                    prompt,
+                    tmp_path,
+                    {},
+                    git_service=_make_git_service(),
+                    cfg=Config(timeout_retries=0),
+                )
             )
-        )
-
-    assert isinstance(result, AgentTimeoutHit)
 
 
 def test_run_agent_logs_restart_on_timeout(tmp_path, capsys):
@@ -2650,3 +2642,24 @@ def test_run_agent_logs_restart_on_timeout(tmp_path, capsys):
         )
 
     assert "Timeout — restarting (attempt 1/1)" in capsys.readouterr().out
+
+
+# ── Issue 270: run_agent returns plain string ─────────────────────────────────
+
+
+def test_run_agent_returns_raw_string_on_success(tmp_path):
+    """run_agent must return the raw output string, not a wrapped result type."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    class _Runner(_CompleteRunner):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._output = "raw agent output"
+
+    with patch("pycastle.container_runner.ContainerRunner", _Runner):
+        result = _run(
+            run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
+        )
+
+    assert result == "raw agent output"
