@@ -30,6 +30,14 @@ class AgentRunnerProtocol(Protocol):
         status_display=None,
     ) -> str | PreflightFailure: ...
 
+    async def run_preflight(
+        self,
+        *,
+        name: str,
+        mount_path: Path,
+        stage: str = "",
+    ) -> list[tuple[str, str, str]]: ...
+
 
 class AgentRunner:
     def __init__(
@@ -184,3 +192,33 @@ class AgentRunner:
             status_display.remove_agent(name)
             if lock is not None and lock.locked():
                 lock.release()
+
+    async def run_preflight(
+        self,
+        *,
+        name: str,
+        mount_path: Path,
+        stage: str = "",
+    ) -> list[tuple[str, str, str]]:
+        loop = asyncio.get_event_loop()
+        runner = ContainerRunner(
+            name,
+            mount_path,
+            self._env,
+            docker_client=self._docker_client,
+            cfg=self._cfg,
+        )
+        try:
+            await loop.run_in_executor(None, runner.__enter__)
+            return await _preflight(
+                name,
+                runner,
+                loop,
+                None,
+                list(self._cfg.preflight_checks),
+            )
+        finally:
+            try:
+                runner.__exit__(None, None, None)
+            except Exception:
+                pass
