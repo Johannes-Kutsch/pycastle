@@ -305,7 +305,9 @@ def test_handle_preflight_failure_forwards_mount_path_to_run_agent(
 
     async def run_agent(name, mount_path=None, **kwargs):
         captured[name] = mount_path
-        return AgentIncomplete(partial_output='<issue label="ready-for-agent">7</issue>')
+        return AgentIncomplete(
+            partial_output='<issue label="ready-for-agent">7</issue>'
+        )
 
     github_svc.get_labels.return_value = ["ready-for-agent"]
 
@@ -313,7 +315,9 @@ def test_handle_preflight_failure_forwards_mount_path_to_run_agent(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
     )
     asyncio.run(
-        _handle_preflight_failure([("ruff", "ruff check .", "E501")], deps, custom_mount)
+        _handle_preflight_failure(
+            [("ruff", "ruff check .", "E501")], deps, custom_mount
+        )
     )
 
     agent_name = next(k for k in captured if "preflight-issue" in k)
@@ -339,7 +343,9 @@ def test_plan_phase_calls_checkout_detached_with_head_sha(
     asyncio.run(plan_phase(deps))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-planning"
-    git_svc.checkout_detached.assert_called_once_with(tmp_path, expected_worktree, "abc123")
+    git_svc.checkout_detached.assert_called_once_with(
+        tmp_path, expected_worktree, "abc123"
+    )
 
 
 def test_plan_phase_passes_worktree_path_as_mount_path_to_planner(
@@ -390,7 +396,9 @@ def test_plan_phase_removes_worktree_when_preflight_fails(tmp_path, git_svc, log
     async def run_agent(name, **kwargs):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501")])
-        return AgentIncomplete(partial_output='<issue label="ready-for-agent">42</issue>')
+        return AgentIncomplete(
+            partial_output='<issue label="ready-for-agent">42</issue>'
+        )
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -401,7 +409,9 @@ def test_plan_phase_removes_worktree_when_preflight_fails(tmp_path, git_svc, log
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
 
 
-def test_plan_phase_removes_worktree_when_planner_raises(tmp_path, git_svc, github_svc, logger):
+def test_plan_phase_removes_worktree_when_planner_raises(
+    tmp_path, git_svc, github_svc, logger
+):
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
 
     async def run_agent(name, **kwargs):
@@ -417,7 +427,9 @@ def test_plan_phase_removes_worktree_when_planner_raises(tmp_path, git_svc, gith
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
 
 
-def test_plan_phase_passes_worktree_path_to_preflight_issue_agent(tmp_path, git_svc, logger):
+def test_plan_phase_passes_worktree_path_to_preflight_issue_agent(
+    tmp_path, git_svc, logger
+):
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     github_svc.get_labels.return_value = ["ready-for-agent"]
@@ -428,7 +440,9 @@ def test_plan_phase_passes_worktree_path_to_preflight_issue_agent(tmp_path, git_
         captured[name] = mount_path
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501")])
-        return AgentIncomplete(partial_output='<issue label="ready-for-agent">42</issue>')
+        return AgentIncomplete(
+            partial_output='<issue label="ready-for-agent">42</issue>'
+        )
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger

@@ -84,7 +84,9 @@ async def plan_phase(deps: Deps) -> PlanResult:
     if not open_issues:
         return PlanReady(worktree_sha=sha, issues=[])
 
-    worktree_path = deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "pre-planning"
+    worktree_path = (
+        deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "pre-planning"
+    )
     deps.git_svc.checkout_detached(deps.repo_root, worktree_path, sha)
 
     try:
@@ -101,13 +103,17 @@ async def plan_phase(deps: Deps) -> PlanResult:
             )
         except PreflightError as exc:
             try:
-                verdict, pf_num = await _handle_preflight_failure(exc.failures, deps, worktree_path)
+                verdict, pf_num = await _handle_preflight_failure(
+                    exc.failures, deps, worktree_path
+                )
             except IssueParseError as parse_exc:
                 raise RuntimeError(str(parse_exc)) from parse_exc
             if verdict == "hitl":
                 return PlanHITL(worktree_sha=sha, issue_number=pf_num)
             pf_title = deps.github_svc.get_issue_title(pf_num)
-            return PlanAFK(worktree_sha=sha, issues=[{"number": pf_num, "title": pf_title}])
+            return PlanAFK(
+                worktree_sha=sha, issues=[{"number": pf_num, "title": pf_title}]
+            )
 
         if isinstance(raw, AgentSuccess):
             plan_text = raw.output
