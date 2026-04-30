@@ -175,6 +175,15 @@ def test_config_module_does_not_export_uppercase_aliases():
 # ── load_config: model shorthand resolution ───────────────────
 
 
+def test_load_config_resolves_model_shorthand_in_overrides(tmp_path):
+    cfg = load_config(
+        repo_root=tmp_path,
+        overrides={"plan_override": StageOverride(model="sonnet", effort="")},
+        claude_service=_make_service(),
+    )
+    assert cfg.plan_override.model == "claude-sonnet-4-6"
+
+
 def test_load_config_resolves_model_shorthand(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(
