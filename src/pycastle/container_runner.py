@@ -313,9 +313,6 @@ class ContainerRunner:
                         line, line_buf = line_buf.split("\n", 1)
                         if _is_usage_limit_line(line, self._cfg.usage_limit_patterns):
                             raise UsageLimitError(line)
-                        formatted = _format_stream_line(line)
-                        if formatted is not None:
-                            print(f"[{self.name}] {formatted}", flush=True)
         finally:
             try:
                 self._active_container.exec_run(
@@ -333,8 +330,10 @@ async def _preflight(
     loop: asyncio.AbstractEventLoop,
     exec_timeout: float | None,
     checks: list[tuple[str, str]],
+    status_display=None,
 ) -> list[tuple[str, str, str]]:
-    print(f"[{name}] Phase: Pre-flight")
+    if status_display is not None:
+        status_display.update_phase(name, "Pre-flight")
     failures: list[tuple[str, str, str]] = []
     for check_name, command in checks:
         try:
@@ -351,9 +350,12 @@ async def _setup(
     exec_timeout: float | None,
     git_service: GitService | None = None,
     cfg: Config | None = None,
+    status_display=None,
 ) -> None:
-    print(f"[{name}] Phase: Setup")
     await loop.run_in_executor(None, runner.__enter__)
+    if status_display is not None:
+        runner.log_path.touch(exist_ok=True)
+        status_display.add_agent(name, "Setup", runner.log_path)
     if git_service is None:
         git_service = GitService(cfg or load_config())
     git_name = git_service.get_user_name()
@@ -379,10 +381,12 @@ async def _prepare(
     exec_timeout: float | None,
     prompt_file: Path,
     prompt_args: dict[str, str],
+    status_display=None,
 ) -> None:
     from .prompt_pipeline import prepare_prompt
 
-    print(f"[{name}] Phase: Prepare")
+    if status_display is not None:
+        status_display.update_phase(name, "Prepare")
     try:
         await loop.run_in_executor(
             None,
@@ -404,8 +408,10 @@ async def _work(
     name: str,
     runner: "ContainerRunner",
     loop: asyncio.AbstractEventLoop,
+    status_display=None,
 ) -> str:
-    print(f"[{name}] Phase: Work")
+    if status_display is not None:
+        status_display.update_phase(name, "Work")
     return await loop.run_in_executor(None, runner.run_streaming)
 
 
