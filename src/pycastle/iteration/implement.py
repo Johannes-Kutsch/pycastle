@@ -49,13 +49,12 @@ async def run_issue(
 
     async def _bounded_run_agent(**kwargs: Any) -> Any:
         async with semaphore or contextlib.nullcontext():
-            return await deps.run_agent(**kwargs, token=token)
+            return await deps.agent_runner.run(**kwargs, token=token)
 
     result = await _bounded_run_agent(
         name=f"Implementer #{issue['number']}",
         prompt_file=deps.cfg.prompts_dir / "implement-prompt.md",
         mount_path=deps.repo_root,
-        env=deps.env,
         prompt_args=prompt_args,
         branch=_branch,
         model=deps.cfg.implement_override.model,
@@ -74,7 +73,6 @@ async def run_issue(
         name=f"Reviewer #{issue['number']}",
         prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
         mount_path=deps.repo_root,
-        env=deps.env,
         prompt_args=prompt_args,
         branch=_branch,
         model=deps.cfg.review_override.model,

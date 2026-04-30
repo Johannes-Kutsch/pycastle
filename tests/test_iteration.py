@@ -20,6 +20,7 @@ from pycastle.iteration import (
 )
 from pycastle.iteration._deps import (
     Deps,
+    FakeAgentRunner,
     NullStatusDisplay,
     RecordingLogger,
     RecordingStatusDisplay,
@@ -67,7 +68,7 @@ def _make_deps(
         repo_root=tmp_path,
         git_svc=git_svc,
         github_svc=github_svc,
-        run_agent=run_agent_fn,
+        agent_runner=FakeAgentRunner(side_effect=run_agent_fn),
         cfg=cfg or Config(max_parallel=4, max_iterations=1),
         logger=logger,
         status_display=status_display or NullStatusDisplay(),

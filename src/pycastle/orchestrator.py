@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from .agent_result import PreflightFailure
+from .agent_runner import AgentRunner, AgentRunnerProtocol
 from .claude_service import ClaudeService
 from .config import Config, load_config
-from .container_runner import run_agent as _default_run_agent
 from .git_service import GitCommandError, GitService
 from .github_service import GithubService
 from .iteration import (
@@ -117,17 +117,27 @@ async def wait_for_clean_working_tree(
         await asyncio.sleep(10)
 
 
+class _CallableAgentRunner:
+    """Wraps a plain async callable as an AgentRunnerProtocol (backward compat for tests)."""
+
+    def __init__(self, fn: Any) -> None:
+        self._fn = fn
+
+    async def run(self, **kwargs: Any) -> Any:
+        return await self._fn(**kwargs)
+
+
 async def run(
     env: dict[str, str],
     repo_root: Path,
     *,
     run_agent: Any | None = None,
+    agent_runner: AgentRunnerProtocol | None = None,
     claude_service: ClaudeService | None = None,
     git_service: GitService | None = None,
     github_service: GithubService | None = None,
 ) -> None:
     cfg = load_config(repo_root=repo_root, claude_service=claude_service)
-    _run_agent = run_agent or _default_run_agent
     prune_orphan_worktrees(repo_root, cfg=cfg)
     git_svc = git_service or GitService(cfg)
     status_display: StatusDisplay = NullStatusDisplay()
@@ -150,12 +160,19 @@ async def run(
             )
             break
 
+        if agent_runner is not None:
+            _agent_runner: AgentRunnerProtocol = agent_runner
+        elif run_agent is not None:
+            _agent_runner = _CallableAgentRunner(run_agent)
+        else:
+            _agent_runner = AgentRunner(env=env, cfg=cfg, git_service=git_svc)
+
         deps = IterationDeps(
             env=env,
             repo_root=repo_root,
             git_svc=git_svc,
             github_svc=_get_github_svc(),
-            run_agent=_run_agent,
+            agent_runner=_agent_runner,
             cfg=cfg,
             logger=FileLogger(cfg.logs_dir),
             status_display=status_display,

@@ -634,9 +634,7 @@ def test_multiple_implementers_run_in_parallel(tmp_path):
     active_implementers: set[str] = set()
     max_concurrent = 0
 
-    async def _fake_run_agent(
-        name, prompt_file, mount_path, env, prompt_args=None, **kw
-    ):
+    async def _fake_run_agent(name, prompt_file, mount_path, prompt_args=None, **kw):
         nonlocal max_concurrent
         if name == "Planner":
             return _plan_json(
@@ -671,9 +669,7 @@ def test_concurrent_agents_never_exceed_max_parallel(tmp_path):
     max_active = 0
     max_parallel = 3
 
-    async def _fake_run_agent(
-        name, prompt_file, mount_path, env, prompt_args=None, **kw
-    ):
+    async def _fake_run_agent(name, prompt_file, mount_path, prompt_args=None, **kw):
         nonlocal active_count, max_active
         if name == "Planner":
             return _plan_json(
@@ -707,9 +703,7 @@ def test_implementer_starts_while_reviewer_runs(tmp_path):
     """A new Implementer must be able to start while a prior issue's Reviewer is running."""
     events: list[str] = []
 
-    async def _fake_run_agent(
-        name, prompt_file, mount_path, env, prompt_args=None, **kw
-    ):
+    async def _fake_run_agent(name, prompt_file, mount_path, prompt_args=None, **kw):
         if name == "Planner":
             return _plan_json(
                 [
