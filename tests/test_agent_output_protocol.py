@@ -13,6 +13,7 @@ from pycastle.agent_output_protocol import (
     PlanParseError,
     PlannerOutput,
     PromiseParseError,
+    assert_complete,
     parse,
 )
 
@@ -303,3 +304,35 @@ def test_parse_ndjson_with_null_result_falls_back_to_envelope_and_raises():
     envelope = json.dumps({"type": "result", "result": None})
     with pytest.raises(PlanParseError):
         parse(envelope, AgentRole.PLANNER)
+
+
+# ── assert_complete ───────────────────────────────────────────────────────────
+
+
+def test_assert_complete_returns_none_on_success():
+    result = assert_complete("<promise>COMPLETE</promise>")
+    assert result is None
+
+
+def test_assert_complete_raises_promise_parse_error_on_missing_tag():
+    with pytest.raises(PromiseParseError):
+        assert_complete("work done but no promise tag")
+
+
+def test_assert_complete_unwraps_ndjson_envelope():
+    envelope = json.dumps({"type": "result", "result": "<promise>COMPLETE</promise>"})
+    result = assert_complete(envelope)
+    assert result is None
+
+
+def test_assert_complete_raises_on_ndjson_missing_promise():
+    envelope = json.dumps({"type": "result", "result": "work done"})
+    with pytest.raises(PromiseParseError):
+        assert_complete(envelope)
+
+
+def test_assert_complete_error_message_includes_output_tail():
+    long_output = "x" * 300 + " work done but no tag"
+    with pytest.raises(PromiseParseError) as exc_info:
+        assert_complete(long_output)
+    assert "no tag" in str(exc_info.value)
