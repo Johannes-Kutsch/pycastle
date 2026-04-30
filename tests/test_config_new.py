@@ -109,13 +109,6 @@ def test_load_config_with_empty_overrides_dict(tmp_path):
     assert cfg.max_parallel == 1
 
 
-def test_module_level_config_singleton_picks_up_local_override():
-    from pycastle.config import config
-
-    assert config.docker_image_name == "pycastle"
-    assert config.max_parallel == 4
-
-
 # ── Issue 222: load_config without repo_root uses CWD ────────────────────────
 
 

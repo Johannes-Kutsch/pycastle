@@ -20,7 +20,7 @@ class PlannerOutput:
 
 @dataclasses.dataclass(frozen=True)
 class IssueOutput:
-    label: str
+    labels: list[str]
     number: int
 
 
@@ -94,26 +94,31 @@ def _extract_planner_output(text: str) -> PlannerOutput:
 
 
 def _extract_issue_output(text: str) -> IssueOutput:
-    match = re.search(r'<issue\s+label="([^"]+)">(\S+)</issue>', text)
+    match = re.search(r"<issue>([\s\S]*?)</issue>", text)
     if not match:
-        raise IssueParseError(
-            'Agent produced no <issue label="...">NUMBER</issue> tag.'
-        )
-    label = match.group(1)
-    raw_number = match.group(2)
+        raise IssueParseError("Agent produced no <issue>...</issue> tag.")
     try:
-        number = int(raw_number)
-    except ValueError as exc:
-        raise IssueParseError(f"{raw_number!r} is not a valid issue number.") from exc
-    return IssueOutput(label=label, number=number)
+        data = json.loads(match.group(1))
+    except json.JSONDecodeError as exc:
+        raise IssueParseError(
+            f"Malformed JSON inside <issue> tag: {exc}"
+        ) from exc
+    try:
+        number = int(data["number"])
+        labels = [str(label) for label in data["labels"]]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise IssueParseError(
+            f"<issue> JSON has unexpected structure: {exc}"
+        ) from exc
+    return IssueOutput(labels=labels, number=number)
 
 
 def parse(output: str, role: AgentRole) -> AgentOutput:
     text = _unwrap(output)
-    if not re.search(r"<promise>COMPLETE</promise>", text):
-        raise PromiseParseError("Agent produced no <promise>COMPLETE</promise> tag.")
-    if role == AgentRole.PLANNER:
-        return _extract_planner_output(text)
     if role == AgentRole.PREFLIGHT_ISSUE:
         return _extract_issue_output(text)
+    if role == AgentRole.PLANNER:
+        return _extract_planner_output(text)
+    if not re.search(r"<promise>COMPLETE</promise>", text):
+        raise PromiseParseError("Agent produced no <promise>COMPLETE</promise> tag.")
     return CompletionOutput()

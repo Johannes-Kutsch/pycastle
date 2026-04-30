@@ -69,7 +69,7 @@ async def _handle_preflight_failure(
     )
     issue_output = parse(agent_result, AgentRole.PREFLIGHT_ISSUE)
     assert isinstance(issue_output, IssueOutput)
-    if issue_output.label == deps.cfg.hitl_label:
+    if deps.cfg.hitl_label in issue_output.labels:
         return "hitl", issue_output.number
     return "afk", issue_output.number
 

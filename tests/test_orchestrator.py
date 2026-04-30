@@ -187,7 +187,7 @@ def test_preflight_issue_branch_uses_pycastle_format(tmp_path):
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
             return (
-                '<promise>COMPLETE</promise><issue label="ready-for-agent">77</issue>'
+                '<issue>{"number": 77, "labels": ["ready-for-agent"]}</issue>'
             )
         if "Implementer" in name:
             captured_branches.append((prompt_args or {}).get("BRANCH", ""))
@@ -975,7 +975,7 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
             )
         if "preflight-issue" in name:
             return (
-                '<promise>COMPLETE</promise><issue label="ready-for-human">70</issue>'
+                '<issue>{"number": 70, "labels": ["ready-for-human"]}</issue>'
             )
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
@@ -1330,7 +1330,7 @@ def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
             )
         if "preflight-issue" in name:
             return (
-                '<promise>COMPLETE</promise><issue label="ready-for-agent">42</issue>'
+                '<issue>{"number": 42, "labels": ["ready-for-agent"]}</issue>'
             )
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
@@ -1363,7 +1363,7 @@ def test_preflight_failure_hitl_exits_nonzero_no_implementer(tmp_path):
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
             return (
-                '<promise>COMPLETE</promise><issue label="ready-for-human">99</issue>'
+                '<issue>{"number": 99, "labels": ["ready-for-human"]}</issue>'
             )
         if "Implementer" in name:
             implementer_calls.append(name)
@@ -1400,7 +1400,7 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
                 {"name": name, "prompt_args": prompt_args or {}}
             )
             return (
-                '<promise>COMPLETE</promise><issue label="ready-for-human">10</issue>'
+                '<issue>{"number": 10, "labels": ["ready-for-human"]}</issue>'
             )
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
@@ -1957,7 +1957,7 @@ def test_planner_preflight_error_spawns_no_implementers(tmp_path):
             return PreflightFailure(
                 failures=(("ruff", "ruff check .", "E501 line too long"),)
             )
-        return '<promise>COMPLETE</promise><issue label="ready-for-human">77</issue>'
+        return '<issue>{"number": 77, "labels": ["ready-for-human"]}</issue>'
 
     with pytest.raises(SystemExit):
         _run(tmp_path, _fake_run_agent, github_service=_make_github_svc_hitl())
@@ -1971,7 +1971,7 @@ def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
             return PreflightFailure(
                 failures=(("ruff", "ruff check .", "E501 line too long"),)
             )
-        return '<promise>COMPLETE</promise><issue label="ready-for-human">88</issue>'
+        return '<issue>{"number": 88, "labels": ["ready-for-human"]}</issue>'
 
     with pytest.raises(SystemExit):
         _run(tmp_path, _fake_run_agent, github_service=_make_github_svc_hitl())
