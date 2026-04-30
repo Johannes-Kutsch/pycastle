@@ -13,7 +13,7 @@ from pycastle.config import Config, StageOverride
 from pycastle.errors import ClaudeServiceError, ConfigValidationError, UsageLimitError
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
-from pycastle.iteration._deps import NullStatusDisplay, RecordingStatusDisplay
+from pycastle.iteration._deps import RecordingStatusDisplay
 from pycastle.orchestrator import (
     _stage_for_agent,
     delete_merged_branches,
@@ -1981,7 +1981,9 @@ def test_delete_merged_branches_routes_deleted_message_through_status_display(
     recording = RecordingStatusDisplay()
     mock_svc = MagicMock(spec=GitService)
     mock_svc.is_ancestor.return_value = True
-    delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc, status_display=recording)
+    delete_merged_branches(
+        ["issue/1"], tmp_path, git_service=mock_svc, status_display=recording
+    )
 
     print_messages = [msg for kind, msg in recording.calls if kind == "print"]
     assert any("issue/1" in msg for msg in print_messages)
@@ -1997,7 +1999,9 @@ def test_wait_for_clean_working_tree_routes_dirty_message_through_status_display
     mock_git.is_working_tree_clean.side_effect = [False, True]
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        asyncio.run(wait_for_clean_working_tree(tmp_path, mock_git, status_display=recording))
+        asyncio.run(
+            wait_for_clean_working_tree(tmp_path, mock_git, status_display=recording)
+        )
 
     print_messages = [msg for kind, msg in recording.calls if kind == "print"]
     assert any("Working tree" in msg for msg in print_messages)
