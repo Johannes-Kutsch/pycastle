@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 from pycastle.agent_result import AgentSuccess, PreflightFailure, UsageLimitHit
 from pycastle.config import Config, config as _cfg
+from pycastle.errors import AgentTimeoutError
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
 from pycastle.iteration._deps import Deps, RecordingLogger
@@ -355,3 +356,22 @@ def test_run_issue_returns_issue_when_implementer_completes(tmp_path):
     result = asyncio.run(run_issue(issue, deps))
 
     assert result == issue
+
+
+# ── implement_phase: AgentTimeoutError propagation ───────────────────────────
+
+
+def test_implement_phase_agent_timeout_error_tracked_as_error(tmp_path):
+    """When run_agent raises AgentTimeoutError, implement_phase captures it in errors."""
+    issues = [{"number": 1, "title": "Fix A"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        raise AgentTimeoutError("idle timeout")
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    result = asyncio.run(implement_phase(issues, None, deps))
+
+    assert result.completed == []
+    assert len(result.errors) == 1
+    assert result.errors[0][0] == issues[0]
+    assert isinstance(result.errors[0][1], AgentTimeoutError)
