@@ -1871,7 +1871,7 @@ def test_run_agent_accepts_stage_parameter(tmp_path):
                 prompt,
                 tmp_path,
                 {},
-                stage="pre-planning",
+                stage="plan-sandbox",
                 git_service=_make_git_service(),
             )
         )
