@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
@@ -79,35 +79,50 @@ def test_run_cmd_exits_one_on_invalid_config(tmp_path, monkeypatch):
     assert result.exit_code == 1
 
 
-def test_build_cmd_passes_cfg_to_build_main(tmp_path, monkeypatch):
+def test_run_cmd_shows_config_error_message(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
     monkeypatch.chdir(tmp_path)
-    cfg = Config(docker_image_name="img")
-    received: list[Config] = []
+    with patch(
+        "pycastle.main.load_config", side_effect=ConfigValidationError("bad model")
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+    assert "bad model" in result.output
 
-    def fake_build(no_cache=False, cfg=None, **kw):
-        received.append(cfg)
+
+def test_build_cmd_uses_config_docker_image_name(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(docker_image_name="custom-img")
+    fake_svc = MagicMock()
 
     with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.build_command.main", fake_build):
+        with patch("pycastle.build_command.DockerService", return_value=fake_svc):
             CliRunner().invoke(cli, ["build"])
 
-    assert received == [cfg]
+    assert fake_svc.build_image.call_args[0][0] == "custom-img"
 
 
-def test_labels_cmd_passes_cfg_to_labels_main(tmp_path, monkeypatch):
+def test_labels_cmd_creates_labels_with_config_issue_label(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
     monkeypatch.chdir(tmp_path)
-    cfg = Config()
-    received: list[Config] = []
+    cfg = Config(issue_label="custom-ready")
+    posted: list = []
 
-    def fake_labels(cfg=None):
-        received.append(cfg)
+    def fake_gh(method, path, token, data=None):
+        if method == "POST":
+            posted.append(data)
+        return (201, None)
+
+    monkeypatch.setenv("GH_TOKEN", "test-token")
+    monkeypatch.setattr("pycastle.labels.click.prompt", lambda *a, **kw: "owner/repo")
+    monkeypatch.setattr("pycastle.labels.click.confirm", lambda *a, **kw: False)
 
     with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.labels.main", fake_labels):
+        with patch("pycastle.labels._gh", fake_gh):
             CliRunner().invoke(cli, ["labels"])
 
-    assert received == [cfg]
+    label_names = {entry["name"] for entry in posted}
+    assert "custom-ready" in label_names
