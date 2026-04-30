@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import re
 import sys
+from pathlib import Path
 from typing import Any
 
 from ..agent_result import AgentSuccess
@@ -29,7 +30,7 @@ async def _wait_for_clean_working_tree(deps: Deps) -> None:
         await asyncio.sleep(10)
 
 
-def _worktree_path_for_branch(branch: str, deps: Deps):
+def _worktree_path_for_branch(branch: str, deps: Deps) -> Path:
     m = re.match(r"pycastle/issue-(\d+)", branch)
     worktree_name = (
         f"issue-{m.group(1)}"

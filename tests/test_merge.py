@@ -318,7 +318,7 @@ def test_merge_result_stores_clean_and_conflicts():
 # ── Active worktree removal before branch deletion ────────────────────────────
 
 
-def test_branch_with_active_worktree_removes_worktree_first(deps, git_svc):
+def test_active_worktree_removed_when_merged_branch_is_cleaned_up(deps, git_svc):
     worktree_path = deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "issue-1"
     git_svc.list_worktrees.return_value = [worktree_path]
     issues = [{"number": 1, "title": "Fix A"}]
@@ -328,7 +328,7 @@ def test_branch_with_active_worktree_removes_worktree_first(deps, git_svc):
     assert "pycastle/issue-1" in deleted
 
 
-def test_branch_with_active_worktree_remove_called_before_delete(deps, git_svc):
+def test_worktree_unregistered_before_branch_deletion(deps, git_svc):
     worktree_path = deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "issue-1"
     git_svc.list_worktrees.return_value = [worktree_path]
     call_order: list[str] = []
@@ -339,7 +339,19 @@ def test_branch_with_active_worktree_remove_called_before_delete(deps, git_svc):
     assert call_order.index("remove") < call_order.index("delete")
 
 
-def test_branch_without_active_worktree_skips_remove_worktree(deps, git_svc):
+def test_merged_branch_without_active_worktree_is_deleted_without_worktree_removal(
+    deps, git_svc
+):
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
     git_svc.remove_worktree.assert_not_called()
+
+
+def test_worktree_removal_failure_does_not_abort_branch_deletion(deps, git_svc):
+    worktree_path = deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "issue-1"
+    git_svc.list_worktrees.return_value = [worktree_path]
+    git_svc.remove_worktree.side_effect = RuntimeError("disk full")
+    issues = [{"number": 1, "title": "Fix A"}]
+    result = _run(issues, deps)
+    git_svc.delete_branch.assert_called()
+    assert result.clean == issues
