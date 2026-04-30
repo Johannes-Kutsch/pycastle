@@ -47,6 +47,13 @@ def test_config_has_bug_label_default():
     assert cfg.bug_label == "bug"
 
 
+def test_load_config_applies_bug_label_from_local_file(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text('bug_label = "my-bug"\n')
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.bug_label == "my-bug"
+
+
 def test_load_config_applies_local_file_override(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text("max_parallel = 4\n")

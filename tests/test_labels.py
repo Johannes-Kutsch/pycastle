@@ -25,6 +25,13 @@ def test_labels_does_not_contain_removed_labels():
     assert "wontfix" not in names
 
 
+def test_labels_entries_have_required_github_api_keys():
+    for entry in LABELS:
+        assert "name" in entry
+        assert "description" in entry
+        assert "color" in entry
+
+
 # ── Cycle 1: _get_remote_repo with injected GitService ───────────────────────
 
 
