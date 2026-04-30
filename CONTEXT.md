@@ -174,6 +174,9 @@
 | **ClaudeService** | Service that encapsulates the `claude list-models` subprocess call with process-lifetime caching | Claude wrapper, model provider |
 | **DockerService** | Service that encapsulates the `docker build` subprocess call with support for build args | Docker wrapper, build provider |
 | **GithubService** | Service that encapsulates `gh` CLI calls for GitHub issue operations: closing issues, querying parent issues, listing open sub-issues, and reading issue labels | GitHub wrapper, gh provider |
+| **Logger** | Injectable abstraction that owns all structured log output for one iteration; exposes named channels (`log_error`, `log_agent_output`) each writing to a dedicated file under `logs/`; injected via `Deps` so tests never touch the filesystem | log writer, output handler |
+| **RecordingLogger** | Test double for `Logger` that records every call in memory; tests assert on recorded calls rather than capturing stderr or reading log files | mock logger, spy logger |
+| **IterationOutcome** | Sealed return type of `run_iteration()`; one of four variants: `Continue` (iteration completed, keep looping), `Done` (no issues found, stop cleanly), `AbortedHITL` (HITL verdict — carries `issue_number`; orchestrator exits non-zero), `AbortedUsageLimit` (token ceiling hit — worktrees preserved, safe to retry; orchestrator exits non-zero) | iteration result, loop result |
 
 ## Test Anti-Patterns (Red Flags)
 
