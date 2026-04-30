@@ -101,7 +101,7 @@
 | **EXPLORATION section** | The section of the implement prompt that instructs the Implementer to read files before coding; scoped to files mentioned in the issue body — not a full repository survey | explore section, discovery section |
 | **FEEDBACK LOOPS section** | The section of the implement prompt that instructs the Implementer to run IMPLEMENT_CHECKS commands before committing | feedback section, pre-commit checks |
 | **`{{FEEDBACK_COMMANDS}}`** | Placeholder in the implement-prompt rendered at run time from `config.IMPLEMENT_CHECKS`; produces a backtick-formatted command list | — |
-| **preflight-issue.md** | Prompt used by the preflight-issue agent; receives `{{CHECK_NAME}}`, `{{COMMAND}}`, and `{{OUTPUT}}` placeholders; explores the codebase to find root cause, evaluates HITL, writes a structured issue body, applies configured labels (never `needs-triage`), and outputs `<issue>NUMBER</issue>` | bug-report.md, error prompt |
+| **preflight-issue.md** | Prompt used by the preflight-issue agent; receives `{{CHECK_NAME}}`, `{{COMMAND}}`, `{{OUTPUT}}`, `{{BUG_LABEL}}`, `{{ISSUE_LABEL}}`, and `{{HITL_LABEL}}` placeholders; explores the codebase to find root cause, evaluates HITL, writes a structured issue body, applies configured labels (never `needs-triage`), and outputs `<issue>NUMBER</issue>` | bug-report.md, error prompt |
 | **`{{CHECKS}}`** | Placeholder in the merge-prompt rendered at run time from `config.PREFLIGHT_CHECKS`; injects quality check commands into the Merger agent's prompt | — |
 | **Explore subagent** | A Claude Code subagent spawned by the Implementer during the EXPLORATION section to read relevant files; token usage bounded by scoping to the issue body | explore agent, repo scanner |
 
