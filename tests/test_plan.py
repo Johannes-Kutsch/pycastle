@@ -227,7 +227,7 @@ def test_plan_phase_returns_hitl_on_hitl_preflight_verdict(tmp_path, git_svc, lo
     async def run_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return '<promise>COMPLETE</promise><issue label="ready-for-human">55</issue>'
+        return '<issue>{"number": 55, "labels": ["bug", "ready-for-human"]}</issue>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -248,7 +248,7 @@ def test_plan_phase_returns_hitl_when_preflight_agent_includes_promise_tag(
     async def run_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return '<promise>COMPLETE</promise><issue label="ready-for-human">99</issue>'
+        return '<issue>{"number": 99, "labels": ["bug", "ready-for-human"]}</issue>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -269,7 +269,7 @@ def test_plan_phase_hitl_verdict_from_agent_output_not_github_labels(
     async def run_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return '<promise>COMPLETE</promise><issue label="ready-for-human">33</issue>'
+        return '<issue>{"number": 33, "labels": ["bug", "ready-for-human"]}</issue>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -291,7 +291,7 @@ def test_plan_phase_returns_afk_on_afk_preflight_verdict(tmp_path, git_svc, logg
     async def run_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return '<promise>COMPLETE</promise><issue label="ready-for-agent">42</issue>'
+        return '<issue>{"number": 42, "labels": ["bug", "ready-for-agent"]}</issue>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -395,7 +395,7 @@ def test_plan_phase_removes_worktree_when_preflight_fails(tmp_path, git_svc, log
     async def run_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return '<promise>COMPLETE</promise><issue label="ready-for-agent">42</issue>'
+        return '<issue>{"number": 42, "labels": ["bug", "ready-for-agent"]}</issue>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -436,7 +436,7 @@ def test_plan_phase_passes_worktree_path_to_preflight_issue_agent(
         captured[name] = mount_path
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return '<promise>COMPLETE</promise><issue label="ready-for-agent">42</issue>'
+        return '<issue>{"number": 42, "labels": ["bug", "ready-for-agent"]}</issue>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -484,7 +484,7 @@ def test_plan_phase_preflight_failure_only_first_check_spawns_agent(
                 )
             )
         captured_args.append(prompt_args or {})
-        return '<promise>COMPLETE</promise><issue label="ready-for-agent">42</issue>'
+        return '<issue>{"number": 42, "labels": ["bug", "ready-for-agent"]}</issue>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger

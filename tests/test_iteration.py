@@ -97,7 +97,7 @@ def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, l
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return '<promise>COMPLETE</promise><issue label="ready-for-human">42</issue>'
+        return '<issue>{"number": 42, "labels": ["ready-for-human"]}</issue>'
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -118,7 +118,7 @@ def test_run_iteration_aborted_hitl_carries_issue_number(tmp_path, git_svc, logg
             return PreflightFailure(
                 failures=(("mypy", "mypy .", "error: Missing module"),)
             )
-        return '<promise>COMPLETE</promise><issue label="ready-for-human">99</issue>'
+        return '<issue>{"number": 99, "labels": ["ready-for-human"]}</issue>'
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -139,7 +139,7 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return '<promise>COMPLETE</promise><issue label="ready-for-human">7</issue>'
+        return '<issue>{"number": 7, "labels": ["ready-for-human"]}</issue>'
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -261,7 +261,7 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
             return (
-                '<promise>COMPLETE</promise><issue label="ready-for-agent">55</issue>'
+                '<issue>{"number": 55, "labels": ["ready-for-agent"]}</issue>'
             )
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
@@ -292,7 +292,7 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
             return PreflightFailure(failures=(("mypy", "mypy .", "error"),))
         if "preflight-issue" in name:
             return (
-                '<promise>COMPLETE</promise><issue label="ready-for-agent">77</issue>'
+                '<issue>{"number": 77, "labels": ["ready-for-agent"]}</issue>'
             )
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"

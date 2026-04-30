@@ -93,10 +93,14 @@ gh issue edit <number> --add-label "bug" --add-label "<ready-for-agent or ready-
 
 Do **not** apply `needs-triage`.
 
-### 6. Output the issue number
+### 6. Output the issue number and labels
 
-After the issue is filed and labeled, output the issue number in this exact format:
+After the issue is filed and labeled, output the details in this exact format:
 
 ```
-<issue>NUMBER</issue>
+<issue>
+{"number": NUMBER, "labels": ["LABEL 1", "LABEL 2"]}
+</issue>
 ```
+
+Where `labels` is the exact list of labels you applied to the issue.

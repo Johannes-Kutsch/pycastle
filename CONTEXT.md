@@ -180,6 +180,10 @@
 | **GithubService** | Service that encapsulates `gh` CLI calls for GitHub issue operations: closing issues, querying parent issues, listing open sub-issues, and reading issue labels | GitHub wrapper, gh provider |
 | **Logger** | Injectable abstraction that owns all structured log output for one iteration; exposes named channels (`log_error`, `log_agent_output`) each writing to a dedicated file under `logs/`; injected via `Deps` so tests never touch the filesystem | log writer, output handler |
 | **RecordingLogger** | Test double for `Logger` that records every call in memory; tests assert on recorded calls rather than capturing stderr or reading log files | mock logger, spy logger |
+| **StatusDisplay** | Injectable abstraction that owns the live terminal status line; exposes `add_agent`, `update_phase`, `remove_agent`, and `print` methods; backed by a `rich` `Live` display in production and a `NullStatusDisplay` no-op in tests; injected via `Deps` as a separate concern from `Logger` | terminal display, status bar |
+| **NullStatusDisplay** | Test/no-op implementation of `StatusDisplay`; all methods are no-ops; `print` falls back to `builtins.print` | — |
+| **agent status row** | One row in the `StatusDisplay` live panel representing one active agent; shows agent name, current agent lifecycle phase, idle seconds since last raw chunk, and an OSC 8 clickable link to the agent's log file; ordered by orchestration phase (plan → implement → review → merge) then by issue number; disappears when the agent finishes | status entry, agent row |
+| **OSC 8 link** | Terminal hyperlink using the OSC 8 ANSI escape sequence (`\033]8;;file:///path\033\\text\033]8;;\033\\`); used in the agent status row to make the log file path clickable; link text is the bare file path | terminal link, clickable link |
 | **IterationOutcome** | Sealed return type of `run_iteration()`; one of four variants: `Continue` (iteration completed, keep looping), `Done` (no issues found, stop cleanly), `AbortedHITL` (HITL verdict — carries `issue_number`; orchestrator exits non-zero), `AbortedUsageLimit` (token ceiling hit — worktrees preserved, safe to retry; orchestrator exits non-zero) | iteration result, loop result |
 
 ## Test Anti-Patterns (Red Flags)
@@ -210,6 +214,10 @@
 - An **orphan sweep** runs once at orchestrator startup; **collision detection** holds a per-branch lock for the full duration of each agent run.
 - Host mounts per container: host repo → RO at `/home/agent/repo`; worktree → RW at `/home/agent/workspace`; `<host-repo>/.git` → RW at `/.pycastle-parent-git`; on Windows, gitdir overlay → RO over `/home/agent/workspace/.git`.
 - A **Service** defines a Custom exception hierarchy so callers never handle raw subprocess exceptions; tests inject Default implementations from a test fixture and override per-test for error paths.
+- **StatusDisplay** is a separate injectable in `Deps` alongside `Logger`; `Logger` owns file I/O, `StatusDisplay` owns the live terminal UI — they never overlap.
+- The **agent status row** is created when the Setup phase begins (log file is also created at this point so the OSC 8 link is always valid); the row is removed when the agent finishes or errors; the `rich` `Live` display is started on the first `add_agent` call and stopped after the last `remove_agent` call.
+- All orchestrator-level terminal output (e.g. "Planning complete…") is routed through `StatusDisplay.print()` so `rich` can coordinate it with the live panel; bare `print()` calls are not used while a `StatusDisplay` is active.
+- Streaming agent messages are no longer printed to the terminal; they are still consumed from the Docker output stream (to reset the idle timeout) and written to the per-agent log file, but `_format_stream_line` output is suppressed; the status row is the sole terminal surface for active agents.
 
 ## Example dialogue
 
