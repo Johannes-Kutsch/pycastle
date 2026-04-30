@@ -15,7 +15,6 @@ from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
 from pycastle.iteration._deps import RecordingStatusDisplay
 from pycastle.orchestrator import (
-    _stage_for_agent,
     delete_merged_branches,
     prune_orphan_worktrees,
     run,
@@ -433,29 +432,6 @@ def test_run_config_validation_error_propagates_no_agents_started(tmp_path):
         )
 
     assert agents_started == [], f"No agents must start; got {agents_started}"
-
-
-# ── Issue-78: _stage_for_agent helper ─────────────────────────────────────────
-
-
-def test_stage_for_agent_planner():
-    assert _stage_for_agent("Planner") == "plan"
-
-
-def test_stage_for_agent_implementer():
-    assert _stage_for_agent("Implementer #42") == "implement"
-
-
-def test_stage_for_agent_reviewer():
-    assert _stage_for_agent("Reviewer #7") == "review"
-
-
-def test_stage_for_agent_merger():
-    assert _stage_for_agent("Merger") == "merge"
-
-
-def test_stage_for_agent_unknown_returns_empty_string():
-    assert _stage_for_agent("Unknown") == ""
 
 
 # ── Issue-78: model/effort passed per stage ───────────────────────────────────
