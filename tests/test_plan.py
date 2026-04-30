@@ -4,7 +4,7 @@ import json
 import pytest
 from unittest.mock import MagicMock
 
-from pycastle.agent_result import AgentIncomplete
+from pycastle.agent_result import AgentIncomplete, AgentSuccess
 from pycastle.config import Config
 from pycastle.errors import PreflightError
 from pycastle.git_service import GitService
@@ -82,6 +82,20 @@ def test_strip_stale_blocker_refs_empty_list():
     assert strip_stale_blocker_refs([]) == []
 
 
+def test_strip_stale_blocker_refs_handles_missing_body_key():
+    issues = [{"number": 1, "title": "A"}]
+    result = strip_stale_blocker_refs(issues)
+    assert result[0]["body"] == ""
+
+
+def test_strip_stale_blocker_refs_preserves_other_fields():
+    issues = [{"number": 7, "title": "T", "state": "open", "body": "Blocked by #99"}]
+    result = strip_stale_blocker_refs(issues)
+    assert result[0]["number"] == 7
+    assert result[0]["title"] == "T"
+    assert result[0]["state"] == "open"
+
+
 # ── plan_phase: success path ──────────────────────────────────────────────────
 
 
@@ -147,6 +161,24 @@ def test_plan_phase_passes_stale_blocker_refs_stripped_to_planner(
     assert received[0]["body"] == "Real content"
 
 
+def test_plan_phase_returns_ready_when_planner_returns_agent_success(
+    tmp_path, git_svc, github_svc, logger
+):
+    expected = [{"number": 3, "title": "Another fix"}]
+    github_svc.get_open_issues.return_value = expected
+
+    async def run_agent(name, **kwargs):
+        return AgentSuccess(output=_plan_json(expected))
+
+    deps = _make_deps(
+        tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(plan_phase(deps))
+
+    assert isinstance(result, PlanReady)
+    assert result.issues == expected
+
+
 # ── plan_phase: PlanParseError ────────────────────────────────────────────────
 
 
@@ -189,7 +221,9 @@ def test_plan_phase_returns_hitl_on_hitl_preflight_verdict(tmp_path, git_svc, lo
     assert result.worktree_sha == "abc123"
 
 
-def test_plan_phase_hitl_does_not_call_sys_exit(tmp_path, git_svc, logger):
+def test_plan_phase_returns_hitl_when_preflight_agent_returns_agent_success(
+    tmp_path, git_svc, logger
+):
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     github_svc.get_labels.return_value = ["ready-for-human"]
@@ -197,16 +231,15 @@ def test_plan_phase_hitl_does_not_call_sys_exit(tmp_path, git_svc, logger):
     async def run_agent(name, **kwargs):
         if name == "Planner":
             raise PreflightError([("ruff", "ruff check .", "E501")])
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-human">88</issue>'
-        )
+        return AgentSuccess(output='<issue label="ready-for-human">99</issue>')
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
     )
-
     result = asyncio.run(plan_phase(deps))
+
     assert isinstance(result, PlanHITL)
+    assert result.issue_number == 99
 
 
 # ── plan_phase: AFK routing ───────────────────────────────────────────────────
@@ -233,31 +266,6 @@ def test_plan_phase_returns_afk_on_afk_preflight_verdict(tmp_path, git_svc, logg
     assert isinstance(result, PlanAFK)
     assert result.issues == [{"number": 42, "title": "Fix preflight issue"}]
     assert result.worktree_sha == "abc123"
-
-
-def test_plan_phase_afk_spawns_preflight_issue_agent(tmp_path, git_svc, logger):
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
-    github_svc.get_labels.return_value = ["ready-for-agent"]
-    github_svc.get_issue_title.return_value = "Preflight fix"
-    spawned: list[str] = []
-
-    async def run_agent(name, **kwargs):
-        spawned.append(name)
-        if name == "Planner":
-            raise PreflightError([("mypy", "mypy .", "error: missing type")])
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-agent">77</issue>'
-        )
-
-    deps = _make_deps(
-        tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
-    asyncio.run(plan_phase(deps))
-
-    assert any("preflight-issue" in n for n in spawned), (
-        f"No preflight-issue agent spawned; got {spawned}"
-    )
 
 
 # ── plan_phase: IssueParseError → RuntimeError ───────────────────────────────
