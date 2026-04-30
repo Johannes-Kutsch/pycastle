@@ -117,17 +117,3 @@ def parse(output: str, role: AgentRole) -> AgentOutput:
     if role == AgentRole.PREFLIGHT_ISSUE:
         return _extract_issue_output(text)
     return CompletionOutput()
-
-
-def parse_plan(output: str) -> list[dict]:
-    return _extract_planner_output(_unwrap(output)).issues
-
-
-def parse_issue_number(output: str) -> tuple[str, int]:
-    out = _extract_issue_output(_unwrap(output))
-    return out.label, out.number
-
-
-def is_complete(output: str) -> bool:
-    text = _unwrap(output)
-    return bool(re.search(r"<promise>COMPLETE</promise>", text))

@@ -3,33 +3,13 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
-class AgentSuccess:
-    output: str
-
-
-@dataclass(frozen=True)
-class AgentIncomplete:
-    partial_output: str
-
-
-@dataclass(frozen=True)
 class PreflightFailure:
     failures: tuple[tuple[str, str, str], ...]
 
 
 @dataclass(frozen=True)
-class UsageLimitHit:
-    last_output: str
-
-
-@dataclass(frozen=True)
 class AgentTimeoutHit:
     last_output: str
-
-
-AgentResult = (
-    AgentSuccess | AgentIncomplete | PreflightFailure | UsageLimitHit | AgentTimeoutHit
-)
 
 
 @dataclass

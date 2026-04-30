@@ -6,14 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from pycastle.agent_result import (
-    AgentIncomplete,
-    AgentSuccess,
     PreflightFailure,
-    UsageLimitHit,
 )
 from pycastle.claude_service import ClaudeService
 from pycastle.config import Config, StageOverride
-from pycastle.errors import ClaudeServiceError, ConfigValidationError
+from pycastle.errors import ClaudeServiceError, ConfigValidationError, UsageLimitError
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
 from pycastle.orchestrator import (
@@ -29,7 +26,7 @@ from pycastle.orchestrator import (
 
 
 def _plan_json(issues: list[dict]) -> str:
-    return f"<plan>{json.dumps({'issues': issues})}</plan>"
+    return f"<promise>COMPLETE</promise><plan>{json.dumps({'issues': issues})}</plan>"
 
 
 def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
@@ -59,9 +56,8 @@ def _make_github_svc():
 
 
 def _make_github_svc_afk():
-    """GithubService mock that returns AFK verdict (ready-for-agent) for any issue."""
+    """GithubService mock for AFK path (verdict comes from agent output label)."""
     mock = MagicMock(spec=GithubService)
-    mock.get_labels.return_value = ["bug", "ready-for-agent"]
     mock.get_issue_title.return_value = "Preflight fix title"
     mock.get_open_issues.return_value = [{"number": 1, "title": "Default Issue"}]
     mock.has_open_issues_with_label.return_value = True
@@ -69,9 +65,8 @@ def _make_github_svc_afk():
 
 
 def _make_github_svc_hitl():
-    """GithubService mock that returns HITL verdict (ready-for-human) for any issue."""
+    """GithubService mock for HITL path (verdict comes from agent output label)."""
     mock = MagicMock(spec=GithubService)
-    mock.get_labels.return_value = ["bug", "ready-for-human"]
     mock.get_issue_title.return_value = "Preflight fix title"
     mock.get_open_issues.return_value = [{"number": 1, "title": "Default Issue"}]
     mock.has_open_issues_with_label.return_value = True
@@ -138,13 +133,11 @@ def test_run_does_not_crash_when_planner_omits_branch_field(tmp_path):
 
     async def _fake_run_agent(name, prompt_args=None, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output='<plan>{"issues": [{"number": 193, "title": "Fix branch bug"}]}</plan>'
-            )
+            return '<promise>COMPLETE</promise><plan>{"issues": [{"number": 193, "title": "Fix branch bug"}]}</plan>'
         if "Implementer" in name:
             dispatched.append((prompt_args or {}).get("BRANCH", ""))
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -165,13 +158,11 @@ def test_run_computes_branch_from_issue_number_not_planner_slug(tmp_path):
 
     async def _fake_run_agent(name, prompt_args=None, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output='<plan>{"issues": [{"number": 42, "title": "Fix thing"}]}</plan>'
-            )
+            return '<promise>COMPLETE</promise><plan>{"issues": [{"number": 42, "title": "Fix thing"}]}</plan>'
         if "Implementer" in name:
             captured_branches.append((prompt_args or {}).get("BRANCH", ""))
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -193,13 +184,13 @@ def test_preflight_issue_branch_uses_pycastle_format(tmp_path):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
-            return AgentIncomplete(
-                partial_output='<issue label="ready-for-agent">77</issue>'
+            return (
+                '<promise>COMPLETE</promise><issue label="ready-for-agent">77</issue>'
             )
         if "Implementer" in name:
             captured_branches.append((prompt_args or {}).get("BRANCH", ""))
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -279,9 +270,7 @@ def test_failed_agent_appends_traceback_to_errors_log(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix thing"}])
-            )
+            return _plan_json([{"number": 1, "title": "Fix thing"}])
         raise boom
 
     _run(
@@ -303,9 +292,7 @@ def test_failed_agent_errors_log_has_timestamp_separator(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix thing"}])
-            )
+            return _plan_json([{"number": 1, "title": "Fix thing"}])
         raise RuntimeError("boom")
 
     _run(
@@ -324,9 +311,7 @@ def test_failed_agent_prints_traceback_to_stderr(tmp_path, capsys):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix thing"}])
-            )
+            return _plan_json([{"number": 1, "title": "Fix thing"}])
         raise RuntimeError("stderr traceback check")
 
     _run(
@@ -365,7 +350,7 @@ def test_run_resolves_models_before_any_agent(tmp_path):
 
     async def _fake_run_agent(*args, **kwargs):
         call_order.append("agent")
-        return AgentIncomplete(partial_output=_plan_json([]))
+        return _plan_json([])
 
     asyncio.run(
         run(
@@ -387,7 +372,7 @@ def test_run_config_validation_error_propagates_no_agents_started(tmp_path):
 
     async def _fake_run_agent(*args, **kwargs):
         agents_started.append(kwargs.get("name", "?"))
-        return AgentIncomplete(partial_output="")
+        return "<promise>COMPLETE</promise>"
 
     svc = MagicMock(spec=ClaudeService)
     svc.list_models.side_effect = ClaudeServiceError("unavailable")
@@ -443,7 +428,7 @@ def test_planner_receives_plan_stage_model_and_effort(tmp_path):
         captured.append(
             {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
         )
-        return AgentIncomplete(partial_output=_plan_json([]))
+        return _plan_json([])
 
     _run(
         tmp_path,
@@ -466,10 +451,8 @@ def test_implementer_receives_implement_stage_model_and_effort(tmp_path):
             {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
         )
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(
-            partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-        )
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     _run(
         tmp_path,
@@ -493,10 +476,8 @@ def test_reviewer_receives_review_stage_model_and_effort(tmp_path):
             {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
         )
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(
-            partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-        )
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     _run(
         tmp_path,
@@ -520,10 +501,8 @@ def test_merger_receives_merge_stage_model_and_effort(tmp_path):
             {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
         )
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(
-            partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-        )
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     _run(
         tmp_path,
@@ -546,7 +525,7 @@ def test_empty_stage_override_passes_empty_strings(tmp_path):
         captured.append(
             {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
         )
-        return AgentIncomplete(partial_output=_plan_json([]))
+        return _plan_json([])
 
     _run(
         tmp_path,
@@ -568,10 +547,8 @@ def test_stage_overrides_are_independent(tmp_path):
             {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
         )
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(
-            partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-        )
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     _run(
         tmp_path,
@@ -605,10 +582,8 @@ def test_merger_receives_checks_prompt_arg_from_preflight_checks(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(
-            partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-        )
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     _run(
         tmp_path,
@@ -629,10 +604,8 @@ def test_each_agent_passes_correct_stage_string(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         captured.append({"name": name, "stage": kwargs.get("stage")})
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(
-            partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-        )
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     _run(
         tmp_path,
@@ -661,21 +634,19 @@ def test_multiple_implementers_run_in_parallel(tmp_path):
     ):
         nonlocal max_concurrent
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json(
-                    [
-                        {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
-                        for i in range(1, 4)
-                    ]
-                )
+            return _plan_json(
+                [
+                    {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
+                    for i in range(1, 4)
+                ]
             )
         if "Implementer" in name:
             active_implementers.add(name)
             max_concurrent = max(max_concurrent, len(active_implementers))
             await asyncio.sleep(0.05)
             active_implementers.discard(name)
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -700,21 +671,19 @@ def test_concurrent_agents_never_exceed_max_parallel(tmp_path):
     ):
         nonlocal active_count, max_active
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json(
-                    [
-                        {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
-                        for i in range(1, 8)
-                    ]
-                )
+            return _plan_json(
+                [
+                    {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
+                    for i in range(1, 8)
+                ]
             )
         active_count += 1
         max_active = max(max_active, active_count)
         await asyncio.sleep(0.01)
         active_count -= 1
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -737,20 +706,18 @@ def test_implementer_starts_while_reviewer_runs(tmp_path):
         name, prompt_file, mount_path, env, prompt_args=None, **kw
     ):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json(
-                    [
-                        {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
-                        for i in range(1, 4)
-                    ]
-                )
+            return _plan_json(
+                [
+                    {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
+                    for i in range(1, 4)
+                ]
             )
         events.append(f"start:{name}")
         await asyncio.sleep(0.03)
         events.append(f"end:{name}")
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -787,8 +754,8 @@ def test_clean_merges_skip_merger(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         agent_names.append(name)
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output=_plan_json(issues))
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
 
     _run(
         tmp_path,
@@ -814,8 +781,8 @@ def test_clean_merge_calls_close_issue_per_issue_and_close_completed_parent_issu
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output=_plan_json(issues))
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
 
     mock_github = _make_github_svc()
     _run(
@@ -844,8 +811,8 @@ def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output=_plan_json(issues))
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
 
     _run(
         tmp_path,
@@ -872,8 +839,8 @@ def test_conflict_branch_closed_after_merger_agent(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output=_plan_json(issues))
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
 
     mock_github = _make_github_svc()
     _run(
@@ -915,8 +882,8 @@ def test_conflict_merge_calls_close_completed_parent_issues(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output=_plan_json(issues))
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
 
     mock_github = _make_github_svc()
     _run(
@@ -943,8 +910,8 @@ def test_merger_does_not_receive_issues_prompt_arg(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output=_plan_json(issues))
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
 
     _run(
         tmp_path,
@@ -970,8 +937,8 @@ def test_multiple_conflict_issues_all_closed_after_merger(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output=_plan_json(issues))
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
 
     mock_github = _make_github_svc()
     _run(
@@ -1001,12 +968,12 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
                 )
             )
         if "preflight-issue" in name:
-            return AgentIncomplete(
-                partial_output='<issue label="ready-for-agent">70</issue>'
+            return (
+                '<promise>COMPLETE</promise><issue label="ready-for-human">70</issue>'
             )
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     with pytest.raises(SystemExit):
         _run(
@@ -1081,10 +1048,8 @@ def test_delete_merged_branches_uses_injected_git_service(tmp_path):
 def test_clean_merged_branches_are_deleted_after_try_merge(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(
-            partial_output=_plan_json([{"number": 1, "title": "Fix A"}])
-        )
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 1, "title": "Fix A"}])
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=True)
     _run(
@@ -1102,10 +1067,8 @@ def test_conflict_branches_are_deleted_after_merger_agent(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(
-            partial_output=_plan_json([{"number": 2, "title": "Conflict"}])
-        )
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 2, "title": "Conflict"}])
 
     mock_git = _make_git_svc(try_merge_side_effect=[False], is_ancestor=True)
     _run(
@@ -1123,10 +1086,8 @@ def test_non_ancestor_branch_not_deleted(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(
-            partial_output=_plan_json([{"number": 1, "title": "Fix A"}])
-        )
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 1, "title": "Fix A"}])
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=False)
     _run(
@@ -1144,10 +1105,8 @@ def test_delete_branch_error_does_not_abort_run(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(
-            partial_output=_plan_json([{"number": 1, "title": "Fix A"}])
-        )
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 1, "title": "Fix A"}])
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=True)
     mock_git.delete_branch.side_effect = GitCommandError(
@@ -1166,12 +1125,8 @@ def test_run_incomplete_implementers_skip_merge(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-            )
-        return AgentIncomplete(
-            partial_output=""
-        )  # implementer does not return COMPLETE
+            return _plan_json([{"number": 1, "title": "Fix"}])
+        return ""  # implementer does not return COMPLETE
 
     mock_git = _make_git_svc()
     _run(
@@ -1193,9 +1148,7 @@ def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-            )
+            return _plan_json([{"number": 1, "title": "Fix"}])
         raise RuntimeError("agent failed")
 
     _run(
@@ -1304,10 +1257,8 @@ def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
     async def _fake_run_agent(name, sha=None, **kwargs):
         if "Implementer" in name:
             captured_shas.append(sha)
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(
-            partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-        )
+            return "<promise>COMPLETE</promise>"
+        return _plan_json([{"number": 1, "title": "Fix"}])
 
     _run(
         tmp_path,
@@ -1328,8 +1279,8 @@ def test_preplanning_preflight_runs_on_cold_startup(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             planner_calls.append(name)
-            return AgentIncomplete(partial_output=_plan_json([]))
-        return AgentIncomplete(partial_output="")
+            return _plan_json([])
+        return "<promise>COMPLETE</promise>"
 
     github_svc = _make_github_svc()
     github_svc.get_open_issues.return_value = []
@@ -1356,8 +1307,8 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
     async def _fake_run_agent(name, sha=None, **kwargs):
         captured_calls.append({"name": name, "sha": sha})
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output=_plan_json(issues))
+            return "<promise>COMPLETE</promise>"
+        return _plan_json(issues)
 
     _run(
         tmp_path,
@@ -1389,12 +1340,12 @@ def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
                 failures=(("ruff", "ruff check .", "E501 line too long"),)
             )
         if "preflight-issue" in name:
-            return AgentIncomplete(
-                partial_output='<issue label="ready-for-agent">42</issue>'
+            return (
+                '<promise>COMPLETE</promise><issue label="ready-for-agent">42</issue>'
             )
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -1422,12 +1373,12 @@ def test_preflight_failure_hitl_exits_nonzero_no_implementer(tmp_path):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
-            return AgentIncomplete(
-                partial_output='<issue label="ready-for-agent">99</issue>'
+            return (
+                '<promise>COMPLETE</promise><issue label="ready-for-human">99</issue>'
             )
         if "Implementer" in name:
             implementer_calls.append(name)
-        return AgentIncomplete(partial_output="")
+        return "<promise>COMPLETE</promise>"
 
     with pytest.raises(SystemExit) as exc_info:
         _run(
@@ -1459,12 +1410,12 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
             preflight_issue_calls.append(
                 {"name": name, "prompt_args": prompt_args or {}}
             )
-            return AgentIncomplete(
-                partial_output='<issue label="ready-for-agent">10</issue>'
+            return (
+                '<promise>COMPLETE</promise><issue label="ready-for-human">10</issue>'
             )
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     with pytest.raises(SystemExit):
         _run(
@@ -1493,10 +1444,8 @@ def test_usage_limit_error_exits_with_code_1(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-            )
-        return UsageLimitHit(last_output="")
+            return _plan_json([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("")
 
     with pytest.raises(SystemExit) as exc_info:
         _run(tmp_path, _fake_run_agent, github_service=_make_github_svc())
@@ -1509,10 +1458,8 @@ def test_usage_limit_error_prints_resume_message_to_stderr(tmp_path, capsys):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-            )
-        return UsageLimitHit(last_output="")
+            return _plan_json([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("")
 
     with pytest.raises(SystemExit):
         _run(tmp_path, _fake_run_agent, github_service=_make_github_svc())
@@ -1533,10 +1480,8 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-            )
-        return UsageLimitHit(last_output="")
+            return _plan_json([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("")
 
     with pytest.raises(SystemExit):
         _run(
@@ -1558,13 +1503,11 @@ def test_usage_limit_error_alongside_regular_exception_exits_with_code_1(
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json(
-                    [{"number": 1, "title": "Limit"}, {"number": 2, "title": "Other"}]
-                )
+            return _plan_json(
+                [{"number": 1, "title": "Limit"}, {"number": 2, "title": "Other"}]
             )
         if "Implementer #1" in name:
-            return UsageLimitHit(last_output="")
+            raise UsageLimitError("")
         if "Implementer #2" in name:
             raise RuntimeError("unrelated failure")
 
@@ -1592,7 +1535,7 @@ def test_planner_not_invoked_when_no_ready_for_agent_issues(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         agent_names.append(name)
-        return AgentIncomplete(partial_output="")
+        return "<promise>COMPLETE</promise>"
 
     mock_github = _make_github_svc()
     mock_github.has_open_issues_with_label.return_value = False
@@ -1610,7 +1553,7 @@ def test_skip_message_emitted_before_any_agent_when_no_issues(tmp_path, capsys):
 
     async def _fake_run_agent(name, **kwargs):
         agent_names.append(name)
-        return AgentIncomplete(partial_output="")
+        return "<promise>COMPLETE</promise>"
 
     mock_github = _make_github_svc()
     mock_github.has_open_issues_with_label.return_value = False
@@ -1633,12 +1576,10 @@ def test_planner_invoked_when_ready_for_agent_issues_exist(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         agent_names.append(name)
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Do thing"}])
-            )
+            return _plan_json([{"number": 1, "title": "Do thing"}])
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     mock_github = _make_github_svc()
     mock_github.has_open_issues_with_label.return_value = True
@@ -1665,12 +1606,10 @@ def test_planner_receives_open_issues_json_not_issue_label(tmp_path):
     async def _fake_run_agent(name, prompt_args=None, **kwargs):
         if name == "Planner":
             captured_planner_args.update(prompt_args or {})
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-            )
+            return _plan_json([{"number": 1, "title": "Fix"}])
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.return_value = [
@@ -1712,11 +1651,9 @@ def test_run_stops_after_max_iterations_from_cfg(tmp_path):
         if name == "Planner":
             planner_calls[0] += 1
             if planner_calls[0] < 2:
-                return AgentIncomplete(
-                    partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-                )
-            return AgentIncomplete(partial_output=_plan_json([]))
-        return AgentIncomplete(partial_output="")
+                return _plan_json([{"number": 1, "title": "Fix"}])
+            return _plan_json([])
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -1736,18 +1673,16 @@ def test_run_limits_concurrency_to_max_parallel_from_cfg(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         nonlocal active_count, max_active
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json(
-                    [{"number": i, "title": f"Issue {i}"} for i in range(1, 6)]
-                )
+            return _plan_json(
+                [{"number": i, "title": f"Issue {i}"} for i in range(1, 6)]
             )
         active_count += 1
         max_active = max(max_active, active_count)
         await asyncio.sleep(0.01)
         active_count -= 1
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -1764,7 +1699,7 @@ def test_run_with_empty_repo_root_completes(tmp_path):
     """run() with empty repo_root completes without error using default config."""
 
     async def _fake_run_agent(name, **kwargs):
-        return AgentIncomplete(partial_output=_plan_json([]))
+        return _plan_json([])
 
     _run(
         tmp_path,
@@ -1782,8 +1717,8 @@ def test_run_passes_plan_override_model_and_effort_to_planner(tmp_path):
         if name == "Planner":
             captured_planner["model"] = kwargs.get("model")
             captured_planner["effort"] = kwargs.get("effort")
-            return AgentIncomplete(partial_output=_plan_json([]))
-        return AgentIncomplete(partial_output="")
+            return _plan_json([])
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -1803,8 +1738,8 @@ def test_run_model_shorthand_resolved_before_agent_calls(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             captured_model.append(kwargs.get("model", ""))
-            return AgentIncomplete(partial_output=_plan_json([]))
-        return AgentIncomplete(partial_output="")
+            return _plan_json([])
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -1839,12 +1774,10 @@ def test_worktree_sha_set_at_iteration_start(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
             call_order.append("Planner")
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-            )
+            return _plan_json([{"number": 1, "title": "Fix"}])
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -1877,13 +1810,11 @@ def test_worktree_sha_refreshed_each_iteration(tmp_path):
             planner_count[0] += 1
             call_order.append(f"Planner-{planner_count[0]}")
             if planner_count[0] == 1:
-                return AgentIncomplete(
-                    partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-                )
-            return AgentIncomplete(partial_output=_plan_json([]))
+                return _plan_json([{"number": 1, "title": "Fix"}])
+            return _plan_json([])
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -1921,13 +1852,13 @@ def test_implementer_preflight_error_siblings_complete(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(partial_output=_plan_json(issues))
+            return _plan_json(issues)
         if name == "Implementer #1":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "Implementer" in name:
             completed_issues.append(int(name.split("#")[1]))
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     _run(
         tmp_path,
@@ -1946,9 +1877,7 @@ def test_implementer_preflight_error_logs_check_details(tmp_path, capsys):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 3, "title": "Fix types"}])
-            )
+            return _plan_json([{"number": 3, "title": "Fix types"}])
         return PreflightFailure(
             failures=(("mypy", "mypy .", "error: Cannot find module"),)
         )
@@ -2004,12 +1933,10 @@ def test_run_full_iteration_cold_path(git_repo):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix thing"}])
-            )
+            return _plan_json([{"number": 1, "title": "Fix thing"}])
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     (git_repo / "pycastle").mkdir(exist_ok=True)
     (git_repo / "pycastle" / "config.py").write_text(
@@ -2041,9 +1968,7 @@ def test_planner_preflight_error_spawns_no_implementers(tmp_path):
             return PreflightFailure(
                 failures=(("ruff", "ruff check .", "E501 line too long"),)
             )
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-agent">77</issue>'
-        )
+        return '<promise>COMPLETE</promise><issue label="ready-for-human">77</issue>'
 
     with pytest.raises(SystemExit):
         _run(tmp_path, _fake_run_agent, github_service=_make_github_svc_hitl())
@@ -2057,9 +1982,7 @@ def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
             return PreflightFailure(
                 failures=(("ruff", "ruff check .", "E501 line too long"),)
             )
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-agent">88</issue>'
-        )
+        return '<promise>COMPLETE</promise><issue label="ready-for-human">88</issue>'
 
     with pytest.raises(SystemExit):
         _run(tmp_path, _fake_run_agent, github_service=_make_github_svc_hitl())

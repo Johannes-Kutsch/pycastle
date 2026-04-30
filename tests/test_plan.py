@@ -5,11 +5,9 @@ import pytest
 from unittest.mock import MagicMock
 
 from pycastle.agent_result import (
-    AgentIncomplete,
-    AgentSuccess,
     PreflightFailure,
-    UsageLimitHit,
 )
+from pycastle.errors import UsageLimitError
 from pycastle.config import Config
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
@@ -24,7 +22,7 @@ from pycastle.iteration.plan import (
 
 
 def _plan_json(issues: list[dict]) -> str:
-    return f"<plan>{json.dumps({'issues': issues})}</plan>"
+    return f"<promise>COMPLETE</promise><plan>{json.dumps({'issues': issues})}</plan>"
 
 
 @pytest.fixture
@@ -110,7 +108,7 @@ def test_plan_phase_returns_ready_with_parsed_issues(
     github_svc.get_open_issues.return_value = expected
 
     async def run_agent(name, **kwargs):
-        return AgentIncomplete(partial_output=_plan_json(expected))
+        return _plan_json(expected)
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -130,7 +128,7 @@ def test_plan_phase_returns_empty_ready_when_no_open_issues(
 
     async def run_agent(name, **kwargs):
         planner_calls.append(name)
-        return AgentIncomplete(partial_output="")
+        return "<promise>COMPLETE</promise>"
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -154,7 +152,7 @@ def test_plan_phase_passes_stale_blocker_refs_stripped_to_planner(
 
     async def run_agent(name, prompt_args=None, **kwargs):
         captured["prompt_args"] = prompt_args or {}
-        return AgentIncomplete(partial_output='<plan>{"issues": []}</plan>')
+        return '<promise>COMPLETE</promise><plan>{"issues": []}</plan>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -172,7 +170,7 @@ def test_plan_phase_returns_ready_when_planner_returns_agent_success(
     github_svc.get_open_issues.return_value = expected
 
     async def run_agent(name, **kwargs):
-        return AgentSuccess(output=_plan_json(expected))
+        return _plan_json(expected)
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -183,19 +181,19 @@ def test_plan_phase_returns_ready_when_planner_returns_agent_success(
     assert result.issues == expected
 
 
-# ── plan_phase: UsageLimitHit ─────────────────────────────────────────────────
+# ── plan_phase: UsageLimitError ──────────────────────────────────────────────
 
 
 def test_plan_phase_removes_worktree_when_planner_hits_usage_limit(
     tmp_path, git_svc, github_svc, logger
 ):
     async def run_agent(name, **kwargs):
-        return UsageLimitHit(last_output="")
+        raise UsageLimitError("")
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
     )
-    with pytest.raises(RuntimeError):
+    with pytest.raises(UsageLimitError):
         asyncio.run(plan_phase(deps))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-planning"
@@ -209,7 +207,7 @@ def test_plan_phase_raises_runtime_error_when_no_plan_tag(
     tmp_path, git_svc, github_svc, logger
 ):
     async def run_agent(name, **kwargs):
-        return AgentIncomplete(partial_output="no plan tag in this output")
+        return "<promise>COMPLETE</promise>no plan tag in this output"
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -230,9 +228,7 @@ def test_plan_phase_returns_hitl_on_hitl_preflight_verdict(tmp_path, git_svc, lo
     async def run_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-human">55</issue>'
-        )
+        return '<promise>COMPLETE</promise><issue label="ready-for-human">55</issue>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -244,17 +240,16 @@ def test_plan_phase_returns_hitl_on_hitl_preflight_verdict(tmp_path, git_svc, lo
     assert result.worktree_sha == "abc123"
 
 
-def test_plan_phase_returns_hitl_when_preflight_agent_returns_agent_success(
+def test_plan_phase_returns_hitl_when_preflight_agent_includes_promise_tag(
     tmp_path, git_svc, logger
 ):
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
-    github_svc.get_labels.return_value = ["ready-for-human"]
 
     async def run_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return AgentSuccess(output='<issue label="ready-for-human">99</issue>')
+        return '<promise>COMPLETE</promise><issue label="ready-for-human">99</issue>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -277,9 +272,7 @@ def test_plan_phase_returns_afk_on_afk_preflight_verdict(tmp_path, git_svc, logg
     async def run_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-agent">42</issue>'
-        )
+        return '<promise>COMPLETE</promise><issue label="ready-for-agent">42</issue>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -303,7 +296,7 @@ def test_plan_phase_raises_runtime_error_when_preflight_agent_returns_no_issue_t
     async def run_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return AgentIncomplete(partial_output="no issue tag here")
+        return "<promise>COMPLETE</promise>no issue tag here"
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -323,7 +316,7 @@ def test_plan_phase_calls_checkout_detached_with_head_sha(
     github_svc.get_open_issues.return_value = expected
 
     async def run_agent(name, **kwargs):
-        return AgentIncomplete(partial_output=_plan_json(expected))
+        return _plan_json(expected)
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -345,7 +338,7 @@ def test_plan_phase_passes_worktree_path_as_mount_path_to_planner(
 
     async def run_agent(name, mount_path=None, **kwargs):
         captured[name] = mount_path
-        return AgentIncomplete(partial_output=_plan_json(expected))
+        return _plan_json(expected)
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -364,7 +357,7 @@ def test_plan_phase_removes_worktree_after_successful_planning(
     github_svc.get_open_issues.return_value = expected
 
     async def run_agent(name, **kwargs):
-        return AgentIncomplete(partial_output=_plan_json(expected))
+        return _plan_json(expected)
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -384,9 +377,7 @@ def test_plan_phase_removes_worktree_when_preflight_fails(tmp_path, git_svc, log
     async def run_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-agent">42</issue>'
-        )
+        return '<promise>COMPLETE</promise><issue label="ready-for-agent">42</issue>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -428,9 +419,7 @@ def test_plan_phase_passes_worktree_path_to_preflight_issue_agent(
         captured[name] = mount_path
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-agent">42</issue>'
-        )
+        return '<promise>COMPLETE</promise><issue label="ready-for-agent">42</issue>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -446,17 +435,17 @@ def test_plan_phase_passes_worktree_path_to_preflight_issue_agent(
 # ── plan_phase: edge cases ────────────────────────────────────────────────────
 
 
-def test_plan_phase_raises_runtime_error_when_planner_returns_usage_limit_hit(
+def test_plan_phase_raises_usage_limit_error_when_planner_hits_usage_limit(
     tmp_path, git_svc, github_svc, logger
 ):
     async def run_agent(name, **kwargs):
-        return UsageLimitHit(last_output="partial output before limit")
+        raise UsageLimitError("")
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
     )
 
-    with pytest.raises(RuntimeError, match="no <plan> tag"):
+    with pytest.raises(UsageLimitError):
         asyncio.run(plan_phase(deps))
 
 
@@ -479,9 +468,7 @@ def test_plan_phase_preflight_failure_only_first_check_spawns_agent(
                 )
             )
         captured_args.append(prompt_args or {})
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-agent">42</issue>'
-        )
+        return '<promise>COMPLETE</promise><issue label="ready-for-agent">42</issue>'
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -502,13 +489,13 @@ def test_plan_phase_raises_when_preflight_issue_agent_hits_usage_limit(
     async def run_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return UsageLimitHit(last_output="")
+        raise UsageLimitError("")
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
     )
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(UsageLimitError):
         asyncio.run(plan_phase(deps))
 
 
@@ -521,13 +508,13 @@ def test_plan_phase_removes_worktree_when_preflight_issue_agent_hits_usage_limit
     async def run_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return UsageLimitHit(last_output="")
+        raise UsageLimitError("")
 
     deps = _make_deps(
         tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
     )
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(UsageLimitError):
         asyncio.run(plan_phase(deps))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-planning"
