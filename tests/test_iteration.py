@@ -18,7 +18,12 @@ from pycastle.iteration import (
     Done,
     run_iteration,
 )
-from pycastle.iteration._deps import Deps, NullStatusDisplay, RecordingLogger, RecordingStatusDisplay
+from pycastle.iteration._deps import (
+    Deps,
+    NullStatusDisplay,
+    RecordingLogger,
+    RecordingStatusDisplay,
+)
 
 
 def _plan_json(issues: list[dict]) -> str:
@@ -335,3 +340,57 @@ def test_run_iteration_routes_planning_complete_through_status_display(
     print_messages = [msg for kind, msg in recording.calls if kind == "print"]
     assert any("Planning complete" in msg for msg in print_messages)
     assert "Planning complete" not in capsys.readouterr().out
+
+
+def test_run_iteration_routes_hitl_abort_message_through_status_display(
+    tmp_path, git_svc, logger, capsys
+):
+    """run_iteration must route the HITL abort message through status_display.print()."""
+    recording = RecordingStatusDisplay()
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+
+    async def _fake_agent(name, **kwargs):
+        if name == "Planner":
+            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
+        return '<issue>{"number": 42, "labels": ["ready-for-human"]}</issue>'
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    print_messages = [msg for kind, msg in recording.calls if kind == "print"]
+    assert any("human intervention" in msg for msg in print_messages)
+    assert "human intervention" not in capsys.readouterr().out
+
+
+def test_run_iteration_routes_no_commits_message_through_status_display(
+    tmp_path, git_svc, github_svc, logger, capsys
+):
+    """run_iteration must route 'No commits produced' through status_display.print()."""
+    recording = RecordingStatusDisplay()
+
+    async def _fake_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix bug"}])
+        return ""  # no COMPLETE promise → implementer produces no commits
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    print_messages = [msg for kind, msg in recording.calls if kind == "print"]
+    assert any("No commits" in msg for msg in print_messages)
+    assert "No commits" not in capsys.readouterr().out
