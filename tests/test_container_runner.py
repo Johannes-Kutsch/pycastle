@@ -481,9 +481,18 @@ def test_no_container_started_when_worktree_creation_fails(mock_docker, tmp_path
 
 def test_exec_simple_times_out():
     blocker = threading.Event()
-    runner = _fake_runner()
-    # Make exec_run block until the event is set
-    runner._container.exec_run.side_effect = lambda *a, **kw: blocker.wait() or None
+    mock_client = MagicMock()
+    mock_client.containers.run.return_value.exec_run.side_effect = lambda *a, **kw: (
+        blocker.wait() or None
+    )
+    runner = ContainerRunner(
+        "test",
+        Path("/fake"),
+        {},
+        docker_client=mock_client,
+        cfg=Config(logs_dir=Path(tempfile.mkdtemp())),
+    )
+    runner.__enter__()
 
     try:
         with pytest.raises(TimeoutError):
@@ -757,11 +766,18 @@ def _never_yields():
 
 
 def test_run_streaming_raises_agent_timeout_error_when_idle(tmp_path):
-    runner = _fake_runner(cfg=Config(idle_timeout=0.05))
+    mock_client = MagicMock()
     mock_result = MagicMock()
     mock_result.output = _never_yields()
-    runner._container.exec_run.return_value = mock_result
-    runner._log_path = tmp_path / "test.log"
+    mock_client.containers.run.return_value.exec_run.return_value = mock_result
+    runner = ContainerRunner(
+        "test",
+        Path("/fake"),
+        {},
+        docker_client=mock_client,
+        cfg=Config(logs_dir=tmp_path, idle_timeout=0.05),
+    )
+    runner.__enter__()
 
     with pytest.raises(AgentTimeoutError):
         runner.run_streaming()
@@ -2321,18 +2337,18 @@ def test_container_runner_constructs_without_cfg_using_default_logs_dir():
 
 def test_run_streaming_uses_usage_limit_patterns_from_cfg(tmp_path):
     """Custom usage_limit_patterns injected via cfg must trigger UsageLimitError."""
+    mock_client = MagicMock()
+    mock_result = MagicMock()
+    mock_result.output = iter([b"CUSTOM_LIMIT_SENTINEL reached\n"])
+    mock_client.containers.run.return_value.exec_run.return_value = mock_result
     runner = ContainerRunner(
         "test",
         Path("/fake"),
         {},
-        docker_client=MagicMock(),
-        cfg=Config(usage_limit_patterns=("CUSTOM_LIMIT_SENTINEL",)),
+        docker_client=mock_client,
+        cfg=Config(logs_dir=tmp_path, usage_limit_patterns=("CUSTOM_LIMIT_SENTINEL",)),
     )
-    runner._log_path = tmp_path / "test.log"
-    mock_result = MagicMock()
-    mock_result.output = iter([b"CUSTOM_LIMIT_SENTINEL reached\n"])
-    runner._container = MagicMock()
-    runner._container.exec_run.return_value = mock_result
+    runner.__enter__()
 
     with pytest.raises(UsageLimitError):
         runner.run_streaming()
@@ -2340,19 +2356,19 @@ def test_run_streaming_uses_usage_limit_patterns_from_cfg(tmp_path):
 
 def test_run_streaming_default_patterns_not_triggered_by_custom_cfg(tmp_path):
     """Default usage_limit_patterns must not trigger when cfg overrides them."""
+    mock_client = MagicMock()
+    mock_result = MagicMock()
+    # Default pattern "You've hit your" should NOT trigger with the custom cfg
+    mock_result.output = iter([b"You've hit your session limit\n"])
+    mock_client.containers.run.return_value.exec_run.return_value = mock_result
     runner = ContainerRunner(
         "test",
         Path("/fake"),
         {},
-        docker_client=MagicMock(),
-        cfg=Config(usage_limit_patterns=("CUSTOM_LIMIT_SENTINEL",)),
+        docker_client=mock_client,
+        cfg=Config(logs_dir=tmp_path, usage_limit_patterns=("CUSTOM_LIMIT_SENTINEL",)),
     )
-    runner._log_path = tmp_path / "test.log"
-    mock_result = MagicMock()
-    # Default pattern "You've hit your" should NOT trigger with the custom cfg
-    mock_result.output = iter([b"You've hit your session limit\n"])
-    runner._container = MagicMock()
-    runner._container.exec_run.return_value = mock_result
+    runner.__enter__()
 
     result = runner.run_streaming()
     assert "You've hit your session limit" in result
