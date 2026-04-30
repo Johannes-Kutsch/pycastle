@@ -89,32 +89,41 @@ def test_preflight_error_carries_failure_tuples():
 # ── Raise sites ───────────────────────────────────────────────────────────────
 
 
-def _fake_runner(exit_code=0, stdout=b"", stderr=b""):
+@pytest.fixture
+def fake_runner(tmp_path):
+    from pycastle.config import Config
     from pycastle.container_runner import ContainerRunner
 
-    runner = object.__new__(ContainerRunner)
-    runner.name = "test"
-    runner.env = {}
-    runner._container_env = {}
-    runner.branch = None
-    runner._worktree_path = "/home/agent/workspace"
-    runner._container = MagicMock()
-    mock_result = MagicMock()
-    mock_result.exit_code = exit_code
-    mock_result.output = (stdout, stderr)
-    runner._container.exec_run.return_value = mock_result
-    return runner
+    def _make(exit_code=0, stdout=b"", stderr=b""):
+        mock_client = MagicMock()
+        mock_result = MagicMock()
+        mock_result.exit_code = exit_code
+        mock_result.output = (stdout, stderr)
+        mock_client.containers.run.return_value.exec_run.return_value = mock_result
+
+        cfg = Config(logs_dir=tmp_path / "logs")
+        runner = ContainerRunner(
+            name="test",
+            mount_path=tmp_path,
+            env={},
+            docker_client=mock_client,
+            cfg=cfg,
+        )
+        runner.__enter__()
+        return runner
+
+    return _make
 
 
-def test_exec_simple_raises_docker_error_on_nonzero_exit():
-    runner = _fake_runner(exit_code=1, stderr=b"command failed")
+def test_exec_simple_raises_docker_error_on_nonzero_exit(fake_runner):
+    runner = fake_runner(exit_code=1, stderr=b"command failed")
     with pytest.raises(DockerError):
         runner.exec_simple("exit 1")
 
 
-def test_exec_simple_raises_docker_timeout_error_on_timeout():
+def test_exec_simple_raises_docker_timeout_error_on_timeout(fake_runner):
     blocker = threading.Event()
-    runner = _fake_runner()
+    runner = fake_runner()
     runner._container.exec_run.side_effect = lambda *a, **kw: blocker.wait() or None
     try:
         with pytest.raises(DockerTimeoutError):
