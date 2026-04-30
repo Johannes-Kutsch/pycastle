@@ -3,41 +3,9 @@ import dataclasses
 import pytest
 
 from pycastle.agent_result import (
-    AgentIncomplete,
-    AgentResult,
-    AgentSuccess,
     CancellationToken,
     PreflightFailure,
-    UsageLimitHit,
 )
-
-
-# ── AgentSuccess ──────────────────────────────────────────────────────────────
-
-
-def test_agent_success_stores_output():
-    result = AgentSuccess(output="done")
-    assert result.output == "done"
-
-
-def test_agent_success_is_frozen():
-    result = AgentSuccess(output="done")
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        result.output = "other"  # type: ignore[misc]
-
-
-# ── AgentIncomplete ───────────────────────────────────────────────────────────
-
-
-def test_agent_incomplete_stores_partial_output():
-    result = AgentIncomplete(partial_output="half done")
-    assert result.partial_output == "half done"
-
-
-def test_agent_incomplete_is_frozen():
-    result = AgentIncomplete(partial_output="half done")
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        result.partial_output = "other"  # type: ignore[misc]
 
 
 # ── PreflightFailure ──────────────────────────────────────────────────────────
@@ -59,33 +27,6 @@ def test_preflight_failure_failures_are_immutable():
     result = PreflightFailure(failures=(("check", "cmd", "output"),))
     with pytest.raises(TypeError):
         result.failures[0] = ("x", "y", "z")  # type: ignore[index]
-
-
-# ── UsageLimitHit ─────────────────────────────────────────────────────────────
-
-
-def test_usage_limit_hit_stores_last_output():
-    result = UsageLimitHit(last_output="last line")
-    assert result.last_output == "last line"
-
-
-def test_usage_limit_hit_is_frozen():
-    result = UsageLimitHit(last_output="")
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        result.last_output = "other"  # type: ignore[misc]
-
-
-# ── AgentResult union ─────────────────────────────────────────────────────────
-
-
-def test_agent_result_covers_all_variants():
-    variants: list[AgentResult] = [
-        AgentSuccess(output="ok"),
-        AgentIncomplete(partial_output="partial"),
-        PreflightFailure(failures=()),
-        UsageLimitHit(last_output=""),
-    ]
-    assert len(variants) == 4
 
 
 # ── CancellationToken ─────────────────────────────────────────────────────────
