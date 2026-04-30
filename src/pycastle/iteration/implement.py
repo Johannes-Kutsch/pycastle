@@ -76,19 +76,12 @@ async def run_issue(
 
     deps.logger.log_agent_output(f"Implementer #{issue['number']}", result.output)
 
-    reviewer_prompt_args = {
-        "ISSUE_NUMBER": str(issue["number"]),
-        "ISSUE_TITLE": issue["title"],
-        "BRANCH": _branch,
-        "FEEDBACK_COMMANDS": _format_feedback_commands(deps.cfg.implement_checks),
-        **_standards,
-    }
     review_result = await _bounded_run_agent(
         name=f"Reviewer #{issue['number']}",
         prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
         mount_path=deps.repo_root,
         env=deps.env,
-        prompt_args=reviewer_prompt_args,
+        prompt_args=prompt_args,
         branch=_branch,
         model=deps.cfg.review_override.model,
         effort=deps.cfg.review_override.effort,
