@@ -11,6 +11,7 @@ import pytest
 from pycastle.agent_result import (
     AgentIncomplete,
     AgentSuccess,
+    AgentTimeoutHit,
     CancellationToken,
     PreflightFailure,
     UsageLimitHit,
@@ -2522,3 +2523,130 @@ def test_run_agent_returns_agent_success_with_ndjson_complete_tag(tmp_path):
         )
 
     assert isinstance(result, AgentSuccess)
+
+
+# ── Cycle 274: AgentTimeoutError restarts agent on same worktree ──────────────
+
+
+class _TimeoutThenSucceedRunner:
+    """Raises AgentTimeoutError on the first run_streaming call, succeeds on the second."""
+
+    def __init__(self, *args, **kwargs):
+        self.branch = None
+        self.env = {}
+        self._calls = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def exec_simple(self, cmd, timeout=None):
+        return ""
+
+    def run_streaming(self):
+        self._calls += 1
+        if self._calls == 1:
+            raise AgentTimeoutError("idle timeout")
+        return "<promise>COMPLETE</promise>"
+
+
+class _AlwaysTimesOutRunner:
+    """Raises AgentTimeoutError on every run_streaming call."""
+
+    def __init__(self, *args, **kwargs):
+        self.branch = None
+        self.env = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def exec_simple(self, cmd, timeout=None):
+        return ""
+
+    def run_streaming(self):
+        raise AgentTimeoutError("idle timeout")
+
+
+def test_run_agent_retries_work_on_timeout_and_succeeds(tmp_path):
+    """When the agent times out once and timeout_retries >= 1, it restarts and can succeed."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with patch("pycastle.container_runner.ContainerRunner", _TimeoutThenSucceedRunner):
+        result = _run(
+            run_agent(
+                "Test",
+                prompt,
+                tmp_path,
+                {},
+                git_service=_make_git_service(),
+                cfg=Config(timeout_retries=1),
+            )
+        )
+
+    assert isinstance(result, AgentSuccess)
+
+
+def test_run_agent_returns_agent_timeout_hit_when_all_retries_exhausted(tmp_path):
+    """When all retries are exhausted, run_agent returns AgentTimeoutHit instead of raising."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with patch("pycastle.container_runner.ContainerRunner", _AlwaysTimesOutRunner):
+        result = _run(
+            run_agent(
+                "Test",
+                prompt,
+                tmp_path,
+                {},
+                git_service=_make_git_service(),
+                cfg=Config(timeout_retries=1),
+            )
+        )
+
+    assert isinstance(result, AgentTimeoutHit)
+
+
+def test_run_agent_returns_agent_timeout_hit_immediately_when_retries_zero(tmp_path):
+    """When timeout_retries=0, the first timeout returns AgentTimeoutHit without restarting."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with patch("pycastle.container_runner.ContainerRunner", _AlwaysTimesOutRunner):
+        result = _run(
+            run_agent(
+                "Test",
+                prompt,
+                tmp_path,
+                {},
+                git_service=_make_git_service(),
+                cfg=Config(timeout_retries=0),
+            )
+        )
+
+    assert isinstance(result, AgentTimeoutHit)
+
+
+def test_run_agent_logs_restart_on_timeout(tmp_path, capsys):
+    """Each timeout restart must be logged with attempt count."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with patch("pycastle.container_runner.ContainerRunner", _TimeoutThenSucceedRunner):
+        _run(
+            run_agent(
+                "Test",
+                prompt,
+                tmp_path,
+                {},
+                git_service=_make_git_service(),
+                cfg=Config(timeout_retries=1),
+            )
+        )
+
+    assert "Timeout — restarting (attempt 1/1)" in capsys.readouterr().out
