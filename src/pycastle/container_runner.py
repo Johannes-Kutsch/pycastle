@@ -19,7 +19,7 @@ from .agent_result import (
     CancellationToken,
     PreflightFailure,
 )
-from .config import Config, config as _cfg
+from .config import Config, load_config
 from .errors import (
     AgentTimeoutError,
     BranchCollisionError,
@@ -108,7 +108,8 @@ class ContainerRunner:
         model: str = "",
         effort: str = "",
         docker_client=None,
-        cfg: Config = _cfg,
+        *,
+        cfg: Config,
     ):
         self.name = name
         self.mount_path = mount_path
@@ -359,11 +360,12 @@ async def _setup(
     loop: asyncio.AbstractEventLoop,
     exec_timeout: float | None,
     git_service: GitService | None = None,
+    cfg: Config | None = None,
 ) -> None:
     print(f"[{name}] Phase: Setup")
     await loop.run_in_executor(None, runner.__enter__)
     if git_service is None:
-        git_service = GitService()
+        git_service = GitService(cfg or load_config())
     git_name = git_service.get_user_name()
     git_email = git_service.get_user_email()
     await loop.run_in_executor(
@@ -438,7 +440,7 @@ async def run_agent(
     token: CancellationToken | None = None,
     cfg: Config | None = None,
 ) -> str | PreflightFailure:
-    _run_cfg = cfg if cfg is not None else _cfg
+    _run_cfg = cfg if cfg is not None else load_config()
     _token = token if token is not None else CancellationToken()
     if _token.is_cancelled:
         raise UsageLimitError("Agent cancelled due to usage limit")
@@ -483,6 +485,7 @@ async def run_agent(
             model=model,
             effort=effort,
             docker_client=docker_client,
+            cfg=_run_cfg,
         )
 
         @asynccontextmanager
@@ -496,7 +499,7 @@ async def run_agent(
                 except BaseException as e:
                     exc = e
                 if worktree_host_path and not _token.wants_worktree_preserved:
-                    svc = git_service or GitService()
+                    svc = git_service or GitService(_run_cfg)
                     try:
                         clean = svc.is_working_tree_clean(worktree_host_path)
                     except Exception:
@@ -513,7 +516,7 @@ async def run_agent(
                     raise exc
 
         async with _worktree_lifecycle():
-            await _setup(name, runner, loop, exec_timeout, git_service)
+            await _setup(name, runner, loop, exec_timeout, git_service, _run_cfg)
             await _prepare(
                 name, runner, loop, exec_timeout, prompt_file, prompt_args or {}
             )

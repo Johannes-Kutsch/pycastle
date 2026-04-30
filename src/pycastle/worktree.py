@@ -5,6 +5,7 @@ import tempfile
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 
+from .config import Config, load_config
 from .errors import WorktreeError, WorktreeTimeoutError
 from .git_service import GitCommandError, GitService, GitTimeoutError
 
@@ -62,8 +63,9 @@ def create_worktree(
     branch: str,
     sha: str | None = None,
     git_service: GitService | None = None,
+    cfg: Config | None = None,
 ) -> None:
-    svc = git_service or GitService()
+    svc = git_service or GitService(cfg or load_config())
     with _wrap_git_errors():
         branch_exists = svc.verify_ref_exists(branch, repo_path)
 
@@ -92,8 +94,9 @@ def remove_worktree(
     repo_path: Path,
     worktree_path: Path,
     git_service: GitService | None = None,
+    cfg: Config | None = None,
 ) -> None:
-    svc = git_service or GitService()
+    svc = git_service or GitService(cfg or load_config())
     try:
         svc.remove_worktree(repo_path, worktree_path)
     except GitTimeoutError as exc:

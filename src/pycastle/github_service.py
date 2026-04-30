@@ -1,7 +1,7 @@
 import json
 import subprocess
 
-from .config import Config, config as _cfg
+from .config import Config
 
 
 class GithubServiceError(RuntimeError):
@@ -24,7 +24,7 @@ class GithubNotFoundError(GithubServiceError):
 
 
 class GithubService:
-    def __init__(self, repo: str, cfg: Config = _cfg) -> None:
+    def __init__(self, repo: str, cfg: Config) -> None:
         self.repo = repo
         self.timeout = cfg.worktree_timeout
 

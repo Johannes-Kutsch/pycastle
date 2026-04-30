@@ -6,7 +6,7 @@ import pytest
 from pycastle.agent_result import (
     PreflightFailure,
 )
-from pycastle.config import Config, config as _cfg
+from pycastle.config import Config
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
@@ -17,6 +17,8 @@ from pycastle.iteration.implement import (
     implement_phase,
     run_issue,
 )
+
+_cfg = Config()
 
 
 def _make_deps(tmp_path, run_agent_fn, logger=None) -> Deps:

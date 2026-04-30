@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from .config import Config, config as _cfg
+from .config import Config, load_config
 from .docker_service import DockerService
 from .errors import DockerServiceError
 
@@ -11,8 +11,10 @@ from .errors import DockerServiceError
 def main(
     no_cache: bool = False,
     docker_service: DockerService | None = None,
-    cfg: Config = _cfg,
+    cfg: Config | None = None,
 ) -> None:
+    if cfg is None:
+        cfg = load_config()
     if not cfg.docker_image_name:
         print(
             "docker_image_name is not set. Run `pycastle init` to configure your project.",

@@ -7,6 +7,8 @@ from pycastle.config import Config
 from pycastle.docker_service import DockerService
 from pycastle.errors import DockerBuildError, DockerServiceError
 
+_cfg = Config(docker_image_name="test-image")
+
 
 def _make_docker_service(side_effect=None):
     svc = MagicMock()
@@ -36,7 +38,7 @@ def test_main_includes_no_cache_flag(tmp_path, monkeypatch):
         "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
     ) as mock_run:
         with pytest.raises(SystemExit):
-            main(no_cache=True, docker_service=svc)
+            main(no_cache=True, docker_service=svc, cfg=_cfg)
     cmd = mock_run.call_args[0][0]
     assert "--no-cache" in cmd
 
@@ -50,7 +52,7 @@ def test_main_omits_no_cache_flag_by_default(tmp_path, monkeypatch):
         "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
     ) as mock_run:
         with pytest.raises(SystemExit):
-            main(docker_service=svc)
+            main(docker_service=svc, cfg=_cfg)
     cmd = mock_run.call_args[0][0]
     assert "--no-cache" not in cmd
 
@@ -68,7 +70,7 @@ def test_main_passes_python_version_from_file(tmp_path, monkeypatch):
         "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
     ) as mock_run:
         with pytest.raises(SystemExit):
-            main(docker_service=svc)
+            main(docker_service=svc, cfg=_cfg)
     cmd = mock_run.call_args[0][0]
     assert "PYTHON_VERSION=3.12" in cmd
 
@@ -83,7 +85,7 @@ def test_main_python_version_short_form_unchanged(tmp_path, monkeypatch):
         "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
     ) as mock_run:
         with pytest.raises(SystemExit):
-            main(docker_service=svc)
+            main(docker_service=svc, cfg=_cfg)
     cmd = mock_run.call_args[0][0]
     assert "PYTHON_VERSION=3.12" in cmd
 
@@ -98,7 +100,7 @@ def test_main_python_version_single_segment_unchanged(tmp_path, monkeypatch):
         "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
     ) as mock_run:
         with pytest.raises(SystemExit):
-            main(docker_service=svc)
+            main(docker_service=svc, cfg=_cfg)
     cmd = mock_run.call_args[0][0]
     assert "PYTHON_VERSION=3" in cmd
 
@@ -112,7 +114,7 @@ def test_main_no_python_version_when_file_absent(tmp_path, monkeypatch):
         "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
     ) as mock_run:
         with pytest.raises(SystemExit):
-            main(docker_service=svc)
+            main(docker_service=svc, cfg=_cfg)
     cmd = mock_run.call_args[0][0]
     assert "--build-arg" not in cmd
 
@@ -126,7 +128,7 @@ def test_main_exits_zero_on_success(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     svc = _make_docker_service()
     with pytest.raises(SystemExit) as exc_info:
-        main(docker_service=svc)
+        main(docker_service=svc, cfg=_cfg)
     assert exc_info.value.code == 0
 
 
@@ -156,7 +158,7 @@ def test_main_prints_error_message_to_stderr(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     svc = _make_docker_service(side_effect=DockerServiceError("docker not found"))
     with pytest.raises(SystemExit):
-        main(docker_service=svc)
+        main(docker_service=svc, cfg=_cfg)
     assert "docker not found" in capsys.readouterr().err
 
 
@@ -171,7 +173,7 @@ def test_main_creates_default_docker_service(tmp_path, monkeypatch):
         instance = _make_docker_service()
         mock_cls.return_value = instance
         with pytest.raises(SystemExit):
-            main()
+            main(cfg=_cfg)
     mock_cls.assert_called_once_with()
 
 
@@ -278,7 +280,7 @@ def test_main_prints_success_message_to_stdout_on_success(
     monkeypatch.chdir(tmp_path)
     svc = _make_docker_service()
     with pytest.raises(SystemExit):
-        main(docker_service=svc)
+        main(docker_service=svc, cfg=_cfg)
     out = capsys.readouterr().out
     assert "Build complete" in out
 
