@@ -57,14 +57,17 @@ async def _handle_preflight_failure(
     mount_path: Path,
 ) -> tuple[str, int]:
     check_name, command, output = failures[0]
-    agent_result = await deps.run_agent(
+    agent_result = await deps.agent_runner.run(
         name=f"preflight-issue ({check_name})",
         prompt_file=deps.cfg.prompts_dir / "preflight-issue.md",
         mount_path=mount_path,
-        env=deps.env,
         prompt_args={"CHECK_NAME": check_name, "COMMAND": command, "OUTPUT": output},
         skip_preflight=True,
     )
+    if isinstance(agent_result, PreflightFailure):
+        raise RuntimeError(
+            "preflight-issue agent returned a PreflightFailure unexpectedly"
+        )
     issue_output = parse(agent_result, AgentRole.PREFLIGHT_ISSUE)
     if deps.cfg.hitl_label in issue_output.labels:
         return "hitl", issue_output.number
@@ -85,11 +88,10 @@ async def plan_phase(deps: Deps) -> PlanResult:
     deps.git_svc.checkout_detached(deps.repo_root, worktree_path, sha)
 
     try:
-        raw = await deps.run_agent(
+        raw = await deps.agent_runner.run(
             name="Planner",
             prompt_file=deps.cfg.prompts_dir / "plan-prompt.md",
             mount_path=worktree_path,
-            env=deps.env,
             prompt_args={"OPEN_ISSUES_JSON": json.dumps(open_issues)},
             model=deps.cfg.plan_override.model,
             effort=deps.cfg.plan_override.effort,

@@ -1,9 +1,11 @@
+import asyncio
 import builtins
 import dataclasses
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from ..agent_result import PreflightFailure
+from ..agent_runner import AgentRunnerProtocol
 from ..config import Config
 from ..git_service import GitService
 from ..github_service import GithubService
@@ -65,13 +67,77 @@ class RecordingStatusDisplay:
         self.calls.append(("print", message))
 
 
+class FakeAgentRunner:
+    """Queue-based test double for AgentRunnerProtocol.
+
+    Pass a list of responses at construction time; each run() call pops the
+    next one. Raises AssertionError if the queue is exhausted. Also records
+    every run() call in self.calls for assertion.
+
+    For complex conditional behaviour, pass side_effect=async_fn instead.
+    """
+
+    def __init__(
+        self,
+        responses: list | None = None,
+        *,
+        side_effect=None,
+    ) -> None:
+        self._responses: list = list(responses or [])
+        self._side_effect = side_effect
+        self.calls: list[dict] = []
+
+    async def run(
+        self,
+        *,
+        name: str,
+        prompt_file: Path,
+        mount_path: Path,
+        prompt_args: dict[str, str] | None = None,
+        branch: str | None = None,
+        sha: str | None = None,
+        skip_preflight: bool = False,
+        model: str = "",
+        effort: str = "",
+        stage: str = "",
+        token=None,
+    ) -> str | PreflightFailure:
+        call = {
+            "name": name,
+            "prompt_file": prompt_file,
+            "mount_path": mount_path,
+            "prompt_args": prompt_args,
+            "branch": branch,
+            "sha": sha,
+            "skip_preflight": skip_preflight,
+            "model": model,
+            "effort": effort,
+            "stage": stage,
+            "token": token,
+        }
+        self.calls.append(call)
+        if self._side_effect is not None:
+            result = self._side_effect(**call)
+            if asyncio.iscoroutine(result):
+                return await result
+            return result
+        if not self._responses:
+            raise AssertionError(
+                f"FakeAgentRunner queue exhausted — unexpected call for agent {name!r}"
+            )
+        response = self._responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+
 @dataclasses.dataclass
 class Deps:
     env: dict[str, str]
     repo_root: Path
     git_svc: GitService
     github_svc: GithubService
-    run_agent: Any
+    agent_runner: AgentRunnerProtocol
     cfg: Config
     logger: Logger
     status_display: StatusDisplay

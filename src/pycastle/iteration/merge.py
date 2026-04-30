@@ -85,11 +85,10 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
         )
         deps.git_svc.create_worktree(deps.repo_root, worktree_path, MERGE_SANDBOX, sha)
         try:
-            merger_result = await deps.run_agent(
+            merger_result = await deps.agent_runner.run(
                 name="Merger",
                 prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
                 mount_path=worktree_path,
-                env=deps.env,
                 prompt_args={
                     "BRANCHES": "\n".join(
                         f"- {branch_for(i['number'])}" for i in conflict_issues
@@ -100,7 +99,8 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                 effort=deps.cfg.merge_override.effort,
                 stage="pre-merge",
             )
-            assert_complete(merger_result)
+            if isinstance(merger_result, str):
+                assert_complete(merger_result)
             deps.git_svc.fast_forward_branch(
                 deps.repo_root, target_branch, MERGE_SANDBOX
             )

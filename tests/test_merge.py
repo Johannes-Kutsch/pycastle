@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -8,6 +8,7 @@ from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
 from pycastle.iteration._deps import (
     Deps,
+    FakeAgentRunner,
     NullStatusDisplay,
     RecordingLogger,
     RecordingStatusDisplay,
@@ -32,18 +33,18 @@ def github_svc():
 
 
 @pytest.fixture
-def run_agent():
-    return AsyncMock(return_value="<promise>COMPLETE</promise>")
+def agent_runner():
+    return FakeAgentRunner(["<promise>COMPLETE</promise>"] * 10)
 
 
 @pytest.fixture
-def deps(tmp_path, git_svc, github_svc, run_agent):
+def deps(tmp_path, git_svc, github_svc, agent_runner):
     return Deps(
         env={},
         repo_root=tmp_path,
         git_svc=git_svc,
         github_svc=github_svc,
-        run_agent=run_agent,
+        agent_runner=agent_runner,
         cfg=Config(),
         logger=RecordingLogger(),
         status_display=NullStatusDisplay(),
@@ -52,6 +53,19 @@ def deps(tmp_path, git_svc, github_svc, run_agent):
 
 def _run(completed, deps):
     return asyncio.run(merge_phase(completed, deps))
+
+
+def _make_deps(tmp_path, git_svc, github_svc, agent_runner):
+    return Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        agent_runner=agent_runner,
+        cfg=Config(),
+        logger=RecordingLogger(),
+        status_display=NullStatusDisplay(),
+    )
 
 
 # ── Clean merge path ──────────────────────────────────────────────────────────
@@ -77,10 +91,10 @@ def test_clean_merge_calls_close_completed_parent_issues_once(deps, github_svc):
     assert github_svc.close_completed_parent_issues.call_count == 1
 
 
-def test_clean_merge_does_not_spawn_merger(deps, run_agent):
+def test_clean_merge_does_not_spawn_merger(deps, agent_runner):
     issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
     _run(issues, deps)
-    run_agent.assert_not_called()
+    assert agent_runner.calls == []
 
 
 def test_clean_merge_deletes_merged_branches(deps, git_svc):
@@ -112,15 +126,15 @@ def test_conflict_branch_is_in_conflicts(deps, git_svc):
     assert result.clean == [{"number": 1, "title": "Clean"}]
 
 
-def test_conflict_spawns_merger_with_conflict_branches_only(deps, git_svc, run_agent):
+def test_conflict_spawns_merger_with_conflict_branches_only(
+    deps, git_svc, agent_runner
+):
     git_svc.try_merge.side_effect = _conflict_on([2])
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
     _run(issues, deps)
-    merger_calls = [
-        c for c in run_agent.call_args_list if c.kwargs.get("name") == "Merger"
-    ]
+    merger_calls = [c for c in agent_runner.calls if c["name"] == "Merger"]
     assert len(merger_calls) == 1
-    branches_arg = merger_calls[0].kwargs["prompt_args"]["BRANCHES"]
+    branches_arg = merger_calls[0]["prompt_args"]["BRANCHES"]
     assert "pycastle/issue-2" in branches_arg
     assert "pycastle/issue-1" not in branches_arg
 
@@ -169,15 +183,13 @@ def test_multiple_conflict_issues_all_closed(deps, git_svc, github_svc):
     assert github_svc.close_completed_parent_issues.call_count == 1
 
 
-def test_merger_does_not_receive_issues_prompt_arg(deps, git_svc, run_agent):
+def test_merger_does_not_receive_issues_prompt_arg(deps, git_svc, agent_runner):
     git_svc.try_merge.return_value = False
     issues = [{"number": 3, "title": "Conflict"}]
     _run(issues, deps)
-    merger_calls = [
-        c for c in run_agent.call_args_list if c.kwargs.get("name") == "Merger"
-    ]
+    merger_calls = [c for c in agent_runner.calls if c["name"] == "Merger"]
     assert len(merger_calls) == 1
-    assert "ISSUES" not in merger_calls[0].kwargs["prompt_args"]
+    assert "ISSUES" not in merger_calls[0]["prompt_args"]
 
 
 # ── Branch deletion edge cases ────────────────────────────────────────────────
@@ -213,26 +225,30 @@ def test_successful_merger_fast_forwards_target_branch(deps, git_svc):
     )
 
 
-def test_incomplete_merger_raises_and_does_not_fast_forward(deps, git_svc, run_agent):
+def test_incomplete_merger_raises_and_does_not_fast_forward(
+    tmp_path, git_svc, github_svc
+):
     from pycastle.agent_output_protocol import PromiseParseError
 
     git_svc.try_merge.return_value = False
-    run_agent.return_value = ""  # no <promise>COMPLETE</promise>
+    fake = FakeAgentRunner([""])  # no <promise>COMPLETE</promise>
+    local_deps = _make_deps(tmp_path, git_svc, github_svc, fake)
     issues = [{"number": 1, "title": "Conflict"}]
     with pytest.raises(PromiseParseError):
-        _run(issues, deps)
+        _run(issues, local_deps)
     git_svc.fast_forward_branch.assert_not_called()
 
 
 # ── Exception safety ──────────────────────────────────────────────────────────
 
 
-def test_sandbox_branch_deleted_when_run_agent_raises(deps, git_svc, run_agent):
+def test_sandbox_branch_deleted_when_run_agent_raises(tmp_path, git_svc, github_svc):
     git_svc.try_merge.return_value = False
-    run_agent.side_effect = RuntimeError("agent crashed")
+    fake = FakeAgentRunner([RuntimeError("agent crashed")])
+    local_deps = _make_deps(tmp_path, git_svc, github_svc, fake)
     issues = [{"number": 1, "title": "Conflict"}]
     with pytest.raises(RuntimeError, match="agent crashed"):
-        _run(issues, deps)
+        _run(issues, local_deps)
     deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
     assert "pycastle/merge-sandbox" in deleted
 
@@ -255,29 +271,25 @@ def test_conflict_creates_worktree_at_merge_sandbox(deps, git_svc):
     )
 
 
-def test_merger_receives_worktree_path_as_mount(deps, git_svc, run_agent):
+def test_merger_receives_worktree_path_as_mount(deps, git_svc, agent_runner):
     git_svc.try_merge.return_value = False
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
-    merger_calls = [
-        c for c in run_agent.call_args_list if c.kwargs.get("name") == "Merger"
-    ]
+    merger_calls = [c for c in agent_runner.calls if c["name"] == "Merger"]
     assert len(merger_calls) == 1
     expected_path = (
         deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "merge-sandbox"
     )
-    assert merger_calls[0].kwargs["mount_path"] == expected_path
+    assert merger_calls[0]["mount_path"] == expected_path
 
 
-def test_merger_has_no_branch_argument(deps, git_svc, run_agent):
+def test_merger_has_no_branch_argument(deps, git_svc, agent_runner):
     git_svc.try_merge.return_value = False
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
-    merger_calls = [
-        c for c in run_agent.call_args_list if c.kwargs.get("name") == "Merger"
-    ]
+    merger_calls = [c for c in agent_runner.calls if c["name"] == "Merger"]
     assert len(merger_calls) == 1
-    assert "branch" not in merger_calls[0].kwargs
+    assert merger_calls[0]["branch"] is None
 
 
 def test_worktree_removed_after_merger(deps, git_svc):
@@ -290,28 +302,32 @@ def test_worktree_removed_after_merger(deps, git_svc):
     git_svc.remove_worktree.assert_called_once_with(deps.repo_root, expected_path)
 
 
-def test_worktree_removed_when_run_agent_raises(deps, git_svc, run_agent):
+def test_worktree_removed_when_run_agent_raises(tmp_path, git_svc, github_svc):
     git_svc.try_merge.return_value = False
-    run_agent.side_effect = RuntimeError("agent crashed")
+    fake = FakeAgentRunner([RuntimeError("agent crashed")])
+    local_deps = _make_deps(tmp_path, git_svc, github_svc, fake)
     issues = [{"number": 1, "title": "Conflict"}]
     with pytest.raises(RuntimeError, match="agent crashed"):
-        _run(issues, deps)
+        _run(issues, local_deps)
     expected_path = (
-        deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "merge-sandbox"
+        local_deps.repo_root
+        / local_deps.cfg.pycastle_dir
+        / ".worktrees"
+        / "merge-sandbox"
     )
-    git_svc.remove_worktree.assert_called_once_with(deps.repo_root, expected_path)
+    git_svc.remove_worktree.assert_called_once_with(local_deps.repo_root, expected_path)
 
 
 # ── Empty input ───────────────────────────────────────────────────────────────
 
 
-def test_empty_completed_list_returns_empty_result(deps, github_svc, run_agent):
+def test_empty_completed_list_returns_empty_result(deps, github_svc, agent_runner):
     result = _run([], deps)
     assert result.clean == []
     assert result.conflicts == []
     github_svc.close_issue.assert_not_called()
     github_svc.close_completed_parent_issues.assert_not_called()
-    run_agent.assert_not_called()
+    assert agent_runner.calls == []
 
 
 # ── MergeResult ───────────────────────────────────────────────────────────────
@@ -369,7 +385,7 @@ def test_worktree_removal_failure_does_not_abort_branch_deletion(deps, git_svc):
 
 
 @pytest.fixture
-def recording_deps(tmp_path, git_svc, github_svc, run_agent):
+def recording_deps(tmp_path, git_svc, github_svc, agent_runner):
     recording = RecordingStatusDisplay()
     return (
         Deps(
@@ -377,7 +393,7 @@ def recording_deps(tmp_path, git_svc, github_svc, run_agent):
             repo_root=tmp_path,
             git_svc=git_svc,
             github_svc=github_svc,
-            run_agent=run_agent,
+            agent_runner=agent_runner,
             cfg=Config(),
             logger=RecordingLogger(),
             status_display=recording,
