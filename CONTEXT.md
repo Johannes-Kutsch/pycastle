@@ -19,7 +19,8 @@
 | --- | --- | --- |
 | **config.py** | Python file in the pycastle directory defining behavioral configuration; overrides the defaults module field by field at runtime | settings.py, settings |
 | **defaults module** | `src/pycastle/defaults/config.py` bundled in the package; contains only pure default values, no logic; never touched by users or the config loader directly | defaults config, fallback config |
-| **config loader** | `src/pycastle/config.py`; imports everything from the defaults module, then applies field-by-field overrides from the consuming project's config.py if it exists; contains no default values of its own | — |
+| **config loader** | The `loader.py` module inside the `config/` package; reads the defaults, executes the consuming project's config.py via importlib, and applies any programmatic overrides; contains no subprocess calls and no default values of its own | — |
+| **config validator** | The `validator.py` module inside the `config/` package; owns `validate_config(cfg, claude_service) -> Config`; resolves model shorthands to full model IDs and validates effort levels; raises `ConfigValidationError` on any invalid entry; returns a new immutable `Config` via `dataclasses.replace` | — |
 | **.env** | File in the pycastle directory holding secrets and credentials only — never committed to git | environment file, config |
 | **GH_TOKEN** | GitHub personal access token stored in .env, used for GitHub API calls and label management | github token, gh pat |
 | **CLAUDE_CODE_OAUTH_TOKEN** | Long-lived OAuth token for Claude Code authentication, stored in .env | claude token, oauth token |
@@ -34,7 +35,7 @@
 | **full model ID** | The versioned Claude model identifier (e.g. `claude-sonnet-4-6`) resolved from a model shorthand via `claude list-models` | model ID, model version |
 | **effort level** | One of three Claude effort values (`low`, `normal`, `high`) that controls cost and reasoning depth | effort, effort flag |
 | **CLI default** | The behavior when no `--model` or `--effort` flag is injected — triggered by an empty string in STAGE_OVERRIDES | default model, unset |
-| **validate_config** | Startup function that resolves model shorthands to full model IDs and validates all stage overrides, mutating STAGE_OVERRIDES in-memory; raises ConfigValidationError on any invalid entry | config validation, startup check |
+| **validate_config** | Public function in the config validator module; takes a `Config` and a `ClaudeService`, resolves model shorthands to full model IDs, validates all stage overrides, and returns a new immutable `Config`; raises `ConfigValidationError` on any invalid entry | config validation, startup check |
 | **ConfigValidationError** | Error raised by validate_config when a model shorthand or effort level is unrecognised; includes the invalid value, closest valid suggestion, and full list of valid options | validation error, config error |
 
 ## GitHub Integration
@@ -112,7 +113,9 @@
 | **`<plan>` tag** | XML tag emitted by the Planner containing a JSON payload listing unblocked issues for the current iteration; extracted by the agent output protocol module | plan output, plan block |
 | **`<issue>` tag** | XML tag emitted by the preflight-issue agent containing the GitHub issue number it filed; extracted by the agent output protocol module | issue output, issue number tag |
 | **`<promise>COMPLETE</promise>`** | XML tag emitted by Implementers, Reviewers, and the Merger to declare that their work phase is complete; detected by the agent output protocol module | done signal, completion tag |
-| **`AgentOutputProtocolError`** | Base exception raised by the agent output protocol module when a required tag is missing or malformed; subclassed by `PlanParseError` and `IssueParseError` | parse error, protocol error |
+| **`AgentOutputProtocolError`** | Base exception raised by the agent output protocol module when a required tag is missing or malformed; subclassed by `PlanParseError`, `IssueParseError`, and `PromiseParseError` | parse error, protocol error |
+| **`parse()`** | Entry point for data-bearing roles (Planner, preflight-issue agent); returns a typed output (`PlannerOutput` or `IssueOutput`) resolved statically by role; also checks for `<promise>COMPLETE</promise>` | protocol parser, output extractor |
+| **`assert_complete()`** | Entry point for completion-only roles (Implementer, Reviewer, Merger); verifies the `<promise>COMPLETE</promise>` tag is present and raises `PromiseParseError` if not; returns `None` on success — never a bool | parse_completion, check_promise |
 | **Claude streaming envelope** | The NDJSON format Claude Code uses for structured output; lines are JSON objects and the agent's final result is carried in the `{"type": "result", "result": "..."}` line; unwrapped internally by the agent output protocol module before tag extraction | streaming format, NDJSON output |
 
 ## Agent Lifecycle
