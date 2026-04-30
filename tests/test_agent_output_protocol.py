@@ -3,9 +3,14 @@ import json
 import pytest
 
 from pycastle.agent_output_protocol import (
+    AgentOutput,
     AgentOutputProtocolError,
+    AgentRole,
+    CompletionOutput,
+    IssueOutput,
     IssueParseError,
     PlanParseError,
+    PlannerOutput,
     PromiseParseError,
     is_complete,
     parse_issue_number,
@@ -173,3 +178,73 @@ def test_issue_parse_error_is_subclass_of_base():
 
 def test_promise_parse_error_is_subclass_of_base():
     assert issubclass(PromiseParseError, AgentOutputProtocolError)
+
+
+# ── AgentRole ─────────────────────────────────────────────────────────────────
+
+
+def test_agent_role_has_all_five_members():
+    members = {r.name for r in AgentRole}
+    assert members == {
+        "PLANNER",
+        "PREFLIGHT_ISSUE",
+        "IMPLEMENTER",
+        "REVIEWER",
+        "MERGER",
+    }
+
+
+# ── PlannerOutput ─────────────────────────────────────────────────────────────
+
+
+def test_planner_output_stores_issues():
+    issues = [{"number": 1, "title": "Fix bug"}]
+    out = PlannerOutput(issues=issues)
+    assert out.issues == issues
+
+
+def test_planner_output_is_frozen():
+    out = PlannerOutput(issues=[])
+    with pytest.raises(Exception):
+        out.issues = []  # type: ignore[misc]
+
+
+# ── IssueOutput ───────────────────────────────────────────────────────────────
+
+
+def test_issue_output_stores_label_and_number():
+    out = IssueOutput(label="ready-for-agent", number=42)
+    assert out.label == "ready-for-agent"
+    assert out.number == 42
+
+
+def test_issue_output_is_frozen():
+    out = IssueOutput(label="x", number=1)
+    with pytest.raises(Exception):
+        out.number = 2  # type: ignore[misc]
+
+
+# ── CompletionOutput ──────────────────────────────────────────────────────────
+
+
+def test_completion_output_is_instantiable():
+    out = CompletionOutput()
+    assert isinstance(out, CompletionOutput)
+
+
+def test_completion_output_is_frozen():
+    out = CompletionOutput()
+    with pytest.raises(Exception):
+        out.foo = "bar"  # type: ignore[attr-defined]
+
+
+# ── AgentOutput type alias ────────────────────────────────────────────────────
+
+
+def test_agent_output_covers_all_output_types():
+    planner: AgentOutput = PlannerOutput(issues=[])
+    issue: AgentOutput = IssueOutput(label="x", number=1)
+    completion: AgentOutput = CompletionOutput()
+    assert isinstance(planner, PlannerOutput)
+    assert isinstance(issue, IssueOutput)
+    assert isinstance(completion, CompletionOutput)
