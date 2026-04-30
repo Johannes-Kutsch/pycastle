@@ -6,7 +6,7 @@ import pytest
 from pycastle.config import Config
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
-from pycastle.iteration._deps import Deps, NullStatusDisplay, RecordingLogger
+from pycastle.iteration._deps import Deps, NullStatusDisplay, RecordingLogger, RecordingStatusDisplay
 from pycastle.iteration.merge import MergeResult, merge_phase
 
 
@@ -358,3 +358,65 @@ def test_worktree_removal_failure_does_not_abort_branch_deletion(deps, git_svc):
     result = _run(issues, deps)
     git_svc.delete_branch.assert_called()
     assert result.clean == issues
+
+
+# ── StatusDisplay routing ─────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def recording_deps(tmp_path, git_svc, github_svc, run_agent):
+    recording = RecordingStatusDisplay()
+    return (
+        Deps(
+            env={},
+            repo_root=tmp_path,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            run_agent=run_agent,
+            cfg=Config(),
+            logger=RecordingLogger(),
+            status_display=recording,
+        ),
+        recording,
+    )
+
+
+def test_merge_phase_routes_deleted_branch_through_status_display(
+    recording_deps, git_svc, capsys
+):
+    """merge_phase must route 'Deleted merged branch' through status_display.print()."""
+    deps, recording = recording_deps
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, deps)
+
+    print_messages = [msg for kind, msg in recording.calls if kind == "print"]
+    assert any("Deleted merged branch" in msg for msg in print_messages)
+    assert "Deleted merged branch" not in capsys.readouterr().out
+
+
+def test_merge_phase_routes_branches_merged_through_status_display(
+    recording_deps, git_svc, capsys
+):
+    """merge_phase must route 'Branches merged' through status_display.print() after conflict resolution."""
+    deps, recording = recording_deps
+    git_svc.try_merge.return_value = False
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+
+    print_messages = [msg for kind, msg in recording.calls if kind == "print"]
+    assert any("Branches merged" in msg for msg in print_messages)
+    assert "Branches merged" not in capsys.readouterr().out
+
+
+def test_merge_phase_routes_dirty_tree_message_through_status_display(
+    recording_deps, git_svc, capsys
+):
+    """merge_phase must route the dirty-tree wait message through status_display.print()."""
+    deps, recording = recording_deps
+    git_svc.is_working_tree_clean.side_effect = [False, True]
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, deps)
+
+    print_messages = [msg for kind, msg in recording.calls if kind == "print"]
+    assert any("Working tree" in msg for msg in print_messages)
+    assert "Working tree" not in capsys.readouterr().out

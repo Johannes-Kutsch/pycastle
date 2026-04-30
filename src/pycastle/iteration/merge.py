@@ -21,7 +21,7 @@ class MergeResult:
 async def _wait_for_clean_working_tree(deps: Deps) -> None:
     if deps.git_svc.is_working_tree_clean(deps.repo_root):
         return
-    print(
+    deps.status_display.print(
         "Working tree has uncommitted changes. "
         "Please commit or revert all local changes before the merge phase can proceed."
     )
@@ -55,7 +55,7 @@ def _delete_merged_branches(branches: list[str], deps: Deps) -> None:
                 )
         try:
             deps.git_svc.delete_branch(branch, deps.repo_root)
-            print(f"Deleted merged branch: {branch}")
+            deps.status_display.print(f"Deleted merged branch: {branch}")
         except GitCommandError as e:
             print(f"Warning: could not delete branch {branch!r}: {e}", file=sys.stderr)
 
@@ -117,7 +117,7 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                 print(
                     f"Warning: could not delete sandbox branch: {exc}", file=sys.stderr
                 )
-        print("\nBranches merged.")
+        deps.status_display.print("\nBranches merged.")
         _delete_merged_branches(
             [branch_for(i["number"]) for i in conflict_issues], deps
         )

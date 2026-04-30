@@ -18,7 +18,7 @@ from pycastle.iteration import (
     Done,
     run_iteration,
 )
-from pycastle.iteration._deps import Deps, NullStatusDisplay, RecordingLogger
+from pycastle.iteration._deps import Deps, NullStatusDisplay, RecordingLogger, RecordingStatusDisplay
 
 
 def _plan_json(issues: list[dict]) -> str:
@@ -55,6 +55,7 @@ def _make_deps(
     github_svc,
     logger,
     cfg=None,
+    status_display=None,
 ) -> Deps:
     return Deps(
         env={},
@@ -64,7 +65,7 @@ def _make_deps(
         run_agent=run_agent_fn,
         cfg=cfg or Config(max_parallel=4, max_iterations=1),
         logger=logger,
-        status_display=NullStatusDisplay(),
+        status_display=status_display or NullStatusDisplay(),
     )
 
 
@@ -305,3 +306,32 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
     assert len(planner_calls) == 1, "Planner called once (returns PreflightFailure)"
     assert len(implementer_calls) == 1, "Exactly one Implementer for the fix issue"
     assert implementer_calls[0] == "Implementer #77"
+
+
+# ── StatusDisplay routing ──────────────────────────────────────────────────────
+
+
+def test_run_iteration_routes_planning_complete_through_status_display(
+    tmp_path, git_svc, github_svc, logger, capsys
+):
+    """run_iteration must route the planning-complete summary through status_display.print()."""
+    recording = RecordingStatusDisplay()
+
+    async def _fake_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([{"number": 1, "title": "Fix bug"}])
+        return "<promise>COMPLETE</promise>"
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    print_messages = [msg for kind, msg in recording.calls if kind == "print"]
+    assert any("Planning complete" in msg for msg in print_messages)
+    assert "Planning complete" not in capsys.readouterr().out

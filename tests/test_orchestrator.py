@@ -13,6 +13,7 @@ from pycastle.config import Config, StageOverride
 from pycastle.errors import ClaudeServiceError, ConfigValidationError, UsageLimitError
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
+from pycastle.iteration._deps import NullStatusDisplay, RecordingStatusDisplay
 from pycastle.orchestrator import (
     _stage_for_agent,
     delete_merged_branches,
@@ -1968,3 +1969,36 @@ def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
 
     out = capsys.readouterr().out
     assert "88" in out, f"Output must reference the filed issue number; got: {out!r}"
+
+
+# ── StatusDisplay routing ─────────────────────────────────────────────────────
+
+
+def test_delete_merged_branches_routes_deleted_message_through_status_display(
+    tmp_path, capsys
+):
+    """delete_merged_branches must route 'Deleted merged branch' through status_display.print()."""
+    recording = RecordingStatusDisplay()
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.is_ancestor.return_value = True
+    delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc, status_display=recording)
+
+    print_messages = [msg for kind, msg in recording.calls if kind == "print"]
+    assert any("issue/1" in msg for msg in print_messages)
+    assert "issue/1" not in capsys.readouterr().out
+
+
+def test_wait_for_clean_working_tree_routes_dirty_message_through_status_display(
+    tmp_path, capsys
+):
+    """wait_for_clean_working_tree must route the dirty-tree message through status_display.print()."""
+    recording = RecordingStatusDisplay()
+    mock_git = MagicMock(spec=GitService)
+    mock_git.is_working_tree_clean.side_effect = [False, True]
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        asyncio.run(wait_for_clean_working_tree(tmp_path, mock_git, status_display=recording))
+
+    print_messages = [msg for kind, msg in recording.calls if kind == "print"]
+    assert any("Working tree" in msg for msg in print_messages)
+    assert "Working tree" not in capsys.readouterr().out

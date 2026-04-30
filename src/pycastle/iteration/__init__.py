@@ -35,7 +35,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
     plan_result = await plan_phase(deps)
 
     if isinstance(plan_result, PlanHITL):
-        print(
+        deps.status_display.print(
             f"Preflight issue #{plan_result.issue_number} requires human intervention. Exiting."
         )
         return AbortedHITL(issue_number=plan_result.issue_number)
@@ -46,9 +46,11 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
     sha = plan_result.worktree_sha
     issues = plan_result.issues[: deps.cfg.max_parallel]
 
-    print(f"Planning complete. {len(issues)} issue(s):")
+    deps.status_display.print(f"Planning complete. {len(issues)} issue(s):")
     for issue in issues:
-        print(f"  #{issue['number']}: {issue['title']} → {branch_for(issue['number'])}")
+        deps.status_display.print(
+            f"  #{issue['number']}: {issue['title']} → {branch_for(issue['number'])}"
+        )
 
     token = CancellationToken()
     impl_result = await implement_phase(issues, sha, deps, token=token)
@@ -59,25 +61,29 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
     for issue, error in impl_result.errors:
         match error:
             case PreflightFailure(failures=fs):
-                print(
+                deps.status_display.print(
                     f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) pre-flight failed:"
                 )
                 for check_name, command, output in fs:
-                    print(f"    ✗ {check_name} ({command}): {output}")
+                    deps.status_display.print(
+                        f"    ✗ {check_name} ({command}): {output}"
+                    )
             case _:
-                print(
+                deps.status_display.print(
                     f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}"
                 )
 
     completed = impl_result.completed
 
     if not completed:
-        print("No commits produced. Nothing to merge.")
+        deps.status_display.print("No commits produced. Nothing to merge.")
         return Continue()
 
-    print(f"\nExecution complete. {len(completed)} branch(es) with commits:")
+    deps.status_display.print(
+        f"\nExecution complete. {len(completed)} branch(es) with commits:"
+    )
     for i in completed:
-        print(f"  {branch_for(i['number'])}")
+        deps.status_display.print(f"  {branch_for(i['number'])}")
 
     await merge_phase(completed, deps)
 
