@@ -260,9 +260,7 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
-            return (
-                '<issue>{"number": 55, "labels": ["ready-for-agent"]}</issue>'
-            )
+            return '<issue>{"number": 55, "labels": ["ready-for-agent"]}</issue>'
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
@@ -291,9 +289,7 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
         if name == "Planner":
             return PreflightFailure(failures=(("mypy", "mypy .", "error"),))
         if "preflight-issue" in name:
-            return (
-                '<issue>{"number": 77, "labels": ["ready-for-agent"]}</issue>'
-            )
+            return '<issue>{"number": 77, "labels": ["ready-for-agent"]}</issue>'
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"

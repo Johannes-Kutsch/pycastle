@@ -261,3 +261,45 @@ def test_parse_raises_promise_parse_error_for_reviewer_without_promise():
 def test_parse_raises_promise_parse_error_for_merger_without_promise():
     with pytest.raises(PromiseParseError):
         parse("merged but forgot promise", AgentRole.MERGER)
+
+
+def test_parse_preflight_issue_with_missing_number_key_raises_issue_parse_error():
+    output = '<issue>{"labels": ["bug"]}</issue>'
+    with pytest.raises(IssueParseError):
+        parse(output, AgentRole.PREFLIGHT_ISSUE)
+
+
+def test_parse_preflight_issue_with_missing_labels_key_raises_issue_parse_error():
+    output = '<issue>{"number": 42}</issue>'
+    with pytest.raises(IssueParseError):
+        parse(output, AgentRole.PREFLIGHT_ISSUE)
+
+
+def test_parse_planner_with_plan_json_missing_both_keys_raises_plan_parse_error():
+    output = '<plan>{"something_else": []}</plan>'
+    with pytest.raises(PlanParseError):
+        parse(output, AgentRole.PLANNER)
+
+
+def test_parse_planner_with_non_dict_json_raises_plan_parse_error():
+    output = '<plan>["issue1", "issue2"]</plan>'
+    with pytest.raises(PlanParseError):
+        parse(output, AgentRole.PLANNER)
+
+
+def test_parse_planner_with_issues_missing_title_raises_plan_parse_error():
+    output = '<plan>{"issues": [{"number": 1}]}</plan>'
+    with pytest.raises(PlanParseError):
+        parse(output, AgentRole.PLANNER)
+
+
+def test_parse_planner_with_issues_missing_number_raises_plan_parse_error():
+    output = '<plan>{"issues": [{"title": "Fix bug"}]}</plan>'
+    with pytest.raises(PlanParseError):
+        parse(output, AgentRole.PLANNER)
+
+
+def test_parse_ndjson_with_null_result_falls_back_to_envelope_and_raises():
+    envelope = json.dumps({"type": "result", "result": None})
+    with pytest.raises(PlanParseError):
+        parse(envelope, AgentRole.PLANNER)
