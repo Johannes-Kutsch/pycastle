@@ -784,7 +784,6 @@ def test_run_streaming_raises_agent_timeout_error_when_idle(tmp_path):
 
 
 def test_second_run_agent_on_same_branch_raises_branch_collision_error(tmp_path):
-
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
@@ -2117,7 +2116,7 @@ def test_worktree_removed_for_non_usage_limit_exception(tmp_path):
     )
 
 
-# ── Issue 215: run_agent catches UsageLimitError, cancels token, returns UsageLimitHit ──
+# ── Issue 215: run_agent catches UsageLimitError, cancels token, re-raises ───
 
 
 def test_usage_limit_cancels_token_and_raises_usage_limit_error(tmp_path):
@@ -2440,7 +2439,7 @@ def test_run_agent_returns_preflight_failure_when_checks_fail(tmp_path):
     assert result.failures == (("mypy", "mypy .", "error: Cannot find module"),)
 
 
-# ── Issue 248: completion detection via is_complete() ────────────────────────
+# ── Issue 248: run_agent returns raw output string ───────────────────────────
 
 
 class _CompleteRunner:
@@ -2653,24 +2652,12 @@ def test_run_agent_returns_raw_string_on_success(tmp_path):
     prompt = tmp_path / "p.md"
     prompt.write_text("test")
 
-    class _OutputRunner:
+    class _Runner(_CompleteRunner):
         def __init__(self, *args, **kwargs):
-            self.branch = None
-            self.env = {}
+            super().__init__(*args, **kwargs)
+            self._output = "raw agent output"
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            pass
-
-        def exec_simple(self, cmd, timeout=None):
-            return ""
-
-        def run_streaming(self):
-            return "raw agent output"
-
-    with patch("pycastle.container_runner.ContainerRunner", _OutputRunner):
+    with patch("pycastle.container_runner.ContainerRunner", _Runner):
         result = _run(
             run_agent("Test", prompt, tmp_path, {}, git_service=_make_git_service())
         )
