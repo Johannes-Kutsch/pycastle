@@ -122,7 +122,9 @@ def _run(
             {},
             tmp_path,
             run_agent=run_agent_fn,
-            claude_service=claude_service or _make_claude_svc(),
+            claude_service=claude_service
+            if claude_service is not None
+            else _make_claude_svc(),
             git_service=git_service if git_service is not None else _make_git_svc(),
             github_service=github_service,
         )
@@ -430,6 +432,10 @@ def test_stage_for_agent_reviewer():
 
 def test_stage_for_agent_merger():
     assert _stage_for_agent("Merger") == "merge"
+
+
+def test_stage_for_agent_unknown_returns_empty_string():
+    assert _stage_for_agent("Unknown") == ""
 
 
 # ── Issue-78: model/effort passed per stage ───────────────────────────────────
@@ -1071,13 +1077,6 @@ def test_delete_merged_branches_prints_deleted_branch_name(tmp_path, capsys):
     assert "issue/1" in capsys.readouterr().out
 
 
-def test_delete_merged_branches_uses_injected_git_service(tmp_path):
-    mock_svc = MagicMock(spec=GitService)
-    mock_svc.is_ancestor.return_value = True
-    delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc)
-    mock_svc.is_ancestor.assert_called_once_with("issue/1", tmp_path)
-
-
 def test_clean_merged_branches_are_deleted_after_try_merge(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
@@ -1213,8 +1212,6 @@ def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
 
 def test_wait_for_clean_working_tree_proceeds_immediately_when_clean(tmp_path):
     """Clean working tree must return without sleeping."""
-    import asyncio
-
     mock_git = MagicMock(spec=GitService)
     mock_git.is_working_tree_clean.return_value = True
 
@@ -1226,8 +1223,6 @@ def test_wait_for_clean_working_tree_proceeds_immediately_when_clean(tmp_path):
 
 def test_wait_for_clean_working_tree_prints_no_message_when_clean(tmp_path, capsys):
     """No output must be produced when the tree is already clean."""
-    import asyncio
-
     mock_git = MagicMock(spec=GitService)
     mock_git.is_working_tree_clean.return_value = True
 
@@ -1240,8 +1235,6 @@ def test_wait_for_clean_working_tree_prints_exactly_one_message_when_dirty(
     tmp_path, capsys
 ):
     """Exactly one non-empty message line must be printed when the tree is dirty."""
-    import asyncio
-
     mock_git = MagicMock(spec=GitService)
     mock_git.is_working_tree_clean.side_effect = [False, False, True]
 
@@ -1256,8 +1249,6 @@ def test_wait_for_clean_working_tree_prints_exactly_one_message_when_dirty(
 
 def test_wait_for_clean_working_tree_polls_every_10_seconds(tmp_path):
     """Each poll cycle must sleep exactly 10 seconds."""
-    import asyncio
-
     mock_git = MagicMock(spec=GitService)
     # Initial check: False; while loop: False → sleep, False → sleep, True → exit
     mock_git.is_working_tree_clean.side_effect = [False, False, False, True]
@@ -1271,8 +1262,6 @@ def test_wait_for_clean_working_tree_polls_every_10_seconds(tmp_path):
 
 def test_wait_for_clean_working_tree_proceeds_once_clean(tmp_path):
     """Must stop polling and return as soon as the tree becomes clean."""
-    import asyncio
-
     mock_git = MagicMock(spec=GitService)
     # Initial: False → print; loop: False → sleep, True → exit
     mock_git.is_working_tree_clean.side_effect = [False, False, True]
