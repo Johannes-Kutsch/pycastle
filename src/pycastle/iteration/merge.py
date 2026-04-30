@@ -97,6 +97,7 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                     "CHECKS": " && ".join(cmd for _, cmd in deps.cfg.preflight_checks),
                 },
                 model=deps.cfg.merge_override.model,
+                status_display=deps.status_display,
                 effort=deps.cfg.merge_override.effort,
                 stage="pre-merge",
             )
