@@ -1,0 +1,101 @@
+import asyncio
+import dataclasses
+import sys
+from typing import Any
+
+from ..agent_result import AgentSuccess
+from ..git_service import GitCommandError
+from ._deps import Deps
+
+MERGE_SANDBOX = "pycastle/merge-sandbox"
+
+
+def branch_for(issue_number: int) -> str:
+    return f"pycastle/issue-{issue_number}"
+
+
+@dataclasses.dataclass
+class MergeResult:
+    clean: list[dict]
+    conflicts: list[dict]
+
+
+async def _wait_for_clean_working_tree(deps: Deps) -> None:
+    if deps.git_svc.is_working_tree_clean(deps.repo_root):
+        return
+    print(
+        "Working tree has uncommitted changes. "
+        "Please commit or revert all local changes before the merge phase can proceed."
+    )
+    while not deps.git_svc.is_working_tree_clean(deps.repo_root):
+        await asyncio.sleep(10)
+
+
+def _delete_merged_branches(branches: list[str], deps: Deps) -> None:
+    for branch in branches:
+        if not deps.git_svc.is_ancestor(branch, deps.repo_root):
+            continue
+        try:
+            deps.git_svc.delete_branch(branch, deps.repo_root)
+            print(f"Deleted merged branch: {branch}")
+        except GitCommandError as e:
+            print(f"Warning: could not delete branch {branch!r}: {e}", file=sys.stderr)
+
+
+async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
+    await _wait_for_clean_working_tree(deps)
+
+    conflict_issues: list[dict] = []
+    for issue in completed:
+        if deps.git_svc.try_merge(deps.repo_root, branch_for(issue["number"])):
+            deps.github_svc.close_issue(issue["number"])
+        else:
+            conflict_issues.append(issue)
+
+    clean_issues = [i for i in completed if i not in conflict_issues]
+
+    if clean_issues:
+        deps.github_svc.close_completed_parent_issues()
+
+    _delete_merged_branches([branch_for(i["number"]) for i in clean_issues], deps)
+
+    if conflict_issues:
+        target_branch = deps.git_svc.get_current_branch(deps.repo_root)
+        merger_result: Any = None
+        try:
+            merger_result = await deps.run_agent(
+                name="Merger",
+                prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
+                mount_path=deps.repo_root,
+                env=deps.env,
+                branch=MERGE_SANDBOX,
+                prompt_args={
+                    "BRANCHES": "\n".join(
+                        f"- {branch_for(i['number'])}" for i in conflict_issues
+                    ),
+                    "CHECKS": " && ".join(cmd for _, cmd in deps.cfg.preflight_checks),
+                },
+                model=deps.cfg.merge_override.model,
+                effort=deps.cfg.merge_override.effort,
+                stage="pre-merge",
+            )
+            if isinstance(merger_result, AgentSuccess):
+                deps.git_svc.fast_forward_branch(
+                    deps.repo_root, target_branch, MERGE_SANDBOX
+                )
+        finally:
+            try:
+                deps.git_svc.delete_branch(MERGE_SANDBOX, deps.repo_root)
+            except Exception as exc:
+                print(
+                    f"Warning: could not delete sandbox branch: {exc}", file=sys.stderr
+                )
+        print("\nBranches merged.")
+        _delete_merged_branches(
+            [branch_for(i["number"]) for i in conflict_issues], deps
+        )
+        for issue in conflict_issues:
+            deps.github_svc.close_issue(issue["number"])
+        deps.github_svc.close_completed_parent_issues()
+
+    return MergeResult(clean=clean_issues, conflicts=conflict_issues)
