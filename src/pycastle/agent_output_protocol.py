@@ -130,3 +130,12 @@ def parse(output: str, role: AgentRole) -> AgentOutput:
     if not re.search(r"<promise>COMPLETE</promise>", text):
         raise PromiseParseError("Agent produced no <promise>COMPLETE</promise> tag.")
     return CompletionOutput()
+
+
+def assert_complete(output: str) -> None:
+    text = _unwrap(output)
+    if not re.search(r"<promise>COMPLETE</promise>", text):
+        tail = text[-200:]
+        raise PromiseParseError(
+            f"Agent produced no <promise>COMPLETE</promise> tag. Output tail: {tail!r}"
+        )

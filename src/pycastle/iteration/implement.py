@@ -4,7 +4,7 @@ import dataclasses
 from collections.abc import Sequence
 from typing import Any
 
-from ..agent_output_protocol import AgentRole, parse
+from ..agent_output_protocol import assert_complete
 from ..agent_result import CancellationToken, PreflightFailure
 from ..errors import UsageLimitError
 from ..prompt_utils import load_standards
@@ -67,7 +67,7 @@ async def run_issue(
     if isinstance(result, PreflightFailure):
         return result
 
-    parse(result, AgentRole.IMPLEMENTER)
+    assert_complete(result)
     deps.logger.log_agent_output(f"Implementer #{issue['number']}", result)
 
     review_result = await _bounded_run_agent(
@@ -82,7 +82,7 @@ async def run_issue(
         stage="pre-review",
         skip_preflight=True,
     )
-    parse(review_result, AgentRole.REVIEWER)
+    assert_complete(review_result)
     return issue
 
 
