@@ -127,12 +127,54 @@ def test_reviewer_default_template_renders_without_error():
 
 # ── Preflight-issue template ──────────────────────────────────────────────────
 
+_PREFLIGHT_ARGS = {
+    "CHECK_NAME": "pytest",
+    "COMMAND": "pytest",
+    "OUTPUT": "1 failed",
+    "BUG_LABEL": "bug",
+    "ISSUE_LABEL": "ready-for-agent",
+    "HITL_LABEL": "ready-for-human",
+}
+
 
 def test_preflight_issue_default_template_renders_without_error():
-    result = _render(
-        _DEFAULTS / "preflight-issue.md",
-        {"CHECK_NAME": "pytest", "COMMAND": "pytest", "OUTPUT": "1 failed"},
-    )
+    result = _render(_DEFAULTS / "preflight-issue.md", _PREFLIGHT_ARGS)
     assert "{{CHECK_NAME}}" not in result
     assert "{{COMMAND}}" not in result
     assert "{{OUTPUT}}" not in result
+    assert "{{BUG_LABEL}}" not in result
+    assert "{{ISSUE_LABEL}}" not in result
+    assert "{{HITL_LABEL}}" not in result
+
+
+def test_preflight_issue_template_fails_without_bug_label_arg():
+    args = {k: v for k, v in _PREFLIGHT_ARGS.items() if k != "BUG_LABEL"}
+    with pytest.raises(PromptRenderError, match="BUG_LABEL"):
+        _render(_DEFAULTS / "preflight-issue.md", args)
+
+
+def test_preflight_issue_template_fails_without_issue_label_arg():
+    args = {k: v for k, v in _PREFLIGHT_ARGS.items() if k != "ISSUE_LABEL"}
+    with pytest.raises(PromptRenderError, match="ISSUE_LABEL"):
+        _render(_DEFAULTS / "preflight-issue.md", args)
+
+
+def test_preflight_issue_template_fails_without_hitl_label_arg():
+    args = {k: v for k, v in _PREFLIGHT_ARGS.items() if k != "HITL_LABEL"}
+    with pytest.raises(PromptRenderError, match="HITL_LABEL"):
+        _render(_DEFAULTS / "preflight-issue.md", args)
+
+
+def test_preflight_issue_template_expands_label_placeholders():
+    result = _render(
+        _DEFAULTS / "preflight-issue.md",
+        {
+            **_PREFLIGHT_ARGS,
+            "BUG_LABEL": "custom-bug",
+            "ISSUE_LABEL": "custom-agent",
+            "HITL_LABEL": "custom-human",
+        },
+    )
+    assert "custom-bug" in result
+    assert "custom-agent" in result
+    assert "custom-human" in result
