@@ -24,7 +24,6 @@ def test_merger_template_renders_without_error():
     prompt_file = REPO_ROOT / _cfg.prompts_dir / "merge-prompt.md"
     args = {
         "BRANCHES": "- branch-a\n- branch-b",
-        "ISSUES": "- #1: Title A\n- #2: Title B",
         "CHECKS": " && ".join(cmd for _, cmd in _cfg.preflight_checks),
     }
     assert_template_renders(prompt_file, args)
@@ -38,7 +37,6 @@ def test_merger_checks_arg_matches_preflight_config():
     expected_checks = " && ".join(cmd for _, cmd in _cfg.preflight_checks)
     args = {
         "BRANCHES": "- branch-a",
-        "ISSUES": "- #1: Title",
         "CHECKS": expected_checks,
     }
     rendered = assert_template_renders(prompt_file, args)
