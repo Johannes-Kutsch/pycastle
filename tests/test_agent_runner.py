@@ -11,7 +11,7 @@ from pycastle.agent_result import CancellationToken, PreflightFailure
 from pycastle.agent_runner import AgentRunner
 from pycastle.config import Config
 from pycastle.errors import AgentTimeoutError, BranchCollisionError, UsageLimitError
-from pycastle.git_service import GitService
+from pycastle.git_service import GitCommandError, GitService
 from pycastle.iteration._deps import FakeAgentRunner
 
 
@@ -226,12 +226,11 @@ def _make_docker_client(chunks: list[bytes]) -> MagicMock:
     mock_container = MagicMock()
     mock_client.containers.run.return_value = mock_container
 
-    stream_result = MagicMock()
-    stream_result.output = iter(chunks)
-
     def exec_side_effect(*args, **kwargs):
         if kwargs.get("stream"):
-            return stream_result
+            result = MagicMock()
+            result.output = iter(chunks)
+            return result
         return MagicMock(exit_code=0, output=(b"", b""))
 
     mock_container.exec_run.side_effect = exec_side_effect
@@ -474,3 +473,166 @@ def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
     )
 
     assert result == "done\n"
+
+
+# ── AgentRunner: worktree lifecycle ──────────────────────────────────────────
+
+
+def test_agent_runner_creates_worktree_at_issue_path(tmp_path):
+    mock_git = _make_git_service()
+    mock_client = _make_docker_client([b"done\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    asyncio.run(
+        runner.run(
+            name="Test",
+            prompt_file=prompt,
+            mount_path=tmp_path,
+            branch="pycastle/issue-42",
+            skip_preflight=True,
+        )
+    )
+
+    worktree_path = mock_git.create_worktree.call_args[0][1]
+    assert worktree_path.name == "issue-42"
+
+
+def test_agent_runner_sanitizes_branch_name_for_worktree_path(tmp_path):
+    mock_git = _make_git_service()
+    mock_client = _make_docker_client([b"done\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    asyncio.run(
+        runner.run(
+            name="Test",
+            prompt_file=prompt,
+            mount_path=tmp_path,
+            branch="feature/My Cool Branch",
+            skip_preflight=True,
+        )
+    )
+
+    worktree_path = mock_git.create_worktree.call_args[0][1]
+    assert worktree_path.name == "feature-my-cool-branch"
+
+
+def test_agent_runner_removes_worktree_when_clean(tmp_path):
+    mock_git = _make_git_service()
+    mock_git.is_working_tree_clean.return_value = True
+    mock_client = _make_docker_client([b"done\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    asyncio.run(
+        runner.run(
+            name="Test",
+            prompt_file=prompt,
+            mount_path=tmp_path,
+            branch="feature/test",
+            skip_preflight=True,
+        )
+    )
+
+    mock_git.remove_worktree.assert_called_once()
+
+
+def test_agent_runner_preserves_worktree_when_dirty(tmp_path):
+    mock_git = _make_git_service()
+    mock_git.is_working_tree_clean.return_value = False
+    mock_client = _make_docker_client([b"done\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    asyncio.run(
+        runner.run(
+            name="Test",
+            prompt_file=prompt,
+            mount_path=tmp_path,
+            branch="feature/test",
+            skip_preflight=True,
+        )
+    )
+
+    mock_git.remove_worktree.assert_not_called()
+
+
+def test_agent_runner_preserves_worktree_on_usage_limit(tmp_path):
+    mock_git = _make_git_service()
+    mock_client = _make_docker_client([b"You've hit your session limit\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(
+            runner.run(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                branch="feature/test",
+                skip_preflight=True,
+            )
+        )
+
+    mock_git.remove_worktree.assert_not_called()
+
+
+def test_agent_runner_does_not_start_container_when_create_worktree_fails(tmp_path):
+    mock_git = _make_git_service()
+    mock_git.create_worktree.side_effect = RuntimeError("git worktree add failed")
+    mock_client = _make_docker_client([b"done\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with pytest.raises(RuntimeError, match="worktree add failed"):
+        asyncio.run(
+            runner.run(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                branch="feature/test",
+                skip_preflight=True,
+            )
+        )
+
+    mock_client.containers.run.assert_not_called()
+
+
+def test_agent_runner_propagates_git_user_name_error(tmp_path):
+    mock_git = _make_git_service()
+    mock_git.get_user_name.side_effect = GitCommandError("git config user.name failed")
+    mock_client = _make_docker_client([b"done\n"])
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    with pytest.raises(GitCommandError):
+        asyncio.run(
+            runner.run(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+            )
+        )
