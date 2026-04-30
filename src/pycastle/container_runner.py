@@ -127,6 +127,7 @@ class ContainerRunner:
         self._container: DockerContainer | None = None
         self._container_env: dict[str, str] = {}
         self._prompt: str = ""
+        self._auto_overlay: Path | None = None
         slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
         self._log_path = self._cfg.logs_dir / f"{slug}.log"
         self._worktree_path = "/home/agent/workspace"
@@ -162,7 +163,27 @@ class ContainerRunner:
                     "mode": "ro",
                 }
         else:
-            volumes = {repo_path: {"bind": "/home/agent/workspace", "mode": "rw"}}
+            git_file = self.mount_path / ".git"
+            if git_file.is_file():
+                overlay = patch_gitdir_for_container(self.mount_path)
+                parent_git = self._parse_parent_git(git_file)
+                if parent_git is not None and parent_git.exists():
+                    parent_git_str = str(parent_git.resolve()).replace("\\", "/")
+                    volumes = {
+                        repo_path: {"bind": "/home/agent/workspace", "mode": "rw"},
+                        parent_git_str: {"bind": CONTAINER_PARENT_GIT, "mode": "rw"},
+                    }
+                    if overlay is not None:
+                        self._auto_overlay = overlay
+                        overlay_path = str(overlay.resolve()).replace("\\", "/")
+                        volumes[overlay_path] = {
+                            "bind": "/home/agent/workspace/.git",
+                            "mode": "ro",
+                        }
+                else:
+                    volumes = {repo_path: {"bind": "/home/agent/workspace", "mode": "rw"}}
+            else:
+                volumes = {repo_path: {"bind": "/home/agent/workspace", "mode": "rw"}}
         working_dir = "/home/agent/workspace"
 
         # CLAUDE_ACCOUNT_JSON is written as a file inside the container, not passed as env var
@@ -184,7 +205,24 @@ class ContainerRunner:
 
         return self
 
+    @staticmethod
+    def _parse_parent_git(git_file: Path) -> Path | None:
+        m = re.search(r"gitdir:\s*(.+)", git_file.read_text(encoding="utf-8"))
+        if not m:
+            return None
+        gitdir = m.group(1).strip().replace("\\", "/")
+        idx = gitdir.find(".git/worktrees/")
+        if idx == -1:
+            return None
+        return Path(gitdir[:idx] + ".git")
+
     def __exit__(self, *_):
+        if self._auto_overlay:
+            try:
+                self._auto_overlay.unlink(missing_ok=True)
+            except Exception:
+                pass
+            self._auto_overlay = None
         if self._container:
             try:
                 self._container.stop(timeout=5)

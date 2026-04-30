@@ -33,6 +33,7 @@ def _plan_json(issues: list[dict]) -> str:
 
 def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
     mock_svc = MagicMock(spec=GitService)
+    mock_svc.get_head_sha.return_value = "abc1234"
     if try_merge_side_effect is not None:
         results = list(try_merge_side_effect)
         idx = [0]
@@ -91,7 +92,7 @@ def _run(
             tmp_path,
             run_agent=run_agent_fn,
             validate_config=validate_config or (lambda _: None),
-            git_service=git_service,
+            git_service=git_service if git_service is not None else _make_git_svc(),
             github_service=github_service,
             cfg=cfg if cfg is not None else Config(max_parallel=4, max_iterations=1),
         )
@@ -566,7 +567,6 @@ def test_stage_overrides_are_independent(tmp_path):
 
 
 def test_merger_receives_checks_prompt_arg_from_preflight_checks(tmp_path):
-<<<<<<< HEAD
     """Merger must receive CHECKS built from preflight_checks commands joined by ' && '."""
     captured: list[dict] = []
 
@@ -1691,6 +1691,7 @@ def test_run_stops_after_max_iterations_from_cfg(tmp_path):
             cfg=Config(max_iterations=2, max_parallel=4),
             run_agent=_fake_run_agent,
             validate_config=lambda _: None,
+            git_service=_make_git_svc(),
             github_service=_make_github_svc(),
         )
     )
@@ -1746,6 +1747,7 @@ def test_run_with_no_cfg_completes_using_module_singleton(tmp_path):
             tmp_path,
             run_agent=_fake_run_agent,
             validate_config=lambda _: None,
+            git_service=_make_git_svc(),
             github_service=_make_github_svc(),
         )
     )
@@ -1773,6 +1775,7 @@ def test_run_passes_plan_override_model_and_effort_from_cfg(tmp_path):
             ),
             run_agent=_fake_run_agent,
             validate_config=lambda _: None,
+            git_service=_make_git_svc(),
             github_service=_make_github_svc(),
         )
     )
@@ -1806,6 +1809,7 @@ def test_run_applies_validate_config_model_resolution_to_agent_calls(tmp_path):
             ),
             run_agent=_fake_run_agent,
             validate_config=_resolving_validate,
+            git_service=_make_git_svc(),
             github_service=_make_github_svc(),
         )
     )
