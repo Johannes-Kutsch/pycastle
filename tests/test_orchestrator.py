@@ -270,7 +270,7 @@ def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
 def _make_github_svc():
     mock = MagicMock(spec=GithubService)
     mock.has_open_issues_with_label.return_value = True
-    mock.get_open_issues.return_value = []
+    mock.get_open_issues.return_value = [{"number": 1, "title": "Default Issue"}]
     return mock
 
 
@@ -1708,7 +1708,7 @@ def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
 
 
 def test_preplanning_preflight_runs_on_cold_startup(tmp_path):
-    """On cold startup the Planner must be called exactly once (no issues → terminate)."""
+    """On cold startup the Planner must not be called when get_open_issues returns empty."""
     planner_calls: list[str] = []
 
     async def _fake_run_agent(name, **kwargs):
@@ -1717,9 +1717,13 @@ def test_preplanning_preflight_runs_on_cold_startup(tmp_path):
             return AgentIncomplete(partial_output=_plan_json([]))
         return AgentIncomplete(partial_output="")
 
-    _run(tmp_path, _fake_run_agent, github_service=_make_github_svc())
+    github_svc = _make_github_svc()
+    github_svc.get_open_issues.return_value = []
+    _run(tmp_path, _fake_run_agent, github_service=github_svc)
 
-    assert len(planner_calls) == 1, f"Expected 1 Planner call; got {len(planner_calls)}"
+    assert len(planner_calls) == 0, (
+        f"Expected 0 Planner calls; got {len(planner_calls)}"
+    )
 
 
 def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
@@ -1764,6 +1768,7 @@ def _make_github_svc_afk():
     mock = MagicMock(spec=GithubService)
     mock.get_labels.return_value = ["bug", "ready-for-agent"]
     mock.get_issue_title.return_value = "Preflight fix title"
+    mock.get_open_issues.return_value = [{"number": 1, "title": "Default Issue"}]
     return mock
 
 
@@ -1772,6 +1777,7 @@ def _make_github_svc_hitl():
     mock = MagicMock(spec=GithubService)
     mock.get_labels.return_value = ["bug", "ready-for-human"]
     mock.get_issue_title.return_value = "Preflight fix title"
+    mock.get_open_issues.return_value = [{"number": 1, "title": "Default Issue"}]
     return mock
 
 
@@ -2490,6 +2496,24 @@ def test_preflight_phase_success_sets_issues(tmp_path):
 # ── Issue-208: plan_phase ─────────────────────────────────────────────────────
 
 
+def test_plan_phase_returns_empty_without_calling_planner_when_no_open_issues(tmp_path):
+    """plan_phase must return PlanResult(issues=[]) without invoking the Planner when get_open_issues returns []."""
+    planner_calls: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        planner_calls.append(name)
+        return AgentIncomplete(partial_output=_plan_json([]))
+
+    github_svc = _make_github_svc()
+    github_svc.get_open_issues.return_value = []
+    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=github_svc)
+    state = IterationState(worktree_sha="sha123")
+    result = asyncio.run(plan_phase(state, deps))
+
+    assert result.issues == []
+    assert planner_calls == [], f"Planner must not be called; got {planner_calls}"
+
+
 def test_plan_phase_success_returns_parsed_issues(tmp_path):
     """plan_phase must return PlanResult with parsed issues from the Planner output."""
     expected = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
@@ -2498,7 +2522,9 @@ def test_plan_phase_success_returns_parsed_issues(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         return AgentIncomplete(partial_output=plan_json_output)
 
-    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc())
+    github_svc = _make_github_svc()
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix A"}]
+    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=github_svc)
     state = IterationState(worktree_sha="sha123")
     result = asyncio.run(plan_phase(state, deps))
 
@@ -2533,7 +2559,9 @@ def test_plan_phase_raises_when_no_plan_tag(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         return AgentIncomplete(partial_output="no plan tag in this output")
 
-    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=_make_github_svc())
+    github_svc = _make_github_svc()
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix A"}]
+    deps = _make_deps(tmp_path, _fake_run_agent, github_svc=github_svc)
     state = IterationState(worktree_sha="sha123")
 
     with pytest.raises(RuntimeError, match="no <plan> tag"):
