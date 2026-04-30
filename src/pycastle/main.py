@@ -8,6 +8,7 @@ import click
 from dotenv import load_dotenv
 
 from .config import Config, load_config
+from .errors import ConfigValidationError
 
 _ENV_KEYS = (
     "ANTHROPIC_API_KEY",
@@ -32,6 +33,14 @@ def _load_env(cfg: Config | None = None) -> dict[str, str]:
     return env
 
 
+def _load_config_or_exit() -> Config:
+    try:
+        return load_config()
+    except ConfigValidationError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+
+
 @click.group()
 def main() -> None:
     pass
@@ -48,7 +57,8 @@ def init_cmd() -> None:
 def labels_cmd() -> None:
     from .labels import main as _labels
 
-    _labels()
+    cfg = _load_config_or_exit()
+    _labels(cfg=cfg)
 
 
 @main.command("build")
@@ -61,14 +71,16 @@ def labels_cmd() -> None:
 def build_cmd(no_cache: bool) -> None:
     from .build_command import main as _build
 
-    _build(no_cache)
+    cfg = _load_config_or_exit()
+    _build(no_cache, cfg=cfg)
 
 
 @main.command("run")
 def run_cmd() -> None:
     from .orchestrator import run
 
-    asyncio.run(run(_load_env(), Path(".").resolve()))
+    cfg = _load_config_or_exit()
+    asyncio.run(run(_load_env(cfg=cfg), Path(".").resolve()))
 
 
 if __name__ == "__main__":

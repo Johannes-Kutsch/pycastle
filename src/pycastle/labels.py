@@ -140,10 +140,10 @@ def create_labels_interactive(
         click.echo("To rerun: pycastle labels")
 
 
-def main() -> None:
+def main(cfg: Config | None = None) -> None:
     from dotenv import load_dotenv
 
-    cfg = load_config()
+    cfg = cfg or load_config()
     load_dotenv(cfg.env_file)
 
     token = os.getenv("GH_TOKEN", "").strip()
