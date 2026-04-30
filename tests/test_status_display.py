@@ -1,14 +1,18 @@
 from pathlib import Path
 
-
 from pycastle.iteration._deps import (
     NullStatusDisplay,
     RecordingStatusDisplay,
     StatusDisplay,
 )
+from pycastle.rich_status_display import RichStatusDisplay
 
 
 # ── NullStatusDisplay protocol conformance ────────────────────────────────────
+
+
+def test_rich_status_display_satisfies_protocol() -> None:
+    assert isinstance(RichStatusDisplay(), StatusDisplay)
 
 
 def test_null_status_display_satisfies_protocol() -> None:
