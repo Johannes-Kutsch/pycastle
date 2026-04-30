@@ -260,9 +260,6 @@ def test_load_config_validate_valid_efforts_pass(tmp_path):
     (tmp_path / "pycastle").mkdir()
     config_dir = tmp_path / "pycastle"
     for effort in ("low", "medium", "high", "xhigh", "max"):
-        from pycastle.config import _fetch_models
-
-        _fetch_models.cache_clear()
         config_dir.joinpath("config.py").write_text(
             "from pycastle import StageOverride\n"
             f'plan_override = StageOverride(model="", effort="{effort}")\n'
@@ -360,6 +357,19 @@ def test_load_config_validate_already_resolved_full_id_accepted(tmp_path):
 # ── load_config(validate=True): atomicity ────────────────────────────────────
 
 
+def test_load_config_validate_valid_model_with_invalid_effort_raises_effort_error(
+    tmp_path,
+):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pycastle import StageOverride\n"
+        'plan_override = StageOverride(model="sonnet", effort="badeffort")\n'
+    )
+    with pytest.raises(ConfigValidationError) as exc_info:
+        load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+    assert exc_info.value.invalid_value == "badeffort"
+
+
 def test_load_config_validate_atomicity_no_partial_resolution(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(
@@ -367,8 +377,9 @@ def test_load_config_validate_atomicity_no_partial_resolution(tmp_path):
         'plan_override = StageOverride(model="sonnet", effort="")\n'
         'implement_override = StageOverride(model="badmodel", effort="")\n'
     )
-    with pytest.raises(ConfigValidationError):
+    with pytest.raises(ConfigValidationError) as exc_info:
         load_config(repo_root=tmp_path, validate=True, claude_service=_make_service())
+    assert exc_info.value.invalid_value == "badmodel"
 
 
 # ── ConfigValidationError hierarchy ─────────────────────────────────────────
