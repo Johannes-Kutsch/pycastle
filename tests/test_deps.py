@@ -189,3 +189,48 @@ def test_fake_agent_runner_can_return_preflight_failure(
     )
 
     assert result is failure
+
+
+def test_fake_agent_runner_raises_queued_exception(prompt_file, mount_path) -> None:
+    runner = FakeAgentRunner(responses=[RuntimeError("agent crashed")])
+
+    with pytest.raises(RuntimeError, match="agent crashed"):
+        asyncio.run(
+            runner.run(name="planner", prompt_file=prompt_file, mount_path=mount_path)
+        )
+
+
+def test_fake_agent_runner_side_effect_bypasses_queue(prompt_file, mount_path) -> None:
+    runner = FakeAgentRunner(responses=[], side_effect=lambda **_: "from side_effect")
+
+    result = asyncio.run(
+        runner.run(name="planner", prompt_file=prompt_file, mount_path=mount_path)
+    )
+
+    assert result == "from side_effect"
+
+
+def test_fake_agent_runner_async_side_effect_is_awaited(
+    prompt_file, mount_path
+) -> None:
+    async def async_effect(**_) -> str:
+        return "async result"
+
+    runner = FakeAgentRunner(side_effect=async_effect)
+
+    result = asyncio.run(
+        runner.run(name="planner", prompt_file=prompt_file, mount_path=mount_path)
+    )
+
+    assert result == "async result"
+
+
+def test_fake_agent_runner_side_effect_records_call(prompt_file, mount_path) -> None:
+    runner = FakeAgentRunner(side_effect=lambda **_: "result")
+
+    asyncio.run(
+        runner.run(name="implementer", prompt_file=prompt_file, mount_path=mount_path)
+    )
+
+    assert len(runner.calls) == 1
+    assert runner.calls[0]["name"] == "implementer"
