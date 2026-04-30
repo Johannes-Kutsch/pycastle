@@ -1,7 +1,7 @@
 from pycastle import StageOverride
 
 # --- Behaviour ---
-max_iterations = 10
+max_iterations = 25
 max_parallel = 1
 # worktree_timeout = 30
 # idle_timeout = 300
