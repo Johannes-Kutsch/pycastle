@@ -239,6 +239,39 @@ class GitService:
                 stderr=result.stderr.decode("utf-8", errors="replace").strip(),
             )
 
+    def checkout_detached(self, repo_path: Path, worktree_path: Path, sha: str) -> None:
+        self._run(
+            ["git", "worktree", "prune"],
+            cwd=repo_path,
+            capture_output=True,
+        )
+
+        if worktree_path.exists():
+            remove = self._run(
+                ["git", "worktree", "remove", "--force", str(worktree_path)],
+                cwd=repo_path,
+                capture_output=True,
+            )
+            if remove.returncode != 0:
+                raise GitCommandError(
+                    f"git worktree remove --force {str(worktree_path)!r} failed",
+                    returncode=remove.returncode,
+                    stderr=remove.stderr.decode("utf-8", errors="replace").strip(),
+                )
+
+        result = self._run(
+            ["git", "worktree", "add", "--detach", str(worktree_path), sha],
+            cwd=repo_path,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.decode("utf-8", errors="replace").strip()
+            raise GitCommandError(
+                f"git worktree add --detach failed: {stderr}",
+                returncode=result.returncode,
+                stderr=stderr,
+            )
+
     def remove_worktree(self, repo_path: Path, worktree_path: Path) -> None:
         result = self._run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
