@@ -51,7 +51,22 @@ def test_load_standards_returns_empty_string_for_missing_file(tmp_path):
     assert result["REFACTORING_STANDARDS"] == ""
 
 
-# ── Cycle 3: prepare_prompt renders standards placeholder ────────────────────
+# ── Cycle 3: absent coding-standards directory returns empty strings ──────────
+
+
+def test_load_standards_returns_empty_strings_when_dir_absent(tmp_path):
+    result = load_standards(tmp_path)
+
+    assert result == {
+        "TESTING_STANDARDS": "",
+        "MOCKING_STANDARDS": "",
+        "INTERFACES_STANDARDS": "",
+        "DEEP_MODULES_STANDARDS": "",
+        "REFACTORING_STANDARDS": "",
+    }
+
+
+# ── Cycle 4: prepare_prompt renders standards placeholder ────────────────────
 
 
 def test_prepare_prompt_renders_standards_placeholder(tmp_path):
