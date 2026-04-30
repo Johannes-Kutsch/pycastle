@@ -74,7 +74,7 @@
 | **conflicting branch** | A branch whose `git merge --no-edit` exits non-zero; `git merge --abort` is run immediately and the branch is collected for the Merger | failed merge branch |
 | **post-merge check** | A quality check run on the host after all clean merges complete; uses the same PREFLIGHT_CHECKS commands as the Pre-flight phase; on pass, repins the safe SHA; on fail, spawns the preflight-issue agent | post-merge quality check, post-merge gate |
 | **RALPH** | The required commit message prefix for all Implementer commits (e.g. `RALPH: fix auth bug`) | — |
-| **plan** | The structured JSON output by the Planner listing which issues to work on and the branch name for each | plan output, plan JSON |
+| **plan** | The structured JSON output by the Planner listing which issues to work on and the branch name for each; after parsing, `plan_phase()` sorts issues by ascending issue number so the orchestrator always processes older issues first | plan output, plan JSON |
 | **issue** | A GitHub issue labeled for agent processing, representing one unit of work | ticket, task, card |
 | **AFK issue** | An issue the Planner assigns to an Implementer because it can be resolved autonomously; labeled `ready-for-agent` | agent issue, auto issue |
 | **HITL issue** | An issue that requires human intervention; labeled `ready-for-human` — the Planner must never assign it to an Implementer | manual issue, human issue |

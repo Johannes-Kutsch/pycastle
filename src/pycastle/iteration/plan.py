@@ -117,6 +117,9 @@ async def plan_phase(deps: Deps) -> PlanResult:
         except AgentOutputProtocolError as exc:
             raise RuntimeError(str(exc)) from exc
 
-        return PlanReady(worktree_sha=sha, issues=planner_output.issues)
+        return PlanReady(
+            worktree_sha=sha,
+            issues=sorted(planner_output.issues, key=lambda i: i["number"]),
+        )
     finally:
         deps.git_svc.remove_worktree(deps.repo_root, worktree_path)

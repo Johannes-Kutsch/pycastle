@@ -175,6 +175,29 @@ def test_plan_phase_returns_ready_when_planner_returns_agent_success(
     assert result.issues == expected
 
 
+def test_plan_phase_returns_issues_sorted_by_ascending_number(
+    tmp_path, git_svc, github_svc, logger
+):
+    planner_output = [
+        {"number": 5, "title": "E"},
+        {"number": 1, "title": "A"},
+        {"number": 3, "title": "C"},
+    ]
+    github_svc.get_open_issues.return_value = planner_output
+    fake = FakeAgentRunner([_plan_json(planner_output)])
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(plan_phase(deps))
+
+    assert result.issues == [
+        {"number": 1, "title": "A"},
+        {"number": 3, "title": "C"},
+        {"number": 5, "title": "E"},
+    ]
+
+
 # ── plan_phase: UsageLimitError ──────────────────────────────────────────────
 
 
