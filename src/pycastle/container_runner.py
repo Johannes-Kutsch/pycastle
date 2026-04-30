@@ -15,14 +15,9 @@ from pathlib import Path
 import docker
 from docker.models.containers import Container as DockerContainer
 
-from . import agent_output_protocol
 from .agent_result import (
-    AgentIncomplete,
-    AgentSuccess,
-    AgentTimeoutHit,
     CancellationToken,
     PreflightFailure,
-    UsageLimitHit,
 )
 from .config import Config, config as _cfg
 from .errors import (
@@ -442,13 +437,11 @@ async def run_agent(
     *,
     token: CancellationToken | None = None,
     cfg: Config | None = None,
-) -> (
-    AgentSuccess | AgentIncomplete | PreflightFailure | UsageLimitHit | AgentTimeoutHit
-):
+) -> str | PreflightFailure:
     _run_cfg = cfg if cfg is not None else _cfg
     _token = token if token is not None else CancellationToken()
     if _token.is_cancelled:
-        return UsageLimitHit(last_output="")
+        raise UsageLimitError("Agent cancelled due to usage limit")
 
     print(f"\n[{name}] Started")
 
@@ -538,7 +531,7 @@ async def run_agent(
                     break
                 except AgentTimeoutError:
                     if retries_left <= 0:
-                        return AgentTimeoutHit(last_output=output)
+                        raise
                     restart_num = _run_cfg.timeout_retries - retries_left + 1
                     print(
                         f"[{name}] Timeout — restarting"
@@ -547,10 +540,8 @@ async def run_agent(
                     retries_left -= 1
                 except UsageLimitError:
                     _token.cancel(preserve_worktree=True)
-                    return UsageLimitHit(last_output=output)
-            if agent_output_protocol.is_complete(output):
-                return AgentSuccess(output=output)
-            return AgentIncomplete(partial_output=output)
+                    raise
+            return output
     finally:
         if lock is not None and lock.locked():
             lock.release()
