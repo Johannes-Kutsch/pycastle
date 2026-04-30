@@ -18,6 +18,7 @@ def git_svc():
     svc.try_merge.return_value = True
     svc.is_ancestor.return_value = True
     svc.get_current_branch.return_value = "main"
+    svc.list_worktrees.return_value = []
     return svc
 
 
@@ -312,3 +313,33 @@ def test_merge_result_stores_clean_and_conflicts():
     result = MergeResult(clean=[{"number": 1}], conflicts=[{"number": 2}])
     assert result.clean == [{"number": 1}]
     assert result.conflicts == [{"number": 2}]
+
+
+# ── Active worktree removal before branch deletion ────────────────────────────
+
+
+def test_branch_with_active_worktree_removes_worktree_first(deps, git_svc):
+    worktree_path = deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "issue-1"
+    git_svc.list_worktrees.return_value = [worktree_path]
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, deps)
+    git_svc.remove_worktree.assert_called_once_with(deps.repo_root, worktree_path)
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-1" in deleted
+
+
+def test_branch_with_active_worktree_remove_called_before_delete(deps, git_svc):
+    worktree_path = deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "issue-1"
+    git_svc.list_worktrees.return_value = [worktree_path]
+    call_order: list[str] = []
+    git_svc.remove_worktree.side_effect = lambda *a, **kw: call_order.append("remove")
+    git_svc.delete_branch.side_effect = lambda *a, **kw: call_order.append("delete")
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, deps)
+    assert call_order.index("remove") < call_order.index("delete")
+
+
+def test_branch_without_active_worktree_skips_remove_worktree(deps, git_svc):
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, deps)
+    git_svc.remove_worktree.assert_not_called()
