@@ -188,18 +188,18 @@ async def _handle_preflight_failure(
 
 
 async def plan_phase(state: IterationState, deps: Deps) -> PlanResult:
+    open_issues = strip_stale_blocker_refs(
+        deps.github_svc.get_open_issues(deps.cfg.issue_label)
+    )
+    if not open_issues:
+        return PlanResult(issues=[])
+
     plan_result = await deps.run_agent(
         name="Planner",
         prompt_file=deps.cfg.prompts_dir / "plan-prompt.md",
         mount_path=deps.repo_root,
         env=deps.env,
-        prompt_args={
-            "OPEN_ISSUES_JSON": json.dumps(
-                strip_stale_blocker_refs(
-                    deps.github_svc.get_open_issues(deps.cfg.issue_label)
-                )
-            )
-        },
+        prompt_args={"OPEN_ISSUES_JSON": json.dumps(open_issues)},
         model=deps.cfg.plan_override.model,
         effort=deps.cfg.plan_override.effort,
         stage="pre-planning",
