@@ -1,10 +1,11 @@
 import asyncio
 import builtins
 import dataclasses
+from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
-from ..agent_result import PreflightFailure
+from ..agent_result import CancellationToken, PreflightFailure
 from ..agent_runner import AgentRunnerProtocol
 from ..config import Config
 from ..git_service import GitService
@@ -72,11 +73,13 @@ class FakeAgentRunner:
 
     def __init__(
         self,
-        responses: list | None = None,
+        responses: list[str | PreflightFailure | BaseException] | None = None,
         *,
-        side_effect=None,
+        side_effect: Callable[..., Any] | None = None,
     ) -> None:
-        self._responses: list = list(responses or [])
+        self._responses: list[str | PreflightFailure | BaseException] = list(
+            responses or []
+        )
         self._side_effect = side_effect
         self.calls: list[dict] = []
 
@@ -93,7 +96,7 @@ class FakeAgentRunner:
         model: str = "",
         effort: str = "",
         stage: str = "",
-        token=None,
+        token: CancellationToken | None = None,
     ) -> str | PreflightFailure:
         call = {
             "name": name,
