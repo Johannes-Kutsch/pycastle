@@ -2,7 +2,7 @@ import asyncio
 from unittest.mock import MagicMock
 
 from pycastle.agent_result import AgentSuccess, PreflightFailure, UsageLimitHit
-from pycastle.config import Config, IMPLEMENT_CHECKS
+from pycastle.config import Config, config as _cfg
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
 from pycastle.iteration._deps import Deps, RecordingLogger
@@ -295,7 +295,7 @@ def test_run_issue_feedback_commands_include_backtick_wrapped_implement_checks(
 
     implementer_call = next(a for a in captured_args if "Implementer" in a["name"])
     feedback_commands = implementer_call["prompt_args"]["FEEDBACK_COMMANDS"]
-    for cmd in IMPLEMENT_CHECKS:
+    for cmd in _cfg.implement_checks:
         assert f"`{cmd}`" in feedback_commands
 
 

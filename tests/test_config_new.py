@@ -114,3 +114,32 @@ def test_stage_override_importable_from_package_top_level():
     from pycastle.config import StageOverride as ConfigStageOverride
 
     assert TopLevelStageOverride is ConfigStageOverride
+
+
+# ── Issue 269: UPPERCASE backward-compat aliases removed ─────────────────────
+
+
+def test_config_module_does_not_export_uppercase_aliases():
+    import pycastle.config as cfg_mod
+
+    _removed = [
+        "MAX_ITERATIONS",
+        "MAX_PARALLEL",
+        "WORKTREE_TIMEOUT",
+        "IDLE_TIMEOUT",
+        "DOCKER_IMAGE_NAME",
+        "ISSUE_LABEL",
+        "HITL_LABEL",
+        "PYCASTLE_DIR",
+        "PROMPTS_DIR",
+        "LOGS_DIR",
+        "WORKTREES_DIR",
+        "ENV_FILE",
+        "DOCKERFILE",
+        "PREFLIGHT_CHECKS",
+        "IMPLEMENT_CHECKS",
+        "USAGE_LIMIT_PATTERNS",
+        "STAGE_OVERRIDES",
+    ]
+    for name in _removed:
+        assert not hasattr(cfg_mod, name), f"config.py should not export {name!r}"

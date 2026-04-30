@@ -566,8 +566,8 @@ def test_stage_overrides_are_independent(tmp_path):
 
 
 def test_merger_receives_checks_prompt_arg_from_preflight_checks(tmp_path):
-    """Merger must receive CHECKS built from PREFLIGHT_CHECKS commands joined by ' && '."""
-    from pycastle.config import PREFLIGHT_CHECKS
+    """Merger must receive CHECKS built from preflight_checks commands joined by ' && '."""
+    from pycastle.config import Config
 
     captured: list[dict] = []
 
@@ -587,7 +587,7 @@ def test_merger_receives_checks_prompt_arg_from_preflight_checks(tmp_path):
     )
 
     merger_call = next(c for c in captured if c["name"] == "Merger")
-    expected_checks = " && ".join(cmd for _, cmd in PREFLIGHT_CHECKS)
+    expected_checks = " && ".join(cmd for _, cmd in Config().preflight_checks)
     assert merger_call["prompt_args"]["CHECKS"] == expected_checks
 
 
@@ -865,9 +865,9 @@ def test_conflict_branch_closed_after_merger_agent(tmp_path):
 
 def test_merge_prompt_has_no_close_issues_section():
     """The merge prompt must not instruct the Merger to close GitHub issues."""
-    from pycastle.config import PROMPTS_DIR
+    from pycastle.config import Config
 
-    merge_prompt = (PROMPTS_DIR / "merge-prompt.md").read_text()
+    merge_prompt = (Config().prompts_dir / "merge-prompt.md").read_text()
     assert "CLOSE ISSUES" not in merge_prompt, (
         "merge-prompt.md must not contain a CLOSE ISSUES section"
     )
@@ -875,9 +875,9 @@ def test_merge_prompt_has_no_close_issues_section():
 
 def test_merge_prompt_has_no_issues_placeholder():
     """The merge prompt must not reference the {{ISSUES}} variable."""
-    from pycastle.config import PROMPTS_DIR
+    from pycastle.config import Config
 
-    merge_prompt = (PROMPTS_DIR / "merge-prompt.md").read_text()
+    merge_prompt = (Config().prompts_dir / "merge-prompt.md").read_text()
     assert "{{ISSUES}}" not in merge_prompt, (
         "merge-prompt.md must not contain the {{ISSUES}} placeholder"
     )
