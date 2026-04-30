@@ -240,3 +240,75 @@ def test_run_iteration_returns_continue_when_no_implementers_complete(
     result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, Continue)
+
+
+# ── PlanAFK: preflight failure with AFK verdict ───────────────────────────────
+
+
+def test_run_iteration_returns_continue_on_afk_preflight_verdict(
+    tmp_path, git_svc, logger
+):
+    """run_iteration implements the preflight-fix issue and returns Continue when
+    plan_phase returns PlanAFK (preflight failure with AFK verdict)."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+    github_svc.get_labels.return_value = ["ready-for-agent"]
+    github_svc.get_issue_title.return_value = "Preflight fix"
+
+    async def _fake_agent(name, **kwargs):
+        if name == "Planner":
+            from pycastle.errors import PreflightError
+
+            raise PreflightError([("ruff", "ruff check .", "E501")])
+        if "preflight-issue" in name:
+            return AgentIncomplete(
+                partial_output='<issue label="ready-for-agent">55</issue>'
+            )
+        if "Implementer" in name:
+            return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return AgentIncomplete(partial_output="")
+
+    deps = _make_deps(
+        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+
+
+def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
+    tmp_path, git_svc, logger
+):
+    """On AFK preflight verdict, run_iteration must spawn an Implementer for the
+    filed fix issue (not invoke the Planner a second time)."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+    github_svc.get_labels.return_value = ["ready-for-agent"]
+    github_svc.get_issue_title.return_value = "Preflight fix"
+
+    agent_names: list[str] = []
+
+    async def _fake_agent(name, **kwargs):
+        agent_names.append(name)
+        if name == "Planner":
+            from pycastle.errors import PreflightError
+
+            raise PreflightError([("mypy", "mypy .", "error")])
+        if "preflight-issue" in name:
+            return AgentIncomplete(
+                partial_output='<issue label="ready-for-agent">77</issue>'
+            )
+        if "Implementer" in name:
+            return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return AgentIncomplete(partial_output="")
+
+    deps = _make_deps(
+        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    asyncio.run(run_iteration(deps))
+
+    planner_calls = [n for n in agent_names if n == "Planner"]
+    implementer_calls = [n for n in agent_names if "Implementer" in n]
+    assert len(planner_calls) == 1, "Planner called once (raises PreflightError)"
+    assert len(implementer_calls) == 1, "Exactly one Implementer for the fix issue"
+    assert implementer_calls[0] == "Implementer #77"
