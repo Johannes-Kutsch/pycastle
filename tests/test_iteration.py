@@ -157,6 +157,22 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
 # ── AbortedUsageLimit: usage limit hit ───────────────────────────────────────
 
 
+def test_run_iteration_returns_aborted_usage_limit_when_planner_hits_usage_limit(
+    tmp_path, git_svc, github_svc, logger
+):
+    """run_iteration returns AbortedUsageLimit when the Planner hits the usage limit."""
+
+    async def _fake_agent(name, **kwargs):
+        return UsageLimitHit(last_output="token ceiling reached")
+
+    deps = _make_deps(
+        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedUsageLimit)
+
+
 def test_run_iteration_returns_aborted_usage_limit_when_implementer_hits_limit(
     tmp_path, git_svc, github_svc, logger
 ):
