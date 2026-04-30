@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import re
 import sys
 from typing import Any
 
@@ -28,10 +29,30 @@ async def _wait_for_clean_working_tree(deps: Deps) -> None:
         await asyncio.sleep(10)
 
 
+def _worktree_path_for_branch(branch: str, deps: Deps):
+    m = re.match(r"pycastle/issue-(\d+)", branch)
+    worktree_name = (
+        f"issue-{m.group(1)}"
+        if m
+        else re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
+    )
+    return deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / worktree_name
+
+
 def _delete_merged_branches(branches: list[str], deps: Deps) -> None:
+    registered_worktrees = deps.git_svc.list_worktrees(deps.repo_root)
     for branch in branches:
         if not deps.git_svc.is_ancestor(branch, deps.repo_root):
             continue
+        worktree_path = _worktree_path_for_branch(branch, deps)
+        if worktree_path in registered_worktrees:
+            try:
+                deps.git_svc.remove_worktree(deps.repo_root, worktree_path)
+            except Exception as e:
+                print(
+                    f"Warning: could not remove worktree for {branch!r}: {e}",
+                    file=sys.stderr,
+                )
         try:
             deps.git_svc.delete_branch(branch, deps.repo_root)
             print(f"Deleted merged branch: {branch}")
