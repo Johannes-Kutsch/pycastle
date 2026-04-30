@@ -7,11 +7,6 @@ class PreflightFailure:
     failures: tuple[tuple[str, str, str], ...]
 
 
-@dataclass(frozen=True)
-class AgentTimeoutHit:
-    last_output: str
-
-
 @dataclass
 class CancellationToken:
     _event: asyncio.Event = field(default_factory=asyncio.Event, init=False)
