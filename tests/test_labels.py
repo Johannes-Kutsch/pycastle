@@ -78,3 +78,22 @@ def test_get_remote_repo_strips_dot_git_suffix():
     mock_svc.get_remote_url.return_value = "https://github.com/owner/repo.git"
     owner, repo = _get_remote_repo(git_service=mock_svc)
     assert repo == "repo"
+
+
+# ── Issue 269: labels.main() uses config.env_file ────────────────────────────
+
+
+def test_main_loads_dotenv_from_config_env_file(monkeypatch):
+    import dotenv
+
+    import pycastle.labels as labels_mod
+    from pycastle.config import config as cfg
+
+    loaded_paths: list = []
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda path: loaded_paths.append(path))
+    monkeypatch.setenv("GH_TOKEN", "fake-token")
+    monkeypatch.setattr(labels_mod, "create_labels_interactive", lambda token: None)
+
+    labels_mod.main()
+
+    assert loaded_paths == [cfg.env_file]

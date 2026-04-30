@@ -2,11 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from pycastle.config import (
-    IMPLEMENT_CHECKS,
-    PREFLIGHT_CHECKS,
-    PROMPTS_DIR,
-)
+from pycastle.config import config as _cfg
 from pycastle.iteration.implement import _format_feedback_commands
 from pycastle.prompt_pipeline import PromptRenderError, _render
 
@@ -23,11 +19,11 @@ def assert_template_renders(prompt_file: Path, args: dict[str, str]) -> str:
 
 
 def test_merger_template_renders_without_error():
-    prompt_file = REPO_ROOT / PROMPTS_DIR / "merge-prompt.md"
+    prompt_file = REPO_ROOT / _cfg.prompts_dir / "merge-prompt.md"
     args = {
         "BRANCHES": "- branch-a\n- branch-b",
         "ISSUES": "- #1: Title A\n- #2: Title B",
-        "CHECKS": " && ".join(cmd for _, cmd in PREFLIGHT_CHECKS),
+        "CHECKS": " && ".join(cmd for _, cmd in _cfg.preflight_checks),
     }
     assert_template_renders(prompt_file, args)
 
@@ -36,8 +32,8 @@ def test_merger_template_renders_without_error():
 
 
 def test_merger_checks_arg_matches_preflight_config():
-    prompt_file = REPO_ROOT / PROMPTS_DIR / "merge-prompt.md"
-    expected_checks = " && ".join(cmd for _, cmd in PREFLIGHT_CHECKS)
+    prompt_file = REPO_ROOT / _cfg.prompts_dir / "merge-prompt.md"
+    expected_checks = " && ".join(cmd for _, cmd in _cfg.preflight_checks)
     args = {
         "BRANCHES": "- branch-a",
         "ISSUES": "- #1: Title",
@@ -49,7 +45,7 @@ def test_merger_checks_arg_matches_preflight_config():
 
 
 def test_merger_template_fails_without_checks_arg():
-    prompt_file = REPO_ROOT / PROMPTS_DIR / "merge-prompt.md"
+    prompt_file = REPO_ROOT / _cfg.prompts_dir / "merge-prompt.md"
     args = {"BRANCHES": "- branch-a", "ISSUES": "- #1: Title"}  # CHECKS missing
     with pytest.raises(PromptRenderError, match="CHECKS"):
         assert_template_renders(prompt_file, args)
@@ -59,18 +55,18 @@ def test_merger_template_fails_without_checks_arg():
 
 
 def test_planner_template_renders_without_error():
-    prompt_file = REPO_ROOT / PROMPTS_DIR / "plan-prompt.md"
+    prompt_file = REPO_ROOT / _cfg.prompts_dir / "plan-prompt.md"
     assert_template_renders(prompt_file, {"OPEN_ISSUES_JSON": "[]"})
 
 
 def test_planner_template_fails_without_open_issues_json_arg():
-    prompt_file = REPO_ROOT / PROMPTS_DIR / "plan-prompt.md"
+    prompt_file = REPO_ROOT / _cfg.prompts_dir / "plan-prompt.md"
     with pytest.raises(PromptRenderError, match="OPEN_ISSUES_JSON"):
         assert_template_renders(prompt_file, {})
 
 
 def test_planner_template_does_not_contain_issue_label_or_shell_expression():
-    prompt_file = REPO_ROOT / PROMPTS_DIR / "plan-prompt.md"
+    prompt_file = REPO_ROOT / _cfg.prompts_dir / "plan-prompt.md"
     content = prompt_file.read_text(encoding="utf-8")
     assert "{{ISSUE_LABEL}}" not in content, (
         "plan-prompt.md must not contain {{ISSUE_LABEL}} — use {{OPEN_ISSUES_JSON}}"
@@ -82,7 +78,7 @@ def test_planner_template_does_not_contain_issue_label_or_shell_expression():
 
 def test_planner_template_does_not_instruct_branch_emission():
     """Plan prompt must not ask the Planner to emit a branch field — branch is now computed in code."""
-    prompt_file = REPO_ROOT / PROMPTS_DIR / "plan-prompt.md"
+    prompt_file = REPO_ROOT / _cfg.prompts_dir / "plan-prompt.md"
     content = prompt_file.read_text(encoding="utf-8")
     assert '"branch"' not in content, (
         "Plan prompt must not instruct the Planner to emit a branch field"
@@ -95,13 +91,13 @@ def test_planner_template_does_not_instruct_branch_emission():
 def test_implementer_template_renders_without_error():
     from pycastle.prompt_utils import load_standards
 
-    prompt_file = REPO_ROOT / PROMPTS_DIR / "implement-prompt.md"
+    prompt_file = REPO_ROOT / _cfg.prompts_dir / "implement-prompt.md"
     args = {
         "ISSUE_NUMBER": "42",
         "ISSUE_TITLE": "Fix the thing",
         "BRANCH": "pycastle/issue-42-fix-the-thing",
-        "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
-        **load_standards(REPO_ROOT / PROMPTS_DIR),
+        "FEEDBACK_COMMANDS": _format_feedback_commands(_cfg.implement_checks),
+        **load_standards(REPO_ROOT / _cfg.prompts_dir),
     }
     assert_template_renders(prompt_file, args)
 
@@ -120,7 +116,7 @@ def _get_step0_section(content: str) -> str:
 
 @pytest.fixture
 def implementer_step0() -> str:
-    prompt_file = REPO_ROOT / PROMPTS_DIR / "implement-prompt.md"
+    prompt_file = REPO_ROOT / _cfg.prompts_dir / "implement-prompt.md"
     return _get_step0_section(prompt_file.read_text(encoding="utf-8"))
 
 
@@ -154,13 +150,13 @@ def test_implementer_step0_falls_through_to_step1_when_clean(implementer_step0: 
 def test_reviewer_template_renders_without_error():
     from pycastle.prompt_utils import load_standards
 
-    prompt_file = REPO_ROOT / PROMPTS_DIR / "review-prompt.md"
+    prompt_file = REPO_ROOT / _cfg.prompts_dir / "review-prompt.md"
     args = {
         "ISSUE_NUMBER": "42",
         "ISSUE_TITLE": "Fix the thing",
         "BRANCH": "pycastle/issue-42-fix-the-thing",
-        "FEEDBACK_COMMANDS": _format_feedback_commands(IMPLEMENT_CHECKS),
-        **load_standards(REPO_ROOT / PROMPTS_DIR),
+        "FEEDBACK_COMMANDS": _format_feedback_commands(_cfg.implement_checks),
+        **load_standards(REPO_ROOT / _cfg.prompts_dir),
     }
     assert_template_renders(prompt_file, args)
 
@@ -169,7 +165,7 @@ def test_reviewer_template_renders_without_error():
 
 
 def test_preflight_issue_template_renders_without_error():
-    prompt_file = REPO_ROOT / PROMPTS_DIR / "preflight-issue.md"
+    prompt_file = REPO_ROOT / _cfg.prompts_dir / "preflight-issue.md"
     args = {
         "CHECK_NAME": "pytest",
         "COMMAND": "pytest",
