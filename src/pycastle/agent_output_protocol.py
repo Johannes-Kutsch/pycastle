@@ -75,6 +75,8 @@ def _extract_planner_output(text: str) -> PlannerOutput:
         ) from exc
     if not isinstance(data, dict):
         raise PlanParseError(f"Plan JSON must be an object, got {type(data).__name__}.")
+    # Accept "unblocked_issues" because the LLM inconsistently uses that name;
+    # "issues" is canonical.
     if "unblocked_issues" in data:
         raw = data["unblocked_issues"]
     elif "issues" in data:
@@ -123,12 +125,21 @@ def parse(output: str, role: AgentRole) -> AgentOutput: ...
 
 def parse(output: str, role: AgentRole) -> AgentOutput:
     text = _unwrap(output)
+    tail = f"\nOutput tail: {text[-300:]!r}"
     if role == AgentRole.PREFLIGHT_ISSUE:
-        return _extract_issue_output(text)
+        try:
+            return _extract_issue_output(text)
+        except IssueParseError as exc:
+            raise IssueParseError(f"{exc}{tail}") from exc.__cause__
     if role == AgentRole.PLANNER:
-        return _extract_planner_output(text)
+        try:
+            return _extract_planner_output(text)
+        except PlanParseError as exc:
+            raise PlanParseError(f"{exc}{tail}") from exc.__cause__
     if not re.search(r"<promise>COMPLETE</promise>", text):
-        raise PromiseParseError("Agent produced no <promise>COMPLETE</promise> tag.")
+        raise PromiseParseError(
+            f"Agent produced no <promise>COMPLETE</promise> tag.{tail}"
+        )
     return CompletionOutput()
 
 
