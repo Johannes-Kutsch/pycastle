@@ -642,7 +642,7 @@ def test_each_agent_passes_correct_stage_string(tmp_path):
     )
 
     by_name = {c["name"]: c for c in captured}
-    assert by_name["Planner"]["stage"] == "pre-planning"
+    assert by_name["Planner"]["stage"] == "plan-sandbox"
     assert by_name["Implementer #1"]["stage"] == "pre-implementation"
     assert by_name["Reviewer #1"]["stage"] == "pre-review"
     assert by_name["Merger"]["stage"] == "pre-merge"
@@ -1294,7 +1294,7 @@ def test_wait_for_clean_working_tree_proceeds_once_clean(tmp_path):
 def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
     tmp_path,
 ):
-    """After pre-planning preflight passes, the HEAD SHA must be captured and passed to implementers."""
+    """After plan-sandbox preflight passes, the HEAD SHA must be captured and passed to implementers."""
     captured_shas: list[str | None] = []
     fake_sha = "deadbeef123"
 
@@ -1378,7 +1378,7 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
 
 
 def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
-    """On pre-planning preflight failure with AFK verdict, Planner must NOT be called again
+    """On plan-sandbox preflight failure with AFK verdict, Planner must NOT be called again
     and exactly one Implementer must be spawned for the preflight issue."""
     agent_names: list[str] = []
 
@@ -1414,7 +1414,7 @@ def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
 
 
 def test_preflight_failure_hitl_exits_nonzero_no_implementer(tmp_path):
-    """On pre-planning preflight failure with HITL verdict, process must exit non-zero
+    """On plan-sandbox preflight failure with HITL verdict, process must exit non-zero
     and no Implementer must be spawned."""
     implementer_calls: list[str] = []
 
@@ -2034,7 +2034,7 @@ def test_run_full_iteration_cold_path(git_repo):
 
 
 def test_planner_preflight_error_spawns_no_implementers(tmp_path):
-    """On pre-planning PreflightError with HITL verdict, run must exit immediately."""
+    """On plan-sandbox PreflightError with HITL verdict, run must exit immediately."""
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
