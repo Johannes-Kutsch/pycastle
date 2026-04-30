@@ -68,14 +68,7 @@ class RecordingStatusDisplay:
 
 
 class FakeAgentRunner:
-    """Queue-based test double for AgentRunnerProtocol.
-
-    Pass a list of responses at construction time; each run() call pops the
-    next one. Raises AssertionError if the queue is exhausted. Also records
-    every run() call in self.calls for assertion.
-
-    For complex conditional behaviour, pass side_effect=async_fn instead.
-    """
+    """Queue-based test double: pop responses in order, record all calls, or delegate to side_effect."""
 
     def __init__(
         self,

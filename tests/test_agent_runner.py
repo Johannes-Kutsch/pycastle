@@ -193,3 +193,19 @@ def test_fake_agent_runner_side_effect_still_records_calls():
 
     assert len(fake.calls) == 1
     assert fake.calls[0]["name"] == "Recorded"
+
+
+def test_fake_agent_runner_side_effect_can_be_synchronous():
+    def _sync_effect(**kwargs):
+        return "sync result"
+
+    fake = FakeAgentRunner(side_effect=_sync_effect)
+    result = asyncio.run(
+        fake.run(
+            name="Agent",
+            prompt_file=Path("/p.md"),
+            mount_path=Path("/w"),
+        )
+    )
+
+    assert result == "sync result"
