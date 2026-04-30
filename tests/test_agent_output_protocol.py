@@ -347,3 +347,27 @@ def test_assert_complete_raises_when_ndjson_result_is_null():
     envelope = json.dumps({"type": "result", "result": None})
     with pytest.raises(PromiseParseError):
         assert_complete(envelope)
+
+
+# ── parse tail in error messages ──────────────────────────────────────────────
+
+
+def test_parse_promise_parse_error_message_includes_output_tail():
+    long_output = "x" * 300 + " distinctive-tail-content"
+    with pytest.raises(PromiseParseError) as exc_info:
+        parse(long_output, AgentRole.IMPLEMENTER)
+    assert "distinctive-tail-content" in str(exc_info.value)
+
+
+def test_parse_plan_parse_error_message_includes_output_tail():
+    long_output = "x" * 300 + " distinctive-plan-tail"
+    with pytest.raises(PlanParseError) as exc_info:
+        parse(long_output, AgentRole.PLANNER)
+    assert "distinctive-plan-tail" in str(exc_info.value)
+
+
+def test_parse_issue_parse_error_message_includes_output_tail():
+    long_output = "x" * 300 + " distinctive-issue-tail"
+    with pytest.raises(IssueParseError) as exc_info:
+        parse(long_output, AgentRole.PREFLIGHT_ISSUE)
+    assert "distinctive-issue-tail" in str(exc_info.value)
