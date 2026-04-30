@@ -1,9 +1,8 @@
 import asyncio
 import dataclasses
 import sys
-from typing import Any
 
-from ..agent_result import AgentSuccess
+from ..agent_output_protocol import AgentRole, parse
 from ..git_service import GitCommandError
 from ._deps import Deps
 from .implement import branch_for
@@ -63,7 +62,6 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
             deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "merge-sandbox"
         )
         deps.git_svc.create_worktree(deps.repo_root, worktree_path, MERGE_SANDBOX, sha)
-        merger_result: Any = None
         try:
             merger_result = await deps.run_agent(
                 name="Merger",
@@ -80,10 +78,10 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                 effort=deps.cfg.merge_override.effort,
                 stage="pre-merge",
             )
-            if isinstance(merger_result, AgentSuccess):
-                deps.git_svc.fast_forward_branch(
-                    deps.repo_root, target_branch, MERGE_SANDBOX
-                )
+            parse(merger_result, AgentRole.MERGER)
+            deps.git_svc.fast_forward_branch(
+                deps.repo_root, target_branch, MERGE_SANDBOX
+            )
         finally:
             try:
                 deps.git_svc.remove_worktree(deps.repo_root, worktree_path)

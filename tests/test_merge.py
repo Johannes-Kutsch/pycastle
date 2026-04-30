@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from pycastle.agent_result import AgentIncomplete, AgentSuccess
 from pycastle.config import Config
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
@@ -28,7 +27,7 @@ def github_svc():
 
 @pytest.fixture
 def run_agent():
-    return AsyncMock(return_value=AgentSuccess(output="done"))
+    return AsyncMock(return_value="<promise>COMPLETE</promise>")
 
 
 @pytest.fixture
@@ -207,11 +206,14 @@ def test_successful_merger_fast_forwards_target_branch(deps, git_svc):
     )
 
 
-def test_incomplete_merger_does_not_fast_forward(deps, git_svc, run_agent):
+def test_incomplete_merger_raises_and_does_not_fast_forward(deps, git_svc, run_agent):
+    from pycastle.agent_output_protocol import PromiseParseError
+
     git_svc.try_merge.return_value = False
-    run_agent.return_value = AgentIncomplete(partial_output="")
+    run_agent.return_value = ""  # no <promise>COMPLETE</promise>
     issues = [{"number": 1, "title": "Conflict"}]
-    _run(issues, deps)
+    with pytest.raises(PromiseParseError):
+        _run(issues, deps)
     git_svc.fast_forward_branch.assert_not_called()
 
 

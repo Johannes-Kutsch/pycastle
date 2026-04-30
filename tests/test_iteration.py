@@ -5,11 +5,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from pycastle.agent_result import (
-    AgentIncomplete,
-    AgentSuccess,
     PreflightFailure,
-    UsageLimitHit,
 )
+from pycastle.errors import UsageLimitError
 from pycastle.config import Config
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
@@ -24,7 +22,7 @@ from pycastle.iteration._deps import Deps, RecordingLogger
 
 
 def _plan_json(issues: list[dict]) -> str:
-    return f"<plan>{json.dumps({'issues': issues})}</plan>"
+    return f"<promise>COMPLETE</promise><plan>{json.dumps({'issues': issues})}</plan>"
 
 
 @pytest.fixture
@@ -78,7 +76,7 @@ def test_run_iteration_returns_done_when_no_open_issues(tmp_path, git_svc, logge
     github_svc.get_open_issues.return_value = []
 
     async def _noop_agent(name, **kwargs):
-        return AgentIncomplete(partial_output="")
+        return "<promise>COMPLETE</promise>"
 
     deps = _make_deps(
         tmp_path, _noop_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -100,9 +98,7 @@ def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, l
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-human">42</issue>'
-        )
+        return '<promise>COMPLETE</promise><issue label="ready-for-human">42</issue>'
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -124,9 +120,7 @@ def test_run_iteration_aborted_hitl_carries_issue_number(tmp_path, git_svc, logg
             return PreflightFailure(
                 failures=(("mypy", "mypy .", "error: Missing module"),)
             )
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-human">99</issue>'
-        )
+        return '<promise>COMPLETE</promise><issue label="ready-for-human">99</issue>'
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -148,9 +142,7 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        return AgentIncomplete(
-            partial_output='<issue label="ready-for-human">7</issue>'
-        )
+        return '<promise>COMPLETE</promise><issue label="ready-for-human">7</issue>'
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -166,15 +158,15 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
 def test_run_iteration_raises_when_planner_hits_usage_limit(
     tmp_path, git_svc, github_svc, logger
 ):
-    """run_iteration raises RuntimeError when the Planner returns UsageLimitHit (no plan tag)."""
+    """run_iteration propagates UsageLimitError when the Planner raises it."""
 
     async def _fake_agent(name, **kwargs):
-        return UsageLimitHit(last_output="token ceiling reached")
+        raise UsageLimitError("token ceiling reached")
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
     )
-    with pytest.raises(RuntimeError):
+    with pytest.raises(UsageLimitError):
         asyncio.run(run_iteration(deps))
 
 
@@ -185,10 +177,8 @@ def test_run_iteration_returns_aborted_usage_limit_when_implementer_hits_limit(
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-            )
-        return UsageLimitHit(last_output="")
+            return _plan_json([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("")
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -205,10 +195,8 @@ def test_run_iteration_aborted_usage_limit_does_not_raise_system_exit(
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-            )
-        return UsageLimitHit(last_output="")
+            return _plan_json([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("")
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -228,12 +216,10 @@ def test_run_iteration_returns_continue_when_issues_complete_normally(
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-            )
+            return _plan_json([{"number": 1, "title": "Fix"}])
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -250,10 +236,8 @@ def test_run_iteration_returns_continue_when_no_implementers_complete(
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
-            return AgentIncomplete(
-                partial_output=_plan_json([{"number": 1, "title": "Fix"}])
-            )
-        return AgentIncomplete(partial_output="")
+            return _plan_json([{"number": 1, "title": "Fix"}])
+        return ""  # implementer without COMPLETE → not completed
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -280,12 +264,12 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
         if name == "Planner":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
-            return AgentIncomplete(
-                partial_output='<issue label="ready-for-agent">55</issue>'
+            return (
+                '<promise>COMPLETE</promise><issue label="ready-for-agent">55</issue>'
             )
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -312,12 +296,12 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
         if name == "Planner":
             return PreflightFailure(failures=(("mypy", "mypy .", "error"),))
         if "preflight-issue" in name:
-            return AgentIncomplete(
-                partial_output='<issue label="ready-for-agent">77</issue>'
+            return (
+                '<promise>COMPLETE</promise><issue label="ready-for-agent">77</issue>'
             )
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentIncomplete(partial_output="")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger

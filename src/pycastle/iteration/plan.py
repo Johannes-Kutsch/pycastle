@@ -4,9 +4,14 @@ import re
 from pathlib import Path
 from typing import TypeAlias
 
-from ..agent_output_protocol import IssueParseError, PlanParseError, parse_issue_number
-from ..agent_output_protocol import parse_plan as _parse_plan
-from ..agent_result import AgentIncomplete, AgentSuccess, PreflightFailure
+from ..agent_output_protocol import (
+    AgentOutputProtocolError,
+    AgentRole,
+    IssueOutput,
+    PlannerOutput,
+    parse,
+)
+from ..agent_result import PreflightFailure
 from ._deps import Deps
 
 
@@ -62,17 +67,11 @@ async def _handle_preflight_failure(
         prompt_args={"CHECK_NAME": check_name, "COMMAND": command, "OUTPUT": output},
         skip_preflight=True,
     )
-    if isinstance(agent_result, AgentSuccess):
-        raw_text = agent_result.output
-    elif isinstance(agent_result, AgentIncomplete):
-        raw_text = agent_result.partial_output
-    else:
-        raw_text = str(agent_result)
-    _label, issue_number = parse_issue_number(raw_text)
-    labels = deps.github_svc.get_labels(issue_number)
-    if deps.cfg.hitl_label in labels:
-        return "hitl", issue_number
-    return "afk", issue_number
+    issue_output = parse(agent_result, AgentRole.PREFLIGHT_ISSUE)
+    assert isinstance(issue_output, IssueOutput)
+    if issue_output.label == deps.cfg.hitl_label:
+        return "hitl", issue_output.number
+    return "afk", issue_output.number
 
 
 async def plan_phase(deps: Deps) -> PlanResult:
@@ -105,7 +104,7 @@ async def plan_phase(deps: Deps) -> PlanResult:
                 verdict, pf_num = await _handle_preflight_failure(
                     raw.failures, deps, worktree_path
                 )
-            except IssueParseError as parse_exc:
+            except AgentOutputProtocolError as parse_exc:
                 raise RuntimeError(str(parse_exc)) from parse_exc
             if verdict == "hitl":
                 return PlanHITL(worktree_sha=sha, issue_number=pf_num)
@@ -114,18 +113,12 @@ async def plan_phase(deps: Deps) -> PlanResult:
                 worktree_sha=sha, issues=[{"number": pf_num, "title": pf_title}]
             )
 
-        if isinstance(raw, AgentSuccess):
-            plan_text = raw.output
-        elif isinstance(raw, AgentIncomplete):
-            plan_text = raw.partial_output
-        else:
-            plan_text = str(raw)
-
         try:
-            issues = _parse_plan(plan_text)
-        except PlanParseError as exc:
+            planner_output = parse(raw, AgentRole.PLANNER)
+            assert isinstance(planner_output, PlannerOutput)
+        except AgentOutputProtocolError as exc:
             raise RuntimeError(str(exc)) from exc
 
-        return PlanReady(worktree_sha=sha, issues=issues)
+        return PlanReady(worktree_sha=sha, issues=planner_output.issues)
     finally:
         deps.git_svc.remove_worktree(deps.repo_root, worktree_path)

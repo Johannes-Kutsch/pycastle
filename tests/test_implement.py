@@ -4,13 +4,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from pycastle.agent_result import (
-    AgentSuccess,
-    AgentTimeoutHit,
     PreflightFailure,
-    UsageLimitHit,
 )
 from pycastle.config import Config, config as _cfg
-from pycastle.errors import AgentTimeoutError
+from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
 from pycastle.iteration._deps import Deps, RecordingLogger
@@ -54,7 +51,7 @@ def test_implement_phase_returns_completed_issues(tmp_path):
     issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
 
     async def _fake_run_agent(name, **kwargs):
-        return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return "<promise>COMPLETE</promise>"
 
     deps = _make_deps(tmp_path, _fake_run_agent)
     result = asyncio.run(implement_phase(issues, None, deps))
@@ -72,7 +69,7 @@ def test_implement_phase_signals_usage_limit_in_result(tmp_path):
     issues = [{"number": 1, "title": "Fix A"}]
 
     async def _fake_run_agent(name, **kwargs):
-        return UsageLimitHit(last_output="")
+        raise UsageLimitError("")
 
     deps = _make_deps(tmp_path, _fake_run_agent)
     result = asyncio.run(implement_phase(issues, None, deps))
@@ -85,7 +82,7 @@ def test_implement_phase_usage_limit_does_not_exit(tmp_path):
     issues = [{"number": 1, "title": "Fix A"}]
 
     async def _fake_run_agent(name, **kwargs):
-        return UsageLimitHit(last_output="")
+        raise UsageLimitError("")
 
     deps = _make_deps(tmp_path, _fake_run_agent)
 
@@ -101,9 +98,9 @@ def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer #1" in name:
-            return UsageLimitHit(last_output="")
+            raise UsageLimitError("")
         completed_agents.append(name)
-        return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return "<promise>COMPLETE</promise>"
 
     deps = _make_deps(tmp_path, _fake_run_agent)
     asyncio.run(implement_phase(issues, None, deps))
@@ -139,7 +136,7 @@ def test_implement_phase_exception_goes_to_errors(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer #1" in name or "Reviewer #1" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
+            return "<promise>COMPLETE</promise>"
         raise RuntimeError("agent failed")
 
     deps = _make_deps(tmp_path, _fake_run_agent)
@@ -151,8 +148,8 @@ def test_implement_phase_exception_goes_to_errors(tmp_path):
     assert isinstance(result.errors[0][1], RuntimeError)
 
 
-def test_implement_phase_no_complete_tag_dropped_from_both_lists(tmp_path):
-    """When run_issue returns None (no COMPLETE tag), issue is absent from both lists."""
+def test_implement_phase_no_complete_tag_goes_to_errors(tmp_path):
+    """When implementer output lacks COMPLETE tag, parse raises and issue goes to errors."""
     issues = [{"number": 1, "title": "Fix A"}]
 
     async def _fake_run_agent(name, **kwargs):
@@ -162,7 +159,7 @@ def test_implement_phase_no_complete_tag_dropped_from_both_lists(tmp_path):
     result = asyncio.run(implement_phase(issues, None, deps))
 
     assert result.completed == []
-    assert result.errors == []
+    assert len(result.errors) == 1
 
 
 # ── implement_phase: errors passed to logger ─────────────────────────────────
@@ -208,7 +205,7 @@ def test_implement_phase_successful_issues_not_logged_as_errors(tmp_path):
     logger = RecordingLogger()
 
     async def _fake_run_agent(name, **kwargs):
-        return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return "<promise>COMPLETE</promise>"
 
     deps = _make_deps(tmp_path, _fake_run_agent, logger=logger)
     asyncio.run(implement_phase(issues, None, deps))
@@ -223,7 +220,7 @@ def test_implement_phase_logs_implementer_output_on_success(tmp_path):
     agent_output = "<promise>COMPLETE</promise>"
 
     async def _fake_run_agent(name, **kwargs):
-        return AgentSuccess(output=agent_output)
+        return agent_output
 
     deps = _make_deps(tmp_path, _fake_run_agent, logger=logger)
     asyncio.run(implement_phase(issues, None, deps))
@@ -238,8 +235,8 @@ def test_implement_phase_reviewer_usage_limit_signals_in_result(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return UsageLimitHit(last_output="")
+            return "<promise>COMPLETE</promise>"
+        raise UsageLimitError("")
 
     deps = _make_deps(tmp_path, _fake_run_agent)
     result = asyncio.run(implement_phase(issues, None, deps))
@@ -260,8 +257,8 @@ def test_run_issue_derives_branch_from_issue_number(tmp_path):
         if "Implementer" in name:
             captured["branch_kwarg"] = branch
             captured["branch_prompt_arg"] = (prompt_args or {}).get("BRANCH")
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentSuccess(output="<promise>COMPLETE</promise>")
+            return "<promise>COMPLETE</promise>"
+        return "<promise>COMPLETE</promise>"
 
     issue = {"number": 7, "title": "Fix thing"}
     deps = _make_deps(tmp_path, _fake_run_agent)
@@ -277,7 +274,7 @@ def test_run_issue_passes_feedback_commands_to_implementer(tmp_path):
 
     async def _fake_run_agent(name, prompt_args=None, **kw):
         captured_args.append({"name": name, "prompt_args": prompt_args or {}})
-        return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return "<promise>COMPLETE</promise>"
 
     issue = {"number": 1, "title": "Fix thing"}
     deps = _make_deps(tmp_path, _fake_run_agent)
@@ -295,7 +292,7 @@ def test_run_issue_feedback_commands_include_backtick_wrapped_implement_checks(
 
     async def _fake_run_agent(name, prompt_args=None, **kw):
         captured_args.append({"name": name, "prompt_args": prompt_args or {}})
-        return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return "<promise>COMPLETE</promise>"
 
     issue = {"number": 1, "title": "Fix thing"}
     deps = _make_deps(tmp_path, _fake_run_agent)
@@ -313,7 +310,7 @@ def test_run_issue_implementer_invoked_with_skip_preflight_true(tmp_path):
 
     async def _fake_run_agent(name, skip_preflight=False, **kwargs):
         captured.append({"name": name, "skip_preflight": skip_preflight})
-        return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return "<promise>COMPLETE</promise>"
 
     issue = {"number": 1, "title": "Fix thing"}
     deps = _make_deps(tmp_path, _fake_run_agent)
@@ -329,7 +326,7 @@ def test_run_issue_reviewer_invoked_with_skip_preflight_true(tmp_path):
 
     async def _fake_run_agent(name, skip_preflight=False, **kwargs):
         captured.append({"name": name, "skip_preflight": skip_preflight})
-        return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return "<promise>COMPLETE</promise>"
 
     issue = {"number": 1, "title": "Fix thing"}
     deps = _make_deps(tmp_path, _fake_run_agent)
@@ -339,24 +336,25 @@ def test_run_issue_reviewer_invoked_with_skip_preflight_true(tmp_path):
     assert rev_call["skip_preflight"] is True
 
 
-def test_run_issue_returns_none_when_implementer_does_not_complete(tmp_path):
-    """run_issue must return None when implementer response lacks COMPLETE tag."""
+def test_run_issue_raises_when_implementer_does_not_complete(tmp_path):
+    """run_issue must raise PromiseParseError when implementer lacks COMPLETE tag."""
+    from pycastle.agent_output_protocol import PromiseParseError
 
     async def _fake_run_agent(**kwargs):
         return "I tried but could not finish"
 
     issue = {"number": 1, "title": "Fix thing"}
     deps = _make_deps(tmp_path, _fake_run_agent)
-    result = asyncio.run(run_issue(issue, deps))
 
-    assert result is None
+    with pytest.raises(PromiseParseError):
+        asyncio.run(run_issue(issue, deps))
 
 
 def test_run_issue_returns_issue_when_implementer_completes(tmp_path):
     """run_issue must return the issue dict when implementer produces COMPLETE."""
 
     async def _fake_run_agent(**kwargs):
-        return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return "<promise>COMPLETE</promise>"
 
     issue = {"number": 2, "title": "Fix thing"}
     deps = _make_deps(tmp_path, _fake_run_agent)
@@ -365,18 +363,18 @@ def test_run_issue_returns_issue_when_implementer_completes(tmp_path):
     assert result == issue
 
 
-# ── Cycle 274: AgentTimeoutHit propagation through implement layer ────────────
+# ── Cycle 274: AgentTimeoutError propagation through implement layer ──────────
 
 
 def test_run_issue_raises_agent_timeout_error_when_implementer_exhausts_retries(
     tmp_path,
 ):
-    """When implementer returns AgentTimeoutHit, run_issue must raise AgentTimeoutError."""
+    """When implementer raises AgentTimeoutError, run_issue must propagate it."""
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
-            return AgentTimeoutHit(last_output="partial work")
-        return AgentSuccess(output="<promise>COMPLETE</promise>")
+            raise AgentTimeoutError("timeout")
+        return "<promise>COMPLETE</promise>"
 
     issue = {"number": 5, "title": "Fix thing"}
     deps = _make_deps(tmp_path, _fake_run_agent)
@@ -386,12 +384,12 @@ def test_run_issue_raises_agent_timeout_error_when_implementer_exhausts_retries(
 
 
 def test_run_issue_raises_agent_timeout_error_when_reviewer_exhausts_retries(tmp_path):
-    """When reviewer returns AgentTimeoutHit, run_issue must raise AgentTimeoutError."""
+    """When reviewer raises AgentTimeoutError, run_issue must propagate it."""
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentTimeoutHit(last_output="")
+            return "<promise>COMPLETE</promise>"
+        raise AgentTimeoutError("timeout")
 
     issue = {"number": 5, "title": "Fix thing"}
     deps = _make_deps(tmp_path, _fake_run_agent)
@@ -401,13 +399,13 @@ def test_run_issue_raises_agent_timeout_error_when_reviewer_exhausts_retries(tmp
 
 
 def test_implement_phase_implementer_timeout_tracked_as_error(tmp_path):
-    """When implementer exhausts retries, implement_phase tracks the issue in errors."""
+    """When implementer raises AgentTimeoutError, implement_phase tracks the issue in errors."""
     issues = [{"number": 3, "title": "Fix C"}]
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
-            return AgentTimeoutHit(last_output="")
-        return AgentSuccess(output="<promise>COMPLETE</promise>")
+            raise AgentTimeoutError("timeout")
+        return "<promise>COMPLETE</promise>"
 
     deps = _make_deps(tmp_path, _fake_run_agent)
     result = asyncio.run(implement_phase(issues, None, deps))
@@ -419,13 +417,13 @@ def test_implement_phase_implementer_timeout_tracked_as_error(tmp_path):
 
 
 def test_implement_phase_reviewer_timeout_does_not_complete_issue(tmp_path):
-    """When reviewer exhausts retries, the issue must not appear in completed."""
+    """When reviewer raises AgentTimeoutError, the issue must not appear in completed."""
     issues = [{"number": 4, "title": "Fix D"}]
 
     async def _fake_run_agent(name, **kwargs):
         if "Implementer" in name:
-            return AgentSuccess(output="<promise>COMPLETE</promise>")
-        return AgentTimeoutHit(last_output="")
+            return "<promise>COMPLETE</promise>"
+        raise AgentTimeoutError("timeout")
 
     deps = _make_deps(tmp_path, _fake_run_agent)
     result = asyncio.run(implement_phase(issues, None, deps))
