@@ -4,9 +4,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.agent_result import AgentIncomplete, AgentSuccess, UsageLimitHit
+from pycastle.agent_result import (
+    AgentIncomplete,
+    AgentSuccess,
+    PreflightFailure,
+    UsageLimitHit,
+)
 from pycastle.config import Config
-from pycastle.errors import PreflightError
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
 from pycastle.iteration import (
@@ -95,7 +99,7 @@ def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, l
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
-            raise PreflightError([("ruff", "ruff check .", "E501")])
+            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         return AgentIncomplete(
             partial_output='<issue label="ready-for-human">42</issue>'
         )
@@ -117,7 +121,9 @@ def test_run_iteration_aborted_hitl_carries_issue_number(tmp_path, git_svc, logg
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
-            raise PreflightError([("mypy", "mypy .", "error: Missing module")])
+            return PreflightFailure(
+                failures=(("mypy", "mypy .", "error: Missing module"),)
+            )
         return AgentIncomplete(
             partial_output='<issue label="ready-for-human">99</issue>'
         )
@@ -141,7 +147,7 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
-            raise PreflightError([("ruff", "ruff check .", "E501")])
+            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         return AgentIncomplete(
             partial_output='<issue label="ready-for-human">7</issue>'
         )
@@ -257,9 +263,7 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
-            from pycastle.errors import PreflightError
-
-            raise PreflightError([("ruff", "ruff check .", "E501")])
+            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
             return AgentIncomplete(
                 partial_output='<issue label="ready-for-agent">55</issue>'
@@ -291,9 +295,7 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
     async def _fake_agent(name, **kwargs):
         agent_names.append(name)
         if name == "Planner":
-            from pycastle.errors import PreflightError
-
-            raise PreflightError([("mypy", "mypy .", "error")])
+            return PreflightFailure(failures=(("mypy", "mypy .", "error"),))
         if "preflight-issue" in name:
             return AgentIncomplete(
                 partial_output='<issue label="ready-for-agent">77</issue>'
