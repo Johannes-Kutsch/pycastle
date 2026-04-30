@@ -4,7 +4,7 @@ import json
 import pytest
 from unittest.mock import MagicMock
 
-from pycastle.agent_result import AgentIncomplete, AgentSuccess
+from pycastle.agent_result import AgentIncomplete, AgentSuccess, UsageLimitHit
 from pycastle.config import Config
 from pycastle.errors import PreflightError
 from pycastle.git_service import GitService
@@ -14,6 +14,7 @@ from pycastle.iteration.plan import (
     PlanAFK,
     PlanHITL,
     PlanReady,
+    PlanUsageLimit,
     _handle_preflight_failure,
     plan_phase,
     strip_stale_blocker_refs,
@@ -178,6 +179,38 @@ def test_plan_phase_returns_ready_when_planner_returns_agent_success(
 
     assert isinstance(result, PlanReady)
     assert result.issues == expected
+
+
+# ── plan_phase: UsageLimitHit ─────────────────────────────────────────────────
+
+
+def test_plan_phase_returns_usage_limit_when_planner_hits_usage_limit(
+    tmp_path, git_svc, github_svc, logger
+):
+    async def run_agent(name, **kwargs):
+        return UsageLimitHit(last_output="token ceiling reached")
+
+    deps = _make_deps(
+        tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(plan_phase(deps))
+
+    assert isinstance(result, PlanUsageLimit)
+
+
+def test_plan_phase_removes_worktree_when_planner_hits_usage_limit(
+    tmp_path, git_svc, github_svc, logger
+):
+    async def run_agent(name, **kwargs):
+        return UsageLimitHit(last_output="")
+
+    deps = _make_deps(
+        tmp_path, run_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    asyncio.run(plan_phase(deps))
+
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-planning"
+    git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
 
 
 # ── plan_phase: PlanParseError ────────────────────────────────────────────────

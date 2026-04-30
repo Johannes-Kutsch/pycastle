@@ -5,7 +5,7 @@ from ..agent_result import CancellationToken, PreflightFailure
 from ._deps import Deps
 from .implement import branch_for, implement_phase
 from .merge import merge_phase
-from .plan import PlanHITL, PlanReady, plan_phase
+from .plan import PlanHITL, PlanReady, PlanUsageLimit, plan_phase
 
 
 @dataclasses.dataclass(frozen=True)
@@ -33,6 +33,10 @@ IterationOutcome: TypeAlias = Continue | Done | AbortedHITL | AbortedUsageLimit
 
 async def run_iteration(deps: Deps) -> IterationOutcome:
     plan_result = await plan_phase(deps)
+
+    if isinstance(plan_result, PlanUsageLimit):
+        print("Usage limit reached during planning. Exiting.")
+        return AbortedUsageLimit()
 
     if isinstance(plan_result, PlanHITL):
         print(
