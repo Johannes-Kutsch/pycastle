@@ -117,6 +117,9 @@ class _CallableAgentRunner:
     async def run(self, **kwargs: Any) -> Any:
         return await self._fn(**kwargs)
 
+    async def run_preflight(self, **kwargs: Any) -> list[tuple[str, str, str]]:
+        return []
+
 
 async def run(
     env: dict[str, str],

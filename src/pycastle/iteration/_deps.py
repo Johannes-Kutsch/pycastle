@@ -76,12 +76,17 @@ class FakeAgentRunner:
         responses: list[str | PreflightFailure | BaseException] | None = None,
         *,
         side_effect: Callable[..., Any] | None = None,
+        preflight_responses: list[list[tuple[str, str, str]] | BaseException] | None = None,
     ) -> None:
         self._responses: list[str | PreflightFailure | BaseException] = list(
             responses or []
         )
         self._side_effect = side_effect
+        self._preflight_responses: list[list[tuple[str, str, str]] | BaseException] = list(
+            preflight_responses or []
+        )
         self.calls: list[dict] = []
+        self.preflight_calls: list[dict] = []
 
     async def run(
         self,
@@ -123,6 +128,24 @@ class FakeAgentRunner:
                 f"FakeAgentRunner queue exhausted — unexpected call for agent {name!r}"
             )
         response = self._responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+    async def run_preflight(
+        self,
+        *,
+        name: str,
+        mount_path: Path,
+        stage: str = "",
+    ) -> list[tuple[str, str, str]]:
+        call = {"name": name, "mount_path": mount_path, "stage": stage}
+        self.preflight_calls.append(call)
+        if not self._preflight_responses:
+            raise AssertionError(
+                f"FakeAgentRunner preflight queue exhausted — unexpected call for agent {name!r}"
+            )
+        response = self._preflight_responses.pop(0)
         if isinstance(response, BaseException):
             raise response
         return response
