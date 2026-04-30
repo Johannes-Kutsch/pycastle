@@ -7,8 +7,6 @@ from typing import TypeAlias
 from ..agent_output_protocol import (
     AgentOutputProtocolError,
     AgentRole,
-    IssueOutput,
-    PlannerOutput,
     parse,
 )
 from ..agent_result import PreflightFailure
@@ -68,7 +66,6 @@ async def _handle_preflight_failure(
         skip_preflight=True,
     )
     issue_output = parse(agent_result, AgentRole.PREFLIGHT_ISSUE)
-    assert isinstance(issue_output, IssueOutput)
     if deps.cfg.hitl_label in issue_output.labels:
         return "hitl", issue_output.number
     return "afk", issue_output.number
@@ -115,7 +112,6 @@ async def plan_phase(deps: Deps) -> PlanResult:
 
         try:
             planner_output = parse(raw, AgentRole.PLANNER)
-            assert isinstance(planner_output, PlannerOutput)
         except AgentOutputProtocolError as exc:
             raise RuntimeError(str(exc)) from exc
 
