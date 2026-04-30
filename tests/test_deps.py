@@ -234,3 +234,69 @@ def test_fake_agent_runner_side_effect_records_call(prompt_file, mount_path) -> 
 
     assert len(runner.calls) == 1
     assert runner.calls[0]["name"] == "implementer"
+
+
+# --- FakeAgentRunner.run_preflight ---
+
+
+def test_fake_agent_runner_run_preflight_returns_queued_empty_list(
+    mount_path,
+) -> None:
+    runner = FakeAgentRunner(preflight_responses=[[]])
+
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=mount_path)
+    )
+
+    assert result == []
+
+
+def test_fake_agent_runner_run_preflight_returns_queued_failures(
+    mount_path,
+) -> None:
+    failures = [("ruff", "ruff check .", "E501 line too long")]
+    runner = FakeAgentRunner(preflight_responses=[failures])
+
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=mount_path)
+    )
+
+    assert result == failures
+
+
+def test_fake_agent_runner_run_preflight_records_call_args(mount_path) -> None:
+    runner = FakeAgentRunner(preflight_responses=[[]])
+
+    asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=mount_path, stage="plan")
+    )
+
+    assert len(runner.preflight_calls) == 1
+    assert runner.preflight_calls[0]["name"] == "plan-sandbox"
+    assert runner.preflight_calls[0]["mount_path"] == mount_path
+    assert runner.preflight_calls[0]["stage"] == "plan"
+
+
+def test_fake_agent_runner_run_preflight_raises_when_queue_exhausted(
+    mount_path,
+) -> None:
+    runner = FakeAgentRunner(preflight_responses=[])
+
+    with pytest.raises(AssertionError, match="queue exhausted"):
+        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=mount_path))
+
+
+def test_fake_agent_runner_run_preflight_exhaustion_error_names_agent(
+    mount_path,
+) -> None:
+    runner = FakeAgentRunner(preflight_responses=[])
+
+    with pytest.raises(AssertionError, match="plan-sandbox"):
+        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=mount_path))
+
+
+def test_fake_agent_runner_run_preflight_raises_queued_exception(mount_path) -> None:
+    runner = FakeAgentRunner(preflight_responses=[RuntimeError("docker failure")])
+
+    with pytest.raises(RuntimeError, match="docker failure"):
+        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=mount_path))
