@@ -97,18 +97,6 @@ Run `{{FEEDBACK_COMMANDS}}` to ensure nothing is broken.
 
 Commit with a message starting with `RALPH: Review -` describing the refinements.
 
-## 9. Issue
-
-Post a comment on the GitHub issue using the exact commit message:
-
-```
-gh issue comment {{ISSUE_NUMBER}} --body "$(git log --format=%B -n 1 HEAD)"
-```
-
-If no commit was made, post this instead:
-
-```
-gh issue comment {{ISSUE_NUMBER}} --body "RALPH: Review - No issues found. All checks pass."
-```
+## 9. Once complete
 
 Once complete, output <promise>COMPLETE</promise>.
