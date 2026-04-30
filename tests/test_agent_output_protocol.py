@@ -14,6 +14,7 @@ from pycastle.agent_output_protocol import (
     PlannerOutput,
     PromiseParseError,
     is_complete,
+    parse,
     parse_issue_number,
     parse_plan,
 )
@@ -257,3 +258,106 @@ def test_agent_output_covers_all_output_types():
     assert isinstance(planner, PlannerOutput)
     assert isinstance(issue, IssueOutput)
     assert isinstance(completion, CompletionOutput)
+
+
+# ── parse (single entry point) ────────────────────────────────────────────────
+
+
+def test_parse_planner_returns_planner_output():
+    output = '<promise>COMPLETE</promise>\n<plan>{"issues": [{"number": 1, "title": "Fix bug"}]}</plan>'
+    result = parse(output, AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == [{"number": 1, "title": "Fix bug"}]
+
+
+def test_parse_preflight_issue_returns_issue_output():
+    output = '<promise>COMPLETE</promise>\n<issue label="ready-for-agent">42</issue>'
+    result = parse(output, AgentRole.PREFLIGHT_ISSUE)
+    assert isinstance(result, IssueOutput)
+    assert result.label == "ready-for-agent"
+    assert result.number == 42
+
+
+def test_parse_preflight_issue_hitl_label():
+    output = '<promise>COMPLETE</promise>\n<issue label="ready-for-human">7</issue>'
+    result = parse(output, AgentRole.PREFLIGHT_ISSUE)
+    assert isinstance(result, IssueOutput)
+    assert result.label == "ready-for-human"
+
+
+def test_parse_implementer_returns_completion_output():
+    result = parse("<promise>COMPLETE</promise>", AgentRole.IMPLEMENTER)
+    assert isinstance(result, CompletionOutput)
+
+
+def test_parse_reviewer_returns_completion_output():
+    result = parse("<promise>COMPLETE</promise>", AgentRole.REVIEWER)
+    assert isinstance(result, CompletionOutput)
+
+
+def test_parse_merger_returns_completion_output():
+    result = parse("<promise>COMPLETE</promise>", AgentRole.MERGER)
+    assert isinstance(result, CompletionOutput)
+
+
+def test_parse_raises_promise_parse_error_for_planner_without_promise():
+    output = '<plan>{"issues": []}</plan>'
+    with pytest.raises(PromiseParseError):
+        parse(output, AgentRole.PLANNER)
+
+
+def test_parse_raises_promise_parse_error_for_implementer_without_promise():
+    with pytest.raises(PromiseParseError):
+        parse("work done but no promise tag", AgentRole.IMPLEMENTER)
+
+
+def test_parse_raises_promise_parse_error_for_preflight_issue_without_promise():
+    output = '<issue label="ready-for-agent">1</issue>'
+    with pytest.raises(PromiseParseError):
+        parse(output, AgentRole.PREFLIGHT_ISSUE)
+
+
+def test_parse_raises_plan_parse_error_for_planner_without_plan_tag():
+    with pytest.raises(PlanParseError):
+        parse("<promise>COMPLETE</promise> no plan here", AgentRole.PLANNER)
+
+
+def test_parse_raises_issue_parse_error_for_preflight_issue_without_issue_tag():
+    with pytest.raises(IssueParseError):
+        parse("<promise>COMPLETE</promise> no issue here", AgentRole.PREFLIGHT_ISSUE)
+
+
+def test_parse_errors_are_agent_output_protocol_errors():
+    with pytest.raises(AgentOutputProtocolError):
+        parse("no promise", AgentRole.IMPLEMENTER)
+
+
+def test_parse_unwraps_ndjson_envelope_for_planner():
+    envelope = json.dumps(
+        {
+            "type": "result",
+            "result": '<promise>COMPLETE</promise><plan>{"issues": [{"number": 5, "title": "T"}]}</plan>',
+        }
+    )
+    result = parse(envelope, AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == [{"number": 5, "title": "T"}]
+
+
+def test_parse_unwraps_ndjson_envelope_for_implementer():
+    envelope = json.dumps({"type": "result", "result": "<promise>COMPLETE</promise>"})
+    result = parse(envelope, AgentRole.IMPLEMENTER)
+    assert isinstance(result, CompletionOutput)
+
+
+def test_parse_falls_back_to_raw_string_when_no_ndjson():
+    output = '<promise>COMPLETE</promise><plan>{"issues": [{"number": 2, "title": "X"}]}</plan>'
+    result = parse(output, AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+
+
+def test_parse_planner_accepts_unblocked_issues_key():
+    output = '<promise>COMPLETE</promise><plan>{"unblocked_issues": [{"number": 3, "title": "Y"}]}</plan>'
+    result = parse(output, AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == [{"number": 3, "title": "Y"}]
