@@ -16,7 +16,7 @@ async def _noop_exec(cmd: str) -> str:
 
 
 def test_load_standards_returns_all_five_keys(tmp_path):
-    standards_dir = tmp_path / "standards"
+    standards_dir = tmp_path / "coding-standards"
     standards_dir.mkdir()
     (standards_dir / "tests.md").write_text("testing content")
     (standards_dir / "mocking.md").write_text("mocking content")
@@ -37,7 +37,7 @@ def test_load_standards_returns_all_five_keys(tmp_path):
 
 
 def test_load_standards_returns_empty_string_for_missing_file(tmp_path):
-    standards_dir = tmp_path / "standards"
+    standards_dir = tmp_path / "coding-standards"
     standards_dir.mkdir()
     (standards_dir / "tests.md").write_text("testing content")
     # other files intentionally absent
@@ -58,7 +58,7 @@ def test_prepare_prompt_renders_standards_placeholder(tmp_path):
     prompt_file = tmp_path / "implement.md"
     prompt_file.write_text("## Testing\n\n{{TESTING_STANDARDS}}\n\nEnd.")
 
-    standards_dir = tmp_path / "standards"
+    standards_dir = tmp_path / "coding-standards"
     standards_dir.mkdir()
     (standards_dir / "tests.md").write_text("Good test: assert behavior, not impl.")
 
