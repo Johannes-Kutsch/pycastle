@@ -13,7 +13,7 @@ from pycastle.agent_result import (
 )
 from pycastle.claude_service import ClaudeService
 from pycastle.config import Config, StageOverride
-from pycastle.errors import ClaudeServiceError, ConfigValidationError, PreflightError
+from pycastle.errors import ClaudeServiceError, ConfigValidationError
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
 from pycastle.orchestrator import (
@@ -191,7 +191,7 @@ def test_preflight_issue_branch_uses_pycastle_format(tmp_path):
 
     async def _fake_run_agent(name, prompt_args=None, branch=None, **kwargs):
         if name == "Planner":
-            raise PreflightError([("ruff", "ruff check .", "E501")])
+            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
             return AgentIncomplete(
                 partial_output='<issue label="ready-for-agent">77</issue>'
@@ -995,8 +995,10 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
         if name == "Planner":
-            raise PreflightError(
-                [("pytest", "pytest -x", "FAILED tests/test_bar.py::test_something")]
+            return PreflightFailure(
+                failures=(
+                    ("pytest", "pytest -x", "FAILED tests/test_bar.py::test_something"),
+                )
             )
         if "preflight-issue" in name:
             return AgentIncomplete(
@@ -1383,7 +1385,9 @@ def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
     async def _fake_run_agent(name, **kwargs):
         agent_names.append(name)
         if name == "Planner":
-            raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
+            return PreflightFailure(
+                failures=(("ruff", "ruff check .", "E501 line too long"),)
+            )
         if "preflight-issue" in name:
             return AgentIncomplete(
                 partial_output='<issue label="ready-for-agent">42</issue>'
@@ -1416,7 +1420,7 @@ def test_preflight_failure_hitl_exits_nonzero_no_implementer(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            raise PreflightError([("ruff", "ruff check .", "E501")])
+            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
             return AgentIncomplete(
                 partial_output='<issue label="ready-for-agent">99</issue>'
@@ -1444,12 +1448,12 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
 
     async def _fake_run_agent(name, prompt_args=None, **kwargs):
         if name == "Planner":
-            raise PreflightError(
-                [
+            return PreflightFailure(
+                failures=(
                     ("ruff", "ruff check .", "ruff error"),
                     ("mypy", "mypy .", "mypy error"),
                     ("pytest", "pytest", "pytest error"),
-                ]
+                )
             )
         if "preflight-issue" in name:
             preflight_issue_calls.append(
@@ -2034,7 +2038,9 @@ def test_planner_preflight_error_spawns_no_implementers(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
+            return PreflightFailure(
+                failures=(("ruff", "ruff check .", "E501 line too long"),)
+            )
         return AgentIncomplete(
             partial_output='<issue label="ready-for-agent">77</issue>'
         )
@@ -2048,7 +2054,9 @@ def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
 
     async def _fake_run_agent(name, **kwargs):
         if name == "Planner":
-            raise PreflightError([("ruff", "ruff check .", "E501 line too long")])
+            return PreflightFailure(
+                failures=(("ruff", "ruff check .", "E501 line too long"),)
+            )
         return AgentIncomplete(
             partial_output='<issue label="ready-for-agent">88</issue>'
         )
