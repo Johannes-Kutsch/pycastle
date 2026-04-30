@@ -393,6 +393,7 @@ async def run_agent(
     sha: str | None = None,
     create_worktree_fn: Callable[[Path, Path, str, str | None], None] = create_worktree,
     remove_worktree_fn: Callable[[Path, Path], None] = remove_worktree,
+    docker_client=None,
     *,
     token: CancellationToken | None = None,
 ) -> AgentSuccess | AgentIncomplete | PreflightFailure | UsageLimitHit:
@@ -439,6 +440,7 @@ async def run_agent(
             gitdir_overlay=gitdir_overlay,
             model=model,
             effort=effort,
+            docker_client=docker_client,
         )
 
         @asynccontextmanager

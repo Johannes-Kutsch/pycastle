@@ -1246,6 +1246,41 @@ def test_run_agent_defaults_model_and_effort_to_empty_string(tmp_path):
     assert captured["effort"] == ""
 
 
+# ── Issue 250: docker_client injection into run_agent ────────────────────────
+
+
+def test_run_agent_uses_injected_docker_client(tmp_path):
+    """Injected docker_client is used for container operations instead of docker.from_env()."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def _exec_run_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            r = MagicMock()
+            r.output = iter([b""])
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = _exec_run_side_effect
+
+    _run(
+        run_agent(
+            "Test",
+            prompt,
+            tmp_path,
+            {},
+            docker_client=mock_client,
+            git_service=_make_git_service(),
+        )
+    )
+
+    mock_client.containers.run.assert_called_once()
+
+
 def test_run_streaming_includes_model_flag_when_set(tmp_path):
     """run_streaming must pass --model to exec_run when model is set on runner."""
     runner = _streaming_runner("Agent", [b"done\n"], tmp_path / "test.log")
