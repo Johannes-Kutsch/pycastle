@@ -8,41 +8,24 @@ import urllib.request
 
 import click
 
+from .config import config as _cfg
 from .git_service import GitService
 
-LABEL_BUG = "bug"
-LABEL_NEEDS_INFO = "needs-info"
-LABEL_NEEDS_TRIAGE = "needs-triage"
-LABEL_READY_FOR_AGENT = "ready-for-agent"
-LABEL_READY_FOR_HUMAN = "ready-for-human"
-LABEL_WONTFIX = "wontfix"
-
 LABELS = [
-    {"name": LABEL_BUG, "description": "Something isn't working", "color": "d73a4a"},
     {
-        "name": LABEL_NEEDS_INFO,
-        "description": "Waiting on reporter for more information",
-        "color": "b03176",
+        "name": _cfg.bug_label,
+        "description": "Something isn't working",
+        "color": "d73a4a",
     },
     {
-        "name": LABEL_NEEDS_TRIAGE,
-        "description": "Maintainer needs to evaluate this issue",
-        "color": "d6b80d",
-    },
-    {
-        "name": LABEL_READY_FOR_AGENT,
+        "name": _cfg.issue_label,
         "description": "Fully specified, ready for afk agent",
         "color": "0be348",
     },
     {
-        "name": LABEL_READY_FOR_HUMAN,
+        "name": _cfg.hitl_label,
         "description": "Requires human implementation",
         "color": "5181b8",
-    },
-    {
-        "name": LABEL_WONTFIX,
-        "description": "This will not be worked on",
-        "color": "e1e4e8",
     },
 ]
 
@@ -156,7 +139,6 @@ def create_labels_interactive(
 
 def main() -> None:
     from dotenv import load_dotenv
-    from .config import config as _cfg
 
     load_dotenv(_cfg.env_file)
 
