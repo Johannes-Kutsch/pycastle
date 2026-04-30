@@ -156,9 +156,9 @@ def create_labels_interactive(
 
 def main() -> None:
     from dotenv import load_dotenv
-    from .config import ENV_FILE
+    from .config import config as _cfg
 
-    load_dotenv(ENV_FILE)
+    load_dotenv(_cfg.env_file)
 
     token = os.getenv("GH_TOKEN", "").strip()
     if not token:

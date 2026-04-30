@@ -1478,30 +1478,30 @@ def test_run_agent_does_not_write_claude_settings_json(tmp_path):
 
 
 def test_preflight_checks_contains_ruff_mypy_pytest():
-    from pycastle.config import PREFLIGHT_CHECKS
+    from pycastle.config import Config
 
-    names = [name for name, _ in PREFLIGHT_CHECKS]
+    names = [name for name, _ in Config().preflight_checks]
     assert names == ["ruff", "mypy", "pytest"]
 
 
 def test_preflight_checks_commands():
-    from pycastle.config import PREFLIGHT_CHECKS
+    from pycastle.config import Config
 
-    cmds = {name: cmd for name, cmd in PREFLIGHT_CHECKS}
+    cmds = {name: cmd for name, cmd in Config().preflight_checks}
     assert cmds["ruff"] == "ruff check ."
     assert cmds["mypy"] == "mypy ."
     assert cmds["pytest"] == "pytest"
 
 
 def test_implement_checks_contains_expected_commands():
-    from pycastle.config import IMPLEMENT_CHECKS
+    from pycastle.config import Config
 
-    assert IMPLEMENT_CHECKS == [
+    assert Config().implement_checks == (
         "ruff check --fix",
         "ruff format --check",
         "mypy .",
         "pytest",
-    ]
+    )
 
 
 # ── Cycle 50-2: _preflight() runs all checks independently ───────────────────

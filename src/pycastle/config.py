@@ -86,39 +86,3 @@ def load_config(
 
 
 config: Config = load_config()
-
-# Backward-compatibility aliases for consumer modules still using UPPERCASE names.
-MAX_ITERATIONS = config.max_iterations
-MAX_PARALLEL = config.max_parallel
-WORKTREE_TIMEOUT = config.worktree_timeout
-IDLE_TIMEOUT = config.idle_timeout
-DOCKER_IMAGE_NAME = config.docker_image_name
-ISSUE_LABEL = config.issue_label
-HITL_LABEL = config.hitl_label
-PYCASTLE_DIR = config.pycastle_dir
-PROMPTS_DIR = config.prompts_dir
-LOGS_DIR = config.logs_dir
-WORKTREES_DIR = config.worktrees_dir
-ENV_FILE = config.env_file
-DOCKERFILE = config.dockerfile
-PREFLIGHT_CHECKS = list(config.preflight_checks)
-IMPLEMENT_CHECKS = list(config.implement_checks)
-USAGE_LIMIT_PATTERNS = list(config.usage_limit_patterns)
-STAGE_OVERRIDES: dict[str, dict[str, str]] = {
-    "plan": {
-        "model": config.plan_override.model,
-        "effort": config.plan_override.effort,
-    },
-    "implement": {
-        "model": config.implement_override.model,
-        "effort": config.implement_override.effort,
-    },
-    "review": {
-        "model": config.review_override.model,
-        "effort": config.review_override.effort,
-    },
-    "merge": {
-        "model": config.merge_override.model,
-        "effort": config.merge_override.effort,
-    },
-}
