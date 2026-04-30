@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from pycastle.agent_result import AgentSuccess
+from pycastle.agent_result import AgentIncomplete, AgentSuccess
 from pycastle.config import Config
-from pycastle.git_service import GitService
+from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
 from pycastle.iteration._deps import Deps, RecordingLogger
 from pycastle.iteration.merge import MergeResult, merge_phase
@@ -74,8 +74,7 @@ def test_clean_merge_calls_close_completed_parent_issues_once(deps, github_svc):
 def test_clean_merge_does_not_spawn_merger(deps, run_agent):
     issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
     _run(issues, deps)
-    calls = [str(c) for c in run_agent.call_args_list]
-    assert not any("Merger" in c for c in calls)
+    run_agent.assert_not_called()
 
 
 def test_clean_merge_deletes_merged_branches(deps, git_svc):
@@ -173,6 +172,72 @@ def test_merger_does_not_receive_issues_prompt_arg(deps, git_svc, run_agent):
     ]
     assert len(merger_calls) == 1
     assert "ISSUES" not in merger_calls[0].kwargs["prompt_args"]
+
+
+# ── Branch deletion edge cases ────────────────────────────────────────────────
+
+
+def test_non_ancestor_branch_not_deleted(deps, git_svc):
+    git_svc.is_ancestor.return_value = False
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, deps)
+    git_svc.delete_branch.assert_not_called()
+
+
+def test_branch_deletion_error_does_not_abort_merge(deps, git_svc):
+    git_svc.delete_branch.side_effect = [
+        GitCommandError("fail", returncode=1, stderr=""),
+        None,
+    ]
+    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    result = _run(issues, deps)
+    assert result.clean == issues
+
+
+# ── Merger fast-forward behaviour ─────────────────────────────────────────────
+
+
+def test_successful_merger_fast_forwards_target_branch(deps, git_svc):
+    git_svc.try_merge.return_value = False
+    git_svc.get_current_branch.return_value = "main"
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+    git_svc.fast_forward_branch.assert_called_once_with(
+        deps.repo_root, "main", "pycastle/merge-sandbox"
+    )
+
+
+def test_incomplete_merger_does_not_fast_forward(deps, git_svc, run_agent):
+    git_svc.try_merge.return_value = False
+    run_agent.return_value = AgentIncomplete(partial_output="")
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+    git_svc.fast_forward_branch.assert_not_called()
+
+
+# ── Exception safety ──────────────────────────────────────────────────────────
+
+
+def test_sandbox_branch_deleted_when_run_agent_raises(deps, git_svc, run_agent):
+    git_svc.try_merge.return_value = False
+    run_agent.side_effect = RuntimeError("agent crashed")
+    issues = [{"number": 1, "title": "Conflict"}]
+    with pytest.raises(RuntimeError, match="agent crashed"):
+        _run(issues, deps)
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/merge-sandbox" in deleted
+
+
+# ── Empty input ───────────────────────────────────────────────────────────────
+
+
+def test_empty_completed_list_returns_empty_result(deps, github_svc, run_agent):
+    result = _run([], deps)
+    assert result.clean == []
+    assert result.conflicts == []
+    github_svc.close_issue.assert_not_called()
+    github_svc.close_completed_parent_issues.assert_not_called()
+    run_agent.assert_not_called()
 
 
 # ── MergeResult ───────────────────────────────────────────────────────────────
