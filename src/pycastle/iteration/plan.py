@@ -70,6 +70,7 @@ async def _handle_preflight_failure(
             "HITL_LABEL": deps.cfg.hitl_label,
         },
         skip_preflight=True,
+        status_display=deps.status_display,
     )
     if isinstance(agent_result, PreflightFailure):
         raise RuntimeError(
@@ -103,6 +104,7 @@ async def plan_phase(deps: Deps) -> PlanResult:
             model=deps.cfg.plan_override.model,
             effort=deps.cfg.plan_override.effort,
             stage="plan-sandbox",
+            status_display=deps.status_display,
         )
 
         if isinstance(raw, PreflightFailure):

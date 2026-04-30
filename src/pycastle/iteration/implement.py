@@ -62,6 +62,7 @@ async def run_issue(
         stage="pre-implementation",
         sha=sha,
         skip_preflight=True,
+        status_display=deps.status_display,
     )
     if isinstance(result, PreflightFailure):
         return result
@@ -79,6 +80,7 @@ async def run_issue(
         effort=deps.cfg.review_override.effort,
         stage="pre-review",
         skip_preflight=True,
+        status_display=deps.status_display,
     )
     assert_complete(review_result)
     return issue
