@@ -1,5 +1,4 @@
 import asyncio
-import dataclasses
 import shutil
 import subprocess
 import sys
@@ -9,7 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from .agent_result import PreflightFailure
-from .config import Config, StageOverride, config as _cfg
+from .claude_service import ClaudeService
+from .config import load_config
 from .container_runner import run_agent as _default_run_agent
 from .git_service import GitCommandError, GitService
 from .github_service import GithubService
@@ -21,7 +21,6 @@ from .iteration import (
     run_iteration,
 )
 from .iteration._deps import Deps as IterationDeps
-from .validate import validate_config as _default_validate_config
 
 
 class FileLogger:
@@ -111,47 +110,12 @@ async def run(
     repo_root: Path,
     *,
     run_agent: Any | None = None,
-    validate_config: Any | None = None,
+    claude_service: ClaudeService | None = None,
     git_service: GitService | None = None,
     github_service: GithubService | None = None,
-    cfg: Config | None = None,
 ) -> None:
-    cfg = cfg if cfg is not None else _cfg
+    cfg = load_config(repo_root=repo_root, validate=True, claude_service=claude_service)
     _run_agent = run_agent or _default_run_agent
-    _validate_config = validate_config or _default_validate_config
-
-    _overrides = {
-        "plan": {"model": cfg.plan_override.model, "effort": cfg.plan_override.effort},
-        "implement": {
-            "model": cfg.implement_override.model,
-            "effort": cfg.implement_override.effort,
-        },
-        "review": {
-            "model": cfg.review_override.model,
-            "effort": cfg.review_override.effort,
-        },
-        "merge": {
-            "model": cfg.merge_override.model,
-            "effort": cfg.merge_override.effort,
-        },
-    }
-    _validate_config(_overrides)
-    cfg = dataclasses.replace(
-        cfg,
-        plan_override=StageOverride(
-            model=_overrides["plan"]["model"], effort=_overrides["plan"]["effort"]
-        ),
-        implement_override=StageOverride(
-            model=_overrides["implement"]["model"],
-            effort=_overrides["implement"]["effort"],
-        ),
-        review_override=StageOverride(
-            model=_overrides["review"]["model"], effort=_overrides["review"]["effort"]
-        ),
-        merge_override=StageOverride(
-            model=_overrides["merge"]["model"], effort=_overrides["merge"]["effort"]
-        ),
-    )
     prune_orphan_worktrees(repo_root)
     git_svc = git_service or GitService()
     _lazy_github_svc: GithubService | None = None
