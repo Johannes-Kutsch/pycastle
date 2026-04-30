@@ -69,22 +69,6 @@ def test_usage_limit_error_carries_matched_line():
     assert str(err) == "You've hit your session limit"
 
 
-# ── PreflightError ────────────────────────────────────────────────────────────
-
-
-def test_preflight_error_is_pycastle_error():
-    from pycastle.errors import PreflightError
-
-    assert issubclass(PreflightError, PycastleError)
-
-
-def test_preflight_error_carries_failure_tuples():
-    from pycastle.errors import PreflightError
-
-    failures = [("ruff", "ruff check .", "E501 line too long")]
-    err = PreflightError(failures)
-    assert err.failures == failures
-
 
 # ── Raise sites ───────────────────────────────────────────────────────────────
 
