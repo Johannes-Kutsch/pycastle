@@ -16,6 +16,7 @@ dependencies = [
     "click",
     "docker",
     "python-dotenv",
+    "rich",
 ]
 
 [project.optional-dependencies]

@@ -21,6 +21,7 @@ from .iteration import (
     run_iteration,
 )
 from .iteration._deps import Deps as IterationDeps, NullStatusDisplay, StatusDisplay
+from .rich_status_display import RichStatusDisplay
 
 
 class FileLogger:
@@ -142,7 +143,8 @@ async def run(
     cfg = load_config(repo_root=repo_root, claude_service=claude_service)
     prune_orphan_worktrees(repo_root, cfg=cfg)
     git_svc = git_service or GitService(cfg)
-    status_display: StatusDisplay = NullStatusDisplay()
+    rich_display = RichStatusDisplay()
+    status_display: StatusDisplay = rich_display
     _lazy_github_svc: GithubService | None = None
 
     def _get_github_svc() -> GithubService:
@@ -153,50 +155,55 @@ async def run(
             )
         return _lazy_github_svc
 
-    for iteration in range(1, cfg.max_iterations + 1):
-        status_display.print(f"\n=== Iteration {iteration}/{cfg.max_iterations} ===\n")
-
-        if not _get_github_svc().has_open_issues_with_label(cfg.issue_label):
+    try:
+        for iteration in range(1, cfg.max_iterations + 1):
             status_display.print(
-                f"No issues with label '{cfg.issue_label}' found. Skipping."
+                f"\n=== Iteration {iteration}/{cfg.max_iterations} ===\n"
             )
-            break
 
-        if agent_runner is not None:
-            _agent_runner: AgentRunnerProtocol = agent_runner
-        elif run_agent is not None:
-            _agent_runner = _CallableAgentRunner(run_agent)
-        else:
-            _agent_runner = AgentRunner(env=env, cfg=cfg, git_service=git_svc)
-
-        deps = IterationDeps(
-            env=env,
-            repo_root=repo_root,
-            git_svc=git_svc,
-            github_svc=_get_github_svc(),
-            agent_runner=_agent_runner,
-            cfg=cfg,
-            logger=FileLogger(cfg.logs_dir),
-            status_display=status_display,
-        )
-        outcome = await run_iteration(deps)
-
-        match outcome:
-            case Done():
+            if not _get_github_svc().has_open_issues_with_label(cfg.issue_label):
                 status_display.print(
                     f"No issues with label '{cfg.issue_label}' found. Skipping."
                 )
                 break
-            case AbortedHITL():
-                sys.exit(1)
-            case AbortedUsageLimit():
-                print(
-                    "Usage limit reached. Worktrees preserved."
-                    " Run 'pycastle run' again to resume.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            case Continue():
-                pass
 
-    status_display.print("\nAll done.")
+            if agent_runner is not None:
+                _agent_runner: AgentRunnerProtocol = agent_runner
+            elif run_agent is not None:
+                _agent_runner = _CallableAgentRunner(run_agent)
+            else:
+                _agent_runner = AgentRunner(env=env, cfg=cfg, git_service=git_svc)
+
+            deps = IterationDeps(
+                env=env,
+                repo_root=repo_root,
+                git_svc=git_svc,
+                github_svc=_get_github_svc(),
+                agent_runner=_agent_runner,
+                cfg=cfg,
+                logger=FileLogger(cfg.logs_dir),
+                status_display=status_display,
+            )
+            outcome = await run_iteration(deps)
+
+            match outcome:
+                case Done():
+                    status_display.print(
+                        f"No issues with label '{cfg.issue_label}' found. Skipping."
+                    )
+                    break
+                case AbortedHITL():
+                    sys.exit(1)
+                case AbortedUsageLimit():
+                    print(
+                        "Usage limit reached. Worktrees preserved."
+                        " Run 'pycastle run' again to resume.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                case Continue():
+                    pass
+
+        status_display.print("\nAll done.")
+    finally:
+        rich_display.stop()
