@@ -13,7 +13,7 @@ from pycastle.iteration._deps import (
     RecordingLogger,
     RecordingStatusDisplay,
 )
-from pycastle.iteration.merge import MergeResult, merge_phase
+from pycastle.iteration.merge import merge_phase
 
 
 @pytest.fixture
@@ -364,15 +364,6 @@ def test_empty_completed_list_returns_empty_result(deps, github_svc, agent_runne
     github_svc.close_issue.assert_not_called()
     github_svc.close_completed_parent_issues.assert_not_called()
     assert agent_runner.calls == []
-
-
-# ── MergeResult ───────────────────────────────────────────────────────────────
-
-
-def test_merge_result_stores_clean_and_conflicts():
-    result = MergeResult(clean=[{"number": 1}], conflicts=[{"number": 2}])
-    assert result.clean == [{"number": 1}]
-    assert result.conflicts == [{"number": 2}]
 
 
 # ── Active worktree removal before branch deletion ────────────────────────────

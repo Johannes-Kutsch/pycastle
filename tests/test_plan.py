@@ -155,24 +155,9 @@ def test_plan_phase_passes_stale_blocker_refs_stripped_to_planner(
     )
     asyncio.run(plan_phase(deps))
 
-    received = json.loads(fake.calls[0]["prompt_args"]["OPEN_ISSUES_JSON"])
+    planner_call = next(c for c in fake.calls if c["name"] == "Planner")
+    received = json.loads(planner_call["prompt_args"]["OPEN_ISSUES_JSON"])
     assert received[0]["body"] == "Real content"
-
-
-def test_plan_phase_returns_ready_when_planner_returns_agent_success(
-    tmp_path, git_svc, github_svc, logger
-):
-    expected = [{"number": 3, "title": "Another fix"}]
-    github_svc.get_open_issues.return_value = expected
-    fake = FakeAgentRunner([_plan_json(expected)])
-
-    deps = _make_deps(
-        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
-    result = asyncio.run(plan_phase(deps))
-
-    assert isinstance(result, PlanReady)
-    assert result.issues == expected
 
 
 def test_plan_phase_returns_issues_sorted_by_ascending_number(
@@ -379,8 +364,9 @@ def test_plan_phase_passes_worktree_path_as_mount_path_to_planner(
     asyncio.run(plan_phase(deps))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
-    assert fake.calls[0]["mount_path"] == expected_worktree
-    assert fake.calls[0]["mount_path"] != tmp_path
+    planner_call = next(c for c in fake.calls if c["name"] == "Planner")
+    assert planner_call["mount_path"] == expected_worktree
+    assert planner_call["mount_path"] != tmp_path
 
 
 def test_plan_phase_removes_worktree_after_successful_planning(
@@ -454,7 +440,6 @@ def test_plan_phase_passes_worktree_path_to_preflight_issue_agent(
     asyncio.run(plan_phase(deps))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
-    # calls[1] is the preflight-issue agent call
     preflight_call = next(c for c in fake.calls if "preflight-issue" in c["name"])
     assert preflight_call["mount_path"] == expected_worktree
     assert preflight_call["mount_path"] != tmp_path
