@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import json
 
 import pytest
@@ -459,6 +460,69 @@ def test_plan_phase_raises_usage_limit_error_when_planner_hits_usage_limit(
 
     with pytest.raises(UsageLimitError):
         asyncio.run(plan_phase(deps))
+
+
+def test_plan_phase_hitl_routing_uses_configured_hitl_label(tmp_path, git_svc, logger):
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+    fake = FakeAgentRunner(
+        [
+            PreflightFailure(failures=(("ruff", "ruff check .", "E501"),)),
+            '<issue>{"number": 55, "labels": ["custom-bug", "custom-human"]}</issue>',
+        ]
+    )
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    deps = dataclasses.replace(
+        deps,
+        cfg=Config(
+            max_parallel=4,
+            max_iterations=1,
+            bug_label="custom-bug",
+            issue_label="custom-agent",
+            hitl_label="custom-human",
+        ),
+    )
+    result = asyncio.run(plan_phase(deps))
+
+    assert isinstance(result, PlanHITL)
+    assert result.issue_number == 55
+
+
+def test_plan_phase_preflight_agent_receives_label_args_from_config(
+    tmp_path, git_svc, logger
+):
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+    github_svc.get_issue_title.return_value = "Preflight fix"
+    fake = FakeAgentRunner(
+        [
+            PreflightFailure(failures=(("ruff", "ruff check .", "E501"),)),
+            '<issue>{"number": 42, "labels": ["custom-bug", "custom-agent"]}</issue>',
+        ]
+    )
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    deps = dataclasses.replace(
+        deps,
+        cfg=Config(
+            max_parallel=4,
+            max_iterations=1,
+            bug_label="custom-bug",
+            issue_label="custom-agent",
+            hitl_label="custom-human",
+        ),
+    )
+    asyncio.run(plan_phase(deps))
+
+    preflight_call = next(c for c in fake.calls if "preflight-issue" in c["name"])
+    assert preflight_call["prompt_args"]["BUG_LABEL"] == "custom-bug"
+    assert preflight_call["prompt_args"]["ISSUE_LABEL"] == "custom-agent"
+    assert preflight_call["prompt_args"]["HITL_LABEL"] == "custom-human"
 
 
 def test_plan_phase_preflight_failure_only_first_check_spawns_agent(
