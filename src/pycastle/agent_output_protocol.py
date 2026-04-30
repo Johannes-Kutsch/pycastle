@@ -1,5 +1,35 @@
+import dataclasses
+import enum
 import json
 import re
+from typing import TypeAlias
+
+
+class AgentRole(enum.Enum):
+    PLANNER = "planner"
+    PREFLIGHT_ISSUE = "preflight_issue"
+    IMPLEMENTER = "implementer"
+    REVIEWER = "reviewer"
+    MERGER = "merger"
+
+
+@dataclasses.dataclass(frozen=True)
+class PlannerOutput:
+    issues: list[dict]
+
+
+@dataclasses.dataclass(frozen=True)
+class IssueOutput:
+    label: str
+    number: int
+
+
+@dataclasses.dataclass(frozen=True)
+class CompletionOutput:
+    pass
+
+
+AgentOutput: TypeAlias = PlannerOutput | IssueOutput | CompletionOutput
 
 
 class AgentOutputProtocolError(Exception):
