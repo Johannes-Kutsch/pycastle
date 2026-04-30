@@ -1312,7 +1312,6 @@ def test_run_streaming_includes_model_flag_when_set(tmp_path):
     runner = _streaming_runner("Agent", [b"done\n"], tmp_path)
     runner.model = "claude-sonnet-4-6"
     runner.effort = ""
-    runner.write_file = MagicMock()
     runner.run_streaming()
 
     streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
@@ -1324,7 +1323,6 @@ def test_run_streaming_includes_effort_flag_when_set(tmp_path):
     runner = _streaming_runner("Agent", [b"done\n"], tmp_path)
     runner.model = ""
     runner.effort = "high"
-    runner.write_file = MagicMock()
     runner.run_streaming()
 
     streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
@@ -1381,94 +1379,6 @@ def test_build_claude_command_does_not_use_temp_file():
 def test_build_claude_command_does_not_embed_large_prompt():
     cmd = _build_claude_command()
     assert len(cmd) < 1024
-
-
-# ── Cycle 36-3: run_streaming passes correct command to exec_run ─────────────
-
-
-def test_run_streaming_command_includes_required_flags(tmp_path):
-    runner = _streaming_runner("TestAgent", [b"output\n"], tmp_path)
-    runner._prompt = "test prompt"
-    runner.write_file = MagicMock()
-    runner.run_streaming()
-    streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
-    assert "--output-format stream-json" in streaming_cmd
-    assert "--dangerously-skip-permissions" in streaming_cmd
-    assert "--verbose" in streaming_cmd
-    assert "-p -" in streaming_cmd
-    assert "< /tmp/.pycastle_prompt" in streaming_cmd
-
-
-# ── Cycle 44-2: run_streaming writes prompt to temp file ─────────────────────
-
-
-def test_run_streaming_writes_prompt_to_temp_file(tmp_path):
-    runner = _streaming_runner("Agent", [b"output\n"], tmp_path)
-    runner._prompt = "my test prompt"
-    runner.write_file = MagicMock()
-    runner.run_streaming()
-    runner.write_file.assert_called_once_with("my test prompt", "/tmp/.pycastle_prompt")
-
-
-# ── Cycle 44-3: command string redirects stdin from temp file ─────────────────
-
-
-def test_run_streaming_command_redirects_stdin_from_temp_file(tmp_path):
-    runner = _streaming_runner("Agent", [b"output\n"], tmp_path)
-    runner._prompt = "test"
-    runner.write_file = MagicMock()
-    runner.run_streaming()
-    streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
-    assert "< /tmp/.pycastle_prompt" in streaming_cmd
-
-
-# ── Cycle 44-4: temp prompt file is cleaned up after run ─────────────────────
-
-
-def test_run_streaming_cleans_up_temp_prompt_file(tmp_path):
-    runner = _streaming_runner("Agent", [b"output\n"], tmp_path)
-    runner._prompt = "test"
-    runner.write_file = MagicMock()
-    runner.run_streaming()
-    all_cmds = [call[0][0] for call in runner._container.exec_run.call_args_list]
-    assert any("rm -f /tmp/.pycastle_prompt" in " ".join(cmd) for cmd in all_cmds)
-
-
-# ── Cycle 36-4: _prepare stores prompt on runner, no write_file ─────────────
-
-
-def test_prepare_stores_prompt_on_runner(tmp_path):
-    from pycastle.container_runner import _prepare
-
-    prompt_file = tmp_path / "p.md"
-    prompt_file.write_text("my prompt content")
-
-    runner = MagicMock()
-    runner.exec_simple.return_value = ""
-
-    async def _run():
-        await _prepare("test", runner, asyncio.get_event_loop(), None, prompt_file, {})
-
-    asyncio.run(_run())
-
-    assert runner._prompt == "my prompt content"
-
-
-def test_prepare_does_not_call_write_file(tmp_path):
-    from pycastle.container_runner import _prepare
-
-    prompt_file = tmp_path / "p.md"
-    prompt_file.write_text("my prompt content")
-
-    runner = MagicMock()
-    runner.exec_simple.return_value = ""
-
-    async def _run():
-        await _prepare("test", runner, asyncio.get_event_loop(), None, prompt_file, {})
-
-    asyncio.run(_run())
-
-    runner.write_file.assert_not_called()
 
 
 # ── Cycle 36-5: streaming consumer prints each line immediately ──────────────
