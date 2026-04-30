@@ -1246,6 +1246,50 @@ def test_run_agent_defaults_model_and_effort_to_empty_string(tmp_path):
     assert captured["effort"] == ""
 
 
+# ── Issue 250: docker_client injection into run_agent ────────────────────────
+
+
+def test_run_agent_passes_docker_client_to_container_runner(tmp_path):
+    """run_agent with docker_client kwarg must forward it to ContainerRunner."""
+    prompt = tmp_path / "p.md"
+    prompt.write_text("test")
+
+    mock_client = MagicMock()
+    captured: dict = {}
+
+    class _CapturingRunner:
+        def __init__(self, *args, docker_client=None, **kwargs):
+            self.branch = None
+            self.env = {}
+            captured["docker_client"] = docker_client
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            return ""
+
+        def run_streaming(self):
+            return ""
+
+    with patch("pycastle.container_runner.ContainerRunner", _CapturingRunner):
+        _run(
+            run_agent(
+                "Test",
+                prompt,
+                tmp_path,
+                {},
+                docker_client=mock_client,
+                git_service=_make_git_service(),
+            )
+        )
+
+    assert captured["docker_client"] is mock_client
+
+
 def test_run_streaming_includes_model_flag_when_set(tmp_path):
     """run_streaming must pass --model to exec_run when model is set on runner."""
     runner = _streaming_runner("Agent", [b"done\n"], tmp_path / "test.log")
