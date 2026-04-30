@@ -18,16 +18,16 @@ from pycastle.worktree import (
 # ── Cycle 23-1: timeout constants ────────────────────────────────────────────
 
 
-def test_worktree_timeout_constant_exists():
-    from pycastle.config import WORKTREE_TIMEOUT
+def test_worktree_timeout_default_value():
+    from pycastle.config import Config
 
-    assert WORKTREE_TIMEOUT == 30
+    assert Config().worktree_timeout == 30
 
 
-def test_idle_timeout_constant_exists():
-    from pycastle.config import IDLE_TIMEOUT
+def test_idle_timeout_default_value():
+    from pycastle.config import Config
 
-    assert IDLE_TIMEOUT == 300
+    assert Config().idle_timeout == 300
 
 
 # ── Cycle 23-2: create_worktree and remove_worktree raise WorktreeTimeoutError on timeout ──
