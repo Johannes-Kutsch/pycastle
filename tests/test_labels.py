@@ -1,3 +1,4 @@
+import pytest
 from unittest.mock import MagicMock, patch
 
 from pycastle.config import Config
@@ -5,64 +6,56 @@ from pycastle.git_service import GitCommandError, GitService, GitTimeoutError
 from pycastle.labels import _get_remote_repo, create_labels_interactive
 
 
+# ── Shared fixture ─────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def label_setup(monkeypatch):
+    """Provide a known GitHub remote and capture POST payloads without prompts."""
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.get_remote_url.return_value = "https://github.com/owner/repo.git"
+
+    # "Target repo owner/repo?" → True; "Delete all existing labels first?" → False
+    monkeypatch.setattr(
+        "pycastle.labels.click.confirm",
+        lambda msg, **kw: "Target repo" in msg,
+    )
+
+    posted: list = []
+
+    def fake_gh(method, path, token, data=None):
+        if method == "POST":
+            posted.append(data)
+        return (201, None)
+
+    return mock_svc, posted, fake_gh
+
+
 # ── Labels built from config ───────────────────────────────────────────────────
 
 
-def test_create_labels_interactive_posts_exactly_three_labels(monkeypatch):
-    monkeypatch.setattr(
-        "pycastle.labels._resolve_repo", lambda token, *a, **kw: ("owner", "repo")
-    )
-    monkeypatch.setattr("pycastle.labels.click.confirm", lambda *a, **kw: False)
-    posted: list = []
-
-    def fake_gh(method, path, token, data=None):
-        if method == "POST":
-            posted.append(data)
-        return (201, None)
-
+def test_create_labels_interactive_posts_exactly_three_labels(label_setup):
+    mock_svc, posted, fake_gh = label_setup
     with patch("pycastle.labels._gh", fake_gh):
-        create_labels_interactive("tok", cfg=Config())
-
+        create_labels_interactive("tok", git_service=mock_svc, cfg=Config())
     assert len(posted) == 3
 
 
-def test_create_labels_interactive_posts_bug_issue_and_hitl_names(monkeypatch):
-    monkeypatch.setattr(
-        "pycastle.labels._resolve_repo", lambda token, *a, **kw: ("owner", "repo")
-    )
-    monkeypatch.setattr("pycastle.labels.click.confirm", lambda *a, **kw: False)
-    posted: list = []
-
-    def fake_gh(method, path, token, data=None):
-        if method == "POST":
-            posted.append(data)
-        return (201, None)
-
+def test_create_labels_interactive_posts_bug_issue_and_hitl_names(label_setup):
+    mock_svc, posted, fake_gh = label_setup
     cfg = Config()
     with patch("pycastle.labels._gh", fake_gh):
-        create_labels_interactive("tok", cfg=cfg)
-
+        create_labels_interactive("tok", git_service=mock_svc, cfg=cfg)
     names = {entry["name"] for entry in posted}
     assert cfg.bug_label in names
     assert cfg.issue_label in names
     assert cfg.hitl_label in names
 
 
-def test_create_labels_interactive_does_not_post_removed_label_names(monkeypatch):
-    monkeypatch.setattr(
-        "pycastle.labels._resolve_repo", lambda token, *a, **kw: ("owner", "repo")
-    )
-    monkeypatch.setattr("pycastle.labels.click.confirm", lambda *a, **kw: False)
-    posted: list = []
-
-    def fake_gh(method, path, token, data=None):
-        if method == "POST":
-            posted.append(data)
-        return (201, None)
-
+def test_create_labels_interactive_does_not_post_removed_label_names(label_setup):
+    mock_svc, posted, fake_gh = label_setup
     with patch("pycastle.labels._gh", fake_gh):
-        create_labels_interactive("tok", cfg=Config())
-
+        create_labels_interactive("tok", git_service=mock_svc, cfg=Config())
     names = {entry["name"] for entry in posted}
     assert "needs-info" not in names
     assert "needs-triage" not in names
@@ -70,26 +63,26 @@ def test_create_labels_interactive_does_not_post_removed_label_names(monkeypatch
 
 
 def test_create_labels_interactive_posts_entries_with_required_github_api_keys(
-    monkeypatch,
+    label_setup,
 ):
-    monkeypatch.setattr(
-        "pycastle.labels._resolve_repo", lambda token, *a, **kw: ("owner", "repo")
-    )
-    monkeypatch.setattr("pycastle.labels.click.confirm", lambda *a, **kw: False)
-    posted: list = []
-
-    def fake_gh(method, path, token, data=None):
-        if method == "POST":
-            posted.append(data)
-        return (201, None)
-
+    mock_svc, posted, fake_gh = label_setup
     with patch("pycastle.labels._gh", fake_gh):
-        create_labels_interactive("tok", cfg=Config())
-
+        create_labels_interactive("tok", git_service=mock_svc, cfg=Config())
     for entry in posted:
         assert "name" in entry
         assert "description" in entry
         assert "color" in entry
+
+
+def test_create_labels_interactive_returns_early_when_repo_not_resolved(monkeypatch):
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.get_remote_url.return_value = "https://gitlab.com/owner/repo.git"
+    # Non-GitHub URL → _get_remote_repo returns None; click.prompt for manual slug
+    monkeypatch.setattr("pycastle.labels.click.prompt", lambda *a, **kw: "invalid")
+    posted: list = []
+    with patch("pycastle.labels._gh", lambda *a, **kw: (201, None)):
+        create_labels_interactive("tok", git_service=mock_svc, cfg=Config())
+    assert posted == []
 
 
 # ── Cycle 1: _get_remote_repo with injected GitService ───────────────────────
