@@ -1,32 +1,12 @@
 import asyncio
 from unittest.mock import MagicMock
 
-import pytest
-
 from pycastle.agent_result import AgentSuccess, PreflightFailure, UsageLimitHit
 from pycastle.config import Config
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
 from pycastle.iteration._deps import Deps, RecordingLogger
 from pycastle.iteration.implement import ImplementResult, branch_for, implement_phase
-
-
-@pytest.fixture
-def logger() -> RecordingLogger:
-    return RecordingLogger()
-
-
-@pytest.fixture
-def deps(tmp_path, logger: RecordingLogger) -> Deps:
-    return Deps(
-        env={},
-        repo_root=tmp_path,
-        git_svc=MagicMock(spec=GitService),
-        github_svc=MagicMock(spec=GithubService),
-        run_agent=None,
-        cfg=Config(max_parallel=4, max_iterations=1),
-        logger=logger,
-    )
 
 
 def _make_deps(tmp_path, run_agent_fn, logger=None) -> Deps:
@@ -221,3 +201,36 @@ def test_implement_phase_successful_issues_not_logged_as_errors(tmp_path):
     asyncio.run(implement_phase(issues, None, deps))
 
     assert logger.errors == []
+
+
+def test_implement_phase_logs_implementer_output_on_success(tmp_path):
+    """Implementer output is passed to deps.logger.log_agent_output() when it succeeds."""
+    issues = [{"number": 7, "title": "Fix C"}]
+    logger = RecordingLogger()
+    agent_output = "<promise>COMPLETE</promise>"
+
+    async def _fake_run_agent(name, **kwargs):
+        return AgentSuccess(output=agent_output)
+
+    deps = _make_deps(tmp_path, _fake_run_agent, logger=logger)
+    asyncio.run(implement_phase(issues, None, deps))
+
+    assert len(logger.agent_outputs) == 1
+    assert logger.agent_outputs[0] == ("Implementer #7", agent_output)
+
+
+def test_implement_phase_reviewer_usage_limit_signals_in_result(tmp_path):
+    """When reviewer hits usage limit, implement_phase returns usage_limit_hit=True and issue is not completed."""
+    issues = [{"number": 1, "title": "Fix A"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        if "Implementer" in name:
+            return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return UsageLimitHit(last_output="")
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    result = asyncio.run(implement_phase(issues, None, deps))
+
+    assert result.usage_limit_hit is True
+    assert result.completed == []
+    assert result.errors == []
