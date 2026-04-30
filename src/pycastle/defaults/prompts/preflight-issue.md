@@ -27,18 +27,18 @@ Do not treat the raw output above as the final answer. Explore the repository to
 
 ### 2. Evaluate HITL
 
-Decide whether this fix requires human judgment. Apply the `ready-for-human` label when:
+Decide whether this fix requires human judgment. Apply the `{{HITL_LABEL}}` label when:
 
 - The fix requires a design decision about intended behavior
 - It is unclear which of several plausible fixes is correct
 - The failure could be fixed in multiple incompatible ways and choosing the wrong one would have significant consequences
 - You are uncertain
 
-**Default to `ready-for-human` when in doubt.** Only choose `ready-for-agent` when the fix is unambiguous and does not require guessing at design intent.
+**Default to `{{HITL_LABEL}}` when in doubt.** Only choose `{{ISSUE_LABEL}}` when the fix is unambiguous and does not require guessing at design intent.
 
 ### 3. Determine the correct labels
 
-Read the project configuration to find the configured label names — do not hardcode strings. The config file is at `pycastle/config.py`. Use the value of `ISSUE_LABEL` as the agent-fixable label. The human label is `ready-for-human`.
+The configured label names are injected into this prompt as placeholders. Use `{{ISSUE_LABEL}}` as the agent-fixable label and `{{HITL_LABEL}}` as the human label.
 
 **Never apply `needs-triage`.** The preflight-issue agent performs triage inline.
 
@@ -85,10 +85,10 @@ EOF
 
 ### 5. Apply labels
 
-Apply the `bug` label and either the `ready-for-agent` or `ready-for-human` label (the exact label names from config) to the newly created issue:
+Apply the `{{BUG_LABEL}}` label and either the `{{ISSUE_LABEL}}` or `{{HITL_LABEL}}` label to the newly created issue:
 
 ```
-gh issue edit <number> --add-label "bug" --add-label "<ready-for-agent or ready-for-human>"
+gh issue edit <number> --add-label "{{BUG_LABEL}}" --add-label "<{{ISSUE_LABEL}} or {{HITL_LABEL}}>"
 ```
 
 Do **not** apply `needs-triage`.
