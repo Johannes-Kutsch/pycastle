@@ -311,29 +311,20 @@ def test_run_streaming_raises_agent_timeout_error_when_idle(tmp_path):
         runner.run_streaming()
 
 
-# ── Cycle 24-A1: run_streaming prefixes lines in stdout ──────────────────────
+# ── Issue 310: run_streaming produces no stdout ──────────────────────────────
 
 
-def test_run_streaming_prefixes_complete_lines_in_stdout(tmp_path, capsys):
-    runner = _streaming_runner("TestAgent", [b"hello world\n"], tmp_path)
+def test_run_streaming_produces_no_stdout(tmp_path, capsys):
+    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working on it"}]}}\n'
+    runner = _streaming_runner("TestAgent", [json_line], tmp_path)
     runner.run_streaming()
-    assert "[TestAgent] hello world" in capsys.readouterr().out
+    assert capsys.readouterr().out == ""
 
 
-def test_run_streaming_prefixes_each_line_separately(tmp_path, capsys):
-    """Multiple lines in a single chunk must each get their own prefix."""
+def test_run_streaming_produces_no_stdout_for_plain_text(tmp_path, capsys):
     runner = _streaming_runner("Bot", [b"line one\nline two\n"], tmp_path)
     runner.run_streaming()
-    out = capsys.readouterr().out
-    assert "[Bot] line one" in out
-    assert "[Bot] line two" in out
-
-
-def test_run_streaming_handles_chunks_split_across_newlines(tmp_path, capsys):
-    """A line split across two chunks must be assembled before prefixing."""
-    runner = _streaming_runner("Bot", [b"hel", b"lo\n"], tmp_path)
-    runner.run_streaming()
-    assert "[Bot] hello" in capsys.readouterr().out
+    assert capsys.readouterr().out == ""
 
 
 # ── Cycle 24-A2: log file stays raw (unprefixed) ─────────────────────────────
@@ -455,18 +446,6 @@ def test_build_claude_command_does_not_use_temp_file():
 def test_build_claude_command_does_not_embed_large_prompt():
     cmd = _build_claude_command()
     assert len(cmd) < 1024
-
-
-# ── Cycle 36-5: streaming consumer prints each line immediately ──────────────
-
-
-def test_run_streaming_prints_lines_from_separate_chunks(tmp_path, capsys):
-    """Lines arriving in separate chunks must each be printed, not buffered until the end."""
-    runner = _streaming_runner("Bot", [b"line one\n", b"line two\n"], tmp_path)
-    runner.run_streaming()
-    out = capsys.readouterr().out
-    assert "[Bot] line one" in out
-    assert "[Bot] line two" in out
 
 
 # ── Cycle 37-1: parent .git mounted rw at /.pycastle-parent-git ──────────────
@@ -673,17 +652,7 @@ def test_format_stream_line_returns_plain_text_verbatim():
     assert _format_stream_line("plain text output") == "plain text output"
 
 
-# ── Cycle 65-6: run_streaming terminal output is human-readable ──────────────
-
-
-def test_run_streaming_terminal_shows_text_not_raw_json(tmp_path, capsys):
-    """Terminal must show extracted text, not the raw JSON envelope."""
-    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working on it"}]}}\n'
-    runner = _streaming_runner("Planner", [json_line], tmp_path)
-    runner.run_streaming()
-    out = capsys.readouterr().out
-    assert "Working on it" in out
-    assert '"type":"assistant"' not in out
+# ── Cycle 65-6: run_streaming writes raw log, suppresses all stdout ──────────
 
 
 def test_run_streaming_suppresses_system_init_line(tmp_path, capsys):
@@ -986,3 +955,143 @@ def test_run_streaming_default_patterns_not_triggered_by_custom_cfg(tmp_path):
 
     result = runner.run_streaming()
     assert "You've hit your session limit" in result
+
+
+# ── Issue 310: StatusDisplay lifecycle wiring ─────────────────────────────────
+
+
+def _unstarted_runner(name: str, tmp_path: Path) -> ContainerRunner:
+    """ContainerRunner with mocked Docker whose __enter__ has NOT been called yet."""
+    mock_client = MagicMock()
+    mock_exec = MagicMock()
+    mock_exec.exit_code = 0
+    mock_exec.output = (b"", b"")
+    mock_client.containers.run.return_value.exec_run.return_value = mock_exec
+    return ContainerRunner(
+        name,
+        Path("/fake"),
+        {},
+        docker_client=mock_client,
+        cfg=Config(logs_dir=tmp_path),
+    )
+
+
+def test_setup_calls_add_agent_with_name_and_log_path(tmp_path):
+    from pycastle.container_runner import _setup
+    from pycastle.iteration._deps import RecordingStatusDisplay
+
+    runner = _unstarted_runner("implementer-42", tmp_path)
+    display = RecordingStatusDisplay()
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(
+            _setup(
+                "implementer-42",
+                runner,
+                loop,
+                None,
+                git_service=_make_git_service(),
+                status_display=display,
+            )
+        )
+    finally:
+        loop.close()
+
+    add_calls = [c for c in display.calls if c[0] == "add_agent"]
+    assert len(add_calls) == 1
+    assert add_calls[0][1] == "implementer-42"
+    assert add_calls[0][2] == "Setup"
+    assert add_calls[0][3] == runner.log_path
+
+
+def test_setup_creates_log_file_before_calling_add_agent(tmp_path):
+    from pycastle.container_runner import _setup
+
+    log_existed: list[bool] = []
+
+    class _CheckDisplay:
+        def add_agent(self, name: str, phase: str, log_path: Path) -> None:
+            log_existed.append(log_path.exists())
+
+        def update_phase(self, name: str, phase: str) -> None:
+            pass
+
+        def remove_agent(self, name: str) -> None:
+            pass
+
+        def print(self, msg: str) -> None:
+            pass
+
+    runner = _unstarted_runner("implementer-42", tmp_path)
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(
+            _setup(
+                "implementer-42",
+                runner,
+                loop,
+                None,
+                git_service=_make_git_service(),
+                status_display=_CheckDisplay(),
+            )
+        )
+    finally:
+        loop.close()
+
+    assert log_existed == [True]
+
+
+def test_work_calls_update_phase_work(tmp_path):
+    from pycastle.container_runner import _work
+    from pycastle.iteration._deps import RecordingStatusDisplay
+
+    runner = _streaming_runner("implementer-42", [b"done\n"], tmp_path)
+    display = RecordingStatusDisplay()
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(
+            _work("implementer-42", runner, loop, status_display=display)
+        )
+    finally:
+        loop.close()
+
+    assert ("update_phase", "implementer-42", "Work") in display.calls
+
+
+def test_work_produces_no_stdout(tmp_path, capsys):
+    from pycastle.container_runner import _work
+    from pycastle.iteration._deps import RecordingStatusDisplay
+
+    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
+    runner = _streaming_runner("implementer-42", [json_line], tmp_path)
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(
+            _work(
+                "implementer-42", runner, loop, status_display=RecordingStatusDisplay()
+            )
+        )
+    finally:
+        loop.close()
+
+    assert capsys.readouterr().out == ""
+
+
+def test_preflight_calls_update_phase_preflight(tmp_path):
+    from pycastle.container_runner import _preflight
+    from pycastle.iteration._deps import RecordingStatusDisplay
+
+    display = RecordingStatusDisplay()
+
+    async def _run():
+        loop = asyncio.get_event_loop()
+        runner = _make_preflight_runner({})
+        return await _preflight(
+            "agent-1", runner, loop, None, [], status_display=display
+        )
+
+    asyncio.run(_run())
+    assert ("update_phase", "agent-1", "Pre-flight") in display.calls
