@@ -8,21 +8,15 @@ import shlex
 import sys
 import tarfile
 import threading
-from collections.abc import Callable
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 import docker
 from docker.models.containers import Container as DockerContainer
 
-from .agent_result import (
-    CancellationToken,
-    PreflightFailure,
-)
+from .agent_result import PreflightFailure
 from .config import Config, load_config
 from .errors import (
     AgentTimeoutError,
-    BranchCollisionError,
     DockerError,
     DockerTimeoutError,
     UsageLimitError,
@@ -30,12 +24,8 @@ from .errors import (
 from .git_service import GitService
 from .worktree import (
     CONTAINER_PARENT_GIT,
-    create_worktree,
     patch_gitdir_for_container,
-    remove_worktree,
 )
-
-_branch_locks: dict[str, asyncio.Lock] = {}
 
 
 def _is_usage_limit_line(line: str, patterns: tuple[str, ...]) -> bool:
@@ -419,132 +409,3 @@ async def _work(
     return await loop.run_in_executor(None, runner.run_streaming)
 
 
-async def run_agent(
-    name: str,
-    prompt_file: Path,
-    mount_path: Path,
-    env: dict[str, str],
-    prompt_args: dict[str, str] | None = None,
-    branch: str | None = None,
-    exec_timeout: float | None = None,
-    skip_preflight: bool = False,
-    model: str = "",
-    effort: str = "",
-    git_service: GitService | None = None,
-    stage: str = "",
-    sha: str | None = None,
-    create_worktree_fn: Callable[[Path, Path, str, str | None], None] = create_worktree,
-    remove_worktree_fn: Callable[[Path, Path], None] = remove_worktree,
-    docker_client=None,
-    *,
-    token: CancellationToken | None = None,
-    cfg: Config | None = None,
-) -> str | PreflightFailure:
-    _run_cfg = cfg if cfg is not None else load_config()
-    _token = token if token is not None else CancellationToken()
-    if _token.is_cancelled:
-        raise UsageLimitError("Agent cancelled due to usage limit")
-
-    print(f"\n[{name}] Started")
-
-    lock: asyncio.Lock | None = None
-    if branch:
-        if branch not in _branch_locks:
-            _branch_locks[branch] = asyncio.Lock()
-        lock = _branch_locks[branch]
-        if lock.locked():
-            raise BranchCollisionError(
-                f"Branch {branch!r} already has an agent running"
-            )
-        await lock.acquire()
-
-    worktree_host_path: Path | None = None
-    gitdir_overlay: Path | None = None
-    try:
-        if branch:
-            m = re.search(r"issue-(\d+)", branch)
-            worktree_name = (
-                f"issue-{m.group(1)}"
-                if m
-                else re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
-            )
-            worktree_host_path = (
-                mount_path / _run_cfg.pycastle_dir / ".worktrees" / worktree_name
-            )
-            create_worktree_fn(mount_path, worktree_host_path, branch, sha)
-            gitdir_overlay = patch_gitdir_for_container(worktree_host_path)
-
-        loop = asyncio.get_event_loop()
-        runner = ContainerRunner(
-            name,
-            mount_path,
-            env,
-            branch=branch,
-            worktree_host_path=worktree_host_path,
-            gitdir_overlay=gitdir_overlay,
-            model=model,
-            effort=effort,
-            docker_client=docker_client,
-            cfg=_run_cfg,
-        )
-
-        @asynccontextmanager
-        async def _worktree_lifecycle():
-            try:
-                yield
-            finally:
-                exc: BaseException | None = None
-                try:
-                    runner.__exit__(None, None, None)
-                except BaseException as e:
-                    exc = e
-                if worktree_host_path and not _token.wants_worktree_preserved:
-                    svc = git_service or GitService(_run_cfg)
-                    try:
-                        clean = svc.is_working_tree_clean(worktree_host_path)
-                    except Exception:
-                        clean = False
-                    if clean:
-                        try:
-                            remove_worktree_fn(mount_path, worktree_host_path)
-                        except BaseException as e:
-                            if exc is None:
-                                exc = e
-                if gitdir_overlay:
-                    gitdir_overlay.unlink(missing_ok=True)
-                if exc is not None:
-                    raise exc
-
-        async with _worktree_lifecycle():
-            await _setup(name, runner, loop, exec_timeout, git_service, _run_cfg)
-            await _prepare(
-                name, runner, loop, exec_timeout, prompt_file, prompt_args or {}
-            )
-            if not skip_preflight:
-                failures = await _preflight(
-                    name, runner, loop, exec_timeout, list(_run_cfg.preflight_checks)
-                )
-                if failures:
-                    return PreflightFailure(failures=tuple(failures))
-            output = ""
-            retries_left = _run_cfg.timeout_retries
-            while True:
-                try:
-                    output = await _work(name, runner, loop)
-                    break
-                except AgentTimeoutError:
-                    if retries_left <= 0:
-                        raise
-                    restart_num = _run_cfg.timeout_retries - retries_left + 1
-                    print(
-                        f"[{name}] Timeout — restarting"
-                        f" (attempt {restart_num}/{_run_cfg.timeout_retries})"
-                    )
-                    retries_left -= 1
-                except UsageLimitError:
-                    _token.cancel(preserve_worktree=True)
-                    raise
-            return output
-    finally:
-        if lock is not None and lock.locked():
-            lock.release()
