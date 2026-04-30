@@ -1,0 +1,249 @@
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from pycastle.agent_result import AgentIncomplete, AgentSuccess
+from pycastle.config import Config
+from pycastle.git_service import GitCommandError, GitService
+from pycastle.github_service import GithubService
+from pycastle.iteration._deps import Deps, RecordingLogger
+from pycastle.iteration.merge import MergeResult, merge_phase
+
+
+@pytest.fixture
+def git_svc():
+    svc = MagicMock(spec=GitService)
+    svc.is_working_tree_clean.return_value = True
+    svc.try_merge.return_value = True
+    svc.is_ancestor.return_value = True
+    svc.get_current_branch.return_value = "main"
+    return svc
+
+
+@pytest.fixture
+def github_svc():
+    return MagicMock(spec=GithubService)
+
+
+@pytest.fixture
+def run_agent():
+    return AsyncMock(return_value=AgentSuccess(output="done"))
+
+
+@pytest.fixture
+def deps(tmp_path, git_svc, github_svc, run_agent):
+    return Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        run_agent=run_agent,
+        cfg=Config(),
+        logger=RecordingLogger(),
+    )
+
+
+def _run(completed, deps):
+    return asyncio.run(merge_phase(completed, deps))
+
+
+# ── Clean merge path ──────────────────────────────────────────────────────────
+
+
+def test_clean_merge_returns_all_issues_as_clean(deps):
+    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    result = _run(issues, deps)
+    assert result.clean == issues
+    assert result.conflicts == []
+
+
+def test_clean_merge_closes_each_issue(deps, github_svc):
+    issues = [{"number": 7, "title": "Fix A"}, {"number": 8, "title": "Fix B"}]
+    _run(issues, deps)
+    closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
+    assert sorted(closed) == [7, 8]
+
+
+def test_clean_merge_calls_close_completed_parent_issues_once(deps, github_svc):
+    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    _run(issues, deps)
+    assert github_svc.close_completed_parent_issues.call_count == 1
+
+
+def test_clean_merge_does_not_spawn_merger(deps, run_agent):
+    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    _run(issues, deps)
+    run_agent.assert_not_called()
+
+
+def test_clean_merge_deletes_merged_branches(deps, git_svc):
+    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    _run(issues, deps)
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-1" in deleted
+    assert "pycastle/issue-2" in deleted
+
+
+# ── Conflict path ─────────────────────────────────────────────────────────────
+
+
+def _conflict_on(issue_numbers: list[int]):
+    conflict_set = set(issue_numbers)
+
+    def _side_effect(repo_path, branch):
+        result = not any(f"issue-{n}" in branch for n in conflict_set)
+        return result
+
+    return _side_effect
+
+
+def test_conflict_branch_is_in_conflicts(deps, git_svc):
+    git_svc.try_merge.side_effect = _conflict_on([2])
+    issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
+    result = _run(issues, deps)
+    assert result.conflicts == [{"number": 2, "title": "Conflict"}]
+    assert result.clean == [{"number": 1, "title": "Clean"}]
+
+
+def test_conflict_spawns_merger_with_conflict_branches_only(deps, git_svc, run_agent):
+    git_svc.try_merge.side_effect = _conflict_on([2])
+    issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
+    _run(issues, deps)
+    merger_calls = [
+        c for c in run_agent.call_args_list if c.kwargs.get("name") == "Merger"
+    ]
+    assert len(merger_calls) == 1
+    branches_arg = merger_calls[0].kwargs["prompt_args"]["BRANCHES"]
+    assert "pycastle/issue-2" in branches_arg
+    assert "pycastle/issue-1" not in branches_arg
+
+
+def test_conflict_closes_conflict_issue_after_merger(deps, git_svc, github_svc):
+    git_svc.try_merge.side_effect = _conflict_on([2])
+    issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
+    _run(issues, deps)
+    closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
+    assert 2 in closed
+
+
+def test_conflict_calls_close_completed_parent_issues(deps, git_svc, github_svc):
+    git_svc.try_merge.side_effect = _conflict_on([1])
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+    assert github_svc.close_completed_parent_issues.call_count == 1
+
+
+def test_conflict_deletes_sandbox_branch(deps, git_svc):
+    git_svc.try_merge.side_effect = _conflict_on([1])
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/merge-sandbox" in deleted
+
+
+def test_conflict_deletes_conflict_branch_after_merger(deps, git_svc):
+    git_svc.try_merge.side_effect = _conflict_on([2])
+    issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
+    _run(issues, deps)
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-2" in deleted
+
+
+def test_multiple_conflict_issues_all_closed(deps, git_svc, github_svc):
+    git_svc.try_merge.return_value = False
+    issues = [
+        {"number": 10, "title": "A"},
+        {"number": 11, "title": "B"},
+        {"number": 12, "title": "C"},
+    ]
+    _run(issues, deps)
+    closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
+    assert sorted(closed) == [10, 11, 12]
+    assert github_svc.close_completed_parent_issues.call_count == 1
+
+
+def test_merger_does_not_receive_issues_prompt_arg(deps, git_svc, run_agent):
+    git_svc.try_merge.return_value = False
+    issues = [{"number": 3, "title": "Conflict"}]
+    _run(issues, deps)
+    merger_calls = [
+        c for c in run_agent.call_args_list if c.kwargs.get("name") == "Merger"
+    ]
+    assert len(merger_calls) == 1
+    assert "ISSUES" not in merger_calls[0].kwargs["prompt_args"]
+
+
+# ── Branch deletion edge cases ────────────────────────────────────────────────
+
+
+def test_non_ancestor_branch_not_deleted(deps, git_svc):
+    git_svc.is_ancestor.return_value = False
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, deps)
+    git_svc.delete_branch.assert_not_called()
+
+
+def test_branch_deletion_error_does_not_abort_merge(deps, git_svc):
+    git_svc.delete_branch.side_effect = [
+        GitCommandError("fail", returncode=1, stderr=""),
+        None,
+    ]
+    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    result = _run(issues, deps)
+    assert result.clean == issues
+
+
+# ── Merger fast-forward behaviour ─────────────────────────────────────────────
+
+
+def test_successful_merger_fast_forwards_target_branch(deps, git_svc):
+    git_svc.try_merge.return_value = False
+    git_svc.get_current_branch.return_value = "main"
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+    git_svc.fast_forward_branch.assert_called_once_with(
+        deps.repo_root, "main", "pycastle/merge-sandbox"
+    )
+
+
+def test_incomplete_merger_does_not_fast_forward(deps, git_svc, run_agent):
+    git_svc.try_merge.return_value = False
+    run_agent.return_value = AgentIncomplete(partial_output="")
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+    git_svc.fast_forward_branch.assert_not_called()
+
+
+# ── Exception safety ──────────────────────────────────────────────────────────
+
+
+def test_sandbox_branch_deleted_when_run_agent_raises(deps, git_svc, run_agent):
+    git_svc.try_merge.return_value = False
+    run_agent.side_effect = RuntimeError("agent crashed")
+    issues = [{"number": 1, "title": "Conflict"}]
+    with pytest.raises(RuntimeError, match="agent crashed"):
+        _run(issues, deps)
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/merge-sandbox" in deleted
+
+
+# ── Empty input ───────────────────────────────────────────────────────────────
+
+
+def test_empty_completed_list_returns_empty_result(deps, github_svc, run_agent):
+    result = _run([], deps)
+    assert result.clean == []
+    assert result.conflicts == []
+    github_svc.close_issue.assert_not_called()
+    github_svc.close_completed_parent_issues.assert_not_called()
+    run_agent.assert_not_called()
+
+
+# ── MergeResult ───────────────────────────────────────────────────────────────
+
+
+def test_merge_result_stores_clean_and_conflicts():
+    result = MergeResult(clean=[{"number": 1}], conflicts=[{"number": 2}])
+    assert result.clean == [{"number": 1}]
+    assert result.conflicts == [{"number": 2}]
