@@ -812,6 +812,67 @@ def test_get_current_branch_raises_git_timeout_error_on_timeout(tmp_path):
             svc.get_current_branch(tmp_path)
 
 
+# ── checkout_detached() ───────────────────────────────────────────────────────
+
+
+def test_checkout_detached_creates_worktree_at_path_with_detach_and_sha(tmp_path):
+    svc = GitService()
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        svc.checkout_detached(tmp_path, tmp_path / "wt", "deadbeef")
+
+    add_cmd = next(c for c in captured if "worktree" in c and "add" in c)
+    assert "--detach" in add_cmd
+    assert "deadbeef" in add_cmd
+    assert any("prune" in c for c in captured)
+
+
+def test_checkout_detached_force_removes_existing_path_then_retries(tmp_path):
+    svc = GitService()
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        svc.checkout_detached(tmp_path, worktree, "deadbeef")
+
+    cmds_str = [" ".join(c) for c in captured]
+    assert any("worktree remove" in c for c in cmds_str)
+    assert any("--detach" in c for c in cmds_str)
+
+
+def test_checkout_detached_raises_git_command_error_on_add_failure(tmp_path):
+    svc = GitService()
+
+    def fake_run(cmd, **kwargs):
+        if "add" in cmd and "--detach" in cmd:
+            return MagicMock(returncode=128, stdout=b"", stderr=b"fatal: bad sha")
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        with pytest.raises(GitCommandError):
+            svc.checkout_detached(tmp_path, tmp_path / "wt", "badbad")
+
+
+def test_checkout_detached_raises_git_timeout_error_on_timeout(tmp_path):
+    svc = GitService()
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    ):
+        with pytest.raises(GitTimeoutError):
+            svc.checkout_detached(tmp_path, tmp_path / "wt", "deadbeef")
+
+
 # ── fast_forward_branch() ─────────────────────────────────────────────────────
 
 
