@@ -300,3 +300,34 @@ def test_fake_agent_runner_run_preflight_raises_queued_exception(mount_path) -> 
 
     with pytest.raises(RuntimeError, match="docker failure"):
         asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=mount_path))
+
+
+def test_fake_agent_runner_run_preflight_starts_with_empty_preflight_calls() -> None:
+    runner = FakeAgentRunner(preflight_responses=[[]])
+
+    assert runner.preflight_calls == []
+
+
+def test_fake_agent_runner_run_preflight_returns_responses_in_order(mount_path) -> None:
+    failures_1 = [("ruff", "ruff check .", "E501")]
+    failures_2: list[tuple[str, str, str]] = []
+    runner = FakeAgentRunner(preflight_responses=[failures_1, failures_2])
+
+    async def _run():
+        return [
+            await runner.run_preflight(name="sandbox-1", mount_path=mount_path),
+            await runner.run_preflight(name="sandbox-2", mount_path=mount_path),
+        ]
+
+    assert asyncio.run(_run()) == [failures_1, failures_2]
+
+
+def test_fake_agent_runner_run_preflight_records_call_even_on_queue_exhaustion(
+    mount_path,
+) -> None:
+    runner = FakeAgentRunner(preflight_responses=[])
+
+    with pytest.raises(AssertionError):
+        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=mount_path))
+
+    assert len(runner.preflight_calls) == 1
