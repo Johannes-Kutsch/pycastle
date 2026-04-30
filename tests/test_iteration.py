@@ -4,9 +4,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.agent_result import AgentIncomplete, AgentSuccess, UsageLimitHit
+from pycastle.agent_result import (
+    AgentIncomplete,
+    AgentSuccess,
+    PreflightFailure,
+    UsageLimitHit,
+)
 from pycastle.config import Config
-from pycastle.errors import PreflightError
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
 from pycastle.iteration import (
@@ -95,7 +99,7 @@ def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, l
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
-            raise PreflightError([("ruff", "ruff check .", "E501")])
+            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         return AgentIncomplete(
             partial_output='<issue label="ready-for-human">42</issue>'
         )
@@ -117,7 +121,9 @@ def test_run_iteration_aborted_hitl_carries_issue_number(tmp_path, git_svc, logg
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
-            raise PreflightError([("mypy", "mypy .", "error: Missing module")])
+            return PreflightFailure(
+                failures=(("mypy", "mypy .", "error: Missing module"),)
+            )
         return AgentIncomplete(
             partial_output='<issue label="ready-for-human">99</issue>'
         )
@@ -141,7 +147,7 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
-            raise PreflightError([("ruff", "ruff check .", "E501")])
+            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         return AgentIncomplete(
             partial_output='<issue label="ready-for-human">7</issue>'
         )
@@ -157,10 +163,10 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
 # ── AbortedUsageLimit: usage limit hit ───────────────────────────────────────
 
 
-def test_run_iteration_returns_aborted_usage_limit_when_planner_hits_usage_limit(
+def test_run_iteration_raises_when_planner_hits_usage_limit(
     tmp_path, git_svc, github_svc, logger
 ):
-    """run_iteration returns AbortedUsageLimit when the Planner hits the usage limit."""
+    """run_iteration raises RuntimeError when the Planner returns UsageLimitHit (no plan tag)."""
 
     async def _fake_agent(name, **kwargs):
         return UsageLimitHit(last_output="token ceiling reached")
@@ -168,9 +174,8 @@ def test_run_iteration_returns_aborted_usage_limit_when_planner_hits_usage_limit
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
     )
-    result = asyncio.run(run_iteration(deps))
-
-    assert isinstance(result, AbortedUsageLimit)
+    with pytest.raises(RuntimeError):
+        asyncio.run(run_iteration(deps))
 
 
 def test_run_iteration_returns_aborted_usage_limit_when_implementer_hits_limit(
@@ -273,9 +278,7 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
 
     async def _fake_agent(name, **kwargs):
         if name == "Planner":
-            from pycastle.errors import PreflightError
-
-            raise PreflightError([("ruff", "ruff check .", "E501")])
+            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
             return AgentIncomplete(
                 partial_output='<issue label="ready-for-agent">55</issue>'
@@ -307,9 +310,7 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
     async def _fake_agent(name, **kwargs):
         agent_names.append(name)
         if name == "Planner":
-            from pycastle.errors import PreflightError
-
-            raise PreflightError([("mypy", "mypy .", "error")])
+            return PreflightFailure(failures=(("mypy", "mypy .", "error"),))
         if "preflight-issue" in name:
             return AgentIncomplete(
                 partial_output='<issue label="ready-for-agent">77</issue>'
@@ -325,6 +326,6 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
 
     planner_calls = [n for n in agent_names if n == "Planner"]
     implementer_calls = [n for n in agent_names if "Implementer" in n]
-    assert len(planner_calls) == 1, "Planner called once (raises PreflightError)"
+    assert len(planner_calls) == 1, "Planner called once (returns PreflightFailure)"
     assert len(implementer_calls) == 1, "Exactly one Implementer for the fix issue"
     assert implementer_calls[0] == "Implementer #77"

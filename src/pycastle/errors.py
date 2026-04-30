@@ -65,11 +65,5 @@ class DockerBuildError(DockerServiceError):
     pass
 
 
-class PreflightError(PycastleError):
-    def __init__(self, failures: list[tuple[str, str, str]]):
-        self.failures = failures
-        super().__init__(f"Pre-flight failed: {failures}")
-
-
 class UsageLimitError(PycastleError):
     pass

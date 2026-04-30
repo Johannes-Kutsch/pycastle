@@ -433,3 +433,22 @@ def test_implement_phase_reviewer_timeout_does_not_complete_issue(tmp_path):
     assert result.completed == []
     assert len(result.errors) == 1
     assert isinstance(result.errors[0][1], AgentTimeoutError)
+
+
+# ── implement_phase: AgentTimeoutError propagation ───────────────────────────
+
+
+def test_implement_phase_agent_timeout_error_tracked_as_error(tmp_path):
+    """When run_agent raises AgentTimeoutError, implement_phase captures it in errors."""
+    issues = [{"number": 1, "title": "Fix A"}]
+
+    async def _fake_run_agent(name, **kwargs):
+        raise AgentTimeoutError("idle timeout")
+
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    result = asyncio.run(implement_phase(issues, None, deps))
+
+    assert result.completed == []
+    assert len(result.errors) == 1
+    assert result.errors[0][0] == issues[0]
+    assert isinstance(result.errors[0][1], AgentTimeoutError)
