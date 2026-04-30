@@ -2,11 +2,16 @@ import asyncio
 from unittest.mock import MagicMock
 
 from pycastle.agent_result import AgentSuccess, PreflightFailure, UsageLimitHit
-from pycastle.config import Config
+from pycastle.config import Config, IMPLEMENT_CHECKS
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
 from pycastle.iteration._deps import Deps, RecordingLogger
-from pycastle.iteration.implement import ImplementResult, branch_for, implement_phase
+from pycastle.iteration.implement import (
+    ImplementResult,
+    branch_for,
+    implement_phase,
+    run_issue,
+)
 
 
 def _make_deps(tmp_path, run_agent_fn, logger=None) -> Deps:
@@ -234,3 +239,119 @@ def test_implement_phase_reviewer_usage_limit_signals_in_result(tmp_path):
     assert result.usage_limit_hit is True
     assert result.completed == []
     assert result.errors == []
+
+
+# ── run_issue: prompt args and skip_preflight ─────────────────────────────────
+
+
+def test_run_issue_derives_branch_from_issue_number(tmp_path):
+    """run_issue must derive the branch via branch_for(number) and include it in prompt_args."""
+    captured: dict = {}
+
+    async def _fake_run_agent(name, prompt_args=None, branch=None, **kw):
+        if "Implementer" in name:
+            captured["branch_kwarg"] = branch
+            captured["branch_prompt_arg"] = (prompt_args or {}).get("BRANCH")
+            return AgentSuccess(output="<promise>COMPLETE</promise>")
+        return AgentSuccess(output="<promise>COMPLETE</promise>")
+
+    issue = {"number": 7, "title": "Fix thing"}
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    asyncio.run(run_issue(issue, deps))
+
+    assert captured["branch_kwarg"] == "pycastle/issue-7"
+    assert captured["branch_prompt_arg"] == "pycastle/issue-7"
+
+
+def test_run_issue_passes_feedback_commands_to_implementer(tmp_path):
+    """run_issue must include FEEDBACK_COMMANDS in prompt_args for the implementer."""
+    captured_args: list[dict] = []
+
+    async def _fake_run_agent(name, prompt_args=None, **kw):
+        captured_args.append({"name": name, "prompt_args": prompt_args or {}})
+        return AgentSuccess(output="<promise>COMPLETE</promise>")
+
+    issue = {"number": 1, "title": "Fix thing"}
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    asyncio.run(run_issue(issue, deps))
+
+    implementer_call = next(a for a in captured_args if "Implementer" in a["name"])
+    assert "FEEDBACK_COMMANDS" in implementer_call["prompt_args"]
+
+
+def test_run_issue_feedback_commands_include_backtick_wrapped_implement_checks(
+    tmp_path,
+):
+    """FEEDBACK_COMMANDS must be formatted from IMPLEMENT_CHECKS with backtick wrapping."""
+    captured_args: list[dict] = []
+
+    async def _fake_run_agent(name, prompt_args=None, **kw):
+        captured_args.append({"name": name, "prompt_args": prompt_args or {}})
+        return AgentSuccess(output="<promise>COMPLETE</promise>")
+
+    issue = {"number": 1, "title": "Fix thing"}
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    asyncio.run(run_issue(issue, deps))
+
+    implementer_call = next(a for a in captured_args if "Implementer" in a["name"])
+    feedback_commands = implementer_call["prompt_args"]["FEEDBACK_COMMANDS"]
+    for cmd in IMPLEMENT_CHECKS:
+        assert f"`{cmd}`" in feedback_commands
+
+
+def test_run_issue_implementer_invoked_with_skip_preflight_true(tmp_path):
+    """run_issue must pass skip_preflight=True to the implementer agent."""
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, skip_preflight=False, **kwargs):
+        captured.append({"name": name, "skip_preflight": skip_preflight})
+        return AgentSuccess(output="<promise>COMPLETE</promise>")
+
+    issue = {"number": 1, "title": "Fix thing"}
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    asyncio.run(run_issue(issue, deps))
+
+    impl_call = next(c for c in captured if "Implementer" in c["name"])
+    assert impl_call["skip_preflight"] is True
+
+
+def test_run_issue_reviewer_invoked_with_skip_preflight_true(tmp_path):
+    """run_issue must pass skip_preflight=True to the reviewer agent."""
+    captured: list[dict] = []
+
+    async def _fake_run_agent(name, skip_preflight=False, **kwargs):
+        captured.append({"name": name, "skip_preflight": skip_preflight})
+        return AgentSuccess(output="<promise>COMPLETE</promise>")
+
+    issue = {"number": 1, "title": "Fix thing"}
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    asyncio.run(run_issue(issue, deps))
+
+    rev_call = next(c for c in captured if "Reviewer" in c["name"])
+    assert rev_call["skip_preflight"] is True
+
+
+def test_run_issue_returns_none_when_implementer_does_not_complete(tmp_path):
+    """run_issue must return None when implementer response lacks COMPLETE tag."""
+
+    async def _fake_run_agent(**kwargs):
+        return "I tried but could not finish"
+
+    issue = {"number": 1, "title": "Fix thing"}
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    result = asyncio.run(run_issue(issue, deps))
+
+    assert result is None
+
+
+def test_run_issue_returns_issue_when_implementer_completes(tmp_path):
+    """run_issue must return the issue dict when implementer produces COMPLETE."""
+
+    async def _fake_run_agent(**kwargs):
+        return AgentSuccess(output="<promise>COMPLETE</promise>")
+
+    issue = {"number": 2, "title": "Fix thing"}
+    deps = _make_deps(tmp_path, _fake_run_agent)
+    result = asyncio.run(run_issue(issue, deps))
+
+    assert result == issue
