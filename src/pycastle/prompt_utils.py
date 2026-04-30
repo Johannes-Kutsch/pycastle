@@ -10,7 +10,7 @@ _STANDARDS_FILES = {
 
 
 def load_standards(prompts_dir: Path) -> dict[str, str]:
-    standards_dir = prompts_dir / "standards"
+    standards_dir = prompts_dir / "coding-standards"
     result = {}
     for key, filename in _STANDARDS_FILES.items():
         path = standards_dir / filename

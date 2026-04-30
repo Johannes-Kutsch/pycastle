@@ -148,7 +148,7 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
 
 
 def test_init_scaffolds_five_standards_files(tmp_path, monkeypatch):
-    """init must copy all five standards files into pycastle/prompts/standards/."""
+    """init must copy all five standards files into pycastle/prompts/coding-standards/."""
     from pycastle.init_command import main
 
     monkeypatch.chdir(tmp_path)
@@ -158,7 +158,7 @@ def test_init_scaffolds_five_standards_files(tmp_path, monkeypatch):
     ):
         main()
 
-    standards = tmp_path / "pycastle" / "prompts" / "standards"
+    standards = tmp_path / "pycastle" / "prompts" / "coding-standards"
     assert (standards / "tests.md").exists()
     assert (standards / "mocking.md").exists()
     assert (standards / "interfaces.md").exists()
