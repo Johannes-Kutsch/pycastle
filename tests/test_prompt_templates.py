@@ -2,11 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from pycastle.config import config as _cfg
+from pycastle.config import Config
 from pycastle.iteration.implement import _format_feedback_commands
 from pycastle.prompt_pipeline import PromptRenderError, _render
 
 REPO_ROOT = Path(__file__).parent.parent
+
+_cfg = Config()
 
 
 def assert_template_renders(prompt_file: Path, args: dict[str, str]) -> str:

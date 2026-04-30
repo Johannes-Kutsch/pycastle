@@ -34,14 +34,16 @@ from pycastle.git_service import (
 def test_container_runner_init_uses_injected_docker_client():
     """ContainerRunner must accept docker_client and use it instead of docker.from_env()."""
     mock_client = MagicMock()
-    runner = ContainerRunner("test", Path("/fake"), {}, docker_client=mock_client)
+    runner = ContainerRunner(
+        "test", Path("/fake"), {}, docker_client=mock_client, cfg=Config()
+    )
     assert runner._client is mock_client
 
 
 def test_container_runner_init_calls_docker_from_env_when_no_client_given():
     """When docker_client is None, __init__ must call docker.from_env()."""
     with patch("pycastle.container_runner.docker") as mock_docker:
-        runner = ContainerRunner("test", Path("/fake"), {})
+        runner = ContainerRunner("test", Path("/fake"), {}, cfg=Config())
     assert runner._client is mock_docker.from_env.return_value
 
 
@@ -2232,14 +2234,6 @@ def test_container_runner_uses_custom_logs_dir_from_cfg(tmp_path):
         cfg=Config(logs_dir=custom_logs),
     )
     assert runner.log_path.parent == custom_logs
-
-
-def test_container_runner_constructs_without_cfg_using_default_logs_dir():
-    """ContainerRunner with no cfg must construct without error and use the default logs_dir."""
-    from pycastle.config import config as singleton
-
-    runner = ContainerRunner("task", Path("/fake"), {}, docker_client=MagicMock())
-    assert runner.log_path.parent == singleton.logs_dir
 
 
 def test_run_streaming_uses_usage_limit_patterns_from_cfg(tmp_path):

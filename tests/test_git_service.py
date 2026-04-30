@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pycastle.config import Config, config as _default_cfg
+from pycastle.config import Config
 from pycastle.git_service import (
     GitCommandError,
     GitNotFoundError,
@@ -12,6 +12,8 @@ from pycastle.git_service import (
     GitServiceError,
     GitTimeoutError,
 )
+
+_cfg = Config()
 
 
 # ── Exception hierarchy ────────────────────────────────────────────────────────
@@ -48,16 +50,11 @@ def test_git_service_uses_worktree_timeout_from_injected_config():
     assert svc.timeout == 1
 
 
-def test_git_service_default_constructor_uses_config_singleton_timeout():
-    svc = GitService()
-    assert svc.timeout == _default_cfg.worktree_timeout
-
-
 # ── get_user_name() ────────────────────────────────────────────────────────────
 
 
 def test_get_user_name_returns_name():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"Alice\n", stderr=b""),
@@ -66,7 +63,7 @@ def test_get_user_name_returns_name():
 
 
 def test_get_user_name_raises_git_command_error_on_failure():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
@@ -76,7 +73,7 @@ def test_get_user_name_raises_git_command_error_on_failure():
 
 
 def test_get_user_name_raises_git_timeout_error_on_timeout():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
@@ -86,14 +83,14 @@ def test_get_user_name_raises_git_timeout_error_on_timeout():
 
 
 def test_get_user_name_raises_git_not_found_error_when_git_missing():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch("subprocess.run", side_effect=FileNotFoundError):
         with pytest.raises(GitNotFoundError):
             svc.get_user_name()
 
 
 def test_get_user_name_strips_trailing_newline():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"  Bob  \n", stderr=b""),
@@ -105,7 +102,7 @@ def test_get_user_name_strips_trailing_newline():
 
 
 def test_get_user_email_returns_email():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"alice@example.com\n", stderr=b""),
@@ -114,7 +111,7 @@ def test_get_user_email_returns_email():
 
 
 def test_get_user_email_raises_git_command_error_on_failure():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
@@ -124,7 +121,7 @@ def test_get_user_email_raises_git_command_error_on_failure():
 
 
 def test_get_user_email_raises_git_timeout_error_on_timeout():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
@@ -137,19 +134,19 @@ def test_get_user_email_raises_git_timeout_error_on_timeout():
 
 
 def test_is_ancestor_returns_true_when_ancestor():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch("subprocess.run", return_value=MagicMock(returncode=0)):
         assert svc.is_ancestor("main", Path("/tmp/repo")) is True
 
 
 def test_is_ancestor_returns_false_when_not_ancestor():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch("subprocess.run", return_value=MagicMock(returncode=1)):
         assert svc.is_ancestor("feature/x", Path("/tmp/repo")) is False
 
 
 def test_is_ancestor_raises_git_timeout_error_on_timeout():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
@@ -162,19 +159,19 @@ def test_is_ancestor_raises_git_timeout_error_on_timeout():
 
 
 def test_verify_ref_exists_returns_true_when_ref_present():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch("subprocess.run", return_value=MagicMock(returncode=0)):
         assert svc.verify_ref_exists("main", Path("/tmp/repo")) is True
 
 
 def test_verify_ref_exists_returns_false_when_ref_absent():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch("subprocess.run", return_value=MagicMock(returncode=1)):
         assert svc.verify_ref_exists("nonexistent", Path("/tmp/repo")) is False
 
 
 def test_verify_ref_exists_raises_git_timeout_error_on_timeout():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
@@ -187,13 +184,13 @@ def test_verify_ref_exists_raises_git_timeout_error_on_timeout():
 
 
 def test_delete_branch_succeeds_silently():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch("subprocess.run", return_value=MagicMock(returncode=0, stderr=b"")):
         svc.delete_branch("feature/old", Path("/tmp/repo"))  # must not raise
 
 
 def test_delete_branch_raises_git_command_error_on_failure():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=1, stderr=b"error: branch not found"),
@@ -203,7 +200,7 @@ def test_delete_branch_raises_git_command_error_on_failure():
 
 
 def test_delete_branch_raises_git_timeout_error_on_timeout():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
@@ -228,7 +225,7 @@ _WORKTREE_PORCELAIN = (
 
 
 def test_list_worktrees_returns_list_of_paths():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=_WORKTREE_PORCELAIN),
@@ -241,7 +238,7 @@ def test_list_worktrees_returns_list_of_paths():
 
 
 def test_list_worktrees_returns_empty_list_for_no_output():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b""),
@@ -250,7 +247,7 @@ def test_list_worktrees_returns_empty_list_for_no_output():
 
 
 def test_list_worktrees_raises_git_command_error_on_failure():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
@@ -260,7 +257,7 @@ def test_list_worktrees_raises_git_command_error_on_failure():
 
 
 def test_list_worktrees_raises_git_timeout_error_on_timeout():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
@@ -273,7 +270,7 @@ def test_list_worktrees_raises_git_timeout_error_on_timeout():
 
 
 def test_get_remote_url_returns_url():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(
@@ -285,7 +282,7 @@ def test_get_remote_url_returns_url():
 
 
 def test_get_remote_url_raises_git_command_error_on_failure():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=2, stdout=b"", stderr=b"no such remote"),
@@ -295,7 +292,7 @@ def test_get_remote_url_raises_git_command_error_on_failure():
 
 
 def test_get_remote_url_raises_git_timeout_error_on_timeout():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
@@ -305,7 +302,7 @@ def test_get_remote_url_raises_git_timeout_error_on_timeout():
 
 
 def test_get_remote_url_uses_custom_remote():
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(
@@ -334,7 +331,7 @@ def _make_fake_run(prune_rc=0, rev_parse_rc=1, add_rc=0):
 
 
 def test_create_worktree_creates_new_branch_when_ref_missing(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
@@ -353,7 +350,7 @@ def test_create_worktree_creates_new_branch_when_ref_missing(tmp_path):
 
 
 def test_create_worktree_uses_existing_branch_when_ref_exists(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
@@ -372,14 +369,14 @@ def test_create_worktree_uses_existing_branch_when_ref_exists(tmp_path):
 
 
 def test_create_worktree_raises_git_command_error_on_add_failure(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch("subprocess.run", side_effect=_make_fake_run(add_rc=1)):
         with pytest.raises(GitCommandError):
             svc.create_worktree(tmp_path, tmp_path / "wt", "feature/conflict")
 
 
 def test_create_worktree_raises_git_timeout_error_on_timeout(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
@@ -389,7 +386,7 @@ def test_create_worktree_raises_git_timeout_error_on_timeout(tmp_path):
 
 
 def test_create_worktree_raises_git_command_error_when_remove_fails(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     worktree = tmp_path / "wt"
     worktree.mkdir()
 
@@ -404,7 +401,7 @@ def test_create_worktree_raises_git_command_error_when_remove_fails(tmp_path):
 
 
 def test_create_worktree_removes_existing_dir_before_add(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     worktree = tmp_path / "wt"
     worktree.mkdir()
     captured: list[list[str]] = []
@@ -421,7 +418,7 @@ def test_create_worktree_removes_existing_dir_before_add(tmp_path):
 
 
 def test_create_worktree_uses_sha_as_start_point_when_provided(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
@@ -439,7 +436,7 @@ def test_create_worktree_uses_sha_as_start_point_when_provided(tmp_path):
 
 
 def test_create_worktree_uses_head_when_sha_is_omitted(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
@@ -456,7 +453,7 @@ def test_create_worktree_uses_head_when_sha_is_omitted(tmp_path):
 
 
 def test_create_worktree_uses_head_when_sha_is_none(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
@@ -473,7 +470,7 @@ def test_create_worktree_uses_head_when_sha_is_none(tmp_path):
 
 
 def test_create_worktree_ignores_sha_when_branch_already_exists(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
@@ -494,7 +491,7 @@ def test_create_worktree_ignores_sha_when_branch_already_exists(tmp_path):
 
 
 def test_remove_worktree_calls_git_worktree_remove(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     worktree = tmp_path / "wt"
     worktree.mkdir()
     with patch("subprocess.run", return_value=MagicMock(returncode=0, stderr=b"")) as m:
@@ -504,7 +501,7 @@ def test_remove_worktree_calls_git_worktree_remove(tmp_path):
 
 
 def test_remove_worktree_falls_back_to_rmtree_when_git_fails(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     worktree = tmp_path / "wt"
     worktree.mkdir()
     (worktree / "file.txt").write_text("content")
@@ -516,7 +513,7 @@ def test_remove_worktree_falls_back_to_rmtree_when_git_fails(tmp_path):
 
 
 def test_remove_worktree_raises_git_timeout_error_on_timeout(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
@@ -577,7 +574,7 @@ def test_try_merge_returns_true_on_clean_merge(tmp_path):
         ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True
     ).stdout.strip()
 
-    svc = GitService()
+    svc = GitService(_cfg)
     result = svc.try_merge(repo, "feature")
 
     head_after = subprocess.run(
@@ -623,7 +620,7 @@ def test_try_merge_returns_false_on_conflict_and_leaves_clean_state(tmp_path):
         ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True
     ).stdout.strip()
 
-    svc = GitService()
+    svc = GitService(_cfg)
     result = svc.try_merge(repo, "conflict-branch")
 
     head_after = subprocess.run(
@@ -645,7 +642,7 @@ def test_try_merge_raises_git_command_error_on_nonexistent_branch(tmp_path):
     repo.mkdir()
     _init_repo(repo)
 
-    svc = GitService()
+    svc = GitService(_cfg)
     with pytest.raises(GitCommandError):
         svc.try_merge(repo, "does-not-exist")
 
@@ -662,14 +659,14 @@ def test_try_merge_already_up_to_date_returns_true(tmp_path):
         ["git", "checkout", "main"], cwd=repo, check=True, capture_output=True
     )
 
-    svc = GitService()
+    svc = GitService(_cfg)
     result = svc.try_merge(repo, "stale")
 
     assert result is True
 
 
 def test_try_merge_raises_git_timeout_error_on_timeout(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
@@ -682,7 +679,7 @@ def test_try_merge_raises_git_timeout_error_on_timeout(tmp_path):
 
 
 def test_is_working_tree_clean_returns_true_on_clean_tree(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b""),
@@ -691,7 +688,7 @@ def test_is_working_tree_clean_returns_true_on_clean_tree(tmp_path):
 
 
 def test_is_working_tree_clean_returns_false_when_staged_changes_present(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"M  staged_file.py\n"),
@@ -702,7 +699,7 @@ def test_is_working_tree_clean_returns_false_when_staged_changes_present(tmp_pat
 def test_is_working_tree_clean_returns_false_when_unstaged_tracked_changes_present(
     tmp_path,
 ):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b" M unstaged_file.py\n"),
@@ -711,7 +708,7 @@ def test_is_working_tree_clean_returns_false_when_unstaged_tracked_changes_prese
 
 
 def test_is_working_tree_clean_returns_true_when_only_untracked_files_present(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"?? new_untracked.py\n"),
@@ -722,7 +719,7 @@ def test_is_working_tree_clean_returns_true_when_only_untracked_files_present(tm
 def test_is_working_tree_clean_ignores_untracked_files_alongside_tracked_changes(
     tmp_path,
 ):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(
@@ -736,7 +733,7 @@ def test_is_working_tree_clean_ignores_untracked_files_alongside_tracked_changes
 
 
 def test_get_head_sha_returns_current_head(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"abc1234567890\n"),
@@ -746,7 +743,7 @@ def test_get_head_sha_returns_current_head(tmp_path):
 
 
 def test_get_head_sha_strips_whitespace(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"  deadbeef  \n"),
@@ -756,7 +753,7 @@ def test_get_head_sha_strips_whitespace(tmp_path):
 
 
 def test_get_head_sha_returns_empty_string_on_git_failure(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=128, stdout=b""),
@@ -769,7 +766,7 @@ def test_get_head_sha_returns_empty_string_on_git_failure(tmp_path):
 
 
 def test_get_current_branch_returns_branch_name(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"main\n", stderr=b""),
@@ -779,7 +776,7 @@ def test_get_current_branch_returns_branch_name(tmp_path):
 
 
 def test_get_current_branch_strips_whitespace(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(
@@ -791,7 +788,7 @@ def test_get_current_branch_strips_whitespace(tmp_path):
 
 
 def test_get_current_branch_raises_git_command_error_on_failure(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(
@@ -803,7 +800,7 @@ def test_get_current_branch_raises_git_command_error_on_failure(tmp_path):
 
 
 def test_get_current_branch_raises_git_timeout_error_on_timeout(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
@@ -816,7 +813,7 @@ def test_get_current_branch_raises_git_timeout_error_on_timeout(tmp_path):
 
 
 def test_checkout_detached_creates_worktree_at_path_with_detach_and_sha(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
@@ -833,7 +830,7 @@ def test_checkout_detached_creates_worktree_at_path_with_detach_and_sha(tmp_path
 
 
 def test_checkout_detached_force_removes_existing_path_then_retries(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     worktree = tmp_path / "wt"
     worktree.mkdir()
     captured: list[list[str]] = []
@@ -851,7 +848,7 @@ def test_checkout_detached_force_removes_existing_path_then_retries(tmp_path):
 
 
 def test_checkout_detached_raises_git_command_error_on_add_failure(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
 
     def fake_run(cmd, **kwargs):
         if "add" in cmd and "--detach" in cmd:
@@ -864,7 +861,7 @@ def test_checkout_detached_raises_git_command_error_on_add_failure(tmp_path):
 
 
 def test_checkout_detached_raises_git_timeout_error_on_timeout(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
@@ -877,7 +874,7 @@ def test_checkout_detached_raises_git_timeout_error_on_timeout(tmp_path):
 
 
 def test_fast_forward_branch_runs_ff_only_merge(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
@@ -893,7 +890,7 @@ def test_fast_forward_branch_runs_ff_only_merge(tmp_path):
 
 
 def test_fast_forward_branch_raises_git_command_error_on_merge_failure(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
 
     def fake_run(cmd, **kwargs):
         if "--ff-only" in cmd:
@@ -908,7 +905,7 @@ def test_fast_forward_branch_raises_git_command_error_on_merge_failure(tmp_path)
 
 
 def test_fast_forward_branch_raises_git_command_error_on_checkout_failure(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(
@@ -922,7 +919,7 @@ def test_fast_forward_branch_raises_git_command_error_on_checkout_failure(tmp_pa
 
 
 def test_fast_forward_branch_raises_git_timeout_error_on_timeout(tmp_path):
-    svc = GitService()
+    svc = GitService(_cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),

@@ -8,32 +8,16 @@ import urllib.request
 
 import click
 
-from .config import config as _cfg
+from .config import Config, load_config
 from .git_service import GitService
-
-LABELS = [
-    {
-        "name": _cfg.bug_label,
-        "description": "Something isn't working",
-        "color": "d73a4a",
-    },
-    {
-        "name": _cfg.issue_label,
-        "description": "Fully specified, ready for afk agent",
-        "color": "0be348",
-    },
-    {
-        "name": _cfg.hitl_label,
-        "description": "Requires human implementation",
-        "color": "5181b8",
-    },
-]
 
 _API = "https://api.github.com"
 
 
-def _get_remote_repo(git_service: GitService | None = None) -> tuple[str, str] | None:
-    svc = git_service or GitService()
+def _get_remote_repo(
+    git_service: GitService | None = None, cfg: Config | None = None
+) -> tuple[str, str] | None:
+    svc = git_service or GitService(cfg or load_config())
     try:
         url = svc.get_remote_url("origin")
         if "github.com" not in url:
@@ -66,9 +50,9 @@ def _gh(
 
 
 def _resolve_repo(
-    token: str, git_service: GitService | None = None
+    token: str, git_service: GitService | None = None, cfg: Config | None = None
 ) -> tuple[str, str] | None:
-    remote = _get_remote_repo(git_service)
+    remote = _get_remote_repo(git_service, cfg)
     if remote:
         owner, repo = remote
         if click.confirm(f"Target repo {owner}/{repo}?", default=True):
@@ -85,9 +69,28 @@ def _resolve_repo(
 
 
 def create_labels_interactive(
-    token: str, git_service: GitService | None = None
+    token: str, git_service: GitService | None = None, cfg: Config | None = None
 ) -> None:
-    resolved = _resolve_repo(token, git_service)
+    _cfg = cfg or load_config()
+    labels = [
+        {
+            "name": _cfg.bug_label,
+            "description": "Something isn't working",
+            "color": "d73a4a",
+        },
+        {
+            "name": _cfg.issue_label,
+            "description": "Fully specified, ready for afk agent",
+            "color": "0be348",
+        },
+        {
+            "name": _cfg.hitl_label,
+            "description": "Requires human implementation",
+            "color": "5181b8",
+        },
+    ]
+
+    resolved = _resolve_repo(token, git_service, _cfg)
     if not resolved:
         return
     owner, repo = resolved
@@ -108,7 +111,7 @@ def create_labels_interactive(
 
     counts = {"created": 0, "skipped": 0, "failed": 0}
     failures: list[str] = []
-    for label in LABELS:
+    for label in labels:
         status, _ = _gh("POST", f"/repos/{owner}/{repo}/labels", token, label)
         if status == 201:
             counts["created"] += 1
@@ -140,7 +143,8 @@ def create_labels_interactive(
 def main() -> None:
     from dotenv import load_dotenv
 
-    load_dotenv(_cfg.env_file)
+    cfg = load_config()
+    load_dotenv(cfg.env_file)
 
     token = os.getenv("GH_TOKEN", "").strip()
     if not token:
@@ -149,4 +153,4 @@ def main() -> None:
         click.echo(click.style("Error: no token provided.", fg="red"), err=True)
         sys.exit(1)
 
-    create_labels_interactive(token)
+    create_labels_interactive(token, cfg=cfg)

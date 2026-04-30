@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pycastle.config import Config, config as _default_cfg
+from pycastle.config import Config
 from pycastle.github_service import (
     GithubCommandError,
     GithubNotFoundError,
@@ -12,6 +12,8 @@ from pycastle.github_service import (
     GithubServiceError,
     GithubTimeoutError,
 )
+
+_cfg = Config()
 
 
 # ── Exception hierarchy ────────────────────────────────────────────────────────
@@ -48,16 +50,11 @@ def test_github_service_uses_worktree_timeout_from_injected_config():
     assert svc.timeout == 1
 
 
-def test_github_service_default_constructor_uses_config_singleton_timeout():
-    svc = GithubService("owner/repo")
-    assert svc.timeout == _default_cfg.worktree_timeout
-
-
 # ── close_issue() ──────────────────────────────────────────────────────────────
 
 
 def test_close_issue_calls_gh_issue_close():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch("subprocess.run", return_value=MagicMock(returncode=0, stderr=b"")) as m:
         svc.close_issue(42)
     cmd = m.call_args[0][0]
@@ -65,7 +62,7 @@ def test_close_issue_calls_gh_issue_close():
 
 
 def test_close_issue_raises_github_command_error_on_failure():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=1, stderr=b"not found"),
@@ -75,7 +72,7 @@ def test_close_issue_raises_github_command_error_on_failure():
 
 
 def test_close_issue_raises_github_timeout_error_on_timeout():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
@@ -85,7 +82,7 @@ def test_close_issue_raises_github_timeout_error_on_timeout():
 
 
 def test_close_issue_raises_github_not_found_error_when_gh_missing():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch("subprocess.run", side_effect=FileNotFoundError):
         with pytest.raises(GithubNotFoundError):
             svc.close_issue(1)
@@ -95,7 +92,7 @@ def test_close_issue_raises_github_not_found_error_when_gh_missing():
 
 
 def test_get_parent_returns_parent_number():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"72\n", stderr=b""),
@@ -104,7 +101,7 @@ def test_get_parent_returns_parent_number():
 
 
 def test_get_parent_returns_none_when_no_parent():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"null\n", stderr=b""),
@@ -113,7 +110,7 @@ def test_get_parent_returns_none_when_no_parent():
 
 
 def test_get_parent_returns_none_when_output_empty():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
@@ -122,7 +119,7 @@ def test_get_parent_returns_none_when_output_empty():
 
 
 def test_get_parent_calls_correct_api_endpoint():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"null\n", stderr=b""),
@@ -134,7 +131,7 @@ def test_get_parent_calls_correct_api_endpoint():
 
 
 def test_get_parent_raises_github_command_error_on_failure():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
@@ -144,7 +141,7 @@ def test_get_parent_raises_github_command_error_on_failure():
 
 
 def test_get_parent_raises_github_command_error_on_non_numeric_output():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"unexpected\n", stderr=b""),
@@ -154,7 +151,7 @@ def test_get_parent_raises_github_command_error_on_non_numeric_output():
 
 
 def test_get_parent_raises_github_timeout_error_on_timeout():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
@@ -167,7 +164,7 @@ def test_get_parent_raises_github_timeout_error_on_timeout():
 
 
 def test_get_open_sub_issues_returns_open_issue_numbers():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     payload = json.dumps(
         [
             {"number": 10, "state": "open"},
@@ -184,7 +181,7 @@ def test_get_open_sub_issues_returns_open_issue_numbers():
 
 
 def test_get_open_sub_issues_returns_empty_list_when_none_open():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     payload = json.dumps([{"number": 10, "state": "closed"}]).encode()
     with patch(
         "subprocess.run",
@@ -194,7 +191,7 @@ def test_get_open_sub_issues_returns_empty_list_when_none_open():
 
 
 def test_get_open_sub_issues_returns_empty_list_for_no_sub_issues():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"[]", stderr=b""),
@@ -203,7 +200,7 @@ def test_get_open_sub_issues_returns_empty_list_for_no_sub_issues():
 
 
 def test_get_open_sub_issues_calls_correct_api_endpoint():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"[]", stderr=b""),
@@ -214,7 +211,7 @@ def test_get_open_sub_issues_calls_correct_api_endpoint():
 
 
 def test_get_open_sub_issues_raises_github_command_error_on_failure():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
@@ -224,7 +221,7 @@ def test_get_open_sub_issues_raises_github_command_error_on_failure():
 
 
 def test_get_open_sub_issues_raises_github_command_error_on_invalid_json():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"not valid json", stderr=b""),
@@ -234,7 +231,7 @@ def test_get_open_sub_issues_raises_github_command_error_on_invalid_json():
 
 
 def test_get_open_sub_issues_raises_github_timeout_error_on_timeout():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
@@ -251,7 +248,7 @@ def _run_ok(stdout: bytes = b"") -> MagicMock:
 
 
 def test_close_issue_with_parents_stops_when_no_parent():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         side_effect=[
@@ -269,7 +266,7 @@ def test_close_issue_with_parents_stops_when_no_parent():
 
 
 def test_close_issue_with_parents_closes_parent_when_all_siblings_done():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         side_effect=[
@@ -290,7 +287,7 @@ def test_close_issue_with_parents_closes_parent_when_all_siblings_done():
 
 
 def test_close_issue_with_parents_skips_parent_when_siblings_still_open():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     siblings = json.dumps([{"number": 11, "state": "open"}]).encode()
     with patch(
         "subprocess.run",
@@ -313,7 +310,7 @@ def test_close_issue_with_parents_skips_parent_when_siblings_still_open():
 
 
 def test_has_open_issues_with_label_returns_true_when_count_greater_than_zero():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"3\n", stderr=b""),
@@ -322,7 +319,7 @@ def test_has_open_issues_with_label_returns_true_when_count_greater_than_zero():
 
 
 def test_has_open_issues_with_label_returns_false_when_count_is_zero():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"0\n", stderr=b""),
@@ -331,7 +328,7 @@ def test_has_open_issues_with_label_returns_false_when_count_is_zero():
 
 
 def test_has_open_issues_with_label_passes_correct_command_args():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"0\n", stderr=b""),
@@ -347,7 +344,7 @@ def test_has_open_issues_with_label_passes_correct_command_args():
 
 
 def test_has_open_issues_with_label_raises_github_command_error_on_nonzero_exit():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
@@ -357,7 +354,7 @@ def test_has_open_issues_with_label_raises_github_command_error_on_nonzero_exit(
 
 
 def test_has_open_issues_with_label_raises_github_command_error_on_non_numeric_output():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"not-a-number\n", stderr=b""),
@@ -367,7 +364,7 @@ def test_has_open_issues_with_label_raises_github_command_error_on_non_numeric_o
 
 
 def test_has_open_issues_with_label_raises_github_timeout_error_on_timeout():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
@@ -380,7 +377,7 @@ def test_has_open_issues_with_label_raises_github_timeout_error_on_timeout():
 
 
 def test_get_labels_returns_label_names():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(
@@ -392,7 +389,7 @@ def test_get_labels_returns_label_names():
 
 
 def test_get_labels_returns_empty_list_when_no_labels():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
@@ -401,7 +398,7 @@ def test_get_labels_returns_empty_list_when_no_labels():
 
 
 def test_get_labels_raises_github_command_error_on_failure():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
@@ -411,7 +408,7 @@ def test_get_labels_raises_github_command_error_on_failure():
 
 
 def test_get_labels_raises_github_timeout_error_on_timeout():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
@@ -421,7 +418,7 @@ def test_get_labels_raises_github_timeout_error_on_timeout():
 
 
 def test_close_issue_with_parents_closes_chain_recursively():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         side_effect=[
@@ -452,7 +449,7 @@ def test_close_issue_with_parents_closes_chain_recursively():
 
 
 def test_get_open_issue_numbers_returns_list_of_integers():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"1\n2\n42\n", stderr=b""),
@@ -461,7 +458,7 @@ def test_get_open_issue_numbers_returns_list_of_integers():
 
 
 def test_get_open_issue_numbers_returns_empty_list_when_no_open_issues():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
@@ -470,7 +467,7 @@ def test_get_open_issue_numbers_returns_empty_list_when_no_open_issues():
 
 
 def test_get_open_issue_numbers_includes_limit_flag():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
@@ -481,7 +478,7 @@ def test_get_open_issue_numbers_includes_limit_flag():
 
 
 def test_get_open_issue_numbers_raises_github_command_error_on_failure():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
@@ -491,7 +488,7 @@ def test_get_open_issue_numbers_raises_github_command_error_on_failure():
 
 
 def test_get_open_issue_numbers_raises_github_command_error_on_non_numeric_output():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"abc\n", stderr=b""),
@@ -501,7 +498,7 @@ def test_get_open_issue_numbers_raises_github_command_error_on_non_numeric_outpu
 
 
 def test_get_open_issue_numbers_raises_github_timeout_error_on_timeout():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
@@ -514,7 +511,7 @@ def test_get_open_issue_numbers_raises_github_timeout_error_on_timeout():
 
 
 def test_close_completed_parent_issues_closes_parent_when_all_sub_issues_closed():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     all_subs = json.dumps([{"number": 10, "state": "closed"}]).encode()
     with patch(
         "subprocess.run",
@@ -535,7 +532,7 @@ def test_close_completed_parent_issues_closes_parent_when_all_sub_issues_closed(
 
 
 def test_close_completed_parent_issues_does_not_close_issue_with_no_sub_issues():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         side_effect=[
@@ -553,7 +550,7 @@ def test_close_completed_parent_issues_does_not_close_issue_with_no_sub_issues()
 
 
 def test_close_completed_parent_issues_handles_multi_level_chain():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     parent_subs = json.dumps([{"number": 20, "state": "closed"}]).encode()
     grandparent_subs_first = json.dumps([{"number": 10, "state": "open"}]).encode()
     grandparent_subs_second = json.dumps([{"number": 10, "state": "closed"}]).encode()
@@ -585,7 +582,7 @@ def test_close_completed_parent_issues_handles_multi_level_chain():
 
 
 def test_close_completed_parent_issues_does_not_close_issue_with_open_sub_issues():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     mixed = json.dumps(
         [
             {"number": 10, "state": "closed"},
@@ -609,7 +606,7 @@ def test_close_completed_parent_issues_does_not_close_issue_with_open_sub_issues
 
 
 def test_close_completed_parent_issues_propagates_error_from_sub_issues_api():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         side_effect=[
@@ -627,7 +624,7 @@ def test_close_completed_parent_issues_propagates_error_from_sub_issues_api():
 
 
 def test_get_open_issues_returns_correctly_shaped_list():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     payload = json.dumps(
         [
             {
@@ -654,7 +651,7 @@ def test_get_open_issues_returns_correctly_shaped_list():
 
 
 def test_get_open_issues_passes_correct_command_args():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"[]", stderr=b""),
@@ -675,7 +672,7 @@ def test_get_open_issues_passes_correct_command_args():
 
 
 def test_get_open_issues_returns_empty_list_when_no_issues():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"[]", stderr=b""),
@@ -684,7 +681,7 @@ def test_get_open_issues_returns_empty_list_when_no_issues():
 
 
 def test_get_open_issues_raises_github_command_error_on_nonzero_exit():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
@@ -694,7 +691,7 @@ def test_get_open_issues_raises_github_command_error_on_nonzero_exit():
 
 
 def test_get_open_issues_raises_github_command_error_on_invalid_json():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"not valid json", stderr=b""),
@@ -704,7 +701,7 @@ def test_get_open_issues_raises_github_command_error_on_invalid_json():
 
 
 def test_get_open_issues_raises_github_timeout_error_on_timeout():
-    svc = GithubService("owner/repo")
+    svc = GithubService("owner/repo", _cfg)
     with patch(
         "subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),

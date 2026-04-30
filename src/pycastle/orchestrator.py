@@ -9,7 +9,7 @@ from typing import Any
 
 from .agent_result import PreflightFailure
 from .claude_service import ClaudeService
-from .config import load_config
+from .config import Config, load_config
 from .container_runner import run_agent as _default_run_agent
 from .git_service import GitCommandError, GitService
 from .github_service import GithubService
@@ -45,12 +45,14 @@ class FileLogger:
 
 
 def prune_orphan_worktrees(
-    repo_root: Path, git_service: GitService | None = None
+    repo_root: Path,
+    git_service: GitService | None = None,
+    cfg: Config | None = None,
 ) -> None:
     worktrees_dir = repo_root / "pycastle" / ".worktrees"
     if not worktrees_dir.exists():
         return
-    svc = git_service or GitService()
+    svc = git_service or GitService(cfg or load_config())
     active = {str(p) for p in svc.list_worktrees(repo_root)}
     for child in worktrees_dir.iterdir():
         if str(child.resolve()) not in active and child.is_dir():
@@ -62,8 +64,9 @@ def delete_merged_branches(
     repo_root: Path,
     git_service: GitService | None = None,
     status_display: StatusDisplay | None = None,
+    cfg: Config | None = None,
 ) -> None:
-    svc = git_service or GitService()
+    svc = git_service or GitService(cfg or load_config())
     sd = status_display or NullStatusDisplay()
     for branch in branches:
         if not svc.is_ancestor(branch, repo_root):
@@ -125,8 +128,8 @@ async def run(
 ) -> None:
     cfg = load_config(repo_root=repo_root, claude_service=claude_service)
     _run_agent = run_agent or _default_run_agent
-    prune_orphan_worktrees(repo_root)
-    git_svc = git_service or GitService()
+    prune_orphan_worktrees(repo_root, cfg=cfg)
+    git_svc = git_service or GitService(cfg)
     status_display: StatusDisplay = NullStatusDisplay()
     _lazy_github_svc: GithubService | None = None
 
@@ -134,7 +137,7 @@ async def run(
         nonlocal _lazy_github_svc
         if _lazy_github_svc is None:
             _lazy_github_svc = github_service or GithubService(
-                repo=_get_repo(repo_root)
+                repo=_get_repo(repo_root), cfg=cfg
             )
         return _lazy_github_svc
 
