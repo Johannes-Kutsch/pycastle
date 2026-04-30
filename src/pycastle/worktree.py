@@ -2,13 +2,58 @@ import os
 import re
 import sys
 import tempfile
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 
 from .errors import WorktreeError, WorktreeTimeoutError
 from .git_service import GitCommandError, GitService, GitTimeoutError
 
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
+
+
+@contextmanager
+def _wrap_git_errors():
+    try:
+        yield
+    except GitTimeoutError as exc:
+        raise WorktreeTimeoutError(str(exc)) from exc
+    except GitCommandError as exc:
+        raise WorktreeError(str(exc)) from exc
+
+
+def _has_project_files(path: Path) -> bool:
+    return (path / "pyproject.toml").exists() or (path / "requirements.txt").exists()
+
+
+def _missing_files_error(path: Path) -> WorktreeError:
+    listing = (
+        "\n".join(sorted(p.name for p in path.iterdir()))
+        if path.exists()
+        else "(missing)"
+    )
+    return WorktreeError(
+        f"No pyproject.toml or requirements.txt found in worktree {path}. "
+        f"Commit your project files before running agents. "
+        f"Worktree contents:\n{listing or '(empty)'}"
+    )
+
+
+def _recreate_stale_branch(
+    svc: GitService,
+    repo_path: Path,
+    worktree_path: Path,
+    branch: str,
+    sha: str | None,
+) -> None:
+    if not svc.is_ancestor(branch, repo_path):
+        raise WorktreeError(
+            f"Branch {branch!r} has unique commits not yet on the base branch. "
+            "Merge or remove these commits before retrying."
+        )
+    svc.remove_worktree(repo_path, worktree_path)
+    with _wrap_git_errors():
+        svc.delete_branch(branch, repo_path)
+        svc.create_worktree(repo_path, worktree_path, branch, sha)
 
 
 def create_worktree(
@@ -19,59 +64,29 @@ def create_worktree(
     git_service: GitService | None = None,
 ) -> None:
     svc = git_service or GitService()
-    try:
+    with _wrap_git_errors():
         branch_exists = svc.verify_ref_exists(branch, repo_path)
 
-        needs_create = True
         if worktree_path.exists():
             registered = svc.list_worktrees(repo_path)
             if worktree_path in registered:
-                needs_create = False
-            else:
-                svc.remove_worktree(repo_path, worktree_path)
-
-        if needs_create:
-            try:
-                svc.create_worktree(repo_path, worktree_path, branch, sha)
-            except GitCommandError as exc:
-                raise WorktreeError(str(exc)) from exc
-
-        has_files = (worktree_path / "pyproject.toml").exists() or (
-            worktree_path / "requirements.txt"
-        ).exists()
-        if not has_files and branch_exists:
-            if not svc.is_ancestor(branch, repo_path):
-                raise WorktreeError(
-                    f"Branch {branch!r} has unique commits not yet on the base branch. "
-                    "Merge or remove these commits before retrying."
-                )
+                if not _has_project_files(worktree_path):
+                    error = _missing_files_error(worktree_path)
+                    svc.remove_worktree(repo_path, worktree_path)
+                    raise error
+                return
             svc.remove_worktree(repo_path, worktree_path)
-            try:
-                svc.delete_branch(branch, repo_path)
-            except GitCommandError as exc:
-                raise WorktreeError(str(exc)) from exc
-            try:
-                svc.create_worktree(repo_path, worktree_path, branch, sha)
-            except GitCommandError as exc:
-                raise WorktreeError(str(exc)) from exc
-            has_files = (worktree_path / "pyproject.toml").exists() or (
-                worktree_path / "requirements.txt"
-            ).exists()
 
-        if not has_files:
-            listing = (
-                "\n".join(sorted(p.name for p in worktree_path.iterdir()))
-                if worktree_path.exists()
-                else "(missing)"
-            )
+        with _wrap_git_errors():
+            svc.create_worktree(repo_path, worktree_path, branch, sha)
+
+        if not _has_project_files(worktree_path) and branch_exists:
+            _recreate_stale_branch(svc, repo_path, worktree_path, branch, sha)
+
+        if not _has_project_files(worktree_path):
+            error = _missing_files_error(worktree_path)
             svc.remove_worktree(repo_path, worktree_path)
-            raise WorktreeError(
-                f"No pyproject.toml or requirements.txt found in worktree {worktree_path}. "
-                f"Commit your project files before running agents. "
-                f"Worktree contents:\n{listing or '(empty)'}"
-            )
-    except GitTimeoutError as exc:
-        raise WorktreeTimeoutError(str(exc)) from exc
+            raise error
 
 
 def remove_worktree(
