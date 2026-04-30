@@ -4,14 +4,9 @@ import dataclasses
 from collections.abc import Sequence
 from typing import Any
 
-from ..agent_result import (
-    AgentSuccess,
-    AgentTimeoutHit,
-    CancellationToken,
-    PreflightFailure,
-    UsageLimitHit,
-)
-from ..errors import AgentTimeoutError
+from ..agent_output_protocol import AgentRole, parse
+from ..agent_result import CancellationToken, PreflightFailure
+from ..errors import UsageLimitError
 from ..prompt_utils import load_standards
 from ._deps import Deps
 
@@ -41,7 +36,7 @@ async def run_issue(
     *,
     token: CancellationToken | None = None,
     sha: str | None = None,
-) -> dict | UsageLimitHit | PreflightFailure | None:
+) -> dict | PreflightFailure:
     _branch = branch_for(issue["number"])
     _standards = load_standards(deps.cfg.prompts_dir)
     prompt_args = {
@@ -69,18 +64,11 @@ async def run_issue(
         sha=sha,
         skip_preflight=True,
     )
-    if isinstance(result, UsageLimitHit):
-        return result
     if isinstance(result, PreflightFailure):
         return result
-    if isinstance(result, AgentTimeoutHit):
-        raise AgentTimeoutError(
-            f"Implementer #{issue['number']} timed out after all retries"
-        )
-    if not isinstance(result, AgentSuccess):
-        return None
 
-    deps.logger.log_agent_output(f"Implementer #{issue['number']}", result.output)
+    parse(result, AgentRole.IMPLEMENTER)
+    deps.logger.log_agent_output(f"Implementer #{issue['number']}", result)
 
     review_result = await _bounded_run_agent(
         name=f"Reviewer #{issue['number']}",
@@ -94,12 +82,7 @@ async def run_issue(
         stage="pre-review",
         skip_preflight=True,
     )
-    if isinstance(review_result, UsageLimitHit):
-        return review_result
-    if isinstance(review_result, AgentTimeoutHit):
-        raise AgentTimeoutError(
-            f"Reviewer #{issue['number']} timed out after all retries"
-        )
+    parse(review_result, AgentRole.REVIEWER)
     return issue
 
 
@@ -116,11 +99,13 @@ async def implement_phase(
         *[run_issue(issue, deps, semaphore, token=_token, sha=sha) for issue in issues],
         return_exceptions=True,
     )
-    usage_limit_hit = any(isinstance(r, UsageLimitHit) for r in results)
+    usage_limit_hit = any(isinstance(r, UsageLimitError) for r in results)
     completed: list[dict] = []
     errors: list[tuple[dict, Exception | PreflightFailure]] = []
     for issue, result in zip(issues, results):
-        if isinstance(result, (Exception, PreflightFailure)):
+        if isinstance(result, UsageLimitError):
+            continue
+        elif isinstance(result, (Exception, PreflightFailure)):
             deps.logger.log_error(issue, result)
             errors.append((issue, result))
         elif isinstance(result, dict):
