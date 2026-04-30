@@ -49,7 +49,7 @@ PlanResult: TypeAlias = PlanReady | PlanHITL | PlanAFK
 
 
 async def _handle_preflight_failure(
-    failures: list[tuple[str, str, str]],
+    failures: tuple[tuple[str, str, str], ...],
     deps: Deps,
     mount_path: Path,
 ) -> tuple[str, int]:
@@ -103,7 +103,7 @@ async def plan_phase(deps: Deps) -> PlanResult:
         if isinstance(raw, PreflightFailure):
             try:
                 verdict, pf_num = await _handle_preflight_failure(
-                    list(raw.failures), deps, worktree_path
+                    raw.failures, deps, worktree_path
                 )
             except IssueParseError as parse_exc:
                 raise RuntimeError(str(parse_exc)) from parse_exc

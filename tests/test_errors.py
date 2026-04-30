@@ -69,7 +69,6 @@ def test_usage_limit_error_carries_matched_line():
     assert str(err) == "You've hit your session limit"
 
 
-
 # ── Raise sites ───────────────────────────────────────────────────────────────
 
 

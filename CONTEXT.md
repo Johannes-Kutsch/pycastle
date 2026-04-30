@@ -159,7 +159,6 @@
 | **WorktreeError** | Error raised when a git worktree operation fails for a non-timeout reason | git error |
 | **WorktreeTimeoutError** | Error raised when a git worktree operation exceeds the worktree timeout | — |
 | **AgentTimeoutError** | Error raised when an agent produces no output for longer than the idle timeout | hung agent error |
-| **PreflightError** | Error raised by the orchestrator after a preflight-issue agent completes with a HITL verdict; signals that human intervention is required and the run cannot continue autonomously | preflight error |
 
 ## Service Abstraction & Dependency Injection
 
@@ -216,7 +215,7 @@
 
 > **Dev:** "What if the agent isn't sure whether a human is needed?"
 
-> **Domain expert:** "It defaults to `ready-for-human`. The **HITL verdict** is read directly from the issue label — that label is the single source of truth. If it's `ready-for-human`, we raise **PreflightError** and exit. The operator goes to GitHub to see the filed issue."
+> **Domain expert:** "It defaults to `ready-for-human`. The **HITL verdict** is read directly from the issue label — that label is the single source of truth. If it's `ready-for-human`, we return **PlanHITL** and exit. The operator goes to GitHub to see the filed issue."
 
 > **Dev:** "And if it's `ready-for-agent`, how does the Implementer know it's starting from a clean state?"
 
