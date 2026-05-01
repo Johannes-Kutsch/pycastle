@@ -15,6 +15,7 @@ from pycastle.container_runner import (
 )
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.git_service import GitService
+from pycastle.iteration._deps import RecordingStatusDisplay
 
 
 # ── Issue 153: docker_client injection ───────────────────────────────────────
@@ -349,8 +350,6 @@ def test_run_streaming_log_file_contains_full_raw_output(tmp_path):
 
 
 def test_run_streaming_calls_reset_idle_timer_per_chunk(tmp_path):
-    from pycastle.iteration._deps import RecordingStatusDisplay
-
     tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
     runner = _streaming_runner("Bot", [tool_chunk, tool_chunk], tmp_path)
     display = RecordingStatusDisplay()
@@ -363,8 +362,6 @@ def test_run_streaming_calls_reset_idle_timer_per_chunk(tmp_path):
 
 
 def test_run_streaming_update_message_called_per_completed_line_not_per_chunk(tmp_path):
-    from pycastle.iteration._deps import RecordingStatusDisplay
-
     text_line = (
         b'{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}\n'
     )
@@ -379,8 +376,6 @@ def test_run_streaming_update_message_called_per_completed_line_not_per_chunk(tm
 
 
 def test_run_streaming_tool_use_only_line_resets_timer_but_not_message(tmp_path):
-    from pycastle.iteration._deps import RecordingStatusDisplay
-
     tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
     runner = _streaming_runner("Bot", [tool_chunk], tmp_path)
     display = RecordingStatusDisplay()
@@ -392,8 +387,6 @@ def test_run_streaming_tool_use_only_line_resets_timer_but_not_message(tmp_path)
 
 
 def test_run_streaming_system_line_resets_timer_but_not_message(tmp_path):
-    from pycastle.iteration._deps import RecordingStatusDisplay
-
     system_chunk = b'{"type":"system","subtype":"init","session_id":"abc","tools":[]}\n'
     runner = _streaming_runner("Bot", [system_chunk], tmp_path)
     display = RecordingStatusDisplay()
@@ -402,6 +395,49 @@ def test_run_streaming_system_line_resets_timer_but_not_message(tmp_path):
 
     assert ("reset_idle_timer", "Bot") in display.calls
     assert not any(c[0] == "update_message" for c in display.calls)
+
+
+def test_run_streaming_result_line_resets_timer_but_not_message(tmp_path):
+    result_chunk = b'{"type":"result","result":"Final answer","session_id":"abc"}\n'
+    runner = _streaming_runner("Bot", [result_chunk], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(status_display=display)
+
+    assert ("reset_idle_timer", "Bot") in display.calls
+    assert not any(c[0] == "update_message" for c in display.calls)
+
+
+def test_run_streaming_partial_chunk_resets_timer_but_not_message(tmp_path):
+    partial_chunk = b'{"type":"assistant","message":{"content":[{"type":"text","text":"no newline here"}'
+    runner = _streaming_runner("Bot", [partial_chunk], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(status_display=display)
+
+    assert ("reset_idle_timer", "Bot") in display.calls
+    assert not any(c[0] == "update_message" for c in display.calls)
+
+
+def test_run_streaming_single_chunk_with_multiple_lines_resets_timer_once(tmp_path):
+    line_a = (
+        b'{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}\n'
+    )
+    line_b = (
+        b'{"type":"assistant","message":{"content":[{"type":"text","text":"World"}]}}\n'
+    )
+    runner = _streaming_runner("Bot", [line_a + line_b], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(status_display=display)
+
+    reset_calls = [c for c in display.calls if c[0] == "reset_idle_timer"]
+    assert len(reset_calls) == 1
+
+    msg_calls = [c for c in display.calls if c[0] == "update_message"]
+    assert len(msg_calls) == 2
+    assert msg_calls[0] == ("update_message", "Bot", "Hello")
+    assert msg_calls[1] == ("update_message", "Bot", "World")
 
 
 # ── Issue 75: _build_claude_command accepts model and effort flags ────────────
