@@ -178,6 +178,104 @@ def test_rich_update_message_for_unknown_agent_is_safe() -> None:
     d.update_message("never-added", "some message")
 
 
+def test_rich_phase_appears_in_output() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "DESIGNING", Path("/tmp/planner.log"), "Fix bug")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert "DESIGNING" in output
+    d.stop()
+
+
+def test_rich_empty_issue_title_renders_name_without_dash() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"), "")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert "Planner - " not in output
+    d.stop()
+
+
+def test_rich_agent_names_are_right_aligned_by_elapsed_column(monkeypatch) -> None:
+    import pycastle.rich_status_display as mod
+
+    # #7 started at t=0, #42 started at t=270; render at t=312
+    # elapsed #7 = 5m 12s (6 chars), elapsed #42 = 42s (3 chars)
+    # right-justified elapsed column must be 6 chars wide for both rows,
+    # so both "Implementer" names start at the same column.
+    times = iter([0.0, 270.0] + [312.0] * 20)
+    monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
+
+    d = RichStatusDisplay()
+    d.add_agent("Implementer #7", "Work", Path("/tmp/impl7.log"), "Fix bug")
+    d.add_agent("Implementer #42", "Work", Path("/tmp/impl42.log"), "Fix other")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    lines = [ln for ln in console.export_text().splitlines() if "Implementer" in ln]
+    assert len(lines) == 2
+    impl7_line = next(ln for ln in lines if "#7" in ln)
+    impl42_line = next(ln for ln in lines if "#42" in ln)
+    assert impl7_line.index("Implementer") == impl42_line.index("Implementer")
+    d.stop()
+
+
+def test_rich_elapsed_format_at_exactly_one_minute(monkeypatch) -> None:
+    import pycastle.rich_status_display as mod
+
+    times = iter([0.0, 60.0, 60.0])
+    monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
+
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"), "Fix bug")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert "1m 0s" in output
+    d.stop()
+
+
+def test_rich_update_message_resets_idle_time(monkeypatch) -> None:
+    import pycastle.rich_status_display as mod
+
+    # started_at=0, message at t=100, render at t=150
+    # idle = 150-100 = 50s  (not 150-0=150s)
+    times = iter([0.0, 100.0, 150.0, 150.0])
+    monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
+
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"), "Fix bug")
+    d.update_message("Planner", "Working...")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert "50s" in output
+    d.stop()
+
+
+def test_rich_reviewers_render_sorted_by_issue_number() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Reviewer #42", "Review", Path("/tmp/rev42.log"), "")
+    d.add_agent("Reviewer #7", "Review", Path("/tmp/rev7.log"), "")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert output.find("Reviewer #7") < output.find("Reviewer #42")
+    d.stop()
+
+
 # ── NullStatusDisplay protocol conformance ────────────────────────────────────
 
 

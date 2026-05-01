@@ -96,7 +96,8 @@ class RichStatusDisplay:
             abs_uri = row.log_path.resolve().as_uri()
             name_text = Text()
             name_text.append(row.name, style=f"link {abs_uri}")
-            name_text.append(f" - {row.issue_title}")
+            if row.issue_title:
+                name_text.append(f" - {row.issue_title}")
             table.add_row(
                 _format_duration(row.elapsed_seconds()),
                 name_text,
