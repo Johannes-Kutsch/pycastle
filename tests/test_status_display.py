@@ -163,22 +163,53 @@ def test_rich_elapsed_format_shows_minutes_and_seconds(monkeypatch) -> None:
     d.stop()
 
 
-def test_rich_update_message_for_unknown_agent_is_safe() -> None:
+def test_rich_issue_title_appears_in_rendered_output() -> None:
     d = RichStatusDisplay()
-    d.update_message("never-added", "some message")
-
-
-def test_rich_message_appears_in_rendered_output() -> None:
-    d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
-    d.update_message("Planner", "Analysing open issues")
+    d.add_agent(
+        "Implementer #5", "Work", Path("/tmp/impl5.log"), issue_title="Fix auth timeout"
+    )
 
     console = Console(record=True, width=200)
     console.print(d)
     output = console.export_text()
 
-    assert "Analysing open issues" in output
+    assert "Fix auth timeout" in output
     d.stop()
+
+
+def test_rich_agent_without_issue_title_shows_blank_issue_cell() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent(
+        "Implementer #5", "Work", Path("/tmp/impl5.log"), issue_title="Fix auth timeout"
+    )
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    lines = [ln for ln in console.export_text().splitlines() if ln.strip()]
+    d.stop()
+
+    planner_line = next(ln for ln in lines if "Planner" in ln)
+    implementer_line = next(ln for ln in lines if "Implementer" in ln)
+    assert "Fix auth timeout" not in planner_line
+    assert "Fix auth timeout" in implementer_line
+
+
+def test_rich_issue_title_with_brackets_renders_literally() -> None:
+    d = RichStatusDisplay()
+    d.add_agent(
+        "Implementer #5",
+        "Work",
+        Path("/tmp/impl5.log"),
+        issue_title="Fix [BUG-123] timeout",
+    )
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "Fix [BUG-123] timeout" in output
 
 
 def test_rich_phase_appears_in_output() -> None:
@@ -234,39 +265,16 @@ def test_rich_elapsed_format_at_exactly_one_minute(monkeypatch) -> None:
     d.stop()
 
 
-def test_rich_update_message_resets_idle_time(monkeypatch) -> None:
+def test_rich_reset_idle_timer_resets_idle_time(monkeypatch) -> None:
     import pycastle.rich_status_display as mod
 
-    # started_at=0, message at t=100, render at t=150
+    # started_at=0, reset at t=100, render at t=150
     # idle = 150-100 = 50s  (not 150-0=150s)
     times = iter([0.0, 100.0, 150.0, 150.0])
     monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
 
     d = RichStatusDisplay()
     d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
-    d.update_message("Planner", "Working...")
-
-    console = Console(record=True, width=200)
-    console.print(d)
-    output = console.export_text()
-
-    assert "50s" in output
-    d.stop()
-
-
-def test_rich_reset_idle_timer_resets_idle_time_without_changing_last_message(
-    monkeypatch,
-) -> None:
-    import pycastle.rich_status_display as mod
-
-    # started_at=0, message at t=50, reset at t=100, render at t=150
-    # idle = 150-100 = 50s; last_message unchanged
-    times = iter([0.0, 50.0, 100.0, 150.0, 150.0])
-    monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
-
-    d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
-    d.update_message("Planner", "Working...")
     d.reset_idle_timer("Planner")
 
     console = Console(record=True, width=200)
@@ -274,7 +282,6 @@ def test_rich_reset_idle_timer_resets_idle_time_without_changing_last_message(
     output = console.export_text()
 
     assert "50s" in output
-    assert "Working..." in output
     d.stop()
 
 
@@ -419,20 +426,6 @@ def test_rich_phase_renders_without_color_for_unknown_agent() -> None:
     assert not _has_code(ansi, 32)  # no green
 
 
-def test_rich_last_message_renders_rich_markup() -> None:
-    d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
-    d.update_message("Planner", "[bold]Important[/bold] message")
-
-    console = Console(record=True, width=200)
-    console.print(d)
-    output = console.export_text()
-    d.stop()
-
-    assert "Important message" in output
-    assert "[bold]" not in output
-
-
 # ── NullStatusDisplay protocol conformance ────────────────────────────────────
 
 
@@ -465,12 +458,6 @@ def test_null_update_phase_is_silent(capsys) -> None:
     assert capsys.readouterr().out == ""
 
 
-def test_null_update_message_is_silent(capsys) -> None:
-    d = NullStatusDisplay()
-    d.update_message("implementer-1", "doing work")
-    assert capsys.readouterr().out == ""
-
-
 def test_null_remove_agent_is_silent(capsys) -> None:
     d = NullStatusDisplay()
     d.remove_agent("implementer-1")
@@ -496,19 +483,22 @@ def test_recording_captures_add_agent() -> None:
     d = RecordingStatusDisplay()
     log_path = Path("/tmp/agent.log")
     d.add_agent("implementer-1", "Setup", log_path)
-    assert d.calls == [("add_agent", "implementer-1", "Setup", log_path)]
+    assert d.calls == [("add_agent", "implementer-1", "Setup", log_path, "")]
+
+
+def test_recording_captures_add_agent_with_issue_title() -> None:
+    d = RecordingStatusDisplay()
+    log_path = Path("/tmp/agent.log")
+    d.add_agent("Implementer #5", "Work", log_path, issue_title="Fix auth timeout")
+    assert d.calls == [
+        ("add_agent", "Implementer #5", "Work", log_path, "Fix auth timeout")
+    ]
 
 
 def test_recording_captures_update_phase() -> None:
     d = RecordingStatusDisplay()
     d.update_phase("implementer-1", "Work")
     assert d.calls == [("update_phase", "implementer-1", "Work")]
-
-
-def test_recording_captures_update_message() -> None:
-    d = RecordingStatusDisplay()
-    d.update_message("implementer-1", "Analysing open issues")
-    assert d.calls == [("update_message", "implementer-1", "Analysing open issues")]
 
 
 def test_recording_captures_remove_agent() -> None:
@@ -554,7 +544,7 @@ def test_recording_accumulates_multiple_calls() -> None:
     d.remove_agent("implementer-1")
 
     assert d.calls == [
-        ("add_agent", "implementer-1", "Setup", log_path),
+        ("add_agent", "implementer-1", "Setup", log_path, ""),
         ("update_phase", "implementer-1", "Work"),
         ("remove_agent", "implementer-1"),
     ]
