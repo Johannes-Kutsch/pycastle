@@ -347,7 +347,7 @@ def test_run_iteration_routes_planning_complete_through_status_display(
     )
     asyncio.run(run_iteration(deps))
 
-    print_messages = [call[1] for call in recording.calls if call[0] == "print"]
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
     assert any("Planning complete" in msg for msg in print_messages)
     assert "Planning complete" not in capsys.readouterr().out
 
@@ -371,7 +371,7 @@ def test_run_iteration_prints_blank_line_after_completion_summary(
     )
     asyncio.run(run_iteration(deps))
 
-    print_messages = [call[1] for call in recording.calls if call[0] == "print"]
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
     exec_idx = next(
         (i for i, msg in enumerate(print_messages) if "Execution complete" in msg),
         None,
@@ -406,7 +406,7 @@ def test_run_iteration_routes_hitl_abort_message_through_status_display(
     )
     asyncio.run(run_iteration(deps))
 
-    print_messages = [call[1] for call in recording.calls if call[0] == "print"]
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
     assert any("human intervention" in msg for msg in print_messages)
     assert "human intervention" not in capsys.readouterr().out
 
@@ -432,7 +432,7 @@ def test_run_iteration_routes_no_commits_message_through_status_display(
     )
     asyncio.run(run_iteration(deps))
 
-    print_messages = [call[1] for call in recording.calls if call[0] == "print"]
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
     assert any("No commits" in msg for msg in print_messages)
     assert "No commits" not in capsys.readouterr().out
 
