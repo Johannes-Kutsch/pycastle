@@ -5,6 +5,7 @@ from pathlib import Path
 
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.live import Live
+from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
 
@@ -34,15 +35,35 @@ def _sort_key(name: str) -> tuple[int, int]:
     return (rank, int(m.group()) if m else 0)
 
 
+def _format_duration(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds}s"
+    return f"{seconds // 60}m {seconds % 60}s"
+
+
 class _AgentRow:
-    __slots__ = ("name", "phase", "log_path", "issue_title", "last_update")
+    __slots__ = (
+        "name",
+        "phase",
+        "log_path",
+        "issue_title",
+        "started_at",
+        "last_update",
+        "last_message",
+    )
 
     def __init__(self, name: str, phase: str, log_path: Path, issue_title: str) -> None:
         self.name = name
         self.phase = phase
         self.log_path = log_path
         self.issue_title = issue_title
-        self.last_update = time.monotonic()
+        self.last_message = ""
+        now = time.monotonic()
+        self.started_at = now
+        self.last_update = now
+
+    def elapsed_seconds(self) -> int:
+        return int(time.monotonic() - self.started_at)
 
     def idle_seconds(self) -> int:
         return int(time.monotonic() - self.last_update)
@@ -65,20 +86,30 @@ class RichStatusDisplay:
         with self._lock:
             rows = sorted(self._rows.values(), key=lambda r: _sort_key(r.name))
 
-        table = Table(show_header=True, header_style="bold", expand=False, box=None)
-        table.add_column("Agent")
-        table.add_column("Phase")
-        table.add_column("Idle (s)", justify="right")
-        table.add_column("Log")
+        table = Table(show_header=False, expand=False, box=None)
+        table.add_column(justify="right")  # elapsed
+        table.add_column()  # name + headline
+        table.add_column()  # phase
+        table.add_column()  # idle
 
         for row in rows:
             abs_uri = row.log_path.resolve().as_uri()
-            link = Text(str(row.log_path), style=f"link {abs_uri}")
-            table.add_row(row.name, row.phase, str(row.idle_seconds()), link)
+            name_text = Text()
+            name_text.append(row.name, style=f"link {abs_uri}")
+            if row.issue_title:
+                name_text.append(f" - {row.issue_title}")
+            table.add_row(
+                _format_duration(row.elapsed_seconds()),
+                name_text,
+                row.phase,
+                _format_duration(row.idle_seconds()),
+            )
 
-        yield table
+        yield Padding(table, (1, 0, 0, 0))
 
-    def add_agent(self, name: str, phase: str, log_path: Path, issue_title: str) -> None:
+    def add_agent(
+        self, name: str, phase: str, log_path: Path, issue_title: str
+    ) -> None:
         live_to_start: Live | None = None
         with self._lock:
             self._rows[name] = _AgentRow(name, phase, log_path, issue_title)
@@ -98,6 +129,12 @@ class RichStatusDisplay:
         with self._lock:
             if name in self._rows:
                 self._rows[name].phase = phase
+                self._rows[name].last_update = time.monotonic()
+
+    def update_message(self, name: str, message: str) -> None:
+        with self._lock:
+            if name in self._rows:
+                self._rows[name].last_message = message
                 self._rows[name].last_update = time.monotonic()
 
     def remove_agent(self, name: str) -> None:
