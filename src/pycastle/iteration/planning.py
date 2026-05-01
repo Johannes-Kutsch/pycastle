@@ -1,6 +1,6 @@
 import json
 
-from ..agent_output_protocol import AgentOutputProtocolError, AgentRole, PlannerOutput, parse
+from ..agent_output_protocol import AgentOutputProtocolError, AgentRole, parse
 from ..agent_result import PreflightFailure
 from ._deps import Deps
 from .plan import PlanReady
@@ -33,7 +33,6 @@ async def planning_phase(deps: Deps, sha: str, open_issues: list[dict]) -> PlanR
         except AgentOutputProtocolError as exc:
             raise RuntimeError(str(exc)) from exc
 
-        assert isinstance(planner_output, PlannerOutput)
         return PlanReady(
             worktree_sha=sha,
             issues=sorted(planner_output.issues, key=lambda i: i["number"]),
