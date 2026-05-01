@@ -211,7 +211,7 @@ class AgentRunner:
             cfg=self._cfg,
         )
         try:
-            await loop.run_in_executor(None, runner.__enter__)
+            await _setup(name, runner, loop, None, self._git_service, self._cfg)
             return await _preflight(
                 name,
                 runner,
