@@ -175,7 +175,7 @@ def test_run_cmd_shows_install_instruction_when_claude_cli_missing(
     assert "sudo npm install -g @anthropic-ai/claude-code" in result.output
 
 
-def test_run_cmd_shows_no_traceback_when_claude_cli_missing(tmp_path, monkeypatch):
+def test_run_cmd_exits_cleanly_when_claude_cli_missing(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
     monkeypatch.chdir(tmp_path)
@@ -184,4 +184,56 @@ def test_run_cmd_shows_no_traceback_when_claude_cli_missing(tmp_path, monkeypatc
         side_effect=ClaudeCliNotFoundError("claude not found"),
     ):
         result = CliRunner().invoke(cli, ["run"])
-    assert "Traceback" not in result.output
+    assert isinstance(result.exception, SystemExit)
+
+
+def test_build_cmd_exits_one_when_claude_cli_missing(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "pycastle.main.load_config",
+        side_effect=ClaudeCliNotFoundError("claude not found"),
+    ):
+        result = CliRunner().invoke(cli, ["build"])
+    assert result.exit_code == 1
+
+
+def test_build_cmd_shows_install_instruction_when_claude_cli_missing(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "pycastle.main.load_config",
+        side_effect=ClaudeCliNotFoundError("claude not found"),
+    ):
+        result = CliRunner().invoke(cli, ["build"])
+    assert "sudo npm install -g @anthropic-ai/claude-code" in result.output
+
+
+def test_labels_cmd_exits_one_when_claude_cli_missing(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "pycastle.main.load_config",
+        side_effect=ClaudeCliNotFoundError("claude not found"),
+    ):
+        result = CliRunner().invoke(cli, ["labels"])
+    assert result.exit_code == 1
+
+
+def test_labels_cmd_shows_install_instruction_when_claude_cli_missing(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "pycastle.main.load_config",
+        side_effect=ClaudeCliNotFoundError("claude not found"),
+    ):
+        result = CliRunner().invoke(cli, ["labels"])
+    assert "sudo npm install -g @anthropic-ai/claude-code" in result.output

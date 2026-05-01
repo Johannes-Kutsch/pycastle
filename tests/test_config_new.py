@@ -286,7 +286,7 @@ def test_load_config_validate_valid_efforts_pass(tmp_path):
 # ── load_config: ClaudeService errors → ConfigValidationError ─
 
 
-def test_load_config_validate_cli_not_found_raises_config_validation_error(tmp_path):
+def test_load_config_validate_cli_not_found_raises_claude_cli_not_found_error(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(
         "from pycastle import StageOverride\n"
@@ -294,9 +294,8 @@ def test_load_config_validate_cli_not_found_raises_config_validation_error(tmp_p
     )
     svc = MagicMock(spec=ClaudeService)
     svc.list_models.side_effect = ClaudeCliNotFoundError("claude CLI not found")
-    with pytest.raises(ConfigValidationError) as exc_info:
+    with pytest.raises(ClaudeCliNotFoundError):
         load_config(repo_root=tmp_path, claude_service=svc)
-    assert "claude" in str(exc_info.value).lower()
 
 
 def test_load_config_validate_service_error_message_preserved(tmp_path):
