@@ -55,14 +55,14 @@ class _AgentRow:
         "log_path",
         "started_at",
         "last_update",
-        "last_message",
+        "issue_title",
     )
 
-    def __init__(self, name: str, phase: str, log_path: Path) -> None:
+    def __init__(self, name: str, phase: str, log_path: Path, issue_title: str = "") -> None:
         self.name = name
         self.phase = phase
         self.log_path = log_path
-        self.last_message = ""
+        self.issue_title = issue_title
         now = time.monotonic()
         self.started_at = now
         self.last_update = now
@@ -96,7 +96,7 @@ class RichStatusDisplay:
         table.add_column()  # name
         table.add_column()  # phase
         table.add_column()  # idle
-        table.add_column(overflow="ellipsis", no_wrap=True)  # last message
+        table.add_column(overflow="ellipsis", no_wrap=True)  # issue title
 
         for row in rows:
             abs_uri = row.log_path.resolve().as_uri()
@@ -115,15 +115,15 @@ class RichStatusDisplay:
                 name_text,
                 phase_text,
                 Text(_format_duration(row.idle_seconds()), style="dim"),
-                row.last_message,
+                Text(row.issue_title),
             )
 
         yield Padding(table, (1, 0, 0, 0))
 
-    def add_agent(self, name: str, phase: str, log_path: Path) -> None:
+    def add_agent(self, name: str, phase: str, log_path: Path, issue_title: str = "") -> None:
         live_to_start: Live | None = None
         with self._lock:
-            self._rows[name] = _AgentRow(name, phase, log_path)
+            self._rows[name] = _AgentRow(name, phase, log_path, issue_title)
             if self._live is None:
                 live = Live(
                     self,
@@ -140,12 +140,6 @@ class RichStatusDisplay:
         with self._lock:
             if name in self._rows:
                 self._rows[name].phase = phase
-                self._rows[name].last_update = time.monotonic()
-
-    def update_message(self, name: str, message: str) -> None:
-        with self._lock:
-            if name in self._rows:
-                self._rows[name].last_message = message
                 self._rows[name].last_update = time.monotonic()
 
     def remove_agent(self, name: str) -> None:
