@@ -15,6 +15,7 @@ from pycastle.container_runner import (
 )
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.git_service import GitService
+from pycastle.iteration._deps import RecordingStatusDisplay
 
 
 # ── Issue 153: docker_client injection ───────────────────────────────────────
@@ -345,16 +346,98 @@ def test_run_streaming_log_file_contains_full_raw_output(tmp_path):
     assert content == "line one\nline two\n"
 
 
-def test_run_streaming_calls_update_message_per_chunk(tmp_path):
-    from pycastle.iteration._deps import RecordingStatusDisplay
+# ── Issue 339: run_streaming per-chunk reset_idle_timer, per-line update_message ─
 
-    runner = _streaming_runner("Bot", [b"chunk one\n", b"chunk two\n"], tmp_path)
+
+def test_run_streaming_calls_reset_idle_timer_per_chunk(tmp_path):
+    tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
+    runner = _streaming_runner("Bot", [tool_chunk, tool_chunk], tmp_path)
     display = RecordingStatusDisplay()
 
     runner.run_streaming(status_display=display)
 
-    assert ("update_message", "Bot", "chunk one") in display.calls
-    assert ("update_message", "Bot", "chunk two") in display.calls
+    reset_calls = [c for c in display.calls if c[0] == "reset_idle_timer"]
+    assert len(reset_calls) == 2
+    assert all(c == ("reset_idle_timer", "Bot") for c in reset_calls)
+
+
+def test_run_streaming_update_message_called_per_completed_line_not_per_chunk(tmp_path):
+    text_line = (
+        b'{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}\n'
+    )
+    runner = _streaming_runner("Bot", [text_line, text_line], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(status_display=display)
+
+    msg_calls = [c for c in display.calls if c[0] == "update_message"]
+    assert len(msg_calls) == 2
+    assert all(c == ("update_message", "Bot", "Hello") for c in msg_calls)
+
+
+def test_run_streaming_tool_use_only_line_resets_timer_but_not_message(tmp_path):
+    tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
+    runner = _streaming_runner("Bot", [tool_chunk], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(status_display=display)
+
+    assert ("reset_idle_timer", "Bot") in display.calls
+    assert not any(c[0] == "update_message" for c in display.calls)
+
+
+def test_run_streaming_system_line_resets_timer_but_not_message(tmp_path):
+    system_chunk = b'{"type":"system","subtype":"init","session_id":"abc","tools":[]}\n'
+    runner = _streaming_runner("Bot", [system_chunk], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(status_display=display)
+
+    assert ("reset_idle_timer", "Bot") in display.calls
+    assert not any(c[0] == "update_message" for c in display.calls)
+
+
+def test_run_streaming_result_line_resets_timer_but_not_message(tmp_path):
+    result_chunk = b'{"type":"result","result":"Final answer","session_id":"abc"}\n'
+    runner = _streaming_runner("Bot", [result_chunk], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(status_display=display)
+
+    assert ("reset_idle_timer", "Bot") in display.calls
+    assert not any(c[0] == "update_message" for c in display.calls)
+
+
+def test_run_streaming_partial_chunk_resets_timer_but_not_message(tmp_path):
+    partial_chunk = b'{"type":"assistant","message":{"content":[{"type":"text","text":"no newline here"}'
+    runner = _streaming_runner("Bot", [partial_chunk], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(status_display=display)
+
+    assert ("reset_idle_timer", "Bot") in display.calls
+    assert not any(c[0] == "update_message" for c in display.calls)
+
+
+def test_run_streaming_single_chunk_with_multiple_lines_resets_timer_once(tmp_path):
+    line_a = (
+        b'{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}\n'
+    )
+    line_b = (
+        b'{"type":"assistant","message":{"content":[{"type":"text","text":"World"}]}}\n'
+    )
+    runner = _streaming_runner("Bot", [line_a + line_b], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(status_display=display)
+
+    reset_calls = [c for c in display.calls if c[0] == "reset_idle_timer"]
+    assert len(reset_calls) == 1
+
+    msg_calls = [c for c in display.calls if c[0] == "update_message"]
+    assert len(msg_calls) == 2
+    assert msg_calls[0] == ("update_message", "Bot", "Hello")
+    assert msg_calls[1] == ("update_message", "Bot", "World")
 
 
 # ── Issue 75: _build_claude_command accepts model and effort flags ────────────
@@ -636,7 +719,7 @@ def test_format_stream_line_returns_none_for_system_init():
 
 def test_format_stream_line_summarises_tool_use_block():
     line = '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}'
-    assert _format_stream_line(line) == "(tool: Bash)"
+    assert _format_stream_line(line) is None
 
 
 # ── Cycle 65-4 / Issue 79: result line suppressed to prevent duplicate output ─
@@ -689,7 +772,7 @@ def test_run_streaming_log_file_unchanged_for_json_lines(tmp_path):
 
 def test_format_stream_line_joins_text_and_tool_use_with_space():
     line = '{"type":"assistant","message":{"content":[{"type":"text","text":"Reading files"},{"type":"tool_use","name":"Read","id":"t1","input":{}}]}}'
-    assert _format_stream_line(line) == "Reading files (tool: Read)"
+    assert _format_stream_line(line) == "Reading files"
 
 
 def test_format_stream_line_returns_none_for_whitespace_only_text():
@@ -730,6 +813,14 @@ def test_format_stream_line_returns_none_for_unknown_type():
 def test_format_stream_line_returns_verbatim_for_json_array():
     line = '["not","a","dict"]'
     assert _format_stream_line(line) == line
+
+
+# ── Issue 339: _format_stream_line new behaviors ─────────────────────────────
+
+
+def test_format_stream_line_returns_first_line_of_multiline_text():
+    line = '{"type":"assistant","message":{"content":[{"type":"text","text":"First line\\nSecond line\\nThird line"}]}}'
+    assert _format_stream_line(line) == "First line"
 
 
 # ── Issue 180: UsageLimitError stream detection ───────────────────────────────

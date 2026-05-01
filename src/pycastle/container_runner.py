@@ -71,9 +71,8 @@ def _format_stream_line(line: str) -> str | None:
                 text = block.get("text", "").strip()
                 if text:
                     parts.append(text)
-            elif block.get("type") == "tool_use":
-                parts.append(f"(tool: {block.get('name', 'unknown')})")
-        return " ".join(parts) if parts else None
+        result = " ".join(parts)
+        return result.splitlines()[0] if result else None
     return None
 
 
@@ -315,12 +314,16 @@ class ContainerRunner:
                     text = chunk.decode("utf-8", errors="replace")
                     parts.append(text)
                     if status_display is not None:
-                        status_display.update_message(self.name, text.strip())
+                        status_display.reset_idle_timer(self.name)
                     line_buf += text
                     while "\n" in line_buf:
                         line, line_buf = line_buf.split("\n", 1)
                         if _is_usage_limit_line(line, self._cfg.usage_limit_patterns):
                             raise UsageLimitError(line)
+                        if status_display is not None:
+                            formatted = _format_stream_line(line)
+                            if formatted is not None:
+                                status_display.update_message(self.name, formatted)
         finally:
             try:
                 self._active_container.exec_run(
