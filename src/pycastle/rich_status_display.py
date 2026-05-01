@@ -16,6 +16,13 @@ _PHASE_RANK: dict[str, int] = {
     "merge": 3,
 }
 
+_PHASE_COLOR: dict[str, str] = {
+    "plan": "blue",
+    "implement": "orange1",
+    "review": "yellow",
+    "merge": "green",
+}
+
 
 def _stage_from_name(name: str) -> str:
     if name == "Planner":
@@ -93,13 +100,21 @@ class RichStatusDisplay:
 
         for row in rows:
             abs_uri = row.log_path.resolve().as_uri()
+
             name_text = Text()
-            name_text.append(row.name, style=f"link {abs_uri}")
+            for segment in re.split(r"(\d+)", row.name):
+                if segment:
+                    style = f"bold cyan link {abs_uri}" if segment.isdigit() else f"bold link {abs_uri}"
+                    name_text.append(segment, style=style)
+
+            phase_color = _PHASE_COLOR.get(_stage_from_name(row.name), "")
+            phase_text = Text(row.phase, style=phase_color)
+
             table.add_row(
-                _format_duration(row.elapsed_seconds()),
+                Text(_format_duration(row.elapsed_seconds()), style="dim"),
                 name_text,
-                row.phase,
-                _format_duration(row.idle_seconds()),
+                phase_text,
+                Text(_format_duration(row.idle_seconds()), style="dim"),
                 row.last_message,
             )
 
