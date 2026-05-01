@@ -123,7 +123,7 @@
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **agent lifecycle phase** | One of four named stages (Setup, Pre-flight, Prepare, Work) within a single agent container run | step, stage |
-| **Setup phase** | First agent lifecycle phase: worktree creation, gitdir overlay creation, parent git dir mount wiring, container start, and git identity propagation | container setup, init phase |
+| **Setup phase** | First agent lifecycle phase: worktree creation, gitdir overlay creation, parent git dir mount wiring, container start, git identity propagation, and consuming project dependency installation (`pip install -e '.[dev]'` or `pip install -r requirements.txt`); any tool referenced in PREFLIGHT_CHECKS must be declared in the consuming project's dependency file — the image does not provide dev tools as a fallback | container setup, init phase |
 | **Pre-flight phase** | Second agent lifecycle phase: runs quality checks sequentially inside the container and returns a list of failure tuples to the orchestrator; does not spawn agents internally | preflight, pre-flight check phase |
 | **quality check** | One command run during the Pre-flight phase or a post-merge check, as defined in PREFLIGHT_CHECKS; each runs independently so all failures are collected in a single pass | quality gate, check |
 | **check stage** | The lifecycle context prefix embedded in CHECK_NAME when a preflight-issue agent is spawned (e.g. `[plan-sandbox]`, `[post-merge]`); included in the filed GitHub issue title | stage prefix, phase prefix |
@@ -132,7 +132,7 @@
 | **pre-existing failure** | A pre-flight failure that existed before the current agent's task began; root cause of scope creep | baseline failure |
 | **scope creep** | The behavior where an agent modifies files outside its assigned task scope, typically caused by inheriting pre-existing failures | overreach |
 | **skip_preflight** | Flag on `run_agent()` that bypasses the Pre-flight phase; always True for the preflight-issue agent; defaults to False for all other agents | — |
-| **Prepare phase** | Third agent lifecycle phase: dependency installation, prompt rendering, and prompt injection into the container | hook phase, pre-work |
+| **Prepare phase** | Third agent lifecycle phase: prompt rendering and prompt injection into the container | hook phase, pre-work |
 | **Work phase** | Fourth agent lifecycle phase: Claude Code invocation and streaming output collection | execution phase, run phase |
 | **git identity propagation** | Setup phase operation that reads the host `git user.name` and `git user.email` and configures them inside the container | git config injection, user setup |
 | **idle timeout** | Maximum wall-clock seconds an agent may produce no output before being killed and raising AgentTimeoutError; default 300 s | inactivity timeout, silence timeout |
@@ -143,7 +143,7 @@
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **Dockerfile** | File in the pycastle directory defining the Docker image for agent containers — ships without baked-in credentials | image definition |
+| **Dockerfile** | File in the pycastle directory defining the Docker image for agent containers — ships without baked-in credentials and without baked-in dev tools; system utilities (git, gh), Claude Code CLI, and the Python runtime are the only baked-in contents; all dev tools (e.g. ruff, mypy, pytest) must be declared in the consuming project's dependency file and are installed at runtime during the Setup phase | image definition |
 | **container runner** | Package module that manages Docker container lifecycle and injects runtime secrets | docker wrapper |
 | **host repo** | The git repository on the developer's machine that is mounted into each agent container | project repo, local repo |
 | **volume mount** | A Docker bind mount attaching a host filesystem path to a container-internal path, with an explicit read/write mode | bind mount, volume |
