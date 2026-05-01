@@ -139,8 +139,8 @@ async def run(
     git_svc = git_service or GitService(cfg)
 
     try:
-        git_svc.get_user_name()
-        git_svc.get_user_email()
+        git_svc.get_user_name(cwd=repo_root)
+        git_svc.get_user_email(cwd=repo_root)
     except GitCommandError:
         print(
             "Git user not configured. Run:\n"
