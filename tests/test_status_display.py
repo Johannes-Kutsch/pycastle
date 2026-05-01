@@ -276,6 +276,35 @@ def test_rich_update_message_resets_idle_time(monkeypatch) -> None:
     d.stop()
 
 
+def test_rich_reset_idle_timer_resets_idle_time_without_changing_last_message(
+    monkeypatch,
+) -> None:
+    import pycastle.rich_status_display as mod
+
+    # started_at=0, message at t=50, reset at t=100, render at t=150
+    # idle = 150-100 = 50s; last_message unchanged
+    times = iter([0.0, 50.0, 100.0, 150.0, 150.0])
+    monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
+
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"), "Fix bug")
+    d.update_message("Planner", "Working...")
+    d.reset_idle_timer("Planner")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert "50s" in output
+    assert "Working..." in output
+    d.stop()
+
+
+def test_rich_reset_idle_timer_for_unknown_agent_is_safe() -> None:
+    d = RichStatusDisplay()
+    d.reset_idle_timer("never-added")
+
+
 def test_rich_reviewers_render_sorted_by_issue_number() -> None:
     d = RichStatusDisplay()
     d.add_agent("Reviewer #42", "Review", Path("/tmp/rev42.log"), "")
@@ -301,6 +330,12 @@ def test_recording_status_display_satisfies_protocol() -> None:
 
 
 # ── NullStatusDisplay behaviour ───────────────────────────────────────────────
+
+
+def test_null_reset_idle_timer_is_silent(capsys) -> None:
+    d = NullStatusDisplay()
+    d.reset_idle_timer("implementer-1")
+    assert capsys.readouterr().out == ""
 
 
 def test_null_add_agent_is_silent(capsys) -> None:
@@ -367,6 +402,22 @@ def test_recording_captures_remove_agent() -> None:
     d = RecordingStatusDisplay()
     d.remove_agent("implementer-1")
     assert d.calls == [("remove_agent", "implementer-1")]
+
+
+def test_recording_captures_reset_idle_timer() -> None:
+    d = RecordingStatusDisplay()
+    d.reset_idle_timer("implementer-1")
+    assert d.calls == [("reset_idle_timer", "implementer-1")]
+
+
+def test_recording_accumulates_reset_idle_timer_calls() -> None:
+    d = RecordingStatusDisplay()
+    d.reset_idle_timer("implementer-1")
+    d.reset_idle_timer("implementer-1")
+    assert d.calls == [
+        ("reset_idle_timer", "implementer-1"),
+        ("reset_idle_timer", "implementer-1"),
+    ]
 
 
 def test_recording_captures_print() -> None:
