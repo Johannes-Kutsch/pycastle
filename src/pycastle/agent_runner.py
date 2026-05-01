@@ -28,7 +28,6 @@ class AgentRunnerProtocol(Protocol):
         stage: str = "",
         token: CancellationToken | None = None,
         status_display=None,
-        issue_title: str = "",
     ) -> str | PreflightFailure: ...
 
     async def run_preflight(
@@ -69,7 +68,6 @@ class AgentRunner:
         stage: str = "",
         token: CancellationToken | None = None,
         status_display=None,
-        issue_title: str = "",
     ) -> str | PreflightFailure:
         if status_display is None:
             from .iteration._deps import NullStatusDisplay
@@ -155,7 +153,7 @@ class AgentRunner:
 
             async with _worktree_lifecycle():
                 await _setup(
-                    name, runner, loop, None, self._git_service, self._cfg, status_display, issue_title
+                    name, runner, loop, None, self._git_service, self._cfg, status_display
                 )
                 await _prepare(
                     name, runner, loop, None, prompt_file, prompt_args or {}, status_display
