@@ -22,6 +22,7 @@ from .errors import (
     UsageLimitError,
 )
 from .git_service import GitService
+from .stream_parser import StreamParser
 from .worktree import (
     CONTAINER_PARENT_GIT,
     patch_gitdir_for_container,
@@ -46,34 +47,6 @@ def _is_usage_limit_line(line: str, patterns: tuple[str, ...]) -> bool:
         pass
     line_lower = line.lower()
     return any(p.lower() in line_lower for p in patterns)
-
-
-def _format_stream_line(line: str) -> str | None:
-    """Return a human-readable summary of a stream-json line, or None to suppress it."""
-    try:
-        obj = json.loads(line)
-    except json.JSONDecodeError:
-        return line
-    if not isinstance(obj, dict):
-        return line
-    line_type = obj.get("type")
-    if line_type == "system":
-        return None
-    if line_type == "result":
-        return None
-    if line_type == "assistant":
-        content = (obj.get("message") or {}).get("content", [])
-        parts: list[str] = []
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") == "text":
-                text = block.get("text", "").strip()
-                if text:
-                    parts.append(text)
-        result = " ".join(parts)
-        return result.splitlines()[0] if result else None
-    return None
 
 
 def _build_claude_command(model: str = "", effort: str = "") -> str:
@@ -276,7 +249,7 @@ class ContainerRunner:
         buf.seek(0)
         self._active_container.put_archive(os.path.dirname(container_path), buf)
 
-    def run_streaming(self, status_display=None) -> str:
+    def run_streaming(self, status_display=None, print_output: bool = False) -> str:
         self.write_file(self._prompt, "/tmp/.pycastle_prompt")
         result = self._active_container.exec_run(
             ["bash", "-c", _build_claude_command(model=self.model, effort=self.effort)],
@@ -298,6 +271,7 @@ class ContainerRunner:
 
         parts: list[str] = []
         line_buf = ""
+        parser = StreamParser()
         try:
             with open(self._log_path, "wb") as log:
                 while True:
@@ -320,6 +294,9 @@ class ContainerRunner:
                         line, line_buf = line_buf.split("\n", 1)
                         if _is_usage_limit_line(line, self._cfg.usage_limit_patterns):
                             raise UsageLimitError(line)
+                        turn = parser.feed(line)
+                        if print_output and turn is not None and status_display is not None:
+                            status_display.print(f"[{self.name}] {turn}\n")
         finally:
             try:
                 self._active_container.exec_run(
@@ -358,11 +335,12 @@ async def _setup(
     git_service: GitService | None = None,
     cfg: Config | None = None,
     status_display=None,
+    issue_title: str = "",
 ) -> None:
     await loop.run_in_executor(None, runner.__enter__)
     if status_display is not None:
         runner.log_path.touch(exist_ok=True)
-        status_display.add_agent(name, "Setup", runner.log_path)
+        status_display.add_agent(name, "Setup", runner.log_path, issue_title)
     if git_service is None:
         git_service = GitService(cfg or load_config())
     git_name = git_service.get_user_name()
@@ -416,6 +394,8 @@ async def _work(
 ) -> str:
     if status_display is not None:
         status_display.update_phase(name, "Work")
-    return await loop.run_in_executor(None, runner.run_streaming, status_display)
+    return await loop.run_in_executor(
+        None, lambda: runner.run_streaming(status_display, print_output=True)
+    )
 
 

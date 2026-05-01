@@ -110,6 +110,7 @@ class FakeAgentRunner:
         stage: str = "",
         token: CancellationToken | None = None,
         status_display: "StatusDisplay | None" = None,
+        issue_title: str = "",
     ) -> str | PreflightFailure:
         call = {
             "name": name,
@@ -123,6 +124,7 @@ class FakeAgentRunner:
             "effort": effort,
             "stage": stage,
             "token": token,
+            "issue_title": issue_title,
         }
         self.calls.append(call)
         if self._side_effect is not None:
