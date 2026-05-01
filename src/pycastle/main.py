@@ -8,7 +8,7 @@ import click
 from dotenv import load_dotenv
 
 from .config import Config, load_config
-from .errors import ConfigValidationError
+from .errors import ClaudeCliNotFoundError, ConfigValidationError
 
 _ENV_KEYS = (
     "ANTHROPIC_API_KEY",
@@ -36,6 +36,12 @@ def _load_env(cfg: Config | None = None) -> dict[str, str]:
 def _load_config_or_exit() -> Config:
     try:
         return load_config()
+    except ClaudeCliNotFoundError:
+        click.echo(
+            "Claude CLI not found. Install it with: sudo npm install -g @anthropic-ai/claude-code",
+            err=True,
+        )
+        sys.exit(1)
     except ConfigValidationError as exc:
         click.echo(str(exc), err=True)
         sys.exit(1)
