@@ -111,6 +111,7 @@ def _run(
     git_service=None,
     github_service=None,
     agent_runner=None,
+    status_display=None,
     **config_kwargs,
 ):
     config_kwargs.setdefault("max_parallel", 4)
@@ -127,6 +128,7 @@ def _run(
             else _make_claude_svc(),
             git_service=git_service if git_service is not None else _make_git_svc(),
             github_service=github_service,
+            status_display=status_display,
         )
     )
 
@@ -2142,3 +2144,85 @@ def test_wait_for_clean_working_tree_routes_dirty_message_through_status_display
     print_messages = [msg for kind, msg in recording.calls if kind == "print"]
     assert any("Working tree" in msg for msg in print_messages)
     assert "Working tree" not in capsys.readouterr().out
+
+
+# ── Issue-352: startup row ────────────────────────────────────────────────────
+
+
+def test_startup_row_added_before_checks_and_removed_after_success(tmp_path):
+    """run() must add a 'startup' row before any startup check and remove it after all checks pass."""
+    recording = RecordingStatusDisplay()
+
+    async def _fake_run_agent(name, **kwargs):
+        return _plan_json([])
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        github_service=_make_github_svc(),
+        status_display=recording,
+    )
+
+    add_idx = next(
+        (i for i, c in enumerate(recording.calls) if c[:2] == ("add_agent", "startup")),
+        None,
+    )
+    remove_idx = next(
+        (i for i, c in enumerate(recording.calls) if c == ("remove_agent", "startup")),
+        None,
+    )
+    assert add_idx is not None, "startup row must be added"
+    assert remove_idx is not None, "startup row must be removed"
+    assert add_idx < remove_idx, "startup must be added before it is removed"
+
+
+def test_startup_row_phase_cycles_git_identity_then_credentials(tmp_path):
+    """startup row must start with 'Git identity' phase then update to 'Credentials'."""
+    recording = RecordingStatusDisplay()
+
+    async def _fake_run_agent(name, **kwargs):
+        return _plan_json([])
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        github_service=_make_github_svc(),
+        status_display=recording,
+    )
+
+    add_call = next(
+        (c for c in recording.calls if c[0] == "add_agent" and c[1] == "startup"),
+        None,
+    )
+    update_call = next(
+        (c for c in recording.calls if c[0] == "update_phase" and c[1] == "startup"),
+        None,
+    )
+    assert add_call is not None and add_call[2] == "Git identity"
+    assert update_call is not None and update_call[2] == "Credentials"
+
+
+def test_startup_row_removed_when_git_identity_check_fails(tmp_path):
+    """startup row must be removed before exit when git identity check fails."""
+    recording = RecordingStatusDisplay()
+
+    with pytest.raises(SystemExit):
+        _run(
+            tmp_path,
+            git_service=_make_git_svc_no_user_name(),
+            github_service=_make_github_svc(),
+            status_display=recording,
+        )
+
+    assert ("remove_agent", "startup") in recording.calls
+
+
+def test_startup_row_removed_when_credentials_check_fails(tmp_path):
+    """startup row must be removed before exit when gh CLI is not found."""
+    recording = RecordingStatusDisplay()
+
+    with patch("pycastle.orchestrator.shutil.which", return_value=None):
+        with pytest.raises(SystemExit):
+            _run(tmp_path, status_display=recording)
+
+    assert ("remove_agent", "startup") in recording.calls

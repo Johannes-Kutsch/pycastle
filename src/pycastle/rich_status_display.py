@@ -20,6 +20,7 @@ _PHASE_COLOR: dict[str, str] = {
     "implement": "orange1",
     "review": "yellow",
     "merge": "green",
+    "startup": "white",
 }
 
 
@@ -32,6 +33,8 @@ def _stage_from_name(name: str) -> str:
         return "review"
     if name == "Merger":
         return "merge"
+    if name == "startup":
+        return "startup"
     return ""
 
 

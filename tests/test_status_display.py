@@ -398,6 +398,16 @@ def test_rich_phase_renders_without_color_for_unknown_agent() -> None:
     assert not _has_code(ansi, 32)  # no green
 
 
+def test_rich_phase_renders_white_for_startup_agent() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("startup", "Git identity")
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 37)  # white
+
+
 # ── NullStatusDisplay protocol conformance ────────────────────────────────────
 
 
