@@ -139,6 +139,11 @@ class RichStatusDisplay:
                 self._rows[name].last_message = message
                 self._rows[name].last_update = time.monotonic()
 
+    def reset_idle_timer(self, name: str) -> None:
+        with self._lock:
+            if name in self._rows:
+                self._rows[name].last_update = time.monotonic()
+
     def remove_agent(self, name: str) -> None:
         live_to_stop: Live | None = None
         with self._lock:
