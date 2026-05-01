@@ -422,3 +422,26 @@ def test_implement_phase_reviewer_timeout_does_not_complete_issue(tmp_path):
     assert result.completed == []
     assert len(result.errors) == 1
     assert isinstance(result.errors[0][1], AgentTimeoutError)
+
+
+# ── Issue 349: issue_title threading ─────────────────────────────────────────
+
+
+def test_run_issue_passes_issue_title_to_implementer(tmp_path):
+    issue = {"number": 5, "title": "Fix auth timeout"}
+    fake = FakeAgentRunner(["<promise>COMPLETE</promise>"] * 2)
+    deps = _make_deps(tmp_path, fake)
+
+    asyncio.run(run_issue(issue, deps))
+
+    assert fake.calls[0]["issue_title"] == "Fix auth timeout"
+
+
+def test_run_issue_passes_issue_title_to_reviewer(tmp_path):
+    issue = {"number": 5, "title": "Fix auth timeout"}
+    fake = FakeAgentRunner(["<promise>COMPLETE</promise>"] * 2)
+    deps = _make_deps(tmp_path, fake)
+
+    asyncio.run(run_issue(issue, deps))
+
+    assert fake.calls[1]["issue_title"] == "Fix auth timeout"
