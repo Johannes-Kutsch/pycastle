@@ -345,6 +345,18 @@ def test_run_streaming_log_file_contains_full_raw_output(tmp_path):
     assert content == "line one\nline two\n"
 
 
+def test_run_streaming_calls_update_message_per_chunk(tmp_path):
+    from pycastle.iteration._deps import RecordingStatusDisplay
+
+    runner = _streaming_runner("Bot", [b"chunk one\n", b"chunk two\n"], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(status_display=display)
+
+    assert ("update_message", "Bot", "chunk one") in display.calls
+    assert ("update_message", "Bot", "chunk two") in display.calls
+
+
 # ── Issue 75: _build_claude_command accepts model and effort flags ────────────
 
 
@@ -1080,6 +1092,21 @@ def test_work_calls_update_phase_work(tmp_path):
 
     asyncio.run(_run())
     assert ("update_phase", "implementer-42", "Work") in display.calls
+
+
+def test_work_calls_update_message_per_chunk(tmp_path):
+    from pycastle.container_runner import _work
+    from pycastle.iteration._deps import RecordingStatusDisplay
+
+    runner = _streaming_runner("implementer-42", [b"Working on it\n"], tmp_path)
+    display = RecordingStatusDisplay()
+
+    async def _run():
+        loop = asyncio.get_event_loop()
+        await _work("implementer-42", runner, loop, status_display=display)
+
+    asyncio.run(_run())
+    assert ("update_message", "implementer-42", "Working on it") in display.calls
 
 
 def test_work_produces_no_stdout(tmp_path, capsys):
