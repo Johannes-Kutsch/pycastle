@@ -437,7 +437,7 @@ def test_merge_phase_routes_deleted_branch_through_status_display(
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
-    print_messages = [call[1] for call in recording.calls if call[0] == "print"]
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
     assert any("Deleted merged branch" in msg for msg in print_messages)
     assert "Deleted merged branch" not in capsys.readouterr().out
 
@@ -451,7 +451,7 @@ def test_merge_phase_routes_branches_merged_through_status_display(
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
 
-    print_messages = [call[1] for call in recording.calls if call[0] == "print"]
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
     assert any("Branches merged" in msg for msg in print_messages)
     assert "Branches merged" not in capsys.readouterr().out
 
@@ -465,7 +465,7 @@ def test_merge_phase_routes_dirty_tree_message_through_status_display(
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
-    print_messages = [call[1] for call in recording.calls if call[0] == "print"]
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
     assert any("Working tree" in msg for msg in print_messages)
     assert "Working tree" not in capsys.readouterr().out
 
@@ -477,7 +477,7 @@ def test_merge_phase_dirty_tree_message_is_red(recording_deps, git_svc):
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
-    print_messages = [call[1] for call in recording.calls if call[0] == "print"]
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
     dirty_msg = next((msg for msg in print_messages if "Working tree" in msg), None)
     assert dirty_msg is not None
     assert dirty_msg.startswith("[red]")
@@ -500,6 +500,13 @@ def test_merge_row_removed_after_clean_merges(recording_deps):
     deps, recording = recording_deps
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
+    assert ("remove_agent", "merge") in recording.calls
+
+
+def test_merge_row_removed_when_completed_is_empty(recording_deps):
+    """merge_phase must remove the 'merge' row even when there is nothing to merge."""
+    deps, recording = recording_deps
+    _run([], deps)
     assert ("remove_agent", "merge") in recording.calls
 
 
