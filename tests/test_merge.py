@@ -480,4 +480,5 @@ def test_merge_phase_dirty_tree_message_is_red(recording_deps, git_svc):
     print_messages = [msg for kind, msg in recording.calls if kind == "print"]
     dirty_msg = next((msg for msg in print_messages if "Working tree" in msg), None)
     assert dirty_msg is not None
-    assert dirty_msg.startswith("[red]") and dirty_msg.endswith("[/red]")
+    assert dirty_msg.startswith("[red]")
+    assert dirty_msg.endswith("[/red]")

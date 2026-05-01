@@ -377,17 +377,11 @@ def test_run_iteration_prints_blank_line_after_completion_summary(
         None,
     )
     assert exec_idx is not None, "Expected 'Execution complete' message"
-    branch_list_end = exec_idx + 1
-    while branch_list_end < len(print_messages) and print_messages[
-        branch_list_end
-    ].startswith("  "):
-        branch_list_end += 1
-    assert branch_list_end < len(print_messages), (
-        "Expected a message after the branch list"
-    )
-    assert print_messages[branch_list_end] == "", (
-        "Expected blank line after branch list"
-    )
+    end = exec_idx + 1
+    while end < len(print_messages) and print_messages[end].startswith("  "):
+        end += 1
+    assert end < len(print_messages), "Expected a message after the branch list"
+    assert print_messages[end] == "", "Expected blank line after branch list"
 
 
 def test_run_iteration_routes_hitl_abort_message_through_status_display(
