@@ -27,7 +27,7 @@ def test_rich_stop_when_no_agents_added_is_safe() -> None:
 
 def test_rich_stop_is_idempotent() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Setup", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "Setup", Path("/tmp/planner.log"), "")
     d.remove_agent("Planner")
     d.stop()
 
@@ -50,10 +50,10 @@ def test_rich_print_outputs_message(capsys) -> None:
 
 def test_rich_agents_render_sorted_by_phase_rank() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Merger", "Work", Path("/tmp/merger.log"))
-    d.add_agent("Reviewer #5", "Work", Path("/tmp/rev5.log"))
-    d.add_agent("Implementer #5", "Work", Path("/tmp/impl5.log"))
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Merger", "Work", Path("/tmp/merger.log"), "")
+    d.add_agent("Reviewer #5", "Work", Path("/tmp/rev5.log"), "")
+    d.add_agent("Implementer #5", "Work", Path("/tmp/impl5.log"), "")
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"), "")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -67,8 +67,8 @@ def test_rich_agents_render_sorted_by_phase_rank() -> None:
 
 def test_rich_implementers_render_sorted_by_issue_number() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Implementer #42", "Work", Path("/tmp/impl42.log"))
-    d.add_agent("Implementer #7", "Work", Path("/tmp/impl7.log"))
+    d.add_agent("Implementer #42", "Work", Path("/tmp/impl42.log"), "")
+    d.add_agent("Implementer #7", "Work", Path("/tmp/impl7.log"), "")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -80,8 +80,8 @@ def test_rich_implementers_render_sorted_by_issue_number() -> None:
 
 def test_rich_unknown_agent_sorts_after_known_phases() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
-    d.add_agent("Unknown-agent", "Work", Path("/tmp/unknown.log"))
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"), "")
+    d.add_agent("Unknown-agent", "Work", Path("/tmp/unknown.log"), "")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -107,7 +107,7 @@ def test_recording_status_display_satisfies_protocol() -> None:
 
 def test_null_add_agent_is_silent(capsys) -> None:
     d = NullStatusDisplay()
-    d.add_agent("implementer-1", "Setup", Path("/tmp/agent.log"))
+    d.add_agent("implementer-1", "Setup", Path("/tmp/agent.log"), "Fix login bug")
     assert capsys.readouterr().out == ""
 
 
@@ -141,8 +141,10 @@ def test_recording_starts_empty() -> None:
 def test_recording_captures_add_agent() -> None:
     d = RecordingStatusDisplay()
     log_path = Path("/tmp/agent.log")
-    d.add_agent("implementer-1", "Setup", log_path)
-    assert d.calls == [("add_agent", "implementer-1", "Setup", log_path)]
+    d.add_agent("implementer-1", "Setup", log_path, "Fix login bug")
+    assert d.calls == [
+        ("add_agent", "implementer-1", "Setup", log_path, "Fix login bug")
+    ]
 
 
 def test_recording_captures_update_phase() -> None:
@@ -173,12 +175,12 @@ def test_recording_accumulates_multiple_calls() -> None:
     d = RecordingStatusDisplay()
     log_path = Path("/tmp/agent.log")
 
-    d.add_agent("implementer-1", "Setup", log_path)
+    d.add_agent("implementer-1", "Setup", log_path, "Fix login bug")
     d.update_phase("implementer-1", "Work")
     d.remove_agent("implementer-1")
 
     assert d.calls == [
-        ("add_agent", "implementer-1", "Setup", log_path),
+        ("add_agent", "implementer-1", "Setup", log_path, "Fix login bug"),
         ("update_phase", "implementer-1", "Work"),
         ("remove_agent", "implementer-1"),
     ]

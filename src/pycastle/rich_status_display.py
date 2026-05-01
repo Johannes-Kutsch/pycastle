@@ -35,12 +35,13 @@ def _sort_key(name: str) -> tuple[int, int]:
 
 
 class _AgentRow:
-    __slots__ = ("name", "phase", "log_path", "last_update")
+    __slots__ = ("name", "phase", "log_path", "issue_title", "last_update")
 
-    def __init__(self, name: str, phase: str, log_path: Path) -> None:
+    def __init__(self, name: str, phase: str, log_path: Path, issue_title: str) -> None:
         self.name = name
         self.phase = phase
         self.log_path = log_path
+        self.issue_title = issue_title
         self.last_update = time.monotonic()
 
     def idle_seconds(self) -> int:
@@ -77,10 +78,10 @@ class RichStatusDisplay:
 
         yield table
 
-    def add_agent(self, name: str, phase: str, log_path: Path) -> None:
+    def add_agent(self, name: str, phase: str, log_path: Path, issue_title: str) -> None:
         live_to_start: Live | None = None
         with self._lock:
-            self._rows[name] = _AgentRow(name, phase, log_path)
+            self._rows[name] = _AgentRow(name, phase, log_path, issue_title)
             if self._live is None:
                 live = Live(
                     self,
