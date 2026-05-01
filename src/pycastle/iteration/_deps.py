@@ -35,6 +35,7 @@ class StatusDisplay(Protocol):
     def update_phase(self, name: str, phase: str) -> None: ...
     def update_message(self, name: str, message: str) -> None: ...
     def remove_agent(self, name: str) -> None: ...
+    def reset_idle_timer(self, name: str) -> None: ...
     def print(self, message: str) -> None: ...
 
 
@@ -49,6 +50,9 @@ class NullStatusDisplay:
         pass
 
     def remove_agent(self, name: str) -> None:
+        pass
+
+    def reset_idle_timer(self, name: str) -> None:
         pass
 
     def print(self, message: str) -> None:
@@ -70,6 +74,9 @@ class RecordingStatusDisplay:
 
     def remove_agent(self, name: str) -> None:
         self.calls.append(("remove_agent", name))
+
+    def reset_idle_timer(self, name: str) -> None:
+        self.calls.append(("reset_idle_timer", name))
 
     def print(self, message: str) -> None:
         self.calls.append(("print", message))
