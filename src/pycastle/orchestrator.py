@@ -138,6 +138,18 @@ async def run(
     prune_orphan_worktrees(repo_root, cfg=cfg)
     git_svc = git_service or GitService(cfg)
 
+    try:
+        git_svc.get_user_name()
+        git_svc.get_user_email()
+    except GitCommandError:
+        print(
+            "Git user not configured. Run:\n"
+            "git config --global user.name 'Your Name' && "
+            "git config --global user.email 'you@example.com'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     if github_service is None and shutil.which("gh") is None:
         print(
             "GitHub CLI not found. Install it with: sudo apt install gh,"
