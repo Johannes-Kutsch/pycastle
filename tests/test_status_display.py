@@ -178,6 +178,19 @@ def test_rich_update_message_for_unknown_agent_is_safe() -> None:
     d.update_message("never-added", "some message")
 
 
+def test_rich_message_appears_in_rendered_output() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"), "Fix bug")
+    d.update_message("Planner", "Analysing open issues")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert "Analysing open issues" in output
+    d.stop()
+
+
 def test_rich_phase_appears_in_output() -> None:
     d = RichStatusDisplay()
     d.add_agent("Planner", "DESIGNING", Path("/tmp/planner.log"), "Fix bug")
@@ -302,6 +315,12 @@ def test_null_update_phase_is_silent(capsys) -> None:
     assert capsys.readouterr().out == ""
 
 
+def test_null_update_message_is_silent(capsys) -> None:
+    d = NullStatusDisplay()
+    d.update_message("implementer-1", "doing work")
+    assert capsys.readouterr().out == ""
+
+
 def test_null_remove_agent_is_silent(capsys) -> None:
     d = NullStatusDisplay()
     d.remove_agent("implementer-1")
@@ -336,6 +355,12 @@ def test_recording_captures_update_phase() -> None:
     d = RecordingStatusDisplay()
     d.update_phase("implementer-1", "Work")
     assert d.calls == [("update_phase", "implementer-1", "Work")]
+
+
+def test_recording_captures_update_message() -> None:
+    d = RecordingStatusDisplay()
+    d.update_message("implementer-1", "Analysing open issues")
+    assert d.calls == [("update_message", "implementer-1", "Analysing open issues")]
 
 
 def test_recording_captures_remove_agent() -> None:

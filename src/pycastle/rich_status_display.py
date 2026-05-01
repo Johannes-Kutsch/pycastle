@@ -91,6 +91,7 @@ class RichStatusDisplay:
         table.add_column()  # name + headline
         table.add_column()  # phase
         table.add_column()  # idle
+        table.add_column(overflow="ellipsis", no_wrap=True)  # last message
 
         for row in rows:
             abs_uri = row.log_path.resolve().as_uri()
@@ -103,6 +104,7 @@ class RichStatusDisplay:
                 name_text,
                 row.phase,
                 _format_duration(row.idle_seconds()),
+                row.last_message,
             )
 
         yield Padding(table, (1, 0, 0, 0))
