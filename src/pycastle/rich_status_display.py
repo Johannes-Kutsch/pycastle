@@ -42,7 +42,15 @@ def _format_duration(seconds: int) -> str:
 
 
 class _AgentRow:
-    __slots__ = ("name", "phase", "log_path", "issue_title", "started_at", "last_update", "last_message")
+    __slots__ = (
+        "name",
+        "phase",
+        "log_path",
+        "issue_title",
+        "started_at",
+        "last_update",
+        "last_message",
+    )
 
     def __init__(self, name: str, phase: str, log_path: Path, issue_title: str) -> None:
         self.name = name
@@ -98,7 +106,9 @@ class RichStatusDisplay:
 
         yield Padding(table, (1, 0, 0, 0))
 
-    def add_agent(self, name: str, phase: str, log_path: Path, issue_title: str) -> None:
+    def add_agent(
+        self, name: str, phase: str, log_path: Path, issue_title: str
+    ) -> None:
         live_to_start: Live | None = None
         with self._lock:
             self._rows[name] = _AgentRow(name, phase, log_path, issue_title)
