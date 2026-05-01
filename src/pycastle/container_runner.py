@@ -375,15 +375,12 @@ async def _setup(
         f"git config --global user.email {shlex.quote(git_email)}",
         exec_timeout,
     )
-    try:
-        await loop.run_in_executor(
-            None,
-            runner.exec_simple,
-            "pip install -e '.[dev]' || pip install -r requirements.txt",
-            exec_timeout,
-        )
-    except RuntimeError as exc:
-        print(f"  [{name}] Warning: dependency install skipped: {exc}", file=sys.stderr)
+    await loop.run_in_executor(
+        None,
+        runner.exec_simple,
+        "pip install -e '.[dev]' || pip install -r requirements.txt",
+        exec_timeout,
+    )
 
 
 async def _prepare(

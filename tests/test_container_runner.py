@@ -1141,3 +1141,49 @@ def test_preflight_calls_update_phase_preflight(tmp_path):
 
     asyncio.run(_run())
     assert ("update_phase", "agent-1", "Pre-flight") in display.calls
+
+
+# ── Issue 337: pip install failure must propagate from _setup ─────────────────
+
+
+def test_setup_propagates_docker_error_when_pip_install_fails():
+    """_setup must not swallow DockerError from a failed pip install."""
+    from pycastle.container_runner import _setup
+    from pycastle.errors import DockerError
+
+    class _FailingPipRunner:
+        def __init__(self):
+            self.branch = None
+            self.env = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def exec_simple(self, cmd, timeout=None):
+            if "pip install" in cmd:
+                raise DockerError("pip install failed: exit 1")
+            return ""
+
+        @property
+        def log_path(self):
+            from pathlib import Path
+
+            return Path("/tmp/test.log")
+
+    loop = asyncio.new_event_loop()
+    try:
+        with pytest.raises(DockerError, match="pip install failed"):
+            loop.run_until_complete(
+                _setup(
+                    "test",
+                    _FailingPipRunner(),
+                    loop,
+                    30.0,
+                    git_service=_make_git_service(),
+                )
+            )
+    finally:
+        loop.close()
