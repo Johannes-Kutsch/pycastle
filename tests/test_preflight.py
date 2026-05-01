@@ -12,6 +12,7 @@ from pycastle.iteration._deps import (
     FakeAgentRunner,
     NullStatusDisplay,
     RecordingLogger,
+    RecordingStatusDisplay,
 )
 from pycastle.iteration.plan import PlanAFK, PlanHITL
 from pycastle.iteration.preflight import PreflightReady, preflight_phase
@@ -296,3 +297,36 @@ def test_preflight_phase_removes_worktree_when_exception_raised(
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
+
+
+# ── preflight_phase: status_display threading ────────────────────────────────
+
+
+def test_preflight_phase_passes_status_display_to_run_preflight(
+    tmp_path, git_svc, github_svc, logger
+):
+    recording = RecordingStatusDisplay()
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    deps = dataclasses.replace(deps, status_display=recording)
+
+    asyncio.run(preflight_phase(deps))
+
+    assert len(fake.preflight_calls) == 1
+    assert fake.preflight_calls[0]["status_display"] is recording
+
+
+def test_preflight_phase_uses_preflight_checks_as_run_preflight_name(
+    tmp_path, git_svc, github_svc, logger
+):
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+
+    asyncio.run(preflight_phase(deps))
+
+    assert len(fake.preflight_calls) == 1
+    assert fake.preflight_calls[0]["name"] == "preflight-checks"

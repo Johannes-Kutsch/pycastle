@@ -35,6 +35,8 @@ def _stage_from_name(name: str) -> str:
         return "merge"
     if name == "startup":
         return "startup"
+    if name == "preflight-checks":
+        return "plan"
     return ""
 
 

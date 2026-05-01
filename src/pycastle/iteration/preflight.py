@@ -30,9 +30,10 @@ async def preflight_phase(deps: Deps) -> PreflightResult:
 
     try:
         failures = await deps.agent_runner.run_preflight(
-            name="plan-sandbox",
+            name="preflight-checks",
             mount_path=worktree_path,
             stage="plan-sandbox",
+            status_display=deps.status_display,
         )
 
         if failures:

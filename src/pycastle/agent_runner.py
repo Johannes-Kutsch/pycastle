@@ -37,6 +37,7 @@ class AgentRunnerProtocol(Protocol):
         name: str,
         mount_path: Path,
         stage: str = "",
+        status_display=None,
     ) -> list[tuple[str, str, str]]: ...
 
 
@@ -201,7 +202,13 @@ class AgentRunner:
         name: str,
         mount_path: Path,
         stage: str = "",
+        status_display=None,
     ) -> list[tuple[str, str, str]]:
+        if status_display is None:
+            from .iteration._deps import NullStatusDisplay
+
+            status_display = NullStatusDisplay()
+
         loop = asyncio.get_event_loop()
         runner = ContainerRunner(
             name,
@@ -211,15 +218,17 @@ class AgentRunner:
             cfg=self._cfg,
         )
         try:
-            await _setup(name, runner, loop, None, self._git_service, self._cfg)
+            await _setup(name, runner, loop, None, self._git_service, self._cfg, status_display)
             return await _preflight(
                 name,
                 runner,
                 loop,
                 None,
                 list(self._cfg.preflight_checks),
+                status_display,
             )
         finally:
+            status_display.remove_agent(name)
             try:
                 runner.__exit__(None, None, None)
             except Exception:
