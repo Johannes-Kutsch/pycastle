@@ -1081,6 +1081,7 @@ def test_setup_calls_add_agent_with_name_and_log_path(tmp_path):
     assert add_calls[0][1] == "implementer-42"
     assert add_calls[0][2] == "Setup"
     assert add_calls[0][3] == runner.log_path
+    assert add_calls[0][4] == ""
 
 
 def test_setup_creates_log_file_before_calling_add_agent(tmp_path):

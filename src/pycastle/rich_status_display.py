@@ -115,7 +115,7 @@ class RichStatusDisplay:
                 name_text,
                 phase_text,
                 Text(_format_duration(row.idle_seconds()), style="dim"),
-                row.issue_title,
+                Text(row.issue_title),
             )
 
         yield Padding(table, (1, 0, 0, 0))
