@@ -146,29 +146,28 @@ async def run(
 
     status_display.add_agent("startup", "Git identity")
     try:
-        git_svc.get_user_name(cwd=repo_root)
-        git_svc.get_user_email(cwd=repo_root)
-    except GitCommandError:
-        status_display.remove_agent("startup")
-        print(
-            "Git user not configured. Run:\n"
-            "git config --global user.name 'Your Name' && "
-            "git config --global user.email 'you@example.com'",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        try:
+            git_svc.get_user_name(cwd=repo_root)
+            git_svc.get_user_email(cwd=repo_root)
+        except GitCommandError:
+            print(
+                "Git user not configured. Run:\n"
+                "git config --global user.name 'Your Name' && "
+                "git config --global user.email 'you@example.com'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-    status_display.update_phase("startup", "Credentials")
-    if github_service is None and shutil.which("gh") is None:
+        status_display.update_phase("startup", "Credentials")
+        if github_service is None and shutil.which("gh") is None:
+            print(
+                "GitHub CLI not found. Install it with: sudo apt install gh,"
+                " then run: gh auth login",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    finally:
         status_display.remove_agent("startup")
-        print(
-            "GitHub CLI not found. Install it with: sudo apt install gh,"
-            " then run: gh auth login",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    status_display.remove_agent("startup")
 
     _lazy_github_svc: GithubService | None = None
 
