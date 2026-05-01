@@ -46,17 +46,15 @@ class _AgentRow:
         "name",
         "phase",
         "log_path",
-        "issue_title",
         "started_at",
         "last_update",
         "last_message",
     )
 
-    def __init__(self, name: str, phase: str, log_path: Path, issue_title: str) -> None:
+    def __init__(self, name: str, phase: str, log_path: Path) -> None:
         self.name = name
         self.phase = phase
         self.log_path = log_path
-        self.issue_title = issue_title
         self.last_message = ""
         now = time.monotonic()
         self.started_at = now
@@ -97,8 +95,6 @@ class RichStatusDisplay:
             abs_uri = row.log_path.resolve().as_uri()
             name_text = Text()
             name_text.append(row.name, style=f"link {abs_uri}")
-            if row.issue_title:
-                name_text.append(f" - {row.issue_title}")
             table.add_row(
                 _format_duration(row.elapsed_seconds()),
                 name_text,
@@ -109,12 +105,10 @@ class RichStatusDisplay:
 
         yield Padding(table, (1, 0, 0, 0))
 
-    def add_agent(
-        self, name: str, phase: str, log_path: Path, issue_title: str
-    ) -> None:
+    def add_agent(self, name: str, phase: str, log_path: Path) -> None:
         live_to_start: Live | None = None
         with self._lock:
-            self._rows[name] = _AgentRow(name, phase, log_path, issue_title)
+            self._rows[name] = _AgentRow(name, phase, log_path)
             if self._live is None:
                 live = Live(
                     self,
