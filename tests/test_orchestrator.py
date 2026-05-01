@@ -12,7 +12,7 @@ from pycastle.claude_service import ClaudeService
 from pycastle.config import Config, StageOverride
 from pycastle.errors import ClaudeServiceError, ConfigValidationError, UsageLimitError
 from pycastle.git_service import GitCommandError, GitService
-from pycastle.github_service import GithubService
+from pycastle.github_service import GithubNotFoundError, GithubService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 from pycastle.orchestrator import (
     delete_merged_branches,
@@ -1706,14 +1706,14 @@ def test_run_no_agents_start_when_gh_not_found(tmp_path):
     assert agents_started == [], f"No agents must start; got {agents_started}"
 
 
-def test_get_repo_raises_github_not_found_error_when_gh_missing(tmp_path):
-    """_get_repo() must raise GithubNotFoundError (not a bare RuntimeError) when gh is absent."""
-    from pycastle.github_service import GithubNotFoundError
-    from pycastle.orchestrator import _get_repo
-
-    with patch("subprocess.run", side_effect=FileNotFoundError):
+def test_run_raises_github_not_found_error_when_gh_invocation_fails(tmp_path):
+    """run() must propagate GithubNotFoundError when gh is in PATH but invoking it raises FileNotFoundError."""
+    with (
+        patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
+        patch("subprocess.run", side_effect=FileNotFoundError),
+    ):
         with pytest.raises(GithubNotFoundError):
-            _get_repo(tmp_path)
+            _run(tmp_path)
 
 
 def test_run_skips_gh_check_when_github_service_injected(tmp_path):
