@@ -389,7 +389,9 @@ def test_rich_elapsed_column_renders_dim() -> None:
     ansi = _ansi_output(d)
     d.stop()
 
-    assert _has_code(ansi, 2)  # dim
+    # Elapsed column precedes the agent name — dim must appear before "Planner"
+    before_name = ansi[: ansi.index("Planner")]
+    assert _has_code(before_name, 2)  # dim
 
 
 def test_rich_idle_column_renders_dim() -> None:
@@ -399,7 +401,22 @@ def test_rich_idle_column_renders_dim() -> None:
     ansi = _ansi_output(d)
     d.stop()
 
-    assert _has_code(ansi, 2)  # dim
+    # Idle column follows the agent name — dim must appear after "Planner"
+    after_name = ansi[ansi.index("Planner") + len("Planner") :]
+    assert _has_code(after_name, 2)  # dim
+
+
+def test_rich_phase_renders_without_color_for_unknown_agent() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Unknown-agent", "Custom", Path("/tmp/unknown.log"))
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert not _has_code(ansi, 34)  # no blue
+    assert "\x1b[38;5;214m" not in ansi  # no orange1
+    assert not _has_code(ansi, 33)  # no yellow
+    assert not _has_code(ansi, 32)  # no green
 
 
 def test_rich_last_message_renders_rich_markup() -> None:
