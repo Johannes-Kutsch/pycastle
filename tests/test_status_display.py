@@ -1,3 +1,4 @@
+import io
 import re
 from pathlib import Path
 
@@ -293,6 +294,126 @@ def test_rich_reviewers_render_sorted_by_issue_number() -> None:
 
     assert output.find("Reviewer #7") < output.find("Reviewer #42")
     d.stop()
+
+
+# ── Color scheme tests ────────────────────────────────────────────────────────
+
+
+def _ansi_output(display: RichStatusDisplay) -> str:
+    buf = io.StringIO()
+    console = Console(file=buf, width=200, force_terminal=True, color_system="256")
+    console.print(display)
+    return buf.getvalue()
+
+
+def _has_code(ansi: str, code: int) -> bool:
+    """Return True if ANSI SGR code N appears in any escape sequence."""
+    return bool(re.search(rf"\x1b\[(?:\d+;)*{code}(?:;\d+)*m", ansi))
+
+
+def test_rich_phase_renders_blue_for_plan_agent() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 34)  # blue
+
+
+def test_rich_phase_renders_orange1_for_implement_agent() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Implementer #5", "Work", Path("/tmp/impl5.log"))
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert "\x1b[38;5;214m" in ansi  # orange1 (256-color index)
+
+
+def test_rich_phase_renders_yellow_for_review_agent() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Reviewer #5", "Review", Path("/tmp/rev5.log"))
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 33)  # yellow
+
+
+def test_rich_phase_renders_green_for_merge_agent() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Merger", "Merge", Path("/tmp/merger.log"))
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 32)  # green
+
+
+def test_rich_agent_name_renders_bold() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 1)  # bold
+
+
+def test_rich_digit_sequences_in_agent_name_render_cyan() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Implementer #5", "Work", Path("/tmp/impl5.log"))
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 36)  # cyan
+
+
+def test_rich_non_numeric_agent_name_renders_bold_without_cyan() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 1)  # bold
+    assert not _has_code(ansi, 36)  # no cyan
+
+
+def test_rich_elapsed_column_renders_dim() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 2)  # dim
+
+
+def test_rich_idle_column_renders_dim() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 2)  # dim
+
+
+def test_rich_last_message_renders_rich_markup() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.update_message("Planner", "[bold]Important[/bold] message")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "Important message" in output
+    assert "[bold]" not in output
 
 
 # ── NullStatusDisplay protocol conformance ────────────────────────────────────
