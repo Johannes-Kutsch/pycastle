@@ -86,7 +86,7 @@ class RichStatusDisplay:
 
         table = Table(show_header=False, expand=False, box=None)
         table.add_column(justify="right")  # elapsed
-        table.add_column()  # name + headline
+        table.add_column()  # name
         table.add_column()  # phase
         table.add_column()  # idle
         table.add_column(overflow="ellipsis", no_wrap=True)  # last message
