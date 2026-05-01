@@ -3,7 +3,7 @@ from typing import TypeAlias
 
 from ..agent_output_protocol import AgentOutputProtocolError
 from ._deps import Deps
-from .plan import PlanAFK, PlanHITL, _handle_preflight_failure, strip_stale_blocker_refs
+from .plan import PlanAFK, PlanHITL, handle_preflight_failure, strip_stale_blocker_refs
 
 
 @dataclasses.dataclass(frozen=True)
@@ -37,7 +37,7 @@ async def preflight_phase(deps: Deps) -> PreflightResult:
 
         if failures:
             try:
-                verdict, pf_num = await _handle_preflight_failure(
+                verdict, pf_num = await handle_preflight_failure(
                     tuple(failures), deps, worktree_path
                 )
             except AgentOutputProtocolError as parse_exc:

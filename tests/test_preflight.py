@@ -225,6 +225,27 @@ def test_preflight_phase_hitl_routing_uses_configured_hitl_label(
     assert result.issue_number == 55
 
 
+# ── preflight_phase: IssueParseError → RuntimeError ─────────────────────────
+
+
+def test_preflight_phase_raises_runtime_error_when_preflight_agent_returns_no_issue_tag(
+    tmp_path, git_svc, logger
+):
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+    fake = FakeAgentRunner(
+        ["<promise>COMPLETE</promise>no issue tag here"],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+
+    with pytest.raises(RuntimeError, match="issue"):
+        asyncio.run(preflight_phase(deps))
+
+
 # ── preflight_phase: worktree lifecycle ──────────────────────────────────────
 
 

@@ -51,7 +51,7 @@ class PlanAFK:
 PlanResult: TypeAlias = PlanReady | PlanHITL | PlanAFK
 
 
-async def _handle_preflight_failure(
+async def handle_preflight_failure(
     failures: tuple[tuple[str, str, str], ...],
     deps: Deps,
     mount_path: Path,
@@ -109,7 +109,7 @@ async def plan_phase(deps: Deps) -> PlanResult:
 
         if isinstance(raw, PreflightFailure):
             try:
-                verdict, pf_num = await _handle_preflight_failure(
+                verdict, pf_num = await handle_preflight_failure(
                     raw.failures, deps, worktree_path
                 )
             except AgentOutputProtocolError as parse_exc:
