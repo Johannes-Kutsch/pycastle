@@ -22,10 +22,12 @@ def _parse_version(version_str: str) -> tuple[int, ...]:
 
 @lru_cache(maxsize=None)
 def _fetch_models(claude_service: Any) -> tuple[str, ...]:
-    from pycastle.errors import ClaudeServiceError, ConfigValidationError
+    from pycastle.errors import ClaudeCliNotFoundError, ClaudeServiceError, ConfigValidationError
 
     try:
         return claude_service.list_models()
+    except ClaudeCliNotFoundError:
+        raise
     except ClaudeServiceError as exc:
         raise ConfigValidationError(str(exc)) from exc
 
