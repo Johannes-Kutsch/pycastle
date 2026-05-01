@@ -346,7 +346,7 @@ def test_run_streaming_log_file_contains_full_raw_output(tmp_path):
     assert content == "line one\nline two\n"
 
 
-# ── Issue 339: run_streaming per-chunk reset_idle_timer, per-line update_message ─
+# ── Issue 339: run_streaming per-chunk reset_idle_timer ──────────────────────
 
 
 def test_run_streaming_calls_reset_idle_timer_per_chunk(tmp_path):
@@ -361,21 +361,7 @@ def test_run_streaming_calls_reset_idle_timer_per_chunk(tmp_path):
     assert all(c == ("reset_idle_timer", "Bot") for c in reset_calls)
 
 
-def test_run_streaming_update_message_called_per_completed_line_not_per_chunk(tmp_path):
-    text_line = (
-        b'{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}\n'
-    )
-    runner = _streaming_runner("Bot", [text_line, text_line], tmp_path)
-    display = RecordingStatusDisplay()
-
-    runner.run_streaming(status_display=display)
-
-    msg_calls = [c for c in display.calls if c[0] == "update_message"]
-    assert len(msg_calls) == 2
-    assert all(c == ("update_message", "Bot", "Hello") for c in msg_calls)
-
-
-def test_run_streaming_tool_use_only_line_resets_timer_but_not_message(tmp_path):
+def test_run_streaming_tool_use_only_line_resets_timer(tmp_path):
     tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
     runner = _streaming_runner("Bot", [tool_chunk], tmp_path)
     display = RecordingStatusDisplay()
@@ -383,10 +369,9 @@ def test_run_streaming_tool_use_only_line_resets_timer_but_not_message(tmp_path)
     runner.run_streaming(status_display=display)
 
     assert ("reset_idle_timer", "Bot") in display.calls
-    assert not any(c[0] == "update_message" for c in display.calls)
 
 
-def test_run_streaming_system_line_resets_timer_but_not_message(tmp_path):
+def test_run_streaming_system_line_resets_timer(tmp_path):
     system_chunk = b'{"type":"system","subtype":"init","session_id":"abc","tools":[]}\n'
     runner = _streaming_runner("Bot", [system_chunk], tmp_path)
     display = RecordingStatusDisplay()
@@ -394,10 +379,9 @@ def test_run_streaming_system_line_resets_timer_but_not_message(tmp_path):
     runner.run_streaming(status_display=display)
 
     assert ("reset_idle_timer", "Bot") in display.calls
-    assert not any(c[0] == "update_message" for c in display.calls)
 
 
-def test_run_streaming_result_line_resets_timer_but_not_message(tmp_path):
+def test_run_streaming_result_line_resets_timer(tmp_path):
     result_chunk = b'{"type":"result","result":"Final answer","session_id":"abc"}\n'
     runner = _streaming_runner("Bot", [result_chunk], tmp_path)
     display = RecordingStatusDisplay()
@@ -405,10 +389,9 @@ def test_run_streaming_result_line_resets_timer_but_not_message(tmp_path):
     runner.run_streaming(status_display=display)
 
     assert ("reset_idle_timer", "Bot") in display.calls
-    assert not any(c[0] == "update_message" for c in display.calls)
 
 
-def test_run_streaming_partial_chunk_resets_timer_but_not_message(tmp_path):
+def test_run_streaming_partial_chunk_resets_timer(tmp_path):
     partial_chunk = b'{"type":"assistant","message":{"content":[{"type":"text","text":"no newline here"}'
     runner = _streaming_runner("Bot", [partial_chunk], tmp_path)
     display = RecordingStatusDisplay()
@@ -416,7 +399,6 @@ def test_run_streaming_partial_chunk_resets_timer_but_not_message(tmp_path):
     runner.run_streaming(status_display=display)
 
     assert ("reset_idle_timer", "Bot") in display.calls
-    assert not any(c[0] == "update_message" for c in display.calls)
 
 
 def test_run_streaming_single_chunk_with_multiple_lines_resets_timer_once(tmp_path):
@@ -433,11 +415,6 @@ def test_run_streaming_single_chunk_with_multiple_lines_resets_timer_once(tmp_pa
 
     reset_calls = [c for c in display.calls if c[0] == "reset_idle_timer"]
     assert len(reset_calls) == 1
-
-    msg_calls = [c for c in display.calls if c[0] == "update_message"]
-    assert len(msg_calls) == 2
-    assert msg_calls[0] == ("update_message", "Bot", "Hello")
-    assert msg_calls[1] == ("update_message", "Bot", "World")
 
 
 # ── Issue 75: _build_claude_command accepts model and effort flags ────────────
@@ -1112,7 +1089,9 @@ def test_setup_creates_log_file_before_calling_add_agent(tmp_path):
     log_existed: list[bool] = []
 
     class _CheckDisplay:
-        def add_agent(self, name: str, phase: str, log_path: Path) -> None:
+        def add_agent(
+            self, name: str, phase: str, log_path: Path, issue_title: str = ""
+        ) -> None:
             log_existed.append(log_path.exists())
 
         def update_phase(self, name: str, phase: str) -> None:
@@ -1154,21 +1133,6 @@ def test_work_calls_update_phase_work(tmp_path):
 
     asyncio.run(_run())
     assert ("update_phase", "implementer-42", "Work") in display.calls
-
-
-def test_work_calls_update_message_per_chunk(tmp_path):
-    from pycastle.container_runner import _work
-    from pycastle.iteration._deps import RecordingStatusDisplay
-
-    runner = _streaming_runner("implementer-42", [b"Working on it\n"], tmp_path)
-    display = RecordingStatusDisplay()
-
-    async def _run():
-        loop = asyncio.get_event_loop()
-        await _work("implementer-42", runner, loop, status_display=display)
-
-    asyncio.run(_run())
-    assert ("update_message", "implementer-42", "Working on it") in display.calls
 
 
 def test_work_produces_no_stdout(tmp_path, capsys):

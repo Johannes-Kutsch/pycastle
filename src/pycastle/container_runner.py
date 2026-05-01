@@ -320,10 +320,6 @@ class ContainerRunner:
                         line, line_buf = line_buf.split("\n", 1)
                         if _is_usage_limit_line(line, self._cfg.usage_limit_patterns):
                             raise UsageLimitError(line)
-                        if status_display is not None:
-                            formatted = _format_stream_line(line)
-                            if formatted is not None:
-                                status_display.update_message(self.name, formatted)
         finally:
             try:
                 self._active_container.exec_run(
