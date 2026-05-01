@@ -901,3 +901,31 @@ def test_agent_runner_run_preflight_removes_status_row_when_checks_fail(tmp_path
     )
 
     assert ("remove_agent", "preflight-checks") in display.calls
+
+
+def test_agent_runner_run_preflight_removes_status_row_when_exception_propagates(
+    tmp_path,
+):
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def _exec_run(cmd, **kwargs):
+        command_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+        if "git config" in command_str or "pip install" in command_str:
+            return MagicMock(exit_code=0, output=(b"", b""))
+        raise RuntimeError("unexpected container error")
+
+    mock_container.exec_run.side_effect = _exec_run
+    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+    display = RecordingStatusDisplay()
+
+    with pytest.raises(RuntimeError, match="unexpected container error"):
+        asyncio.run(
+            runner.run_preflight(
+                name="preflight-checks", mount_path=tmp_path, status_display=display
+            )
+        )
+
+    assert ("remove_agent", "preflight-checks") in display.calls
