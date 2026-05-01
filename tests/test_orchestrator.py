@@ -2190,16 +2190,27 @@ def test_startup_row_phase_cycles_git_identity_then_credentials(tmp_path):
         status_display=recording,
     )
 
-    add_call = next(
-        (c for c in recording.calls if c[0] == "add_agent" and c[1] == "startup"),
+    add_idx = next(
+        (
+            i
+            for i, c in enumerate(recording.calls)
+            if c[0] == "add_agent" and c[1] == "startup"
+        ),
         None,
     )
-    update_call = next(
-        (c for c in recording.calls if c[0] == "update_phase" and c[1] == "startup"),
+    update_idx = next(
+        (
+            i
+            for i, c in enumerate(recording.calls)
+            if c[0] == "update_phase" and c[1] == "startup"
+        ),
         None,
     )
-    assert add_call is not None and add_call[2] == "Git identity"
-    assert update_call is not None and update_call[2] == "Credentials"
+    assert add_idx is not None and recording.calls[add_idx][2] == "Git identity"
+    assert update_idx is not None and recording.calls[update_idx][2] == "Credentials"
+    assert add_idx < update_idx, (
+        "phase must be updated to 'Credentials' after the row is added with 'Git identity'"
+    )
 
 
 def test_startup_row_removed_when_git_identity_check_fails(tmp_path):
