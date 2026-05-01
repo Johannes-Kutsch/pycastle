@@ -468,3 +468,16 @@ def test_merge_phase_routes_dirty_tree_message_through_status_display(
     print_messages = [msg for kind, msg in recording.calls if kind == "print"]
     assert any("Working tree" in msg for msg in print_messages)
     assert "Working tree" not in capsys.readouterr().out
+
+
+def test_merge_phase_dirty_tree_message_is_red(recording_deps, git_svc):
+    """The dirty-tree wait message must be wrapped in Rich red markup."""
+    deps, recording = recording_deps
+    git_svc.is_working_tree_clean.side_effect = [False, True]
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, deps)
+
+    print_messages = [msg for kind, msg in recording.calls if kind == "print"]
+    dirty_msg = next((msg for msg in print_messages if "Working tree" in msg), None)
+    assert dirty_msg is not None
+    assert dirty_msg.startswith("[red]") and dirty_msg.endswith("[/red]")

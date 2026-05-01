@@ -352,6 +352,44 @@ def test_run_iteration_routes_planning_complete_through_status_display(
     assert "Planning complete" not in capsys.readouterr().out
 
 
+def test_run_iteration_prints_blank_line_after_completion_summary(
+    tmp_path, git_svc, github_svc, logger
+):
+    """A blank line must be printed immediately after the completed-branches list."""
+    recording = RecordingStatusDisplay()
+
+    async def _fake_agent(name, **kwargs):
+        return "<promise>COMPLETE</promise>"
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    print_messages = [msg for kind, msg in recording.calls if kind == "print"]
+    exec_idx = next(
+        (i for i, msg in enumerate(print_messages) if "Execution complete" in msg),
+        None,
+    )
+    assert exec_idx is not None, "Expected 'Execution complete' message"
+    branch_list_end = exec_idx + 1
+    while branch_list_end < len(print_messages) and print_messages[
+        branch_list_end
+    ].startswith("  "):
+        branch_list_end += 1
+    assert branch_list_end < len(print_messages), (
+        "Expected a message after the branch list"
+    )
+    assert print_messages[branch_list_end] == "", (
+        "Expected blank line after branch list"
+    )
+
+
 def test_run_iteration_routes_hitl_abort_message_through_status_display(
     tmp_path, git_svc, logger, capsys
 ):

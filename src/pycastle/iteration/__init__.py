@@ -97,6 +97,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
     )
     for i in completed:
         deps.status_display.print(f"  {branch_for(i['number'])}")
+    deps.status_display.print("")
 
     await merge_phase(completed, deps)
 
