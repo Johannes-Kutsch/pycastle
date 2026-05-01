@@ -122,9 +122,6 @@ def test_version_flag_output_contains_pycastle_and_version():
     assert "version" in result.output
 
 
-# ── Issue 309: load_config() called at entry in CLI commands ──────────────────
-
-
 def test_labels_cmd_creates_labels_with_config_issue_label(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
