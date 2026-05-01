@@ -1179,3 +1179,28 @@ def test_setup_propagates_docker_error_when_pip_install_fails():
 
     with pytest.raises(DockerError, match="pip install failed"):
         asyncio.run(_run())
+
+
+# ── Issue 344: Docker client connection leak on shutdown ──────────────────────
+
+
+def test_exit_closes_client_when_runner_owns_it():
+    """When no docker_client is injected, __exit__ must close the created client."""
+    with patch("pycastle.container_runner.docker") as mock_docker:
+        mock_container = MagicMock()
+        mock_docker.from_env.return_value.containers.run.return_value = mock_container
+        runner = ContainerRunner("test", Path("/fake"), {}, cfg=Config())
+        runner.__enter__()
+        runner.__exit__(None, None, None)
+    mock_docker.from_env.return_value.close.assert_called_once()
+
+
+def test_exit_does_not_close_injected_client():
+    """When docker_client is injected, __exit__ must not close it."""
+    mock_client = MagicMock()
+    runner = ContainerRunner(
+        "test", Path("/fake"), {}, docker_client=mock_client, cfg=Config()
+    )
+    runner.__enter__()
+    runner.__exit__(None, None, None)
+    mock_client.close.assert_not_called()
