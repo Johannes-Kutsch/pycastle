@@ -408,6 +408,16 @@ def test_rich_phase_renders_white_for_startup_agent() -> None:
     assert _has_code(ansi, 37)  # white
 
 
+def test_rich_phase_renders_blue_for_preflight_checks_agent() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("preflight-checks", "Setup")
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 34)  # blue (same as plan stage)
+
+
 # ── NullStatusDisplay protocol conformance ────────────────────────────────────
 
 

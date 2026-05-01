@@ -147,8 +147,9 @@ class FakeAgentRunner:
         name: str,
         mount_path: Path,
         stage: str = "",
+        status_display: "StatusDisplay | None" = None,
     ) -> list[tuple[str, str, str]]:
-        call = {"name": name, "mount_path": mount_path, "stage": stage}
+        call = {"name": name, "mount_path": mount_path, "stage": stage, "status_display": status_display}
         self.preflight_calls.append(call)
         if not self._preflight_responses:
             raise AssertionError(

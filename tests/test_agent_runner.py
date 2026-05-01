@@ -17,7 +17,7 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.git_service import GitCommandError, GitService
-from pycastle.iteration._deps import FakeAgentRunner
+from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 
 
 # ── FakeAgentRunner: queue behaviour ─────────────────────────────────────────
@@ -849,3 +849,55 @@ def test_agent_runner_run_preflight_passes_checks_that_require_installed_tools(
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     assert result == []
+
+
+# ── AgentRunner: run_preflight status_display ────────────────────────────────
+
+
+def test_agent_runner_run_preflight_registers_and_removes_status_row_on_success(
+    tmp_path,
+):
+    mock_client = _make_preflight_docker_client()
+    cfg = Config(logs_dir=tmp_path, preflight_checks=())
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+    display = RecordingStatusDisplay()
+
+    asyncio.run(
+        runner.run_preflight(
+            name="preflight-checks", mount_path=tmp_path, status_display=display
+        )
+    )
+
+    assert ("add_agent", "preflight-checks", "Setup") in display.calls
+    assert ("remove_agent", "preflight-checks") in display.calls
+
+
+def test_agent_runner_run_preflight_cycles_phase_to_preflight_before_checks(tmp_path):
+    mock_client = _make_preflight_docker_client()
+    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+    display = RecordingStatusDisplay()
+
+    asyncio.run(
+        runner.run_preflight(
+            name="preflight-checks", mount_path=tmp_path, status_display=display
+        )
+    )
+
+    phase_updates = [c for c in display.calls if c[0] == "update_phase"]
+    assert any(c[2] == "Pre-flight" for c in phase_updates)
+
+
+def test_agent_runner_run_preflight_removes_status_row_when_checks_fail(tmp_path):
+    mock_client = _make_preflight_docker_client(exit_code=1, stdout=b"E501")
+    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+    display = RecordingStatusDisplay()
+
+    asyncio.run(
+        runner.run_preflight(
+            name="preflight-checks", mount_path=tmp_path, status_display=display
+        )
+    )
+
+    assert ("remove_agent", "preflight-checks") in display.calls
