@@ -1,6 +1,5 @@
 import io
 import re
-from pathlib import Path
 
 from rich.console import Console
 
@@ -29,7 +28,7 @@ def test_rich_stop_when_no_agents_added_is_safe() -> None:
 
 def test_rich_stop_is_idempotent() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Setup", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "Setup")
     d.remove_agent("Planner")
     d.stop()
 
@@ -52,10 +51,10 @@ def test_rich_print_outputs_message(capsys) -> None:
 
 def test_rich_agents_render_sorted_by_phase_rank() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Merger", "Work", Path("/tmp/merger.log"))
-    d.add_agent("Reviewer #5", "Work", Path("/tmp/rev5.log"))
-    d.add_agent("Implementer #5", "Work", Path("/tmp/impl5.log"))
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Merger", "Work")
+    d.add_agent("Reviewer #5", "Work")
+    d.add_agent("Implementer #5", "Work")
+    d.add_agent("Planner", "Plan")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -69,8 +68,8 @@ def test_rich_agents_render_sorted_by_phase_rank() -> None:
 
 def test_rich_implementers_render_sorted_by_issue_number() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Implementer #42", "Work", Path("/tmp/impl42.log"))
-    d.add_agent("Implementer #7", "Work", Path("/tmp/impl7.log"))
+    d.add_agent("Implementer #42", "Work")
+    d.add_agent("Implementer #7", "Work")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -82,8 +81,8 @@ def test_rich_implementers_render_sorted_by_issue_number() -> None:
 
 def test_rich_unknown_agent_sorts_after_known_phases() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
-    d.add_agent("Unknown-agent", "Work", Path("/tmp/unknown.log"))
+    d.add_agent("Planner", "Plan")
+    d.add_agent("Unknown-agent", "Work")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -95,7 +94,7 @@ def test_rich_unknown_agent_sorts_after_known_phases() -> None:
 
 def test_rich_renders_agent_name_without_dash_suffix() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Implementer #42", "Work", Path("/tmp/impl42.log"))
+    d.add_agent("Implementer #42", "Work")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -108,7 +107,7 @@ def test_rich_renders_agent_name_without_dash_suffix() -> None:
 
 def test_rich_renders_no_header_row() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "Plan")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -121,7 +120,7 @@ def test_rich_renders_no_header_row() -> None:
 
 def test_rich_renders_blank_line_before_agent_rows() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "Plan")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -135,7 +134,7 @@ def test_rich_renders_blank_line_before_agent_rows() -> None:
 
 def test_rich_elapsed_format_shows_seconds_under_one_minute() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "Plan")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -152,7 +151,7 @@ def test_rich_elapsed_format_shows_minutes_and_seconds(monkeypatch) -> None:
     monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
 
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "Plan")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -163,58 +162,9 @@ def test_rich_elapsed_format_shows_minutes_and_seconds(monkeypatch) -> None:
     d.stop()
 
 
-def test_rich_issue_title_appears_in_rendered_output() -> None:
-    d = RichStatusDisplay()
-    d.add_agent(
-        "Implementer #5", "Work", Path("/tmp/impl5.log"), issue_title="Fix auth timeout"
-    )
-
-    console = Console(record=True, width=200)
-    console.print(d)
-    output = console.export_text()
-
-    assert "Fix auth timeout" in output
-    d.stop()
-
-
-def test_rich_agent_without_issue_title_shows_blank_issue_cell() -> None:
-    d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
-    d.add_agent(
-        "Implementer #5", "Work", Path("/tmp/impl5.log"), issue_title="Fix auth timeout"
-    )
-
-    console = Console(record=True, width=200)
-    console.print(d)
-    lines = [ln for ln in console.export_text().splitlines() if ln.strip()]
-    d.stop()
-
-    planner_line = next(ln for ln in lines if "Planner" in ln)
-    implementer_line = next(ln for ln in lines if "Implementer" in ln)
-    assert "Fix auth timeout" not in planner_line
-    assert "Fix auth timeout" in implementer_line
-
-
-def test_rich_issue_title_with_brackets_renders_literally() -> None:
-    d = RichStatusDisplay()
-    d.add_agent(
-        "Implementer #5",
-        "Work",
-        Path("/tmp/impl5.log"),
-        issue_title="Fix [BUG-123] timeout",
-    )
-
-    console = Console(record=True, width=200)
-    console.print(d)
-    output = console.export_text()
-    d.stop()
-
-    assert "Fix [BUG-123] timeout" in output
-
-
 def test_rich_phase_appears_in_output() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "DESIGNING", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "DESIGNING")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -235,8 +185,8 @@ def test_rich_agent_names_are_right_aligned_by_elapsed_column(monkeypatch) -> No
     monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
 
     d = RichStatusDisplay()
-    d.add_agent("Implementer #7", "Work", Path("/tmp/impl7.log"))
-    d.add_agent("Implementer #42", "Work", Path("/tmp/impl42.log"))
+    d.add_agent("Implementer #7", "Work")
+    d.add_agent("Implementer #42", "Work")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -255,7 +205,7 @@ def test_rich_elapsed_format_at_exactly_one_minute(monkeypatch) -> None:
     monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
 
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "Plan")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -274,7 +224,7 @@ def test_rich_reset_idle_timer_resets_idle_time(monkeypatch) -> None:
     monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
 
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "Plan")
     d.reset_idle_timer("Planner")
 
     console = Console(record=True, width=200)
@@ -292,8 +242,8 @@ def test_rich_reset_idle_timer_for_unknown_agent_is_safe() -> None:
 
 def test_rich_reviewers_render_sorted_by_issue_number() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Reviewer #42", "Review", Path("/tmp/rev42.log"))
-    d.add_agent("Reviewer #7", "Review", Path("/tmp/rev7.log"))
+    d.add_agent("Reviewer #42", "Review")
+    d.add_agent("Reviewer #7", "Review")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -320,7 +270,7 @@ def _has_code(ansi: str, code: int) -> bool:
 
 def test_rich_phase_renders_blue_for_plan_agent() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "Plan")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -330,7 +280,7 @@ def test_rich_phase_renders_blue_for_plan_agent() -> None:
 
 def test_rich_phase_renders_orange1_for_implement_agent() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Implementer #5", "Work", Path("/tmp/impl5.log"))
+    d.add_agent("Implementer #5", "Work")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -340,7 +290,7 @@ def test_rich_phase_renders_orange1_for_implement_agent() -> None:
 
 def test_rich_phase_renders_yellow_for_review_agent() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Reviewer #5", "Review", Path("/tmp/rev5.log"))
+    d.add_agent("Reviewer #5", "Review")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -350,7 +300,7 @@ def test_rich_phase_renders_yellow_for_review_agent() -> None:
 
 def test_rich_phase_renders_green_for_merge_agent() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Merger", "Merge", Path("/tmp/merger.log"))
+    d.add_agent("Merger", "Merge")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -360,7 +310,7 @@ def test_rich_phase_renders_green_for_merge_agent() -> None:
 
 def test_rich_agent_name_renders_bold() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "Plan")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -370,7 +320,7 @@ def test_rich_agent_name_renders_bold() -> None:
 
 def test_rich_digit_sequences_in_agent_name_render_cyan() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Implementer #5", "Work", Path("/tmp/impl5.log"))
+    d.add_agent("Implementer #5", "Work")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -380,7 +330,7 @@ def test_rich_digit_sequences_in_agent_name_render_cyan() -> None:
 
 def test_rich_non_numeric_agent_name_renders_bold_without_cyan() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "Plan")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -391,7 +341,7 @@ def test_rich_non_numeric_agent_name_renders_bold_without_cyan() -> None:
 
 def test_rich_elapsed_column_renders_dim() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "Plan")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -403,7 +353,7 @@ def test_rich_elapsed_column_renders_dim() -> None:
 
 def test_rich_idle_column_renders_dim() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent("Planner", "Plan")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -415,7 +365,7 @@ def test_rich_idle_column_renders_dim() -> None:
 
 def test_rich_phase_renders_without_color_for_unknown_agent() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Unknown-agent", "Custom", Path("/tmp/unknown.log"))
+    d.add_agent("Unknown-agent", "Custom")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -448,7 +398,7 @@ def test_null_reset_idle_timer_is_silent(capsys) -> None:
 
 def test_null_add_agent_is_silent(capsys) -> None:
     d = NullStatusDisplay()
-    d.add_agent("implementer-1", "Setup", Path("/tmp/agent.log"))
+    d.add_agent("implementer-1", "Setup")
     assert capsys.readouterr().out == ""
 
 
@@ -481,18 +431,8 @@ def test_recording_starts_empty() -> None:
 
 def test_recording_captures_add_agent() -> None:
     d = RecordingStatusDisplay()
-    log_path = Path("/tmp/agent.log")
-    d.add_agent("implementer-1", "Setup", log_path)
-    assert d.calls == [("add_agent", "implementer-1", "Setup", log_path, "")]
-
-
-def test_recording_captures_add_agent_with_issue_title() -> None:
-    d = RecordingStatusDisplay()
-    log_path = Path("/tmp/agent.log")
-    d.add_agent("Implementer #5", "Work", log_path, issue_title="Fix auth timeout")
-    assert d.calls == [
-        ("add_agent", "Implementer #5", "Work", log_path, "Fix auth timeout")
-    ]
+    d.add_agent("implementer-1", "Setup")
+    assert d.calls == [("add_agent", "implementer-1", "Setup")]
 
 
 def test_recording_captures_update_phase() -> None:
@@ -537,14 +477,13 @@ def test_recording_print_produces_no_stdout(capsys) -> None:
 
 def test_recording_accumulates_multiple_calls() -> None:
     d = RecordingStatusDisplay()
-    log_path = Path("/tmp/agent.log")
 
-    d.add_agent("implementer-1", "Setup", log_path)
+    d.add_agent("implementer-1", "Setup")
     d.update_phase("implementer-1", "Work")
     d.remove_agent("implementer-1")
 
     assert d.calls == [
-        ("add_agent", "implementer-1", "Setup", log_path, ""),
+        ("add_agent", "implementer-1", "Setup"),
         ("update_phase", "implementer-1", "Work"),
         ("remove_agent", "implementer-1"),
     ]

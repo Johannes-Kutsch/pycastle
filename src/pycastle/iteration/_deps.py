@@ -31,7 +31,7 @@ class RecordingLogger:
 
 @runtime_checkable
 class StatusDisplay(Protocol):
-    def add_agent(self, name: str, phase: str, log_path: Path, issue_title: str = "") -> None: ...
+    def add_agent(self, name: str, phase: str) -> None: ...
     def update_phase(self, name: str, phase: str) -> None: ...
     def remove_agent(self, name: str) -> None: ...
     def reset_idle_timer(self, name: str) -> None: ...
@@ -39,7 +39,7 @@ class StatusDisplay(Protocol):
 
 
 class NullStatusDisplay:
-    def add_agent(self, name: str, phase: str, log_path: Path, issue_title: str = "") -> None:
+    def add_agent(self, name: str, phase: str) -> None:
         pass
 
     def update_phase(self, name: str, phase: str) -> None:
@@ -59,8 +59,8 @@ class RecordingStatusDisplay:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
 
-    def add_agent(self, name: str, phase: str, log_path: Path, issue_title: str = "") -> None:
-        self.calls.append(("add_agent", name, phase, log_path, issue_title))
+    def add_agent(self, name: str, phase: str) -> None:
+        self.calls.append(("add_agent", name, phase))
 
     def update_phase(self, name: str, phase: str) -> None:
         self.calls.append(("update_phase", name, phase))
