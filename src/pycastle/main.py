@@ -42,6 +42,7 @@ def _load_config_or_exit() -> Config:
 
 
 @click.group()
+@click.version_option(package_name="pycastle", prog_name="pycastle")
 def main() -> None:
     pass
 

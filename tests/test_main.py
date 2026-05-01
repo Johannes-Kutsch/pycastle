@@ -104,6 +104,27 @@ def test_build_cmd_uses_config_docker_image_name(tmp_path, monkeypatch):
     assert fake_svc.build_image.call_args[0][0] == "custom-img"
 
 
+# ── Issue 329: --version flag ─────────────────────────────────────────────────
+
+
+def test_version_flag_exits_zero():
+    from pycastle.main import main as cli
+
+    result = CliRunner().invoke(cli, ["--version"])
+    assert result.exit_code == 0
+
+
+def test_version_flag_output_contains_pycastle_and_version():
+    from pycastle.main import main as cli
+
+    result = CliRunner().invoke(cli, ["--version"])
+    assert "pycastle" in result.output
+    assert "version" in result.output
+
+
+# ── Issue 309: load_config() called at entry in CLI commands ──────────────────
+
+
 def test_labels_cmd_creates_labels_with_config_issue_label(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
