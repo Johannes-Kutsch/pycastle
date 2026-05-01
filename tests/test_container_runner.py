@@ -11,7 +11,6 @@ from pycastle.config import Config
 from pycastle.container_runner import (
     ContainerRunner,
     _build_claude_command,
-    _format_stream_line,
 )
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.git_service import GitService
@@ -675,55 +674,6 @@ def test_preflight_returns_empty_list_on_clean_pass():
     assert asyncio.run(_run()) == []
 
 
-# ── Cycle 65-1: assistant text content extracted for terminal ─────────────────
-
-
-def test_format_stream_line_extracts_text_from_assistant_message():
-    line = '{"type":"assistant","message":{"id":"msg_x","content":[{"type":"text","text":"Analysing issues"}]}}'
-    assert _format_stream_line(line) == "Analysing issues"
-
-
-# ── Cycle 65-2: system init lines suppressed ──────────────────────────────────
-
-
-def test_format_stream_line_returns_none_for_system_init():
-    line = '{"type":"system","subtype":"init","session_id":"abc","tools":[]}'
-    assert _format_stream_line(line) is None
-
-
-# ── Cycle 65-3: tool_use content block summarised ─────────────────────────────
-
-
-def test_format_stream_line_summarises_tool_use_block():
-    line = '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}'
-    assert _format_stream_line(line) is None
-
-
-# ── Cycle 65-4 / Issue 79: result line suppressed to prevent duplicate output ─
-
-
-def test_format_stream_line_returns_result_text():
-    line = '{"type":"result","result":"Final answer here","session_id":"abc"}'
-    assert _format_stream_line(line) is None
-
-
-def test_format_stream_line_returns_none_for_empty_result():
-    line = '{"type":"result","result":"","session_id":"abc"}'
-    assert _format_stream_line(line) is None
-
-
-def test_format_stream_line_returns_none_for_missing_result_key():
-    line = '{"type":"result","session_id":"abc"}'
-    assert _format_stream_line(line) is None
-
-
-# ── Cycle 65-5: non-JSON line returned verbatim ───────────────────────────────
-
-
-def test_format_stream_line_returns_plain_text_verbatim():
-    assert _format_stream_line("plain text output") == "plain text output"
-
-
 # ── Cycle 65-6: run_streaming writes raw log, suppresses all stdout ──────────
 
 
@@ -742,62 +692,6 @@ def test_run_streaming_log_file_unchanged_for_json_lines(tmp_path):
     runner = _streaming_runner("Planner", [raw], tmp_path)
     runner.run_streaming()
     assert runner._log_path.read_bytes() == raw
-
-
-# ── Cycle 65-7: _format_stream_line edge cases ───────────────────────────────
-
-
-def test_format_stream_line_joins_text_and_tool_use_with_space():
-    line = '{"type":"assistant","message":{"content":[{"type":"text","text":"Reading files"},{"type":"tool_use","name":"Read","id":"t1","input":{}}]}}'
-    assert _format_stream_line(line) == "Reading files"
-
-
-def test_format_stream_line_returns_none_for_whitespace_only_text():
-    line = '{"type":"assistant","message":{"content":[{"type":"text","text":"   "}]}}'
-    assert _format_stream_line(line) is None
-
-
-def test_format_stream_line_returns_none_for_empty_content_list():
-    line = '{"type":"assistant","message":{"content":[]}}'
-    assert _format_stream_line(line) is None
-
-
-def test_format_stream_line_returns_none_for_missing_message():
-    line = '{"type":"assistant"}'
-    assert _format_stream_line(line) is None
-
-
-def test_format_stream_line_returns_none_for_null_message():
-    line = '{"type":"assistant","message":null}'
-    assert _format_stream_line(line) is None
-
-
-def test_format_stream_line_returns_none_for_empty_result_string():
-    line = '{"type":"result","result":""}'
-    assert _format_stream_line(line) is None
-
-
-def test_format_stream_line_returns_none_for_null_result():
-    line = '{"type":"result","result":null,"session_id":"abc"}'
-    assert _format_stream_line(line) is None
-
-
-def test_format_stream_line_returns_none_for_unknown_type():
-    line = '{"type":"tool_result","content":"output"}'
-    assert _format_stream_line(line) is None
-
-
-def test_format_stream_line_returns_verbatim_for_json_array():
-    line = '["not","a","dict"]'
-    assert _format_stream_line(line) == line
-
-
-# ── Issue 339: _format_stream_line new behaviors ─────────────────────────────
-
-
-def test_format_stream_line_returns_first_line_of_multiline_text():
-    line = '{"type":"assistant","message":{"content":[{"type":"text","text":"First line\\nSecond line\\nThird line"}]}}'
-    assert _format_stream_line(line) == "First line"
 
 
 # ── Issue 180: UsageLimitError stream detection ───────────────────────────────
@@ -1084,6 +978,31 @@ def test_setup_calls_add_agent_with_name_and_log_path(tmp_path):
     assert add_calls[0][4] == ""
 
 
+def test_setup_passes_issue_title_to_add_agent(tmp_path):
+    from pycastle.container_runner import _setup
+
+    runner = _unstarted_runner("implementer-42", tmp_path)
+    display = RecordingStatusDisplay()
+
+    async def _run():
+        loop = asyncio.get_event_loop()
+        await _setup(
+            "implementer-42",
+            runner,
+            loop,
+            None,
+            git_service=_make_git_service(),
+            status_display=display,
+            issue_title="Fix auth timeout",
+        )
+
+    asyncio.run(_run())
+
+    add_calls = [c for c in display.calls if c[0] == "add_agent"]
+    assert len(add_calls) == 1
+    assert add_calls[0][4] == "Fix auth timeout"
+
+
 def test_setup_creates_log_file_before_calling_add_agent(tmp_path):
     from pycastle.container_runner import _setup
 
@@ -1247,3 +1166,96 @@ def test_exit_swallows_close_exception():
         )
         runner = ContainerRunner("test", Path("/fake"), {}, cfg=Config())
         runner.__exit__(None, None, None)  # must not raise
+
+
+# ── Issue 349: StreamParser integration ──────────────────────────────────────
+
+
+def test_run_streaming_in_work_phase_prints_complete_turn(tmp_path):
+    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Analysing issues"}]}}\n'
+    runner = _streaming_runner("Implementer #1", [json_line], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(display, print_output=True)
+
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    assert len(print_calls) == 1
+    assert print_calls[0][1] == "[Implementer #1] Analysing issues\n"
+
+
+def test_run_streaming_without_print_output_does_not_call_print(tmp_path):
+    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Analysing issues"}]}}\n'
+    runner = _streaming_runner("Bot", [json_line], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(display, print_output=False)
+
+    assert not any(c[0] == "print" for c in display.calls)
+
+
+def test_run_streaming_tool_use_only_does_not_call_print_in_work_phase(tmp_path):
+    tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
+    runner = _streaming_runner("Bot", [tool_chunk], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(display, print_output=True)
+
+    assert not any(c[0] == "print" for c in display.calls)
+
+
+def test_work_calls_print_for_complete_assistant_turn(tmp_path):
+    from pycastle.container_runner import _work
+
+    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Fixing bug"}]}}\n'
+    runner = _streaming_runner("Implementer #3", [json_line], tmp_path)
+    display = RecordingStatusDisplay()
+
+    async def _run():
+        loop = asyncio.get_event_loop()
+        await _work("Implementer #3", runner, loop, status_display=display)
+
+    asyncio.run(_run())
+
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    assert len(print_calls) == 1
+    assert print_calls[0][1] == "[Implementer #3] Fixing bug\n"
+
+
+def test_work_does_not_call_print_for_tool_use_turns(tmp_path):
+    from pycastle.container_runner import _work
+
+    tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","id":"t1","input":{}}]}}\n'
+    runner = _streaming_runner("Implementer #3", [tool_chunk], tmp_path)
+    display = RecordingStatusDisplay()
+
+    async def _run():
+        loop = asyncio.get_event_loop()
+        await _work("Implementer #3", runner, loop, status_display=display)
+
+    asyncio.run(_run())
+
+    assert not any(c[0] == "print" for c in display.calls)
+
+
+def test_run_streaming_with_print_output_still_calls_reset_idle_timer(tmp_path):
+    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
+    runner = _streaming_runner("Bot", [json_line], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(display, print_output=True)
+
+    assert ("reset_idle_timer", "Bot") in display.calls
+
+
+def test_run_streaming_multiple_turns_prints_each_one(tmp_path):
+    line_a = b'{"type":"assistant","message":{"content":[{"type":"text","text":"First turn"}]}}\n'
+    line_b = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Second turn"}]}}\n'
+    runner = _streaming_runner("Bot", [line_a + line_b], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(display, print_output=True)
+
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    assert len(print_calls) == 2
+    assert print_calls[0][1] == "[Bot] First turn\n"
+    assert print_calls[1][1] == "[Bot] Second turn\n"
