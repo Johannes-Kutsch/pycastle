@@ -978,6 +978,31 @@ def test_setup_calls_add_agent_with_name_and_log_path(tmp_path):
     assert add_calls[0][4] == ""
 
 
+def test_setup_passes_issue_title_to_add_agent(tmp_path):
+    from pycastle.container_runner import _setup
+
+    runner = _unstarted_runner("implementer-42", tmp_path)
+    display = RecordingStatusDisplay()
+
+    async def _run():
+        loop = asyncio.get_event_loop()
+        await _setup(
+            "implementer-42",
+            runner,
+            loop,
+            None,
+            git_service=_make_git_service(),
+            status_display=display,
+            issue_title="Fix auth timeout",
+        )
+
+    asyncio.run(_run())
+
+    add_calls = [c for c in display.calls if c[0] == "add_agent"]
+    assert len(add_calls) == 1
+    assert add_calls[0][4] == "Fix auth timeout"
+
+
 def test_setup_creates_log_file_before_calling_add_agent(tmp_path):
     from pycastle.container_runner import _setup
 
@@ -1210,3 +1235,27 @@ def test_work_does_not_call_print_for_tool_use_turns(tmp_path):
     asyncio.run(_run())
 
     assert not any(c[0] == "print" for c in display.calls)
+
+
+def test_run_streaming_with_print_output_still_calls_reset_idle_timer(tmp_path):
+    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
+    runner = _streaming_runner("Bot", [json_line], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(display, print_output=True)
+
+    assert ("reset_idle_timer", "Bot") in display.calls
+
+
+def test_run_streaming_multiple_turns_prints_each_one(tmp_path):
+    line_a = b'{"type":"assistant","message":{"content":[{"type":"text","text":"First turn"}]}}\n'
+    line_b = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Second turn"}]}}\n'
+    runner = _streaming_runner("Bot", [line_a + line_b], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(display, print_output=True)
+
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    assert len(print_calls) == 2
+    assert print_calls[0][1] == "[Bot] First turn\n"
+    assert print_calls[1][1] == "[Bot] Second turn\n"
