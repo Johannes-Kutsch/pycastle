@@ -110,6 +110,7 @@ class ContainerRunner:
         self.model = model
         self.effort = effort
         self._cfg = cfg
+        self._owns_client = docker_client is None
         self._client = docker_client if docker_client is not None else docker.from_env()
         self._container: DockerContainer | None = None
         self._container_env: dict[str, str] = {}
@@ -219,6 +220,11 @@ class ContainerRunner:
                 pass
             try:
                 self._container.remove(force=True)
+            except Exception:
+                pass
+        if self._owns_client:
+            try:
+                self._client.close()
             except Exception:
                 pass
 
