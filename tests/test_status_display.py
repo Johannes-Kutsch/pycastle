@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from rich.console import Console
@@ -89,6 +90,80 @@ def test_rich_unknown_agent_sorts_after_known_phases() -> None:
 
     assert output.find("Planner") < output.find("Unknown-agent")
     d.stop()
+
+
+def test_rich_renders_issue_headline_in_output() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"), "Fix the login bug")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert "Fix the login bug" in output
+    d.stop()
+
+
+def test_rich_renders_no_header_row() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"), "Fix bug")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert "Idle (s)" not in output
+    assert "Log" not in output
+    d.stop()
+
+
+def test_rich_renders_blank_line_before_agent_rows() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"), "Fix bug")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    planner_pos = output.find("Planner")
+    lines_before = output[:planner_pos].split("\n")
+    assert any(line.strip() == "" for line in lines_before)
+    d.stop()
+
+
+def test_rich_elapsed_format_shows_seconds_under_one_minute() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"), "Fix bug")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert re.search(r"\d+s", output)
+    d.stop()
+
+
+def test_rich_elapsed_format_shows_minutes_and_seconds(monkeypatch) -> None:
+    import pycastle.rich_status_display as mod
+
+    times = iter([0.0, 312.0, 42.0])
+    monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
+
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan", Path("/tmp/planner.log"), "Fix bug")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert "5m 12s" in output
+    assert "42s" in output
+    d.stop()
+
+
+def test_rich_update_message_for_unknown_agent_is_safe() -> None:
+    d = RichStatusDisplay()
+    d.update_message("never-added", "some message")
 
 
 # ── NullStatusDisplay protocol conformance ────────────────────────────────────
