@@ -563,9 +563,7 @@ def test_patch_gitdir_rewrites_linux_path(tmp_path):
         result.read_text().strip()
         == "gitdir: /.pycastle-parent-git/worktrees/my-branch"
     )
-    assert (
-        git_file.read_text() == "gitdir: /home/user/repo/.git/worktrees/my-branch\n"
-    )
+    assert git_file.read_text() == "gitdir: /home/user/repo/.git/worktrees/my-branch\n"
 
 
 # ── Issue-229: managed_worktree context manager ───────────────────────────────
