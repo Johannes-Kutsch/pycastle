@@ -1,7 +1,6 @@
 import re
 import threading
 import time
-from pathlib import Path
 
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.live import Live
@@ -52,17 +51,13 @@ class _AgentRow:
     __slots__ = (
         "name",
         "phase",
-        "log_path",
         "started_at",
         "last_update",
-        "issue_title",
     )
 
-    def __init__(self, name: str, phase: str, log_path: Path, issue_title: str = "") -> None:
+    def __init__(self, name: str, phase: str) -> None:
         self.name = name
         self.phase = phase
-        self.log_path = log_path
-        self.issue_title = issue_title
         now = time.monotonic()
         self.started_at = now
         self.last_update = now
@@ -96,15 +91,12 @@ class RichStatusDisplay:
         table.add_column()  # name
         table.add_column()  # phase
         table.add_column()  # idle
-        table.add_column(overflow="ellipsis", no_wrap=True)  # issue title
 
         for row in rows:
-            abs_uri = row.log_path.resolve().as_uri()
-
             name_text = Text()
             for segment in re.split(r"(\d+)", row.name):
                 if segment:
-                    style = f"bold cyan link {abs_uri}" if segment.isdigit() else f"bold link {abs_uri}"
+                    style = "bold cyan" if segment.isdigit() else "bold"
                     name_text.append(segment, style=style)
 
             phase_color = _PHASE_COLOR.get(_stage_from_name(row.name), "")
@@ -115,15 +107,14 @@ class RichStatusDisplay:
                 name_text,
                 phase_text,
                 Text(_format_duration(row.idle_seconds()), style="dim"),
-                Text(row.issue_title),
             )
 
         yield Padding(table, (1, 0, 0, 0))
 
-    def add_agent(self, name: str, phase: str, log_path: Path, issue_title: str = "") -> None:
+    def add_agent(self, name: str, phase: str) -> None:
         live_to_start: Live | None = None
         with self._lock:
-            self._rows[name] = _AgentRow(name, phase, log_path, issue_title)
+            self._rows[name] = _AgentRow(name, phase)
             if self._live is None:
                 live = Live(
                     self,

@@ -950,7 +950,7 @@ def _unstarted_runner(name: str, tmp_path: Path) -> ContainerRunner:
     )
 
 
-def test_setup_calls_add_agent_with_name_and_log_path(tmp_path):
+def test_setup_calls_add_agent_with_name_and_phase(tmp_path):
     from pycastle.container_runner import _setup
     from pycastle.iteration._deps import RecordingStatusDisplay
 
@@ -974,70 +974,6 @@ def test_setup_calls_add_agent_with_name_and_log_path(tmp_path):
     assert len(add_calls) == 1
     assert add_calls[0][1] == "implementer-42"
     assert add_calls[0][2] == "Setup"
-    assert add_calls[0][3] == runner.log_path
-    assert add_calls[0][4] == ""
-
-
-def test_setup_passes_issue_title_to_add_agent(tmp_path):
-    from pycastle.container_runner import _setup
-
-    runner = _unstarted_runner("implementer-42", tmp_path)
-    display = RecordingStatusDisplay()
-
-    async def _run():
-        loop = asyncio.get_event_loop()
-        await _setup(
-            "implementer-42",
-            runner,
-            loop,
-            None,
-            git_service=_make_git_service(),
-            status_display=display,
-            issue_title="Fix auth timeout",
-        )
-
-    asyncio.run(_run())
-
-    add_calls = [c for c in display.calls if c[0] == "add_agent"]
-    assert len(add_calls) == 1
-    assert add_calls[0][4] == "Fix auth timeout"
-
-
-def test_setup_creates_log_file_before_calling_add_agent(tmp_path):
-    from pycastle.container_runner import _setup
-
-    log_existed: list[bool] = []
-
-    class _CheckDisplay:
-        def add_agent(
-            self, name: str, phase: str, log_path: Path, issue_title: str = ""
-        ) -> None:
-            log_existed.append(log_path.exists())
-
-        def update_phase(self, name: str, phase: str) -> None:
-            pass
-
-        def remove_agent(self, name: str) -> None:
-            pass
-
-        def print(self, msg: str) -> None:
-            pass
-
-    runner = _unstarted_runner("implementer-42", tmp_path)
-
-    async def _run():
-        loop = asyncio.get_event_loop()
-        await _setup(
-            "implementer-42",
-            runner,
-            loop,
-            None,
-            git_service=_make_git_service(),
-            status_display=_CheckDisplay(),
-        )
-
-    asyncio.run(_run())
-    assert log_existed == [True]
 
 
 def test_work_calls_update_phase_work(tmp_path):
