@@ -375,6 +375,15 @@ async def _setup(
         f"git config --global user.email {shlex.quote(git_email)}",
         exec_timeout,
     )
+    try:
+        await loop.run_in_executor(
+            None,
+            runner.exec_simple,
+            "pip install -e '.[dev]' || pip install -r requirements.txt",
+            exec_timeout,
+        )
+    except RuntimeError as exc:
+        print(f"  [{name}] Warning: dependency install skipped: {exc}", file=sys.stderr)
 
 
 async def _prepare(
@@ -390,15 +399,6 @@ async def _prepare(
 
     if status_display is not None:
         status_display.update_phase(name, "Prepare")
-    try:
-        await loop.run_in_executor(
-            None,
-            runner.exec_simple,
-            "pip install -e '.[dev]' || pip install -r requirements.txt",
-            exec_timeout,
-        )
-    except RuntimeError as exc:
-        print(f"  [{name}] Warning: dependency install skipped: {exc}", file=sys.stderr)
 
     async def container_exec(cmd: str) -> str:
         return await loop.run_in_executor(None, runner.exec_simple, cmd, exec_timeout)
