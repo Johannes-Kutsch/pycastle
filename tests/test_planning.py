@@ -4,6 +4,7 @@ import json
 import pytest
 from unittest.mock import MagicMock
 
+from pycastle.agent_result import PreflightFailure
 from pycastle.config import Config
 from pycastle.git_service import GitService
 from pycastle.github_service import GithubService
@@ -134,3 +135,53 @@ def test_planning_phase_removes_worktree_when_exception_raised(
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
+
+
+# ── planning_phase: error paths ─────────────────────────────────────────────
+
+
+def test_planning_phase_raises_runtime_error_when_planner_returns_preflight_failure(
+    tmp_path, git_svc, github_svc, logger
+):
+    issues = [{"number": 1, "title": "A"}]
+    fake = FakeAgentRunner(
+        [PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))]
+    )
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    with pytest.raises(RuntimeError, match="PreflightFailure unexpectedly"):
+        asyncio.run(planning_phase(deps, "abc123", issues))
+
+
+def test_planning_phase_raises_runtime_error_when_planner_output_has_no_plan_tag(
+    tmp_path, git_svc, github_svc, logger
+):
+    issues = [{"number": 1, "title": "A"}]
+    fake = FakeAgentRunner(["output without a plan tag"])
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    with pytest.raises(RuntimeError, match="no <plan> tag"):
+        asyncio.run(planning_phase(deps, "abc123", issues))
+
+
+# ── planning_phase: edge cases ───────────────────────────────────────────────
+
+
+def test_planning_phase_with_empty_issues_list_still_invokes_planner_and_returns_ready(
+    tmp_path, git_svc, github_svc, logger
+):
+    fake = FakeAgentRunner([_plan_json([])])
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(planning_phase(deps, "abc123", []))
+
+    assert isinstance(result, PlanReady)
+    assert result.issues == []
+    assert result.worktree_sha == "abc123"
+    assert len(fake.calls) == 1
