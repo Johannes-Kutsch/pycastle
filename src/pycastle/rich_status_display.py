@@ -149,6 +149,11 @@ class RichStatusDisplay:
         if live_to_stop is not None:
             live_to_stop.stop()
 
+    def reset_idle_timer(self, name: str) -> None:
+        with self._lock:
+            if name in self._rows:
+                self._rows[name].last_update = time.monotonic()
+
     def print(self, message: str) -> None:
         self._console.print(message)
 
