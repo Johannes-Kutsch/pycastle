@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from pycastle.config import Config
-from pycastle.errors import ConfigValidationError
+from pycastle.errors import ClaudeCliNotFoundError, ConfigValidationError
 
 
 # ── Issue 203: cfg injection into _load_env ───────────────────────────────────
@@ -144,3 +144,44 @@ def test_labels_cmd_creates_labels_with_config_issue_label(tmp_path, monkeypatch
 
     label_names = {entry["name"] for entry in posted}
     assert "custom-ready" in label_names
+
+
+# ── Issue 330: ClaudeCliNotFoundError shows install instruction ───────────────
+
+
+def test_run_cmd_exits_one_when_claude_cli_missing(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "pycastle.main.load_config",
+        side_effect=ClaudeCliNotFoundError("claude not found"),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+    assert result.exit_code == 1
+
+
+def test_run_cmd_shows_install_instruction_when_claude_cli_missing(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "pycastle.main.load_config",
+        side_effect=ClaudeCliNotFoundError("claude not found"),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+    assert "sudo npm install -g @anthropic-ai/claude-code" in result.output
+
+
+def test_run_cmd_shows_no_traceback_when_claude_cli_missing(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with patch(
+        "pycastle.main.load_config",
+        side_effect=ClaudeCliNotFoundError("claude not found"),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+    assert "Traceback" not in result.output
