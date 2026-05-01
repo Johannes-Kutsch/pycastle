@@ -10,7 +10,12 @@ import pytest
 from pycastle.agent_result import CancellationToken, PreflightFailure
 from pycastle.agent_runner import AgentRunner
 from pycastle.config import Config
-from pycastle.errors import AgentTimeoutError, BranchCollisionError, UsageLimitError
+from pycastle.errors import (
+    AgentTimeoutError,
+    BranchCollisionError,
+    DockerError,
+    UsageLimitError,
+)
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.iteration._deps import FakeAgentRunner
 
@@ -782,6 +787,33 @@ def test_agent_runner_run_preflight_stops_container_when_check_fails(tmp_path):
     asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     mock_client.containers.run.return_value.stop.assert_called()
+
+
+def test_agent_runner_run_preflight_propagates_docker_error_when_pip_install_fails(
+    tmp_path,
+):
+    # Reproduces the issue-342 silent-swallow bug: if pip install fails, DockerError
+    # must propagate out of run_preflight rather than continuing with ruff absent.
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def _exec_run(cmd, **kwargs):
+        command_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+        if "git config" in command_str:
+            return MagicMock(exit_code=0, output=(b"", b""))
+        if "pip install" in command_str:
+            return MagicMock(
+                exit_code=1, output=(b"", b"ERROR: Could not find a version")
+            )
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = _exec_run
+    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    with pytest.raises(DockerError):
+        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
 
 def test_agent_runner_run_preflight_passes_checks_that_require_installed_tools(
