@@ -180,13 +180,36 @@ def test_rich_issue_title_appears_in_rendered_output() -> None:
 def test_rich_agent_without_issue_title_shows_blank_issue_cell() -> None:
     d = RichStatusDisplay()
     d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
+    d.add_agent(
+        "Implementer #5", "Work", Path("/tmp/impl5.log"), issue_title="Fix auth timeout"
+    )
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    lines = [ln for ln in console.export_text().splitlines() if ln.strip()]
+    d.stop()
+
+    planner_line = next(ln for ln in lines if "Planner" in ln)
+    implementer_line = next(ln for ln in lines if "Implementer" in ln)
+    assert "Fix auth timeout" not in planner_line
+    assert "Fix auth timeout" in implementer_line
+
+
+def test_rich_issue_title_with_brackets_renders_literally() -> None:
+    d = RichStatusDisplay()
+    d.add_agent(
+        "Implementer #5",
+        "Work",
+        Path("/tmp/impl5.log"),
+        issue_title="Fix [BUG-123] timeout",
+    )
 
     console = Console(record=True, width=200)
     console.print(d)
     output = console.export_text()
-
-    assert "Planner" in output
     d.stop()
+
+    assert "Fix [BUG-123] timeout" in output
 
 
 def test_rich_phase_appears_in_output() -> None:
