@@ -698,9 +698,14 @@ def _make_preflight_docker_client(exit_code: int = 0, stdout: bytes = b"") -> Ma
     mock_client = MagicMock()
     mock_container = MagicMock()
     mock_client.containers.run.return_value = mock_container
-    mock_container.exec_run.return_value = MagicMock(
-        exit_code=exit_code, output=(stdout, b"")
-    )
+
+    def _exec_run(cmd, **kwargs):
+        command_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+        if "git config" in command_str or "pip install" in command_str:
+            return MagicMock(exit_code=0, output=(b"", b""))
+        return MagicMock(exit_code=exit_code, output=(stdout, b""))
+
+    mock_container.exec_run.side_effect = _exec_run
     return mock_client
 
 
@@ -777,3 +782,26 @@ def test_agent_runner_run_preflight_stops_container_when_check_fails(tmp_path):
     asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     mock_client.containers.run.return_value.stop.assert_called()
+
+
+def test_agent_runner_run_preflight_installs_dependencies_before_running_checks(
+    tmp_path,
+):
+    mock_client = _make_preflight_docker_client()
+    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    all_commands = [
+        call.args[0]
+        for call in mock_client.containers.run.return_value.exec_run.call_args_list
+    ]
+    flat_commands = [" ".join(cmd) for cmd in all_commands]
+    pip_indices = [i for i, c in enumerate(flat_commands) if "pip install" in c]
+    ruff_indices = [i for i, c in enumerate(flat_commands) if "ruff check" in c]
+    assert pip_indices, "pip install must be called during run_preflight"
+    assert ruff_indices, "preflight check must be called"
+    assert pip_indices[-1] < ruff_indices[0], (
+        "pip install must run before preflight checks"
+    )
