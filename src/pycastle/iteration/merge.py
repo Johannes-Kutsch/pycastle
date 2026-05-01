@@ -62,6 +62,7 @@ def _delete_merged_branches(branches: list[str], deps: Deps) -> None:
 
 
 async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
+    deps.status_display.add_agent("merge", "Merging")
     await _wait_for_clean_working_tree(deps)
 
     conflict_issues: list[dict] = []
@@ -78,13 +79,16 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
 
     _delete_merged_branches([branch_for(i["number"]) for i in clean_issues], deps)
 
-    if conflict_issues:
+    if not conflict_issues:
+        deps.status_display.remove_agent("merge")
+    else:
         target_branch = deps.git_svc.get_current_branch(deps.repo_root)
         sha = deps.git_svc.get_head_sha(deps.repo_root)
         worktree_path = (
             deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "merge-sandbox"
         )
         deps.git_svc.create_worktree(deps.repo_root, worktree_path, MERGE_SANDBOX, sha)
+        deps.status_display.remove_agent("merge")
         try:
             merger_result = await deps.agent_runner.run(
                 name="Merger",

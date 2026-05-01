@@ -330,6 +330,16 @@ def test_rich_phase_renders_green_for_merge_agent() -> None:
     assert _has_code(ansi, 32)  # green
 
 
+def test_rich_phase_renders_green_for_merge_row() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("merge", "Merging")
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 32)  # green
+
+
 def test_rich_agent_name_renders_bold() -> None:
     d = RichStatusDisplay()
     d.add_agent("Planner", "Plan")
