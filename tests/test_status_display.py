@@ -92,6 +92,19 @@ def test_rich_unknown_agent_sorts_after_known_phases() -> None:
     d.stop()
 
 
+def test_rich_renders_agent_name_without_dash_suffix() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Implementer #42", "Work", Path("/tmp/impl42.log"))
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert "Implementer #42" in output
+    assert " - " not in output
+    d.stop()
+
+
 def test_rich_renders_no_header_row() -> None:
     d = RichStatusDisplay()
     d.add_agent("Planner", "Plan", Path("/tmp/planner.log"))
