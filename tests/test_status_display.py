@@ -253,6 +253,28 @@ def test_rich_reviewers_render_sorted_by_issue_number() -> None:
     d.stop()
 
 
+def test_rich_add_agent_twice_with_same_name_is_safe() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Setup")
+    d.add_agent("Planner", "Plan")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    lines = [ln for ln in console.export_text().splitlines() if "Planner" in ln]
+    assert len(lines) == 1
+    d.stop()
+
+
+def test_rich_agent_name_renders_without_hyperlink() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Implementer #5", "Work")
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert "\x1b]8" not in ansi
+
+
 # ── Color scheme tests ────────────────────────────────────────────────────────
 
 
