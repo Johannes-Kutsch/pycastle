@@ -1167,23 +1167,15 @@ def test_setup_propagates_docker_error_when_pip_install_fails():
                 raise DockerError("pip install failed: exit 1")
             return ""
 
-        @property
-        def log_path(self):
-            from pathlib import Path
+    async def _run():
+        loop = asyncio.get_event_loop()
+        await _setup(
+            "test",
+            _FailingPipRunner(),
+            loop,
+            30.0,
+            git_service=_make_git_service(),
+        )
 
-            return Path("/tmp/test.log")
-
-    loop = asyncio.new_event_loop()
-    try:
-        with pytest.raises(DockerError, match="pip install failed"):
-            loop.run_until_complete(
-                _setup(
-                    "test",
-                    _FailingPipRunner(),
-                    loop,
-                    30.0,
-                    git_service=_make_git_service(),
-                )
-            )
-    finally:
-        loop.close()
+    with pytest.raises(DockerError, match="pip install failed"):
+        asyncio.run(_run())
