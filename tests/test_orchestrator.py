@@ -1742,6 +1742,83 @@ def test_run_with_empty_repo_root_completes(tmp_path):
     )
 
 
+# ── Issue-332: unconfigured git identity detected at startup ──────────────────
+
+
+def _make_git_svc_no_user_name():
+    svc = _make_git_svc()
+    svc.get_user_name.side_effect = GitCommandError(
+        "git config user.name failed", returncode=1, stderr=""
+    )
+    return svc
+
+
+def _make_git_svc_no_user_email():
+    svc = _make_git_svc()
+    svc.get_user_email.side_effect = GitCommandError(
+        "git config user.email failed", returncode=1, stderr=""
+    )
+    return svc
+
+
+def test_run_exits_with_code_1_when_git_user_name_not_configured(tmp_path):
+    """run() must exit 1 when git user.name is not set."""
+    with pytest.raises(SystemExit) as exc_info:
+        _run(
+            tmp_path,
+            git_service=_make_git_svc_no_user_name(),
+            github_service=_make_github_svc(),
+        )
+    assert exc_info.value.code == 1
+
+
+def test_run_exits_with_code_1_when_git_user_email_not_configured(tmp_path):
+    """run() must exit 1 when git user.email is not set."""
+    with pytest.raises(SystemExit) as exc_info:
+        _run(
+            tmp_path,
+            git_service=_make_git_svc_no_user_email(),
+            github_service=_make_github_svc(),
+        )
+    assert exc_info.value.code == 1
+
+
+def test_run_prints_git_config_instruction_when_identity_not_configured(
+    tmp_path, capsys
+):
+    """run() must print both git config commands to stderr when user identity is missing."""
+    with pytest.raises(SystemExit):
+        _run(
+            tmp_path,
+            git_service=_make_git_svc_no_user_name(),
+            github_service=_make_github_svc(),
+        )
+    err = capsys.readouterr().err
+    assert "git config --global user.name" in err
+    assert "git config --global user.email" in err
+
+
+def test_run_no_agents_start_when_git_identity_not_configured(tmp_path):
+    """run() must not spawn any agents when git identity is missing."""
+    agents_started: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        agents_started.append(name)
+        return "<promise>COMPLETE</promise>"
+
+    with pytest.raises(SystemExit):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            git_service=_make_git_svc_no_user_name(),
+            github_service=_make_github_svc(),
+        )
+
+    assert agents_started == [], (
+        f"No agents must start when git identity missing; got {agents_started}"
+    )
+
+
 def test_run_passes_plan_override_model_and_effort_to_planner(tmp_path):
     """run() with plan_override must pass its model and effort to the Planner agent."""
     captured_planner: dict = {}
