@@ -12,7 +12,7 @@ from .agent_runner import AgentRunner, AgentRunnerProtocol
 from .claude_service import ClaudeService
 from .config import Config, load_config
 from .git_service import GitCommandError, GitService
-from .github_service import GithubService
+from .github_service import GithubNotFoundError, GithubService
 from .iteration import (
     AbortedHITL,
     AbortedUsageLimit,
@@ -82,11 +82,14 @@ def delete_merged_branches(
 
 
 def _get_repo(repo_root: Path) -> str:
-    result = subprocess.run(
-        ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
-        capture_output=True,
-        cwd=repo_root,
-    )
+    try:
+        result = subprocess.run(
+            ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+            capture_output=True,
+            cwd=repo_root,
+        )
+    except FileNotFoundError as exc:
+        raise GithubNotFoundError("gh executable not found") from exc
     if result.returncode != 0:
         raise RuntimeError("Could not determine GitHub repo name via gh")
     return result.stdout.decode("utf-8").strip()
@@ -134,6 +137,15 @@ async def run(
     cfg = load_config(repo_root=repo_root, claude_service=claude_service)
     prune_orphan_worktrees(repo_root, cfg=cfg)
     git_svc = git_service or GitService(cfg)
+
+    if github_service is None and shutil.which("gh") is None:
+        print(
+            "GitHub CLI not found. Install it with: sudo apt install gh,"
+            " then run: gh auth login",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     rich_display = RichStatusDisplay()
     status_display: StatusDisplay = rich_display
     _lazy_github_svc: GithubService | None = None

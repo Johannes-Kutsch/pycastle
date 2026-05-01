@@ -1670,6 +1670,64 @@ def test_run_limits_concurrency_to_max_parallel_from_cfg(tmp_path):
     assert max_active <= 2, f"Expected at most 2 concurrent; max was {max_active}"
 
 
+# ── Issue-331: gh CLI not found detected at startup ──────────────────────────
+
+
+def test_run_exits_with_code_1_when_gh_not_found(tmp_path):
+    """run() without an injected github_service must exit 1 if gh is absent."""
+    with patch("pycastle.orchestrator.shutil.which", return_value=None):
+        with pytest.raises(SystemExit) as exc_info:
+            _run(tmp_path)
+    assert exc_info.value.code == 1
+
+
+def test_run_prints_gh_install_and_auth_when_gh_not_found(tmp_path, capsys):
+    """run() must print both install command and auth step to stderr when gh is absent."""
+    with patch("pycastle.orchestrator.shutil.which", return_value=None):
+        with pytest.raises(SystemExit):
+            _run(tmp_path)
+    err = capsys.readouterr().err
+    assert "sudo apt install gh" in err
+    assert "gh auth login" in err
+
+
+def test_run_no_agents_start_when_gh_not_found(tmp_path):
+    """run() must not spawn any agents when gh is absent."""
+    agents_started: list[str] = []
+
+    async def _fake_run_agent(name, **kwargs):
+        agents_started.append(name)
+        return "<promise>COMPLETE</promise>"
+
+    with patch("pycastle.orchestrator.shutil.which", return_value=None):
+        with pytest.raises(SystemExit):
+            _run(tmp_path, _fake_run_agent)
+
+    assert agents_started == [], f"No agents must start; got {agents_started}"
+
+
+def test_get_repo_raises_github_not_found_error_when_gh_missing(tmp_path):
+    """_get_repo() must raise GithubNotFoundError (not a bare RuntimeError) when gh is absent."""
+    from pycastle.github_service import GithubNotFoundError
+    from pycastle.orchestrator import _get_repo
+
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        with pytest.raises(GithubNotFoundError):
+            _get_repo(tmp_path)
+
+
+def test_run_skips_gh_check_when_github_service_injected(tmp_path):
+    """run() must not check for gh CLI when a github_service is already injected."""
+
+    async def _fake_run_agent(name, **kwargs):
+        return _plan_json([])
+
+    with patch("pycastle.orchestrator.shutil.which", return_value=None):
+        _run(
+            tmp_path, _fake_run_agent, github_service=_make_github_svc()
+        )  # must not raise SystemExit
+
+
 def test_run_with_empty_repo_root_completes(tmp_path):
     """run() with empty repo_root completes without error using default config."""
 
