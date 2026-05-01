@@ -92,6 +92,18 @@ def test_rich_unknown_agent_sorts_after_known_phases() -> None:
     d.stop()
 
 
+def test_rich_agent_name_and_headline_separated_by_dash() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Implementer #42", "Work", Path("/tmp/impl42.log"), "Fix login bug")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+
+    assert "Implementer #42 - Fix login bug" in output
+    d.stop()
+
+
 def test_rich_renders_issue_headline_in_output() -> None:
     d = RichStatusDisplay()
     d.add_agent("Planner", "Plan", Path("/tmp/planner.log"), "Fix the login bug")
