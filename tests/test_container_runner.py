@@ -1004,6 +1004,32 @@ def test_setup_calls_add_agent_with_name_and_log_path(tmp_path):
     assert add_calls[0][4] == ""
 
 
+def test_setup_forwards_issue_title_to_add_agent(tmp_path):
+    from pycastle.container_runner import _setup
+    from pycastle.iteration._deps import RecordingStatusDisplay
+
+    runner = _unstarted_runner("implementer-42", tmp_path)
+    display = RecordingStatusDisplay()
+
+    async def _run():
+        loop = asyncio.get_event_loop()
+        await _setup(
+            "implementer-42",
+            runner,
+            loop,
+            None,
+            git_service=_make_git_service(),
+            status_display=display,
+            issue_title="Fix login bug",
+        )
+
+    asyncio.run(_run())
+
+    add_calls = [c for c in display.calls if c[0] == "add_agent"]
+    assert len(add_calls) == 1
+    assert add_calls[0][4] == "Fix login bug"
+
+
 def test_setup_creates_log_file_before_calling_add_agent(tmp_path):
     from pycastle.container_runner import _setup
 

@@ -103,6 +103,7 @@ class FakeAgentRunner:
         stage: str = "",
         token: CancellationToken | None = None,
         status_display: "StatusDisplay | None" = None,
+        issue_title: str = "",
     ) -> str | PreflightFailure:
         call = {
             "name": name,

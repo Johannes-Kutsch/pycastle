@@ -28,6 +28,7 @@ class AgentRunnerProtocol(Protocol):
         stage: str = "",
         token: CancellationToken | None = None,
         status_display=None,
+        issue_title: str = "",
     ) -> str | PreflightFailure: ...
 
     async def run_preflight(
