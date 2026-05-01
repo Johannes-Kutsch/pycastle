@@ -133,15 +133,23 @@ async def run(
     claude_service: ClaudeService | None = None,
     git_service: GitService | None = None,
     github_service: GithubService | None = None,
+    status_display: StatusDisplay | None = None,
 ) -> None:
     cfg = load_config(repo_root=repo_root, claude_service=claude_service)
     prune_orphan_worktrees(repo_root, cfg=cfg)
     git_svc = git_service or GitService(cfg)
 
+    _owned_display: RichStatusDisplay | None = None
+    if status_display is None:
+        _owned_display = RichStatusDisplay()
+        status_display = _owned_display
+
+    status_display.add_agent("startup", "Git identity")
     try:
         git_svc.get_user_name(cwd=repo_root)
         git_svc.get_user_email(cwd=repo_root)
     except GitCommandError:
+        status_display.remove_agent("startup")
         print(
             "Git user not configured. Run:\n"
             "git config --global user.name 'Your Name' && "
@@ -150,7 +158,9 @@ async def run(
         )
         sys.exit(1)
 
+    status_display.update_phase("startup", "Credentials")
     if github_service is None and shutil.which("gh") is None:
+        status_display.remove_agent("startup")
         print(
             "GitHub CLI not found. Install it with: sudo apt install gh,"
             " then run: gh auth login",
@@ -158,8 +168,8 @@ async def run(
         )
         sys.exit(1)
 
-    rich_display = RichStatusDisplay()
-    status_display: StatusDisplay = rich_display
+    status_display.remove_agent("startup")
+
     _lazy_github_svc: GithubService | None = None
 
     def _get_github_svc() -> GithubService:
@@ -221,4 +231,5 @@ async def run(
 
         status_display.print("\nAll done.")
     finally:
-        rich_display.stop()
+        if _owned_display is not None:
+            _owned_display.stop()
