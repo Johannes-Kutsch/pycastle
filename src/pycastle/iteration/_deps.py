@@ -33,6 +33,7 @@ class RecordingLogger:
 class StatusDisplay(Protocol):
     def add_agent(self, name: str, phase: str, log_path: Path, issue_title: str) -> None: ...
     def update_phase(self, name: str, phase: str) -> None: ...
+    def update_message(self, name: str, message: str) -> None: ...
     def remove_agent(self, name: str) -> None: ...
     def print(self, message: str) -> None: ...
 
@@ -42,6 +43,9 @@ class NullStatusDisplay:
         pass
 
     def update_phase(self, name: str, phase: str) -> None:
+        pass
+
+    def update_message(self, name: str, message: str) -> None:
         pass
 
     def remove_agent(self, name: str) -> None:
@@ -60,6 +64,9 @@ class RecordingStatusDisplay:
 
     def update_phase(self, name: str, phase: str) -> None:
         self.calls.append(("update_phase", name, phase))
+
+    def update_message(self, name: str, message: str) -> None:
+        self.calls.append(("update_message", name, message))
 
     def remove_agent(self, name: str) -> None:
         self.calls.append(("remove_agent", name))

@@ -271,7 +271,7 @@ class ContainerRunner:
         buf.seek(0)
         self._active_container.put_archive(os.path.dirname(container_path), buf)
 
-    def run_streaming(self) -> str:
+    def run_streaming(self, status_display=None) -> str:
         self.write_file(self._prompt, "/tmp/.pycastle_prompt")
         result = self._active_container.exec_run(
             ["bash", "-c", _build_claude_command(model=self.model, effort=self.effort)],
@@ -308,6 +308,8 @@ class ContainerRunner:
                     log.flush()
                     text = chunk.decode("utf-8", errors="replace")
                     parts.append(text)
+                    if status_display is not None:
+                        status_display.update_message(self.name, text.strip())
                     line_buf += text
                     while "\n" in line_buf:
                         line, line_buf = line_buf.split("\n", 1)
@@ -413,6 +415,6 @@ async def _work(
 ) -> str:
     if status_display is not None:
         status_display.update_phase(name, "Work")
-    return await loop.run_in_executor(None, runner.run_streaming)
+    return await loop.run_in_executor(None, runner.run_streaming, status_display)
 
 
