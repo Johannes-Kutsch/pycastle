@@ -1,6 +1,5 @@
 import os
 import re
-import sys
 import tempfile
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
@@ -121,13 +120,12 @@ async def managed_worktree(
 def patch_gitdir_for_container(worktree_path: Path) -> Path | None:
     """Return a temp file with the container-internal gitdir path, or None.
 
-    Only needed on Windows where git writes a Windows-style absolute path that
-    the Linux container cannot follow. The host .git file is never modified;
-    the caller should bind-mount the returned path over the container's .git.
+    Needed on all platforms: the host parent .git dir is bind-mounted at
+    CONTAINER_PARENT_GIT, so the worktree .git file's absolute host path
+    cannot be followed inside the container. The host .git file is never
+    modified; the caller should bind-mount the returned path over the
+    container's .git.
     """
-    if sys.platform != "win32":
-        return None
-
     git_file = worktree_path / ".git"
     if not git_file.is_file():
         return None
