@@ -5,7 +5,9 @@ from ..agent_result import CancellationToken, PreflightFailure
 from ._deps import Deps
 from .implement import branch_for, implement_phase
 from .merge import merge_phase
-from .plan import PlanHITL, PlanReady, plan_phase
+from .plan import PlanAFK, PlanHITL
+from .preflight import PreflightReady, preflight_phase
+from .planning import planning_phase
 
 
 @dataclasses.dataclass(frozen=True)
@@ -32,19 +34,30 @@ IterationOutcome: TypeAlias = Continue | Done | AbortedHITL | AbortedUsageLimit
 
 
 async def run_iteration(deps: Deps) -> IterationOutcome:
-    plan_result = await plan_phase(deps)
+    preflight_result = await preflight_phase(deps)
 
-    if isinstance(plan_result, PlanHITL):
+    if isinstance(preflight_result, PlanHITL):
         deps.status_display.print(
-            f"Preflight issue #{plan_result.issue_number} requires human intervention. Exiting."
+            f"Preflight issue #{preflight_result.issue_number} requires human intervention. Exiting."
         )
-        return AbortedHITL(issue_number=plan_result.issue_number)
+        return AbortedHITL(issue_number=preflight_result.issue_number)
 
-    if isinstance(plan_result, PlanReady) and not plan_result.issues:
-        return Done()
+    if isinstance(preflight_result, PreflightReady):
+        if not preflight_result.issues:
+            return Done()
+        sha = preflight_result.sha
+        open_issues = preflight_result.issues
+        if len(open_issues) >= 2:
+            plan_result = await planning_phase(deps, sha, open_issues)
+            sha = plan_result.worktree_sha
+            issues = plan_result.issues
+        else:
+            issues = open_issues
+    else:
+        sha = preflight_result.worktree_sha
+        issues = preflight_result.issues
 
-    sha = plan_result.worktree_sha
-    issues = plan_result.issues[: deps.cfg.max_parallel]
+    issues = issues[: deps.cfg.max_parallel]
 
     deps.status_display.print(f"Planning complete. {len(issues)} issue(s):")
     for issue in issues:

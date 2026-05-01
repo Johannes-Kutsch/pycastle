@@ -4,9 +4,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.agent_result import (
-    PreflightFailure,
-)
 from pycastle.errors import UsageLimitError
 from pycastle.config import Config
 from pycastle.git_service import GitService
@@ -62,13 +59,19 @@ def _make_deps(
     logger,
     cfg=None,
     status_display=None,
+    preflight_responses=None,
 ) -> Deps:
     return Deps(
         env={},
         repo_root=tmp_path,
         git_svc=git_svc,
         github_svc=github_svc,
-        agent_runner=FakeAgentRunner(side_effect=run_agent_fn),
+        agent_runner=FakeAgentRunner(
+            side_effect=run_agent_fn,
+            preflight_responses=[[]]
+            if preflight_responses is None
+            else preflight_responses,
+        ),
         cfg=cfg or Config(max_parallel=4, max_iterations=1),
         logger=logger,
         status_display=status_display or NullStatusDisplay(),
@@ -98,17 +101,20 @@ def test_run_iteration_returns_done_when_no_open_issues(tmp_path, git_svc, logge
 
 
 def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, logger):
-    """run_iteration returns AbortedHITL when plan_phase returns PlanHITL."""
+    """run_iteration returns AbortedHITL when preflight_phase returns PlanHITL."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
 
     async def _fake_agent(name, **kwargs):
-        if name == "Planner":
-            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         return '<issue>{"number": 42, "labels": ["ready-for-human"]}</issue>'
 
     deps = _make_deps(
-        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[(("ruff", "ruff check .", "E501"),)],
     )
     result = asyncio.run(run_iteration(deps))
 
@@ -122,14 +128,15 @@ def test_run_iteration_aborted_hitl_carries_issue_number(tmp_path, git_svc, logg
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
 
     async def _fake_agent(name, **kwargs):
-        if name == "Planner":
-            return PreflightFailure(
-                failures=(("mypy", "mypy .", "error: Missing module"),)
-            )
         return '<issue>{"number": 99, "labels": ["ready-for-human"]}</issue>'
 
     deps = _make_deps(
-        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[(("mypy", "mypy .", "error: Missing module"),)],
     )
     result = asyncio.run(run_iteration(deps))
 
@@ -145,12 +152,15 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
 
     async def _fake_agent(name, **kwargs):
-        if name == "Planner":
-            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         return '<issue>{"number": 7, "labels": ["ready-for-human"]}</issue>'
 
     deps = _make_deps(
-        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[(("ruff", "ruff check .", "E501"),)],
     )
 
     result = asyncio.run(run_iteration(deps))
@@ -160,16 +170,24 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
 # ── AbortedUsageLimit: usage limit hit ───────────────────────────────────────
 
 
-def test_run_iteration_raises_when_planner_hits_usage_limit(
-    tmp_path, git_svc, github_svc, logger
-):
+def test_run_iteration_raises_when_planner_hits_usage_limit(tmp_path, git_svc, logger):
     """run_iteration propagates UsageLimitError when the Planner raises it."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix A"},
+        {"number": 2, "title": "Fix B"},
+    ]
 
     async def _fake_agent(name, **kwargs):
         raise UsageLimitError("token ceiling reached")
 
     deps = _make_deps(
-        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[[]],
     )
     with pytest.raises(UsageLimitError):
         asyncio.run(run_iteration(deps))
@@ -259,22 +277,23 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
     tmp_path, git_svc, logger
 ):
     """run_iteration implements the preflight-fix issue and returns Continue when
-    plan_phase returns PlanAFK (preflight failure with AFK verdict)."""
+    preflight_phase returns PlanAFK (preflight failure with AFK verdict)."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     github_svc.get_issue_title.return_value = "Preflight fix"
 
     async def _fake_agent(name, **kwargs):
-        if name == "Planner":
-            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
             return '<issue>{"number": 55, "labels": ["ready-for-agent"]}</issue>'
-        if "Implementer" in name:
-            return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
     deps = _make_deps(
-        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[(("ruff", "ruff check .", "E501"),)],
     )
     result = asyncio.run(run_iteration(deps))
 
@@ -285,7 +304,7 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
     tmp_path, git_svc, logger
 ):
     """On AFK preflight verdict, run_iteration must spawn an Implementer for the
-    filed fix issue (not invoke the Planner a second time)."""
+    filed fix issue without invoking the Planner."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     github_svc.get_issue_title.return_value = "Preflight fix"
@@ -294,22 +313,24 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
 
     async def _fake_agent(name, **kwargs):
         agent_names.append(name)
-        if name == "Planner":
-            return PreflightFailure(failures=(("mypy", "mypy .", "error"),))
         if "preflight-issue" in name:
             return '<issue>{"number": 77, "labels": ["ready-for-agent"]}</issue>'
-        if "Implementer" in name:
-            return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
     deps = _make_deps(
-        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[(("mypy", "mypy .", "error"),)],
     )
     asyncio.run(run_iteration(deps))
 
-    planner_calls = [n for n in agent_names if n == "Planner"]
     implementer_calls = [n for n in agent_names if "Implementer" in n]
-    assert len(planner_calls) == 1, "Planner called once (returns PreflightFailure)"
+    assert "Planner" not in agent_names, (
+        "Planner must not be called on AFK preflight path"
+    )
     assert len(implementer_calls) == 1, "Exactly one Implementer for the fix issue"
     assert implementer_calls[0] == "Implementer #77"
 
@@ -352,8 +373,6 @@ def test_run_iteration_routes_hitl_abort_message_through_status_display(
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
 
     async def _fake_agent(name, **kwargs):
-        if name == "Planner":
-            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         return '<issue>{"number": 42, "labels": ["ready-for-human"]}</issue>'
 
     deps = _make_deps(
@@ -363,6 +382,7 @@ def test_run_iteration_routes_hitl_abort_message_through_status_display(
         github_svc=github_svc,
         logger=logger,
         status_display=recording,
+        preflight_responses=[(("ruff", "ruff check .", "E501"),)],
     )
     asyncio.run(run_iteration(deps))
 
@@ -395,3 +415,70 @@ def test_run_iteration_routes_no_commits_message_through_status_display(
     print_messages = [msg for kind, msg in recording.calls if kind == "print"]
     assert any("No commits" in msg for msg in print_messages)
     assert "No commits" not in capsys.readouterr().out
+
+
+# ── One-issue fast path ───────────────────────────────────────────────────────
+
+
+def test_run_iteration_calls_planning_phase_with_two_or_more_open_issues(
+    tmp_path, git_svc, logger
+):
+    """With two or more open issues and passing preflight, run_iteration must invoke
+    the Planner (planning_phase) before implement_phase."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 3, "title": "Issue A"},
+        {"number": 7, "title": "Issue B"},
+    ]
+
+    agent_names: list[str] = []
+
+    async def _fake_agent(name, **kwargs):
+        agent_names.append(name)
+        if name == "Planner":
+            return _plan_json([{"number": 3, "title": "Issue A"}])
+        return "<promise>COMPLETE</promise>"
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[[]],
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    assert "Planner" in agent_names, (
+        "Planner must be called when two or more issues exist"
+    )
+
+
+def test_run_iteration_skips_planning_phase_with_one_open_issue(
+    tmp_path, git_svc, logger
+):
+    """With exactly one open issue and passing preflight, run_iteration must not
+    invoke the Planner and must pass the issue directly to implement_phase."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 7, "title": "Single issue"}]
+
+    agent_names: list[str] = []
+
+    async def _fake_agent(name, **kwargs):
+        agent_names.append(name)
+        return "<promise>COMPLETE</promise>"
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[[]],
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    assert "Planner" not in agent_names, "Planner must not be called for a single issue"
+    assert any("Implementer" in n for n in agent_names), "Implementer must be called"

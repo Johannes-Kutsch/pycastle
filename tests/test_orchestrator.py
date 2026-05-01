@@ -13,7 +13,7 @@ from pycastle.config import Config, StageOverride
 from pycastle.errors import ClaudeServiceError, ConfigValidationError, UsageLimitError
 from pycastle.git_service import GitCommandError, GitService
 from pycastle.github_service import GithubService
-from pycastle.iteration._deps import RecordingStatusDisplay
+from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 from pycastle.orchestrator import (
     delete_merged_branches,
     prune_orphan_worktrees,
@@ -51,7 +51,10 @@ def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
 def _make_github_svc():
     mock = MagicMock(spec=GithubService)
     mock.has_open_issues_with_label.return_value = True
-    mock.get_open_issues.return_value = [{"number": 1, "title": "Default Issue"}]
+    mock.get_open_issues.return_value = [
+        {"number": 1, "title": "Default Issue"},
+        {"number": 2, "title": "Default Issue 2"},
+    ]
     return mock
 
 
@@ -102,11 +105,12 @@ def _write_config(tmp_path: Path, **kwargs) -> None:
 
 def _run(
     tmp_path,
-    run_agent_fn,
+    run_agent_fn=None,
     *,
     claude_service=None,
     git_service=None,
     github_service=None,
+    agent_runner=None,
     **config_kwargs,
 ):
     config_kwargs.setdefault("max_parallel", 4)
@@ -117,6 +121,7 @@ def _run(
             {},
             tmp_path,
             run_agent=run_agent_fn,
+            agent_runner=agent_runner,
             claude_service=claude_service
             if claude_service is not None
             else _make_claude_svc(),
@@ -183,8 +188,6 @@ def test_preflight_issue_branch_uses_pycastle_format(tmp_path):
     captured_branches: list[str] = []
 
     async def _fake_run_agent(name, prompt_args=None, branch=None, **kwargs):
-        if name == "Planner":
-            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
             return '<issue>{"number": 77, "labels": ["ready-for-agent"]}</issue>'
         if "Implementer" in name:
@@ -194,7 +197,10 @@ def test_preflight_issue_branch_uses_pycastle_format(tmp_path):
 
     _run(
         tmp_path,
-        _fake_run_agent,
+        agent_runner=FakeAgentRunner(
+            side_effect=_fake_run_agent,
+            preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+        ),
         git_service=_make_git_svc(try_merge_side_effect=[True]),
         github_service=_make_github_svc_afk(),
     )
@@ -953,22 +959,25 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
-        if name == "Planner":
-            return PreflightFailure(
-                failures=(
-                    ("pytest", "pytest -x", "FAILED tests/test_bar.py::test_something"),
-                )
-            )
         if "preflight-issue" in name:
             return '<issue>{"number": 70, "labels": ["ready-for-human"]}</issue>'
-        if "Implementer" in name:
-            return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
     with pytest.raises(SystemExit):
         _run(
             tmp_path,
-            _fake_run_agent,
+            agent_runner=FakeAgentRunner(
+                side_effect=_fake_run_agent,
+                preflight_responses=[
+                    (
+                        (
+                            "pytest",
+                            "pytest -x",
+                            "FAILED tests/test_bar.py::test_something",
+                        ),
+                    )
+                ],
+            ),
             github_service=_make_github_svc_hitl(),
         )
 
@@ -1302,16 +1311,12 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
 
 
 def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
-    """On plan-sandbox preflight failure with AFK verdict, Planner must NOT be called again
+    """On plan-sandbox preflight failure with AFK verdict, Planner must NOT be called
     and exactly one Implementer must be spawned for the preflight issue."""
     agent_names: list[str] = []
 
     async def _fake_run_agent(name, **kwargs):
         agent_names.append(name)
-        if name == "Planner":
-            return PreflightFailure(
-                failures=(("ruff", "ruff check .", "E501 line too long"),)
-            )
         if "preflight-issue" in name:
             return '<issue>{"number": 42, "labels": ["ready-for-agent"]}</issue>'
         if "Implementer" in name:
@@ -1320,15 +1325,17 @@ def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
 
     _run(
         tmp_path,
-        _fake_run_agent,
+        agent_runner=FakeAgentRunner(
+            side_effect=_fake_run_agent,
+            preflight_responses=[(("ruff", "ruff check .", "E501 line too long"),)],
+        ),
         git_service=_make_git_svc(try_merge_side_effect=[True]),
         github_service=_make_github_svc_afk(),
     )
 
-    planner_calls = [n for n in agent_names if n == "Planner"]
     implementer_calls = [n for n in agent_names if "Implementer" in n]
-    assert len(planner_calls) == 1, (
-        f"Planner called once (then errors); got {planner_calls}"
+    assert "Planner" not in agent_names, (
+        "Planner must not be called on AFK preflight path"
     )
     assert len(implementer_calls) == 1, (
         f"Exactly one Implementer must be spawned for the preflight fix; got {implementer_calls}"
@@ -1341,8 +1348,6 @@ def test_preflight_failure_hitl_exits_nonzero_no_implementer(tmp_path):
     implementer_calls: list[str] = []
 
     async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
-            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
         if "preflight-issue" in name:
             return '<issue>{"number": 99, "labels": ["ready-for-human"]}</issue>'
         if "Implementer" in name:
@@ -1352,7 +1357,10 @@ def test_preflight_failure_hitl_exits_nonzero_no_implementer(tmp_path):
     with pytest.raises(SystemExit) as exc_info:
         _run(
             tmp_path,
-            _fake_run_agent,
+            agent_runner=FakeAgentRunner(
+                side_effect=_fake_run_agent,
+                preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+            ),
             github_service=_make_github_svc_hitl(),
         )
 
@@ -1367,27 +1375,26 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
     preflight_issue_calls: list[dict] = []
 
     async def _fake_run_agent(name, prompt_args=None, **kwargs):
-        if name == "Planner":
-            return PreflightFailure(
-                failures=(
-                    ("ruff", "ruff check .", "ruff error"),
-                    ("mypy", "mypy .", "mypy error"),
-                    ("pytest", "pytest", "pytest error"),
-                )
-            )
         if "preflight-issue" in name:
             preflight_issue_calls.append(
                 {"name": name, "prompt_args": prompt_args or {}}
             )
             return '<issue>{"number": 10, "labels": ["ready-for-human"]}</issue>'
-        if "Implementer" in name:
-            return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
     with pytest.raises(SystemExit):
         _run(
             tmp_path,
-            _fake_run_agent,
+            agent_runner=FakeAgentRunner(
+                side_effect=_fake_run_agent,
+                preflight_responses=[
+                    (
+                        ("ruff", "ruff check .", "ruff error"),
+                        ("mypy", "mypy .", "mypy error"),
+                        ("pytest", "pytest", "pytest error"),
+                    )
+                ],
+            ),
             github_service=_make_github_svc_hitl(),
         )
 
@@ -1586,7 +1593,8 @@ def test_planner_receives_open_issues_json_not_issue_label(tmp_path):
             "body": "Blocked by #99\nDo the work.",
             "labels": [],
             "comments": [],
-        }
+        },
+        {"number": 2, "title": "Another issue", "body": ""},
     ]
 
     _run(
@@ -1931,28 +1939,34 @@ def test_planner_preflight_error_spawns_no_implementers(tmp_path):
     """On plan-sandbox PreflightError with HITL verdict, run must exit immediately."""
 
     async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
-            return PreflightFailure(
-                failures=(("ruff", "ruff check .", "E501 line too long"),)
-            )
         return '<issue>{"number": 77, "labels": ["ready-for-human"]}</issue>'
 
     with pytest.raises(SystemExit):
-        _run(tmp_path, _fake_run_agent, github_service=_make_github_svc_hitl())
+        _run(
+            tmp_path,
+            agent_runner=FakeAgentRunner(
+                side_effect=_fake_run_agent,
+                preflight_responses=[(("ruff", "ruff check .", "E501 line too long"),)],
+            ),
+            github_service=_make_github_svc_hitl(),
+        )
 
 
 def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
     """HITL preflight failure must print a message referencing the filed issue number."""
 
     async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
-            return PreflightFailure(
-                failures=(("ruff", "ruff check .", "E501 line too long"),)
-            )
         return '<issue>{"number": 88, "labels": ["ready-for-human"]}</issue>'
 
     with pytest.raises(SystemExit):
-        _run(tmp_path, _fake_run_agent, github_service=_make_github_svc_hitl())
+        _run(
+            tmp_path,
+            agent_runner=FakeAgentRunner(
+                side_effect=_fake_run_agent,
+                preflight_responses=[(("ruff", "ruff check .", "E501 line too long"),)],
+            ),
+            github_service=_make_github_svc_hitl(),
+        )
 
     out = capsys.readouterr().out
     assert "88" in out, f"Output must reference the filed issue number; got: {out!r}"
