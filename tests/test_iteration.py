@@ -199,8 +199,6 @@ def test_run_iteration_returns_aborted_usage_limit_when_implementer_hits_limit(
     """run_iteration returns AbortedUsageLimit when an implementer hits the usage limit."""
 
     async def _fake_agent(name, **kwargs):
-        if name == "Planner":
-            return _plan_json([{"number": 1, "title": "Fix"}])
         raise UsageLimitError("")
 
     deps = _make_deps(
@@ -217,8 +215,6 @@ def test_run_iteration_aborted_usage_limit_does_not_raise_system_exit(
     """run_iteration must return AbortedUsageLimit instead of calling sys.exit on usage limit."""
 
     async def _fake_agent(name, **kwargs):
-        if name == "Planner":
-            return _plan_json([{"number": 1, "title": "Fix"}])
         raise UsageLimitError("")
 
     deps = _make_deps(
@@ -235,13 +231,9 @@ def test_run_iteration_aborted_usage_limit_does_not_raise_system_exit(
 def test_run_iteration_returns_continue_when_issues_complete_normally(
     tmp_path, git_svc, github_svc, logger
 ):
-    """run_iteration returns Continue after a normal plan→implement→merge cycle."""
+    """run_iteration returns Continue after a normal implement→merge cycle (1-issue fast path)."""
 
     async def _fake_agent(name, **kwargs):
-        if name == "Planner":
-            return _plan_json([{"number": 1, "title": "Fix"}])
-        if "Implementer" in name:
-            return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
     deps = _make_deps(
@@ -258,8 +250,6 @@ def test_run_iteration_returns_continue_when_no_implementers_complete(
     """run_iteration returns Continue (not Done) when implementers produce no commits."""
 
     async def _fake_agent(name, **kwargs):
-        if name == "Planner":
-            return _plan_json([{"number": 1, "title": "Fix"}])
         return ""  # implementer without COMPLETE → not completed
 
     deps = _make_deps(
@@ -345,8 +335,6 @@ def test_run_iteration_routes_planning_complete_through_status_display(
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(name, **kwargs):
-        if name == "Planner":
-            return _plan_json([{"number": 1, "title": "Fix bug"}])
         return "<promise>COMPLETE</promise>"
 
     deps = _make_deps(
@@ -482,3 +470,32 @@ def test_run_iteration_skips_planning_phase_with_one_open_issue(
     assert isinstance(result, Continue)
     assert "Planner" not in agent_names, "Planner must not be called for a single issue"
     assert any("Implementer" in n for n in agent_names), "Implementer must be called"
+
+
+def test_run_iteration_returns_continue_when_planning_phase_selects_no_issues(
+    tmp_path, git_svc, logger
+):
+    """When planning_phase returns zero issues (Planner picks none), run_iteration
+    produces no commits and returns Continue."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Issue A"},
+        {"number": 2, "title": "Issue B"},
+    ]
+
+    async def _fake_agent(name, **kwargs):
+        if name == "Planner":
+            return _plan_json([])
+        return "<promise>COMPLETE</promise>"
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[[]],
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)

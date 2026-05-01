@@ -53,7 +53,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             issues = plan_result.issues
         else:
             issues = open_issues
-    else:
+    elif isinstance(preflight_result, PlanAFK):
         sha = preflight_result.worktree_sha
         issues = preflight_result.issues
 
