@@ -548,18 +548,24 @@ def test_patch_gitdir_returns_temp_file_and_leaves_host_unchanged(tmp_path):
     )
 
 
-def test_patch_gitdir_noop_on_non_windows(tmp_path):
-    """On Linux/macOS the function returns None and leaves the .git file untouched."""
+def test_patch_gitdir_rewrites_linux_path(tmp_path):
+    """On Linux the function returns a temp file with the container-internal gitdir path."""
     worktree = tmp_path / "my-branch"
     worktree.mkdir()
-    original = "gitdir: /home/user/repo/.git/worktrees/my-branch\n"
-    (worktree / ".git").write_text(original)
+    git_file = worktree / ".git"
+    git_file.write_text("gitdir: /home/user/repo/.git/worktrees/my-branch\n")
 
     with patch("sys.platform", "linux"):
         result = patch_gitdir_for_container(worktree)
 
-    assert result is None
-    assert (worktree / ".git").read_text() == original
+    assert result is not None
+    assert (
+        result.read_text().strip()
+        == "gitdir: /.pycastle-parent-git/worktrees/my-branch"
+    )
+    assert (
+        git_file.read_text() == "gitdir: /home/user/repo/.git/worktrees/my-branch\n"
+    )
 
 
 # ── Issue-229: managed_worktree context manager ───────────────────────────────
