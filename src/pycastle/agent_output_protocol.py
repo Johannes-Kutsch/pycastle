@@ -3,7 +3,7 @@ import enum
 import json
 import re
 from collections.abc import Callable, Iterable
-from typing import Literal, TypeAlias, overload
+from typing import TypeAlias
 
 from .errors import UsageLimitError
 
@@ -49,21 +49,6 @@ class IssueParseError(AgentOutputProtocolError):
 
 class PromiseParseError(AgentOutputProtocolError):
     pass
-
-
-def _unwrap(output: str) -> str:
-    for line in output.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict) and obj.get("type") == "result":
-            result = obj.get("result")
-            return result if isinstance(result, str) else output
-    return output
 
 
 def _extract_planner_output(text: str) -> PlannerOutput:
@@ -112,47 +97,6 @@ def _extract_issue_output(text: str) -> IssueOutput:
     except (KeyError, TypeError, ValueError) as exc:
         raise IssueParseError(f"<issue> JSON has unexpected structure: {exc}") from exc
     return IssueOutput(labels=labels, number=number)
-
-
-@overload
-def parse(output: str, role: Literal[AgentRole.PLANNER]) -> PlannerOutput: ...
-
-
-@overload
-def parse(output: str, role: Literal[AgentRole.PREFLIGHT_ISSUE]) -> IssueOutput: ...
-
-
-@overload
-def parse(output: str, role: AgentRole) -> AgentOutput: ...
-
-
-def parse(output: str, role: AgentRole) -> AgentOutput:
-    text = _unwrap(output)
-    tail = f"\nOutput tail: {text[-300:]!r}"
-    if role == AgentRole.PREFLIGHT_ISSUE:
-        try:
-            return _extract_issue_output(text)
-        except IssueParseError as exc:
-            raise IssueParseError(f"{exc}{tail}") from exc.__cause__
-    if role == AgentRole.PLANNER:
-        try:
-            return _extract_planner_output(text)
-        except PlanParseError as exc:
-            raise PlanParseError(f"{exc}{tail}") from exc.__cause__
-    if not re.search(r"<promise>COMPLETE</promise>", text):
-        raise PromiseParseError(
-            f"Agent produced no <promise>COMPLETE</promise> tag.{tail}"
-        )
-    return CompletionOutput()
-
-
-def assert_complete(output: str) -> None:
-    text = _unwrap(output)
-    if not re.search(r"<promise>COMPLETE</promise>", text):
-        tail = text[-200:]
-        raise PromiseParseError(
-            f"Agent produced no <promise>COMPLETE</promise> tag. Output tail: {tail!r}"
-        )
 
 
 def _is_usage_limit_line(line: str, patterns: tuple[str, ...]) -> bool:
