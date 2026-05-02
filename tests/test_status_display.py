@@ -618,29 +618,21 @@ def test_rich_new_api_register_custom_startup_message(capsys) -> None:
 
 
 def test_rich_new_api_remove_prints_finished_in_green() -> None:
-    buf = io.StringIO()
-    test_console = Console(
-        file=buf, width=200, force_terminal=True, color_system="standard"
-    )
-    d = RichStatusDisplay(console=test_console)
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
     d.remove("X")
     ansi = buf.getvalue()
     assert "[X] finished" in ansi
-    finished_idx = ansi.find("[X] finished")
-    assert _has_code(ansi[:finished_idx], 32)
+    assert _has_code(ansi[: ansi.find("[X] finished")], 32)
 
 
 def test_rich_new_api_remove_error_style_prints_in_red() -> None:
-    buf = io.StringIO()
-    test_console = Console(
-        file=buf, width=200, force_terminal=True, color_system="standard"
-    )
-    d = RichStatusDisplay(console=test_console)
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
     d.remove("X", shutdown_message="failed", shutdown_style="error")
     ansi = buf.getvalue()
     assert "[X] failed" in ansi
-    failed_idx = ansi.find("[X] failed")
-    assert _has_code(ansi[:failed_idx], 31)
+    assert _has_code(ansi[: ansi.find("[X] failed")], 31)
 
 
 def test_rich_new_api_blank_line_on_caller_change(capsys) -> None:
@@ -687,6 +679,46 @@ def test_rich_preflight_agent_sorts_before_plan_agent() -> None:
     d.stop()
 
     assert output.find("Preflight Agent") < output.find("Plan Agent")
+
+
+def test_rich_new_api_first_print_has_no_leading_blank_line(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("A", "hello")
+    out = capsys.readouterr().out
+    assert out.startswith("[A]")
+
+
+def test_rich_register_with_empty_caller_prints_message_only(capsys) -> None:
+    d = RichStatusDisplay()
+    d.register("", startup_message="booting")
+    d.stop()
+    out = capsys.readouterr().out
+    assert "booting" in out
+    assert "[" not in out
+
+
+def test_rich_remove_with_empty_caller_prints_message_only(capsys) -> None:
+    d = RichStatusDisplay()
+    d.remove("", shutdown_message="done")
+    out = capsys.readouterr().out
+    assert "done" in out
+    assert "[" not in out
+
+
+def test_rich_remove_unregistered_caller_is_safe(capsys) -> None:
+    d = RichStatusDisplay()
+    d.remove("never-registered")
+    assert "[never-registered] finished" in capsys.readouterr().out
+
+
+def test_rich_multiple_registers_use_single_live(capsys) -> None:
+    d = RichStatusDisplay()
+    d.register("A")
+    d.register("B")
+    d.stop()
+    out = capsys.readouterr().out
+    assert "[A] started" in out
+    assert "[B] started" in out
 
 
 def test_plain_status_display_satisfies_protocol() -> None:
