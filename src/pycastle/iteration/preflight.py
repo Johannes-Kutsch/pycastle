@@ -10,6 +10,7 @@ from ..agent_output_protocol import (
 )
 from ..agent_result import PreflightFailure
 from ..services import GitCommandError
+from ..worktree import detached_worktree
 from ._deps import Deps
 from ._utils import _wait_for_clean_working_tree
 
@@ -101,15 +102,10 @@ async def preflight_phase(deps: Deps) -> PreflightResult:
     if not open_issues:
         return PreflightReady(sha=sha, issues=[])
 
-    worktree_path = (
-        deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "pre-flight-sandbox"
-    )
-    deps.git_svc.checkout_detached(deps.repo_root, worktree_path, sha)
-
-    try:
+    async with detached_worktree("pre-flight-sandbox", sha, deps) as wt:
         failures = await deps.agent_runner.run_preflight(
             name="Pre-Flight",
-            mount_path=worktree_path,
+            mount_path=wt,
             stage="PREFLIGHT",
             status_display=deps.status_display,
             work_body="Checking",
@@ -118,7 +114,7 @@ async def preflight_phase(deps: Deps) -> PreflightResult:
         if failures:
             try:
                 verdict, pf_num = await handle_preflight_failure(
-                    tuple(failures), deps, worktree_path
+                    tuple(failures), deps, wt
                 )
             except AgentOutputProtocolError as parse_exc:
                 raise RuntimeError(str(parse_exc)) from parse_exc
@@ -130,5 +126,3 @@ async def preflight_phase(deps: Deps) -> PreflightResult:
             )
 
         return PreflightReady(sha=sha, issues=open_issues)
-    finally:
-        deps.git_svc.remove_worktree(deps.repo_root, worktree_path)
