@@ -72,6 +72,26 @@ def test_rich_print_blank_line_on_source_change(capsys) -> None:
     assert "hello\n\nworld" in out
 
 
+def test_rich_print_blank_line_when_switching_from_default_to_named_source(
+    capsys,
+) -> None:
+    d = RichStatusDisplay()
+    d.print("hello")
+    d.print("world", source="block-a")
+    out = capsys.readouterr().out
+    assert "hello\n\nworld" in out
+
+
+def test_rich_print_blank_line_when_switching_from_named_to_default_source(
+    capsys,
+) -> None:
+    d = RichStatusDisplay()
+    d.print("hello", source="block-a")
+    d.print("world")
+    out = capsys.readouterr().out
+    assert "hello\n\nworld" in out
+
+
 def test_rich_agents_render_sorted_by_phase_rank() -> None:
     d = RichStatusDisplay()
     d.add_agent("Merger", "Work")
