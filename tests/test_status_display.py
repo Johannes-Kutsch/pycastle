@@ -565,7 +565,7 @@ def test_rich_pre_flight_reporter_name_renders_bold_without_role_color() -> None
 # ── PlainStatusDisplay protocol conformance ────────────────────────────────────
 
 
-def test_null_status_display_satisfies_protocol() -> None:
+def test_plain_status_display_satisfies_protocol() -> None:
     assert isinstance(PlainStatusDisplay(), StatusDisplay)
 
 
@@ -576,37 +576,37 @@ def test_recording_status_display_satisfies_protocol() -> None:
 # ── PlainStatusDisplay behaviour ───────────────────────────────────────────────
 
 
-def test_null_reset_idle_timer_is_silent(capsys) -> None:
+def test_plain_reset_idle_timer_produces_no_output(capsys) -> None:
     d = PlainStatusDisplay()
     d.reset_idle_timer("implementer-1")
     assert capsys.readouterr().out == ""
 
 
-def test_null_add_agent_is_silent(capsys) -> None:
+def test_plain_add_agent_produces_no_output(capsys) -> None:
     d = PlainStatusDisplay()
     d.add_agent("implementer-1", "Setup")
     assert capsys.readouterr().out == ""
 
 
-def test_null_add_agent_with_work_body_is_silent(capsys) -> None:
+def test_plain_add_agent_with_work_body_produces_no_output(capsys) -> None:
     d = PlainStatusDisplay()
     d.add_agent("implementer-1", "Work", "working on auth bug")
     assert capsys.readouterr().out == ""
 
 
-def test_null_update_phase_is_silent(capsys) -> None:
+def test_plain_update_phase_produces_no_output(capsys) -> None:
     d = PlainStatusDisplay()
     d.update_phase("implementer-1", "Work")
     assert capsys.readouterr().out == ""
 
 
-def test_null_remove_agent_is_silent(capsys) -> None:
+def test_plain_remove_agent_produces_no_output(capsys) -> None:
     d = PlainStatusDisplay()
     d.remove_agent("implementer-1")
     assert capsys.readouterr().out == ""
 
 
-def test_null_print_delegates_to_builtins(capsys) -> None:
+def test_plain_print_delegates_to_builtins(capsys) -> None:
     d = PlainStatusDisplay()
     d.print("Planning complete. 3 issue(s)")
     captured = capsys.readouterr()
