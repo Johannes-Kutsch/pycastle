@@ -999,3 +999,29 @@ def test_is_working_tree_clean_returns_true_when_status_command_fails(tmp_path):
         return_value=MagicMock(returncode=128, stdout=b""),
     ):
         assert svc.is_working_tree_clean(tmp_path) is True
+
+
+# ── pull() ────────────────────────────────────────────────────────────────────
+
+
+def test_pull_succeeds_on_zero_exit(tmp_path):
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(
+            returncode=0, stdout=b"Already up to date.\n", stderr=b""
+        ),
+    ):
+        svc.pull(tmp_path)  # must not raise
+
+
+def test_pull_raises_git_command_error_on_nonzero_exit(tmp_path):
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(
+            returncode=1, stdout=b"fatal: diverged\n", stderr=b"hint: use rebase"
+        ),
+    ):
+        with pytest.raises(GitCommandError):
+            svc.pull(tmp_path)
