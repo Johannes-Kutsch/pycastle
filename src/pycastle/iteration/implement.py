@@ -28,8 +28,9 @@ async def _agent_worktree(
     wt_name = worktree_name_for_branch(branch)
     wt_path = _worktree_path(wt_name, deps)
     deps.git_svc.create_worktree(deps.repo_root, wt_path, branch, sha)
-    gitdir_overlay = patch_gitdir_for_container(wt_path)
+    gitdir_overlay = None
     try:
+        gitdir_overlay = patch_gitdir_for_container(wt_path)
         yield wt_path
     finally:
         if not token.wants_worktree_preserved:
