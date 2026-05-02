@@ -66,7 +66,7 @@ async def run_issue(
             skip_preflight=True,
             status_display=deps.status_display,
             issue_title=issue["title"],
-            work_body=f'working on "{issue["title"]}"',
+            work_body=f'implementing "{issue["title"]}"',
             token=token,
         )
     )
@@ -89,7 +89,7 @@ async def run_issue(
             skip_preflight=True,
             status_display=deps.status_display,
             issue_title=issue["title"],
-            work_body=f'working on "{issue["title"]}"',
+            work_body=f'reviewing "{issue["title"]}"',
             token=token,
         )
     )
