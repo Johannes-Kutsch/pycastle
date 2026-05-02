@@ -416,6 +416,8 @@ def test_preflight_phase_propagates_error_when_pull_fails(
     with pytest.raises(GitCommandError):
         asyncio.run(preflight_phase(deps))
 
+    git_svc.get_head_sha.assert_not_called()
+
 
 def test_preflight_phase_prints_red_error_message_when_pull_fails(
     tmp_path, git_svc, github_svc, logger
@@ -457,6 +459,7 @@ def test_preflight_phase_pins_sha_from_post_pull_head(tmp_path, logger):
 
     assert isinstance(result, PreflightReady)
     assert result.sha == "post_pull_sha"
+    git_svc.pull.assert_called_once_with(tmp_path)
 
 
 def test_preflight_phase_waits_for_clean_working_tree_before_pulling(
