@@ -9,7 +9,9 @@ from ..agent_output_protocol import (
     parse,
 )
 from ..agent_result import PreflightFailure
+from ..services import GitCommandError
 from ._deps import Deps
+from ._utils import _wait_for_clean_working_tree
 
 
 def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
@@ -83,6 +85,15 @@ async def handle_preflight_failure(
 
 
 async def preflight_phase(deps: Deps) -> PreflightResult:
+    await _wait_for_clean_working_tree(deps, phase="preflight")
+    try:
+        deps.git_svc.pull(deps.repo_root)
+    except GitCommandError:
+        deps.status_display.print(
+            "[red]git pull --ff-only failed — remote branch has diverged or is unreachable. "
+            "Resolve manually and retry.[/red]"
+        )
+        raise
     sha = deps.git_svc.get_head_sha(deps.repo_root)
     open_issues = strip_stale_blocker_refs(
         deps.github_svc.get_open_issues(deps.cfg.issue_label)
