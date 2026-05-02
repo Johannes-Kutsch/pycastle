@@ -7,7 +7,7 @@ import pytest
 
 from pycastle.errors import UsageLimitError
 from pycastle.config import Config
-from pycastle.git_service import GitService
+from pycastle.services import GitService
 from pycastle.github_service import GithubService
 from pycastle.iteration import (
     AbortedHITL,

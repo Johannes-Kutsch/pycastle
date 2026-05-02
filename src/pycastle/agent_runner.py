@@ -8,7 +8,7 @@ from .agent_result import CancellationToken, PreflightFailure
 from .config import Config
 from .container_runner import ContainerRunner, _preflight, _prepare, _setup, _work
 from .errors import AgentTimeoutError, BranchCollisionError, UsageLimitError
-from .git_service import GitService
+from .services import GitService
 from .worktree import patch_gitdir_for_container
 
 

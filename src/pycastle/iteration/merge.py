@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ..agent_output_protocol import assert_complete
 from ..agent_result import PreflightFailure
-from ..git_service import GitCommandError
+from ..services import GitCommandError
 from ._deps import Deps
 from .implement import branch_for
 

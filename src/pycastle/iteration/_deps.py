@@ -8,7 +8,7 @@ from typing import Any, Protocol, runtime_checkable
 from ..agent_result import CancellationToken, PreflightFailure
 from ..agent_runner import AgentRunnerProtocol
 from ..config import Config
-from ..git_service import GitService
+from ..services import GitService
 from ..github_service import GithubService
 
 

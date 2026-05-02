@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from pycastle.config import Config
-from pycastle.git_service import GitCommandError, GitService
+from pycastle.services import GitCommandError, GitService
 from pycastle.github_service import GithubService
 from pycastle.iteration._deps import (
     Deps,
