@@ -987,6 +987,17 @@ def test_agent_runner_run_preflight_removes_status_row_when_exception_propagates
     assert ("remove_agent", "preflight-checks") in display.calls
 
 
+def test_agent_runner_run_preflight_propagates_git_user_name_error(tmp_path):
+    mock_git = _make_git_service()
+    mock_git.get_user_name.side_effect = GitCommandError("git config user.name failed")
+    runner = AgentRunner(
+        {}, Config(logs_dir=tmp_path), mock_git, docker_client=MagicMock()
+    )
+
+    with pytest.raises(GitCommandError):
+        asyncio.run(runner.run_preflight(name="preflight-checks", mount_path=tmp_path))
+
+
 # ── RunRequest: core interface ────────────────────────────────────────────────
 
 
