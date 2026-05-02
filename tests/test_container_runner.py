@@ -1065,7 +1065,7 @@ def test_run_streaming_in_work_phase_prints_complete_turn(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
-    assert print_calls[0][1].plain == "[Implementer #1] Analysing issues\n"
+    assert print_calls[0][1].plain == "[Implementer #1] Analysing issues"
 
 
 def test_run_streaming_without_print_output_does_not_call_print(tmp_path):
@@ -1097,7 +1097,7 @@ def test_work_calls_print_for_complete_assistant_turn(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
-    assert print_calls[0][1].plain == "[Implementer #3] Fixing bug\n"
+    assert print_calls[0][1].plain == "[Implementer #3] Fixing bug"
 
 
 def test_work_does_not_call_print_for_tool_use_turns(tmp_path):
@@ -1130,8 +1130,31 @@ def test_run_streaming_multiple_turns_prints_each_one(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 2
-    assert print_calls[0][1].plain == "[Bot] First turn\n"
-    assert print_calls[1][1].plain == "[Bot] Second turn\n"
+    assert print_calls[0][1].plain == "[Bot] First turn"
+    assert print_calls[1][1].plain == "[Bot] Second turn"
+
+
+# ── Issue 392: no trailing newline in agent message (blank-line bug) ──────────
+
+
+def test_run_streaming_agent_message_has_no_trailing_newline(tmp_path):
+    line_a = (
+        b'{"type":"assistant","message":{"content":[{"type":"text","text":"First"}]}}\n'
+    )
+    line_b = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Second"}]}}\n'
+    display = RecordingStatusDisplay()
+    runner = _streaming_runner("Bot", [line_a + line_b], tmp_path, display)
+
+    runner.run_streaming(print_output=True)
+
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    assert len(print_calls) == 2
+    assert not print_calls[0][1].plain.endswith("\n"), (
+        "agent message must not end with newline"
+    )
+    assert not print_calls[1][1].plain.endswith("\n"), (
+        "agent message must not end with newline"
+    )
 
 
 # ── Issue 377: rich Text prefix with agent-name source ────────────────────────

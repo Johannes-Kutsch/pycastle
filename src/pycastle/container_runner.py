@@ -362,7 +362,7 @@ class ContainerRunner:
                         turn = parser.feed(line)
                         if print_output and turn is not None:
                             msg = _build_agent_prefix(self.name)
-                            msg.append(f"{turn}\n")
+                            msg.append(turn)
                             self._status_display.print(msg, source=self.name)
         finally:
             try:
@@ -373,4 +373,3 @@ class ContainerRunner:
             except Exception:
                 pass
         return "".join(parts)
-
