@@ -83,7 +83,10 @@ async def handle_preflight_failure(
         raise RuntimeError(
             "preflight-issue agent returned a PreflightFailure unexpectedly"
         )
-    assert isinstance(agent_result, IssueOutput)
+    if not isinstance(agent_result, IssueOutput):
+        raise RuntimeError(
+            f"Preflight-issue agent returned unexpected output type: {type(agent_result).__name__}"
+        )
     if deps.cfg.hitl_label in agent_result.labels:
         return "hitl", agent_result.number
     return "afk", agent_result.number
