@@ -1157,6 +1157,18 @@ def test_run_streaming_agent_message_has_no_trailing_newline(tmp_path):
     )
 
 
+def test_run_streaming_multiblock_turn_prints_as_single_call(tmp_path):
+    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"First paragraph"},{"type":"text","text":"Second paragraph"}]}}\n'
+    display = RecordingStatusDisplay()
+    runner = _streaming_runner("Bot", [json_line], tmp_path, display)
+
+    runner.run_streaming(print_output=True)
+
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    assert len(print_calls) == 1
+    assert print_calls[0][1].plain == "[Bot] First paragraph\n\nSecond paragraph"
+
+
 # ── Issue 377: rich Text prefix with agent-name source ────────────────────────
 
 
