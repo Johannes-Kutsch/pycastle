@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from pycastle.agent_output_protocol import CompletionOutput
 from pycastle.agent_result import PreflightFailure
 from pycastle.agent_runner import RunRequest
 from pycastle.iteration._deps import FakeAgentRunner, RecordingLogger
@@ -79,13 +80,13 @@ def mount_path(tmp_path):
 
 
 def test_fake_agent_runner_starts_with_no_calls() -> None:
-    runner = FakeAgentRunner(responses=["output"])
+    runner = FakeAgentRunner(responses=[CompletionOutput()])
 
     assert runner.calls == []
 
 
 def test_fake_agent_runner_returns_queued_response(prompt_file, mount_path) -> None:
-    runner = FakeAgentRunner(responses=["agent output"])
+    runner = FakeAgentRunner(responses=[CompletionOutput()])
 
     result = asyncio.run(
         runner.run(
@@ -93,11 +94,12 @@ def test_fake_agent_runner_returns_queued_response(prompt_file, mount_path) -> N
         )
     )
 
-    assert result == "agent output"
+    assert isinstance(result, CompletionOutput)
 
 
 def test_fake_agent_runner_returns_responses_in_order(prompt_file, mount_path) -> None:
-    runner = FakeAgentRunner(responses=["first", "second", "third"])
+    r1, r2, r3 = CompletionOutput(), CompletionOutput(), CompletionOutput()
+    runner = FakeAgentRunner(responses=[r1, r2, r3])
 
     async def _run():
         return [
@@ -118,11 +120,11 @@ def test_fake_agent_runner_returns_responses_in_order(prompt_file, mount_path) -
             ),
         ]
 
-    assert asyncio.run(_run()) == ["first", "second", "third"]
+    assert asyncio.run(_run()) == [r1, r2, r3]
 
 
 def test_fake_agent_runner_records_call_arguments(prompt_file, mount_path) -> None:
-    runner = FakeAgentRunner(responses=["output"])
+    runner = FakeAgentRunner(responses=[CompletionOutput()])
 
     asyncio.run(
         runner.run(
@@ -137,7 +139,7 @@ def test_fake_agent_runner_records_call_arguments(prompt_file, mount_path) -> No
 
 
 def test_fake_agent_runner_records_all_calls(prompt_file, mount_path) -> None:
-    runner = FakeAgentRunner(responses=["out1", "out2"])
+    runner = FakeAgentRunner(responses=[CompletionOutput(), CompletionOutput()])
 
     async def _run():
         await runner.run(
@@ -172,7 +174,7 @@ def test_fake_agent_runner_records_call_even_on_queue_exhaustion(
 
 
 def test_fake_agent_runner_queue_exhaustion_raises(prompt_file, mount_path) -> None:
-    runner = FakeAgentRunner(responses=["only one"])
+    runner = FakeAgentRunner(responses=[CompletionOutput()])
 
     async def _run():
         await runner.run(
@@ -234,7 +236,8 @@ def test_fake_agent_runner_raises_queued_exception(prompt_file, mount_path) -> N
 
 
 def test_fake_agent_runner_side_effect_bypasses_queue(prompt_file, mount_path) -> None:
-    runner = FakeAgentRunner(responses=[], side_effect=lambda _: "from side_effect")
+    expected = CompletionOutput()
+    runner = FakeAgentRunner(responses=[], side_effect=lambda _: expected)
 
     result = asyncio.run(
         runner.run(
@@ -242,14 +245,16 @@ def test_fake_agent_runner_side_effect_bypasses_queue(prompt_file, mount_path) -
         )
     )
 
-    assert result == "from side_effect"
+    assert result is expected
 
 
 def test_fake_agent_runner_async_side_effect_is_awaited(
     prompt_file, mount_path
 ) -> None:
-    async def async_effect(_) -> str:
-        return "async result"
+    expected = CompletionOutput()
+
+    async def async_effect(_) -> CompletionOutput:
+        return expected
 
     runner = FakeAgentRunner(side_effect=async_effect)
 
@@ -259,11 +264,11 @@ def test_fake_agent_runner_async_side_effect_is_awaited(
         )
     )
 
-    assert result == "async result"
+    assert result is expected
 
 
 def test_fake_agent_runner_side_effect_records_call(prompt_file, mount_path) -> None:
-    runner = FakeAgentRunner(side_effect=lambda _: "result")
+    runner = FakeAgentRunner(side_effect=lambda _: CompletionOutput())
 
     asyncio.run(
         runner.run(

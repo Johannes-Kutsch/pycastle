@@ -38,7 +38,10 @@ async def planning_phase(deps: Deps, sha: str, open_issues: list[dict]) -> PlanR
         if isinstance(output, PreflightFailure):
             raise RuntimeError("Planner returned a PreflightFailure unexpectedly")
 
-        assert isinstance(output, PlannerOutput)
+        if not isinstance(output, PlannerOutput):
+            raise RuntimeError(
+                f"Planner returned unexpected output type: {type(output).__name__}"
+            )
         return PlanReady(
             worktree_sha=sha,
             issues=sorted(output.issues, key=lambda i: i["number"]),

@@ -3,7 +3,11 @@ import asyncio
 import pytest
 from unittest.mock import MagicMock
 
-from pycastle.agent_output_protocol import PlanParseError, PlannerOutput
+from pycastle.agent_output_protocol import (
+    CompletionOutput,
+    PlanParseError,
+    PlannerOutput,
+)
 from pycastle.agent_result import PreflightFailure
 from pycastle.config import Config
 from pycastle.services import GitService
@@ -157,6 +161,19 @@ def test_planning_phase_raises_runtime_error_when_planner_output_has_no_plan_tag
         tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
     )
     with pytest.raises(RuntimeError, match="no <plan> tag"):
+        asyncio.run(planning_phase(deps, "abc123", issues))
+
+
+def test_planning_phase_raises_runtime_error_when_planner_returns_wrong_output_type(
+    tmp_path, git_svc, github_svc, logger
+):
+    issues = [{"number": 1, "title": "A"}]
+    fake = FakeAgentRunner([CompletionOutput()])
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    with pytest.raises(RuntimeError, match="unexpected output type"):
         asyncio.run(planning_phase(deps, "abc123", issues))
 
 

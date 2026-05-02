@@ -8,6 +8,7 @@ from pycastle.agent_output_protocol import (
     CompletionOutput,
     IssueOutput,
     PlannerOutput,
+    PromiseParseError,
 )
 from pycastle.agent_result import (
     PreflightFailure,
@@ -1099,7 +1100,9 @@ def test_run_incomplete_implementers_skip_merge(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        return PreflightFailure(failures=())  # implementer does not return COMPLETE
+        raise PromiseParseError(
+            "no COMPLETE tag"
+        )  # implementer ran but didn't complete
 
     mock_git = _make_git_svc()
     _run(
