@@ -2,10 +2,10 @@ import asyncio
 import dataclasses
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from pycastle.config import Config
-from pycastle.services import GitService
+from pycastle.services import GitCommandError, GitService
 from pycastle.services import GithubService
 from pycastle.iteration._deps import (
     Deps,
@@ -397,3 +397,84 @@ def test_preflight_failure_passes_reporting_work_body_to_run(tmp_path, git_svc, 
     asyncio.run(preflight_phase(deps))
 
     assert fake.calls[0]["work_body"] == f"reporting {check_name} issue"
+
+
+# ── preflight_phase: preflight pull ──────────────────────────────────────────
+
+
+def test_preflight_phase_propagates_error_when_pull_fails(
+    tmp_path, git_svc, github_svc, logger
+):
+    git_svc.pull.side_effect = GitCommandError("git pull --ff-only failed")
+    github_svc.get_open_issues.return_value = []
+    fake = FakeAgentRunner([], preflight_responses=[])
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+
+    with pytest.raises(GitCommandError):
+        asyncio.run(preflight_phase(deps))
+
+
+def test_preflight_phase_prints_red_error_message_when_pull_fails(
+    tmp_path, git_svc, github_svc, logger
+):
+    git_svc.pull.side_effect = GitCommandError("git pull --ff-only failed")
+    github_svc.get_open_issues.return_value = []
+    fake = FakeAgentRunner([], preflight_responses=[])
+    recording = RecordingStatusDisplay()
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    deps = dataclasses.replace(deps, status_display=recording)
+
+    with pytest.raises(GitCommandError):
+        asyncio.run(preflight_phase(deps))
+
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    expected = (
+        "[red]git pull --ff-only failed — remote branch has diverged or is unreachable. "
+        "Resolve manually and retry.[/red]"
+    )
+    assert expected in print_messages
+
+
+def test_preflight_phase_pins_sha_from_post_pull_head(tmp_path, logger):
+    git_svc = MagicMock(spec=GitService)
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "post_pull_sha"
+    github_svc = MagicMock(spec=GithubService)
+    issues = [{"number": 1, "title": "Fix bug", "body": ""}]
+    github_svc.get_open_issues.return_value = issues
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(preflight_phase(deps))
+
+    assert isinstance(result, PreflightReady)
+    assert result.sha == "post_pull_sha"
+
+
+def test_preflight_phase_waits_for_clean_working_tree_before_pulling(
+    tmp_path, git_svc, github_svc, logger
+):
+    git_svc.is_working_tree_clean.side_effect = [False, True]
+    github_svc.get_open_issues.return_value = []
+    fake = FakeAgentRunner([], preflight_responses=[])
+    recording = RecordingStatusDisplay()
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    deps = dataclasses.replace(deps, status_display=recording)
+
+    with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
+        result = asyncio.run(preflight_phase(deps))
+
+    assert isinstance(result, PreflightReady)
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    assert any("preflight" in msg for msg in print_messages)

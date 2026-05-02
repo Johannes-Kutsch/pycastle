@@ -11,27 +11,51 @@ def pytest_configure():
 
 @pytest.fixture
 def git_repo(tmp_path):
-    """Minimal git repo with one commit, ready for worktree operations."""
+    """Minimal git repo with one commit and a local bare remote, ready for worktree operations."""
+    repo = tmp_path / "repo"
+    bare = tmp_path / "origin.git"
+    repo.mkdir()
+
     subprocess.run(
-        ["git", "init", "-b", "main", str(tmp_path)], check=True, capture_output=True
+        ["git", "init", "-b", "main", str(repo)], check=True, capture_output=True
     )
     subprocess.run(
-        ["git", "-C", str(tmp_path), "config", "user.email", "test@test.com"],
+        ["git", "-C", str(repo), "config", "user.email", "test@test.com"],
         check=True,
         capture_output=True,
     )
     subprocess.run(
-        ["git", "-C", str(tmp_path), "config", "user.name", "Test"],
+        ["git", "-C", str(repo), "config", "user.name", "Test"],
         check=True,
         capture_output=True,
     )
-    (tmp_path / "README.md").write_text("# Test")
+    (repo / "README.md").write_text("# Test")
     subprocess.run(
-        ["git", "-C", str(tmp_path), "add", "."], check=True, capture_output=True
+        ["git", "-C", str(repo), "add", "."], check=True, capture_output=True
     )
     subprocess.run(
-        ["git", "-C", str(tmp_path), "commit", "-m", "init"],
+        ["git", "-C", str(repo), "commit", "-m", "init"],
         check=True,
         capture_output=True,
     )
-    return tmp_path
+    subprocess.run(
+        ["git", "clone", "--bare", str(repo), str(bare)],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "remote", "add", "origin", str(bare)],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "fetch", "origin"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "branch", "--set-upstream-to=origin/main", "main"],
+        check=True,
+        capture_output=True,
+    )
+    return repo
