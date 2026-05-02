@@ -82,6 +82,7 @@ class ContainerRunner:
         model: str = "",
         effort: str = "",
         docker_client=None,
+        status_display=None,
         *,
         cfg: Config,
     ):
@@ -94,6 +95,11 @@ class ContainerRunner:
         self.model = model
         self.effort = effort
         self._cfg = cfg
+        if status_display is None:
+            from .iteration._deps import NullStatusDisplay
+
+            status_display = NullStatusDisplay()
+        self._status_display = status_display
         self._owns_client = docker_client is None
         self._client = docker_client if docker_client is not None else docker.from_env()
         self._container: DockerContainer | None = None
@@ -261,7 +267,7 @@ class ContainerRunner:
         buf.seek(0)
         self._active_container.put_archive(os.path.dirname(container_path), buf)
 
-    def run_streaming(self, status_display=None, print_output: bool = False) -> str:
+    def run_streaming(self, print_output: bool = False) -> str:
         self.write_file(self._prompt, "/tmp/.pycastle_prompt")
         result = self._active_container.exec_run(
             ["bash", "-c", _build_claude_command(model=self.model, effort=self.effort)],
@@ -299,18 +305,17 @@ class ContainerRunner:
                     log.flush()
                     text = chunk.decode("utf-8", errors="replace")
                     parts.append(text)
-                    if status_display is not None:
-                        status_display.reset_idle_timer(self.name)
+                    self._status_display.reset_idle_timer(self.name)
                     line_buf += text
                     while "\n" in line_buf:
                         line, line_buf = line_buf.split("\n", 1)
                         if _is_usage_limit_line(line, self._cfg.usage_limit_patterns):
                             raise UsageLimitError(line)
                         turn = parser.feed(line)
-                        if print_output and turn is not None and status_display is not None:
+                        if print_output and turn is not None:
                             msg = _build_agent_prefix(self.name)
                             msg.append(f"{turn}\n")
-                            status_display.print(msg, source=self.name)
+                            self._status_display.print(msg, source=self.name)
         finally:
             try:
                 self._active_container.exec_run(
@@ -408,7 +413,7 @@ async def _work(
     if status_display is not None:
         status_display.update_phase(name, "Work")
     return await loop.run_in_executor(
-        None, lambda: runner.run_streaming(status_display, print_output=True)
+        None, lambda: runner.run_streaming(print_output=True)
     )
 
 
