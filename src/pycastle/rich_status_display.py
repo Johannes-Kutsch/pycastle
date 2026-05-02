@@ -8,7 +8,10 @@ from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
 
+_MISSING = object()
+
 _PHASE_RANK: dict[str, int] = {
+    "preflight": -1,
     "plan": 0,
     "implement": 1,
     "review": 2,
@@ -17,6 +20,27 @@ _PHASE_RANK: dict[str, int] = {
 
 
 def _stage_from_name(name: str) -> str:
+    # Phase rows
+    if name == "Preflight":
+        return "preflight"
+    if name == "Plan":
+        return "plan"
+    if name == "Implement":
+        return "implement"
+    if name == "Merge":
+        return "merge"
+    # New canonical agent names
+    if name == "Preflight Agent":
+        return "preflight"
+    if name == "Plan Agent":
+        return "plan"
+    if name.startswith("Implement Agent"):
+        return "implement"
+    if name.startswith("Review Agent"):
+        return "review"
+    if name == "Merge Agent":
+        return "merge"
+    # Legacy names
     if name == "Planner":
         return "plan"
     if name.startswith("Implementer"):
@@ -73,12 +97,13 @@ class _AgentRow:
 class RichStatusDisplay:
     """Live terminal status panel showing one row per active agent."""
 
-    def __init__(self) -> None:
-        self._console = Console()
+    def __init__(self, console: Console | None = None) -> None:
+        self._console = console or Console()
         self._rows: dict[str, _AgentRow] = {}
         self._lock = threading.Lock()
         self._live: Live | None = None
         self._last_source: str | None = None
+        self._last_caller: str | None = None
 
     def __rich_console__(
         self, console: Console, options: ConsoleOptions
@@ -114,6 +139,26 @@ class RichStatusDisplay:
 
         yield Padding(table, (1, 0, 0, 0))
 
+    def register(
+        self, caller: str, startup_message: str = "started", work_body: str = ""
+    ) -> None:
+        live_to_start: Live | None = None
+        with self._lock:
+            self._rows[caller] = _AgentRow(caller, "Setup", work_body)
+            if self._live is None:
+                live = Live(
+                    self,
+                    console=self._console,
+                    refresh_per_second=4,
+                    transient=True,
+                )
+                self._live = live
+                live_to_start = live
+        if live_to_start is not None:
+            live_to_start.start()
+        line = f"[{caller}] {startup_message}" if caller else startup_message
+        self._console.print(Text(line))
+
     def add_agent(self, name: str, phase: str, work_body: str = "") -> None:
         live_to_start: Live | None = None
         with self._lock:
@@ -136,6 +181,33 @@ class RichStatusDisplay:
                 self._rows[name].phase = phase
                 self._rows[name].last_update = time.monotonic()
 
+    def reset_idle_timer(self, name: str) -> None:
+        with self._lock:
+            if name in self._rows:
+                self._rows[name].last_update = time.monotonic()
+
+    def remove(
+        self,
+        caller: str,
+        shutdown_message: str = "finished",
+        shutdown_style: str = "success",
+    ) -> None:
+        live_to_stop: Live | None = None
+        with self._lock:
+            self._rows.pop(caller, None)
+            if not self._rows and self._live is not None:
+                live_to_stop = self._live
+                self._live = None
+        if live_to_stop is not None:
+            live_to_stop.stop()
+        line = f"[{caller}] {shutdown_message}" if caller else shutdown_message
+        text = Text(line)
+        if shutdown_style == "success":
+            text.stylize("green")
+        elif shutdown_style == "error":
+            text.stylize("red")
+        self._console.print(text)
+
     def remove_agent(self, name: str) -> None:
         live_to_stop: Live | None = None
         with self._lock:
@@ -146,18 +218,41 @@ class RichStatusDisplay:
         if live_to_stop is not None:
             live_to_stop.stop()
 
-    def reset_idle_timer(self, name: str) -> None:
-        with self._lock:
-            if name in self._rows:
-                self._rows[name].last_update = time.monotonic()
-
-    def print(self, message: object, *, source: str = "") -> None:
-        with self._lock:
-            prepend_blank = self._last_source is not None and source != self._last_source
-            self._last_source = source
-        if prepend_blank:
-            self._console.print()
-        self._console.print(message)
+    def print(
+        self,
+        caller_or_message: object,
+        message: object = _MISSING,
+        *,
+        source: str = "",
+        style: str | None = None,
+    ) -> None:  # type: ignore[override]
+        if message is _MISSING:
+            # Legacy path: print(message, *, source="")
+            with self._lock:
+                prepend_blank = (
+                    self._last_source is not None and source != self._last_source
+                )
+                self._last_source = source
+            if prepend_blank:
+                self._console.print()
+            self._console.print(caller_or_message)
+        else:
+            # New path: print(caller, message, style=None)
+            caller = str(caller_or_message)
+            with self._lock:
+                prepend_blank = (
+                    self._last_caller is not None and caller != self._last_caller
+                )
+                self._last_caller = caller
+            if prepend_blank:
+                self._console.print()
+            line = f"[{caller}] {message}" if caller else str(message)
+            text = Text(line)
+            if style == "error":
+                text.stylize("red")
+            elif style == "success":
+                text.stylize("green")
+            self._console.print(text)
 
     def stop(self) -> None:
         live_to_stop: Live | None = None

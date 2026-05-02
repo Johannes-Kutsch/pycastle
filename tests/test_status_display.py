@@ -555,7 +555,138 @@ def test_rich_pre_flight_reporter_name_renders_bold_without_role_color() -> None
     assert not _has_code(ansi, 31)  # no red
 
 
-# ── PlainStatusDisplay protocol conformance ────────────────────────────────────
+# ── Protocol conformance ─────────────────────────────────────────────────────
+
+
+def test_rich_status_display_satisfies_protocol() -> None:
+    assert isinstance(RichStatusDisplay(), StatusDisplay)
+
+
+# ── RichStatusDisplay new caller-based API ────────────────────────────────────
+
+
+def _make_ansi_console() -> tuple[io.StringIO, Console]:
+    buf = io.StringIO()
+    console = Console(file=buf, width=200, force_terminal=True, color_system="standard")
+    return buf, console
+
+
+def test_rich_new_api_print_outputs_bracketed_prefix(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("Plan", "msg")
+    assert "[Plan] msg" in capsys.readouterr().out
+
+
+def test_rich_new_api_print_empty_caller_outputs_message_verbatim(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("", "no prefix")
+    out = capsys.readouterr().out
+    assert "no prefix" in out
+    assert "[" not in out
+
+
+def test_rich_new_api_print_error_style_renders_entire_line_in_red() -> None:
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.print("X", "msg", style="error")
+    ansi = buf.getvalue()
+    assert "[X] msg" in ansi
+    assert _has_code(ansi[: ansi.find("[X] msg")], 31)  # red precedes text
+
+
+def test_rich_new_api_print_success_style_renders_entire_line_in_green() -> None:
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.print("X", "msg", style="success")
+    ansi = buf.getvalue()
+    assert "[X] msg" in ansi
+    assert _has_code(ansi[: ansi.find("[X] msg")], 32)  # green precedes text
+
+
+def test_rich_new_api_register_prints_started(capsys) -> None:
+    d = RichStatusDisplay()
+    d.register("X")
+    d.stop()
+    assert "[X] started" in capsys.readouterr().out
+
+
+def test_rich_new_api_register_custom_startup_message(capsys) -> None:
+    d = RichStatusDisplay()
+    d.register("X", startup_message="booting")
+    d.stop()
+    assert "[X] booting" in capsys.readouterr().out
+
+
+def test_rich_new_api_remove_prints_finished_in_green() -> None:
+    buf = io.StringIO()
+    test_console = Console(
+        file=buf, width=200, force_terminal=True, color_system="standard"
+    )
+    d = RichStatusDisplay(console=test_console)
+    d.remove("X")
+    ansi = buf.getvalue()
+    assert "[X] finished" in ansi
+    finished_idx = ansi.find("[X] finished")
+    assert _has_code(ansi[:finished_idx], 32)
+
+
+def test_rich_new_api_remove_error_style_prints_in_red() -> None:
+    buf = io.StringIO()
+    test_console = Console(
+        file=buf, width=200, force_terminal=True, color_system="standard"
+    )
+    d = RichStatusDisplay(console=test_console)
+    d.remove("X", shutdown_message="failed", shutdown_style="error")
+    ansi = buf.getvalue()
+    assert "[X] failed" in ansi
+    failed_idx = ansi.find("[X] failed")
+    assert _has_code(ansi[:failed_idx], 31)
+
+
+def test_rich_new_api_blank_line_on_caller_change(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("A", "first")
+    d.print("B", "second")
+    out = capsys.readouterr().out
+    assert "[A] first\n\n[B] second" in out
+
+
+def test_rich_new_api_no_blank_line_on_same_caller(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("A", "first")
+    d.print("A", "second")
+    out = capsys.readouterr().out
+    assert "[A] first\n[A] second" in out
+
+
+def test_rich_new_canonical_agent_names_sort_correctly() -> None:
+    d = RichStatusDisplay()
+    d.register("Merge Agent")
+    d.register("Review Agent #3")
+    d.register("Implement Agent #1")
+    d.register("Plan Agent")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert output.find("Plan Agent") < output.find("Implement Agent #1")
+    assert output.find("Implement Agent #1") < output.find("Review Agent #3")
+    assert output.find("Review Agent #3") < output.find("Merge Agent")
+
+
+def test_rich_preflight_agent_sorts_before_plan_agent() -> None:
+    d = RichStatusDisplay()
+    d.register("Plan Agent")
+    d.register("Preflight Agent")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert output.find("Preflight Agent") < output.find("Plan Agent")
 
 
 def test_plain_status_display_satisfies_protocol() -> None:
