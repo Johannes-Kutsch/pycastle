@@ -138,14 +138,21 @@ class RichStatusDisplay:
             return live
         return None
 
+    def _blank_before(self, caller: str) -> bool:
+        return self._last_caller is not None and (caller != self._last_caller or caller == "")
+
     def register(
         self, caller: str, startup_message: str = "started", work_body: str = ""
     ) -> None:
         with self._lock:
+            prepend_blank = self._blank_before(caller)
+            self._last_caller = caller
             self._rows[caller] = _AgentRow(caller, "Setup", work_body)
             live_to_start = self._acquire_live()
         if live_to_start is not None:
             live_to_start.start()
+        if prepend_blank:
+            self._console.print()
         line = f"[{caller}] {startup_message}" if caller else startup_message
         self._console.print(Text(line))
 
@@ -167,10 +174,14 @@ class RichStatusDisplay:
         shutdown_style: str = "success",
     ) -> None:
         with self._lock:
+            prepend_blank = self._blank_before(caller)
+            self._last_caller = caller
             self._rows.pop(caller, None)
             live_to_stop = self._release_live_if_empty()
         if live_to_stop is not None:
             live_to_stop.stop()
+        if prepend_blank:
+            self._console.print()
         line = f"[{caller}] {shutdown_message}" if caller else shutdown_message
         text = Text(line)
         if shutdown_style == "success":
@@ -186,14 +197,16 @@ class RichStatusDisplay:
         style: str | None = None,
     ) -> None:
         with self._lock:
-            prepend_blank = (
-                self._last_caller is not None and caller != self._last_caller
-            )
+            prepend_blank = self._blank_before(caller)
             self._last_caller = caller
         if prepend_blank:
             self._console.print()
-        line = f"[{caller}] {message}" if caller else str(message)
-        text = Text(line)
+        if caller:
+            text = Text()
+            text.append(f"[{caller}]", style="bold")
+            text.append(f" {message}")
+        else:
+            text = Text(str(message))
         if style == "error":
             text.stylize("red")
         elif style == "success":
