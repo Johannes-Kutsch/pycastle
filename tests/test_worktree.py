@@ -653,6 +653,17 @@ def test_worktree_name_for_branch_sanitises_special_chars():
     assert worktree_name_for_branch("UPPER/Case_Branch!") == "upper-case-branch"
 
 
+def test_worktree_name_for_branch_extracts_issue_zero():
+    assert worktree_name_for_branch("pycastle/issue-0") == "issue-0"
+
+
+def test_worktree_name_for_branch_does_not_match_issue_number_in_non_pycastle_branch():
+    # re.match anchors at the start: only pycastle/issue-N branches get the
+    # issue-N shortname; other branches containing issue-N fall back to the
+    # sanitised slug.
+    assert worktree_name_for_branch("feature/issue-5-work") == "feature-issue-5-work"
+
+
 # ── worktree_path ─────────────────────────────────────────────────────────────
 
 
@@ -664,3 +675,13 @@ def test_worktree_path_constructs_correct_path(tmp_path):
     deps = SimpleNamespace(repo_root=tmp_path, cfg=cfg)
     result = worktree_path("issue-42", deps)
     assert result == tmp_path / ".pycastle" / ".worktrees" / "issue-42"
+
+
+def test_worktree_path_respects_configured_pycastle_dir(tmp_path):
+    from types import SimpleNamespace
+    from pycastle.config import Config
+
+    cfg = Config(pycastle_dir="custom-dir")
+    deps = SimpleNamespace(repo_root=tmp_path, cfg=cfg)
+    result = worktree_path("issue-99", deps)
+    assert result == tmp_path / "custom-dir" / ".worktrees" / "issue-99"
