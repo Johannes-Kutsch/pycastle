@@ -74,7 +74,7 @@ def _recreate_stale_branch(
         svc.create_worktree(repo_path, worktree_path, branch, sha)
 
 
-def create_worktree(
+def _create_worktree(
     repo_path: Path,
     worktree_path: Path,
     branch: str,
@@ -107,34 +107,6 @@ def create_worktree(
             raise error
 
 
-def remove_worktree(
-    repo_path: Path,
-    worktree_path: Path,
-    git_service: GitService | None = None,
-    cfg: Config | None = None,
-) -> None:
-    svc = git_service or GitService(cfg or load_config())
-    try:
-        svc.remove_worktree(repo_path, worktree_path)
-    except GitTimeoutError as exc:
-        raise WorktreeTimeoutError(str(exc)) from exc
-
-
-@asynccontextmanager
-async def managed_worktree(
-    repo_path: Path,
-    worktree_path: Path,
-    branch: str,
-    sha: str | None = None,
-    git_service: GitService | None = None,
-):
-    create_worktree(repo_path, worktree_path, branch, sha, git_service)
-    try:
-        yield worktree_path
-    finally:
-        remove_worktree(repo_path, worktree_path, git_service)
-
-
 @asynccontextmanager
 async def branch_worktree(
     name: str,
@@ -145,7 +117,7 @@ async def branch_worktree(
     delete_branch: bool = True,
 ):
     path = worktree_path(name, deps)
-    create_worktree(deps.repo_root, path, branch, sha, deps.git_svc)
+    _create_worktree(deps.repo_root, path, branch, sha, deps.git_svc)
     try:
         yield path
     finally:

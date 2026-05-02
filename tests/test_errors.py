@@ -115,9 +115,14 @@ def test_exec_simple_raises_docker_timeout_error_on_timeout(fake_runner):
         blocker.set()
 
 
-def test_create_worktree_raises_worktree_error_on_git_failure(tmp_path):
+def test_branch_worktree_raises_worktree_error_on_git_failure(tmp_path):
     """Git can't check out the same branch in two worktrees — must raise WorktreeError."""
-    from pycastle.worktree import create_worktree
+    import asyncio
+    from types import SimpleNamespace
+
+    from pycastle.config import Config
+    from pycastle.services import GitService
+    from pycastle.worktree import branch_worktree
 
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
     subprocess.run(
@@ -140,7 +145,15 @@ def test_create_worktree_raises_worktree_error_on_git_failure(tmp_path):
         capture_output=True,
     )
 
-    wt = tmp_path / "wt"
-    create_worktree(tmp_path, wt, "feature/same")
-    with pytest.raises(WorktreeError):
-        create_worktree(tmp_path, tmp_path / "wt2", "feature/same")
+    cfg = Config(pycastle_dir=".pycastle")
+    deps = SimpleNamespace(repo_root=tmp_path, cfg=cfg, git_svc=GitService(cfg))
+
+    async def _run():
+        async with branch_worktree(
+            "name1", "feature/same", None, deps, delete_branch=False
+        ):
+            with pytest.raises(WorktreeError):
+                async with branch_worktree("name2", "feature/same", None, deps):
+                    pass
+
+    asyncio.run(_run())
