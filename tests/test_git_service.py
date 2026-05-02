@@ -1004,6 +1004,21 @@ def test_is_working_tree_clean_returns_true_when_status_command_fails(tmp_path):
 # ── pull() ────────────────────────────────────────────────────────────────────
 
 
+def test_pull_runs_ff_only_flag(tmp_path):
+    svc = GitService(_cfg)
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        return MagicMock(returncode=0, stdout=b"Already up to date.\n", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        svc.pull(tmp_path)
+
+    assert len(captured) == 1
+    assert captured[0] == ["git", "pull", "--ff-only"]
+
+
 def test_pull_succeeds_on_zero_exit(tmp_path):
     svc = GitService(_cfg)
     with patch(
@@ -1024,4 +1039,14 @@ def test_pull_raises_git_command_error_on_nonzero_exit(tmp_path):
         ),
     ):
         with pytest.raises(GitCommandError):
+            svc.pull(tmp_path)
+
+
+def test_pull_raises_git_timeout_error_on_timeout(tmp_path):
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    ):
+        with pytest.raises(GitTimeoutError):
             svc.pull(tmp_path)
