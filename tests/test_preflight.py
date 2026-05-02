@@ -363,6 +363,67 @@ def test_preflight_phase_passes_preflight_stage_string_to_run_preflight(
     assert fake.preflight_calls[0]["stage"] == "PREFLIGHT"
 
 
+def test_preflight_phase_prints_confirmation_when_all_checks_pass(
+    tmp_path, git_svc, github_svc, logger
+):
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix bug", "body": ""}
+    ]
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    recording = RecordingStatusDisplay()
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    deps = dataclasses.replace(deps, status_display=recording)
+
+    asyncio.run(preflight_phase(deps))
+
+    assert ("print", "Preflight checks passed.", "preflight-phase") in recording.calls
+
+
+def test_preflight_phase_prints_no_confirmation_when_no_open_issues(
+    tmp_path, git_svc, logger
+):
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+    fake = FakeAgentRunner([], preflight_responses=[])
+    recording = RecordingStatusDisplay()
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    deps = dataclasses.replace(deps, status_display=recording)
+
+    asyncio.run(preflight_phase(deps))
+
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    assert "Preflight checks passed." not in print_messages
+
+
+def test_preflight_phase_prints_no_confirmation_when_check_fails(
+    tmp_path, git_svc, logger
+):
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+    github_svc.get_issue_title.return_value = "Fix bug"
+    fake = FakeAgentRunner(
+        ['<issue>{"number": 42, "labels": ["ready-for-agent"]}</issue>'],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    recording = RecordingStatusDisplay()
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    deps = dataclasses.replace(deps, status_display=recording)
+
+    asyncio.run(preflight_phase(deps))
+
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    assert "Preflight checks passed." not in print_messages
+
+
 def test_preflight_failure_uses_pre_flight_reporter_as_agent_name(
     tmp_path, git_svc, logger
 ):
