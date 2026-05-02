@@ -3,12 +3,29 @@ import re
 import tempfile
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
+from typing import Protocol
 
 from .config import Config, load_config
 from .errors import WorktreeError, WorktreeTimeoutError
 from .services import GitCommandError, GitService, GitTimeoutError
 
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
+
+
+class _WorktreeDeps(Protocol):
+    repo_root: Path
+    cfg: Config
+
+
+def worktree_name_for_branch(branch: str) -> str:
+    m = re.match(r"pycastle/issue-(\d+)", branch)
+    if m:
+        return f"issue-{m.group(1)}"
+    return re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
+
+
+def worktree_path(name: str, deps: _WorktreeDeps) -> Path:
+    return deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / name
 
 
 @contextmanager
