@@ -93,10 +93,10 @@ async def preflight_phase(deps: Deps) -> PreflightResult:
     try:
         deps.git_svc.pull(deps.repo_root)
     except GitCommandError:
-        deps.status_display.print(  # type: ignore[call-arg]
+        deps.status_display.print(
+            "pycastle",
             "[red]git pull --ff-only failed — remote branch has diverged or is unreachable. "
             "Resolve manually and retry.[/red]",
-            source="preflight-phase",
         )
         raise
     sha = deps.git_svc.get_head_sha(deps.repo_root)
@@ -129,5 +129,4 @@ async def preflight_phase(deps: Deps) -> PreflightResult:
                 worktree_sha=sha, issues=[{"number": pf_num, "title": pf_title}]
             )
 
-        deps.status_display.print("Preflight checks passed.", source="preflight-phase")  # type: ignore[call-arg]
         return PreflightReady(sha=sha, issues=open_issues)

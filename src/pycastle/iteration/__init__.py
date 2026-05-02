@@ -33,12 +33,14 @@ IterationOutcome: TypeAlias = Continue | Done | AbortedHITL | AbortedUsageLimit
 
 
 async def run_iteration(deps: Deps) -> IterationOutcome:
+    deps.status_display.register("Preflight")
     preflight_result = await preflight_phase(deps)
+    deps.status_display.remove("Preflight")
 
     if isinstance(preflight_result, PreflightHITL):
-        deps.status_display.print(  # type: ignore[call-arg]
+        deps.status_display.print(
+            "pycastle",
             f"Preflight issue #{preflight_result.issue_number} requires human intervention. Exiting.",
-            source="preflight-request-human-error",
         )
         return AbortedHITL(issue_number=preflight_result.issue_number)
 
@@ -48,7 +50,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         sha = preflight_result.sha
         open_issues = preflight_result.issues
         if len(open_issues) >= 2:
+            deps.status_display.register("Plan")
             plan_result = await planning_phase(deps, sha, open_issues)
+            deps.status_display.remove("Plan")
             sha = plan_result.worktree_sha
             issues = plan_result.issues
         else:
@@ -59,15 +63,17 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
     issues = issues[: deps.cfg.max_parallel]
 
-    deps.status_display.print(f"Planning complete. {len(issues)} issue(s):", source="planning")  # type: ignore[call-arg]
+    deps.status_display.print("pycastle", f"Planning complete. {len(issues)} issue(s):")
     for issue in issues:
-        deps.status_display.print(  # type: ignore[call-arg]
+        deps.status_display.print(
+            "pycastle",
             f"  #{issue['number']}: {issue['title']} → {branch_for(issue['number'])}",
-            source="planning",
         )
 
     token = CancellationToken()
+    deps.status_display.register("Implement")
     impl_result = await implement_phase(issues, sha, deps, token=token)
+    deps.status_display.remove("Implement")
 
     if impl_result.usage_limit_hit:
         return AbortedUsageLimit()
@@ -75,33 +81,33 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
     for issue, error in impl_result.errors:
         match error:
             case PreflightFailure(failures=fs):
-                deps.status_display.print(  # type: ignore[call-arg]
+                deps.status_display.print(
+                    "pycastle",
                     f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) pre-flight failed:",
-                    source="execution-errors",
                 )
                 for check_name, command, output in fs:
-                    deps.status_display.print(  # type: ignore[call-arg]
+                    deps.status_display.print(
+                        "pycastle",
                         f"    ✗ {check_name} ({command}): {output}",
-                        source="execution-errors",
                     )
             case _:
-                deps.status_display.print(  # type: ignore[call-arg]
+                deps.status_display.print(
+                    "pycastle",
                     f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}",
-                    source="execution-errors",
                 )
 
     completed = impl_result.completed
 
     if not completed:
-        deps.status_display.print("No commits produced. Nothing to merge.", source="execution-complete")  # type: ignore[call-arg]
+        deps.status_display.print("pycastle", "No commits produced. Nothing to merge.")
         return Continue()
 
-    deps.status_display.print(  # type: ignore[call-arg]
+    deps.status_display.print(
+        "pycastle",
         f"Execution complete. {len(completed)} branch(es) with commits:",
-        source="execution-complete",
     )
     for i in completed:
-        deps.status_display.print(f"  {branch_for(i['number'])}", source="execution-complete")  # type: ignore[call-arg]
+        deps.status_display.print("pycastle", f"  {branch_for(i['number'])}")
 
     await merge_phase(completed, deps)
 

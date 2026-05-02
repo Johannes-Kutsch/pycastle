@@ -718,7 +718,7 @@ def test_agent_runner_remove_agent_called_on_success(tmp_path):
         )
     )
 
-    assert ("remove_agent", "Test") in display.calls
+    assert ("remove", "Test", "finished", "success") in display.calls
 
 
 def test_agent_runner_remove_agent_called_on_error(tmp_path):
@@ -746,7 +746,7 @@ def test_agent_runner_remove_agent_called_on_error(tmp_path):
             )
         )
 
-    assert ("remove_agent", "Test") in display.calls
+    assert ("remove", "Test", "finished", "success") in display.calls
 
 
 # ── AgentRunner: run_preflight ────────────────────────────────────────────────
@@ -921,8 +921,8 @@ def test_agent_runner_run_preflight_registers_and_removes_status_row_on_success(
         )
     )
 
-    assert ("add_agent", "preflight-checks", "Setup", "") in display.calls
-    assert ("remove_agent", "preflight-checks") in display.calls
+    assert ("register", "preflight-checks", "started", "") in display.calls
+    assert ("remove", "preflight-checks", "finished", "success") in display.calls
 
 
 def test_agent_runner_run_preflight_updates_phase_for_each_check(tmp_path):
@@ -956,7 +956,7 @@ def test_agent_runner_run_preflight_removes_status_row_when_checks_fail(tmp_path
         )
     )
 
-    assert ("remove_agent", "preflight-checks") in display.calls
+    assert ("remove", "preflight-checks", "finished", "success") in display.calls
 
 
 def test_agent_runner_run_preflight_removes_status_row_when_exception_propagates(
@@ -984,7 +984,7 @@ def test_agent_runner_run_preflight_removes_status_row_when_exception_propagates
             )
         )
 
-    assert ("remove_agent", "preflight-checks") in display.calls
+    assert ("remove", "preflight-checks", "finished", "success") in display.calls
 
 
 def test_agent_runner_run_preflight_propagates_git_user_name_error(tmp_path):

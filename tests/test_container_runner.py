@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from rich.text import Text
 
 from pycastle.config import Config
 from pycastle.container_runner import (
@@ -949,7 +948,7 @@ def _unstarted_runner(name: str, tmp_path: Path) -> ContainerRunner:
     )
 
 
-def test_setup_calls_add_agent_with_name_and_phase(tmp_path):
+def test_setup_registers_agent_with_name(tmp_path):
     display = RecordingStatusDisplay()
     runner = ContainerRunner(
         "implementer-42",
@@ -963,10 +962,9 @@ def test_setup_calls_add_agent_with_name_and_phase(tmp_path):
 
     asyncio.run(runner.setup("Alice", "alice@example.com"))
 
-    add_calls = [c for c in display.calls if c[0] == "add_agent"]
-    assert len(add_calls) == 1
-    assert add_calls[0][1] == "implementer-42"
-    assert add_calls[0][2] == "Setup"
+    register_calls = [c for c in display.calls if c[0] == "register"]
+    assert len(register_calls) == 1
+    assert register_calls[0][1] == "implementer-42"
 
 
 def test_work_calls_update_phase_work(tmp_path):
@@ -1065,7 +1063,8 @@ def test_run_streaming_in_work_phase_prints_complete_turn(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
-    assert print_calls[0][1].plain == "[Implementer #1] Analysing issues"
+    assert print_calls[0][1] == "Implementer #1"
+    assert print_calls[0][2] == "Analysing issues"
 
 
 def test_run_streaming_without_print_output_does_not_call_print(tmp_path):
@@ -1097,7 +1096,8 @@ def test_work_calls_print_for_complete_assistant_turn(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
-    assert print_calls[0][1].plain == "[Implementer #3] Fixing bug"
+    assert print_calls[0][1] == "Implementer #3"
+    assert print_calls[0][2] == "Fixing bug"
 
 
 def test_work_does_not_call_print_for_tool_use_turns(tmp_path):
@@ -1130,8 +1130,8 @@ def test_run_streaming_multiple_turns_prints_each_one(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 2
-    assert print_calls[0][1].plain == "[Bot] First turn"
-    assert print_calls[1][1].plain == "[Bot] Second turn"
+    assert print_calls[0][1] == "Bot" and print_calls[0][2] == "First turn"
+    assert print_calls[1][1] == "Bot" and print_calls[1][2] == "Second turn"
 
 
 # ── Issue 392: no trailing newline in agent message (blank-line bug) ──────────
@@ -1149,10 +1149,10 @@ def test_run_streaming_agent_message_has_no_trailing_newline(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 2
-    assert not print_calls[0][1].plain.endswith("\n"), (
+    assert not str(print_calls[0][2]).endswith("\n"), (
         "agent message must not end with newline"
     )
-    assert not print_calls[1][1].plain.endswith("\n"), (
+    assert not str(print_calls[1][2]).endswith("\n"), (
         "agent message must not end with newline"
     )
 
@@ -1166,13 +1166,14 @@ def test_run_streaming_multiblock_turn_prints_as_single_call(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
-    assert print_calls[0][1].plain == "[Bot] First paragraph\n\nSecond paragraph"
+    assert print_calls[0][1] == "Bot"
+    assert print_calls[0][2] == "First paragraph\n\nSecond paragraph"
 
 
-# ── Issue 377: rich Text prefix with agent-name source ────────────────────────
+# ── Issue 377: caller passed as first argument to print ───────────────────────
 
 
-def test_run_streaming_print_uses_rich_text_object_with_agent_name_source(tmp_path):
+def test_run_streaming_print_uses_agent_name_as_caller(tmp_path):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
     display = RecordingStatusDisplay()
     runner = _streaming_runner("Implementer #1", [json_line], tmp_path, display)
@@ -1181,8 +1182,8 @@ def test_run_streaming_print_uses_rich_text_object_with_agent_name_source(tmp_pa
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
-    assert isinstance(print_calls[0][1], Text)
-    assert print_calls[0][2] == "Implementer #1"
+    assert print_calls[0][1] == "Implementer #1"
+    assert print_calls[0][2] == "Working"
 
 
 def test_build_agent_prefix_plain_text():

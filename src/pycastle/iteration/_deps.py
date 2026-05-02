@@ -29,42 +29,24 @@ class RecordingLogger:
         self.agent_outputs.append((agent_name, output))
 
 
-_MISSING = object()
-
-
 class RecordingStatusDisplay:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
 
-    # ── new caller-based API ──────────────────────────────────────────────────
-
     def register(self, caller: str, startup_message: str = "started", work_body: str = "") -> None:
         self.calls.append(("register", caller, startup_message, work_body))
-
-    def remove(self, caller: str, shutdown_message: str = "finished", shutdown_style: str = "success") -> None:
-        self.calls.append(("remove", caller, shutdown_message, shutdown_style))
-
-    def print(self, caller_or_message: object, message: object = _MISSING, *, source: str = "", style: str | None = None) -> None:  # type: ignore[override]
-        if message is _MISSING:
-            # legacy signature: print(message, *, source="")
-            self.calls.append(("print", caller_or_message, source))
-        else:
-            # new signature: print(caller, message, style=None)
-            self.calls.append(("print", caller_or_message, message, style))
-
-    # ── legacy API kept for call sites not yet migrated ───────────────────────
-
-    def add_agent(self, name: str, phase: str, work_body: str = "") -> None:
-        self.calls.append(("add_agent", name, phase, work_body))
 
     def update_phase(self, name: str, phase: str) -> None:
         self.calls.append(("update_phase", name, phase))
 
-    def remove_agent(self, name: str) -> None:
-        self.calls.append(("remove_agent", name))
-
     def reset_idle_timer(self, name: str) -> None:
         self.calls.append(("reset_idle_timer", name))
+
+    def remove(self, caller: str, shutdown_message: str = "finished", shutdown_style: str = "success") -> None:
+        self.calls.append(("remove", caller, shutdown_message, shutdown_style))
+
+    def print(self, caller: str, message: object, style: str | None = None) -> None:
+        self.calls.append(("print", caller, message, style))
 
 
 class FakeAgentRunner:

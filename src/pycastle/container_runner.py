@@ -267,7 +267,7 @@ class ContainerRunner:
     async def setup(self, git_name: str, git_email: str, work_body: str = "") -> None:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self.__enter__)
-        self._status_display.add_agent(self.name, "Setup", work_body)
+        self._status_display.register(self.name, work_body=work_body)
         await loop.run_in_executor(
             None,
             self.exec_simple,
@@ -361,9 +361,7 @@ class ContainerRunner:
                             raise UsageLimitError(line)
                         turn = parser.feed(line)
                         if print_output and turn is not None:
-                            msg = _build_agent_prefix(self.name)
-                            msg.append(turn)
-                            self._status_display.print(msg, source=self.name)
+                            self._status_display.print(self.name, turn)
         finally:
             try:
                 self._active_container.exec_run(
