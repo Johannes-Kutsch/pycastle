@@ -838,3 +838,36 @@ def test_branch_worktree_cleans_up_on_exception(branch_deps):
     branch_deps.git_svc.delete_branch.assert_called_once_with(
         "pycastle/issue-42", branch_deps.repo_root
     )
+
+
+def test_branch_worktree_deletes_branch_even_when_remove_worktree_raises(branch_deps):
+    branch_deps.git_svc.remove_worktree.side_effect = RuntimeError("disk full")
+
+    async def _run():
+        with pytest.raises(RuntimeError, match="disk full"):
+            async with branch_worktree(
+                "issue-42", "pycastle/issue-42", "abc123", branch_deps
+            ):
+                pass
+
+    asyncio.run(_run())
+    branch_deps.git_svc.delete_branch.assert_called_once_with(
+        "pycastle/issue-42", branch_deps.repo_root
+    )
+
+
+def test_branch_worktree_does_not_run_cleanup_when_create_fails(branch_deps):
+    from pycastle.errors import WorktreeError
+
+    branch_deps.git_svc.create_worktree.side_effect = WorktreeError("create failed")
+
+    async def _run():
+        with pytest.raises(WorktreeError, match="create failed"):
+            async with branch_worktree(
+                "issue-42", "pycastle/issue-42", "abc123", branch_deps
+            ):
+                pass
+
+    asyncio.run(_run())
+    branch_deps.git_svc.remove_worktree.assert_not_called()
+    branch_deps.git_svc.delete_branch.assert_not_called()

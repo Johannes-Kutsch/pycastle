@@ -149,9 +149,11 @@ async def branch_worktree(
     try:
         yield path
     finally:
-        deps.git_svc.remove_worktree(deps.repo_root, path)
-        if delete_branch:
-            deps.git_svc.delete_branch(branch, deps.repo_root)
+        try:
+            deps.git_svc.remove_worktree(deps.repo_root, path)
+        finally:
+            if delete_branch:
+                deps.git_svc.delete_branch(branch, deps.repo_root)
 
 
 @asynccontextmanager
