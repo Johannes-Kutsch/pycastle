@@ -169,3 +169,33 @@ def test_remove_anonymous_caller_blank_when_caller_changes(
     d.remove("")
     out = capsys.readouterr().out
     assert out == "[Alice] hello\n\nfinished\n"
+
+
+def test_print_named_caller_after_anonymous_gets_blank(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.print("", "anonymous")
+    d.print("Alice", "named")
+    out = capsys.readouterr().out
+    assert out == "anonymous\n\n[Alice] named\n"
+
+
+def test_register_blank_for_consecutive_anonymous_callers(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.register("")
+    d.register("")
+    out = capsys.readouterr().out
+    assert out == "started\n\nstarted\n"
+
+
+def test_remove_blank_for_consecutive_anonymous_callers(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.remove("")
+    d.remove("")
+    out = capsys.readouterr().out
+    assert out == "finished\n\nfinished\n"
