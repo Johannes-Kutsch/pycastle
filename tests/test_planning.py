@@ -98,7 +98,7 @@ def test_planning_phase_invokes_planner_with_skip_preflight_true(
     asyncio.run(planning_phase(deps, "abc123", issues))
 
     assert len(fake.calls) == 1
-    assert fake.calls[0]["skip_preflight"] is True
+    assert fake.calls[0].skip_preflight is True
 
 
 # ── planning_phase: worktree lifecycle ──────────────────────────────────────

@@ -1,7 +1,8 @@
 import asyncio
+import dataclasses
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from .agent_result import CancellationToken, PreflightFailure
 from .config import Config
@@ -11,25 +12,26 @@ from .services import GitService
 from .worktree import patch_gitdir_for_container, worktree_name_for_branch
 
 
+@dataclasses.dataclass
+class RunRequest:
+    name: str
+    prompt_file: Path
+    mount_path: Path
+    prompt_args: dict[str, str] | None = None
+    branch: str | None = None
+    sha: str | None = None
+    skip_preflight: bool = False
+    model: str = ""
+    effort: str = ""
+    stage: str = ""
+    token: CancellationToken | None = None
+    status_display: Any = None
+    issue_title: str = ""
+    work_body: str = ""
+
+
 class AgentRunnerProtocol(Protocol):
-    async def run(
-        self,
-        *,
-        name: str,
-        prompt_file: Path,
-        mount_path: Path,
-        prompt_args: dict[str, str] | None = None,
-        branch: str | None = None,
-        sha: str | None = None,
-        skip_preflight: bool = False,
-        model: str = "",
-        effort: str = "",
-        stage: str = "",
-        token: CancellationToken | None = None,
-        status_display=None,
-        issue_title: str = "",
-        work_body: str = "",
-    ) -> str | PreflightFailure: ...
+    async def run(self, request: RunRequest) -> str | PreflightFailure: ...
 
     async def run_preflight(
         self,
@@ -56,24 +58,20 @@ class AgentRunner:
         self._docker_client = docker_client
         self._branch_locks: dict[str, asyncio.Lock] = {}
 
-    async def run(
-        self,
-        *,
-        name: str,
-        prompt_file: Path,
-        mount_path: Path,
-        prompt_args: dict[str, str] | None = None,
-        branch: str | None = None,
-        sha: str | None = None,
-        skip_preflight: bool = False,
-        model: str = "",
-        effort: str = "",
-        stage: str = "",
-        token: CancellationToken | None = None,
-        status_display=None,
-        issue_title: str = "",
-        work_body: str = "",
-    ) -> str | PreflightFailure:
+    async def run(self, request: RunRequest) -> str | PreflightFailure:
+        name = request.name
+        prompt_file = request.prompt_file
+        mount_path = request.mount_path
+        prompt_args = request.prompt_args
+        branch = request.branch
+        sha = request.sha
+        skip_preflight = request.skip_preflight
+        model = request.model
+        effort = request.effort
+        token = request.token
+        status_display = request.status_display
+        work_body = request.work_body
+
         if status_display is None:
             from .iteration._deps import NullStatusDisplay
 

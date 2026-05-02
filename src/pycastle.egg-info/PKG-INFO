@@ -1,0 +1,161 @@
+Metadata-Version: 2.4
+Name: pycastle
+Version: 0.1.3.6.dev17
+Summary: Python orchestrator for autonomous Claude Code agents in Docker
+License: MIT License
+        
+        Copyright (c) Matt Pocock
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.11.3
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: click
+Requires-Dist: docker
+Requires-Dist: python-dotenv
+Requires-Dist: rich
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: mypy; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Requires-Dist: types-docker; extra == "dev"
+Dynamic: license-file
+
+# pycastle
+
+pycastle is a Python orchestrator for autonomous [Claude Code](https://claude.ai/code) agents running inside Docker containers. It is inspired by [sandcastle](https://github.com/mattpocock/sandcastle) — Matt Pocock's original project — and brings the same multi-agent, worktree-based workflow to a pip-installable Python package with configurable prompts, Dockerfile, and environment.
+
+## Installation
+
+```bash
+pip install pycastle
+```
+
+## Prerequisites
+
+- Python 3.11.3 or later
+- Docker (daemon must be running)
+- A valid `ANTHROPIC_API_KEY` environment variable (or a `.env` file in your project root)
+- A GitHub repository with a `GH_TOKEN` environment variable that has issue read/write access
+
+## CLI Commands
+
+### `pycastle init`
+
+Copies the default `pycastle/` configuration directory into your project root. This directory contains the `Dockerfile`, `config.py`, and prompt templates (`plan-prompt.md`, `implement-prompt.md`, `review-prompt.md`, `merge-prompt.md`, `CODING_STANDARDS.md`) that drive the agents. Run this once per repository, then customise the files to suit your project.
+
+```bash
+pycastle init
+```
+
+### `pycastle build`
+
+Builds the Docker image defined in `pycastle/Dockerfile`. Pass `--no-cache` to force a clean build. You must rebuild whenever you change the Dockerfile or install new dependencies.
+
+```bash
+pycastle build [--no-cache]
+```
+
+### `pycastle labels`
+
+Creates the standard label set on your GitHub repository. These labels drive the triage workflow that feeds issues into the agent pipeline (see [The `ready-for-agent` label](#the-ready-for-agent-label) below).
+
+```bash
+pycastle labels
+```
+
+### `pycastle run`
+
+Runs the full agent pipeline. The pipeline iterates up to `max_iterations` times, each time picking up whatever `ready-for-agent` issues remain open. Progress is streamed to your terminal in real time.
+
+```bash
+pycastle run
+```
+
+## How the pipeline works
+
+Each iteration of `pycastle run` moves through five phases in order.
+
+### 1. Pre-flight
+
+Before any agent work starts, pycastle runs the configured preflight checks inside Docker (default: `ruff check .`, `mypy .`, `pytest`). If all checks pass the pipeline continues normally.
+
+If a check fails, a **preflight-issue agent** is spawned. It analyses the failure and creates a GitHub issue describing what needs to be fixed. The issue is labelled either `ready-for-agent` (the fix can be automated) or `ready-for-human` (a human must intervene). If the issue is `ready-for-human`, pycastle exits immediately so you can investigate. If it is `ready-for-agent`, the issue is queued as the sole work item for this iteration and the pipeline continues.
+
+You can skip preflight entirely by setting `skip_preflight = True` in `pycastle/config.py` — useful while the codebase is still being bootstrapped.
+
+### 2. Planner
+
+The **planner agent** reads all open GitHub issues labelled `ready-for-agent`. It evaluates dependencies (issues can declare `blocked by #N` in their body), filters out issues that are still blocked, and emits a `<plan>` JSON block listing the unblocked issues to tackle this iteration. Only the issues selected by the planner proceed to the next phase.
+
+### 3. Implementer(s)
+
+For each planned issue, pycastle spawns an **implementer agent** in a dedicated git worktree on a branch named `pycastle/issue-<N>`. The agent reads the issue, writes the code, and continuously runs the implement checks (`ruff check --fix`, `ruff format --check`, `mypy .`, `pytest` by default) until they pass. When the agent is satisfied it emits `<promise>COMPLETE</promise>`; if it cannot complete the issue it exits without that tag and the issue is skipped this iteration.
+
+Multiple implementer agents can run in parallel (controlled by `max_parallel` in `config.py`).
+
+### 4. Reviewer
+
+Immediately after each implementer signals completion, a **reviewer agent** inspects the same branch. The reviewer re-runs the checks, reads the diff, and pushes any corrections directly onto the branch before handing off to the merge phase.
+
+### 5. Merging
+
+Once all implementer/reviewer pairs have finished, pycastle attempts to fast-forward merge each completed branch into the default branch:
+
+- **No conflict** — the branch is merged automatically and the worktree is cleaned up.
+- **Conflict** — the conflicting branches are handed to a **merger agent**, which resolves the conflicts manually, re-runs the preflight checks, and commits the result.
+
+After merging, the corresponding GitHub issue is closed. If an issue is a child of a parent/epic issue and all sibling issues are now closed, the parent issue is closed too. Merged branches are deleted.
+
+If the working tree has uncommitted changes when the merge phase begins, pycastle waits (polling every 10 seconds) until the tree is clean before proceeding.
+
+## The `ready-for-agent` label
+
+`ready-for-agent` is the entry point into the automated pipeline. The planner only considers issues that carry this label. The intended workflow is:
+
+1. A new issue arrives labelled `needs-triage`.
+2. A maintainer (or a separate triage agent) evaluates it and either closes it, marks it `need-info`, `wontfix`, or — once it is fully specified with a clear acceptance criterion — relabels it `ready-for-agent`.
+3. On the next `pycastle run`, the planner picks it up and the automated pipeline takes over.
+
+Marking an issue `ready-for-agent` is a deliberate gate: it signals that the issue has enough detail for an agent to implement it without further clarification.
+
+The companion label `ready-for-human` is used for issues that are too ambiguous, require access to external systems, or have failed preflight in a way that needs manual diagnosis. These issues are never picked up by the planner.
+
+## Configuration
+
+All runtime configuration lives in `pycastle/config.py`. Key settings:
+
+| Setting | Default | Description |
+|---|---|---|
+| `max_iterations` | `10` | How many plan→implement→merge loops to run |
+| `max_parallel` | `1` | Maximum concurrent implementer agents |
+| `issue_label` | `ready-for-agent` | Label the planner filters on |
+| `hitl_label` | `ready-for-human` | Label that triggers a human-intervention exit |
+| `preflight_checks` | ruff, mypy, pytest | Commands run before planning |
+| `implement_checks` | ruff fix, mypy, pytest | Commands the implementer must pass |
+| `skip_preflight` | `False` | Set to `True` to bypass preflight entirely |
+| `plan_override` / `implement_override` / `review_override` / `merge_override` | — | Per-stage model and effort overrides |
+
+Edit `pycastle/config.py` (created by `pycastle init`) to tailor these to your project.
