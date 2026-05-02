@@ -8,7 +8,7 @@ from typing import Any
 from ..agent_output_protocol import AgentRole
 from ..agent_result import CancellationToken, PreflightFailure
 from ..agent_runner import RunRequest
-from ..errors import UsageLimitError
+from ..errors import BranchCollisionError, UsageLimitError
 from ..prompt_utils import load_standards
 from ..worktree import (
     patch_gitdir_for_container,
@@ -69,8 +69,10 @@ async def run_issue(
     *,
     token: CancellationToken | None = None,
     sha: str | None = None,
+    branch_locks: dict[str, asyncio.Lock] | None = None,
 ) -> dict | PreflightFailure:
     _branch = branch_for(issue["number"])
+    _token = token if token is not None else CancellationToken()
     _standards = load_standards(deps.cfg.prompts_dir)
     prompt_args = {
         "ISSUE_NUMBER": str(issue["number"]),
@@ -84,46 +86,61 @@ async def run_issue(
         async with semaphore or contextlib.nullcontext():
             return await deps.agent_runner.run(request)
 
-    result = await _bounded_run_agent(
-        RunRequest(
-            name=f"Implement Agent #{issue['number']}",
-            prompt_file=deps.cfg.prompts_dir / "implement-prompt.md",
-            mount_path=deps.repo_root,
-            role=AgentRole.IMPLEMENTER,
-            prompt_args=prompt_args,
-            branch=_branch,
-            model=deps.cfg.implement_override.model,
-            effort=deps.cfg.implement_override.effort,
-            stage="pre-implementation",
-            sha=sha,
-            skip_preflight=True,
-            status_display=deps.status_display,
-            issue_title=issue["title"],
-            work_body=f'implementing "{issue["title"]}"',
-            token=token,
-        )
-    )
-    if isinstance(result, PreflightFailure):
-        return result
+    lock: asyncio.Lock | None = None
+    if branch_locks is not None:
+        if _branch not in branch_locks:
+            branch_locks[_branch] = asyncio.Lock()
+        lock = branch_locks[_branch]
+        if lock.locked():
+            raise BranchCollisionError(
+                f"Branch {_branch!r} already has an agent running"
+            )
+        await lock.acquire()
 
-    await _bounded_run_agent(
-        RunRequest(
-            name=f"Review Agent #{issue['number']}",
-            prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
-            mount_path=deps.repo_root,
-            role=AgentRole.REVIEWER,
-            prompt_args=prompt_args,
-            branch=_branch,
-            model=deps.cfg.review_override.model,
-            effort=deps.cfg.review_override.effort,
-            stage="pre-review",
-            skip_preflight=True,
-            status_display=deps.status_display,
-            issue_title=issue["title"],
-            work_body=f'reviewing "{issue["title"]}"',
-            token=token,
-        )
-    )
+    try:
+        async with _agent_worktree(_branch, sha, _token, deps) as impl_mount_path:
+            result = await _bounded_run_agent(
+                RunRequest(
+                    name=f"Implement Agent #{issue['number']}",
+                    prompt_file=deps.cfg.prompts_dir / "implement-prompt.md",
+                    mount_path=impl_mount_path,
+                    role=AgentRole.IMPLEMENTER,
+                    prompt_args=prompt_args,
+                    model=deps.cfg.implement_override.model,
+                    effort=deps.cfg.implement_override.effort,
+                    stage="pre-implementation",
+                    skip_preflight=True,
+                    status_display=deps.status_display,
+                    issue_title=issue["title"],
+                    work_body=f'implementing "{issue["title"]}"',
+                    token=_token,
+                )
+            )
+            if isinstance(result, PreflightFailure):
+                return result
+
+        async with _agent_worktree(_branch, None, _token, deps) as review_mount_path:
+            await _bounded_run_agent(
+                RunRequest(
+                    name=f"Review Agent #{issue['number']}",
+                    prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
+                    mount_path=review_mount_path,
+                    role=AgentRole.REVIEWER,
+                    prompt_args=prompt_args,
+                    model=deps.cfg.review_override.model,
+                    effort=deps.cfg.review_override.effort,
+                    stage="pre-review",
+                    skip_preflight=True,
+                    status_display=deps.status_display,
+                    issue_title=issue["title"],
+                    work_body=f'reviewing "{issue["title"]}"',
+                    token=_token,
+                )
+            )
+    finally:
+        if lock is not None and lock.locked():
+            lock.release()
+
     return issue
 
 
@@ -136,8 +153,14 @@ async def implement_phase(
 ) -> ImplementResult:
     _token = token if token is not None else CancellationToken()
     semaphore = asyncio.Semaphore(deps.cfg.max_parallel)
+    branch_locks: dict[str, asyncio.Lock] = {}
     results = await asyncio.gather(
-        *[run_issue(issue, deps, semaphore, token=_token, sha=sha) for issue in issues],
+        *[
+            run_issue(
+                issue, deps, semaphore, token=_token, sha=sha, branch_locks=branch_locks
+            )
+            for issue in issues
+        ],
         return_exceptions=True,
     )
     usage_limit_hit = any(isinstance(r, UsageLimitError) for r in results)
