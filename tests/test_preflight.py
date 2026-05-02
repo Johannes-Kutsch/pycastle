@@ -363,23 +363,21 @@ def test_preflight_phase_passes_preflight_stage_string_to_run_preflight(
     assert fake.preflight_calls[0]["stage"] == "PREFLIGHT"
 
 
-def test_preflight_phase_prints_confirmation_when_all_checks_pass(
+def test_preflight_phase_returns_ready_when_all_checks_pass(
     tmp_path, git_svc, github_svc, logger
 ):
     github_svc.get_open_issues.return_value = [
         {"number": 1, "title": "Fix bug", "body": ""}
     ]
     fake = FakeAgentRunner([], preflight_responses=[[]])
-    recording = RecordingStatusDisplay()
-
     deps = _make_deps(
         tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
     )
-    deps = dataclasses.replace(deps, status_display=recording)
 
-    asyncio.run(preflight_phase(deps))
+    result = asyncio.run(preflight_phase(deps))
 
-    assert ("print", "Preflight checks passed.", "preflight-phase") in recording.calls
+    assert isinstance(result, PreflightReady)
+    assert result.issues
 
 
 def test_preflight_phase_prints_no_confirmation_when_no_open_issues(
@@ -397,7 +395,7 @@ def test_preflight_phase_prints_no_confirmation_when_no_open_issues(
 
     asyncio.run(preflight_phase(deps))
 
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert "Preflight checks passed." not in print_messages
 
 
@@ -420,7 +418,7 @@ def test_preflight_phase_prints_no_confirmation_when_check_fails(
 
     asyncio.run(preflight_phase(deps))
 
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert "Preflight checks passed." not in print_messages
 
 
@@ -496,7 +494,7 @@ def test_preflight_phase_prints_red_error_message_when_pull_fails(
     with pytest.raises(GitCommandError):
         asyncio.run(preflight_phase(deps))
 
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     expected = (
         "[red]git pull --ff-only failed — remote branch has diverged or is unreachable. "
         "Resolve manually and retry.[/red]"
@@ -540,5 +538,5 @@ def test_preflight_phase_waits_for_clean_working_tree_before_pulling(
         result = asyncio.run(preflight_phase(deps))
 
     assert isinstance(result, PreflightReady)
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert any("preflight" in msg for msg in print_messages)

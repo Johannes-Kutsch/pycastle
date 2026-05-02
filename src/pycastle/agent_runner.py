@@ -168,9 +168,9 @@ class AgentRunner:
                             raise
                         restart_num = self._cfg.timeout_retries - retries_left + 1
                         status_display.print(
-                            f"[{name}] Timeout — restarting"
+                            name,
+                            f"Timeout — restarting"
                             f" (attempt {restart_num}/{self._cfg.timeout_retries})",
-                            source="agent-timeout",
                         )
                         retries_left -= 1
                     except UsageLimitError:
@@ -178,7 +178,7 @@ class AgentRunner:
                         raise
                 return output
         finally:
-            status_display.remove_agent(name)
+            status_display.remove(name)
             if lock is not None and lock.locked():
                 lock.release()
 
@@ -208,7 +208,7 @@ class AgentRunner:
             await runner.setup(git_name, git_email, work_body)
             return await runner.preflight(list(self._cfg.preflight_checks))
         finally:
-            status_display.remove_agent(name)
+            status_display.remove(name)
             try:
                 runner.__exit__(None, None, None)
             except Exception:

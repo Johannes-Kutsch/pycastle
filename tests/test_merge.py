@@ -141,7 +141,7 @@ def test_conflict_spawns_merger_with_conflict_branches_only(
     git_svc.try_merge.side_effect = _conflict_on([2])
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
     _run(issues, deps)
-    merger_calls = [c for c in agent_runner.calls if c.name == "Merger"]
+    merger_calls = [c for c in agent_runner.calls if c.name == "Merge Agent"]
     assert len(merger_calls) == 1
     branches_arg = merger_calls[0].prompt_args["BRANCHES"]
     assert "pycastle/issue-2" in branches_arg
@@ -196,7 +196,7 @@ def test_merger_does_not_receive_issues_prompt_arg(deps, git_svc, agent_runner):
     git_svc.try_merge.return_value = False
     issues = [{"number": 3, "title": "Conflict"}]
     _run(issues, deps)
-    merger_calls = [c for c in agent_runner.calls if c.name == "Merger"]
+    merger_calls = [c for c in agent_runner.calls if c.name == "Merge Agent"]
     assert len(merger_calls) == 1
     assert "ISSUES" not in merger_calls[0].prompt_args
 
@@ -320,7 +320,7 @@ def test_merger_receives_worktree_path_as_mount(deps, git_svc, agent_runner):
     git_svc.try_merge.return_value = False
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
-    merger_calls = [c for c in agent_runner.calls if c.name == "Merger"]
+    merger_calls = [c for c in agent_runner.calls if c.name == "Merge Agent"]
     assert len(merger_calls) == 1
     expected_path = (
         deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "merge-sandbox"
@@ -332,7 +332,7 @@ def test_merger_has_no_branch_argument(deps, git_svc, agent_runner):
     git_svc.try_merge.return_value = False
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
-    merger_calls = [c for c in agent_runner.calls if c.name == "Merger"]
+    merger_calls = [c for c in agent_runner.calls if c.name == "Merge Agent"]
     assert len(merger_calls) == 1
     assert merger_calls[0].branch is None
 
@@ -446,7 +446,7 @@ def test_merge_phase_routes_deleted_branch_through_status_display(
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert any("Deleted merged branch" in msg for msg in print_messages)
     assert "Deleted merged branch" not in capsys.readouterr().out
 
@@ -460,7 +460,7 @@ def test_merge_phase_routes_branches_merged_through_status_display(
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
 
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert any("Branches merged" in msg for msg in print_messages)
     assert "Branches merged" not in capsys.readouterr().out
 
@@ -474,7 +474,7 @@ def test_merge_phase_routes_dirty_tree_message_through_status_display(
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert any("Working tree" in msg for msg in print_messages)
     assert "Working tree" not in capsys.readouterr().out
 
@@ -486,7 +486,7 @@ def test_merge_phase_dirty_tree_message_is_red(recording_deps, git_svc):
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     dirty_msg = next((msg for msg in print_messages if "Working tree" in msg), None)
     assert dirty_msg is not None
     assert dirty_msg.startswith("[red]")
@@ -500,7 +500,7 @@ def test_merge_phase_dirty_tree_message_references_merge_phase(recording_deps, g
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     dirty_msg = next((msg for msg in print_messages if "Working tree" in msg), None)
     assert dirty_msg is not None
     assert "merge" in dirty_msg
@@ -513,7 +513,7 @@ def test_merge_phase_does_not_print_dirty_tree_message_when_working_tree_is_clea
     deps, recording = recording_deps
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert not any("Working tree" in msg for msg in print_messages)
 
 
@@ -552,7 +552,7 @@ def test_merge_row_added_at_start_of_merge_phase(recording_deps):
     deps, recording = recording_deps
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
-    assert ("add_agent", "merge", "Merging", "") in recording.calls
+    assert ("register", "Merge", "started", "Merging") in recording.calls
 
 
 def test_merge_row_removed_after_clean_merges(recording_deps):
@@ -560,24 +560,26 @@ def test_merge_row_removed_after_clean_merges(recording_deps):
     deps, recording = recording_deps
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
-    assert ("remove_agent", "merge") in recording.calls
+    assert ("remove", "Merge", "finished", "success") in recording.calls
 
 
 def test_merge_row_removed_when_completed_is_empty(recording_deps):
-    """merge_phase must remove the 'merge' row even when there is nothing to merge."""
+    """merge_phase must remove the 'Merge' row even when there is nothing to merge."""
     deps, recording = recording_deps
     _run([], deps)
-    assert ("remove_agent", "merge") in recording.calls
+    assert ("remove", "Merge", "finished", "success") in recording.calls
 
 
 def test_merge_row_removed_before_merger_spawned(tmp_path, git_svc, github_svc):
-    """merge_phase must remove the 'merge' row before spawning the Merger agent."""
+    """merge_phase must remove the 'Merge' row before spawning the Merge Agent."""
     recording = RecordingStatusDisplay()
     removed_when_merger_ran: list[bool] = []
 
     async def side_effect(request: RunRequest):
-        if request.name == "Merger":
-            removed_when_merger_ran.append(("remove_agent", "merge") in recording.calls)
+        if request.name == "Merge Agent":
+            removed_when_merger_ran.append(
+                ("remove", "Merge", "finished", "success") in recording.calls
+            )
         return "<promise>COMPLETE</promise>"
 
     agent_runner = FakeAgentRunner(side_effect=side_effect)
@@ -612,6 +614,6 @@ def test_merger_run_call_passes_work_body_with_conflict_count(
 
     _run(conflict_issues, deps)
 
-    merger_calls = [c for c in recording_runner.calls if c.name == "Merger"]
+    merger_calls = [c for c in recording_runner.calls if c.name == "Merge Agent"]
     assert len(merger_calls) == 1
     assert merger_calls[0].work_body == f"Merging {len(conflict_issues)} Branches"

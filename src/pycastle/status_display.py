@@ -1,8 +1,6 @@
 import builtins
 from typing import Protocol, runtime_checkable
 
-_MISSING = object()
-
 
 @runtime_checkable
 class StatusDisplay(Protocol):
@@ -16,8 +14,6 @@ class StatusDisplay(Protocol):
 class PlainStatusDisplay:
     def __init__(self) -> None:
         self._last_caller: str | None = None
-
-    # ── new caller-based API ──────────────────────────────────────────────────
 
     def register(self, caller: str, startup_message: str = "started", work_body: str = "") -> None:
         if caller:
@@ -37,25 +33,11 @@ class PlainStatusDisplay:
         else:
             builtins.print(shutdown_message)
 
-    def print(self, caller_or_message: object, message: object = _MISSING, *, source: str = "", style: str | None = None) -> None:  # type: ignore[override]
-        if message is _MISSING:
-            # legacy signature: print(message, *, source="")
-            builtins.print(caller_or_message)
+    def print(self, caller: str, message: object, style: str | None = None) -> None:
+        if self._last_caller is not None and caller != self._last_caller:
+            builtins.print()
+        if caller:
+            builtins.print(f"[{caller}] {message}")
         else:
-            # new signature: print(caller, message, style=None)
-            caller = str(caller_or_message)
-            if self._last_caller is not None and caller != self._last_caller:
-                builtins.print()
-            if caller:
-                builtins.print(f"[{caller}] {message}")
-            else:
-                builtins.print(message)
-            self._last_caller = caller
-
-    # ── legacy API kept for call sites not yet migrated ───────────────────────
-
-    def add_agent(self, name: str, phase: str, work_body: str = "") -> None:
-        pass
-
-    def remove_agent(self, name: str) -> None:
-        pass
+            builtins.print(message)
+        self._last_caller = caller

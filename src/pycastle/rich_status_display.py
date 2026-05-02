@@ -8,8 +8,6 @@ from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
 
-_MISSING = object()
-
 _PHASE_RANK: dict[str, int] = {
     "preflight": -1,
     "plan": 0,
@@ -102,7 +100,6 @@ class RichStatusDisplay:
         self._rows: dict[str, _AgentRow] = {}
         self._lock = threading.Lock()
         self._live: Live | None = None
-        self._last_source: str | None = None
         self._last_caller: str | None = None
 
     def __rich_console__(
@@ -165,13 +162,6 @@ class RichStatusDisplay:
         line = f"[{caller}] {startup_message}" if caller else startup_message
         self._console.print(Text(line))
 
-    def add_agent(self, name: str, phase: str, work_body: str = "") -> None:
-        with self._lock:
-            self._rows[name] = _AgentRow(name, phase, work_body)
-            live_to_start = self._acquire_live()
-        if live_to_start is not None:
-            live_to_start.start()
-
     def update_phase(self, name: str, phase: str) -> None:
         with self._lock:
             if name in self._rows:
@@ -202,48 +192,26 @@ class RichStatusDisplay:
             text.stylize("red")
         self._console.print(text)
 
-    def remove_agent(self, name: str) -> None:
-        with self._lock:
-            self._rows.pop(name, None)
-            live_to_stop = self._release_live_if_empty()
-        if live_to_stop is not None:
-            live_to_stop.stop()
-
     def print(
         self,
-        caller_or_message: object,
-        message: object = _MISSING,
-        *,
-        source: str = "",
+        caller: str,
+        message: object,
         style: str | None = None,
-    ) -> None:  # type: ignore[override]
-        if message is _MISSING:
-            # Legacy path: print(message, *, source="")
-            with self._lock:
-                prepend_blank = (
-                    self._last_source is not None and source != self._last_source
-                )
-                self._last_source = source
-            if prepend_blank:
-                self._console.print()
-            self._console.print(caller_or_message)
-        else:
-            # New path: print(caller, message, style=None)
-            caller = str(caller_or_message)
-            with self._lock:
-                prepend_blank = (
-                    self._last_caller is not None and caller != self._last_caller
-                )
-                self._last_caller = caller
-            if prepend_blank:
-                self._console.print()
-            line = f"[{caller}] {message}" if caller else str(message)
-            text = Text(line)
-            if style == "error":
-                text.stylize("red")
-            elif style == "success":
-                text.stylize("green")
-            self._console.print(text)
+    ) -> None:
+        with self._lock:
+            prepend_blank = (
+                self._last_caller is not None and caller != self._last_caller
+            )
+            self._last_caller = caller
+        if prepend_blank:
+            self._console.print()
+        line = f"[{caller}] {message}" if caller else str(message)
+        text = Text(line)
+        if style == "error":
+            text.stylize("red")
+        elif style == "success":
+            text.stylize("green")
+        self._console.print(text)
 
     def stop(self) -> None:
         live_to_stop: Live | None = None

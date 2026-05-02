@@ -109,7 +109,7 @@ async def run(
         _owned_display = RichStatusDisplay()
         status_display = _owned_display  # type: ignore[assignment]
 
-    status_display.add_agent("startup", "Git identity")  # type: ignore[union-attr,attr-defined]
+    status_display.register("pycastle", work_body="Git identity")  # type: ignore[union-attr]
     try:
         try:
             git_svc.get_user_name(cwd=repo_root)
@@ -123,7 +123,7 @@ async def run(
             )
             sys.exit(1)
 
-        status_display.update_phase("startup", "Credentials")  # type: ignore[union-attr]
+        status_display.update_phase("pycastle", "Credentials")  # type: ignore[union-attr]
         if github_service is None and shutil.which("gh") is None:
             print(
                 "GitHub CLI not found. Install it with: sudo apt install gh,"
@@ -132,7 +132,7 @@ async def run(
             )
             sys.exit(1)
     finally:
-        status_display.remove_agent("startup")  # type: ignore[union-attr,attr-defined]
+        status_display.remove("pycastle")  # type: ignore[union-attr]
 
     _lazy_github_svc: GithubService | None = None
 
@@ -146,15 +146,15 @@ async def run(
 
     try:
         for iteration in range(1, cfg.max_iterations + 1):
-            status_display.print(  # type: ignore[union-attr,call-arg]
+            status_display.print(  # type: ignore[union-attr]
+                "pycastle",
                 f"=== Iteration {iteration}/{cfg.max_iterations} ===",
-                source="iteration-header",
             )
 
             if not _get_github_svc().has_open_issues_with_label(cfg.issue_label):
-                status_display.print(  # type: ignore[union-attr,call-arg]
+                status_display.print(  # type: ignore[union-attr]
+                    "pycastle",
                     f"No issues with label '{cfg.issue_label}' found. Skipping.",
-                    source="iteration-skip",
                 )
                 break
 
@@ -179,9 +179,9 @@ async def run(
 
             match outcome:
                 case Done():
-                    status_display.print(  # type: ignore[union-attr,call-arg]
+                    status_display.print(  # type: ignore[union-attr]
+                        "pycastle",
                         f"No issues with label '{cfg.issue_label}' found. Skipping.",
-                        source="iteration-skip",
                     )
                     break
                 case AbortedHITL():
@@ -196,7 +196,7 @@ async def run(
                 case Continue():
                     pass
 
-        status_display.print("All done.", source="all-done")  # type: ignore[union-attr,call-arg]
+        status_display.print("pycastle", "All done.")  # type: ignore[union-attr]
     finally:
         if _owned_display is not None:
             _owned_display.stop()

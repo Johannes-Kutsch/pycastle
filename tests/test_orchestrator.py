@@ -544,7 +544,7 @@ def test_merger_receives_merge_stage_model_and_effort(tmp_path):
         merge_override=StageOverride(model="claude-opus-4-7", effort="low"),
     )
 
-    merger_call = next(c for c in captured if c["name"] == "Merger")
+    merger_call = next(c for c in captured if c["name"] == "Merge Agent")
     assert merger_call["model"] == "claude-opus-4-7"
     assert merger_call["effort"] == "low"
 
@@ -600,8 +600,8 @@ def test_stage_overrides_are_independent(tmp_path):
     assert by_name["Implementer #1"]["effort"] == "medium"
     assert by_name["Reviewer #1"]["model"] == "claude-haiku-4-5"
     assert by_name["Reviewer #1"]["effort"] == ""
-    assert by_name["Merger"]["model"] == "claude-opus-4-7"
-    assert by_name["Merger"]["effort"] == "high"
+    assert by_name["Merge Agent"]["model"] == "claude-opus-4-7"
+    assert by_name["Merge Agent"]["effort"] == "high"
 
 
 # ── Issue-100: stage parameter and CHECKS prompt arg ─────────────────────────
@@ -626,7 +626,7 @@ def test_merger_receives_checks_prompt_arg_from_preflight_checks(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    merger_call = next(c for c in captured if c["name"] == "Merger")
+    merger_call = next(c for c in captured if c["name"] == "Merge Agent")
     expected_checks = " && ".join(cmd for _, cmd in Config().preflight_checks)
     assert merger_call["prompt_args"]["CHECKS"] == expected_checks
 
@@ -652,7 +652,7 @@ def test_each_agent_passes_correct_stage_string(tmp_path):
     assert by_name["Planner"]["stage"] == "plan-sandbox"
     assert by_name["Implementer #1"]["stage"] == "pre-implementation"
     assert by_name["Reviewer #1"]["stage"] == "pre-review"
-    assert by_name["Merger"]["stage"] == "pre-merge"
+    assert by_name["Merge Agent"]["stage"] == "pre-merge"
 
 
 # ── Issue-95: parallel implementers with bounded concurrency ──────────────────
@@ -792,8 +792,8 @@ def test_clean_merges_skip_merger(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    assert "Merger" not in agent_names, (
-        f"Merger must not be spawned on clean merges; agents called: {agent_names}"
+    assert "Merge Agent" not in agent_names, (
+        f"Merge Agent must not be spawned on clean merges; agents called: {agent_names}"
     )
 
 
@@ -851,7 +851,7 @@ def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    merger_calls = [c for c in captured if c["name"] == "Merger"]
+    merger_calls = [c for c in captured if c["name"] == "Merge Agent"]
     assert len(merger_calls) == 1, (
         f"Expected exactly one Merger call; got {merger_calls}"
     )
@@ -933,7 +933,7 @@ def test_merger_does_not_receive_issues_prompt_arg(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    merger_calls = [c for c in captured if c["name"] == "Merger"]
+    merger_calls = [c for c in captured if c["name"] == "Merge Agent"]
     assert len(merger_calls) == 1
     assert "ISSUES" not in merger_calls[0]["prompt_args"], (
         "Merger must not receive an ISSUES prompt arg"
@@ -2027,16 +2027,16 @@ def test_startup_row_added_before_checks_and_removed_after_success(tmp_path):
     )
 
     add_idx = next(
-        (i for i, c in enumerate(recording.calls) if c[:2] == ("add_agent", "startup")),
+        (i for i, c in enumerate(recording.calls) if c[:2] == ("register", "pycastle")),
         None,
     )
     remove_idx = next(
-        (i for i, c in enumerate(recording.calls) if c == ("remove_agent", "startup")),
+        (i for i, c in enumerate(recording.calls) if c[:2] == ("remove", "pycastle")),
         None,
     )
-    assert add_idx is not None, "startup row must be added"
+    assert add_idx is not None, "startup row must be registered"
     assert remove_idx is not None, "startup row must be removed"
-    assert add_idx < remove_idx, "startup must be added before it is removed"
+    assert add_idx < remove_idx, "startup must be registered before it is removed"
 
 
 def test_startup_row_phase_cycles_git_identity_then_credentials(tmp_path):
@@ -2057,7 +2057,7 @@ def test_startup_row_phase_cycles_git_identity_then_credentials(tmp_path):
         (
             i
             for i, c in enumerate(recording.calls)
-            if c[0] == "add_agent" and c[1] == "startup"
+            if c[0] == "register" and c[1] == "pycastle"
         ),
         None,
     )
@@ -2065,14 +2065,14 @@ def test_startup_row_phase_cycles_git_identity_then_credentials(tmp_path):
         (
             i
             for i, c in enumerate(recording.calls)
-            if c[0] == "update_phase" and c[1] == "startup"
+            if c[0] == "update_phase" and c[1] == "pycastle"
         ),
         None,
     )
-    assert add_idx is not None and recording.calls[add_idx][2] == "Git identity"
+    assert add_idx is not None and recording.calls[add_idx][3] == "Git identity"
     assert update_idx is not None and recording.calls[update_idx][2] == "Credentials"
     assert add_idx < update_idx, (
-        "phase must be updated to 'Credentials' after the row is added with 'Git identity'"
+        "phase must be updated to 'Credentials' after the row is registered with 'Git identity'"
     )
 
 
@@ -2088,7 +2088,7 @@ def test_startup_row_removed_when_git_identity_check_fails(tmp_path):
             status_display=recording,
         )
 
-    assert ("remove_agent", "startup") in recording.calls
+    assert ("remove", "pycastle", "finished", "success") in recording.calls
 
 
 def test_startup_row_removed_when_credentials_check_fails(tmp_path):
@@ -2099,4 +2099,4 @@ def test_startup_row_removed_when_credentials_check_fails(tmp_path):
         with pytest.raises(SystemExit):
             _run(tmp_path, status_display=recording)
 
-    assert ("remove_agent", "startup") in recording.calls
+    assert ("remove", "pycastle", "finished", "success") in recording.calls

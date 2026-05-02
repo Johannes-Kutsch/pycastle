@@ -18,8 +18,8 @@ def test_rich_stop_when_no_agents_added_is_safe() -> None:
 
 def test_rich_stop_is_idempotent() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Setup")
-    d.remove_agent("Planner")
+    d.register("Planner")
+    d.remove("Planner")
     d.stop()
 
 
@@ -30,64 +30,64 @@ def test_rich_update_phase_for_unknown_agent_is_safe() -> None:
 
 def test_rich_remove_unknown_agent_is_safe() -> None:
     d = RichStatusDisplay()
-    d.remove_agent("never-added")
+    d.remove("never-added")
 
 
 def test_rich_print_outputs_message(capsys) -> None:
     d = RichStatusDisplay()
-    d.print("hello world")
+    d.print("caller", "hello world")
     assert "hello world" in capsys.readouterr().out
 
 
 def test_rich_print_no_blank_line_on_first_print(capsys) -> None:
     d = RichStatusDisplay()
-    d.print("hello", source="test")
+    d.print("test", "hello")
     out = capsys.readouterr().out
-    assert out.startswith("hello")
+    assert out.startswith("[test]")
 
 
-def test_rich_print_no_blank_line_on_same_source_repeat(capsys) -> None:
+def test_rich_print_no_blank_line_on_same_caller_repeat(capsys) -> None:
     d = RichStatusDisplay()
-    d.print("hello", source="block")
-    d.print("world", source="block")
+    d.print("block", "hello")
+    d.print("block", "world")
     out = capsys.readouterr().out
-    assert "hello\nworld" in out
+    assert "[block] hello\n[block] world" in out
 
 
-def test_rich_print_blank_line_on_source_change(capsys) -> None:
+def test_rich_print_blank_line_on_caller_change(capsys) -> None:
     d = RichStatusDisplay()
-    d.print("hello", source="block-a")
-    d.print("world", source="block-b")
+    d.print("block-a", "hello")
+    d.print("block-b", "world")
     out = capsys.readouterr().out
-    assert "hello\n\nworld" in out
+    assert "hello\n\n" in out and "world" in out
 
 
-def test_rich_print_blank_line_when_switching_from_default_to_named_source(
+def test_rich_print_blank_line_when_switching_from_empty_to_named_caller(
     capsys,
 ) -> None:
     d = RichStatusDisplay()
-    d.print("hello")
-    d.print("world", source="block-a")
+    d.print("", "hello")
+    d.print("block-a", "world")
     out = capsys.readouterr().out
-    assert "hello\n\nworld" in out
+    assert "hello\n\n" in out and "world" in out
 
 
-def test_rich_print_blank_line_when_switching_from_named_to_default_source(
+def test_rich_print_blank_line_when_switching_from_named_to_empty_caller(
     capsys,
 ) -> None:
     d = RichStatusDisplay()
-    d.print("hello", source="block-a")
-    d.print("world")
+    d.print("block-a", "hello")
+    d.print("", "world")
     out = capsys.readouterr().out
-    assert "hello\n\nworld" in out
+    assert "hello\n\n" in out and "world" in out
 
 
 def test_rich_agents_render_sorted_by_phase_rank() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Merger", "Work")
-    d.add_agent("Reviewer #5", "Work")
-    d.add_agent("Implementer #5", "Work")
-    d.add_agent("Planner", "Plan")
+    d.register("Merger")
+    d.register("Reviewer #5")
+    d.register("Implementer #5")
+    d.register("Planner")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -101,8 +101,8 @@ def test_rich_agents_render_sorted_by_phase_rank() -> None:
 
 def test_rich_implementers_render_sorted_by_issue_number() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Implementer #42", "Work")
-    d.add_agent("Implementer #7", "Work")
+    d.register("Implementer #42")
+    d.register("Implementer #7")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -114,8 +114,8 @@ def test_rich_implementers_render_sorted_by_issue_number() -> None:
 
 def test_rich_unknown_agent_sorts_after_known_phases() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan")
-    d.add_agent("Unknown-agent", "Work")
+    d.register("Planner")
+    d.register("Unknown-agent")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -127,7 +127,7 @@ def test_rich_unknown_agent_sorts_after_known_phases() -> None:
 
 def test_rich_renders_agent_name_without_dash_suffix() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Implementer #42", "Work")
+    d.register("Implementer #42")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -140,7 +140,7 @@ def test_rich_renders_agent_name_without_dash_suffix() -> None:
 
 def test_rich_renders_no_header_row() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan")
+    d.register("Planner")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -153,7 +153,7 @@ def test_rich_renders_no_header_row() -> None:
 
 def test_rich_renders_blank_line_before_agent_rows() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan")
+    d.register("Planner")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -167,7 +167,7 @@ def test_rich_renders_blank_line_before_agent_rows() -> None:
 
 def test_rich_elapsed_format_shows_seconds_under_one_minute() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan")
+    d.register("Planner")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -184,7 +184,7 @@ def test_rich_elapsed_format_shows_minutes_and_seconds(monkeypatch) -> None:
     monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
 
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan")
+    d.register("Planner")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -197,7 +197,8 @@ def test_rich_elapsed_format_shows_minutes_and_seconds(monkeypatch) -> None:
 
 def test_rich_phase_appears_in_output() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "DESIGNING")
+    d.register("Planner")
+    d.update_phase("Planner", "DESIGNING")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -218,8 +219,8 @@ def test_rich_agent_names_are_right_aligned_by_elapsed_column(monkeypatch) -> No
     monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
 
     d = RichStatusDisplay()
-    d.add_agent("Implementer #7", "Work")
-    d.add_agent("Implementer #42", "Work")
+    d.register("Implementer #7")
+    d.register("Implementer #42")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -238,7 +239,7 @@ def test_rich_elapsed_format_at_exactly_one_minute(monkeypatch) -> None:
     monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
 
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan")
+    d.register("Planner")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -257,7 +258,7 @@ def test_rich_reset_idle_timer_resets_idle_time(monkeypatch) -> None:
     monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
 
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan")
+    d.register("Planner")
     d.reset_idle_timer("Planner")
 
     console = Console(record=True, width=200)
@@ -275,8 +276,8 @@ def test_rich_reset_idle_timer_for_unknown_agent_is_safe() -> None:
 
 def test_rich_reviewers_render_sorted_by_issue_number() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Reviewer #42", "Review")
-    d.add_agent("Reviewer #7", "Review")
+    d.register("Reviewer #42")
+    d.register("Reviewer #7")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -286,10 +287,10 @@ def test_rich_reviewers_render_sorted_by_issue_number() -> None:
     d.stop()
 
 
-def test_rich_add_agent_twice_with_same_name_is_safe() -> None:
+def test_rich_register_twice_with_same_name_is_safe() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Setup")
-    d.add_agent("Planner", "Plan")
+    d.register("Planner")
+    d.register("Planner")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -300,7 +301,7 @@ def test_rich_add_agent_twice_with_same_name_is_safe() -> None:
 
 def test_rich_agent_name_renders_without_hyperlink() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Implementer #5", "Work")
+    d.register("Implementer #5")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -313,7 +314,7 @@ def test_rich_agent_name_renders_without_hyperlink() -> None:
 
 def test_rich_body_shows_lifecycle_phase_during_non_work() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Setup", "Creating Plan from 3 issues")
+    d.register("Planner", work_body="Creating Plan from 3 issues")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -326,7 +327,8 @@ def test_rich_body_shows_lifecycle_phase_during_non_work() -> None:
 
 def test_rich_body_shows_work_body_during_work() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Work", "Creating Plan from 3 issues")
+    d.register("Planner", work_body="Creating Plan from 3 issues")
+    d.update_phase("Planner", "Work")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -339,7 +341,7 @@ def test_rich_body_shows_work_body_during_work() -> None:
 
 def test_rich_body_is_unstyled() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Setup")
+    d.register("Planner")
 
     buf = io.StringIO()
     console = Console(file=buf, width=200, force_terminal=True, color_system="256")
@@ -354,7 +356,8 @@ def test_rich_body_is_unstyled() -> None:
 
 def test_rich_body_is_blank_when_work_body_is_empty() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Work")
+    d.register("Planner")
+    d.update_phase("Planner", "Work")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -367,7 +370,7 @@ def test_rich_body_is_blank_when_work_body_is_empty() -> None:
 
 def test_rich_body_shows_work_body_after_phase_transitions_to_work() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Setup", "Creating Plan from 3 issues")
+    d.register("Planner", work_body="Creating Plan from 3 issues")
     d.update_phase("Planner", "Work")
 
     console = Console(record=True, width=200)
@@ -381,7 +384,8 @@ def test_rich_body_shows_work_body_after_phase_transitions_to_work() -> None:
 
 def test_rich_body_reverts_to_phase_name_after_transitioning_from_work() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Work", "Creating Plan from 3 issues")
+    d.register("Planner", work_body="Creating Plan from 3 issues")
+    d.update_phase("Planner", "Work")
     d.update_phase("Planner", "Prepare")
 
     console = Console(record=True, width=200)
@@ -395,8 +399,8 @@ def test_rich_body_reverts_to_phase_name_after_transitioning_from_work() -> None
 
 def test_rich_pre_flight_agent_sorts_before_implementers() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Implementer #1", "Work")
-    d.add_agent("Pre-Flight", "Setup")
+    d.register("Implementer #1")
+    d.register("Pre-Flight")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -423,7 +427,7 @@ def _has_code(ansi: str, code: int) -> bool:
 
 def test_rich_agent_name_renders_bold() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan")
+    d.register("Planner")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -433,7 +437,7 @@ def test_rich_agent_name_renders_bold() -> None:
 
 def test_rich_digit_sequences_in_agent_name_render_cyan() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Implementer #5", "Work")
+    d.register("Implementer #5")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -443,7 +447,7 @@ def test_rich_digit_sequences_in_agent_name_render_cyan() -> None:
 
 def test_rich_non_numeric_agent_name_renders_bold_without_cyan() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan")
+    d.register("Planner")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -454,7 +458,7 @@ def test_rich_non_numeric_agent_name_renders_bold_without_cyan() -> None:
 
 def test_rich_elapsed_column_renders_dim() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan")
+    d.register("Planner")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -466,7 +470,7 @@ def test_rich_elapsed_column_renders_dim() -> None:
 
 def test_rich_idle_column_renders_dim() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan")
+    d.register("Planner")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -478,7 +482,7 @@ def test_rich_idle_column_renders_dim() -> None:
 
 def test_rich_role_name_renders_without_color_for_unknown_agent() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Unknown-agent", "Custom")
+    d.register("Unknown-agent")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -491,7 +495,7 @@ def test_rich_role_name_renders_without_color_for_unknown_agent() -> None:
 
 def test_rich_planner_name_renders_bold_without_role_color() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan")
+    d.register("Planner")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -502,7 +506,7 @@ def test_rich_planner_name_renders_bold_without_role_color() -> None:
 
 def test_rich_implementer_name_renders_bold_without_role_color() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Implementer #5", "Work")
+    d.register("Implementer #5")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -513,7 +517,7 @@ def test_rich_implementer_name_renders_bold_without_role_color() -> None:
 
 def test_rich_reviewer_name_renders_bold_without_role_color() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Reviewer #3", "Review")
+    d.register("Reviewer #3")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -524,7 +528,7 @@ def test_rich_reviewer_name_renders_bold_without_role_color() -> None:
 
 def test_rich_merger_name_renders_bold_without_role_color() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Merger", "Merge")
+    d.register("Merger")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -535,7 +539,7 @@ def test_rich_merger_name_renders_bold_without_role_color() -> None:
 
 def test_rich_pre_flight_name_renders_bold_without_role_color() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Pre-Flight", "Setup")
+    d.register("Pre-Flight")
 
     ansi = _ansi_output(d)
     d.stop()
@@ -546,7 +550,7 @@ def test_rich_pre_flight_name_renders_bold_without_role_color() -> None:
 
 def test_rich_pre_flight_reporter_name_renders_bold_without_role_color() -> None:
     d = RichStatusDisplay()
-    d.add_agent("Pre-Flight Reporter", "Setup")
+    d.register("Pre-Flight Reporter")
 
     ansi = _ansi_output(d)
     d.stop()

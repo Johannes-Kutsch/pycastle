@@ -349,7 +349,7 @@ def test_run_iteration_routes_planning_complete_through_status_display(
     )
     asyncio.run(run_iteration(deps))
 
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert any("Planning complete" in msg for msg in print_messages)
     assert "Planning complete" not in capsys.readouterr().out
 
@@ -374,14 +374,16 @@ def test_run_iteration_execution_complete_uses_consistent_source(
     asyncio.run(run_iteration(deps))
 
     exec_prints = [
-        (msg, src)
-        for kind, msg, src in (c for c in recording.calls if c[0] == "print")
+        (caller, msg)
+        for c in recording.calls
+        if c[0] == "print"
+        for caller, msg in [(c[1], c[2])]
         if "Execution complete" in str(msg) or str(msg).startswith("  pycastle/")
     ]
     assert exec_prints, "Expected execution-complete messages"
-    sources = {src for _, src in exec_prints}
-    assert len(sources) == 1, (
-        f"Expected all execution-complete messages to share one source, got: {sources}"
+    callers = {caller for caller, _ in exec_prints}
+    assert len(callers) == 1, (
+        f"Expected all execution-complete messages to share one caller, got: {callers}"
     )
 
 
@@ -407,7 +409,7 @@ def test_run_iteration_routes_hitl_abort_message_through_status_display(
     )
     asyncio.run(run_iteration(deps))
 
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert any("human intervention" in msg for msg in print_messages)
     assert "human intervention" not in capsys.readouterr().out
 
@@ -433,7 +435,7 @@ def test_run_iteration_routes_no_commits_message_through_status_display(
     )
     asyncio.run(run_iteration(deps))
 
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert any("No commits" in msg for msg in print_messages)
     assert "No commits" not in capsys.readouterr().out
 
