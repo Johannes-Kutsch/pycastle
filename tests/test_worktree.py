@@ -598,6 +598,18 @@ def test_detached_worktree_does_not_remove_worktree_when_checkout_fails(detached
     detached_deps.git_svc.remove_worktree.assert_not_called()
 
 
+def test_detached_worktree_propagates_cleanup_error(detached_deps):
+    """An error from remove_worktree in the finally block must propagate."""
+    detached_deps.git_svc.remove_worktree.side_effect = RuntimeError("disk full")
+
+    async def _run():
+        with pytest.raises(RuntimeError, match="disk full"):
+            async with detached_worktree("sandbox", "abc123", detached_deps):
+                pass
+
+    asyncio.run(_run())
+
+
 # ── branch_worktree ───────────────────────────────────────────────────────────
 
 
@@ -609,7 +621,7 @@ def test_branch_worktree_creates_worktree_on_enter_and_yields_correct_path(branc
             "issue-42", "pycastle/issue-42", "abc123", branch_deps
         ) as path:
             assert path == expected_path
-            branch_deps.git_svc.create_worktree.assert_called_once()
+            assert expected_path.exists()
 
     asyncio.run(_run())
 

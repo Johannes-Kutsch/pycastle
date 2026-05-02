@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Protocol
 
-from .config import Config, load_config
+from .config import Config
 from .errors import WorktreeError, WorktreeTimeoutError
 from .services import GitCommandError, GitService, GitTimeoutError
 
@@ -75,14 +75,12 @@ def _recreate_stale_branch(
 
 
 def _create_worktree(
+    svc: GitService,
     repo_path: Path,
     worktree_path: Path,
     branch: str,
     sha: str | None = None,
-    git_service: GitService | None = None,
-    cfg: Config | None = None,
 ) -> None:
-    svc = git_service or GitService(cfg or load_config())
     with _wrap_git_errors():
         branch_exists = svc.verify_ref_exists(branch, repo_path)
 
@@ -117,7 +115,7 @@ async def branch_worktree(
     delete_branch: bool = True,
 ):
     path = worktree_path(name, deps)
-    _create_worktree(deps.repo_root, path, branch, sha, deps.git_svc)
+    _create_worktree(deps.git_svc, deps.repo_root, path, branch, sha)
     try:
         yield path
     finally:
