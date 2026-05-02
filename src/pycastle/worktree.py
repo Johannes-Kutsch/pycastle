@@ -15,6 +15,7 @@ CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
 class _WorktreeDeps(Protocol):
     repo_root: Path
     cfg: Config
+    git_svc: GitService
 
 
 def worktree_name_for_branch(branch: str) -> str:
@@ -132,6 +133,16 @@ async def managed_worktree(
         yield worktree_path
     finally:
         remove_worktree(repo_path, worktree_path, git_service)
+
+
+@asynccontextmanager
+async def detached_worktree(name: str, sha: str, deps: _WorktreeDeps):
+    path = worktree_path(name, deps)
+    deps.git_svc.checkout_detached(deps.repo_root, path, sha)
+    try:
+        yield path
+    finally:
+        deps.git_svc.remove_worktree(deps.repo_root, path)
 
 
 def patch_gitdir_for_container(worktree_path: Path) -> Path | None:
