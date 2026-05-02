@@ -379,8 +379,7 @@ def test_preflight_phase_prints_confirmation_when_all_checks_pass(
 
     asyncio.run(preflight_phase(deps))
 
-    print_calls = [(msg, src) for kind, msg, src in recording.calls if kind == "print"]
-    assert ("Preflight checks passed.", "preflight-phase") in print_calls
+    assert ("print", "Preflight checks passed.", "preflight-phase") in recording.calls
 
 
 def test_preflight_phase_prints_no_confirmation_when_no_open_issues(
