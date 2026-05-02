@@ -872,9 +872,10 @@ def test_agent_runner_run_preflight_registers_and_removes_status_row_on_success(
     assert ("remove_agent", "preflight-checks") in display.calls
 
 
-def test_agent_runner_run_preflight_cycles_phase_to_preflight_before_checks(tmp_path):
+def test_agent_runner_run_preflight_updates_phase_for_each_check(tmp_path):
     mock_client = _make_preflight_docker_client()
-    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    checks = (("ruff", "ruff check ."), ("mypy", "mypy ."), ("pytest", "pytest"))
+    cfg = Config(logs_dir=tmp_path, preflight_checks=checks)
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
     display = RecordingStatusDisplay()
 
@@ -886,6 +887,8 @@ def test_agent_runner_run_preflight_cycles_phase_to_preflight_before_checks(tmp_
 
     phase_updates = [c for c in display.calls if c[0] == "update_phase"]
     assert any(c[2] == "Running ruff Checks" for c in phase_updates)
+    assert any(c[2] == "Running mypy Checks" for c in phase_updates)
+    assert any(c[2] == "Running pytest Checks" for c in phase_updates)
 
 
 def test_agent_runner_run_preflight_removes_status_row_when_checks_fail(tmp_path):
