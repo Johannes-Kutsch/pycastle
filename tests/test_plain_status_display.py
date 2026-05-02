@@ -199,3 +199,69 @@ def test_remove_blank_for_consecutive_anonymous_callers(
     d.remove("")
     out = capsys.readouterr().out
     assert out == "finished\n\nfinished\n"
+
+
+def test_register_then_print_different_callers_blank(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.register("Alice")
+    d.print("Bob", "message")
+    out = capsys.readouterr().out
+    assert out == "[Alice] started\n\n[Bob] message\n"
+
+
+def test_register_then_remove_different_callers_blank(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.register("Alice")
+    d.remove("Bob")
+    out = capsys.readouterr().out
+    assert out == "[Alice] started\n\n[Bob] finished\n"
+
+
+def test_cross_method_consecutive_anonymous_blank(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.print("", "first")
+    d.register("", "second")
+    out = capsys.readouterr().out
+    assert out == "first\n\nsecond\n"
+
+
+def test_register_custom_startup_message(capsys: pytest.CaptureFixture[str]) -> None:
+    d = PlainStatusDisplay()
+    d.register("Alice", startup_message="connecting")
+    out = capsys.readouterr().out
+    assert out == "[Alice] connecting\n"
+
+
+def test_remove_custom_shutdown_message(capsys: pytest.CaptureFixture[str]) -> None:
+    d = PlainStatusDisplay()
+    d.remove("Alice", shutdown_message="aborted")
+    out = capsys.readouterr().out
+    assert out == "[Alice] aborted\n"
+
+
+def test_full_lifecycle_interleaved_callers(capsys: pytest.CaptureFixture[str]) -> None:
+    d = PlainStatusDisplay()
+    d.register("Alice")
+    d.print("Alice", "working")
+    d.register("Bob")
+    d.print("Bob", "running")
+    d.remove("Alice")
+    d.remove("Bob")
+    out = capsys.readouterr().out
+    assert out == (
+        "[Alice] started\n"
+        "[Alice] working\n"
+        "\n"
+        "[Bob] started\n"
+        "[Bob] running\n"
+        "\n"
+        "[Alice] finished\n"
+        "\n"
+        "[Bob] finished\n"
+    )
