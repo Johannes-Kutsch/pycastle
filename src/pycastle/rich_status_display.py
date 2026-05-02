@@ -139,39 +139,36 @@ class RichStatusDisplay:
 
         yield Padding(table, (1, 0, 0, 0))
 
+    def _acquire_live(self) -> "Live | None":
+        """Create and record a new Live if none is running. Must be called with self._lock held."""
+        if self._live is None:
+            live = Live(self, console=self._console, refresh_per_second=4, transient=True)
+            self._live = live
+            return live
+        return None
+
+    def _release_live_if_empty(self) -> "Live | None":
+        """Return the Live for stopping if no rows remain. Must be called with self._lock held."""
+        if not self._rows and self._live is not None:
+            live, self._live = self._live, None
+            return live
+        return None
+
     def register(
         self, caller: str, startup_message: str = "started", work_body: str = ""
     ) -> None:
-        live_to_start: Live | None = None
         with self._lock:
             self._rows[caller] = _AgentRow(caller, "Setup", work_body)
-            if self._live is None:
-                live = Live(
-                    self,
-                    console=self._console,
-                    refresh_per_second=4,
-                    transient=True,
-                )
-                self._live = live
-                live_to_start = live
+            live_to_start = self._acquire_live()
         if live_to_start is not None:
             live_to_start.start()
         line = f"[{caller}] {startup_message}" if caller else startup_message
         self._console.print(Text(line))
 
     def add_agent(self, name: str, phase: str, work_body: str = "") -> None:
-        live_to_start: Live | None = None
         with self._lock:
             self._rows[name] = _AgentRow(name, phase, work_body)
-            if self._live is None:
-                live = Live(
-                    self,
-                    console=self._console,
-                    refresh_per_second=4,
-                    transient=True,
-                )
-                self._live = live
-                live_to_start = live
+            live_to_start = self._acquire_live()
         if live_to_start is not None:
             live_to_start.start()
 
@@ -192,12 +189,9 @@ class RichStatusDisplay:
         shutdown_message: str = "finished",
         shutdown_style: str = "success",
     ) -> None:
-        live_to_stop: Live | None = None
         with self._lock:
             self._rows.pop(caller, None)
-            if not self._rows and self._live is not None:
-                live_to_stop = self._live
-                self._live = None
+            live_to_stop = self._release_live_if_empty()
         if live_to_stop is not None:
             live_to_stop.stop()
         line = f"[{caller}] {shutdown_message}" if caller else shutdown_message
@@ -209,12 +203,9 @@ class RichStatusDisplay:
         self._console.print(text)
 
     def remove_agent(self, name: str) -> None:
-        live_to_stop: Live | None = None
         with self._lock:
             self._rows.pop(name, None)
-            if not self._rows and self._live is not None:
-                live_to_stop = self._live
-                self._live = None
+            live_to_stop = self._release_live_if_empty()
         if live_to_stop is not None:
             live_to_stop.stop()
 
