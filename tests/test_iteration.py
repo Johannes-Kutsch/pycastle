@@ -562,9 +562,9 @@ def test_implementer_and_reviewer_run_calls_pass_work_body_with_issue_title(
     implementer_calls = [c for c in recording_runner.calls if "Implementer" in c.name]
     reviewer_calls = [c for c in recording_runner.calls if "Reviewer" in c.name]
     assert len(implementer_calls) == 1
-    assert implementer_calls[0].work_body == f'working on "{issue_title}"'
+    assert implementer_calls[0].work_body == f'implementing "{issue_title}"'
     assert len(reviewer_calls) == 1
-    assert reviewer_calls[0].work_body == f'working on "{issue_title}"'
+    assert reviewer_calls[0].work_body == f'reviewing "{issue_title}"'
 
 
 def test_planner_run_call_passes_work_body_with_issue_count(
