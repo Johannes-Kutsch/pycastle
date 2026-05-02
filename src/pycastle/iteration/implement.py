@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import dataclasses
 from collections.abc import Sequence
+from contextlib import asynccontextmanager
 from typing import Any
 
 from ..agent_output_protocol import AgentRole
@@ -9,7 +10,38 @@ from ..agent_result import CancellationToken, PreflightFailure
 from ..agent_runner import RunRequest
 from ..errors import UsageLimitError
 from ..prompt_utils import load_standards
+from ..worktree import (
+    patch_gitdir_for_container,
+    worktree_name_for_branch,
+    worktree_path as _worktree_path,
+)
 from ._deps import Deps
+
+
+@asynccontextmanager
+async def _agent_worktree(
+    branch: str,
+    sha: str | None,
+    token: CancellationToken,
+    deps: Deps,
+):
+    wt_name = worktree_name_for_branch(branch)
+    wt_path = _worktree_path(wt_name, deps)
+    deps.git_svc.create_worktree(deps.repo_root, wt_path, branch, sha)
+    gitdir_overlay = None
+    try:
+        gitdir_overlay = patch_gitdir_for_container(wt_path)
+        yield wt_path
+    finally:
+        if not token.wants_worktree_preserved:
+            try:
+                clean = deps.git_svc.is_working_tree_clean(wt_path)
+            except Exception:
+                clean = False
+            if clean:
+                deps.git_svc.remove_worktree(deps.repo_root, wt_path)
+        if gitdir_overlay is not None:
+            gitdir_overlay.unlink(missing_ok=True)
 
 
 def branch_for(issue_number: int) -> str:
