@@ -926,3 +926,76 @@ def test_fast_forward_branch_raises_git_timeout_error_on_timeout(tmp_path):
     ):
         with pytest.raises(GitTimeoutError):
             svc.fast_forward_branch(tmp_path, "main", "pycastle/merge-sandbox")
+
+
+# ── checkout_detached() additional edge cases ─────────────────────────────────
+
+
+def test_checkout_detached_raises_git_command_error_when_remove_fails(tmp_path):
+    svc = GitService(_cfg)
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+
+    def fake_run(cmd, **kwargs):
+        if "remove" in cmd and "worktree" in cmd:
+            return MagicMock(returncode=1, stdout=b"", stderr=b"not a worktree")
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        with pytest.raises(GitCommandError):
+            svc.checkout_detached(tmp_path, worktree, "deadbeef")
+
+
+# ── remove_worktree() additional edge cases ───────────────────────────────────
+
+
+def test_remove_worktree_silent_fallback_when_path_absent(tmp_path):
+    svc = GitService(_cfg)
+    worktree = tmp_path / "nonexistent-wt"
+
+    with patch("subprocess.run", return_value=MagicMock(returncode=1, stderr=b"error")):
+        svc.remove_worktree(tmp_path, worktree)  # must not raise
+
+
+# ── list_worktrees() additional edge cases ────────────────────────────────────
+
+
+def test_list_worktrees_skips_non_worktree_lines(tmp_path):
+    svc = GitService(_cfg)
+    output = b"HEAD abc123\nbranch refs/heads/main\n\n"
+    with patch("subprocess.run", return_value=MagicMock(returncode=0, stdout=output)):
+        result = svc.list_worktrees(tmp_path)
+    assert result == []
+
+
+# ── create_worktree() additional edge cases ───────────────────────────────────
+
+
+def test_create_worktree_continues_when_prune_fails(tmp_path):
+    svc = GitService(_cfg)
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        if "prune" in cmd:
+            return MagicMock(returncode=1, stdout=b"", stderr=b"prune failed")
+        if "rev-parse" in cmd:
+            return MagicMock(returncode=1, stdout=b"", stderr=b"")
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        svc.create_worktree(tmp_path, tmp_path / "wt", "feature/new")
+
+    assert any("add" in c and "worktree" in c for c in captured)
+
+
+# ── is_working_tree_clean() additional edge cases ─────────────────────────────
+
+
+def test_is_working_tree_clean_returns_true_when_status_command_fails(tmp_path):
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=128, stdout=b""),
+    ):
+        assert svc.is_working_tree_clean(tmp_path) is True
