@@ -11,7 +11,7 @@ from pycastle.agent_result import (
 from pycastle.claude_service import ClaudeService
 from pycastle.config import Config, StageOverride
 from pycastle.errors import ClaudeServiceError, ConfigValidationError, UsageLimitError
-from pycastle.git_service import GitCommandError, GitService
+from pycastle.services import GitCommandError, GitService
 from pycastle.github_service import GithubNotFoundError, GithubService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 from pycastle.orchestrator import (

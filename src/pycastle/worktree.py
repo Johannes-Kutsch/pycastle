@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .config import Config, load_config
 from .errors import WorktreeError, WorktreeTimeoutError
-from .git_service import GitCommandError, GitService, GitTimeoutError
+from .services import GitCommandError, GitService, GitTimeoutError
 
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
 

@@ -9,7 +9,7 @@ import urllib.request
 import click
 
 from .config import Config, load_config
-from .git_service import GitService
+from .services import GitService
 
 _API = "https://api.github.com"
 

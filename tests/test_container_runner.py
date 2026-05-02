@@ -13,7 +13,7 @@ from pycastle.container_runner import (
     _build_claude_command,
 )
 from pycastle.errors import AgentTimeoutError, UsageLimitError
-from pycastle.git_service import GitService
+from pycastle.services import GitService
 from pycastle.iteration._deps import RecordingStatusDisplay
 
 

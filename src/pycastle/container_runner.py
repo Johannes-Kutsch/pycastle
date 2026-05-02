@@ -21,7 +21,7 @@ from .errors import (
     DockerTimeoutError,
     UsageLimitError,
 )
-from .git_service import GitService
+from .services import GitService
 from .stream_parser import StreamParser
 from .worktree import (
     CONTAINER_PARENT_GIT,

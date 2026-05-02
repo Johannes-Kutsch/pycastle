@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from pycastle.config import Config
-from pycastle.git_service import GitCommandError, GitService, GitTimeoutError
+from pycastle.services import GitCommandError, GitService, GitTimeoutError
 from pycastle.labels import _get_remote_repo, create_labels_interactive
 
 

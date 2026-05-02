@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.errors import WorktreeTimeoutError
-from pycastle.git_service import GitService, GitTimeoutError
+from pycastle.services import GitService, GitTimeoutError
 from pycastle.worktree import (
     create_worktree,
     managed_worktree,
@@ -384,7 +384,7 @@ def test_create_worktree_fresh_when_not_registered(tmp_path):
 def test_create_worktree_git_command_error_raises_worktree_error(tmp_path):
     """GitCommandError from svc.create_worktree is wrapped as WorktreeError."""
     from pycastle.errors import WorktreeError
-    from pycastle.git_service import GitCommandError
+    from pycastle.services import GitCommandError
 
     worktree = tmp_path / "wt"
 
