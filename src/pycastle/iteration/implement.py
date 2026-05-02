@@ -64,7 +64,7 @@ async def run_issue(
         skip_preflight=True,
         status_display=deps.status_display,
         issue_title=issue["title"],
-        work_body=f"working on {issue['title']}",
+        work_body=f'working on "{issue["title"]}"',
     )
     if isinstance(result, PreflightFailure):
         return result
@@ -84,7 +84,7 @@ async def run_issue(
         skip_preflight=True,
         status_display=deps.status_display,
         issue_title=issue["title"],
-        work_body=f"working on {issue['title']}",
+        work_body=f'working on "{issue["title"]}"',
     )
     assert_complete(review_result)
     return issue

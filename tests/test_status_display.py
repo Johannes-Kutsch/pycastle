@@ -431,56 +431,6 @@ def _has_code(ansi: str, code: int) -> bool:
     return bool(re.search(rf"\x1b\[(?:\d+;)*{code}(?:;\d+)*m", ansi))
 
 
-def test_rich_role_name_renders_blue_for_planner() -> None:
-    d = RichStatusDisplay()
-    d.add_agent("Planner", "Plan")
-
-    ansi = _ansi_output(d)
-    d.stop()
-
-    assert _has_code(ansi, 34)  # blue
-
-
-def test_rich_role_name_renders_orange1_for_implementer() -> None:
-    d = RichStatusDisplay()
-    d.add_agent("Implementer #5", "Work")
-
-    ansi = _ansi_output(d)
-    d.stop()
-
-    assert _has_code(ansi, 214)  # orange1 (256-color index 214)
-
-
-def test_rich_role_name_renders_yellow_for_reviewer() -> None:
-    d = RichStatusDisplay()
-    d.add_agent("Reviewer #5", "Review")
-
-    ansi = _ansi_output(d)
-    d.stop()
-
-    assert _has_code(ansi, 33)  # yellow
-
-
-def test_rich_role_name_renders_green_for_merger() -> None:
-    d = RichStatusDisplay()
-    d.add_agent("Merger", "Merge")
-
-    ansi = _ansi_output(d)
-    d.stop()
-
-    assert _has_code(ansi, 32)  # green
-
-
-def test_rich_role_name_renders_green_for_merge_row() -> None:
-    d = RichStatusDisplay()
-    d.add_agent("merge", "Merging")
-
-    ansi = _ansi_output(d)
-    d.stop()
-
-    assert _has_code(ansi, 32)  # green
-
-
 def test_rich_agent_name_renders_bold() -> None:
     d = RichStatusDisplay()
     d.add_agent("Planner", "Plan")
@@ -536,26 +486,6 @@ def test_rich_idle_column_renders_dim() -> None:
     assert _has_code(after_name, 2)  # dim
 
 
-def test_rich_role_name_renders_purple_for_pre_flight_agent() -> None:
-    d = RichStatusDisplay()
-    d.add_agent("Pre-Flight", "Setup")
-
-    ansi = _ansi_output(d)
-    d.stop()
-
-    assert _has_code(ansi, 129)  # purple (256-color index 129)
-
-
-def test_rich_role_name_renders_red_for_pre_flight_reporter_agent() -> None:
-    d = RichStatusDisplay()
-    d.add_agent("Pre-Flight Reporter", "Setup")
-
-    ansi = _ansi_output(d)
-    d.stop()
-
-    assert _has_code(ansi, 31)  # red
-
-
 def test_rich_role_name_renders_without_color_for_unknown_agent() -> None:
     d = RichStatusDisplay()
     d.add_agent("Unknown-agent", "Custom")
@@ -567,6 +497,72 @@ def test_rich_role_name_renders_without_color_for_unknown_agent() -> None:
     assert not _has_code(ansi, 214)  # no orange1
     assert not _has_code(ansi, 33)  # no yellow
     assert not _has_code(ansi, 32)  # no green
+
+
+def test_rich_planner_name_renders_bold_without_role_color() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Plan")
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 1)  # bold
+    assert not _has_code(ansi, 34)  # no blue
+
+
+def test_rich_implementer_name_renders_bold_without_role_color() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Implementer #5", "Work")
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 1)  # bold
+    assert not _has_code(ansi, 214)  # no orange1
+
+
+def test_rich_reviewer_name_renders_bold_without_role_color() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Reviewer #3", "Review")
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 1)  # bold
+    assert not _has_code(ansi, 33)  # no yellow
+
+
+def test_rich_merger_name_renders_bold_without_role_color() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Merger", "Merge")
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 1)  # bold
+    assert not _has_code(ansi, 32)  # no green
+
+
+def test_rich_pre_flight_name_renders_bold_without_role_color() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Pre-Flight", "Setup")
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 1)  # bold
+    assert not _has_code(ansi, 129)  # no purple
+
+
+def test_rich_pre_flight_reporter_name_renders_bold_without_role_color() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Pre-Flight Reporter", "Setup")
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 1)  # bold
+    assert not _has_code(ansi, 31)  # no red
 
 
 # ── NullStatusDisplay protocol conformance ────────────────────────────────────

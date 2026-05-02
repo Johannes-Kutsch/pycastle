@@ -316,10 +316,10 @@ async def _preflight(
     checks: list[tuple[str, str]],
     status_display=None,
 ) -> list[tuple[str, str, str]]:
-    if status_display is not None:
-        status_display.update_phase(name, "Pre-flight")
     failures: list[tuple[str, str, str]] = []
     for check_name, command in checks:
+        if status_display is not None:
+            status_display.update_phase(name, f"Running {check_name} Checks")
         try:
             await loop.run_in_executor(None, runner.exec_simple, command, exec_timeout)
         except DockerError as exc:

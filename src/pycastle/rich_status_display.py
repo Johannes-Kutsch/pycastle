@@ -34,24 +34,6 @@ def _stage_from_name(name: str) -> str:
     return ""
 
 
-def _role_color(name: str) -> str:
-    if name == "Planner":
-        return "blue"
-    if name.startswith("Implementer"):
-        return "orange1"
-    if name.startswith("Reviewer"):
-        return "yellow"
-    if name == "Merger":
-        return "green"
-    if name == "Pre-Flight":
-        return "purple"
-    if name == "Pre-Flight Reporter":
-        return "red"
-    if name == "merge":
-        return "green"
-    return ""
-
-
 def _sort_key(name: str) -> tuple[int, int]:
     rank = _PHASE_RANK.get(_stage_from_name(name), 99)
     m = re.search(r"\d+", name)
@@ -113,14 +95,11 @@ class RichStatusDisplay:
         table.add_column()  # body
 
         for row in rows:
-            role_color = _role_color(row.name)
             name_text = Text()
             for segment in re.split(r"(\d+)", row.name):
                 if segment:
                     if segment.isdigit():
                         name_text.append(segment, style="bold cyan")
-                    elif role_color:
-                        name_text.append(segment, style=f"bold {role_color}")
                     else:
                         name_text.append(segment, style="bold")
 
