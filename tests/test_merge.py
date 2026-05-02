@@ -1,6 +1,6 @@
 import asyncio
 import dataclasses
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -483,6 +483,30 @@ def test_merge_phase_dirty_tree_message_is_red(recording_deps, git_svc):
     assert dirty_msg is not None
     assert dirty_msg.startswith("[red]")
     assert dirty_msg.endswith("[/red]")
+
+
+def test_merge_phase_does_not_print_dirty_tree_message_when_working_tree_is_clean(
+    recording_deps, git_svc
+):
+    """merge_phase must not print a dirty-tree message when the working tree is already clean."""
+    deps, recording = recording_deps
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, deps)
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
+    assert not any("Working tree" in msg for msg in print_messages)
+
+
+def test_merge_phase_completes_normally_after_polling_through_multiple_dirty_states(
+    recording_deps, git_svc
+):
+    """merge_phase must complete normally when the working tree becomes clean after multiple polls."""
+    deps, recording = recording_deps
+    git_svc.is_working_tree_clean.side_effect = [False, False, True]
+    issues = [{"number": 1, "title": "Fix A"}]
+    with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
+        result = _run(issues, deps)
+    assert result.clean == issues
+    assert result.conflicts == []
 
 
 # ── Merge status row ──────────────────────────────────────────────────────────
