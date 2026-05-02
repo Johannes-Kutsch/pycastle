@@ -66,13 +66,12 @@
 | **Merger** | Agent role spawned during the merge phase only when at least one conflicting branch exists; integrates only the conflicting branches and closes their issues | merge agent, integration agent |
 | **preflight-issue agent** | Agent spawned when a quality check fails at the orchestrator level; explores the codebase to find root cause, evaluates whether HITL is required, files one structured GitHub issue, and outputs the issue number as `<issue>NUMBER</issue>`; always runs with skip_preflight enabled | bug-report agent, error reporter |
 | **HITL verdict** | The routing decision encoded in the preflight issue's label after the preflight-issue agent completes; `ready-for-agent` means the orchestrator spawns a single Implementer, `ready-for-human` means the orchestrator aborts | HITL decision, routing verdict |
-| **safe SHA** | The exact git commit SHA captured by the orchestrator after a passing preflight check; the Planner and all Implementer worktrees in the current iteration are created from this SHA, guaranteeing every agent sees the same verified-clean committed state | verified SHA, clean SHA |
-| **cold startup** | The state at the beginning of a fresh `pycastle run` when no post-merge check has run yet in the current process; always triggers a pre-planning preflight check | first iteration, fresh start |
-| **preflight-fix path** | The orchestrator routing when a preflight issue is AFK: skip the Planner, spawn one Implementer for the preflight issue, run the normal Reviewer → merge → post-merge check pipeline, then start a new iteration | preflight fast path |
+| **safe SHA** | The exact git commit SHA captured by the orchestrator after a `git pull --ff-only` and a passing preflight check; the Planner and all Implementer worktrees in the current iteration are created from this SHA, guaranteeing every agent sees the same verified-clean committed state reflecting the latest remote state | verified SHA, clean SHA |
+| **preflight pull** | A `git pull --ff-only` run at the start of every preflight phase, before the safe SHA is pinned; waits for the working tree to be clean first; aborts with an error if the remote has diverged or is unreachable | — |
+| **preflight-fix path** | The orchestrator routing when a preflight issue is AFK: skip the Planner, spawn one Implementer for the preflight issue, run the normal Reviewer → merge pipeline, then start a new iteration | preflight fast path |
 | **programmatic merge path** | Fast-path logic in the merge phase that runs `git merge --no-edit` directly via subprocess without spawning the Merger; used when all branches merge cleanly | fast path, direct merge |
 | **clean merge** | A `git merge --no-edit` that exits zero and requires no conflict resolution | conflict-free merge, successful merge |
 | **conflicting branch** | A branch whose `git merge --no-edit` exits non-zero; `git merge --abort` is run immediately and the branch is collected for the Merger | failed merge branch |
-| **post-merge check** | A quality check run on the host after all clean merges complete; uses the same PREFLIGHT_CHECKS commands as the Pre-flight phase; on pass, repins the safe SHA; on fail, spawns the preflight-issue agent | post-merge quality check, post-merge gate |
 | **RALPH** | The required commit message prefix for all Implementer commits (e.g. `RALPH: fix auth bug`) | — |
 | **plan** | The structured JSON output by the Planner listing which issues to work on and the branch name for each; after parsing, `plan_phase()` sorts issues by ascending issue number so the orchestrator always processes older issues first | plan output, plan JSON |
 | **issue** | A GitHub issue labeled for agent processing, representing one unit of work | ticket, task, card |
@@ -126,10 +125,9 @@
 | **agent lifecycle phase** | One of four named stages (Setup, Pre-flight, Prepare, Work) within a single agent container run | step, stage |
 | **Setup phase** | First agent lifecycle phase: worktree creation, gitdir overlay creation, parent git dir mount wiring, container start, git identity propagation, and consuming project dependency installation (`pip install -e '.[dev]'` or `pip install -r requirements.txt`); any tool referenced in PREFLIGHT_CHECKS must be declared in the consuming project's dependency file — the image does not provide dev tools as a fallback | container setup, init phase |
 | **Pre-flight phase** | Second agent lifecycle phase: runs quality checks sequentially inside the container and returns a list of failure tuples to the orchestrator; does not spawn agents internally | preflight, pre-flight check phase |
-| **quality check** | One command run during the Pre-flight phase or a post-merge check, as defined in PREFLIGHT_CHECKS; each runs independently so all failures are collected in a single pass | quality gate, check |
-| **check stage** | The lifecycle context prefix embedded in CHECK_NAME when a preflight-issue agent is spawned (e.g. `[PREFLIGHT]`, `[post-merge]`); included in the filed GitHub issue title | stage prefix, phase prefix |
+| **quality check** | One command run during the Pre-flight phase, as defined in PREFLIGHT_CHECKS; each runs independently so all failures are collected in a single pass | quality gate, check |
+| **check stage** | The lifecycle context prefix embedded in CHECK_NAME when a preflight-issue agent is spawned (e.g. `[PREFLIGHT]`); included in the filed GitHub issue title | stage prefix, phase prefix |
 | **pre-flight failure** | Result of a quality check returning non-zero during the Pre-flight phase; returned as a failure tuple to the orchestrator | check failure |
-| **post-merge failure** | Result of a quality check returning non-zero during the post-merge check; triggers the preflight-issue agent with check stage `[post-merge]`; the Merger is not spawned | post-merge check failure |
 | **pre-existing failure** | A pre-flight failure that existed before the current agent's task began; root cause of scope creep | baseline failure |
 | **scope creep** | The behavior where an agent modifies files outside its assigned task scope, typically caused by inheriting pre-existing failures | overreach |
 | **skip_preflight** | Flag on `run_agent()` that bypasses the Pre-flight phase; always True for the preflight-issue agent; defaults to False for all other agents | — |
@@ -207,11 +205,10 @@
 - The **Planner** produces one plan per iteration listing only unblocked AFK issues; blockers and HITL issues are excluded via the dependency graph.
 - Each AFK issue in a plan is processed by exactly one **Implementer** followed by one **Reviewer**.
 - The **merge phase** attempts the programmatic merge path for every branch sequentially; the **Merger** is spawned at most once per iteration and only when conflicting branches exist.
-- A **post-merge check** runs on the host if any clean merges occurred; on pass, the **safe SHA** is repinned to the new HEAD; on fail, the **preflight-issue agent** is spawned with check stage `[post-merge]` and the Merger is not spawned.
-- A **pre-planning preflight** runs at **cold startup** and is skipped when the previous iteration ended with a passing post-merge check; on pass, the **safe SHA** is pinned to current HEAD. The preflight runs inside a **pre-flight-sandbox worktree** — a detached checkout of HEAD — so it sees only committed files, never live host state or active Implementer worktrees.
+- A **pre-planning preflight** runs at the start of every iteration; it first performs a **preflight pull** to sync with the remote, then pins the **safe SHA** to the resulting HEAD. The preflight runs inside a **pre-flight-sandbox worktree** — a detached checkout of HEAD — so it sees only committed files, never live host state or active Implementer worktrees.
 - The **preflight-issue agent** is spawned at most once per preflight failure session, acting on the first failing check by PREFLIGHT_CHECKS order; always runs with skip_preflight to prevent circular failures; mounts the same **pre-flight-sandbox worktree** used by the Pre-flight phase so it explores the same committed state where the failure occurred.
 - The **HITL verdict** is read by the orchestrator from the GitHub issue label after the **preflight-issue agent** completes; `ready-for-agent` triggers the **preflight-fix path**, `ready-for-human` aborts with a non-zero exit code.
-- On the **preflight-fix path**, the Planner is skipped; one Implementer is spawned for the preflight issue, followed by one Reviewer, then a merge and post-merge check; a new iteration then begins from the post-merge check result.
+- On the **preflight-fix path**, the Planner is skipped; one Implementer is spawned for the preflight issue, followed by one Reviewer, then a merge; a new iteration then begins.
 - The **Planner** and all **Implementer** worktrees are created from the pinned **safe SHA**, never from HEAD directly; this guarantees every agent sees the same verified-clean committed state regardless of external commits that land on main after preflight passes.
 - In **sequential mode** (`max_parallel = 1`), the iteration processes issues one by one: after each issue's merge the safe SHA is re-pinned to the new HEAD, and the next Implementer starts from that SHA; a failed issue is skipped (remains `ready-for-agent`) and the queue continues; the Merger remains available as a fallback for unexpected conflicts; no additional pre-flight checks run between issues.
 - The **Pre-flight phase** (agent lifecycle) runs quality checks inside the container and returns a list of failure tuples to the orchestrator; it never spawns agents internally.
@@ -239,7 +236,7 @@
 
 > **Dev:** "After the preflight fix merges, do we re-run preflight before planning the next iteration?"
 
-> **Domain expert:** "No. The **post-merge check** repins the **safe SHA** on pass. That's the signal the next iteration uses — we don't run preflight twice back-to-back. We're in **cold startup** only on the very first iteration of a fresh run."
+> **Domain expert:** "Yes — every iteration starts with a **pre-planning preflight**. The preflight pulls the latest remote changes, pins the **safe SHA**, then runs quality checks. On pass, the iteration proceeds. There's no separate post-merge check."
 
 ## Flagged ambiguities
 
