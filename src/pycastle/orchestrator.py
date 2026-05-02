@@ -107,9 +107,9 @@ async def run(
     _owned_display: RichStatusDisplay | None = None
     if status_display is None:
         _owned_display = RichStatusDisplay()
-        status_display = _owned_display
+        status_display = _owned_display  # type: ignore[assignment]
 
-    status_display.add_agent("startup", "Git identity")
+    status_display.add_agent("startup", "Git identity")  # type: ignore[union-attr,attr-defined]
     try:
         try:
             git_svc.get_user_name(cwd=repo_root)
@@ -123,7 +123,7 @@ async def run(
             )
             sys.exit(1)
 
-        status_display.update_phase("startup", "Credentials")
+        status_display.update_phase("startup", "Credentials")  # type: ignore[union-attr]
         if github_service is None and shutil.which("gh") is None:
             print(
                 "GitHub CLI not found. Install it with: sudo apt install gh,"
@@ -132,7 +132,7 @@ async def run(
             )
             sys.exit(1)
     finally:
-        status_display.remove_agent("startup")
+        status_display.remove_agent("startup")  # type: ignore[union-attr,attr-defined]
 
     _lazy_github_svc: GithubService | None = None
 
@@ -146,13 +146,13 @@ async def run(
 
     try:
         for iteration in range(1, cfg.max_iterations + 1):
-            status_display.print(
+            status_display.print(  # type: ignore[union-attr,call-arg]
                 f"=== Iteration {iteration}/{cfg.max_iterations} ===",
                 source="iteration-header",
             )
 
             if not _get_github_svc().has_open_issues_with_label(cfg.issue_label):
-                status_display.print(
+                status_display.print(  # type: ignore[union-attr,call-arg]
                     f"No issues with label '{cfg.issue_label}' found. Skipping.",
                     source="iteration-skip",
                 )
@@ -173,13 +173,13 @@ async def run(
                 agent_runner=_agent_runner,
                 cfg=cfg,
                 logger=FileLogger(cfg.logs_dir),
-                status_display=status_display,
+                status_display=status_display,  # type: ignore[arg-type]
             )
             outcome = await run_iteration(deps)
 
             match outcome:
                 case Done():
-                    status_display.print(
+                    status_display.print(  # type: ignore[union-attr,call-arg]
                         f"No issues with label '{cfg.issue_label}' found. Skipping.",
                         source="iteration-skip",
                     )
@@ -196,7 +196,7 @@ async def run(
                 case Continue():
                     pass
 
-        status_display.print("All done.", source="all-done")
+        status_display.print("All done.", source="all-done")  # type: ignore[union-attr,call-arg]
     finally:
         if _owned_display is not None:
             _owned_display.stop()

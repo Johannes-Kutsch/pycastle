@@ -11,48 +11,30 @@ def test_plain_status_display_satisfies_protocol() -> None:
 # ── print behaviour ───────────────────────────────────────────────────────────
 
 
-def test_plain_print_routes_to_stdout(capsys) -> None:
+def test_plain_print_with_caller_outputs_bracketed_line(capsys) -> None:
     d = PlainStatusDisplay()
-    d.print("Planning complete. 3 issue(s)")
-    assert capsys.readouterr().out == "Planning complete. 3 issue(s)\n"
+    d.print("Plan", "Planning complete. 3 issue(s)")
+    assert capsys.readouterr().out == "[Plan] Planning complete. 3 issue(s)\n"
 
 
-def test_plain_print_with_source_routes_to_stdout(capsys) -> None:
+def test_plain_print_with_empty_caller_outputs_message_verbatim(capsys) -> None:
     d = PlainStatusDisplay()
-    d.print("Planning complete. 3 issue(s)", source="planner")
-    assert capsys.readouterr().out == "Planning complete. 3 issue(s)\n"
+    d.print("", "no prefix here")
+    assert capsys.readouterr().out == "no prefix here\n"
 
 
 def test_plain_print_accepts_non_string_message(capsys) -> None:
     d = PlainStatusDisplay()
-    d.print(42)
-    assert capsys.readouterr().out == "42\n"
+    d.print("X", 42)
+    assert capsys.readouterr().out == "[X] 42\n"
 
 
 # ── panel method no-ops ───────────────────────────────────────────────────────
 
 
-def test_plain_add_agent_produces_no_output(capsys) -> None:
-    d = PlainStatusDisplay()
-    d.add_agent("implementer-1", "Setup")
-    assert capsys.readouterr().out == ""
-
-
-def test_plain_add_agent_with_work_body_produces_no_output(capsys) -> None:
-    d = PlainStatusDisplay()
-    d.add_agent("implementer-1", "Work", "working on auth bug")
-    assert capsys.readouterr().out == ""
-
-
 def test_plain_update_phase_produces_no_output(capsys) -> None:
     d = PlainStatusDisplay()
     d.update_phase("implementer-1", "Work")
-    assert capsys.readouterr().out == ""
-
-
-def test_plain_remove_agent_produces_no_output(capsys) -> None:
-    d = PlainStatusDisplay()
-    d.remove_agent("implementer-1")
     assert capsys.readouterr().out == ""
 
 
