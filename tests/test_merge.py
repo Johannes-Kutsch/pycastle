@@ -534,3 +534,27 @@ def test_merge_row_removed_before_merger_spawned(tmp_path, git_svc, github_svc):
     git_svc.try_merge.return_value = False
     _run([{"number": 1, "title": "Conflict"}], deps)
     assert removed_when_merger_ran == [True]
+
+
+# ── Merger work_body ──────────────────────────────────────────────────────────
+
+
+def test_merger_run_call_passes_work_body_with_conflict_count(
+    tmp_path, git_svc, github_svc
+):
+    """Merger agent call must pass work_body = 'Merging N Branches' where N is conflict count."""
+    import dataclasses
+
+    git_svc.try_merge.return_value = False
+    recording_runner = FakeAgentRunner(["<promise>COMPLETE</promise>"])
+    deps = dataclasses.replace(
+        _make_deps(tmp_path, git_svc, github_svc, recording_runner),
+        status_display=NullStatusDisplay(),
+    )
+    conflict_issues = [{"number": 1, "title": "A"}, {"number": 2, "title": "B"}]
+
+    _run(conflict_issues, deps)
+
+    merger_calls = [c for c in recording_runner.calls if c["name"] == "Merger"]
+    assert len(merger_calls) == 1
+    assert merger_calls[0]["work_body"] == f"Merging {len(conflict_issues)} Branches"

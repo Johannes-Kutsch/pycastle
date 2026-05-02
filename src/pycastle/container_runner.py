@@ -335,10 +335,11 @@ async def _setup(
     git_service: GitService | None = None,
     cfg: Config | None = None,
     status_display=None,
+    work_body: str = "",
 ) -> None:
     await loop.run_in_executor(None, runner.__enter__)
     if status_display is not None:
-        status_display.add_agent(name, "Setup")
+        status_display.add_agent(name, "Setup", work_body)
     if git_service is None:
         git_service = GitService(cfg or load_config())
     git_name = git_service.get_user_name()
