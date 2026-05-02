@@ -59,6 +59,17 @@ def _build_claude_command(model: str = "", effort: str = "") -> str:
     return f"claude {flags} < /tmp/.pycastle_prompt"
 
 
+def _build_agent_prefix(name: str) -> Text:
+    """Return a styled Text object for the agent output prefix, e.g. ``[Implementer #1] ``."""
+    msg = Text()
+    msg.append("[", style="bold")
+    for segment in re.split(r"(\d+)", name):
+        if segment:
+            msg.append(segment, style="bold cyan" if segment.isdigit() else "bold")
+    msg.append("] ", style="bold")
+    return msg
+
+
 class ContainerRunner:
     def __init__(
         self,
@@ -297,15 +308,7 @@ class ContainerRunner:
                             raise UsageLimitError(line)
                         turn = parser.feed(line)
                         if print_output and turn is not None and status_display is not None:
-                            msg = Text()
-                            msg.append("[", style="bold")
-                            for segment in re.split(r"(\d+)", self.name):
-                                if segment:
-                                    msg.append(
-                                        segment,
-                                        style="bold cyan" if segment.isdigit() else "bold",
-                                    )
-                            msg.append("] ", style="bold")
+                            msg = _build_agent_prefix(self.name)
                             msg.append(f"{turn}\n")
                             status_display.print(msg, source=self.name)
         finally:
