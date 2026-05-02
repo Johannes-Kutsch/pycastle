@@ -136,6 +136,25 @@ async def managed_worktree(
 
 
 @asynccontextmanager
+async def branch_worktree(
+    name: str,
+    branch: str,
+    sha: str | None,
+    deps: _WorktreeDeps,
+    *,
+    delete_branch: bool = True,
+):
+    path = worktree_path(name, deps)
+    create_worktree(deps.repo_root, path, branch, sha, deps.git_svc)
+    try:
+        yield path
+    finally:
+        deps.git_svc.remove_worktree(deps.repo_root, path)
+        if delete_branch:
+            deps.git_svc.delete_branch(branch, deps.repo_root)
+
+
+@asynccontextmanager
 async def detached_worktree(name: str, sha: str, deps: _WorktreeDeps):
     path = worktree_path(name, deps)
     deps.git_svc.checkout_detached(deps.repo_root, path, sha)

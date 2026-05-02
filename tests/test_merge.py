@@ -25,6 +25,13 @@ def git_svc():
     svc.is_ancestor.return_value = True
     svc.get_current_branch.return_value = "main"
     svc.list_worktrees.return_value = []
+    svc.verify_ref_exists.return_value = False
+
+    def _fake_create_worktree(repo, wt, branch, sha=None):
+        wt.mkdir(parents=True, exist_ok=True)
+        (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
+
+    svc.create_worktree.side_effect = _fake_create_worktree
     return svc
 
 

@@ -4,7 +4,7 @@ import sys
 from ..agent_output_protocol import assert_complete
 from ..agent_result import PreflightFailure
 from ..services import GitCommandError
-from ..worktree import worktree_name_for_branch, worktree_path
+from ..worktree import branch_worktree, worktree_name_for_branch, worktree_path
 from ._deps import Deps
 from ._utils import _wait_for_clean_working_tree
 from .implement import branch_for
@@ -63,10 +63,8 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
     else:
         target_branch = deps.git_svc.get_current_branch(deps.repo_root)
         sha = deps.git_svc.get_head_sha(deps.repo_root)
-        sandbox_path = worktree_path("merge-sandbox", deps)
-        deps.git_svc.create_worktree(deps.repo_root, sandbox_path, MERGE_SANDBOX, sha)
-        deps.status_display.remove_agent("merge")
-        try:
+        async with branch_worktree("merge-sandbox", MERGE_SANDBOX, sha, deps) as sandbox_path:
+            deps.status_display.remove_agent("merge")
             merger_result = await deps.agent_runner.run(
                 name="Merger",
                 prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
@@ -91,19 +89,6 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
             deps.git_svc.fast_forward_branch(
                 deps.repo_root, target_branch, MERGE_SANDBOX
             )
-        finally:
-            try:
-                deps.git_svc.remove_worktree(deps.repo_root, sandbox_path)
-            except Exception as exc:
-                print(
-                    f"Warning: could not remove merge worktree: {exc}", file=sys.stderr
-                )
-            try:
-                deps.git_svc.delete_branch(MERGE_SANDBOX, deps.repo_root)
-            except Exception as exc:
-                print(
-                    f"Warning: could not delete sandbox branch: {exc}", file=sys.stderr
-                )
         deps.status_display.print("\nBranches merged.")
         _delete_merged_branches(
             [branch_for(i["number"]) for i in conflict_issues], deps
