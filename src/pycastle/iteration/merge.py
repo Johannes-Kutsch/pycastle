@@ -36,7 +36,7 @@ def _delete_merged_branches(branches: list[str], deps: Deps) -> None:
 
         try:
             deps.git_svc.delete_branch(branch, deps.repo_root)
-            deps.status_display.print("pycastle", f"Deleted merged branch: {branch}")
+            deps.status_display.print("", f"Deleted merged branch: {branch}")
         except GitCommandError as e:
             print(f"Warning: could not delete branch {branch!r}: {e}", file=sys.stderr)
 
@@ -96,7 +96,7 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                 deps.git_svc.fast_forward_branch(
                     deps.repo_root, target_branch, MERGE_SANDBOX
                 )
-            deps.status_display.print("pycastle", "Branches merged.")
+            deps.status_display.print("", "Branches merged.")
             _delete_merged_branches(
                 [branch_for(i["number"]) for i in conflict_issues], deps
             )

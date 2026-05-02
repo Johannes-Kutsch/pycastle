@@ -501,9 +501,10 @@ def test_preflight_phase_propagates_error_when_pull_fails(
     git_svc.get_head_sha.assert_not_called()
 
 
-def test_preflight_phase_prints_red_error_message_when_pull_fails(
+def test_preflight_phase_prints_pull_error_message_with_no_markup(
     tmp_path, git_svc, github_svc, logger
 ):
+    """Pull failure message must contain the error text, use '' caller, style='error', no [red] markup."""
     git_svc.pull.side_effect = GitCommandError("git pull --ff-only failed")
     github_svc.get_open_issues.return_value = []
     fake = FakeAgentRunner([], preflight_responses=[])
@@ -517,12 +518,15 @@ def test_preflight_phase_prints_red_error_message_when_pull_fails(
     with pytest.raises(GitCommandError):
         asyncio.run(preflight_phase(deps))
 
-    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
-    expected = (
-        "[red]git pull --ff-only failed — remote branch has diverged or is unreachable. "
-        "Resolve manually and retry.[/red]"
-    )
-    assert expected in print_messages
+    print_calls = [c for c in recording.calls if c[0] == "print"]
+    error_calls = [c for c in print_calls if "git pull" in str(c[2])]
+    assert error_calls, "Pull failure message must be printed"
+    for call in error_calls:
+        assert call[1] == "", f"Pull error must use anonymous caller; got {call[1]!r}"
+        assert call[3] == "error", f"Pull error must use style='error'; got {call[3]!r}"
+        assert "[red]" not in str(call[2]), (
+            f"Message must not contain [red] markup: {call[2]!r}"
+        )
 
 
 def test_preflight_phase_pins_sha_from_post_pull_head(tmp_path, logger):
@@ -563,3 +567,38 @@ def test_preflight_phase_waits_for_clean_working_tree_before_pulling(
     assert isinstance(result, PreflightReady)
     print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert any("preflight" in msg for msg in print_messages)
+
+
+def test_wait_for_clean_working_tree_uses_anonymous_caller_with_error_style(
+    tmp_path, git_svc, github_svc, logger
+):
+    """Working-tree uncommitted-changes message must use '' caller, style='error', no [red] markup."""
+    git_svc.is_working_tree_clean.side_effect = [False, True]
+    github_svc.get_open_issues.return_value = []
+    fake = FakeAgentRunner([], preflight_responses=[])
+    recording = RecordingStatusDisplay()
+
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    deps = dataclasses.replace(deps, status_display=recording)
+
+    with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
+        asyncio.run(preflight_phase(deps))
+
+    wt_calls = [
+        c
+        for c in recording.calls
+        if c[0] == "print" and "uncommitted changes" in str(c[2])
+    ]
+    assert wt_calls, "Working-tree error message must be printed"
+    for call in wt_calls:
+        assert call[1] == "", (
+            f"Working-tree error must use anonymous caller; got {call[1]!r}"
+        )
+        assert call[3] == "error", (
+            f"Working-tree error must use style='error'; got {call[3]!r}"
+        )
+        assert "[red]" not in str(call[2]), (
+            f"Message must not contain [red] markup: {call[2]!r}"
+        )

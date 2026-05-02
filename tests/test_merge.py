@@ -469,18 +469,27 @@ def test_merge_phase_routes_dirty_tree_message_through_status_display(
     assert "Working tree" not in capsys.readouterr().out
 
 
-def test_merge_phase_dirty_tree_message_is_red(recording_deps, git_svc):
-    """The dirty-tree wait message must be wrapped in Rich red markup."""
+def test_merge_phase_dirty_tree_message_uses_error_style(recording_deps, git_svc):
+    """The dirty-tree wait message must use style='error' and contain no [red] markup."""
     deps, recording = recording_deps
     git_svc.is_working_tree_clean.side_effect = [False, True]
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
-    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
-    dirty_msg = next((msg for msg in print_messages if "Working tree" in msg), None)
-    assert dirty_msg is not None
-    assert dirty_msg.startswith("[red]")
-    assert dirty_msg.endswith("[/red]")
+    dirty_calls = [
+        c for c in recording.calls if c[0] == "print" and "Working tree" in str(c[2])
+    ]
+    assert dirty_calls, "Dirty-tree message must be printed"
+    for call in dirty_calls:
+        assert call[1] == "", (
+            f"Dirty-tree message must use anonymous caller; got {call[1]!r}"
+        )
+        assert call[3] == "error", (
+            f"Dirty-tree message must use style='error'; got {call[3]!r}"
+        )
+        assert "[red]" not in str(call[2]), (
+            f"Message must not contain [red] markup: {call[2]!r}"
+        )
 
 
 def test_merge_phase_dirty_tree_message_references_merge_phase(recording_deps, git_svc):

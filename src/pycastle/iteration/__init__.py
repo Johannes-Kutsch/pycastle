@@ -41,7 +41,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
     if isinstance(preflight_result, PreflightHITL):
         deps.status_display.print(
-            "pycastle",
+            "",
             f"Preflight issue #{preflight_result.issue_number} requires human intervention. Exiting.",
         )
         return AbortedHITL(issue_number=preflight_result.issue_number)
@@ -67,10 +67,10 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
     issues = issues[: deps.cfg.max_parallel]
 
-    deps.status_display.print("pycastle", f"Planning complete. {len(issues)} issue(s):")
+    deps.status_display.print("", f"Planning complete. {len(issues)} issue(s):")
     for issue in issues:
         deps.status_display.print(
-            "pycastle",
+            "",
             f"  #{issue['number']}: {issue['title']} → {branch_for(issue['number'])}",
         )
 
@@ -88,32 +88,32 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         match error:
             case PreflightFailure(failures=fs):
                 deps.status_display.print(
-                    "pycastle",
+                    "",
                     f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) pre-flight failed:",
                 )
                 for check_name, command, output in fs:
                     deps.status_display.print(
-                        "pycastle",
+                        "",
                         f"    ✗ {check_name} ({command}): {output}",
                     )
             case _:
                 deps.status_display.print(
-                    "pycastle",
+                    "",
                     f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}",
                 )
 
     completed = impl_result.completed
 
     if not completed:
-        deps.status_display.print("pycastle", "No commits produced. Nothing to merge.")
+        deps.status_display.print("", "No commits produced. Nothing to merge.")
         return Continue()
 
     deps.status_display.print(
-        "pycastle",
+        "",
         f"Execution complete. {len(completed)} branch(es) with commits:",
     )
     for i in completed:
-        deps.status_display.print("pycastle", f"  {branch_for(i['number'])}")
+        deps.status_display.print("", f"  {branch_for(i['number'])}")
 
     await merge_phase(completed, deps)
 
