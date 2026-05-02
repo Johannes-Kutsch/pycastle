@@ -35,7 +35,7 @@ class StatusDisplay(Protocol):
     def update_phase(self, name: str, phase: str) -> None: ...
     def remove_agent(self, name: str) -> None: ...
     def reset_idle_timer(self, name: str) -> None: ...
-    def print(self, message: str) -> None: ...
+    def print(self, message: object, *, source: str = "") -> None: ...
 
 
 class NullStatusDisplay:
@@ -51,7 +51,7 @@ class NullStatusDisplay:
     def reset_idle_timer(self, name: str) -> None:
         pass
 
-    def print(self, message: str) -> None:
+    def print(self, message: object, *, source: str = "") -> None:
         builtins.print(message)
 
 
@@ -71,8 +71,8 @@ class RecordingStatusDisplay:
     def reset_idle_timer(self, name: str) -> None:
         self.calls.append(("reset_idle_timer", name))
 
-    def print(self, message: str) -> None:
-        self.calls.append(("print", message))
+    def print(self, message: object, *, source: str = "") -> None:
+        self.calls.append(("print", message, source))
 
 
 class FakeAgentRunner:

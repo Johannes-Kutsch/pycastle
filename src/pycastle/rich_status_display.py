@@ -96,6 +96,7 @@ class RichStatusDisplay:
         self._rows: dict[str, _AgentRow] = {}
         self._lock = threading.Lock()
         self._live: Live | None = None
+        self._last_source: str | None = None
 
     def __rich_console__(
         self, console: Console, options: ConsoleOptions
@@ -171,7 +172,12 @@ class RichStatusDisplay:
             if name in self._rows:
                 self._rows[name].last_update = time.monotonic()
 
-    def print(self, message: str) -> None:
+    def print(self, message: object, *, source: str = "") -> None:
+        with self._lock:
+            prepend_blank = self._last_source is not None and source != self._last_source
+            self._last_source = source
+        if prepend_blank:
+            self._console.print()
         self._console.print(message)
 
     def stop(self) -> None:
