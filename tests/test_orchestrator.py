@@ -2177,7 +2177,7 @@ def test_startup_does_not_use_pycastle_caller_on_git_identity_failure(tmp_path):
             status_display=recording,
         )
 
-    pycastle_calls = [c for c in recording.calls if len(c) > 1 and c[1] == "pycastle"]
+    pycastle_calls = [c for c in recording.calls if c[1] == "pycastle"]
     assert pycastle_calls == [], (
         f"No 'pycastle' calls expected on git identity failure; got {pycastle_calls}"
     )
@@ -2191,7 +2191,7 @@ def test_startup_does_not_use_pycastle_caller_on_credentials_failure(tmp_path):
         with pytest.raises(SystemExit):
             _run(tmp_path, status_display=recording)
 
-    pycastle_calls = [c for c in recording.calls if len(c) > 1 and c[1] == "pycastle"]
+    pycastle_calls = [c for c in recording.calls if c[1] == "pycastle"]
     assert pycastle_calls == [], (
         f"No 'pycastle' calls expected on credentials failure; got {pycastle_calls}"
     )
