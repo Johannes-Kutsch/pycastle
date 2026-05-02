@@ -192,9 +192,10 @@ async def run(
                         minute=0, second=0, microsecond=0
                     ) + timedelta(hours=1)
                     wake_time = next_hour + timedelta(minutes=2)
-                    print(
+                    status_display.print(  # type: ignore[union-attr]
+                        "pycastle",
                         f"Usage limit reached. Sleeping until {wake_time.strftime('%H:%M')}."
-                        " Press Ctrl+C to abort."
+                        " Press Ctrl+C to abort.",
                     )
                     time.sleep((wake_time - now).total_seconds())
                     continue
