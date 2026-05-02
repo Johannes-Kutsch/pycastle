@@ -16,7 +16,7 @@ from pycastle.container_runner import (
 )
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.services import GitService
-from pycastle.iteration._deps import RecordingStatusDisplay
+from pycastle.iteration._deps import NullStatusDisplay, RecordingStatusDisplay
 
 
 # ── Issue 153: docker_client injection ───────────────────────────────────────
@@ -41,7 +41,9 @@ def test_container_runner_init_calls_docker_from_env_when_no_client_given():
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 
-def _streaming_runner(name: str, chunks: list, tmp_path: Path) -> ContainerRunner:
+def _streaming_runner(
+    name: str, chunks: list, tmp_path: Path, status_display=None
+) -> ContainerRunner:
     """ContainerRunner whose run_streaming replays the given byte chunks."""
     mock_client = MagicMock()
     mock_result = MagicMock()
@@ -52,6 +54,7 @@ def _streaming_runner(name: str, chunks: list, tmp_path: Path) -> ContainerRunne
         Path("/fake"),
         {},
         docker_client=mock_client,
+        status_display=status_display,
         cfg=Config(logs_dir=tmp_path),
     )
     runner.__enter__()
@@ -352,10 +355,10 @@ def test_run_streaming_log_file_contains_full_raw_output(tmp_path):
 
 def test_run_streaming_calls_reset_idle_timer_per_chunk(tmp_path):
     tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
-    runner = _streaming_runner("Bot", [tool_chunk, tool_chunk], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Bot", [tool_chunk, tool_chunk], tmp_path, display)
 
-    runner.run_streaming(status_display=display)
+    runner.run_streaming()
 
     reset_calls = [c for c in display.calls if c[0] == "reset_idle_timer"]
     assert len(reset_calls) == 2
@@ -364,40 +367,40 @@ def test_run_streaming_calls_reset_idle_timer_per_chunk(tmp_path):
 
 def test_run_streaming_tool_use_only_line_resets_timer(tmp_path):
     tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
-    runner = _streaming_runner("Bot", [tool_chunk], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Bot", [tool_chunk], tmp_path, display)
 
-    runner.run_streaming(status_display=display)
+    runner.run_streaming()
 
     assert ("reset_idle_timer", "Bot") in display.calls
 
 
 def test_run_streaming_system_line_resets_timer(tmp_path):
     system_chunk = b'{"type":"system","subtype":"init","session_id":"abc","tools":[]}\n'
-    runner = _streaming_runner("Bot", [system_chunk], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Bot", [system_chunk], tmp_path, display)
 
-    runner.run_streaming(status_display=display)
+    runner.run_streaming()
 
     assert ("reset_idle_timer", "Bot") in display.calls
 
 
 def test_run_streaming_result_line_resets_timer(tmp_path):
     result_chunk = b'{"type":"result","result":"Final answer","session_id":"abc"}\n'
-    runner = _streaming_runner("Bot", [result_chunk], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Bot", [result_chunk], tmp_path, display)
 
-    runner.run_streaming(status_display=display)
+    runner.run_streaming()
 
     assert ("reset_idle_timer", "Bot") in display.calls
 
 
 def test_run_streaming_partial_chunk_resets_timer(tmp_path):
     partial_chunk = b'{"type":"assistant","message":{"content":[{"type":"text","text":"no newline here"}'
-    runner = _streaming_runner("Bot", [partial_chunk], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Bot", [partial_chunk], tmp_path, display)
 
-    runner.run_streaming(status_display=display)
+    runner.run_streaming()
 
     assert ("reset_idle_timer", "Bot") in display.calls
 
@@ -409,10 +412,10 @@ def test_run_streaming_single_chunk_with_multiple_lines_resets_timer_once(tmp_pa
     line_b = (
         b'{"type":"assistant","message":{"content":[{"type":"text","text":"World"}]}}\n'
     )
-    runner = _streaming_runner("Bot", [line_a + line_b], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Bot", [line_a + line_b], tmp_path, display)
 
-    runner.run_streaming(status_display=display)
+    runner.run_streaming()
 
     reset_calls = [c for c in display.calls if c[0] == "reset_idle_timer"]
     assert len(reset_calls) == 1
@@ -998,13 +1001,12 @@ def test_work_produces_no_stdout(tmp_path, capsys):
     from pycastle.iteration._deps import RecordingStatusDisplay
 
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
-    runner = _streaming_runner("implementer-42", [json_line], tmp_path)
+    display = RecordingStatusDisplay()
+    runner = _streaming_runner("implementer-42", [json_line], tmp_path, display)
 
     async def _run():
         loop = asyncio.get_event_loop()
-        await _work(
-            "implementer-42", runner, loop, status_display=RecordingStatusDisplay()
-        )
+        await _work("implementer-42", runner, loop, status_display=display)
 
     asyncio.run(_run())
     assert capsys.readouterr().out == ""
@@ -1094,10 +1096,10 @@ def test_exit_swallows_close_exception():
 
 def test_run_streaming_in_work_phase_prints_complete_turn(tmp_path):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Analysing issues"}]}}\n'
-    runner = _streaming_runner("Implementer #1", [json_line], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Implementer #1", [json_line], tmp_path, display)
 
-    runner.run_streaming(display, print_output=True)
+    runner.run_streaming(print_output=True)
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
@@ -1106,20 +1108,20 @@ def test_run_streaming_in_work_phase_prints_complete_turn(tmp_path):
 
 def test_run_streaming_without_print_output_does_not_call_print(tmp_path):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Analysing issues"}]}}\n'
-    runner = _streaming_runner("Bot", [json_line], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Bot", [json_line], tmp_path, display)
 
-    runner.run_streaming(display, print_output=False)
+    runner.run_streaming(print_output=False)
 
     assert not any(c[0] == "print" for c in display.calls)
 
 
 def test_run_streaming_tool_use_only_does_not_call_print_in_work_phase(tmp_path):
     tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
-    runner = _streaming_runner("Bot", [tool_chunk], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Bot", [tool_chunk], tmp_path, display)
 
-    runner.run_streaming(display, print_output=True)
+    runner.run_streaming(print_output=True)
 
     assert not any(c[0] == "print" for c in display.calls)
 
@@ -1128,8 +1130,8 @@ def test_work_calls_print_for_complete_assistant_turn(tmp_path):
     from pycastle.container_runner import _work
 
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Fixing bug"}]}}\n'
-    runner = _streaming_runner("Implementer #3", [json_line], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Implementer #3", [json_line], tmp_path, display)
 
     async def _run():
         loop = asyncio.get_event_loop()
@@ -1146,8 +1148,8 @@ def test_work_does_not_call_print_for_tool_use_turns(tmp_path):
     from pycastle.container_runner import _work
 
     tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","id":"t1","input":{}}]}}\n'
-    runner = _streaming_runner("Implementer #3", [tool_chunk], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Implementer #3", [tool_chunk], tmp_path, display)
 
     async def _run():
         loop = asyncio.get_event_loop()
@@ -1160,10 +1162,10 @@ def test_work_does_not_call_print_for_tool_use_turns(tmp_path):
 
 def test_run_streaming_with_print_output_still_calls_reset_idle_timer(tmp_path):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
-    runner = _streaming_runner("Bot", [json_line], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Bot", [json_line], tmp_path, display)
 
-    runner.run_streaming(display, print_output=True)
+    runner.run_streaming(print_output=True)
 
     assert ("reset_idle_timer", "Bot") in display.calls
 
@@ -1171,10 +1173,10 @@ def test_run_streaming_with_print_output_still_calls_reset_idle_timer(tmp_path):
 def test_run_streaming_multiple_turns_prints_each_one(tmp_path):
     line_a = b'{"type":"assistant","message":{"content":[{"type":"text","text":"First turn"}]}}\n'
     line_b = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Second turn"}]}}\n'
-    runner = _streaming_runner("Bot", [line_a + line_b], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Bot", [line_a + line_b], tmp_path, display)
 
-    runner.run_streaming(display, print_output=True)
+    runner.run_streaming(print_output=True)
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 2
@@ -1187,10 +1189,10 @@ def test_run_streaming_multiple_turns_prints_each_one(tmp_path):
 
 def test_run_streaming_print_uses_rich_text_object_with_agent_name_source(tmp_path):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
-    runner = _streaming_runner("Implementer #1", [json_line], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("Implementer #1", [json_line], tmp_path, display)
 
-    runner.run_streaming(display, print_output=True)
+    runner.run_streaming(print_output=True)
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
@@ -1235,3 +1237,30 @@ def test_build_agent_prefix_multiple_digit_segments():
         assert any(s.start <= pos < s.end for s in cyan_spans), (
             f"digit {digit!r} not bold-cyan"
         )
+
+
+# ── Issue 384: status_display constructor injection ──────────────────────────
+
+
+def test_container_runner_run_streaming_uses_status_display_from_constructor(tmp_path):
+    """run_streaming must call reset_idle_timer on the display passed at construction."""
+    display = RecordingStatusDisplay()
+    runner = _streaming_runner("test", [b"chunk\n"], tmp_path, display)
+    runner.run_streaming()
+    assert any(c[0] == "reset_idle_timer" for c in display.calls)
+
+
+def test_container_runner_run_streaming_accepts_no_status_display_argument(tmp_path):
+    """run_streaming must not accept a status_display argument."""
+    import inspect
+
+    sig = inspect.signature(ContainerRunner.run_streaming)
+    assert "status_display" not in sig.parameters
+
+
+def test_container_runner_default_status_display_is_null(tmp_path):
+    """When no status_display is given at construction, the default is NullStatusDisplay."""
+    runner = ContainerRunner(
+        "test", Path("/fake"), {}, docker_client=MagicMock(), cfg=Config()
+    )
+    assert isinstance(runner._status_display, NullStatusDisplay)
