@@ -615,14 +615,15 @@ def test_run_issue_preserves_worktree_on_usage_limit(tmp_path):
 
 
 def test_run_issue_preserves_worktree_when_dirty(tmp_path):
-    """run_issue must not remove the worktree when the working tree is dirty."""
+    """run_issue must not remove the worktree when the working tree is dirty, but still return the issue."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = False
 
     issue = {"number": 13, "title": "Fix thing"}
-    asyncio.run(run_issue(issue, deps))
+    result = asyncio.run(run_issue(issue, deps))
 
+    assert result == issue
     deps.git_svc.remove_worktree.assert_not_called()
 
 
@@ -650,3 +651,31 @@ def test_run_issue_raises_branch_collision_for_concurrent_same_issue(tmp_path):
     results = asyncio.run(_two_concurrent())
     errors = [r for r in results if isinstance(r, Exception)]
     assert any(isinstance(e, BranchCollisionError) for e in errors)
+
+
+def test_run_issue_does_not_create_reviewer_worktree_on_preflight_failure(tmp_path):
+    """When the Implementer returns PreflightFailure, run_issue must skip the Reviewer worktree."""
+    failure = PreflightFailure(failures=(("mypy", "mypy .", "error: missing module"),))
+    fake = FakeAgentRunner([failure])
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    issue = {"number": 15, "title": "Fix thing"}
+    result = asyncio.run(run_issue(issue, deps))
+
+    assert isinstance(result, PreflightFailure)
+    assert deps.git_svc.create_worktree.call_count == 1
+
+
+def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
+    """run_issue must create the Reviewer worktree without a pinned SHA (existing-branch path)."""
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    issue = {"number": 16, "title": "Fix thing"}
+    asyncio.run(run_issue(issue, deps, sha="abc123"))
+
+    assert deps.git_svc.create_worktree.call_count == 2
+    reviewer_sha = deps.git_svc.create_worktree.call_args_list[1][0][3]
+    assert reviewer_sha is None

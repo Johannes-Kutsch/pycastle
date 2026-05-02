@@ -327,15 +327,6 @@ def test_merger_receives_worktree_path_as_mount(deps, git_svc, agent_runner):
     assert merger_calls[0].mount_path == expected_path
 
 
-def test_merger_uses_pre_created_mount_path(deps, git_svc, agent_runner):
-    git_svc.try_merge.return_value = False
-    issues = [{"number": 1, "title": "Conflict"}]
-    _run(issues, deps)
-    merger_calls = [c for c in agent_runner.calls if c.name == "Merge Agent"]
-    assert len(merger_calls) == 1
-    assert merger_calls[0].mount_path is not None
-
-
 def test_worktree_removed_after_merger(deps, git_svc):
     git_svc.try_merge.return_value = False
     issues = [{"number": 1, "title": "Conflict"}]
