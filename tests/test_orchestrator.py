@@ -2120,11 +2120,11 @@ def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
     assert "88" in out, f"Output must reference the filed issue number; got: {out!r}"
 
 
-# ── Issue-352: startup row ────────────────────────────────────────────────────
+# ── Issue-407: no pycastle startup row ───────────────────────────────────────
 
 
-def test_startup_row_added_before_checks_and_removed_after_success(tmp_path):
-    """run() must add a 'startup' row before any startup check and remove it after all checks pass."""
+def test_startup_does_not_register_pycastle_row(tmp_path):
+    """run() must not register a 'pycastle' status row — the orchestrator is not an agent."""
     recording = RecordingStatusDisplay()
 
     async def _fake_run_agent(request: RunRequest):
@@ -2137,21 +2137,16 @@ def test_startup_row_added_before_checks_and_removed_after_success(tmp_path):
         status_display=recording,
     )
 
-    add_idx = next(
-        (i for i, c in enumerate(recording.calls) if c[:2] == ("register", "pycastle")),
-        None,
+    pycastle_registers = [
+        c for c in recording.calls if c[:2] == ("register", "pycastle")
+    ]
+    assert pycastle_registers == [], (
+        f"No 'pycastle' register calls expected; got {pycastle_registers}"
     )
-    remove_idx = next(
-        (i for i, c in enumerate(recording.calls) if c[:2] == ("remove", "pycastle")),
-        None,
-    )
-    assert add_idx is not None, "startup row must be registered"
-    assert remove_idx is not None, "startup row must be removed"
-    assert add_idx < remove_idx, "startup must be registered before it is removed"
 
 
-def test_startup_row_phase_cycles_git_identity_then_credentials(tmp_path):
-    """startup row must start with 'Git identity' phase then update to 'Credentials'."""
+def test_startup_does_not_remove_pycastle_row(tmp_path):
+    """run() must not remove a 'pycastle' status row — the orchestrator is not an agent."""
     recording = RecordingStatusDisplay()
 
     async def _fake_run_agent(request: RunRequest):
@@ -2164,31 +2159,14 @@ def test_startup_row_phase_cycles_git_identity_then_credentials(tmp_path):
         status_display=recording,
     )
 
-    add_idx = next(
-        (
-            i
-            for i, c in enumerate(recording.calls)
-            if c[0] == "register" and c[1] == "pycastle"
-        ),
-        None,
-    )
-    update_idx = next(
-        (
-            i
-            for i, c in enumerate(recording.calls)
-            if c[0] == "update_phase" and c[1] == "pycastle"
-        ),
-        None,
-    )
-    assert add_idx is not None and recording.calls[add_idx][3] == "Git identity"
-    assert update_idx is not None and recording.calls[update_idx][2] == "Credentials"
-    assert add_idx < update_idx, (
-        "phase must be updated to 'Credentials' after the row is registered with 'Git identity'"
+    pycastle_removes = [c for c in recording.calls if c[:2] == ("remove", "pycastle")]
+    assert pycastle_removes == [], (
+        f"No 'pycastle' remove calls expected; got {pycastle_removes}"
     )
 
 
-def test_startup_row_removed_when_git_identity_check_fails(tmp_path):
-    """startup row must be removed before exit when git identity check fails."""
+def test_startup_does_not_use_pycastle_caller_on_git_identity_failure(tmp_path):
+    """run() must not emit any 'pycastle' register or remove calls when git identity check fails."""
     recording = RecordingStatusDisplay()
 
     with pytest.raises(SystemExit):
@@ -2199,15 +2177,43 @@ def test_startup_row_removed_when_git_identity_check_fails(tmp_path):
             status_display=recording,
         )
 
-    assert ("remove", "pycastle", "finished", "success") in recording.calls
+    pycastle_calls = [c for c in recording.calls if len(c) > 1 and c[1] == "pycastle"]
+    assert pycastle_calls == [], (
+        f"No 'pycastle' calls expected on git identity failure; got {pycastle_calls}"
+    )
 
 
-def test_startup_row_removed_when_credentials_check_fails(tmp_path):
-    """startup row must be removed before exit when gh CLI is not found."""
+def test_startup_does_not_use_pycastle_caller_on_credentials_failure(tmp_path):
+    """run() must not emit any 'pycastle' register or remove calls when gh CLI is absent."""
     recording = RecordingStatusDisplay()
 
     with patch("pycastle.orchestrator.shutil.which", return_value=None):
         with pytest.raises(SystemExit):
             _run(tmp_path, status_display=recording)
 
-    assert ("remove", "pycastle", "finished", "success") in recording.calls
+    pycastle_calls = [c for c in recording.calls if len(c) > 1 and c[1] == "pycastle"]
+    assert pycastle_calls == [], (
+        f"No 'pycastle' calls expected on credentials failure; got {pycastle_calls}"
+    )
+
+
+def test_iteration_header_uses_anonymous_caller(tmp_path):
+    """Iteration boundary header must use '' as caller so it prints without a bracket prefix."""
+    recording = RecordingStatusDisplay()
+
+    async def _fake_run_agent(request: RunRequest):
+        return _plan_output([])
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        github_service=_make_github_svc(),
+        status_display=recording,
+    )
+
+    header_calls = [
+        c for c in recording.calls if c[0] == "print" and "=== Iteration" in str(c[2])
+    ]
+    assert header_calls, "Iteration boundary header must be printed"
+    for call in header_calls:
+        assert call[1] == "", f"Iteration header must use '' as caller; got {call[1]!r}"
