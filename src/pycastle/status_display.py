@@ -18,7 +18,7 @@ class PlainStatusDisplay:
     def _needs_blank(self, caller: str) -> bool:
         if self._last_caller is None:
             return False
-        return caller != self._last_caller or caller == ""
+        return caller == "" or caller != self._last_caller
 
     def register(self, caller: str, startup_message: str = "started", work_body: str = "") -> None:
         if self._needs_blank(caller):
