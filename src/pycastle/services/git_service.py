@@ -195,6 +195,13 @@ class GitService(_SubprocessService):
             cwd=repo_path,
         )
 
+    def pull(self, repo_path: Path) -> None:
+        self._run_or_raise(
+            ["git", "pull", "--ff-only"],
+            "git pull --ff-only failed",
+            cwd=repo_path,
+        )
+
     def remove_worktree(self, repo_path: Path, worktree_path: Path) -> None:
         result = self._run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
