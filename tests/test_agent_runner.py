@@ -868,7 +868,7 @@ def test_agent_runner_run_preflight_registers_and_removes_status_row_on_success(
         )
     )
 
-    assert ("add_agent", "preflight-checks", "Setup") in display.calls
+    assert ("add_agent", "preflight-checks", "Setup", "") in display.calls
     assert ("remove_agent", "preflight-checks") in display.calls
 
 

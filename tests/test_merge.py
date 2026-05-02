@@ -492,7 +492,7 @@ def test_merge_row_added_at_start_of_merge_phase(recording_deps):
     deps, recording = recording_deps
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
-    assert ("add_agent", "merge", "Merging") in recording.calls
+    assert ("add_agent", "merge", "Merging", "") in recording.calls
 
 
 def test_merge_row_removed_after_clean_merges(recording_deps):

@@ -275,6 +275,50 @@ def test_rich_agent_name_renders_without_hyperlink() -> None:
     assert "\x1b]8" not in ansi
 
 
+# ── Body column tests ────────────────────────────────────────────────────────
+
+
+def test_rich_body_shows_lifecycle_phase_during_non_work() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Setup", "Creating Plan from 3 issues")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "Setup" in output
+    assert "Creating Plan from 3 issues" not in output
+
+
+def test_rich_body_shows_work_body_during_work() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Work", "Creating Plan from 3 issues")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "Creating Plan from 3 issues" in output
+    assert "Work" not in output
+
+
+def test_rich_body_is_unstyled() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Setup")
+
+    buf = io.StringIO()
+    console = Console(file=buf, width=200, force_terminal=True, color_system="256")
+    console.print(d)
+    ansi = buf.getvalue()
+    d.stop()
+
+    body_idx = ansi.index("Setup")
+    before_body = ansi[max(0, body_idx - 30) : body_idx]
+    assert not re.search(r"\x1b\[(?:\d+;)*(?:3[0-9]|9[0-7])(?:;\d+)*m", before_body)
+
+
 # ── Color scheme tests ────────────────────────────────────────────────────────
 
 
@@ -307,7 +351,7 @@ def test_rich_phase_renders_orange1_for_implement_agent() -> None:
     ansi = _ansi_output(d)
     d.stop()
 
-    assert "\x1b[38;5;214m" in ansi  # orange1 (256-color index)
+    assert _has_code(ansi, 214)  # orange1 (256-color index 214)
 
 
 def test_rich_phase_renders_yellow_for_review_agent() -> None:
@@ -395,6 +439,29 @@ def test_rich_idle_column_renders_dim() -> None:
     assert _has_code(after_name, 2)  # dim
 
 
+def test_rich_role_name_renders_purple_for_pre_flight_agent() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Pre-Flight", "Setup")
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    # Purple role color produces a foreground color code before "Pre-Flight" text
+    idx = ansi.index("Pre-Flight")
+    before = ansi[:idx]
+    assert re.search(r"\x1b\[(?:\d+;)*(?:3[0-9]|9[0-7])(?:;\d+)*m", before)
+
+
+def test_rich_role_name_renders_red_for_pre_flight_reporter_agent() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Pre-Flight Reporter", "Setup")
+
+    ansi = _ansi_output(d)
+    d.stop()
+
+    assert _has_code(ansi, 31)  # red
+
+
 def test_rich_phase_renders_without_color_for_unknown_agent() -> None:
     d = RichStatusDisplay()
     d.add_agent("Unknown-agent", "Custom")
@@ -403,29 +470,9 @@ def test_rich_phase_renders_without_color_for_unknown_agent() -> None:
     d.stop()
 
     assert not _has_code(ansi, 34)  # no blue
-    assert "\x1b[38;5;214m" not in ansi  # no orange1
+    assert not _has_code(ansi, 214)  # no orange1
     assert not _has_code(ansi, 33)  # no yellow
     assert not _has_code(ansi, 32)  # no green
-
-
-def test_rich_phase_renders_white_for_startup_agent() -> None:
-    d = RichStatusDisplay()
-    d.add_agent("startup", "Git identity")
-
-    ansi = _ansi_output(d)
-    d.stop()
-
-    assert _has_code(ansi, 37)  # white
-
-
-def test_rich_phase_renders_blue_for_preflight_checks_agent() -> None:
-    d = RichStatusDisplay()
-    d.add_agent("preflight-checks", "Setup")
-
-    ansi = _ansi_output(d)
-    d.stop()
-
-    assert _has_code(ansi, 34)  # blue (same as plan stage)
 
 
 # ── NullStatusDisplay protocol conformance ────────────────────────────────────
@@ -451,6 +498,12 @@ def test_null_reset_idle_timer_is_silent(capsys) -> None:
 def test_null_add_agent_is_silent(capsys) -> None:
     d = NullStatusDisplay()
     d.add_agent("implementer-1", "Setup")
+    assert capsys.readouterr().out == ""
+
+
+def test_null_add_agent_with_work_body_is_silent(capsys) -> None:
+    d = NullStatusDisplay()
+    d.add_agent("implementer-1", "Work", "working on auth bug")
     assert capsys.readouterr().out == ""
 
 
@@ -484,7 +537,13 @@ def test_recording_starts_empty() -> None:
 def test_recording_captures_add_agent() -> None:
     d = RecordingStatusDisplay()
     d.add_agent("implementer-1", "Setup")
-    assert d.calls == [("add_agent", "implementer-1", "Setup")]
+    assert d.calls == [("add_agent", "implementer-1", "Setup", "")]
+
+
+def test_recording_captures_work_body_in_add_agent() -> None:
+    d = RecordingStatusDisplay()
+    d.add_agent("implementer-1", "Setup", "working on auth bug")
+    assert d.calls == [("add_agent", "implementer-1", "Setup", "working on auth bug")]
 
 
 def test_recording_captures_update_phase() -> None:
@@ -535,7 +594,7 @@ def test_recording_accumulates_multiple_calls() -> None:
     d.remove_agent("implementer-1")
 
     assert d.calls == [
-        ("add_agent", "implementer-1", "Setup"),
+        ("add_agent", "implementer-1", "Setup", ""),
         ("update_phase", "implementer-1", "Work"),
         ("remove_agent", "implementer-1"),
     ]
