@@ -375,6 +375,3 @@ class ContainerRunner:
                 pass
         return "".join(parts)
 
-
-
-
