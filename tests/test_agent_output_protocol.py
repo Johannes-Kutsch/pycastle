@@ -397,3 +397,46 @@ def test_process_stream_raises_usage_limit_on_non_429_error_result_with_pattern(
             role=AgentRole.IMPLEMENTER,
             usage_limit_patterns=("usage limit",),
         )
+
+
+def test_process_stream_null_result_in_envelope_falls_back_to_collected_lines():
+    null_result_line = json.dumps(
+        {"type": "result", "subtype": "success", "result": None, "is_error": False}
+    )
+    lines = [null_result_line, "<promise>COMPLETE</promise>"]
+    result = process_stream(
+        lines,
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        usage_limit_patterns=(),
+    )
+    assert isinstance(result, CompletionOutput)
+
+
+def test_process_stream_last_result_envelope_wins_when_multiple_present():
+    lines = [
+        _result_line('<plan>{"issues": [{"number": 1, "title": "First"}]}</plan>'),
+        _result_line('<plan>{"issues": [{"number": 2, "title": "Last"}]}</plan>'),
+    ]
+    result = process_stream(
+        lines, on_turn=lambda t: None, role=AgentRole.PLANNER, usage_limit_patterns=()
+    )
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == [{"number": 2, "title": "Last"}]
+
+
+def test_process_stream_non_error_result_with_pattern_text_does_not_raise():
+    success_result = json.dumps(
+        {
+            "type": "result",
+            "is_error": False,
+            "result": "<promise>COMPLETE</promise> usage limit in text",
+        }
+    )
+    result = process_stream(
+        [success_result],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        usage_limit_patterns=("usage limit",),
+    )
+    assert isinstance(result, CompletionOutput)
