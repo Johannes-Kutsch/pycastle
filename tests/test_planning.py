@@ -14,8 +14,7 @@ from pycastle.iteration._deps import (
     NullStatusDisplay,
     RecordingLogger,
 )
-from pycastle.iteration.plan import PlanReady
-from pycastle.iteration.planning import planning_phase
+from pycastle.iteration.planning import PlanReady, planning_phase
 
 
 def _plan_json(issues: list[dict]) -> str:

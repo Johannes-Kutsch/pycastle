@@ -1,7 +1,6 @@
 import dataclasses
 import re
 from pathlib import Path
-from typing import TypeAlias
 
 from ..agent_output_protocol import (
     AgentOutputProtocolError,
@@ -30,12 +29,6 @@ def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
 
 
 @dataclasses.dataclass(frozen=True)
-class PlanReady:
-    worktree_sha: str
-    issues: list[dict]
-
-
-@dataclasses.dataclass(frozen=True)
 class PlanHITL:
     worktree_sha: str
     issue_number: int
@@ -45,9 +38,6 @@ class PlanHITL:
 class PlanAFK:
     worktree_sha: str
     issues: list[dict]
-
-
-PlanResult: TypeAlias = PlanReady | PlanHITL | PlanAFK
 
 
 async def handle_preflight_failure(

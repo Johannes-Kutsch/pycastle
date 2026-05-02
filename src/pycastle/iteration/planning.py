@@ -1,9 +1,15 @@
+import dataclasses
 import json
 
 from ..agent_output_protocol import AgentOutputProtocolError, AgentRole, parse
 from ..agent_result import PreflightFailure
 from ._deps import Deps
-from .plan import PlanReady
+
+
+@dataclasses.dataclass(frozen=True)
+class PlanReady:
+    worktree_sha: str
+    issues: list[dict]
 
 
 async def planning_phase(deps: Deps, sha: str, open_issues: list[dict]) -> PlanReady:

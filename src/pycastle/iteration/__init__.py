@@ -7,7 +7,7 @@ from .implement import branch_for, implement_phase
 from .merge import merge_phase
 from .plan import PlanAFK, PlanHITL
 from .preflight import PreflightReady, preflight_phase
-from .planning import planning_phase
+from .planning import PlanReady, planning_phase
 
 
 @dataclasses.dataclass(frozen=True)
