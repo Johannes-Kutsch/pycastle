@@ -15,11 +15,17 @@ class PlainStatusDisplay:
     def __init__(self) -> None:
         self._last_caller: str | None = None
 
+    def _blank_before(self, caller: str) -> bool:
+        return self._last_caller is not None and (caller != self._last_caller or caller == "")
+
     def register(self, caller: str, startup_message: str = "started", work_body: str = "") -> None:
+        if self._blank_before(caller):
+            builtins.print()
         if caller:
             builtins.print(f"[{caller}] {startup_message}")
         else:
             builtins.print(startup_message)
+        self._last_caller = caller
 
     def update_phase(self, name: str, phase: str) -> None:
         pass
@@ -28,13 +34,16 @@ class PlainStatusDisplay:
         pass
 
     def remove(self, caller: str, shutdown_message: str = "finished", shutdown_style: str = "success") -> None:
+        if self._blank_before(caller):
+            builtins.print()
         if caller:
             builtins.print(f"[{caller}] {shutdown_message}")
         else:
             builtins.print(shutdown_message)
+        self._last_caller = caller
 
     def print(self, caller: str, message: object, style: str | None = None) -> None:
-        if self._last_caller is not None and caller != self._last_caller:
+        if self._blank_before(caller):
             builtins.print()
         if caller:
             builtins.print(f"[{caller}] {message}")
