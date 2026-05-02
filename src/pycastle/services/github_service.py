@@ -166,7 +166,7 @@ class GithubService(_SubprocessService):
             f"gh api repos/{self.repo}/issues/{number}/sub_issues failed",
         )
         try:
-            return json.loads(result.stdout.decode("utf-8", errors="replace"))
+            return json.loads(self._decode(result.stdout))
         except json.JSONDecodeError as exc:
             raise GithubCommandError(
                 f"gh api repos/{self.repo}/issues/{number}/sub_issues returned invalid JSON",
@@ -192,7 +192,7 @@ class GithubService(_SubprocessService):
             f"gh issue list --label {label} failed",
         )
         try:
-            return json.loads(result.stdout.decode("utf-8", errors="replace"))
+            return json.loads(self._decode(result.stdout))
         except json.JSONDecodeError as exc:
             raise GithubCommandError(
                 f"gh issue list --label {label} returned invalid JSON",
