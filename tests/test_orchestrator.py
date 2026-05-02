@@ -1,7 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -18,7 +18,6 @@ from pycastle.orchestrator import (
     delete_merged_branches,
     prune_orphan_worktrees,
     run,
-    wait_for_clean_working_tree,
 )
 
 
@@ -1163,76 +1162,6 @@ def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
     assert (logs_dir / "errors.log").exists()
 
 
-# ── Issue-167: dirty-tree polling guard ───────────────────────────────────────
-
-
-def test_wait_for_clean_working_tree_proceeds_immediately_when_clean(tmp_path):
-    """Clean working tree must return without sleeping."""
-    mock_git = MagicMock(spec=GitService)
-    mock_git.is_working_tree_clean.return_value = True
-
-    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-        asyncio.run(wait_for_clean_working_tree(tmp_path, mock_git))
-
-    mock_sleep.assert_not_called()
-
-
-def test_wait_for_clean_working_tree_prints_no_message_when_clean(tmp_path, capsys):
-    """No output must be produced when the tree is already clean."""
-    mock_git = MagicMock(spec=GitService)
-    mock_git.is_working_tree_clean.return_value = True
-
-    asyncio.run(wait_for_clean_working_tree(tmp_path, mock_git))
-
-    assert capsys.readouterr().out == ""
-
-
-def test_wait_for_clean_working_tree_prints_exactly_one_message_when_dirty(
-    tmp_path, capsys
-):
-    """Exactly one non-empty message line must be printed when the tree is dirty."""
-    mock_git = MagicMock(spec=GitService)
-    mock_git.is_working_tree_clean.side_effect = [False, False, True]
-
-    with patch("asyncio.sleep", new_callable=AsyncMock):
-        asyncio.run(wait_for_clean_working_tree(tmp_path, mock_git))
-
-    non_empty_lines = [
-        line for line in capsys.readouterr().out.splitlines() if line.strip()
-    ]
-    assert len(non_empty_lines) == 1
-
-
-def test_wait_for_clean_working_tree_polls_every_10_seconds(tmp_path):
-    """Each poll cycle must sleep exactly 10 seconds."""
-    mock_git = MagicMock(spec=GitService)
-    # Initial check: False; while loop: False → sleep, False → sleep, True → exit
-    mock_git.is_working_tree_clean.side_effect = [False, False, False, True]
-
-    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-        asyncio.run(wait_for_clean_working_tree(tmp_path, mock_git))
-
-    assert mock_sleep.call_count == 2
-    assert all(call.args[0] == 10 for call in mock_sleep.call_args_list)
-
-
-def test_wait_for_clean_working_tree_proceeds_once_clean(tmp_path):
-    """Must stop polling and return as soon as the tree becomes clean."""
-    mock_git = MagicMock(spec=GitService)
-    # Initial: False → print; loop: False → sleep, True → exit
-    mock_git.is_working_tree_clean.side_effect = [False, False, True]
-
-    sleep_calls = []
-
-    async def _fake_sleep(n):
-        sleep_calls.append(n)
-
-    with patch("asyncio.sleep", side_effect=_fake_sleep):
-        asyncio.run(wait_for_clean_working_tree(tmp_path, mock_git))
-
-    assert sleep_calls == [10]
-
-
 # ── Issue-175: safe SHA pinning and skip-preflight logic ──────────────────────
 
 
@@ -2134,24 +2063,6 @@ def test_delete_merged_branches_routes_deleted_message_through_status_display(
     print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
     assert any("issue/1" in msg for msg in print_messages)
     assert "issue/1" not in capsys.readouterr().out
-
-
-def test_wait_for_clean_working_tree_routes_dirty_message_through_status_display(
-    tmp_path, capsys
-):
-    """wait_for_clean_working_tree must route the dirty-tree message through status_display.print()."""
-    recording = RecordingStatusDisplay()
-    mock_git = MagicMock(spec=GitService)
-    mock_git.is_working_tree_clean.side_effect = [False, True]
-
-    with patch("asyncio.sleep", new_callable=AsyncMock):
-        asyncio.run(
-            wait_for_clean_working_tree(tmp_path, mock_git, status_display=recording)
-        )
-
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
-    assert any("Working tree" in msg for msg in print_messages)
-    assert "Working tree" not in capsys.readouterr().out
 
 
 # ── Issue-352: startup row ────────────────────────────────────────────────────
