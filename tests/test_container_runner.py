@@ -1116,7 +1116,7 @@ def test_run_streaming_in_work_phase_prints_complete_turn(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
-    assert print_calls[0][1] == "[Implementer #1] Analysing issues\n"
+    assert print_calls[0][1].plain == "[Implementer #1] Analysing issues\n"
 
 
 def test_run_streaming_without_print_output_does_not_call_print(tmp_path):
@@ -1154,7 +1154,7 @@ def test_work_calls_print_for_complete_assistant_turn(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
-    assert print_calls[0][1] == "[Implementer #3] Fixing bug\n"
+    assert print_calls[0][1].plain == "[Implementer #3] Fixing bug\n"
 
 
 def test_work_does_not_call_print_for_tool_use_turns(tmp_path):
@@ -1193,5 +1193,23 @@ def test_run_streaming_multiple_turns_prints_each_one(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 2
-    assert print_calls[0][1] == "[Bot] First turn\n"
-    assert print_calls[1][1] == "[Bot] Second turn\n"
+    assert print_calls[0][1].plain == "[Bot] First turn\n"
+    assert print_calls[1][1].plain == "[Bot] Second turn\n"
+
+
+# ── Issue 377: rich Text prefix with agent-name source ────────────────────────
+
+
+def test_run_streaming_print_uses_rich_text_object_with_agent_name_source(tmp_path):
+    from rich.text import Text
+
+    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
+    runner = _streaming_runner("Implementer #1", [json_line], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(display, print_output=True)
+
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    assert len(print_calls) == 1
+    assert isinstance(print_calls[0][1], Text)
+    assert print_calls[0][2] == "Implementer #1"
