@@ -101,7 +101,7 @@ def test_run_iteration_returns_done_when_no_open_issues(tmp_path, git_svc, logge
 
 
 def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, logger):
-    """run_iteration returns AbortedHITL when preflight_phase returns PlanHITL."""
+    """run_iteration returns AbortedHITL when preflight_phase returns PreflightHITL."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
 
@@ -260,14 +260,14 @@ def test_run_iteration_returns_continue_when_no_implementers_complete(
     assert isinstance(result, Continue)
 
 
-# ── PlanAFK: preflight failure with AFK verdict ───────────────────────────────
+# ── PreflightAFK: preflight failure with AFK verdict ─────────────────────────
 
 
 def test_run_iteration_returns_continue_on_afk_preflight_verdict(
     tmp_path, git_svc, logger
 ):
     """run_iteration implements the preflight-fix issue and returns Continue when
-    preflight_phase returns PlanAFK (preflight failure with AFK verdict)."""
+    preflight_phase returns PreflightAFK (preflight failure with AFK verdict)."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     github_svc.get_issue_title.return_value = "Preflight fix"
