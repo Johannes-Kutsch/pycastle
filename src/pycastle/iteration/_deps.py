@@ -1,15 +1,15 @@
 import asyncio
-import builtins
 import dataclasses
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol
 
 from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..services import GitService
 from ..services import GithubService
+from ..status_display import StatusDisplay
 
 
 class Logger(Protocol):
@@ -27,32 +27,6 @@ class RecordingLogger:
 
     def log_agent_output(self, agent_name: str, output: str) -> None:
         self.agent_outputs.append((agent_name, output))
-
-
-@runtime_checkable
-class StatusDisplay(Protocol):
-    def add_agent(self, name: str, phase: str, work_body: str = "") -> None: ...
-    def update_phase(self, name: str, phase: str) -> None: ...
-    def remove_agent(self, name: str) -> None: ...
-    def reset_idle_timer(self, name: str) -> None: ...
-    def print(self, message: object, *, source: str = "") -> None: ...
-
-
-class NullStatusDisplay:
-    def add_agent(self, name: str, phase: str, work_body: str = "") -> None:
-        pass
-
-    def update_phase(self, name: str, phase: str) -> None:
-        pass
-
-    def remove_agent(self, name: str) -> None:
-        pass
-
-    def reset_idle_timer(self, name: str) -> None:
-        pass
-
-    def print(self, message: object, *, source: str = "") -> None:
-        builtins.print(message)
 
 
 class RecordingStatusDisplay:

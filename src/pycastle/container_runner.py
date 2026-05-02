@@ -21,6 +21,7 @@ from .errors import (
     DockerTimeoutError,
     UsageLimitError,
 )
+from .status_display import PlainStatusDisplay
 from .stream_parser import StreamParser
 from .worktree import (
     CONTAINER_PARENT_GIT,
@@ -94,9 +95,7 @@ class ContainerRunner:
         self.effort = effort
         self._cfg = cfg
         if status_display is None:
-            from .iteration._deps import NullStatusDisplay
-
-            status_display = NullStatusDisplay()
+            status_display = PlainStatusDisplay()
         self._status_display = status_display
         self._owns_client = docker_client is None
         self._client = docker_client if docker_client is not None else docker.from_env()

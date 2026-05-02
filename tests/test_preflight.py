@@ -10,10 +10,10 @@ from pycastle.services import GithubService
 from pycastle.iteration._deps import (
     Deps,
     FakeAgentRunner,
-    NullStatusDisplay,
     RecordingLogger,
     RecordingStatusDisplay,
 )
+from pycastle.status_display import PlainStatusDisplay
 from pycastle.iteration.preflight import (
     PreflightAFK,
     PreflightHITL,
@@ -50,7 +50,7 @@ def _make_deps(tmp_path, agent_runner, *, git_svc, github_svc, logger):
         agent_runner=agent_runner,
         cfg=Config(max_parallel=4, max_iterations=1),
         logger=logger,
-        status_display=NullStatusDisplay(),
+        status_display=PlainStatusDisplay(),
     )
 
 

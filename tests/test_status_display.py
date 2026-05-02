@@ -3,11 +3,8 @@ import re
 
 from rich.console import Console
 
-from pycastle.iteration._deps import (
-    NullStatusDisplay,
-    RecordingStatusDisplay,
-    StatusDisplay,
-)
+from pycastle.iteration._deps import RecordingStatusDisplay
+from pycastle.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.rich_status_display import RichStatusDisplay
 
 
@@ -565,52 +562,52 @@ def test_rich_pre_flight_reporter_name_renders_bold_without_role_color() -> None
     assert not _has_code(ansi, 31)  # no red
 
 
-# ── NullStatusDisplay protocol conformance ────────────────────────────────────
+# ── PlainStatusDisplay protocol conformance ────────────────────────────────────
 
 
 def test_null_status_display_satisfies_protocol() -> None:
-    assert isinstance(NullStatusDisplay(), StatusDisplay)
+    assert isinstance(PlainStatusDisplay(), StatusDisplay)
 
 
 def test_recording_status_display_satisfies_protocol() -> None:
     assert isinstance(RecordingStatusDisplay(), StatusDisplay)
 
 
-# ── NullStatusDisplay behaviour ───────────────────────────────────────────────
+# ── PlainStatusDisplay behaviour ───────────────────────────────────────────────
 
 
 def test_null_reset_idle_timer_is_silent(capsys) -> None:
-    d = NullStatusDisplay()
+    d = PlainStatusDisplay()
     d.reset_idle_timer("implementer-1")
     assert capsys.readouterr().out == ""
 
 
 def test_null_add_agent_is_silent(capsys) -> None:
-    d = NullStatusDisplay()
+    d = PlainStatusDisplay()
     d.add_agent("implementer-1", "Setup")
     assert capsys.readouterr().out == ""
 
 
 def test_null_add_agent_with_work_body_is_silent(capsys) -> None:
-    d = NullStatusDisplay()
+    d = PlainStatusDisplay()
     d.add_agent("implementer-1", "Work", "working on auth bug")
     assert capsys.readouterr().out == ""
 
 
 def test_null_update_phase_is_silent(capsys) -> None:
-    d = NullStatusDisplay()
+    d = PlainStatusDisplay()
     d.update_phase("implementer-1", "Work")
     assert capsys.readouterr().out == ""
 
 
 def test_null_remove_agent_is_silent(capsys) -> None:
-    d = NullStatusDisplay()
+    d = PlainStatusDisplay()
     d.remove_agent("implementer-1")
     assert capsys.readouterr().out == ""
 
 
 def test_null_print_delegates_to_builtins(capsys) -> None:
-    d = NullStatusDisplay()
+    d = PlainStatusDisplay()
     d.print("Planning complete. 3 issue(s)")
     captured = capsys.readouterr()
     assert captured.out == "Planning complete. 3 issue(s)\n"
