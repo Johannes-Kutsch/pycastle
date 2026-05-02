@@ -9,6 +9,7 @@ from .config import Config
 from .container_runner import ContainerRunner
 from .errors import AgentTimeoutError, BranchCollisionError, UsageLimitError
 from .services import GitService
+from .status_display import PlainStatusDisplay
 from .worktree import patch_gitdir_for_container, worktree_name_for_branch
 
 
@@ -73,9 +74,7 @@ class AgentRunner:
         work_body = request.work_body
 
         if status_display is None:
-            from .iteration._deps import NullStatusDisplay
-
-            status_display = NullStatusDisplay()
+            status_display = PlainStatusDisplay()
 
         _token = token if token is not None else CancellationToken()
         if _token.is_cancelled:
@@ -193,9 +192,7 @@ class AgentRunner:
         work_body: str = "",
     ) -> list[tuple[str, str, str]]:
         if status_display is None:
-            from .iteration._deps import NullStatusDisplay
-
-            status_display = NullStatusDisplay()
+            status_display = PlainStatusDisplay()
 
         git_name = self._git_service.get_user_name()
         git_email = self._git_service.get_user_email()

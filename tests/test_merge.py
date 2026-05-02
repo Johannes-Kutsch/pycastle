@@ -11,10 +11,10 @@ from pycastle.services import GithubService
 from pycastle.iteration._deps import (
     Deps,
     FakeAgentRunner,
-    NullStatusDisplay,
     RecordingLogger,
     RecordingStatusDisplay,
 )
+from pycastle.status_display import PlainStatusDisplay
 from pycastle.iteration.merge import merge_phase
 
 
@@ -56,7 +56,7 @@ def deps(tmp_path, git_svc, github_svc, agent_runner):
         agent_runner=agent_runner,
         cfg=Config(),
         logger=RecordingLogger(),
-        status_display=NullStatusDisplay(),
+        status_display=PlainStatusDisplay(),
     )
 
 
@@ -73,7 +73,7 @@ def _make_deps(tmp_path, git_svc, github_svc, agent_runner):
         agent_runner=agent_runner,
         cfg=Config(),
         logger=RecordingLogger(),
-        status_display=NullStatusDisplay(),
+        status_display=PlainStatusDisplay(),
     )
 
 
@@ -606,7 +606,7 @@ def test_merger_run_call_passes_work_body_with_conflict_count(
     recording_runner = FakeAgentRunner(["<promise>COMPLETE</promise>"])
     deps = dataclasses.replace(
         _make_deps(tmp_path, git_svc, github_svc, recording_runner),
-        status_display=NullStatusDisplay(),
+        status_display=PlainStatusDisplay(),
     )
     conflict_issues = [{"number": 1, "title": "A"}, {"number": 2, "title": "B"}]
 

@@ -19,8 +19,9 @@ from .iteration import (
     Done,
     run_iteration,
 )
-from .iteration._deps import Deps as IterationDeps, NullStatusDisplay, StatusDisplay
+from .iteration._deps import Deps as IterationDeps
 from .rich_status_display import RichStatusDisplay
+from .status_display import StatusDisplay
 
 
 class FileLogger:

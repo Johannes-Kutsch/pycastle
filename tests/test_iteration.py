@@ -20,10 +20,10 @@ from pycastle.agent_runner import RunRequest
 from pycastle.iteration._deps import (
     Deps,
     FakeAgentRunner,
-    NullStatusDisplay,
     RecordingLogger,
     RecordingStatusDisplay,
 )
+from pycastle.status_display import PlainStatusDisplay
 
 
 def _plan_json(issues: list[dict]) -> str:
@@ -76,7 +76,7 @@ def _make_deps(
         ),
         cfg=cfg or Config(max_parallel=4, max_iterations=1),
         logger=logger,
-        status_display=status_display or NullStatusDisplay(),
+        status_display=status_display or PlainStatusDisplay(),
     )
 
 

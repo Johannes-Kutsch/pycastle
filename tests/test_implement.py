@@ -14,9 +14,9 @@ from pycastle.services import GithubService
 from pycastle.iteration._deps import (
     Deps,
     FakeAgentRunner,
-    NullStatusDisplay,
     RecordingLogger,
 )
+from pycastle.status_display import PlainStatusDisplay
 from pycastle.iteration.implement import (
     ImplementResult,
     branch_for,
@@ -36,7 +36,7 @@ def _make_deps(tmp_path, agent_runner, logger=None) -> Deps:
         agent_runner=agent_runner,
         cfg=Config(max_parallel=4, max_iterations=1),
         logger=logger or RecordingLogger(),
-        status_display=NullStatusDisplay(),
+        status_display=PlainStatusDisplay(),
     )
 
 
