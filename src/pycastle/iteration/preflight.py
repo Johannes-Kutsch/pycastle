@@ -57,7 +57,7 @@ async def handle_preflight_failure(
 ) -> tuple[str, int]:
     check_name, command, output = failures[0]
     agent_result = await deps.agent_runner.run(
-        name=f"preflight-issue ({check_name})",
+        name="Pre-Flight Reporter",
         prompt_file=deps.cfg.prompts_dir / "preflight-issue.md",
         mount_path=mount_path,
         prompt_args={
@@ -70,6 +70,7 @@ async def handle_preflight_failure(
         },
         skip_preflight=True,
         status_display=deps.status_display,
+        work_body=f"reporting {check_name} issue",
     )
     if isinstance(agent_result, PreflightFailure):
         raise RuntimeError(
@@ -96,10 +97,11 @@ async def preflight_phase(deps: Deps) -> PreflightResult:
 
     try:
         failures = await deps.agent_runner.run_preflight(
-            name="preflight-checks",
+            name="Pre-Flight",
             mount_path=worktree_path,
             stage="PREFLIGHT",
             status_display=deps.status_display,
+            work_body="Checking",
         )
 
         if failures:

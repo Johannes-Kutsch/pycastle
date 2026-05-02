@@ -322,7 +322,7 @@ def test_preflight_phase_passes_status_display_to_run_preflight(
     assert fake.preflight_calls[0]["status_display"] is recording
 
 
-def test_preflight_phase_uses_preflight_checks_as_run_preflight_name(
+def test_preflight_phase_uses_pre_flight_as_run_preflight_name(
     tmp_path, git_svc, github_svc, logger
 ):
     fake = FakeAgentRunner([], preflight_responses=[[]])
@@ -333,7 +333,20 @@ def test_preflight_phase_uses_preflight_checks_as_run_preflight_name(
     asyncio.run(preflight_phase(deps))
 
     assert len(fake.preflight_calls) == 1
-    assert fake.preflight_calls[0]["name"] == "preflight-checks"
+    assert fake.preflight_calls[0]["name"] == "Pre-Flight"
+
+
+def test_preflight_phase_passes_checking_work_body_to_run_preflight(
+    tmp_path, git_svc, github_svc, logger
+):
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+
+    asyncio.run(preflight_phase(deps))
+
+    assert fake.preflight_calls[0].get("work_body") == "Checking"
 
 
 def test_preflight_phase_passes_preflight_stage_string_to_run_preflight(
@@ -348,3 +361,39 @@ def test_preflight_phase_passes_preflight_stage_string_to_run_preflight(
 
     assert len(fake.preflight_calls) == 1
     assert fake.preflight_calls[0]["stage"] == "PREFLIGHT"
+
+
+def test_preflight_failure_uses_pre_flight_reporter_as_agent_name(
+    tmp_path, git_svc, logger
+):
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+    fake = FakeAgentRunner(
+        ['<issue>{"number": 42, "labels": ["ready-for-human"]}</issue>'],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+
+    asyncio.run(preflight_phase(deps))
+
+    assert len(fake.calls) == 1
+    assert fake.calls[0]["name"] == "Pre-Flight Reporter"
+
+
+def test_preflight_failure_passes_reporting_work_body_to_run(tmp_path, git_svc, logger):
+    check_name = "ruff"
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+    fake = FakeAgentRunner(
+        ['<issue>{"number": 42, "labels": ["ready-for-human"]}</issue>'],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+
+    asyncio.run(preflight_phase(deps))
+
+    assert fake.calls[0]["work_body"] == f"reporting {check_name} issue"

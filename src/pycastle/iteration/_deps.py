@@ -111,6 +111,7 @@ class FakeAgentRunner:
         token: CancellationToken | None = None,
         status_display: "StatusDisplay | None" = None,
         issue_title: str = "",
+        work_body: str = "",
     ) -> str | PreflightFailure:
         call = {
             "name": name,
@@ -125,6 +126,7 @@ class FakeAgentRunner:
             "stage": stage,
             "token": token,
             "issue_title": issue_title,
+            "work_body": work_body,
         }
         self.calls.append(call)
         if self._side_effect is not None:
@@ -148,8 +150,9 @@ class FakeAgentRunner:
         mount_path: Path,
         stage: str = "",
         status_display: "StatusDisplay | None" = None,
+        work_body: str = "",
     ) -> list[tuple[str, str, str]]:
-        call = {"name": name, "mount_path": mount_path, "stage": stage, "status_display": status_display}
+        call = {"name": name, "mount_path": mount_path, "stage": stage, "status_display": status_display, "work_body": work_body}
         self.preflight_calls.append(call)
         if not self._preflight_responses:
             raise AssertionError(

@@ -104,6 +104,7 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                 status_display=deps.status_display,
                 effort=deps.cfg.merge_override.effort,
                 stage="pre-merge",
+                work_body=f"Merging {len(conflict_issues)} Branches",
             )
             if isinstance(merger_result, PreflightFailure):
                 raise RuntimeError(

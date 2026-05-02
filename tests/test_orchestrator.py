@@ -190,7 +190,7 @@ def test_preflight_issue_branch_uses_pycastle_format(tmp_path):
     captured_branches: list[str] = []
 
     async def _fake_run_agent(name, prompt_args=None, branch=None, **kwargs):
-        if "preflight-issue" in name:
+        if "Pre-Flight Reporter" in name:
             return '<issue>{"number": 77, "labels": ["ready-for-agent"]}</issue>'
         if "Implementer" in name:
             captured_branches.append((prompt_args or {}).get("BRANCH", ""))
@@ -961,7 +961,7 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
-        if "preflight-issue" in name:
+        if "Pre-Flight Reporter" in name:
             return '<issue>{"number": 70, "labels": ["ready-for-human"]}</issue>'
         return "<promise>COMPLETE</promise>"
 
@@ -983,7 +983,7 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
             github_service=_make_github_svc_hitl(),
         )
 
-    pf_calls = [c for c in captured if "preflight-issue" in c["name"]]
+    pf_calls = [c for c in captured if "Pre-Flight Reporter" in c["name"]]
     assert len(pf_calls) == 1
     args = pf_calls[0]["prompt_args"]
     assert args.get("COMMAND") == "pytest -x", (
@@ -1319,7 +1319,7 @@ def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
 
     async def _fake_run_agent(name, **kwargs):
         agent_names.append(name)
-        if "preflight-issue" in name:
+        if "Pre-Flight Reporter" in name:
             return '<issue>{"number": 42, "labels": ["ready-for-agent"]}</issue>'
         if "Implementer" in name:
             return "<promise>COMPLETE</promise>"
@@ -1350,7 +1350,7 @@ def test_preflight_failure_hitl_exits_nonzero_no_implementer(tmp_path):
     implementer_calls: list[str] = []
 
     async def _fake_run_agent(name, **kwargs):
-        if "preflight-issue" in name:
+        if "Pre-Flight Reporter" in name:
             return '<issue>{"number": 99, "labels": ["ready-for-human"]}</issue>'
         if "Implementer" in name:
             implementer_calls.append(name)
@@ -1377,7 +1377,7 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
     preflight_issue_calls: list[dict] = []
 
     async def _fake_run_agent(name, prompt_args=None, **kwargs):
-        if "preflight-issue" in name:
+        if "Pre-Flight Reporter" in name:
             preflight_issue_calls.append(
                 {"name": name, "prompt_args": prompt_args or {}}
             )
