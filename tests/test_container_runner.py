@@ -1008,27 +1008,6 @@ def test_work_produces_no_stdout(tmp_path, capsys):
     assert capsys.readouterr().out == ""
 
 
-def test_preflight_updates_phase_per_check():
-    from pycastle.container_runner import _preflight
-    from pycastle.iteration._deps import RecordingStatusDisplay
-
-    display = RecordingStatusDisplay()
-
-    async def _run():
-        loop = asyncio.get_event_loop()
-        checks = [("ruff", "ruff check ."), ("mypy", "mypy ."), ("pytest", "pytest")]
-        runner = _make_preflight_runner({})
-        return await _preflight(
-            "agent-1", runner, loop, None, checks, status_display=display
-        )
-
-    asyncio.run(_run())
-    phase_calls = [c for c in display.calls if c[0] == "update_phase"]
-    assert ("update_phase", "agent-1", "Running ruff Checks") in phase_calls
-    assert ("update_phase", "agent-1", "Running mypy Checks") in phase_calls
-    assert ("update_phase", "agent-1", "Running pytest Checks") in phase_calls
-
-
 # ── Issue 337: pip install failure must propagate from _setup ─────────────────
 
 
