@@ -514,6 +514,46 @@ def test_process_stream_stops_consuming_after_result_line():
     assert len(consumed) == 1
 
 
+def test_process_stream_planner_skips_malformed_turn_and_exits_on_later_valid_turn():
+    lines = [
+        _assistant_line("no plan tag here"),
+        _assistant_line('<plan>{"issues": [{"number": 3, "title": "Real"}]}</plan>'),
+        _assistant_line("This line must not be consumed"),
+    ]
+    result = process_stream(
+        lines, on_turn=lambda t: None, role=AgentRole.PLANNER, usage_limit_patterns=()
+    )
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == [{"number": 3, "title": "Real"}]
+
+
+def test_process_stream_preflight_issue_skips_malformed_turn_and_exits_on_later_valid_turn():
+    lines = [
+        _assistant_line("no issue tag here"),
+        _assistant_line('<issue>{"number": 5, "labels": ["bug"]}</issue>'),
+        _assistant_line("This line must not be consumed"),
+    ]
+    result = process_stream(
+        lines,
+        on_turn=lambda t: None,
+        role=AgentRole.PREFLIGHT_ISSUE,
+        usage_limit_patterns=(),
+    )
+    assert isinstance(result, IssueOutput)
+    assert result.number == 5
+
+
+def test_process_stream_on_turn_receives_signal_turn_before_early_exit():
+    received: list[str] = []
+    process_stream(
+        [_assistant_line("<promise>COMPLETE</promise>")],
+        on_turn=received.append,
+        role=AgentRole.IMPLEMENTER,
+        usage_limit_patterns=(),
+    )
+    assert received == ["<promise>COMPLETE</promise>"]
+
+
 def test_process_stream_non_error_result_with_pattern_text_does_not_raise():
     success_result = json.dumps(
         {
