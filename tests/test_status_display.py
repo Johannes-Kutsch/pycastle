@@ -49,6 +49,29 @@ def test_rich_print_outputs_message(capsys) -> None:
     assert "hello world" in capsys.readouterr().out
 
 
+def test_rich_print_no_blank_line_on_first_print(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("hello", source="test")
+    out = capsys.readouterr().out
+    assert out.startswith("hello")
+
+
+def test_rich_print_no_blank_line_on_same_source_repeat(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("hello", source="block")
+    d.print("world", source="block")
+    out = capsys.readouterr().out
+    assert "hello\nworld" in out
+
+
+def test_rich_print_blank_line_on_source_change(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("hello", source="block-a")
+    d.print("world", source="block-b")
+    out = capsys.readouterr().out
+    assert "hello\n\nworld" in out
+
+
 def test_rich_agents_render_sorted_by_phase_rank() -> None:
     d = RichStatusDisplay()
     d.add_agent("Merger", "Work")
@@ -628,7 +651,13 @@ def test_recording_accumulates_reset_idle_timer_calls() -> None:
 def test_recording_captures_print() -> None:
     d = RecordingStatusDisplay()
     d.print("Planning complete.")
-    assert d.calls == [("print", "Planning complete.")]
+    assert d.calls == [("print", "Planning complete.", "")]
+
+
+def test_recording_captures_print_with_source() -> None:
+    d = RecordingStatusDisplay()
+    d.print("Planning complete.", source="planning")
+    assert d.calls == [("print", "Planning complete.", "planning")]
 
 
 def test_recording_print_produces_no_stdout(capsys) -> None:

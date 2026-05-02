@@ -92,7 +92,8 @@ async def preflight_phase(deps: Deps) -> PreflightResult:
     except GitCommandError:
         deps.status_display.print(
             "[red]git pull --ff-only failed — remote branch has diverged or is unreachable. "
-            "Resolve manually and retry.[/red]"
+            "Resolve manually and retry.[/red]",
+            source="preflight-phase",
         )
         raise
     sha = deps.git_svc.get_head_sha(deps.repo_root)
