@@ -1,9 +1,8 @@
 import json
-from typing import Optional
 
 
 class StreamParser:
-    def feed(self, line: str) -> Optional[str]:
+    def feed(self, line: str) -> str | None:
         try:
             obj = json.loads(line)
         except json.JSONDecodeError:
