@@ -143,7 +143,7 @@
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **Dockerfile** | File in the pycastle directory defining the Docker image for agent containers — ships without baked-in credentials and without baked-in dev tools; system utilities (git, gh), Claude Code CLI, and the Python runtime are the only baked-in contents; all dev tools (e.g. ruff, mypy, pytest) must be declared in the consuming project's dependency file and are installed at runtime during the Setup phase | image definition |
-| **container runner** | Package module that manages Docker container lifecycle and injects runtime secrets | docker wrapper |
+| **container runner** | Package module that manages Docker container lifecycle, injects runtime secrets, and drives the four agent lifecycle phases (Setup, Pre-flight, Prepare, Work) via instance methods; holds `status_display` at construction time so phase methods can update terminal state without caller involvement | docker wrapper |
 | **host repo** | The git repository on the developer's machine that is mounted into each agent container | project repo, local repo |
 | **volume mount** | A Docker bind mount attaching a host filesystem path to a container-internal path, with an explicit read/write mode | bind mount, volume |
 | **RO mount** | A volume mount with `mode: "ro"` — the container cannot write to it; used for the host repo | read-only mount |
