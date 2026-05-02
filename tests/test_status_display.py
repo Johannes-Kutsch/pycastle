@@ -319,6 +319,60 @@ def test_rich_body_is_unstyled() -> None:
     assert not re.search(r"\x1b\[(?:\d+;)*(?:3[0-9]|9[0-7])(?:;\d+)*m", before_body)
 
 
+def test_rich_body_is_blank_when_work_body_is_empty() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Work")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "Planner" in output
+    assert "Work" not in output
+
+
+def test_rich_body_shows_work_body_after_phase_transitions_to_work() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Setup", "Creating Plan from 3 issues")
+    d.update_phase("Planner", "Work")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "Creating Plan from 3 issues" in output
+    assert "Setup" not in output
+
+
+def test_rich_body_reverts_to_phase_name_after_transitioning_from_work() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Planner", "Work", "Creating Plan from 3 issues")
+    d.update_phase("Planner", "Prepare")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "Prepare" in output
+    assert "Creating Plan from 3 issues" not in output
+
+
+def test_rich_pre_flight_agent_sorts_before_implementers() -> None:
+    d = RichStatusDisplay()
+    d.add_agent("Implementer #1", "Work")
+    d.add_agent("Pre-Flight", "Setup")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert output.find("Pre-Flight") < output.find("Implementer")
+
+
 # ── Color scheme tests ────────────────────────────────────────────────────────
 
 
@@ -334,7 +388,7 @@ def _has_code(ansi: str, code: int) -> bool:
     return bool(re.search(rf"\x1b\[(?:\d+;)*{code}(?:;\d+)*m", ansi))
 
 
-def test_rich_phase_renders_blue_for_plan_agent() -> None:
+def test_rich_role_name_renders_blue_for_planner() -> None:
     d = RichStatusDisplay()
     d.add_agent("Planner", "Plan")
 
@@ -344,7 +398,7 @@ def test_rich_phase_renders_blue_for_plan_agent() -> None:
     assert _has_code(ansi, 34)  # blue
 
 
-def test_rich_phase_renders_orange1_for_implement_agent() -> None:
+def test_rich_role_name_renders_orange1_for_implementer() -> None:
     d = RichStatusDisplay()
     d.add_agent("Implementer #5", "Work")
 
@@ -354,7 +408,7 @@ def test_rich_phase_renders_orange1_for_implement_agent() -> None:
     assert _has_code(ansi, 214)  # orange1 (256-color index 214)
 
 
-def test_rich_phase_renders_yellow_for_review_agent() -> None:
+def test_rich_role_name_renders_yellow_for_reviewer() -> None:
     d = RichStatusDisplay()
     d.add_agent("Reviewer #5", "Review")
 
@@ -364,7 +418,7 @@ def test_rich_phase_renders_yellow_for_review_agent() -> None:
     assert _has_code(ansi, 33)  # yellow
 
 
-def test_rich_phase_renders_green_for_merge_agent() -> None:
+def test_rich_role_name_renders_green_for_merger() -> None:
     d = RichStatusDisplay()
     d.add_agent("Merger", "Merge")
 
@@ -374,7 +428,7 @@ def test_rich_phase_renders_green_for_merge_agent() -> None:
     assert _has_code(ansi, 32)  # green
 
 
-def test_rich_phase_renders_green_for_merge_row() -> None:
+def test_rich_role_name_renders_green_for_merge_row() -> None:
     d = RichStatusDisplay()
     d.add_agent("merge", "Merging")
 
@@ -446,10 +500,7 @@ def test_rich_role_name_renders_purple_for_pre_flight_agent() -> None:
     ansi = _ansi_output(d)
     d.stop()
 
-    # Purple role color produces a foreground color code before "Pre-Flight" text
-    idx = ansi.index("Pre-Flight")
-    before = ansi[:idx]
-    assert re.search(r"\x1b\[(?:\d+;)*(?:3[0-9]|9[0-7])(?:;\d+)*m", before)
+    assert _has_code(ansi, 129)  # purple (256-color index 129)
 
 
 def test_rich_role_name_renders_red_for_pre_flight_reporter_agent() -> None:
@@ -462,7 +513,7 @@ def test_rich_role_name_renders_red_for_pre_flight_reporter_agent() -> None:
     assert _has_code(ansi, 31)  # red
 
 
-def test_rich_phase_renders_without_color_for_unknown_agent() -> None:
+def test_rich_role_name_renders_without_color_for_unknown_agent() -> None:
     d = RichStatusDisplay()
     d.add_agent("Unknown-agent", "Custom")
 
