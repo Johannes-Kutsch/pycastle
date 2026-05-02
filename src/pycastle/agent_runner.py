@@ -116,6 +116,7 @@ class AgentRunner:
                 model=model,
                 effort=effort,
                 docker_client=self._docker_client,
+                status_display=status_display,
                 cfg=self._cfg,
             )
 
@@ -225,6 +226,7 @@ class AgentRunner:
             mount_path,
             self._env,
             docker_client=self._docker_client,
+            status_display=status_display,
             cfg=self._cfg,
         )
         try:
