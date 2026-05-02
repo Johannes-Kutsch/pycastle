@@ -38,21 +38,8 @@ def _stage_from_name(name: str) -> str:
         return "review"
     if name == "Merge Agent":
         return "merge"
-    # Legacy names
-    if name == "Planner":
-        return "plan"
-    if name.startswith("Implementer"):
-        return "implement"
-    if name.startswith("Reviewer"):
-        return "review"
-    if name == "Merger":
-        return "merge"
-    if name == "Pre-Flight":
-        return "plan"
     if name == "Pre-Flight Reporter":
         return "plan"
-    if name == "merge":
-        return "merge"
     return ""
 
 

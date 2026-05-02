@@ -18,7 +18,7 @@ async def planning_phase(deps: Deps, sha: str, open_issues: list[dict]) -> PlanR
     async with detached_worktree("plan-sandbox", sha, deps) as wt:
         raw = await deps.agent_runner.run(
             RunRequest(
-                name="Planner",
+                name="Plan Agent",
                 prompt_file=deps.cfg.prompts_dir / "plan-prompt.md",
                 mount_path=wt,
                 prompt_args={"OPEN_ISSUES_JSON": json.dumps(open_issues)},

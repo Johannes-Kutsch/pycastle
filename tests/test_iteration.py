@@ -319,12 +319,12 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
     )
     asyncio.run(run_iteration(deps))
 
-    implementer_calls = [n for n in agent_names if "Implementer" in n]
-    assert "Planner" not in agent_names, (
-        "Planner must not be called on AFK preflight path"
+    implementer_calls = [n for n in agent_names if "Implement Agent" in n]
+    assert "Plan Agent" not in agent_names, (
+        "Plan Agent must not be called on AFK preflight path"
     )
-    assert len(implementer_calls) == 1, "Exactly one Implementer for the fix issue"
-    assert implementer_calls[0] == "Implementer #77"
+    assert len(implementer_calls) == 1, "Exactly one Implement Agent for the fix issue"
+    assert implementer_calls[0] == "Implement Agent #77"
 
 
 # ── StatusDisplay routing ──────────────────────────────────────────────────────
@@ -421,7 +421,7 @@ def test_run_iteration_routes_no_commits_message_through_status_display(
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(request: RunRequest):
-        if request.name == "Planner":
+        if request.name == "Plan Agent":
             return _plan_json([{"number": 1, "title": "Fix bug"}])
         return ""  # no COMPLETE promise → implementer produces no commits
 
@@ -458,7 +458,7 @@ def test_run_iteration_calls_planning_phase_with_two_or_more_open_issues(
 
     async def _fake_agent(request: RunRequest):
         agent_names.append(request.name)
-        if request.name == "Planner":
+        if request.name == "Plan Agent":
             return _plan_json([{"number": 3, "title": "Issue A"}])
         return "<promise>COMPLETE</promise>"
 
@@ -473,8 +473,8 @@ def test_run_iteration_calls_planning_phase_with_two_or_more_open_issues(
     result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, Continue)
-    assert "Planner" in agent_names, (
-        "Planner must be called when two or more issues exist"
+    assert "Plan Agent" in agent_names, (
+        "Plan Agent must be called when two or more issues exist"
     )
 
 
@@ -503,8 +503,12 @@ def test_run_iteration_skips_planning_phase_with_one_open_issue(
     result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, Continue)
-    assert "Planner" not in agent_names, "Planner must not be called for a single issue"
-    assert any("Implementer" in n for n in agent_names), "Implementer must be called"
+    assert "Plan Agent" not in agent_names, (
+        "Plan Agent must not be called for a single issue"
+    )
+    assert any("Implement Agent" in n for n in agent_names), (
+        "Implement Agent must be called"
+    )
 
 
 def test_run_iteration_returns_continue_when_planning_phase_selects_no_issues(
@@ -519,7 +523,7 @@ def test_run_iteration_returns_continue_when_planning_phase_selects_no_issues(
     ]
 
     async def _fake_agent(request: RunRequest):
-        if request.name == "Planner":
+        if request.name == "Plan Agent":
             return _plan_json([])
         return "<promise>COMPLETE</promise>"
 
@@ -561,8 +565,10 @@ def test_implementer_and_reviewer_run_calls_pass_work_body_with_issue_title(
 
     asyncio.run(run_iteration(deps))
 
-    implementer_calls = [c for c in recording_runner.calls if "Implementer" in c.name]
-    reviewer_calls = [c for c in recording_runner.calls if "Reviewer" in c.name]
+    implementer_calls = [
+        c for c in recording_runner.calls if "Implement Agent" in c.name
+    ]
+    reviewer_calls = [c for c in recording_runner.calls if "Review Agent" in c.name]
     assert len(implementer_calls) == 1
     assert implementer_calls[0].work_body == f'implementing "{issue_title}"'
     assert len(reviewer_calls) == 1
@@ -595,6 +601,126 @@ def test_planner_run_call_passes_work_body_with_issue_count(
 
     asyncio.run(run_iteration(deps))
 
-    planner_calls = [c for c in recording_runner.calls if c.name == "Planner"]
+    planner_calls = [c for c in recording_runner.calls if c.name == "Plan Agent"]
     assert len(planner_calls) == 1
     assert planner_calls[0].work_body == f"Creating Plan from {len(open_issues)} issues"
+
+
+# ── Display row lifecycle ──────────────────────────────────────────────────────
+
+
+def test_run_iteration_preflight_row_removed_even_if_preflight_raises(tmp_path, logger):
+    """run_iteration must remove the 'Preflight' display row even when preflight_phase raises."""
+    from pycastle.services import GitCommandError
+
+    recording = RecordingStatusDisplay()
+    git_svc = MagicMock(spec=GitService)
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.pull.side_effect = GitCommandError("pull failed", returncode=1, stderr="")
+    git_svc.get_head_sha.return_value = "abc123"
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+
+    deps = _make_deps(
+        tmp_path,
+        None,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+
+    with pytest.raises(GitCommandError):
+        asyncio.run(run_iteration(deps))
+
+    assert ("remove", "Preflight", "finished", "success") in recording.calls
+
+
+def test_run_iteration_plan_row_removed_even_if_planning_raises(
+    tmp_path, git_svc, logger
+):
+    """run_iteration must remove the 'Plan' display row even when planning_phase raises."""
+    recording = RecordingStatusDisplay()
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Issue A"},
+        {"number": 2, "title": "Issue B"},
+    ]
+
+    async def _bad_planner(request: RunRequest):
+        raise RuntimeError("planner exploded")
+
+    deps = _make_deps(
+        tmp_path,
+        _bad_planner,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+
+    with pytest.raises(RuntimeError, match="planner exploded"):
+        asyncio.run(run_iteration(deps))
+
+    assert ("remove", "Plan", "finished", "success") in recording.calls
+
+
+def test_run_iteration_implement_row_removed_on_usage_limit(
+    tmp_path, git_svc, github_svc, logger
+):
+    """run_iteration must remove the 'Implement' display row even when usage limit is hit."""
+    recording = RecordingStatusDisplay()
+
+    async def _usage_limit(request: RunRequest):
+        raise UsageLimitError("")
+
+    deps = _make_deps(
+        tmp_path,
+        _usage_limit,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedUsageLimit)
+    assert ("remove", "Implement", "finished", "success") in recording.calls
+
+
+def test_run_iteration_registers_preflight_row_before_preflight_phase(
+    tmp_path, git_svc, github_svc, logger
+):
+    """run_iteration must register the 'Preflight' row before calling preflight_phase."""
+    recording = RecordingStatusDisplay()
+
+    async def _noop_agent(request: RunRequest):
+        return "<promise>COMPLETE</promise>"
+
+    deps = _make_deps(
+        tmp_path,
+        _noop_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    register_idx = next(
+        (
+            i
+            for i, c in enumerate(recording.calls)
+            if c[:2] == ("register", "Preflight")
+        ),
+        None,
+    )
+    remove_idx = next(
+        (i for i, c in enumerate(recording.calls) if c[:2] == ("remove", "Preflight")),
+        None,
+    )
+    assert register_idx is not None, "Preflight row must be registered"
+    assert remove_idx is not None, "Preflight row must be removed"
+    assert register_idx < remove_idx
