@@ -4,7 +4,7 @@ import dataclasses
 from collections.abc import Sequence
 from typing import Any
 
-from ..agent_output_protocol import assert_complete
+from ..agent_output_protocol import AgentRole
 from ..agent_result import CancellationToken, PreflightFailure
 from ..agent_runner import RunRequest
 from ..errors import UsageLimitError
@@ -57,6 +57,7 @@ async def run_issue(
             name=f"Implement Agent #{issue['number']}",
             prompt_file=deps.cfg.prompts_dir / "implement-prompt.md",
             mount_path=deps.repo_root,
+            role=AgentRole.IMPLEMENTER,
             prompt_args=prompt_args,
             branch=_branch,
             model=deps.cfg.implement_override.model,
@@ -73,14 +74,12 @@ async def run_issue(
     if isinstance(result, PreflightFailure):
         return result
 
-    assert_complete(result)
-    deps.logger.log_agent_output(f"Implement Agent #{issue['number']}", result)
-
-    review_result = await _bounded_run_agent(
+    await _bounded_run_agent(
         RunRequest(
             name=f"Review Agent #{issue['number']}",
             prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
             mount_path=deps.repo_root,
+            role=AgentRole.REVIEWER,
             prompt_args=prompt_args,
             branch=_branch,
             model=deps.cfg.review_override.model,
@@ -93,7 +92,6 @@ async def run_issue(
             token=token,
         )
     )
-    assert_complete(review_result)
     return issue
 
 

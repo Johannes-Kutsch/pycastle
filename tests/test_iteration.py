@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -24,10 +23,18 @@ from pycastle.iteration._deps import (
     RecordingStatusDisplay,
 )
 from pycastle.status_display import PlainStatusDisplay
+from pycastle.agent_output_protocol import (
+    CompletionOutput,
+    IssueOutput,
+    PlannerOutput,
+    PromiseParseError,
+)
 
 
-def _plan_json(issues: list[dict]) -> str:
-    return f"<promise>COMPLETE</promise><plan>{json.dumps({'issues': issues})}</plan>"
+def _plan_output(issues: list[dict]) -> PlannerOutput:
+    return PlannerOutput(
+        issues=[{"number": i["number"], "title": i["title"]} for i in issues]
+    )
 
 
 @pytest.fixture
@@ -89,7 +96,7 @@ def test_run_iteration_returns_done_when_no_open_issues(tmp_path, git_svc, logge
     github_svc.get_open_issues.return_value = []
 
     async def _noop_agent(request: RunRequest):
-        return "<promise>COMPLETE</promise>"
+        return CompletionOutput()
 
     deps = _make_deps(
         tmp_path, _noop_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -108,7 +115,7 @@ def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, l
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
 
     async def _fake_agent(request: RunRequest):
-        return '<issue>{"number": 42, "labels": ["ready-for-human"]}</issue>'
+        return IssueOutput(number=42, labels=["ready-for-human"])
 
     deps = _make_deps(
         tmp_path,
@@ -130,7 +137,7 @@ def test_run_iteration_aborted_hitl_carries_issue_number(tmp_path, git_svc, logg
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
 
     async def _fake_agent(request: RunRequest):
-        return '<issue>{"number": 99, "labels": ["ready-for-human"]}</issue>'
+        return IssueOutput(number=99, labels=["ready-for-human"])
 
     deps = _make_deps(
         tmp_path,
@@ -154,7 +161,7 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
 
     async def _fake_agent(request: RunRequest):
-        return '<issue>{"number": 7, "labels": ["ready-for-human"]}</issue>'
+        return IssueOutput(number=7, labels=["ready-for-human"])
 
     deps = _make_deps(
         tmp_path,
@@ -236,7 +243,7 @@ def test_run_iteration_returns_continue_when_issues_complete_normally(
     """run_iteration returns Continue after a normal implement→merge cycle (1-issue fast path)."""
 
     async def _fake_agent(request: RunRequest):
-        return "<promise>COMPLETE</promise>"
+        return CompletionOutput()
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -252,7 +259,7 @@ def test_run_iteration_returns_continue_when_no_implementers_complete(
     """run_iteration returns Continue (not Done) when implementers produce no commits."""
 
     async def _fake_agent(request: RunRequest):
-        return ""  # implementer without COMPLETE → not completed
+        raise PromiseParseError("no <promise>COMPLETE</promise> tag")
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -276,8 +283,8 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
 
     async def _fake_agent(request: RunRequest):
         if "Pre-Flight Reporter" in request.name:
-            return '<issue>{"number": 55, "labels": ["ready-for-agent"]}</issue>'
-        return "<promise>COMPLETE</promise>"
+            return IssueOutput(number=55, labels=["ready-for-agent"])
+        return CompletionOutput()
 
     deps = _make_deps(
         tmp_path,
@@ -306,8 +313,8 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
     async def _fake_agent(request: RunRequest):
         agent_names.append(request.name)
         if "Pre-Flight Reporter" in request.name:
-            return '<issue>{"number": 77, "labels": ["ready-for-agent"]}</issue>'
-        return "<promise>COMPLETE</promise>"
+            return IssueOutput(number=77, labels=["ready-for-agent"])
+        return CompletionOutput()
 
     deps = _make_deps(
         tmp_path,
@@ -337,7 +344,7 @@ def test_run_iteration_routes_planning_complete_through_status_display(
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(request: RunRequest):
-        return "<promise>COMPLETE</promise>"
+        return CompletionOutput()
 
     deps = _make_deps(
         tmp_path,
@@ -361,7 +368,7 @@ def test_run_iteration_execution_complete_uses_consistent_source(
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(request: RunRequest):
-        return "<promise>COMPLETE</promise>"
+        return CompletionOutput()
 
     deps = _make_deps(
         tmp_path,
@@ -396,7 +403,7 @@ def test_run_iteration_routes_hitl_abort_message_through_status_display(
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
 
     async def _fake_agent(request: RunRequest):
-        return '<issue>{"number": 42, "labels": ["ready-for-human"]}</issue>'
+        return IssueOutput(number=42, labels=["ready-for-human"])
 
     deps = _make_deps(
         tmp_path,
@@ -422,8 +429,8 @@ def test_run_iteration_routes_no_commits_message_through_status_display(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_json([{"number": 1, "title": "Fix bug"}])
-        return ""  # no COMPLETE promise → implementer produces no commits
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
+        raise PromiseParseError("no <promise>COMPLETE</promise> tag")
 
     deps = _make_deps(
         tmp_path,
@@ -459,8 +466,8 @@ def test_run_iteration_calls_planning_phase_with_two_or_more_open_issues(
     async def _fake_agent(request: RunRequest):
         agent_names.append(request.name)
         if request.name == "Plan Agent":
-            return _plan_json([{"number": 3, "title": "Issue A"}])
-        return "<promise>COMPLETE</promise>"
+            return _plan_output([{"number": 3, "title": "Issue A"}])
+        return CompletionOutput()
 
     deps = _make_deps(
         tmp_path,
@@ -490,7 +497,7 @@ def test_run_iteration_skips_planning_phase_with_one_open_issue(
 
     async def _fake_agent(request: RunRequest):
         agent_names.append(request.name)
-        return "<promise>COMPLETE</promise>"
+        return CompletionOutput()
 
     deps = _make_deps(
         tmp_path,
@@ -524,8 +531,8 @@ def test_run_iteration_returns_continue_when_planning_phase_selects_no_issues(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_json([])
-        return "<promise>COMPLETE</promise>"
+            return _plan_output([])
+        return CompletionOutput()
 
     deps = _make_deps(
         tmp_path,
@@ -550,9 +557,9 @@ def test_implementer_and_reviewer_run_calls_pass_work_body_with_issue_title(
     github_svc.get_open_issues.return_value = [{"number": 3, "title": issue_title}]
     recording_runner = FakeAgentRunner(
         [
-            _plan_json([{"number": 3, "title": issue_title}]),
-            "<promise>COMPLETE</promise>",
-            "<promise>COMPLETE</promise>",
+            _plan_output([{"number": 3, "title": issue_title}]),
+            CompletionOutput(),
+            CompletionOutput(),
         ],
         preflight_responses=[[]],
     )
@@ -586,9 +593,9 @@ def test_planner_run_call_passes_work_body_with_issue_count(
     github_svc.get_open_issues.return_value = open_issues
     recording_runner = FakeAgentRunner(
         [
-            _plan_json([{"number": 1, "title": "Fix A"}]),
-            "<promise>COMPLETE</promise>",
-            "<promise>COMPLETE</promise>",
+            _plan_output([{"number": 1, "title": "Fix A"}]),
+            CompletionOutput(),
+            CompletionOutput(),
         ],
         preflight_responses=[[]],
     )
@@ -697,7 +704,7 @@ def test_run_iteration_registers_preflight_row_before_preflight_phase(
     recording = RecordingStatusDisplay()
 
     async def _noop_agent(request: RunRequest):
-        return "<promise>COMPLETE</promise>"
+        return CompletionOutput()
 
     deps = _make_deps(
         tmp_path,

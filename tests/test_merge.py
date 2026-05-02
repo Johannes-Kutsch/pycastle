@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from pycastle.agent_output_protocol import CompletionOutput, PromiseParseError
 from pycastle.agent_runner import RunRequest
 from pycastle.config import Config
 from pycastle.services import GitCommandError, GitService
@@ -43,7 +44,7 @@ def github_svc():
 
 @pytest.fixture
 def agent_runner():
-    return FakeAgentRunner(["<promise>COMPLETE</promise>"] * 10)
+    return FakeAgentRunner([CompletionOutput()] * 10)
 
 
 @pytest.fixture
@@ -237,10 +238,8 @@ def test_successful_merger_fast_forwards_target_branch(deps, git_svc):
 def test_incomplete_merger_raises_and_does_not_fast_forward(
     tmp_path, git_svc, github_svc
 ):
-    from pycastle.agent_output_protocol import PromiseParseError
-
     git_svc.try_merge.return_value = False
-    fake = FakeAgentRunner([""])  # no <promise>COMPLETE</promise>
+    fake = FakeAgentRunner([PromiseParseError("no <promise>COMPLETE</promise> tag")])
     local_deps = _make_deps(tmp_path, git_svc, github_svc, fake)
     issues = [{"number": 1, "title": "Conflict"}]
     with pytest.raises(PromiseParseError):
@@ -580,7 +579,7 @@ def test_merge_row_removed_before_merger_spawned(tmp_path, git_svc, github_svc):
             removed_when_merger_ran.append(
                 ("remove", "Merge", "finished", "success") in recording.calls
             )
-        return "<promise>COMPLETE</promise>"
+        return CompletionOutput()
 
     agent_runner = FakeAgentRunner(side_effect=side_effect)
     deps = Deps(
@@ -646,7 +645,7 @@ def test_merger_run_call_passes_work_body_with_conflict_count(
     tmp_path, git_svc, github_svc
 ):
     git_svc.try_merge.return_value = False
-    recording_runner = FakeAgentRunner(["<promise>COMPLETE</promise>"])
+    recording_runner = FakeAgentRunner([CompletionOutput()])
     deps = dataclasses.replace(
         _make_deps(tmp_path, git_svc, github_svc, recording_runner),
         status_display=PlainStatusDisplay(),

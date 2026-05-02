@@ -6,7 +6,7 @@ from typing import TypeAlias
 from ..agent_output_protocol import (
     AgentOutputProtocolError,
     AgentRole,
-    parse,
+    IssueOutput,
 )
 from ..agent_result import PreflightFailure
 from ..agent_runner import RunRequest
@@ -65,6 +65,7 @@ async def handle_preflight_failure(
             name="Pre-Flight Reporter",
             prompt_file=deps.cfg.prompts_dir / "preflight-issue.md",
             mount_path=mount_path,
+            role=AgentRole.PREFLIGHT_ISSUE,
             prompt_args={
                 "CHECK_NAME": check_name,
                 "COMMAND": command,
@@ -82,10 +83,10 @@ async def handle_preflight_failure(
         raise RuntimeError(
             "preflight-issue agent returned a PreflightFailure unexpectedly"
         )
-    issue_output = parse(agent_result, AgentRole.PREFLIGHT_ISSUE)
-    if deps.cfg.hitl_label in issue_output.labels:
-        return "hitl", issue_output.number
-    return "afk", issue_output.number
+    assert isinstance(agent_result, IssueOutput)
+    if deps.cfg.hitl_label in agent_result.labels:
+        return "hitl", agent_result.number
+    return "afk", agent_result.number
 
 
 async def preflight_phase(deps: Deps) -> PreflightResult:

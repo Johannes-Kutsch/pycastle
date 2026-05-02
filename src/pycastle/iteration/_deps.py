@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
+from ..agent_output_protocol import AgentOutput
 from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
@@ -54,12 +55,12 @@ class FakeAgentRunner:
 
     def __init__(
         self,
-        responses: list[str | PreflightFailure | BaseException] | None = None,
+        responses: list[AgentOutput | PreflightFailure | BaseException] | None = None,
         *,
         side_effect: Callable[..., Any] | None = None,
         preflight_responses: list[list[tuple[str, str, str]] | BaseException] | None = None,
     ) -> None:
-        self._responses: list[str | PreflightFailure | BaseException] = list(
+        self._responses: list[AgentOutput | PreflightFailure | BaseException] = list(
             responses or []
         )
         self._side_effect = side_effect
@@ -69,7 +70,7 @@ class FakeAgentRunner:
         self.calls: list[RunRequest] = []
         self.preflight_calls: list[dict] = []
 
-    async def run(self, request: RunRequest) -> str | PreflightFailure:
+    async def run(self, request: RunRequest) -> AgentOutput | PreflightFailure:
         self.calls.append(request)
         if self._side_effect is not None:
             result = self._side_effect(request)

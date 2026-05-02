@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Protocol
 
+from .agent_output_protocol import AgentOutput, AgentRole
 from .agent_result import CancellationToken, PreflightFailure
 from .config import Config
 from .container_runner import ContainerRunner
@@ -18,6 +19,7 @@ class RunRequest:
     name: str
     prompt_file: Path
     mount_path: Path
+    role: AgentRole = AgentRole.IMPLEMENTER
     prompt_args: dict[str, str] | None = None
     branch: str | None = None
     sha: str | None = None
@@ -32,7 +34,7 @@ class RunRequest:
 
 
 class AgentRunnerProtocol(Protocol):
-    async def run(self, request: RunRequest) -> str | PreflightFailure: ...
+    async def run(self, request: RunRequest) -> AgentOutput | PreflightFailure: ...
 
     async def run_preflight(
         self,
@@ -59,7 +61,7 @@ class AgentRunner:
         self._docker_client = docker_client
         self._branch_locks: dict[str, asyncio.Lock] = {}
 
-    async def run(self, request: RunRequest) -> str | PreflightFailure:
+    async def run(self, request: RunRequest) -> AgentOutput | PreflightFailure:
         name = request.name
         prompt_file = request.prompt_file
         mount_path = request.mount_path
@@ -157,12 +159,11 @@ class AgentRunner:
                     failures = await runner.preflight(list(self._cfg.preflight_checks))
                     if failures:
                         return PreflightFailure(failures=tuple(failures))
-                output = ""
                 retries_left = self._cfg.timeout_retries
                 while True:
                     try:
-                        output = await runner.work()
-                        break
+                        output = await runner.work(request.role)
+                        return output
                     except AgentTimeoutError:
                         if retries_left <= 0:
                             raise
@@ -176,7 +177,6 @@ class AgentRunner:
                     except UsageLimitError:
                         _token.cancel(preserve_worktree=True)
                         raise
-                return output
         finally:
             status_display.remove(name)
             if lock is not None and lock.locked():
