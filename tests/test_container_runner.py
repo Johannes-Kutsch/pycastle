@@ -16,7 +16,7 @@ from pycastle.container_runner import (
 )
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.services import GitService
-from pycastle.iteration._deps import NullStatusDisplay, RecordingStatusDisplay
+from pycastle.iteration._deps import RecordingStatusDisplay
 
 
 # ── Issue 153: docker_client injection ───────────────────────────────────────
@@ -1250,17 +1250,14 @@ def test_container_runner_run_streaming_uses_status_display_from_constructor(tmp
     assert any(c[0] == "reset_idle_timer" for c in display.calls)
 
 
-def test_container_runner_run_streaming_accepts_no_status_display_argument(tmp_path):
-    """run_streaming must not accept a status_display argument."""
-    import inspect
+def test_run_streaming_rejects_status_display_argument(tmp_path):
+    """Passing status_display to run_streaming must raise TypeError."""
+    runner = _streaming_runner("Bot", [], tmp_path)
+    with pytest.raises(TypeError):
+        runner.run_streaming(status_display=MagicMock())
 
-    sig = inspect.signature(ContainerRunner.run_streaming)
-    assert "status_display" not in sig.parameters
 
-
-def test_container_runner_default_status_display_is_null(tmp_path):
-    """When no status_display is given at construction, the default is NullStatusDisplay."""
-    runner = ContainerRunner(
-        "test", Path("/fake"), {}, docker_client=MagicMock(), cfg=Config()
-    )
-    assert isinstance(runner._status_display, NullStatusDisplay)
+def test_container_runner_without_status_display_runs_streaming_without_error(tmp_path):
+    """ContainerRunner constructed without status_display must complete run_streaming without error."""
+    runner = _streaming_runner("Bot", [b"chunk\n"], tmp_path)
+    runner.run_streaming()
