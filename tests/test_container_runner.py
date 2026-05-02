@@ -618,6 +618,61 @@ def test_preflight_returns_empty_list_on_clean_pass(tmp_path):
     assert asyncio.run(runner.preflight(checks)) == []
 
 
+def test_preflight_with_no_checks_returns_empty_list(tmp_path):
+    """preflight() with an empty check list must return [] without running any commands."""
+    runner = _unstarted_runner("test", tmp_path)
+    runner.__enter__()
+    assert asyncio.run(runner.preflight([])) == []
+
+
+# ── Prepare phase ─────────────────────────────────────────────────────────────
+
+
+def test_prepare_updates_phase_display(tmp_path):
+    """prepare() must update the status display to 'Prepare'."""
+    display = RecordingStatusDisplay()
+    runner = ContainerRunner(
+        "test",
+        Path("/fake"),
+        {},
+        docker_client=MagicMock(),
+        status_display=display,
+        cfg=Config(logs_dir=tmp_path),
+    )
+    runner.__enter__()
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("Hello World")
+
+    asyncio.run(runner.prepare(prompt_file, {}))
+
+    assert ("update_phase", "test", "Prepare") in display.calls
+
+
+def test_prepare_stores_rendered_prompt(tmp_path):
+    """prepare() must render placeholders and store the result for work() to inject."""
+    runner = _unstarted_runner("test", tmp_path)
+    runner.__enter__()
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("Hello {{NAME}}")
+
+    asyncio.run(runner.prepare(prompt_file, {"NAME": "World"}))
+
+    assert runner._prompt == "Hello World"
+
+
+def test_prepare_expands_shell_expressions_via_container_exec(tmp_path):
+    """prepare() must forward shell expressions to exec_simple inside the container."""
+    runner = _unstarted_runner("test", tmp_path)
+    runner.__enter__()
+    runner.exec_simple = lambda cmd, timeout=None: "exec_output"  # type: ignore[method-assign]
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("Result: !`gh issue list`")
+
+    asyncio.run(runner.prepare(prompt_file, {}))
+
+    assert runner._prompt == "Result: exec_output"
+
+
 # ── Cycle 65-6: run_streaming writes raw log, suppresses all stdout ──────────
 
 
