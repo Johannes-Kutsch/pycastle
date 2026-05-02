@@ -68,7 +68,6 @@ class AgentRunner:
         skip_preflight = request.skip_preflight
         model = request.model
         effort = request.effort
-        stage = request.stage
         token = request.token
         status_display = request.status_display
         work_body = request.work_body

@@ -999,10 +999,16 @@ def test_run_request_stores_required_fields():
     assert req.name == "Agent"
     assert req.prompt_file == Path("/prompt.md")
     assert req.mount_path == Path("/workspace")
+    assert req.prompt_args is None
+    assert req.branch is None
+    assert req.sha is None
     assert req.skip_preflight is False
     assert req.model == ""
-    assert req.branch is None
+    assert req.effort == ""
+    assert req.stage == ""
     assert req.token is None
+    assert req.status_display is None
+    assert req.issue_title == ""
     assert req.work_body == ""
 
 
