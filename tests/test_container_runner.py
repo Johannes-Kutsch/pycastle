@@ -15,7 +15,6 @@ from pycastle.container_runner import (
     _build_claude_command,
 )
 from pycastle.errors import AgentTimeoutError, UsageLimitError
-from pycastle.services import GitService
 from pycastle.iteration._deps import RecordingStatusDisplay
 
 
@@ -236,52 +235,18 @@ def test_exec_simple_times_out():
 # ── Cycle 22: git identity injection ─────────────────────────────────────────
 
 
-def _make_exec_logging_runner():
-    """Return (RunnerClass, exec_log) — exec_log collects exec_simple calls."""
+def test_setup_configures_git_identity_with_readonly_repo_mount(tmp_path):
+    """setup() must use --global because the repo is mounted read-only inside the container."""
+    runner = _unstarted_runner("test", tmp_path)
     exec_log: list[str] = []
 
-    class _Runner:
-        def __init__(self, *args, **kwargs):
-            self.branch = None
-            self.env = {}
+    def _tracking_exec(cmd, timeout=None):
+        exec_log.append(cmd)
+        return ""
 
-        def __enter__(self):
-            return self
+    runner.exec_simple = _tracking_exec  # type: ignore[method-assign]
 
-        def __exit__(self, *_):
-            pass
-
-        def exec_simple(self, cmd, timeout=None):
-            exec_log.append(cmd)
-            return ""
-
-        def run_streaming(self):
-            return ""
-
-    return _Runner, exec_log
-
-
-def _make_git_service(name="Alice", email="alice@example.com") -> MagicMock:
-    mock = MagicMock(spec=GitService)
-    mock.get_user_name.return_value = name
-    mock.get_user_email.return_value = email
-    return mock
-
-
-def test_setup_configures_git_identity_with_readonly_repo_mount():
-    """_setup must use --global because the repo is mounted read-only inside the container."""
-    from pycastle.container_runner import _setup
-
-    _Runner, exec_log = _make_exec_logging_runner()
-    mock_git = _make_git_service()
-
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(
-            _setup("test", _Runner(), loop, 30.0, git_service=mock_git)
-        )
-    finally:
-        loop.close()
+    asyncio.run(runner.setup("Alice", "alice@example.com"))
 
     assert any("git config --global user.name" in cmd for cmd in exec_log)
     assert any("git config --global user.email" in cmd for cmd in exec_log)
@@ -601,65 +566,42 @@ def test_implement_checks_contains_expected_commands():
 # ── Cycle 50-2: _preflight() runs all checks independently ───────────────────
 
 
-def _make_preflight_runner(results: dict[str, str | Exception]):
-    """Fake runner whose exec_simple returns or raises based on the command."""
-
-    class _Runner:
-        def __init__(self):
-            self.branch = None
-            self.env = {}
-
-        def exec_simple(self, cmd, timeout=None):
-            for key, val in results.items():
-                if key in cmd:
-                    if isinstance(val, Exception):
-                        raise val
-                    return val
-            return ""
-
-    return _Runner()
-
-
-def test_preflight_all_checks_run_when_one_fails():
+def test_preflight_all_checks_run_when_one_fails(tmp_path):
     """A DockerError in one check must not prevent the remaining checks from running."""
-    from pycastle.container_runner import _preflight
     from pycastle.errors import DockerError
 
     ran: list[str] = []
+    runner = _unstarted_runner("test", tmp_path)
+    runner.__enter__()
 
-    class _TrackingRunner:
-        def __init__(self):
-            self.branch = None
-            self.env = {}
+    def _tracking_exec(cmd, timeout=None):
+        ran.append(cmd)
+        if "ruff" in cmd:
+            raise DockerError("ruff failed")
+        return ""
 
-        def exec_simple(self, cmd, timeout=None):
-            ran.append(cmd)
-            if "ruff" in cmd:
-                raise DockerError("ruff failed")
-            return ""
+    runner.exec_simple = _tracking_exec  # type: ignore[method-assign]
 
-    async def _coro():
-        loop = asyncio.get_event_loop()
-        checks = [("ruff", "ruff check ."), ("mypy", "mypy ."), ("pytest", "pytest")]
-        return await _preflight("test", _TrackingRunner(), loop, None, checks)
-
-    asyncio.run(_coro())
+    checks = [("ruff", "ruff check ."), ("mypy", "mypy ."), ("pytest", "pytest")]
+    asyncio.run(runner.preflight(checks))
     assert len(ran) == 3
 
 
-def test_preflight_returns_failure_tuples():
-    from pycastle.container_runner import _preflight
+def test_preflight_returns_failure_tuples(tmp_path):
     from pycastle.errors import DockerError
 
-    async def _run():
-        loop = asyncio.get_event_loop()
-        checks = [("ruff", "ruff check ."), ("mypy", "mypy .")]
-        runner = _make_preflight_runner(
-            {"ruff check": DockerError("E501 line too long"), "mypy": ""}
-        )
-        return await _preflight("test", runner, loop, None, checks)
+    runner = _unstarted_runner("test", tmp_path)
+    runner.__enter__()
 
-    failures = asyncio.run(_run())
+    def _selective_exec(cmd, timeout=None):
+        if "ruff check" in cmd:
+            raise DockerError("E501 line too long")
+        return ""
+
+    runner.exec_simple = _selective_exec  # type: ignore[method-assign]
+
+    checks = [("ruff", "ruff check ."), ("mypy", "mypy .")]
+    failures = asyncio.run(runner.preflight(checks))
     assert len(failures) == 1
     name, cmd, output = failures[0]
     assert name == "ruff"
@@ -667,16 +609,13 @@ def test_preflight_returns_failure_tuples():
     assert "E501" in output
 
 
-def test_preflight_returns_empty_list_on_clean_pass():
-    from pycastle.container_runner import _preflight
+def test_preflight_returns_empty_list_on_clean_pass(tmp_path):
+    runner = _unstarted_runner("test", tmp_path)
+    runner.__enter__()
+    runner.exec_simple = lambda cmd, timeout=None: ""  # type: ignore[method-assign]
 
-    async def _run():
-        loop = asyncio.get_event_loop()
-        checks = [("ruff", "ruff check ."), ("mypy", "mypy ."), ("pytest", "pytest")]
-        runner = _make_preflight_runner({})
-        return await _preflight("test", runner, loop, None, checks)
-
-    assert asyncio.run(_run()) == []
+    checks = [("ruff", "ruff check ."), ("mypy", "mypy ."), ("pytest", "pytest")]
+    assert asyncio.run(runner.preflight(checks)) == []
 
 
 # ── Cycle 65-6: run_streaming writes raw log, suppresses all stdout ──────────
@@ -956,24 +895,18 @@ def _unstarted_runner(name: str, tmp_path: Path) -> ContainerRunner:
 
 
 def test_setup_calls_add_agent_with_name_and_phase(tmp_path):
-    from pycastle.container_runner import _setup
-    from pycastle.iteration._deps import RecordingStatusDisplay
-
-    runner = _unstarted_runner("implementer-42", tmp_path)
     display = RecordingStatusDisplay()
+    runner = ContainerRunner(
+        "implementer-42",
+        Path("/fake"),
+        {},
+        docker_client=MagicMock(),
+        status_display=display,
+        cfg=Config(logs_dir=tmp_path),
+    )
+    runner.exec_simple = lambda cmd, timeout=None: ""  # type: ignore[method-assign]
 
-    async def _run():
-        loop = asyncio.get_event_loop()
-        await _setup(
-            "implementer-42",
-            runner,
-            loop,
-            None,
-            git_service=_make_git_service(),
-            status_display=display,
-        )
-
-    asyncio.run(_run())
+    asyncio.run(runner.setup("Alice", "alice@example.com"))
 
     add_calls = [c for c in display.calls if c[0] == "add_agent"]
     assert len(add_calls) == 1
@@ -982,72 +915,46 @@ def test_setup_calls_add_agent_with_name_and_phase(tmp_path):
 
 
 def test_work_calls_update_phase_work(tmp_path):
-    from pycastle.container_runner import _work
-    from pycastle.iteration._deps import RecordingStatusDisplay
-
-    runner = _streaming_runner("implementer-42", [b"done\n"], tmp_path)
     display = RecordingStatusDisplay()
+    runner = _streaming_runner("implementer-42", [b"done\n"], tmp_path, display)
 
-    async def _run():
-        loop = asyncio.get_event_loop()
-        await _work("implementer-42", runner, loop, status_display=display)
-
-    asyncio.run(_run())
+    asyncio.run(runner.work())
     assert ("update_phase", "implementer-42", "Work") in display.calls
 
 
 def test_work_produces_no_stdout(tmp_path, capsys):
-    from pycastle.container_runner import _work
-    from pycastle.iteration._deps import RecordingStatusDisplay
-
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
     display = RecordingStatusDisplay()
     runner = _streaming_runner("implementer-42", [json_line], tmp_path, display)
 
-    async def _run():
-        loop = asyncio.get_event_loop()
-        await _work("implementer-42", runner, loop, status_display=display)
-
-    asyncio.run(_run())
+    asyncio.run(runner.work())
     assert capsys.readouterr().out == ""
 
 
 # ── Issue 337: pip install failure must propagate from _setup ─────────────────
 
 
-def test_setup_propagates_docker_error_when_pip_install_fails():
-    """_setup must not swallow DockerError from a failed pip install."""
-    from pycastle.container_runner import _setup
+def test_setup_propagates_docker_error_when_pip_install_fails(tmp_path):
+    """setup() must not swallow DockerError from a failed pip install."""
     from pycastle.errors import DockerError
 
-    class _FailingPipRunner:
-        def __init__(self):
-            self.branch = None
-            self.env = {}
+    runner = ContainerRunner(
+        "test",
+        Path("/fake"),
+        {},
+        docker_client=MagicMock(),
+        cfg=Config(logs_dir=tmp_path),
+    )
 
-        def __enter__(self):
-            return self
+    def _failing_exec(cmd, timeout=None):
+        if "pip install" in cmd:
+            raise DockerError("pip install failed: exit 1")
+        return ""
 
-        def __exit__(self, *_):
-            pass
-
-        def exec_simple(self, cmd, timeout=None):
-            if "pip install" in cmd:
-                raise DockerError("pip install failed: exit 1")
-            return ""
-
-    async def _run():
-        loop = asyncio.get_event_loop()
-        await _setup(
-            "test",
-            _FailingPipRunner(),
-            loop,
-            30.0,
-            git_service=_make_git_service(),
-        )
+    runner.exec_simple = _failing_exec  # type: ignore[method-assign]
 
     with pytest.raises(DockerError, match="pip install failed"):
-        asyncio.run(_run())
+        asyncio.run(runner.setup("Alice", "alice@example.com"))
 
 
 # ── Issue 344: Docker client connection leak on shutdown ──────────────────────
@@ -1127,17 +1034,11 @@ def test_run_streaming_tool_use_only_does_not_call_print_in_work_phase(tmp_path)
 
 
 def test_work_calls_print_for_complete_assistant_turn(tmp_path):
-    from pycastle.container_runner import _work
-
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Fixing bug"}]}}\n'
     display = RecordingStatusDisplay()
     runner = _streaming_runner("Implementer #3", [json_line], tmp_path, display)
 
-    async def _run():
-        loop = asyncio.get_event_loop()
-        await _work("Implementer #3", runner, loop, status_display=display)
-
-    asyncio.run(_run())
+    asyncio.run(runner.work())
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
@@ -1145,17 +1046,11 @@ def test_work_calls_print_for_complete_assistant_turn(tmp_path):
 
 
 def test_work_does_not_call_print_for_tool_use_turns(tmp_path):
-    from pycastle.container_runner import _work
-
     tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","id":"t1","input":{}}]}}\n'
     display = RecordingStatusDisplay()
     runner = _streaming_runner("Implementer #3", [tool_chunk], tmp_path, display)
 
-    async def _run():
-        loop = asyncio.get_event_loop()
-        await _work("Implementer #3", runner, loop, status_display=display)
-
-    asyncio.run(_run())
+    asyncio.run(runner.work())
 
     assert not any(c[0] == "print" for c in display.calls)
 

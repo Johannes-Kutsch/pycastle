@@ -14,15 +14,13 @@ import docker
 from rich.text import Text
 from docker.models.containers import Container as DockerContainer
 
-from .agent_result import PreflightFailure
-from .config import Config, load_config
+from .config import Config
 from .errors import (
     AgentTimeoutError,
     DockerError,
     DockerTimeoutError,
     UsageLimitError,
 )
-from .services import GitService
 from .stream_parser import StreamParser
 from .worktree import (
     CONTAINER_PARENT_GIT,
@@ -267,6 +265,57 @@ class ContainerRunner:
         buf.seek(0)
         self._active_container.put_archive(os.path.dirname(container_path), buf)
 
+    async def setup(self, git_name: str, git_email: str, work_body: str = "") -> None:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self.__enter__)
+        self._status_display.add_agent(self.name, "Setup", work_body)
+        await loop.run_in_executor(
+            None,
+            self.exec_simple,
+            f"git config --global user.name {shlex.quote(git_name)}",
+        )
+        await loop.run_in_executor(
+            None,
+            self.exec_simple,
+            f"git config --global user.email {shlex.quote(git_email)}",
+        )
+        await loop.run_in_executor(
+            None,
+            self.exec_simple,
+            "pip install -e '.[dev]' || pip install -r requirements.txt",
+        )
+
+    async def preflight(
+        self, checks: list[tuple[str, str]]
+    ) -> list[tuple[str, str, str]]:
+        loop = asyncio.get_running_loop()
+        failures: list[tuple[str, str, str]] = []
+        for check_name, command in checks:
+            self._status_display.update_phase(self.name, f"Running {check_name} Checks")
+            try:
+                await loop.run_in_executor(None, self.exec_simple, command)
+            except DockerError as exc:
+                failures.append((check_name, command, str(exc)))
+        return failures
+
+    async def prepare(self, prompt_file: Path, prompt_args: dict[str, str]) -> None:
+        from .prompt_pipeline import prepare_prompt
+
+        self._status_display.update_phase(self.name, "Prepare")
+        loop = asyncio.get_running_loop()
+
+        async def container_exec(cmd: str) -> str:
+            return await loop.run_in_executor(None, self.exec_simple, cmd)
+
+        self._prompt = await prepare_prompt(prompt_file, prompt_args, container_exec)
+
+    async def work(self) -> str:
+        self._status_display.update_phase(self.name, "Work")
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: self.run_streaming(print_output=True)
+        )
+
     def run_streaming(self, print_output: bool = False) -> str:
         self.write_file(self._prompt, "/tmp/.pycastle_prompt")
         result = self._active_container.exec_run(
@@ -327,93 +376,5 @@ class ContainerRunner:
         return "".join(parts)
 
 
-async def _preflight(
-    name: str,
-    runner: "ContainerRunner",
-    loop: asyncio.AbstractEventLoop,
-    exec_timeout: float | None,
-    checks: list[tuple[str, str]],
-    status_display=None,
-) -> list[tuple[str, str, str]]:
-    failures: list[tuple[str, str, str]] = []
-    for check_name, command in checks:
-        if status_display is not None:
-            status_display.update_phase(name, f"Running {check_name} Checks")
-        try:
-            await loop.run_in_executor(None, runner.exec_simple, command, exec_timeout)
-        except DockerError as exc:
-            failures.append((check_name, command, str(exc)))
-    return failures
-
-
-async def _setup(
-    name: str,
-    runner: "ContainerRunner",
-    loop: asyncio.AbstractEventLoop,
-    exec_timeout: float | None,
-    git_service: GitService | None = None,
-    cfg: Config | None = None,
-    status_display=None,
-    work_body: str = "",
-) -> None:
-    await loop.run_in_executor(None, runner.__enter__)
-    if status_display is not None:
-        status_display.add_agent(name, "Setup", work_body)
-    if git_service is None:
-        git_service = GitService(cfg or load_config())
-    git_name = git_service.get_user_name()
-    git_email = git_service.get_user_email()
-    await loop.run_in_executor(
-        None,
-        runner.exec_simple,
-        f"git config --global user.name {shlex.quote(git_name)}",
-        exec_timeout,
-    )
-    await loop.run_in_executor(
-        None,
-        runner.exec_simple,
-        f"git config --global user.email {shlex.quote(git_email)}",
-        exec_timeout,
-    )
-    await loop.run_in_executor(
-        None,
-        runner.exec_simple,
-        "pip install -e '.[dev]' || pip install -r requirements.txt",
-        exec_timeout,
-    )
-
-
-async def _prepare(
-    name: str,
-    runner: "ContainerRunner",
-    loop: asyncio.AbstractEventLoop,
-    exec_timeout: float | None,
-    prompt_file: Path,
-    prompt_args: dict[str, str],
-    status_display=None,
-) -> None:
-    from .prompt_pipeline import prepare_prompt
-
-    if status_display is not None:
-        status_display.update_phase(name, "Prepare")
-
-    async def container_exec(cmd: str) -> str:
-        return await loop.run_in_executor(None, runner.exec_simple, cmd, exec_timeout)
-
-    prompt = await prepare_prompt(prompt_file, prompt_args, container_exec)
-    runner._prompt = prompt
-
-
-async def _work(
-    name: str,
-    runner: "ContainerRunner",
-    loop: asyncio.AbstractEventLoop,
-    status_display=None,
-) -> str:
-    if status_display is not None:
-        status_display.update_phase(name, "Work")
-    return await loop.run_in_executor(
-        None, lambda: runner.run_streaming(print_output=True)
-    )
 
 
