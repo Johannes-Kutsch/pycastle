@@ -1,15 +1,5 @@
 # Workflow
 
-### 0. Prior Run Detection
-
-Before starting, check whether prior RALPH work exists on this branch.
-
-Run `git log main..HEAD --oneline`. If any commits are present, prior RALPH work is already done — emit `<promise>COMPLETE</promise>` and stop.
-
-Otherwise, run `git status`. If the working tree is dirty, review the existing uncommitted changes and continue from the current state rather than starting over.
-
-If both checks show a clean, empty branch, fall through to step 1 and proceed normally.
-
 ### 1. Task
 
 Fix issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
