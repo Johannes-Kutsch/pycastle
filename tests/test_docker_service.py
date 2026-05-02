@@ -40,10 +40,10 @@ def _fail_result(returncode: int = 1, stderr: str = "build failed"):
 
 
 def test_build_image_calls_docker_build(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_ok_result()
+        "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image("myimage", tmp_path / "Dockerfile", tmp_path)
     args = mock_run.call_args[0][0]
@@ -52,10 +52,10 @@ def test_build_image_calls_docker_build(tmp_path):
 
 
 def test_build_image_includes_image_name(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_ok_result()
+        "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image("myimage:latest", tmp_path / "Dockerfile", tmp_path)
     args = mock_run.call_args[0][0]
@@ -64,11 +64,11 @@ def test_build_image_includes_image_name(tmp_path):
 
 
 def test_build_image_includes_dockerfile_path(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     dockerfile = tmp_path / "Dockerfile"
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_ok_result()
+        "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image("img", dockerfile, tmp_path)
     args = mock_run.call_args[0][0]
@@ -77,10 +77,10 @@ def test_build_image_includes_dockerfile_path(tmp_path):
 
 
 def test_build_image_includes_context_dir(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_ok_result()
+        "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
     args = mock_run.call_args[0][0]
@@ -88,9 +88,11 @@ def test_build_image_includes_context_dir(tmp_path):
 
 
 def test_build_image_returns_none_on_success(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
-    with patch("pycastle.docker_service.subprocess.run", return_value=_ok_result()):
+    with patch(
+        "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
+    ):
         result = DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
     assert result is None
 
@@ -99,10 +101,10 @@ def test_build_image_returns_none_on_success(tmp_path):
 
 
 def test_build_image_no_cache_adds_flag(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_ok_result()
+        "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image(
             "img", tmp_path / "Dockerfile", tmp_path, no_cache=True
@@ -112,10 +114,10 @@ def test_build_image_no_cache_adds_flag(tmp_path):
 
 
 def test_build_image_no_cache_false_omits_flag(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_ok_result()
+        "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image(
             "img", tmp_path / "Dockerfile", tmp_path, no_cache=False
@@ -128,10 +130,10 @@ def test_build_image_no_cache_false_omits_flag(tmp_path):
 
 
 def test_build_image_python_version_adds_build_arg(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_ok_result()
+        "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image(
             "img", tmp_path / "Dockerfile", tmp_path, python_version="3.12"
@@ -143,10 +145,10 @@ def test_build_image_python_version_adds_build_arg(tmp_path):
 
 
 def test_build_image_no_python_version_omits_build_arg(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_ok_result()
+        "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
     args = mock_run.call_args[0][0]
@@ -157,10 +159,10 @@ def test_build_image_no_python_version_omits_build_arg(tmp_path):
 
 
 def test_build_image_raises_docker_build_error_on_nonzero_exit(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with patch(
-        "pycastle.docker_service.subprocess.run",
+        "pycastle.services.docker_service.subprocess.run",
         return_value=_fail_result(returncode=1),
     ):
         with pytest.raises(DockerBuildError):
@@ -168,10 +170,10 @@ def test_build_image_raises_docker_build_error_on_nonzero_exit(tmp_path):
 
 
 def test_build_image_error_includes_stderr(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with patch(
-        "pycastle.docker_service.subprocess.run",
+        "pycastle.services.docker_service.subprocess.run",
         return_value=_fail_result(stderr="no space left"),
     ):
         with pytest.raises(DockerBuildError) as exc_info:
@@ -180,18 +182,20 @@ def test_build_image_error_includes_stderr(tmp_path):
 
 
 def test_build_image_raises_docker_service_error_when_docker_not_found(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
-    with patch("pycastle.docker_service.subprocess.run", side_effect=FileNotFoundError):
+    with patch(
+        "pycastle.services.docker_service.subprocess.run", side_effect=FileNotFoundError
+    ):
         with pytest.raises(DockerServiceError):
             DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
 
 
 def test_build_image_raises_docker_build_error_on_timeout(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with patch(
-        "pycastle.docker_service.subprocess.run",
+        "pycastle.services.docker_service.subprocess.run",
         side_effect=subprocess.TimeoutExpired(["docker"], 60),
     ):
         with pytest.raises(DockerBuildError):
@@ -202,10 +206,10 @@ def test_build_image_raises_docker_build_error_on_timeout(tmp_path):
 
 
 def test_build_image_timeout_is_forwarded_to_subprocess(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_ok_result()
+        "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image(
             "img", tmp_path / "Dockerfile", tmp_path, timeout=30.0
@@ -215,10 +219,10 @@ def test_build_image_timeout_is_forwarded_to_subprocess(tmp_path):
 
 
 def test_build_image_default_timeout_is_none(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_ok_result()
+        "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
     _, kwargs = mock_run.call_args
@@ -226,10 +230,10 @@ def test_build_image_default_timeout_is_none(tmp_path):
 
 
 def test_build_image_accepts_string_paths(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_ok_result()
+        "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image(
             "img",
@@ -243,7 +247,7 @@ def test_build_image_accepts_string_paths(tmp_path):
 
 
 def test_build_image_raises_on_empty_image_name(tmp_path):
-    from pycastle.docker_service import DockerService
+    from pycastle.services.docker_service import DockerService
 
     with pytest.raises(ValueError, match="image_name"):
         DockerService().build_image("", tmp_path / "Dockerfile", tmp_path)

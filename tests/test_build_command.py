@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.config import Config
-from pycastle.docker_service import DockerService
+from pycastle.services.docker_service import DockerService
 from pycastle.errors import DockerBuildError, DockerServiceError
 
 _cfg = Config(docker_image_name="test-image")
@@ -35,7 +35,7 @@ def test_main_includes_no_cache_flag(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     svc = DockerService()
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
+        "pycastle.services.docker_service.subprocess.run", return_value=_subprocess_ok()
     ) as mock_run:
         with pytest.raises(SystemExit):
             main(no_cache=True, docker_service=svc, cfg=_cfg)
@@ -49,7 +49,7 @@ def test_main_omits_no_cache_flag_by_default(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     svc = DockerService()
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
+        "pycastle.services.docker_service.subprocess.run", return_value=_subprocess_ok()
     ) as mock_run:
         with pytest.raises(SystemExit):
             main(docker_service=svc, cfg=_cfg)
@@ -67,7 +67,7 @@ def test_main_passes_python_version_from_file(tmp_path, monkeypatch):
     (tmp_path / ".python-version").write_text("3.12.1\n")
     svc = DockerService()
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
+        "pycastle.services.docker_service.subprocess.run", return_value=_subprocess_ok()
     ) as mock_run:
         with pytest.raises(SystemExit):
             main(docker_service=svc, cfg=_cfg)
@@ -82,7 +82,7 @@ def test_main_python_version_short_form_unchanged(tmp_path, monkeypatch):
     (tmp_path / ".python-version").write_text("3.12\n")
     svc = DockerService()
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
+        "pycastle.services.docker_service.subprocess.run", return_value=_subprocess_ok()
     ) as mock_run:
         with pytest.raises(SystemExit):
             main(docker_service=svc, cfg=_cfg)
@@ -97,7 +97,7 @@ def test_main_python_version_single_segment_unchanged(tmp_path, monkeypatch):
     (tmp_path / ".python-version").write_text("3\n")
     svc = DockerService()
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
+        "pycastle.services.docker_service.subprocess.run", return_value=_subprocess_ok()
     ) as mock_run:
         with pytest.raises(SystemExit):
             main(docker_service=svc, cfg=_cfg)
@@ -111,7 +111,7 @@ def test_main_no_python_version_when_file_absent(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     svc = DockerService()
     with patch(
-        "pycastle.docker_service.subprocess.run", return_value=_subprocess_ok()
+        "pycastle.services.docker_service.subprocess.run", return_value=_subprocess_ok()
     ) as mock_run:
         with pytest.raises(SystemExit):
             main(docker_service=svc, cfg=_cfg)
