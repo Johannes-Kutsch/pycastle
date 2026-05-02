@@ -1,9 +1,9 @@
-import asyncio
 import shutil
 import subprocess
 import sys
+import time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -187,12 +187,18 @@ async def run(
                 case AbortedHITL():
                     sys.exit(1)
                 case AbortedUsageLimit():
-                    print(
-                        "Usage limit reached. Worktrees preserved."
-                        " Run 'pycastle run' again to resume.",
-                        file=sys.stderr,
+                    now = datetime.now()
+                    next_hour = now.replace(
+                        minute=0, second=0, microsecond=0
+                    ) + timedelta(hours=1)
+                    wake_time = next_hour + timedelta(minutes=2)
+                    status_display.print(  # type: ignore[union-attr]
+                        "pycastle",
+                        f"Usage limit reached. Sleeping until {wake_time.strftime('%H:%M')}."
+                        " Press Ctrl+C to abort.",
                     )
-                    sys.exit(1)
+                    time.sleep((wake_time - now).total_seconds())
+                    continue
                 case Continue():
                     pass
 
