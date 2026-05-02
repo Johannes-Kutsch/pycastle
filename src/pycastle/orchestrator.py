@@ -75,23 +75,6 @@ def _get_repo(repo_root: Path) -> str:
     return result.stdout.decode("utf-8").strip()
 
 
-async def wait_for_clean_working_tree(
-    repo_root: Path,
-    git_svc: GitService,
-    status_display: StatusDisplay | None = None,
-) -> None:
-    if git_svc.is_working_tree_clean(repo_root):
-        return
-    sd = status_display or NullStatusDisplay()
-    sd.print(
-        "Working tree has uncommitted changes. "
-        "Please commit or revert all local changes before the merge phase can proceed.",
-        source="working-tree-dirty",
-    )
-    while not git_svc.is_working_tree_clean(repo_root):
-        await asyncio.sleep(10)
-
-
 class _CallableAgentRunner:
     """Wraps a plain async callable as an AgentRunnerProtocol (backward compat for tests)."""
 
