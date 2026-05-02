@@ -529,6 +529,20 @@ def test_merge_phase_completes_normally_after_polling_through_multiple_dirty_sta
     assert result.conflicts == []
 
 
+def test_merge_phase_polls_dirty_tree_every_10_seconds(recording_deps, git_svc):
+    """merge_phase must sleep exactly 10 s between dirty-tree polls."""
+    deps, recording = recording_deps
+    # Initial: dirty → print; loop: dirty → sleep, dirty → sleep, clean → exit
+    git_svc.is_working_tree_clean.side_effect = [False, False, False, True]
+    issues = [{"number": 1, "title": "Fix A"}]
+    with patch(
+        "pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        _run(issues, deps)
+    assert mock_sleep.call_count == 2
+    assert all(call.args[0] == 10 for call in mock_sleep.call_args_list)
+
+
 # ── Merge status row ──────────────────────────────────────────────────────────
 
 
