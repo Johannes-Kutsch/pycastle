@@ -26,6 +26,15 @@ def _result_line(content: str) -> str:
     )
 
 
+def _assistant_line(text: str) -> str:
+    return json.dumps(
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": text}]},
+        }
+    )
+
+
 # ── Exception hierarchy ───────────────────────────────────────────────────────
 
 
@@ -484,17 +493,12 @@ def test_process_stream_raises_usage_limit_error_on_429_json():
 
 
 def test_process_stream_invokes_on_turn_for_each_assistant_turn():
-    assistant_line = json.dumps(
-        {
-            "type": "assistant",
-            "message": {
-                "content": [{"type": "text", "text": "Hello, I will fix this."}]
-            },
-        }
-    )
     turns: list[str] = []
     process_stream(
-        [assistant_line, _result_line("<promise>COMPLETE</promise>")],
+        [
+            _assistant_line("Hello, I will fix this."),
+            _result_line("<promise>COMPLETE</promise>"),
+        ],
         on_turn=turns.append,
         role=AgentRole.IMPLEMENTER,
         usage_limit_patterns=(),
@@ -503,19 +507,11 @@ def test_process_stream_invokes_on_turn_for_each_assistant_turn():
 
 
 def test_process_stream_invokes_on_turn_once_per_turn():
-    def _turn_line(text: str) -> str:
-        return json.dumps(
-            {
-                "type": "assistant",
-                "message": {"content": [{"type": "text", "text": text}]},
-            }
-        )
-
     turns: list[str] = []
     process_stream(
         [
-            _turn_line("First turn."),
-            _turn_line("Second turn."),
+            _assistant_line("First turn."),
+            _assistant_line("Second turn."),
             _result_line("<promise>COMPLETE</promise>"),
         ],
         on_turn=turns.append,
@@ -560,12 +556,7 @@ def test_process_stream_raises_promise_parse_error_when_completion_tag_absent():
 
 def test_process_stream_extracts_result_from_envelope():
     lines = [
-        json.dumps(
-            {
-                "type": "assistant",
-                "message": {"content": [{"type": "text", "text": "thinking"}]},
-            }
-        ),
+        _assistant_line("thinking"),
         _result_line('<plan>{"issues": [{"number": 7, "title": "T"}]}</plan>'),
     ]
     result = process_stream(
@@ -581,6 +572,106 @@ def test_process_stream_raises_usage_limit_immediately_before_end():
     with pytest.raises(UsageLimitError):
         process_stream(
             [usage_line, result_line],
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+            usage_limit_patterns=("usage limit",),
+        )
+
+
+def test_process_stream_empty_stream_raises_promise_parse_error():
+    with pytest.raises(PromiseParseError):
+        process_stream(
+            [],
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+            usage_limit_patterns=(),
+        )
+
+
+def test_process_stream_empty_stream_raises_plan_parse_error():
+    with pytest.raises(PlanParseError):
+        process_stream(
+            [], on_turn=lambda t: None, role=AgentRole.PLANNER, usage_limit_patterns=()
+        )
+
+
+def test_process_stream_empty_stream_raises_issue_parse_error():
+    with pytest.raises(IssueParseError):
+        process_stream(
+            [],
+            on_turn=lambda t: None,
+            role=AgentRole.PREFLIGHT_ISSUE,
+            usage_limit_patterns=(),
+        )
+
+
+def test_process_stream_no_result_envelope_falls_back_to_collected_lines():
+    lines = ["<promise>COMPLETE</promise>"]
+    result = process_stream(
+        lines,
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        usage_limit_patterns=(),
+    )
+    assert isinstance(result, CompletionOutput)
+
+
+def test_process_stream_error_message_includes_output_tail():
+    long_content = "x" * 300 + " distinctive-tail"
+    with pytest.raises(PromiseParseError) as exc_info:
+        process_stream(
+            [_result_line(long_content)],
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+            usage_limit_patterns=(),
+        )
+    assert "distinctive-tail" in str(exc_info.value)
+
+
+def test_process_stream_multiple_text_blocks_assembled_with_double_newline():
+    line = json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "First block"},
+                    {"type": "text", "text": "Second block"},
+                ]
+            },
+        }
+    )
+    turns: list[str] = []
+    process_stream(
+        [line, _result_line("<promise>COMPLETE</promise>")],
+        on_turn=turns.append,
+        role=AgentRole.IMPLEMENTER,
+        usage_limit_patterns=(),
+    )
+    assert turns == ["First block\n\nSecond block"]
+
+
+def test_process_stream_usage_limit_pattern_matching_is_case_insensitive():
+    with pytest.raises(UsageLimitError):
+        process_stream(
+            ["CLAUDE REACHED ITS USAGE LIMIT"],
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+            usage_limit_patterns=("usage limit",),
+        )
+
+
+def test_process_stream_raises_usage_limit_on_non_429_error_result_with_pattern():
+    error_line = json.dumps(
+        {
+            "type": "result",
+            "is_error": True,
+            "api_error_status": 529,
+            "result": "overloaded: usage limit exceeded",
+        }
+    )
+    with pytest.raises(UsageLimitError):
+        process_stream(
+            [error_line],
             on_turn=lambda t: None,
             role=AgentRole.IMPLEMENTER,
             usage_limit_patterns=("usage limit",),
