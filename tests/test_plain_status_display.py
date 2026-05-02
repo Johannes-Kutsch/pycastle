@@ -17,6 +17,18 @@ def test_plain_print_routes_to_stdout(capsys) -> None:
     assert capsys.readouterr().out == "Planning complete. 3 issue(s)\n"
 
 
+def test_plain_print_with_source_routes_to_stdout(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("Planning complete. 3 issue(s)", source="planner")
+    assert capsys.readouterr().out == "Planning complete. 3 issue(s)\n"
+
+
+def test_plain_print_accepts_non_string_message(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print(42)
+    assert capsys.readouterr().out == "42\n"
+
+
 # ── panel method no-ops ───────────────────────────────────────────────────────
 
 
