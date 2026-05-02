@@ -15,14 +15,6 @@ _PHASE_RANK: dict[str, int] = {
     "merge": 3,
 }
 
-_PHASE_COLOR: dict[str, str] = {
-    "plan": "blue",
-    "implement": "orange1",
-    "review": "yellow",
-    "merge": "green",
-    "startup": "white",
-}
-
 
 def _stage_from_name(name: str) -> str:
     if name == "Planner":
@@ -33,12 +25,30 @@ def _stage_from_name(name: str) -> str:
         return "review"
     if name == "Merger":
         return "merge"
-    if name == "startup":
-        return "startup"
-    if name == "preflight-checks":
+    if name == "Pre-Flight":
+        return "plan"
+    if name == "Pre-Flight Reporter":
         return "plan"
     if name == "merge":
         return "merge"
+    return ""
+
+
+def _role_color(name: str) -> str:
+    if name == "Planner":
+        return "blue"
+    if name.startswith("Implementer"):
+        return "orange1"
+    if name.startswith("Reviewer"):
+        return "yellow"
+    if name == "Merger":
+        return "green"
+    if name == "Pre-Flight":
+        return "purple"
+    if name == "Pre-Flight Reporter":
+        return "red"
+    if name == "merge":
+        return "green"
     return ""
 
 
@@ -58,13 +68,15 @@ class _AgentRow:
     __slots__ = (
         "name",
         "phase",
+        "work_body",
         "started_at",
         "last_update",
     )
 
-    def __init__(self, name: str, phase: str) -> None:
+    def __init__(self, name: str, phase: str, work_body: str = "") -> None:
         self.name = name
         self.phase = phase
+        self.work_body = work_body
         now = time.monotonic()
         self.started_at = now
         self.last_update = now
@@ -96,32 +108,36 @@ class RichStatusDisplay:
         table = Table(show_header=False, expand=False, box=None)
         table.add_column(justify="right")  # elapsed
         table.add_column()  # name
-        table.add_column()  # phase
         table.add_column()  # idle
+        table.add_column()  # body
 
         for row in rows:
+            role_color = _role_color(row.name)
             name_text = Text()
             for segment in re.split(r"(\d+)", row.name):
                 if segment:
-                    style = "bold cyan" if segment.isdigit() else "bold"
-                    name_text.append(segment, style=style)
+                    if segment.isdigit():
+                        name_text.append(segment, style="bold cyan")
+                    elif role_color:
+                        name_text.append(segment, style=f"bold {role_color}")
+                    else:
+                        name_text.append(segment, style="bold")
 
-            phase_color = _PHASE_COLOR.get(_stage_from_name(row.name), "")
-            phase_text = Text(row.phase, style=phase_color)
+            body = row.work_body if row.phase == "Work" else row.phase
 
             table.add_row(
                 Text(_format_duration(row.elapsed_seconds()), style="dim"),
                 name_text,
-                phase_text,
                 Text(_format_duration(row.idle_seconds()), style="dim"),
+                Text(body),
             )
 
         yield Padding(table, (1, 0, 0, 0))
 
-    def add_agent(self, name: str, phase: str) -> None:
+    def add_agent(self, name: str, phase: str, work_body: str = "") -> None:
         live_to_start: Live | None = None
         with self._lock:
-            self._rows[name] = _AgentRow(name, phase)
+            self._rows[name] = _AgentRow(name, phase, work_body)
             if self._live is None:
                 live = Live(
                     self,
