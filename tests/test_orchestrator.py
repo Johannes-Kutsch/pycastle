@@ -1398,12 +1398,9 @@ def test_consecutive_usage_limits_sleep_multiple_times(tmp_path):
     mock_github = _make_github_svc()
     mock_github.has_open_issues_with_label.side_effect = [True, True, False]
 
-    call_count = [0]
-
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        call_count[0] += 1
         raise UsageLimitError("")
 
     with patch("time.sleep") as mock_sleep:
@@ -1446,6 +1443,37 @@ def test_usage_limit_wake_time_is_next_full_hour_plus_two_minutes(tmp_path, caps
 
     out = capsys.readouterr().out
     assert expected_str in out
+
+
+def test_usage_limit_sleep_duration_matches_wake_time(tmp_path):
+    """Sleep duration must equal the seconds from now to the next full hour + 2 minutes."""
+    from datetime import datetime as real_datetime
+
+    fixed_now = real_datetime(2026, 1, 1, 14, 30, 0)
+    # next hour: 15:00, wake: 15:02 → 32 minutes = 1920 seconds
+    expected_seconds = 32 * 60
+
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.side_effect = [True, False]
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("")
+
+    with (
+        patch("time.sleep") as mock_sleep,
+        patch("pycastle.orchestrator.datetime") as mock_dt,
+    ):
+        mock_dt.now.return_value = fixed_now
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            max_iterations=2,
+        )
+
+    mock_sleep.assert_called_once_with(float(expected_seconds))
 
 
 def test_usage_limit_error_not_written_to_errors_log(tmp_path):
