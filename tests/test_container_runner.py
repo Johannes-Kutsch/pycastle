@@ -1092,7 +1092,7 @@ def test_exit_swallows_close_exception():
         runner.__exit__(None, None, None)  # must not raise
 
 
-# ── Issue 349: StreamParser integration ──────────────────────────────────────
+# ── run_streaming turn display ───────────────────────────────────────────────
 
 
 def test_run_streaming_in_work_phase_prints_complete_turn(tmp_path):
