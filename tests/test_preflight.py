@@ -14,8 +14,12 @@ from pycastle.iteration._deps import (
     RecordingLogger,
     RecordingStatusDisplay,
 )
-from pycastle.iteration.plan import PlanAFK, PlanHITL
-from pycastle.iteration.preflight import PreflightReady, preflight_phase
+from pycastle.iteration.preflight import (
+    PreflightAFK,
+    PreflightHITL,
+    PreflightReady,
+    preflight_phase,
+)
 
 
 @pytest.fixture
@@ -129,7 +133,7 @@ def test_preflight_phase_calls_checkout_detached_with_head_sha(
     )
     asyncio.run(preflight_phase(deps))
 
-    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-flight-sandbox"
     git_svc.checkout_detached.assert_called_once_with(
         tmp_path, expected_worktree, "abc123"
     )
@@ -145,7 +149,7 @@ def test_preflight_phase_passes_worktree_path_as_mount_path_to_run_preflight(
     )
     asyncio.run(preflight_phase(deps))
 
-    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-flight-sandbox"
     assert len(fake.preflight_calls) == 1
     assert fake.preflight_calls[0]["mount_path"] == expected_worktree
 
@@ -168,7 +172,7 @@ def test_preflight_phase_returns_hitl_on_hitl_preflight_verdict(
     )
     result = asyncio.run(preflight_phase(deps))
 
-    assert isinstance(result, PlanHITL)
+    assert isinstance(result, PreflightHITL)
     assert result.issue_number == 55
     assert result.worktree_sha == "abc123"
 
@@ -192,7 +196,7 @@ def test_preflight_phase_returns_afk_on_afk_preflight_verdict(
     )
     result = asyncio.run(preflight_phase(deps))
 
-    assert isinstance(result, PlanAFK)
+    assert isinstance(result, PreflightAFK)
     assert result.issues == [{"number": 42, "title": "Fix preflight issue"}]
     assert result.worktree_sha == "abc123"
 
@@ -222,7 +226,7 @@ def test_preflight_phase_hitl_routing_uses_configured_hitl_label(
     )
     result = asyncio.run(preflight_phase(deps))
 
-    assert isinstance(result, PlanHITL)
+    assert isinstance(result, PreflightHITL)
     assert result.issue_number == 55
 
 
@@ -260,7 +264,7 @@ def test_preflight_phase_removes_worktree_after_passing_preflight(
     )
     asyncio.run(preflight_phase(deps))
 
-    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-flight-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
 
 
@@ -280,7 +284,7 @@ def test_preflight_phase_removes_worktree_when_preflight_fails(
     )
     asyncio.run(preflight_phase(deps))
 
-    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-flight-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
 
 
@@ -295,7 +299,7 @@ def test_preflight_phase_removes_worktree_when_exception_raised(
     with pytest.raises(RuntimeError, match="container error"):
         asyncio.run(preflight_phase(deps))
 
-    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-flight-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
 
 
