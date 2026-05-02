@@ -37,7 +37,8 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
     if isinstance(preflight_result, PreflightHITL):
         deps.status_display.print(
-            f"Preflight issue #{preflight_result.issue_number} requires human intervention. Exiting."
+            f"Preflight issue #{preflight_result.issue_number} requires human intervention. Exiting.",
+            source="preflight-request-human-error",
         )
         return AbortedHITL(issue_number=preflight_result.issue_number)
 
@@ -58,10 +59,11 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
     issues = issues[: deps.cfg.max_parallel]
 
-    deps.status_display.print(f"Planning complete. {len(issues)} issue(s):")
+    deps.status_display.print(f"Planning complete. {len(issues)} issue(s):", source="planning")
     for issue in issues:
         deps.status_display.print(
-            f"  #{issue['number']}: {issue['title']} → {branch_for(issue['number'])}"
+            f"  #{issue['number']}: {issue['title']} → {branch_for(issue['number'])}",
+            source="planning",
         )
 
     token = CancellationToken()
@@ -74,29 +76,32 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         match error:
             case PreflightFailure(failures=fs):
                 deps.status_display.print(
-                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) pre-flight failed:"
+                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) pre-flight failed:",
+                    source="execution-errors",
                 )
                 for check_name, command, output in fs:
                     deps.status_display.print(
-                        f"    ✗ {check_name} ({command}): {output}"
+                        f"    ✗ {check_name} ({command}): {output}",
+                        source="execution-errors",
                     )
             case _:
                 deps.status_display.print(
-                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}"
+                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}",
+                    source="execution-errors",
                 )
 
     completed = impl_result.completed
 
     if not completed:
-        deps.status_display.print("No commits produced. Nothing to merge.")
+        deps.status_display.print("No commits produced. Nothing to merge.", source="execution-complete")
         return Continue()
 
     deps.status_display.print(
-        f"\nExecution complete. {len(completed)} branch(es) with commits:"
+        f"Execution complete. {len(completed)} branch(es) with commits:",
+        source="execution-complete",
     )
     for i in completed:
-        deps.status_display.print(f"  {branch_for(i['number'])}")
-    deps.status_display.print("")
+        deps.status_display.print(f"  {branch_for(i['number'])}", source="execution-complete")
 
     await merge_phase(completed, deps)
 

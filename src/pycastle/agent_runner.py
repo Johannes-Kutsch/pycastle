@@ -194,7 +194,8 @@ class AgentRunner:
                         restart_num = self._cfg.timeout_retries - retries_left + 1
                         status_display.print(
                             f"[{name}] Timeout — restarting"
-                            f" (attempt {restart_num}/{self._cfg.timeout_retries})"
+                            f" (attempt {restart_num}/{self._cfg.timeout_retries})",
+                            source="agent-timeout",
                         )
                         retries_left -= 1
                     except UsageLimitError:

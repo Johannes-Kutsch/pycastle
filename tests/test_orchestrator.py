@@ -2131,7 +2131,7 @@ def test_delete_merged_branches_routes_deleted_message_through_status_display(
         ["issue/1"], tmp_path, git_service=mock_svc, status_display=recording
     )
 
-    print_messages = [msg for kind, msg in recording.calls if kind == "print"]
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
     assert any("issue/1" in msg for msg in print_messages)
     assert "issue/1" not in capsys.readouterr().out
 
@@ -2149,7 +2149,7 @@ def test_wait_for_clean_working_tree_routes_dirty_message_through_status_display
             wait_for_clean_working_tree(tmp_path, mock_git, status_display=recording)
         )
 
-    print_messages = [msg for kind, msg in recording.calls if kind == "print"]
+    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
     assert any("Working tree" in msg for msg in print_messages)
     assert "Working tree" not in capsys.readouterr().out
 

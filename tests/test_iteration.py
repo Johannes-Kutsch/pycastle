@@ -353,10 +353,10 @@ def test_run_iteration_routes_planning_complete_through_status_display(
     assert "Planning complete" not in capsys.readouterr().out
 
 
-def test_run_iteration_prints_blank_line_after_completion_summary(
+def test_run_iteration_execution_complete_uses_consistent_source(
     tmp_path, git_svc, github_svc, logger
 ):
-    """A blank line must be printed immediately after the completed-branches list."""
+    """The execution-complete block must use a single consistent source for automatic blank-line separation."""
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(name, **kwargs):
@@ -372,17 +372,16 @@ def test_run_iteration_prints_blank_line_after_completion_summary(
     )
     asyncio.run(run_iteration(deps))
 
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
-    exec_idx = next(
-        (i for i, msg in enumerate(print_messages) if "Execution complete" in msg),
-        None,
+    exec_prints = [
+        (msg, src)
+        for kind, msg, src in (c for c in recording.calls if c[0] == "print")
+        if "Execution complete" in str(msg) or str(msg).startswith("  pycastle/")
+    ]
+    assert exec_prints, "Expected execution-complete messages"
+    sources = {src for _, src in exec_prints}
+    assert len(sources) == 1, (
+        f"Expected all execution-complete messages to share one source, got: {sources}"
     )
-    assert exec_idx is not None, "Expected 'Execution complete' message"
-    end = exec_idx + 1
-    while end < len(print_messages) and print_messages[end].startswith("  "):
-        end += 1
-    assert end < len(print_messages), "Expected a message after the branch list"
-    assert print_messages[end] == "", "Expected blank line after branch list"
 
 
 def test_run_iteration_routes_hitl_abort_message_through_status_display(

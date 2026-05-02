@@ -296,7 +296,7 @@ class ContainerRunner:
                             raise UsageLimitError(line)
                         turn = parser.feed(line)
                         if print_output and turn is not None and status_display is not None:
-                            status_display.print(f"[{self.name}] {turn}\n")
+                            status_display.print(f"[{self.name}] {turn}\n", source=f"agent-output-{self.name}")
         finally:
             try:
                 self._active_container.exec_run(
