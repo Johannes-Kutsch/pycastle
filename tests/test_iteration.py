@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import json
 from unittest.mock import MagicMock
 
@@ -536,12 +537,9 @@ def test_run_iteration_returns_continue_when_planning_phase_selects_no_issues(
 # ── work_body ─────────────────────────────────────────────────────────────────
 
 
-def test_implementer_run_call_passes_work_body_with_issue_title(
+def test_implementer_and_reviewer_run_calls_pass_work_body_with_issue_title(
     tmp_path, git_svc, github_svc, logger
 ):
-    """Implementer call must pass work_body = 'working on <title>'."""
-    import dataclasses as _dc
-
     issue_title = "Fix auth bug"
     github_svc.get_open_issues.return_value = [{"number": 3, "title": issue_title}]
     recording_runner = FakeAgentRunner(
@@ -552,7 +550,7 @@ def test_implementer_run_call_passes_work_body_with_issue_title(
         ],
         preflight_responses=[[]],
     )
-    deps = _dc.replace(
+    deps = dataclasses.replace(
         _make_deps(
             tmp_path, None, git_svc=git_svc, github_svc=github_svc, logger=logger
         ),
@@ -564,36 +562,9 @@ def test_implementer_run_call_passes_work_body_with_issue_title(
     implementer_calls = [
         c for c in recording_runner.calls if "Implementer" in c["name"]
     ]
+    reviewer_calls = [c for c in recording_runner.calls if "Reviewer" in c["name"]]
     assert len(implementer_calls) == 1
     assert implementer_calls[0]["work_body"] == f"working on {issue_title}"
-
-
-def test_reviewer_run_call_passes_work_body_with_issue_title(
-    tmp_path, git_svc, github_svc, logger
-):
-    """Reviewer call must pass work_body = 'working on <title>'."""
-    import dataclasses as _dc
-
-    issue_title = "Fix auth bug"
-    github_svc.get_open_issues.return_value = [{"number": 3, "title": issue_title}]
-    recording_runner = FakeAgentRunner(
-        [
-            _plan_json([{"number": 3, "title": issue_title}]),
-            "<promise>COMPLETE</promise>",
-            "<promise>COMPLETE</promise>",
-        ],
-        preflight_responses=[[]],
-    )
-    deps = _dc.replace(
-        _make_deps(
-            tmp_path, None, git_svc=git_svc, github_svc=github_svc, logger=logger
-        ),
-        agent_runner=recording_runner,
-    )
-
-    asyncio.run(run_iteration(deps))
-
-    reviewer_calls = [c for c in recording_runner.calls if "Reviewer" in c["name"]]
     assert len(reviewer_calls) == 1
     assert reviewer_calls[0]["work_body"] == f"working on {issue_title}"
 
@@ -601,9 +572,6 @@ def test_reviewer_run_call_passes_work_body_with_issue_title(
 def test_planner_run_call_passes_work_body_with_issue_count(
     tmp_path, git_svc, github_svc, logger
 ):
-    """Planner call must pass work_body = 'Creating Plan from N issues'."""
-    import dataclasses as _dc
-
     open_issues = [
         {"number": 1, "title": "Fix A"},
         {"number": 2, "title": "Fix B"},
@@ -618,7 +586,7 @@ def test_planner_run_call_passes_work_body_with_issue_count(
         ],
         preflight_responses=[[]],
     )
-    deps = _dc.replace(
+    deps = dataclasses.replace(
         _make_deps(
             tmp_path, None, git_svc=git_svc, github_svc=github_svc, logger=logger
         ),

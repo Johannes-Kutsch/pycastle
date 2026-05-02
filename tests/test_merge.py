@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 from unittest.mock import MagicMock
 
 import pytest
@@ -542,9 +543,6 @@ def test_merge_row_removed_before_merger_spawned(tmp_path, git_svc, github_svc):
 def test_merger_run_call_passes_work_body_with_conflict_count(
     tmp_path, git_svc, github_svc
 ):
-    """Merger agent call must pass work_body = 'Merging N Branches' where N is conflict count."""
-    import dataclasses
-
     git_svc.try_merge.return_value = False
     recording_runner = FakeAgentRunner(["<promise>COMPLETE</promise>"])
     deps = dataclasses.replace(

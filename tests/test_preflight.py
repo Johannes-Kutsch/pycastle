@@ -346,7 +346,7 @@ def test_preflight_phase_passes_checking_work_body_to_run_preflight(
 
     asyncio.run(preflight_phase(deps))
 
-    assert fake.preflight_calls[0].get("work_body") == "Checking"
+    assert fake.preflight_calls[0]["work_body"] == "Checking"
 
 
 def test_preflight_phase_passes_preflight_stage_string_to_run_preflight(
