@@ -126,4 +126,5 @@ async def preflight_phase(deps: Deps) -> PreflightResult:
                 worktree_sha=sha, issues=[{"number": pf_num, "title": pf_title}]
             )
 
+        deps.status_display.print("Preflight checks passed.", source="preflight-phase")
         return PreflightReady(sha=sha, issues=open_issues)
