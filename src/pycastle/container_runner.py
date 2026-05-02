@@ -11,6 +11,7 @@ import threading
 from pathlib import Path
 
 import docker
+from rich.text import Text
 from docker.models.containers import Container as DockerContainer
 
 from .agent_result import PreflightFailure
@@ -296,7 +297,17 @@ class ContainerRunner:
                             raise UsageLimitError(line)
                         turn = parser.feed(line)
                         if print_output and turn is not None and status_display is not None:
-                            status_display.print(f"[{self.name}] {turn}\n", source=f"agent-output-{self.name}")
+                            msg = Text()
+                            msg.append("[", style="bold")
+                            for segment in re.split(r"(\d+)", self.name):
+                                if segment:
+                                    msg.append(
+                                        segment,
+                                        style="bold cyan" if segment.isdigit() else "bold",
+                                    )
+                            msg.append("] ", style="bold")
+                            msg.append(f"{turn}\n")
+                            status_display.print(msg, source=self.name)
         finally:
             try:
                 self._active_container.exec_run(
