@@ -334,3 +334,17 @@ def test_preflight_phase_uses_preflight_checks_as_run_preflight_name(
 
     assert len(fake.preflight_calls) == 1
     assert fake.preflight_calls[0]["name"] == "preflight-checks"
+
+
+def test_preflight_phase_passes_preflight_stage_string_to_run_preflight(
+    tmp_path, git_svc, github_svc, logger
+):
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+
+    asyncio.run(preflight_phase(deps))
+
+    assert len(fake.preflight_calls) == 1
+    assert fake.preflight_calls[0]["stage"] == "PREFLIGHT"

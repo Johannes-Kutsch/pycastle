@@ -41,3 +41,20 @@ def test_strip_stale_blocker_refs_preserves_other_fields():
     assert result[0]["number"] == 7
     assert result[0]["title"] == "T"
     assert result[0]["state"] == "open"
+
+
+def test_strip_stale_blocker_refs_keeps_line_when_one_of_two_blockers_is_open():
+    issues = [
+        {"number": 1, "title": "A", "body": "Blocked by #2 and #99"},
+        {"number": 2, "title": "B", "body": ""},
+    ]
+    result = strip_stale_blocker_refs(issues)
+    assert "Blocked by #2 and #99" in result[0]["body"]
+
+
+def test_strip_stale_blocker_refs_removes_line_when_all_blockers_are_closed():
+    issues = [
+        {"number": 1, "title": "A", "body": "Blocked by #98 and #99\nOther content"},
+    ]
+    result = strip_stale_blocker_refs(issues)
+    assert result[0]["body"] == "Other content"
