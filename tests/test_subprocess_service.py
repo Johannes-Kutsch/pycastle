@@ -48,7 +48,7 @@ def test_run_returns_completed_process_on_success():
     assert result is completed
 
 
-def test_run_translates_timeout_expired_to_timeout_error_class():
+def test_run_raises_timeout_error_when_command_exceeds_timeout():
     svc = _ConcreteService(timeout=5.0)
     with patch(
         "subprocess.run",
@@ -58,14 +58,48 @@ def test_run_translates_timeout_expired_to_timeout_error_class():
             svc._run(["echo"])
 
 
-def test_run_translates_file_not_found_to_not_found_error_class():
+def test_run_timeout_error_message_includes_cmd_and_duration():
+    svc = _ConcreteService(timeout=5.0)
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd=["echo", "hi"], timeout=5.0),
+    ):
+        with pytest.raises(_ConcreteTimeoutError, match="5.0s"):
+            svc._run(["echo", "hi"])
+
+
+def test_run_raises_not_found_error_when_executable_is_missing():
     svc = _ConcreteService(timeout=5.0)
     with patch("subprocess.run", side_effect=FileNotFoundError()):
         with pytest.raises(_ConcreteNotFoundError):
             svc._run(["no-such-exe"])
 
 
+def test_run_not_found_error_message_includes_executable_name():
+    svc = _ConcreteService(timeout=5.0)
+    with patch("subprocess.run", side_effect=FileNotFoundError()):
+        with pytest.raises(_ConcreteNotFoundError, match="no-such-exe"):
+            svc._run(["no-such-exe"])
+
+
 # ── _run_or_raise ──────────────────────────────────────────────────────────────
+
+
+def test_run_or_raise_propagates_timeout_error():
+    svc = _ConcreteService(timeout=5.0)
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd=["cmd"], timeout=5.0),
+    ):
+        with pytest.raises(_ConcreteTimeoutError):
+            svc._run_or_raise(["cmd"], message="failed")
+
+
+def test_run_or_raise_propagates_not_found_error():
+    svc = _ConcreteService(timeout=5.0)
+    with patch("subprocess.run", side_effect=FileNotFoundError()):
+        with pytest.raises(_ConcreteNotFoundError):
+            svc._run_or_raise(["no-such-exe"], message="failed")
 
 
 def test_run_or_raise_returns_completed_process_on_success():
@@ -99,6 +133,14 @@ def test_decode_strips_and_decodes_utf8_bytes():
     assert _ConcreteService._decode(b"  hello world  \n") == "hello world"
 
 
+def test_decode_empty_bytes_returns_empty_string():
+    assert _ConcreteService._decode(b"") == ""
+
+
+def test_decode_whitespace_only_returns_empty_string():
+    assert _ConcreteService._decode(b"   \n\t  ") == ""
+
+
 def test_decode_handles_invalid_utf8_with_replacement():
     result = _ConcreteService._decode(b"\xff\xfe")
-    assert isinstance(result, str)
+    assert "�" in result

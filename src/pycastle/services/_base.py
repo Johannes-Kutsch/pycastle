@@ -19,7 +19,7 @@ class _SubprocessService:
             return subprocess.run(cmd, cwd=cwd, **kwargs)  # type: ignore[call-overload]
         except subprocess.TimeoutExpired as exc:
             raise self._timeout_error_class(
-                f"command timed out after {self.timeout}s: {exc.cmd}"
+                f"command timed out after {exc.timeout}s: {exc.cmd}"
             ) from exc
         except FileNotFoundError as exc:
             raise self._not_found_error_class(
