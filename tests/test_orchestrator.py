@@ -1333,93 +1333,183 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
     )
 
 
-# ── Issue-183: orchestrator exit handling for usage-limit shutdown ─────────────
+# ── Issue-409: sleep on usage limit instead of exiting ───────────────────────
 
 
-def test_usage_limit_error_exits_with_code_1(tmp_path):
-    """When UsageLimitError is raised by an agent task, orchestrator must exit with code 1."""
-
-    async def _fake_run_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
-
-    with pytest.raises(SystemExit) as exc_info:
-        _run(tmp_path, _fake_run_agent, github_service=_make_github_svc())
-
-    assert exc_info.value.code == 1
-
-
-def test_usage_limit_error_prints_resume_message_to_stderr(tmp_path, capsys):
-    """When UsageLimitError is raised by an agent task, the resume message must be printed to stderr."""
+def test_usage_limit_sleeps_instead_of_exiting(tmp_path):
+    """When AbortedUsageLimit is received, run() must sleep instead of calling sys.exit()."""
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.side_effect = [True, False]
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
         raise UsageLimitError("")
 
-    with pytest.raises(SystemExit):
-        _run(tmp_path, _fake_run_agent, github_service=_make_github_svc())
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            max_iterations=2,
+        )
 
-    err = capsys.readouterr().err
-    assert (
-        "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume."
-        in err
-    )
+    mock_sleep.assert_called_once()
+    assert mock_sleep.call_args[0][0] > 0
+
+
+def test_usage_limit_prints_sleep_message_with_wake_time(tmp_path, capsys):
+    """run() must print 'Usage limit reached. Sleeping until HH:MM. Press Ctrl+C to abort.'"""
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.side_effect = [True, False]
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("")
+
+    with patch("time.sleep"):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            max_iterations=2,
+        )
+
+    out = capsys.readouterr().out
+    assert "Usage limit reached. Sleeping until " in out
+    assert ". Press Ctrl+C to abort." in out
+
+
+def test_usage_limit_loop_continues_after_sleep(tmp_path):
+    """After sleeping on usage limit, run() must continue to the next iteration."""
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.side_effect = [True, False]
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("")
+
+    with patch("time.sleep"):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            max_iterations=2,
+        )
+
+    assert mock_github.has_open_issues_with_label.call_count == 2
+
+
+def test_consecutive_usage_limits_sleep_multiple_times(tmp_path):
+    """Consecutive AbortedUsageLimit outcomes must each trigger a separate sleep."""
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.side_effect = [True, True, False]
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("")
+
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            max_iterations=3,
+        )
+
+    assert mock_sleep.call_count == 2
+
+
+def test_usage_limit_wake_time_is_next_full_hour_plus_two_minutes(tmp_path, capsys):
+    """Wake time must be the next full hour + 2 minutes in local time."""
+    from datetime import datetime as real_datetime
+
+    fixed_now = real_datetime(2026, 1, 1, 14, 30, 0)
+    expected_str = "15:02"
+
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.side_effect = [True, False]
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("")
+
+    with (
+        patch("time.sleep"),
+        patch("pycastle.orchestrator.datetime") as mock_dt,
+    ):
+        mock_dt.now.return_value = fixed_now
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            max_iterations=2,
+        )
+
+    out = capsys.readouterr().out
+    assert expected_str in out
+
+
+def test_usage_limit_sleep_duration_matches_wake_time(tmp_path):
+    """Sleep duration must equal the seconds from now to the next full hour + 2 minutes."""
+    from datetime import datetime as real_datetime
+
+    fixed_now = real_datetime(2026, 1, 1, 14, 30, 0)
+    # next hour: 15:00, wake: 15:02 → 32 minutes = 1920 seconds
+    expected_seconds = 32 * 60
+
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.side_effect = [True, False]
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError("")
+
+    with (
+        patch("time.sleep") as mock_sleep,
+        patch("pycastle.orchestrator.datetime") as mock_dt,
+    ):
+        mock_dt.now.return_value = fixed_now
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            max_iterations=2,
+        )
+
+    mock_sleep.assert_called_once_with(float(expected_seconds))
 
 
 def test_usage_limit_error_not_written_to_errors_log(tmp_path):
-    """UsageLimitError must not be logged to errors.log (unlike regular exceptions)."""
-
+    """UsageLimitError must not be logged to errors.log."""
     logs_dir = tmp_path / "pycastle" / "logs"
     logs_dir.mkdir(parents=True)
     errors_log = logs_dir / "errors.log"
 
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.side_effect = [True, False]
+
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
         raise UsageLimitError("")
 
-    with pytest.raises(SystemExit):
+    with patch("time.sleep"):
         _run(
             tmp_path,
             _fake_run_agent,
-            github_service=_make_github_svc(),
+            github_service=mock_github,
             logs_dir=logs_dir,
+            max_iterations=2,
         )
 
     assert not errors_log.exists() or errors_log.read_text() == "", (
         "UsageLimitError must not be written to errors.log"
-    )
-
-
-def test_usage_limit_error_alongside_regular_exception_exits_with_code_1(
-    tmp_path, capsys
-):
-    """When one task raises UsageLimitError and another raises a regular exception, exit cleanly with code 1."""
-
-    async def _fake_run_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 1, "title": "Limit"}, {"number": 2, "title": "Other"}]
-            )
-        if "Implement Agent #1" in request.name:
-            raise UsageLimitError("")
-        if "Implement Agent #2" in request.name:
-            raise RuntimeError("unrelated failure")
-
-    with pytest.raises(SystemExit) as exc_info:
-        _run(
-            tmp_path,
-            _fake_run_agent,
-            github_service=_make_github_svc(),
-        )
-
-    assert exc_info.value.code == 1
-    err = capsys.readouterr().err
-    assert (
-        "Usage limit reached. Worktrees preserved. Run 'pycastle run' again to resume."
-        in err
     )
 
 
