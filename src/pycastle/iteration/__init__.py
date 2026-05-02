@@ -5,8 +5,7 @@ from ..agent_result import CancellationToken, PreflightFailure
 from ._deps import Deps
 from .implement import branch_for, implement_phase
 from .merge import merge_phase
-from .plan import PlanAFK, PlanHITL
-from .preflight import PreflightReady, preflight_phase
+from .preflight import PreflightAFK, PreflightHITL, PreflightReady, preflight_phase
 from .planning import PlanReady, planning_phase
 
 
@@ -36,7 +35,7 @@ IterationOutcome: TypeAlias = Continue | Done | AbortedHITL | AbortedUsageLimit
 async def run_iteration(deps: Deps) -> IterationOutcome:
     preflight_result = await preflight_phase(deps)
 
-    if isinstance(preflight_result, PlanHITL):
+    if isinstance(preflight_result, PreflightHITL):
         deps.status_display.print(
             f"Preflight issue #{preflight_result.issue_number} requires human intervention. Exiting."
         )
@@ -53,7 +52,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             issues = plan_result.issues
         else:
             issues = open_issues
-    elif isinstance(preflight_result, PlanAFK):
+    elif isinstance(preflight_result, PreflightAFK):
         sha = preflight_result.worktree_sha
         issues = preflight_result.issues
 

@@ -1,4 +1,4 @@
-from pycastle.iteration.plan import strip_stale_blocker_refs
+from pycastle.iteration.preflight import strip_stale_blocker_refs
 
 
 # ── strip_stale_blocker_refs ──────────────────────────────────────────────────
