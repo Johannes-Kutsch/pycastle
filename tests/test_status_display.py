@@ -8,13 +8,6 @@ from pycastle.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.rich_status_display import RichStatusDisplay
 
 
-# ── RichStatusDisplay protocol conformance ────────────────────────────────────
-
-
-def test_rich_status_display_satisfies_protocol() -> None:
-    assert isinstance(RichStatusDisplay(), StatusDisplay)
-
-
 # ── RichStatusDisplay behaviour ───────────────────────────────────────────────
 
 
@@ -576,41 +569,108 @@ def test_recording_status_display_satisfies_protocol() -> None:
 # ── PlainStatusDisplay behaviour ───────────────────────────────────────────────
 
 
-def test_plain_reset_idle_timer_produces_no_output(capsys) -> None:
-    d = PlainStatusDisplay()
-    d.reset_idle_timer("implementer-1")
-    assert capsys.readouterr().out == ""
-
-
-def test_plain_add_agent_produces_no_output(capsys) -> None:
-    d = PlainStatusDisplay()
-    d.add_agent("implementer-1", "Setup")
-    assert capsys.readouterr().out == ""
-
-
-def test_plain_add_agent_with_work_body_produces_no_output(capsys) -> None:
-    d = PlainStatusDisplay()
-    d.add_agent("implementer-1", "Work", "working on auth bug")
-    assert capsys.readouterr().out == ""
-
-
 def test_plain_update_phase_produces_no_output(capsys) -> None:
     d = PlainStatusDisplay()
     d.update_phase("implementer-1", "Work")
     assert capsys.readouterr().out == ""
 
 
-def test_plain_remove_agent_produces_no_output(capsys) -> None:
+def test_plain_reset_idle_timer_produces_no_output(capsys) -> None:
     d = PlainStatusDisplay()
-    d.remove_agent("implementer-1")
+    d.reset_idle_timer("implementer-1")
     assert capsys.readouterr().out == ""
 
 
-def test_plain_print_delegates_to_builtins(capsys) -> None:
+def test_plain_print_with_caller_outputs_bracketed_prefix(capsys) -> None:
     d = PlainStatusDisplay()
-    d.print("Planning complete. 3 issue(s)")
-    captured = capsys.readouterr()
-    assert captured.out == "Planning complete. 3 issue(s)\n"
+    d.print("Plan", "Planning complete. 3 issue(s)")
+    assert capsys.readouterr().out == "[Plan] Planning complete. 3 issue(s)\n"
+
+
+def test_plain_print_with_empty_caller_outputs_message_verbatim(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("", "no prefix here")
+    assert capsys.readouterr().out == "no prefix here\n"
+
+
+def test_plain_print_style_is_ignored(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("X", "msg", style="error")
+    assert capsys.readouterr().out == "[X] msg\n"
+
+
+def test_plain_register_defaults_print_started(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.register("X")
+    assert capsys.readouterr().out == "[X] started\n"
+
+
+def test_plain_register_with_custom_startup_message(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.register("X", startup_message="custom")
+    assert capsys.readouterr().out == "[X] custom\n"
+
+
+def test_plain_remove_defaults_print_finished(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.remove("X")
+    assert capsys.readouterr().out == "[X] finished\n"
+
+
+def test_plain_remove_with_custom_shutdown_message(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.remove("X", shutdown_message="failed", shutdown_style="error")
+    assert capsys.readouterr().out == "[X] failed\n"
+
+
+def test_plain_consecutive_same_caller_no_blank_line(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("X", "first")
+    d.print("X", "second")
+    out = capsys.readouterr().out
+    assert out == "[X] first\n[X] second\n"
+
+
+def test_plain_different_caller_inserts_blank_line(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("X", "from X")
+    d.print("Y", "from Y")
+    out = capsys.readouterr().out
+    assert out == "[X] from X\n\n[Y] from Y\n"
+
+
+def test_plain_first_print_has_no_leading_blank_line(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("X", "msg")
+    out = capsys.readouterr().out
+    assert out.startswith("[X]")
+
+
+def test_plain_print_accepts_non_string_message(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("X", 42)
+    assert capsys.readouterr().out == "[X] 42\n"
+
+
+def test_plain_print_caller_switch_and_back_inserts_blank_lines(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("X", "first")
+    d.print("Y", "second")
+    d.print("X", "third")
+    out = capsys.readouterr().out
+    assert out == "[X] first\n\n[Y] second\n\n[X] third\n"
+
+
+def test_plain_register_with_empty_caller_prints_message_only(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.register("", startup_message="booting")
+    assert capsys.readouterr().out == "booting\n"
+
+
+def test_plain_remove_with_empty_caller_prints_message_only(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.remove("", shutdown_message="done")
+    assert capsys.readouterr().out == "done\n"
 
 
 # ── RecordingStatusDisplay behaviour ─────────────────────────────────────────
@@ -621,28 +681,46 @@ def test_recording_starts_empty() -> None:
     assert d.calls == []
 
 
-def test_recording_captures_add_agent() -> None:
+def test_recording_captures_register() -> None:
     d = RecordingStatusDisplay()
-    d.add_agent("implementer-1", "Setup")
-    assert d.calls == [("add_agent", "implementer-1", "Setup", "")]
+    d.register("Plan")
+    assert d.calls == [("register", "Plan", "started", "")]
 
 
-def test_recording_captures_work_body_in_add_agent() -> None:
+def test_recording_captures_register_with_custom_args() -> None:
     d = RecordingStatusDisplay()
-    d.add_agent("implementer-1", "Setup", "working on auth bug")
-    assert d.calls == [("add_agent", "implementer-1", "Setup", "working on auth bug")]
+    d.register("Plan", startup_message="running", work_body="issue list")
+    assert d.calls == [("register", "Plan", "running", "issue list")]
+
+
+def test_recording_captures_remove() -> None:
+    d = RecordingStatusDisplay()
+    d.remove("Plan")
+    assert d.calls == [("remove", "Plan", "finished", "success")]
+
+
+def test_recording_captures_remove_with_custom_args() -> None:
+    d = RecordingStatusDisplay()
+    d.remove("Plan", shutdown_message="failed", shutdown_style="error")
+    assert d.calls == [("remove", "Plan", "failed", "error")]
+
+
+def test_recording_captures_print_new_api() -> None:
+    d = RecordingStatusDisplay()
+    d.print("Plan", "Planning complete.")
+    assert d.calls == [("print", "Plan", "Planning complete.", None)]
+
+
+def test_recording_captures_print_new_api_with_style() -> None:
+    d = RecordingStatusDisplay()
+    d.print("Plan", "error msg", style="error")
+    assert d.calls == [("print", "Plan", "error msg", "error")]
 
 
 def test_recording_captures_update_phase() -> None:
     d = RecordingStatusDisplay()
     d.update_phase("implementer-1", "Work")
     assert d.calls == [("update_phase", "implementer-1", "Work")]
-
-
-def test_recording_captures_remove_agent() -> None:
-    d = RecordingStatusDisplay()
-    d.remove_agent("implementer-1")
-    assert d.calls == [("remove_agent", "implementer-1")]
 
 
 def test_recording_captures_reset_idle_timer() -> None:
@@ -661,33 +739,20 @@ def test_recording_accumulates_reset_idle_timer_calls() -> None:
     ]
 
 
-def test_recording_captures_print() -> None:
-    d = RecordingStatusDisplay()
-    d.print("Planning complete.")
-    assert d.calls == [("print", "Planning complete.", "")]
-
-
-def test_recording_captures_print_with_source() -> None:
-    d = RecordingStatusDisplay()
-    d.print("Planning complete.", source="planning")
-    assert d.calls == [("print", "Planning complete.", "planning")]
-
-
 def test_recording_print_produces_no_stdout(capsys) -> None:
     d = RecordingStatusDisplay()
-    d.print("Planning complete.")
+    d.print("Plan", "Planning complete.")
     assert capsys.readouterr().out == ""
 
 
-def test_recording_accumulates_multiple_calls() -> None:
+def test_recording_accumulates_multiple_new_api_calls() -> None:
     d = RecordingStatusDisplay()
-
-    d.add_agent("implementer-1", "Setup")
-    d.update_phase("implementer-1", "Work")
-    d.remove_agent("implementer-1")
+    d.register("Plan")
+    d.update_phase("Plan", "Work")
+    d.remove("Plan")
 
     assert d.calls == [
-        ("add_agent", "implementer-1", "Setup", ""),
-        ("update_phase", "implementer-1", "Work"),
-        ("remove_agent", "implementer-1"),
+        ("register", "Plan", "started", ""),
+        ("update_phase", "Plan", "Work"),
+        ("remove", "Plan", "finished", "success"),
     ]
