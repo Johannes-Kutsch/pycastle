@@ -15,7 +15,6 @@ from pycastle.services import GitCommandError, GitService
 from pycastle.services import GithubNotFoundError, GithubService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 from pycastle.orchestrator import (
-    delete_merged_branches,
     prune_orphan_worktrees,
     run,
     wait_for_clean_working_tree,
@@ -1000,51 +999,6 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
     assert args.get("OUTPUT") == "FAILED tests/test_bar.py::test_something", (
         f"OUTPUT mismatch; got {args.get('OUTPUT')!r}"
     )
-
-
-# ── Issue-150: delete_merged_branches ────────────────────────────────────────
-
-
-def test_delete_merged_branches_deletes_ancestor_branch(tmp_path):
-    mock_svc = MagicMock(spec=GitService)
-    mock_svc.is_ancestor.return_value = True
-    delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc)
-    mock_svc.delete_branch.assert_called_once_with("issue/1", tmp_path)
-
-
-def test_delete_merged_branches_skips_non_ancestor_branch(tmp_path):
-    mock_svc = MagicMock(spec=GitService)
-    mock_svc.is_ancestor.return_value = False
-    delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc)
-    mock_svc.delete_branch.assert_not_called()
-
-
-def test_delete_merged_branches_continues_after_git_command_error(tmp_path):
-    mock_svc = MagicMock(spec=GitService)
-    mock_svc.is_ancestor.return_value = True
-    mock_svc.delete_branch.side_effect = [
-        GitCommandError("fail", returncode=1, stderr=""),
-        None,
-    ]
-    delete_merged_branches(["issue/1", "issue/2"], tmp_path, git_service=mock_svc)
-    assert mock_svc.delete_branch.call_count == 2
-
-
-def test_delete_merged_branches_prints_warning_to_stderr_on_error(tmp_path, capsys):
-    mock_svc = MagicMock(spec=GitService)
-    mock_svc.is_ancestor.return_value = True
-    mock_svc.delete_branch.side_effect = GitCommandError(
-        "fail", returncode=1, stderr=""
-    )
-    delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc)
-    assert "issue/1" in capsys.readouterr().err
-
-
-def test_delete_merged_branches_prints_deleted_branch_name(tmp_path, capsys):
-    mock_svc = MagicMock(spec=GitService)
-    mock_svc.is_ancestor.return_value = True
-    delete_merged_branches(["issue/1"], tmp_path, git_service=mock_svc)
-    assert "issue/1" in capsys.readouterr().out
 
 
 def test_clean_merged_branches_are_deleted_after_try_merge(tmp_path):
@@ -2118,22 +2072,6 @@ def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
 
 
 # ── StatusDisplay routing ─────────────────────────────────────────────────────
-
-
-def test_delete_merged_branches_routes_deleted_message_through_status_display(
-    tmp_path, capsys
-):
-    """delete_merged_branches must route 'Deleted merged branch' through status_display.print()."""
-    recording = RecordingStatusDisplay()
-    mock_svc = MagicMock(spec=GitService)
-    mock_svc.is_ancestor.return_value = True
-    delete_merged_branches(
-        ["issue/1"], tmp_path, git_service=mock_svc, status_display=recording
-    )
-
-    print_messages = [msg for kind, msg, *_ in recording.calls if kind == "print"]
-    assert any("issue/1" in msg for msg in print_messages)
-    assert "issue/1" not in capsys.readouterr().out
 
 
 def test_wait_for_clean_working_tree_routes_dirty_message_through_status_display(

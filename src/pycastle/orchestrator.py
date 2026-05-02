@@ -61,25 +61,6 @@ def prune_orphan_worktrees(
         worktrees_dir.rmdir()
 
 
-def delete_merged_branches(
-    branches: list[str],
-    repo_root: Path,
-    git_service: GitService | None = None,
-    status_display: StatusDisplay | None = None,
-    cfg: Config | None = None,
-) -> None:
-    svc = git_service or GitService(cfg or load_config())
-    sd = status_display or NullStatusDisplay()
-    for branch in branches:
-        if not svc.is_ancestor(branch, repo_root):
-            continue
-        try:
-            svc.delete_branch(branch, repo_root)
-            sd.print(f"Deleted merged branch: {branch}", source="merge-cleanup")
-        except GitCommandError as e:
-            print(f"Warning: could not delete branch {branch!r}: {e}", file=sys.stderr)
-
-
 def _get_repo(repo_root: Path) -> str:
     try:
         result = subprocess.run(
