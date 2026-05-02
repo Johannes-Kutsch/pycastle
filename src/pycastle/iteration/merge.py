@@ -36,13 +36,13 @@ def _delete_merged_branches(branches: list[str], deps: Deps) -> None:
 
         try:
             deps.git_svc.delete_branch(branch, deps.repo_root)
-            deps.status_display.print(f"Deleted merged branch: {branch}", source="merge-cleanup")
+            deps.status_display.print(f"Deleted merged branch: {branch}", source="merge-cleanup")  # type: ignore[call-arg]
         except GitCommandError as e:
             print(f"Warning: could not delete branch {branch!r}: {e}", file=sys.stderr)
 
 
 async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
-    deps.status_display.add_agent("merge", "Merging")
+    deps.status_display.add_agent("merge", "Merging")  # type: ignore[attr-defined]
     await _wait_for_clean_working_tree(deps)
 
     conflict_issues: list[dict] = []
@@ -60,12 +60,12 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
     _delete_merged_branches([branch_for(i["number"]) for i in clean_issues], deps)
 
     if not conflict_issues:
-        deps.status_display.remove_agent("merge")
+        deps.status_display.remove_agent("merge")  # type: ignore[attr-defined]
     else:
         target_branch = deps.git_svc.get_current_branch(deps.repo_root)
         sha = deps.git_svc.get_head_sha(deps.repo_root)
         async with branch_worktree("merge-sandbox", MERGE_SANDBOX, sha, deps) as sandbox_path:
-            deps.status_display.remove_agent("merge")
+            deps.status_display.remove_agent("merge")  # type: ignore[attr-defined]
             merger_result = await deps.agent_runner.run(
                 RunRequest(
                     name="Merger",
@@ -92,7 +92,7 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
             deps.git_svc.fast_forward_branch(
                 deps.repo_root, target_branch, MERGE_SANDBOX
             )
-        deps.status_display.print("Branches merged.", source="merge-complete")
+        deps.status_display.print("Branches merged.", source="merge-complete")  # type: ignore[call-arg]
         _delete_merged_branches(
             [branch_for(i["number"]) for i in conflict_issues], deps
         )
