@@ -5,6 +5,13 @@ from .git_service import (
     GitServiceError,
     GitTimeoutError,
 )
+from .github_service import (
+    GithubCommandError,
+    GithubNotFoundError,
+    GithubService,
+    GithubServiceError,
+    GithubTimeoutError,
+)
 
 __all__ = [
     "GitCommandError",
@@ -12,4 +19,9 @@ __all__ = [
     "GitService",
     "GitServiceError",
     "GitTimeoutError",
+    "GithubCommandError",
+    "GithubNotFoundError",
+    "GithubService",
+    "GithubServiceError",
+    "GithubTimeoutError",
 ]

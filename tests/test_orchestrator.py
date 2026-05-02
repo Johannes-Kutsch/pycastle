@@ -12,7 +12,7 @@ from pycastle.claude_service import ClaudeService
 from pycastle.config import Config, StageOverride
 from pycastle.errors import ClaudeServiceError, ConfigValidationError, UsageLimitError
 from pycastle.services import GitCommandError, GitService
-from pycastle.github_service import GithubNotFoundError, GithubService
+from pycastle.services import GithubNotFoundError, GithubService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 from pycastle.orchestrator import (
     delete_merged_branches,

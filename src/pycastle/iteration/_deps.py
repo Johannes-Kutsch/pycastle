@@ -9,7 +9,7 @@ from ..agent_result import CancellationToken, PreflightFailure
 from ..agent_runner import AgentRunnerProtocol
 from ..config import Config
 from ..services import GitService
-from ..github_service import GithubService
+from ..services import GithubService
 
 
 class Logger(Protocol):
