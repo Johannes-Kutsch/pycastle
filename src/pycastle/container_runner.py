@@ -11,7 +11,6 @@ import threading
 from pathlib import Path
 
 import docker
-from rich.text import Text
 from docker.models.containers import Container as DockerContainer
 
 from .config import Config
@@ -57,16 +56,6 @@ def _build_claude_command(model: str = "", effort: str = "") -> str:
         flags += f" --effort {effort}"
     return f"claude {flags} < /tmp/.pycastle_prompt"
 
-
-def _build_agent_prefix(name: str) -> Text:
-    """Return a styled Text object for the agent output prefix, e.g. ``[Implementer #1] ``."""
-    msg = Text()
-    msg.append("[", style="bold")
-    for segment in re.split(r"(\d+)", name):
-        if segment:
-            msg.append(segment, style="bold cyan" if segment.isdigit() else "bold")
-    msg.append("] ", style="bold")
-    return msg
 
 
 class ContainerRunner:

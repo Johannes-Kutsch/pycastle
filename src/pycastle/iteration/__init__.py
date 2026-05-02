@@ -34,8 +34,10 @@ IterationOutcome: TypeAlias = Continue | Done | AbortedHITL | AbortedUsageLimit
 
 async def run_iteration(deps: Deps) -> IterationOutcome:
     deps.status_display.register("Preflight")
-    preflight_result = await preflight_phase(deps)
-    deps.status_display.remove("Preflight")
+    try:
+        preflight_result = await preflight_phase(deps)
+    finally:
+        deps.status_display.remove("Preflight")
 
     if isinstance(preflight_result, PreflightHITL):
         deps.status_display.print(
@@ -51,8 +53,10 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         open_issues = preflight_result.issues
         if len(open_issues) >= 2:
             deps.status_display.register("Plan")
-            plan_result = await planning_phase(deps, sha, open_issues)
-            deps.status_display.remove("Plan")
+            try:
+                plan_result = await planning_phase(deps, sha, open_issues)
+            finally:
+                deps.status_display.remove("Plan")
             sha = plan_result.worktree_sha
             issues = plan_result.issues
         else:
@@ -72,8 +76,10 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
     token = CancellationToken()
     deps.status_display.register("Implement")
-    impl_result = await implement_phase(issues, sha, deps, token=token)
-    deps.status_display.remove("Implement")
+    try:
+        impl_result = await implement_phase(issues, sha, deps, token=token)
+    finally:
+        deps.status_display.remove("Implement")
 
     if impl_result.usage_limit_hit:
         return AbortedUsageLimit()

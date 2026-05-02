@@ -118,7 +118,7 @@ def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
     completed_agents: list[str] = []
 
     async def _side_effect(request: RunRequest):
-        if "Implementer #1" in request.name:
+        if "Implement Agent #1" in request.name:
             raise UsageLimitError("")
         completed_agents.append(request.name)
         return "<promise>COMPLETE</promise>"
@@ -128,8 +128,8 @@ def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
     deps = _make_deps(tmp_path, fake)
     asyncio.run(implement_phase(issues, None, deps))
 
-    assert any("Implementer #2" in n for n in completed_agents), (
-        f"Sibling Implementer #2 must complete before returning; completed={completed_agents}"
+    assert any("Implement Agent #2" in n for n in completed_agents), (
+        f"Sibling Implement Agent #2 must complete before returning; completed={completed_agents}"
     )
 
 
@@ -156,7 +156,7 @@ def test_implement_phase_exception_goes_to_errors(tmp_path):
     issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
 
     async def _side_effect(request: RunRequest):
-        if "Implementer #1" in request.name or "Reviewer #1" in request.name:
+        if "Implement Agent #1" in request.name or "Review Agent #1" in request.name:
             return "<promise>COMPLETE</promise>"
         raise RuntimeError("agent failed")
 
@@ -238,7 +238,7 @@ def test_implement_phase_logs_implementer_output_on_success(tmp_path):
     asyncio.run(implement_phase(issues, None, deps))
 
     assert len(logger.agent_outputs) == 1
-    assert logger.agent_outputs[0] == ("Implementer #7", agent_output)
+    assert logger.agent_outputs[0] == ("Implement Agent #7", agent_output)
 
 
 def test_implement_phase_reviewer_usage_limit_signals_in_result(tmp_path):
@@ -246,7 +246,7 @@ def test_implement_phase_reviewer_usage_limit_signals_in_result(tmp_path):
     issues = [{"number": 1, "title": "Fix A"}]
 
     async def _side_effect(request: RunRequest):
-        if "Implementer" in request.name:
+        if "Implement Agent" in request.name:
             return "<promise>COMPLETE</promise>"
         raise UsageLimitError("")
 
@@ -270,7 +270,7 @@ def test_run_issue_derives_branch_from_issue_number(tmp_path):
     deps = _make_deps(tmp_path, fake)
     asyncio.run(run_issue(issue, deps))
 
-    implementer_call = next(c for c in fake.calls if "Implementer" in c.name)
+    implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
     assert implementer_call.branch == "pycastle/issue-7"
     assert implementer_call.prompt_args["BRANCH"] == "pycastle/issue-7"
 
@@ -283,7 +283,7 @@ def test_run_issue_passes_feedback_commands_to_implementer(tmp_path):
     deps = _make_deps(tmp_path, fake)
     asyncio.run(run_issue(issue, deps))
 
-    implementer_call = next(c for c in fake.calls if "Implementer" in c.name)
+    implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
     assert "FEEDBACK_COMMANDS" in implementer_call.prompt_args
 
 
@@ -297,7 +297,7 @@ def test_run_issue_feedback_commands_include_backtick_wrapped_implement_checks(
     deps = _make_deps(tmp_path, fake)
     asyncio.run(run_issue(issue, deps))
 
-    implementer_call = next(c for c in fake.calls if "Implementer" in c.name)
+    implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
     feedback_commands = implementer_call.prompt_args["FEEDBACK_COMMANDS"]
     for cmd in _cfg.implement_checks:
         assert f"`{cmd}`" in feedback_commands
@@ -311,7 +311,7 @@ def test_run_issue_implementer_invoked_with_skip_preflight_true(tmp_path):
     deps = _make_deps(tmp_path, fake)
     asyncio.run(run_issue(issue, deps))
 
-    impl_call = next(c for c in fake.calls if "Implementer" in c.name)
+    impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
     assert impl_call.skip_preflight is True
 
 
@@ -323,7 +323,7 @@ def test_run_issue_reviewer_invoked_with_skip_preflight_true(tmp_path):
     deps = _make_deps(tmp_path, fake)
     asyncio.run(run_issue(issue, deps))
 
-    rev_call = next(c for c in fake.calls if "Reviewer" in c.name)
+    rev_call = next(c for c in fake.calls if "Review Agent" in c.name)
     assert rev_call.skip_preflight is True
 
 
@@ -360,7 +360,7 @@ def test_run_issue_raises_agent_timeout_error_when_implementer_exhausts_retries(
     """When implementer raises AgentTimeoutError, run_issue must propagate it."""
 
     async def _side_effect(request: RunRequest):
-        if "Implementer" in request.name:
+        if "Implement Agent" in request.name:
             raise AgentTimeoutError("timeout")
         return "<promise>COMPLETE</promise>"
 
@@ -376,7 +376,7 @@ def test_run_issue_raises_agent_timeout_error_when_reviewer_exhausts_retries(tmp
     """When reviewer raises AgentTimeoutError, run_issue must propagate it."""
 
     async def _side_effect(request: RunRequest):
-        if "Implementer" in request.name:
+        if "Implement Agent" in request.name:
             return "<promise>COMPLETE</promise>"
         raise AgentTimeoutError("timeout")
 
@@ -393,7 +393,7 @@ def test_implement_phase_implementer_timeout_tracked_as_error(tmp_path):
     issues = [{"number": 3, "title": "Fix C"}]
 
     async def _side_effect(request: RunRequest):
-        if "Implementer" in request.name:
+        if "Implement Agent" in request.name:
             raise AgentTimeoutError("timeout")
         return "<promise>COMPLETE</promise>"
 
@@ -412,7 +412,7 @@ def test_implement_phase_reviewer_timeout_does_not_complete_issue(tmp_path):
     issues = [{"number": 4, "title": "Fix D"}]
 
     async def _side_effect(request: RunRequest):
-        if "Implementer" in request.name:
+        if "Implement Agent" in request.name:
             return "<promise>COMPLETE</promise>"
         raise AgentTimeoutError("timeout")
 

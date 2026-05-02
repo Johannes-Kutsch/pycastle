@@ -54,7 +54,7 @@ async def run_issue(
 
     result = await _bounded_run_agent(
         RunRequest(
-            name=f"Implementer #{issue['number']}",
+            name=f"Implement Agent #{issue['number']}",
             prompt_file=deps.cfg.prompts_dir / "implement-prompt.md",
             mount_path=deps.repo_root,
             prompt_args=prompt_args,
@@ -74,11 +74,11 @@ async def run_issue(
         return result
 
     assert_complete(result)
-    deps.logger.log_agent_output(f"Implementer #{issue['number']}", result)
+    deps.logger.log_agent_output(f"Implement Agent #{issue['number']}", result)
 
     review_result = await _bounded_run_agent(
         RunRequest(
-            name=f"Reviewer #{issue['number']}",
+            name=f"Review Agent #{issue['number']}",
             prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
             mount_path=deps.repo_root,
             prompt_args=prompt_args,

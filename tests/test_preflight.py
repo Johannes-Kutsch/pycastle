@@ -333,7 +333,7 @@ def test_preflight_phase_uses_pre_flight_as_run_preflight_name(
     asyncio.run(preflight_phase(deps))
 
     assert len(fake.preflight_calls) == 1
-    assert fake.preflight_calls[0]["name"] == "Pre-Flight"
+    assert fake.preflight_calls[0]["name"] == "Preflight Agent"
 
 
 def test_preflight_phase_passes_checking_work_body_to_run_preflight(

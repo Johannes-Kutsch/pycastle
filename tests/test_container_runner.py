@@ -10,7 +10,6 @@ import pytest
 from pycastle.config import Config
 from pycastle.container_runner import (
     ContainerRunner,
-    _build_agent_prefix,
     _build_claude_command,
 )
 from pycastle.errors import AgentTimeoutError, UsageLimitError
@@ -1184,45 +1183,6 @@ def test_run_streaming_print_uses_agent_name_as_caller(tmp_path):
     assert len(print_calls) == 1
     assert print_calls[0][1] == "Implementer #1"
     assert print_calls[0][2] == "Working"
-
-
-def test_build_agent_prefix_plain_text():
-    assert _build_agent_prefix("Implementer #1").plain == "[Implementer #1] "
-
-
-def test_build_agent_prefix_digits_are_bold_cyan():
-    prefix = _build_agent_prefix("Implementer #42")
-    plain = prefix.plain  # "[Implementer #42] "
-    digit_pos = plain.index("42")
-    cyan_spans = [s for s in prefix._spans if "cyan" in str(s.style)]
-    assert any(s.start <= digit_pos < s.end for s in cyan_spans)
-
-
-def test_build_agent_prefix_brackets_are_bold():
-    prefix = _build_agent_prefix("Bot")
-    plain = prefix.plain  # "[Bot] "
-    bracket_pos = plain.index("[")
-    bold_spans = [s for s in prefix._spans if str(s.style) == "bold"]
-    assert any(s.start <= bracket_pos < s.end for s in bold_spans)
-
-
-def test_build_agent_prefix_no_digits_name_is_bold():
-    prefix = _build_agent_prefix("Bot")
-    plain = prefix.plain  # "[Bot] "
-    name_pos = plain.index("Bot")
-    bold_spans = [s for s in prefix._spans if str(s.style) == "bold"]
-    assert any(s.start <= name_pos < s.end for s in bold_spans)
-
-
-def test_build_agent_prefix_multiple_digit_segments():
-    prefix = _build_agent_prefix("Agent 1 Group 2")
-    plain = prefix.plain
-    for digit in ("1", "2"):
-        pos = plain.index(digit)
-        cyan_spans = [s for s in prefix._spans if "cyan" in str(s.style)]
-        assert any(s.start <= pos < s.end for s in cyan_spans), (
-            f"digit {digit!r} not bold-cyan"
-        )
 
 
 # ── Issue 384: status_display constructor injection ──────────────────────────

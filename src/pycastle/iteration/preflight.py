@@ -108,7 +108,7 @@ async def preflight_phase(deps: Deps) -> PreflightResult:
 
     async with detached_worktree("pre-flight-sandbox", sha, deps) as wt:
         failures = await deps.agent_runner.run_preflight(
-            name="Pre-Flight",
+            name="Preflight Agent",
             mount_path=wt,
             stage="PREFLIGHT",
             status_display=deps.status_display,
