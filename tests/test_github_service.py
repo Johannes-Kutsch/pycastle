@@ -373,6 +373,66 @@ def test_has_open_issues_with_label_raises_github_timeout_error_on_timeout():
             svc.has_open_issues_with_label("ready-for-agent")
 
 
+# ── get_issue_title() ─────────────────────────────────────────────────────────
+
+
+def test_get_issue_title_returns_title_string():
+    svc = GithubService("owner/repo", _cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"Fix auth bug\n", stderr=b""),
+    ):
+        assert svc.get_issue_title(42) == "Fix auth bug"
+
+
+def test_get_issue_title_strips_trailing_whitespace():
+    svc = GithubService("owner/repo", _cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"  Fix auth bug  \n", stderr=b""),
+    ):
+        assert svc.get_issue_title(42) == "Fix auth bug"
+
+
+def test_get_issue_title_calls_correct_api_endpoint():
+    svc = GithubService("owner/repo", _cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"title\n", stderr=b""),
+    ) as m:
+        svc.get_issue_title(7)
+    cmd = m.call_args[0][0]
+    assert "repos/owner/repo/issues/7" in " ".join(cmd)
+    assert ".title" in cmd
+
+
+def test_get_issue_title_raises_github_command_error_on_failure():
+    svc = GithubService("owner/repo", _cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=1, stdout=b"", stderr=b"not found"),
+    ):
+        with pytest.raises(GithubCommandError):
+            svc.get_issue_title(42)
+
+
+def test_get_issue_title_raises_github_timeout_error_on_timeout():
+    svc = GithubService("owner/repo", _cfg)
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
+    ):
+        with pytest.raises(GithubTimeoutError):
+            svc.get_issue_title(42)
+
+
+def test_get_issue_title_raises_github_not_found_error_when_gh_missing():
+    svc = GithubService("owner/repo", _cfg)
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        with pytest.raises(GithubNotFoundError):
+            svc.get_issue_title(42)
+
+
 # ── get_labels() ──────────────────────────────────────────────────────────────
 
 
@@ -492,6 +552,16 @@ def test_get_open_issue_numbers_raises_github_command_error_on_non_numeric_outpu
     with patch(
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"abc\n", stderr=b""),
+    ):
+        with pytest.raises(GithubCommandError):
+            svc.get_open_issue_numbers()
+
+
+def test_get_open_issue_numbers_raises_github_command_error_on_blank_line_in_output():
+    svc = GithubService("owner/repo", _cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"1\n\n2\n", stderr=b""),
     ):
         with pytest.raises(GithubCommandError):
             svc.get_open_issue_numbers()
@@ -707,4 +777,11 @@ def test_get_open_issues_raises_github_timeout_error_on_timeout():
         side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
     ):
         with pytest.raises(GithubTimeoutError):
+            svc.get_open_issues("ready-for-agent")
+
+
+def test_get_open_issues_raises_github_not_found_error_when_gh_missing():
+    svc = GithubService("owner/repo", _cfg)
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        with pytest.raises(GithubNotFoundError):
             svc.get_open_issues("ready-for-agent")
