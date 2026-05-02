@@ -479,6 +479,7 @@ def test_agent_worktree_creates_worktree_on_entry_and_removes_on_clean_exit(
     assert args[2] == "pycastle/issue-1"
     assert args[3] == "abc123"
     deps.git_svc.remove_worktree.assert_called_once()
+    assert not overlay.exists()
 
 
 def test_agent_worktree_preserves_worktree_when_token_wants_preserved(
@@ -500,6 +501,7 @@ def test_agent_worktree_preserves_worktree_when_token_wants_preserved(
     asyncio.run(_run())
 
     deps.git_svc.remove_worktree.assert_not_called()
+    assert not overlay.exists()
 
 
 def test_agent_worktree_preserves_worktree_when_dirty(tmp_path, monkeypatch):
@@ -519,6 +521,7 @@ def test_agent_worktree_preserves_worktree_when_dirty(tmp_path, monkeypatch):
     asyncio.run(_run())
 
     deps.git_svc.remove_worktree.assert_not_called()
+    assert not overlay.exists()
 
 
 def test_agent_worktree_always_removes_gitdir_overlay(tmp_path, monkeypatch):
@@ -536,5 +539,27 @@ def test_agent_worktree_always_removes_gitdir_overlay(tmp_path, monkeypatch):
             pass
 
     asyncio.run(_run())
+
+    assert not overlay.exists()
+
+
+def test_agent_worktree_removes_gitdir_overlay_even_when_body_raises(
+    tmp_path, monkeypatch
+):
+    """_agent_worktree removes the gitdir overlay even when the body raises."""
+    overlay = _make_overlay(tmp_path)
+    monkeypatch.setattr(
+        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
+    )
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    deps.git_svc.is_working_tree_clean.return_value = True
+    token = CancellationToken()
+
+    async def _run():
+        async with _agent_worktree("pycastle/issue-5", None, token, deps):
+            raise RuntimeError("body failure")
+
+    with pytest.raises(RuntimeError, match="body failure"):
+        asyncio.run(_run())
 
     assert not overlay.exists()
