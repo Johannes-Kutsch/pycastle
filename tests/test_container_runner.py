@@ -6,10 +6,12 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from rich.text import Text
 
 from pycastle.config import Config
 from pycastle.container_runner import (
     ContainerRunner,
+    _build_agent_prefix,
     _build_claude_command,
 )
 from pycastle.errors import AgentTimeoutError, UsageLimitError
@@ -1099,7 +1101,7 @@ def test_run_streaming_in_work_phase_prints_complete_turn(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
-    assert print_calls[0][1] == "[Implementer #1] Analysing issues\n"
+    assert print_calls[0][1].plain == "[Implementer #1] Analysing issues\n"
 
 
 def test_run_streaming_without_print_output_does_not_call_print(tmp_path):
@@ -1137,7 +1139,7 @@ def test_work_calls_print_for_complete_assistant_turn(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
-    assert print_calls[0][1] == "[Implementer #3] Fixing bug\n"
+    assert print_calls[0][1].plain == "[Implementer #3] Fixing bug\n"
 
 
 def test_work_does_not_call_print_for_tool_use_turns(tmp_path):
@@ -1176,5 +1178,60 @@ def test_run_streaming_multiple_turns_prints_each_one(tmp_path):
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 2
-    assert print_calls[0][1] == "[Bot] First turn\n"
-    assert print_calls[1][1] == "[Bot] Second turn\n"
+    assert print_calls[0][1].plain == "[Bot] First turn\n"
+    assert print_calls[1][1].plain == "[Bot] Second turn\n"
+
+
+# ── Issue 377: rich Text prefix with agent-name source ────────────────────────
+
+
+def test_run_streaming_print_uses_rich_text_object_with_agent_name_source(tmp_path):
+    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
+    runner = _streaming_runner("Implementer #1", [json_line], tmp_path)
+    display = RecordingStatusDisplay()
+
+    runner.run_streaming(display, print_output=True)
+
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    assert len(print_calls) == 1
+    assert isinstance(print_calls[0][1], Text)
+    assert print_calls[0][2] == "Implementer #1"
+
+
+def test_build_agent_prefix_plain_text():
+    assert _build_agent_prefix("Implementer #1").plain == "[Implementer #1] "
+
+
+def test_build_agent_prefix_digits_are_bold_cyan():
+    prefix = _build_agent_prefix("Implementer #42")
+    plain = prefix.plain  # "[Implementer #42] "
+    digit_pos = plain.index("42")
+    cyan_spans = [s for s in prefix._spans if "cyan" in str(s.style)]
+    assert any(s.start <= digit_pos < s.end for s in cyan_spans)
+
+
+def test_build_agent_prefix_brackets_are_bold():
+    prefix = _build_agent_prefix("Bot")
+    plain = prefix.plain  # "[Bot] "
+    bracket_pos = plain.index("[")
+    bold_spans = [s for s in prefix._spans if str(s.style) == "bold"]
+    assert any(s.start <= bracket_pos < s.end for s in bold_spans)
+
+
+def test_build_agent_prefix_no_digits_name_is_bold():
+    prefix = _build_agent_prefix("Bot")
+    plain = prefix.plain  # "[Bot] "
+    name_pos = plain.index("Bot")
+    bold_spans = [s for s in prefix._spans if str(s.style) == "bold"]
+    assert any(s.start <= name_pos < s.end for s in bold_spans)
+
+
+def test_build_agent_prefix_multiple_digit_segments():
+    prefix = _build_agent_prefix("Agent 1 Group 2")
+    plain = prefix.plain
+    for digit in ("1", "2"):
+        pos = plain.index(digit)
+        cyan_spans = [s for s in prefix._spans if "cyan" in str(s.style)]
+        assert any(s.start <= pos < s.end for s in cyan_spans), (
+            f"digit {digit!r} not bold-cyan"
+        )
