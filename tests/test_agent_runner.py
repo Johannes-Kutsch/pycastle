@@ -885,7 +885,7 @@ def test_agent_runner_run_preflight_cycles_phase_to_preflight_before_checks(tmp_
     )
 
     phase_updates = [c for c in display.calls if c[0] == "update_phase"]
-    assert any(c[2] == "Pre-flight" for c in phase_updates)
+    assert any(c[2] == "Running ruff Checks" for c in phase_updates)
 
 
 def test_agent_runner_run_preflight_removes_status_row_when_checks_fail(tmp_path):
