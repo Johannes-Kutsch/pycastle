@@ -671,9 +671,6 @@ def test_worktree_name_for_branch_does_not_match_issue_number_in_non_pycastle_br
 
 
 def test_worktree_path_constructs_correct_path(tmp_path):
-    from types import SimpleNamespace
-    from pycastle.config import Config
-
     cfg = Config(pycastle_dir=".pycastle")
     deps = SimpleNamespace(repo_root=tmp_path, cfg=cfg)
     result = worktree_path("issue-42", deps)
@@ -690,58 +687,71 @@ def test_worktree_path_respects_configured_pycastle_dir(tmp_path):
 # ── detached_worktree ─────────────────────────────────────────────────────────
 
 
-def _make_detached_deps(tmp_path):
+@pytest.fixture
+def detached_deps(tmp_path):
     mock_svc = MagicMock(spec=GitService)
     cfg = Config(pycastle_dir=".pycastle")
     return SimpleNamespace(repo_root=tmp_path, cfg=cfg, git_svc=mock_svc)
 
 
-def test_detached_worktree_creates_worktree_on_enter(tmp_path):
-    deps = _make_detached_deps(tmp_path)
-    expected_path = tmp_path / ".pycastle" / ".worktrees" / "sandbox"
+def test_detached_worktree_creates_worktree_on_enter(detached_deps):
+    expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
 
     async def _run():
-        async with detached_worktree("sandbox", "abc123", deps):
-            deps.git_svc.checkout_detached.assert_called_once_with(
-                tmp_path, expected_path, "abc123"
+        async with detached_worktree("sandbox", "abc123", detached_deps):
+            detached_deps.git_svc.checkout_detached.assert_called_once_with(
+                detached_deps.repo_root, expected_path, "abc123"
             )
 
     asyncio.run(_run())
 
 
-def test_detached_worktree_yields_correct_path(tmp_path):
-    deps = _make_detached_deps(tmp_path)
-    expected_path = tmp_path / ".pycastle" / ".worktrees" / "sandbox"
-    captured: list = []
+def test_detached_worktree_yields_correct_path(detached_deps):
+    expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
 
     async def _run():
-        async with detached_worktree("sandbox", "abc123", deps) as path:
-            captured.append(path)
+        async with detached_worktree("sandbox", "abc123", detached_deps) as path:
+            assert path == expected_path
 
     asyncio.run(_run())
-    assert captured == [expected_path]
 
 
-def test_detached_worktree_removes_worktree_on_clean_exit(tmp_path):
-    deps = _make_detached_deps(tmp_path)
-    expected_path = tmp_path / ".pycastle" / ".worktrees" / "sandbox"
+def test_detached_worktree_removes_worktree_on_clean_exit(detached_deps):
+    expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
 
     async def _run():
-        async with detached_worktree("sandbox", "abc123", deps):
+        async with detached_worktree("sandbox", "abc123", detached_deps):
             pass
 
     asyncio.run(_run())
-    deps.git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_path)
+    detached_deps.git_svc.remove_worktree.assert_called_once_with(
+        detached_deps.repo_root, expected_path
+    )
 
 
-def test_detached_worktree_removes_worktree_when_body_raises(tmp_path):
-    deps = _make_detached_deps(tmp_path)
-    expected_path = tmp_path / ".pycastle" / ".worktrees" / "sandbox"
+def test_detached_worktree_removes_worktree_when_body_raises(detached_deps):
+    expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
 
     async def _run():
         with pytest.raises(RuntimeError, match="body error"):
-            async with detached_worktree("sandbox", "abc123", deps):
+            async with detached_worktree("sandbox", "abc123", detached_deps):
                 raise RuntimeError("body error")
 
     asyncio.run(_run())
-    deps.git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_path)
+    detached_deps.git_svc.remove_worktree.assert_called_once_with(
+        detached_deps.repo_root, expected_path
+    )
+
+
+def test_detached_worktree_does_not_remove_worktree_when_checkout_fails(detached_deps):
+    detached_deps.git_svc.checkout_detached.side_effect = RuntimeError(
+        "checkout failed"
+    )
+
+    async def _run():
+        with pytest.raises(RuntimeError, match="checkout failed"):
+            async with detached_worktree("sandbox", "abc123", detached_deps):
+                pass
+
+    asyncio.run(_run())
+    detached_deps.git_svc.remove_worktree.assert_not_called()
