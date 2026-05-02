@@ -76,7 +76,7 @@ def _make_deps(
         ),
         cfg=cfg or Config(max_parallel=4, max_iterations=1),
         logger=logger,
-        status_display=status_display or PlainStatusDisplay(),
+        status_display=status_display or PlainStatusDisplay(),  # type: ignore[arg-type]
     )
 
 
