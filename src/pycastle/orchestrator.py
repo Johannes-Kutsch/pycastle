@@ -75,7 +75,7 @@ def delete_merged_branches(
             continue
         try:
             svc.delete_branch(branch, repo_root)
-            sd.print(f"Deleted merged branch: {branch}")
+            sd.print(f"Deleted merged branch: {branch}", source="merge-cleanup")
         except GitCommandError as e:
             print(f"Warning: could not delete branch {branch!r}: {e}", file=sys.stderr)
 
@@ -104,7 +104,8 @@ async def wait_for_clean_working_tree(
     sd = status_display or NullStatusDisplay()
     sd.print(
         "Working tree has uncommitted changes. "
-        "Please commit or revert all local changes before the merge phase can proceed."
+        "Please commit or revert all local changes before the merge phase can proceed.",
+        source="working-tree-dirty",
     )
     while not git_svc.is_working_tree_clean(repo_root):
         await asyncio.sleep(10)
@@ -181,12 +182,14 @@ async def run(
     try:
         for iteration in range(1, cfg.max_iterations + 1):
             status_display.print(
-                f"\n=== Iteration {iteration}/{cfg.max_iterations} ===\n"
+                f"=== Iteration {iteration}/{cfg.max_iterations} ===",
+                source="iteration-header",
             )
 
             if not _get_github_svc().has_open_issues_with_label(cfg.issue_label):
                 status_display.print(
-                    f"No issues with label '{cfg.issue_label}' found. Skipping."
+                    f"No issues with label '{cfg.issue_label}' found. Skipping.",
+                    source="iteration-skip",
                 )
                 break
 
@@ -212,7 +215,8 @@ async def run(
             match outcome:
                 case Done():
                     status_display.print(
-                        f"No issues with label '{cfg.issue_label}' found. Skipping."
+                        f"No issues with label '{cfg.issue_label}' found. Skipping.",
+                        source="iteration-skip",
                     )
                     break
                 case AbortedHITL():
@@ -227,7 +231,7 @@ async def run(
                 case Continue():
                     pass
 
-        status_display.print("\nAll done.")
+        status_display.print("All done.", source="all-done")
     finally:
         if _owned_display is not None:
             _owned_display.stop()
