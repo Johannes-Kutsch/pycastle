@@ -1,4 +1,3 @@
-import asyncio
 import dataclasses
 import re
 import sys
@@ -8,6 +7,7 @@ from ..agent_output_protocol import assert_complete
 from ..agent_result import PreflightFailure
 from ..services import GitCommandError
 from ._deps import Deps
+from ._utils import _wait_for_clean_working_tree
 from .implement import branch_for
 
 MERGE_SANDBOX = "pycastle/merge-sandbox"
@@ -17,17 +17,6 @@ MERGE_SANDBOX = "pycastle/merge-sandbox"
 class MergeResult:
     clean: list[dict]
     conflicts: list[dict]
-
-
-async def _wait_for_clean_working_tree(deps: Deps) -> None:
-    if deps.git_svc.is_working_tree_clean(deps.repo_root):
-        return
-    deps.status_display.print(
-        "[red]Working tree has uncommitted changes. "
-        "Please commit or revert all local changes before the merge phase can proceed.[/red]"
-    )
-    while not deps.git_svc.is_working_tree_clean(deps.repo_root):
-        await asyncio.sleep(10)
 
 
 def _worktree_path_for_branch(branch: str, deps: Deps) -> Path:
