@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from pycastle.agent_output_protocol import CompletionOutput
 from pycastle.agent_result import CancellationToken, PreflightFailure
 from pycastle.agent_runner import AgentRunner, RunRequest
 from pycastle.config import Config
@@ -19,12 +20,17 @@ from pycastle.errors import (
 from pycastle.services import GitCommandError, GitService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 
+# A minimal NDJSON stream that process_stream accepts as CompletionOutput (IMPLEMENTER role)
+_COMPLETE_STREAM = [
+    b'{"type": "result", "result": "<promise>COMPLETE</promise>", "is_error": false}\n'
+]
+
 
 # ── FakeAgentRunner: queue behaviour ─────────────────────────────────────────
 
 
-def test_fake_agent_runner_returns_queued_string_response():
-    fake = FakeAgentRunner(["<promise>COMPLETE</promise>"])
+def test_fake_agent_runner_returns_queued_completion_output():
+    fake = FakeAgentRunner([CompletionOutput()])
     result = asyncio.run(
         fake.run(
             RunRequest(
@@ -34,7 +40,7 @@ def test_fake_agent_runner_returns_queued_string_response():
             )
         )
     )
-    assert result == "<promise>COMPLETE</promise>"
+    assert isinstance(result, CompletionOutput)
 
 
 def test_fake_agent_runner_returns_queued_preflight_failure():
@@ -95,7 +101,8 @@ def test_fake_agent_runner_exhaustion_error_includes_agent_name():
 
 
 def test_fake_agent_runner_pops_responses_in_order():
-    fake = FakeAgentRunner(["first", "second", "third"])
+    r1, r2, r3 = CompletionOutput(), CompletionOutput(), CompletionOutput()
+    fake = FakeAgentRunner([r1, r2, r3])
     run = fake.run
 
     async def _collect():
@@ -107,11 +114,11 @@ def test_fake_agent_runner_pops_responses_in_order():
         ]
 
     results = asyncio.run(_collect())
-    assert results == ["first", "second", "third"]
+    assert results == [r1, r2, r3]
 
 
 def test_fake_agent_runner_records_all_calls():
-    fake = FakeAgentRunner(["a", "b"])
+    fake = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
     prompt = Path("/prompt.md")
     mount = Path("/workspace")
 
@@ -124,7 +131,7 @@ def test_fake_agent_runner_records_all_calls():
 
 
 def test_fake_agent_runner_records_call_kwargs():
-    fake = FakeAgentRunner(["ok"])
+    fake = FakeAgentRunner([CompletionOutput()])
     prompt = Path("/prompt.md")
     mount = Path("/workspace")
 
@@ -159,7 +166,7 @@ def test_fake_agent_runner_records_call_kwargs():
 
 
 def test_fake_agent_runner_starts_with_empty_calls():
-    fake = FakeAgentRunner(["ok"])
+    fake = FakeAgentRunner([CompletionOutput()])
     assert fake.calls == []
 
 
@@ -168,10 +175,11 @@ def test_fake_agent_runner_starts_with_empty_calls():
 
 def test_fake_agent_runner_side_effect_is_called_with_run_request():
     received: dict = {}
+    completion = CompletionOutput()
 
     async def _effect(request: RunRequest):
         received["name"] = request.name
-        return "from side effect"
+        return completion
 
     fake = FakeAgentRunner(side_effect=_effect)
     result = asyncio.run(
@@ -182,7 +190,7 @@ def test_fake_agent_runner_side_effect_is_called_with_run_request():
         )
     )
 
-    assert result == "from side effect"
+    assert result is completion
     assert received["name"] == "SideEffectAgent"
 
 
@@ -203,7 +211,7 @@ def test_fake_agent_runner_side_effect_can_raise():
 
 def test_fake_agent_runner_side_effect_still_records_calls():
     async def _effect(request: RunRequest):
-        return "ok"
+        return CompletionOutput()
 
     fake = FakeAgentRunner(side_effect=_effect)
     asyncio.run(
@@ -219,8 +227,10 @@ def test_fake_agent_runner_side_effect_still_records_calls():
 
 
 def test_fake_agent_runner_side_effect_can_be_synchronous():
+    completion = CompletionOutput()
+
     def _sync_effect(request: RunRequest):
-        return "sync result"
+        return completion
 
     fake = FakeAgentRunner(side_effect=_sync_effect)
     result = asyncio.run(
@@ -229,7 +239,7 @@ def test_fake_agent_runner_side_effect_can_be_synchronous():
         )
     )
 
-    assert result == "sync result"
+    assert result is completion
 
 
 # ── AgentRunner: helpers ──────────────────────────────────────────────────────
@@ -271,7 +281,7 @@ def _never_yields():
 
 
 def test_agent_runner_run_returns_agent_output(tmp_path):
-    mock_client = _make_docker_client([b"agent output\n"])
+    mock_client = _make_docker_client(_COMPLETE_STREAM)
     runner = AgentRunner(
         {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
     )
@@ -289,7 +299,7 @@ def test_agent_runner_run_returns_agent_output(tmp_path):
         )
     )
 
-    assert result == "agent output\n"
+    assert isinstance(result, CompletionOutput)
 
 
 def test_agent_runner_run_returns_preflight_failure_when_check_fails(tmp_path):
@@ -332,7 +342,7 @@ def test_agent_runner_run_skips_preflight_when_skip_preflight_true(tmp_path):
     def exec_side_effect(*args, **kwargs):
         if kwargs.get("stream"):
             r = MagicMock()
-            r.output = iter([b"done\n"])
+            r.output = iter(_COMPLETE_STREAM)
             return r
         cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
         if "ruff check" in cmd:
@@ -356,7 +366,7 @@ def test_agent_runner_run_skips_preflight_when_skip_preflight_true(tmp_path):
         )
     )
 
-    assert isinstance(result, str)
+    assert isinstance(result, CompletionOutput)
 
 
 # ── AgentRunner: error propagation ───────────────────────────────────────────
@@ -411,7 +421,7 @@ def test_agent_runner_run_cancels_token_and_raises_on_usage_limit_in_stream(tmp_
 
 
 def test_agent_runner_run_raises_branch_collision_for_concurrent_same_branch(tmp_path):
-    mock_client = _make_docker_client([b"output\n"])
+    mock_client = _make_docker_client(_COMPLETE_STREAM)
     mock_git = _make_git_service()
     runner = AgentRunner(
         {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
@@ -490,7 +500,9 @@ def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
             stream_call_count["n"] += 1
             r = MagicMock()
             r.output = (
-                _never_yields() if stream_call_count["n"] == 1 else iter([b"done\n"])
+                _never_yields()
+                if stream_call_count["n"] == 1
+                else iter(_COMPLETE_STREAM)
             )
             return r
         return MagicMock(exit_code=0, output=(b"", b""))
@@ -512,7 +524,7 @@ def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
         )
     )
 
-    assert result == "done\n"
+    assert isinstance(result, CompletionOutput)
 
 
 # ── AgentRunner: worktree lifecycle ──────────────────────────────────────────
@@ -520,7 +532,7 @@ def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
 
 def test_agent_runner_creates_worktree_at_issue_path(tmp_path):
     mock_git = _make_git_service()
-    mock_client = _make_docker_client([b"done\n"])
+    mock_client = _make_docker_client(_COMPLETE_STREAM)
     runner = AgentRunner(
         {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
     )
@@ -545,7 +557,7 @@ def test_agent_runner_creates_worktree_at_issue_path(tmp_path):
 
 def test_agent_runner_sanitizes_branch_name_for_worktree_path(tmp_path):
     mock_git = _make_git_service()
-    mock_client = _make_docker_client([b"done\n"])
+    mock_client = _make_docker_client(_COMPLETE_STREAM)
     runner = AgentRunner(
         {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
     )
@@ -571,7 +583,7 @@ def test_agent_runner_sanitizes_branch_name_for_worktree_path(tmp_path):
 def test_agent_runner_removes_worktree_when_clean(tmp_path):
     mock_git = _make_git_service()
     mock_git.is_working_tree_clean.return_value = True
-    mock_client = _make_docker_client([b"done\n"])
+    mock_client = _make_docker_client(_COMPLETE_STREAM)
     runner = AgentRunner(
         {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
     )
@@ -596,7 +608,7 @@ def test_agent_runner_removes_worktree_when_clean(tmp_path):
 def test_agent_runner_preserves_worktree_when_dirty(tmp_path):
     mock_git = _make_git_service()
     mock_git.is_working_tree_clean.return_value = False
-    mock_client = _make_docker_client([b"done\n"])
+    mock_client = _make_docker_client(_COMPLETE_STREAM)
     runner = AgentRunner(
         {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
     )
@@ -646,7 +658,7 @@ def test_agent_runner_preserves_worktree_on_usage_limit(tmp_path):
 def test_agent_runner_does_not_start_container_when_create_worktree_fails(tmp_path):
     mock_git = _make_git_service()
     mock_git.create_worktree.side_effect = RuntimeError("git worktree add failed")
-    mock_client = _make_docker_client([b"done\n"])
+    mock_client = _make_docker_client(_COMPLETE_STREAM)
     runner = AgentRunner(
         {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
     )
@@ -672,7 +684,7 @@ def test_agent_runner_does_not_start_container_when_create_worktree_fails(tmp_pa
 def test_agent_runner_propagates_git_user_name_error(tmp_path):
     mock_git = _make_git_service()
     mock_git.get_user_name.side_effect = GitCommandError("git config user.name failed")
-    mock_client = _make_docker_client([b"done\n"])
+    mock_client = _make_docker_client(_COMPLETE_STREAM)
     runner = AgentRunner(
         {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
     )
@@ -698,7 +710,7 @@ def test_agent_runner_propagates_git_user_name_error(tmp_path):
 def test_agent_runner_remove_agent_called_on_success(tmp_path):
     from pycastle.iteration._deps import RecordingStatusDisplay
 
-    mock_client = _make_docker_client([b"done\n"])
+    mock_client = _make_docker_client(_COMPLETE_STREAM)
     runner = AgentRunner(
         {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
     )
@@ -1002,6 +1014,8 @@ def test_agent_runner_run_preflight_propagates_git_user_name_error(tmp_path):
 
 
 def test_run_request_stores_required_fields():
+    from pycastle.agent_output_protocol import AgentRole
+
     req = RunRequest(
         name="Agent",
         prompt_file=Path("/prompt.md"),
@@ -1010,6 +1024,7 @@ def test_run_request_stores_required_fields():
     assert req.name == "Agent"
     assert req.prompt_file == Path("/prompt.md")
     assert req.mount_path == Path("/workspace")
+    assert req.role == AgentRole.IMPLEMENTER
     assert req.prompt_args is None
     assert req.branch is None
     assert req.sha is None
@@ -1024,12 +1039,13 @@ def test_run_request_stores_required_fields():
 
 
 def test_fake_agent_runner_accepts_run_request_and_records_it():
-    fake = FakeAgentRunner(["result"])
+    completion = CompletionOutput()
+    fake = FakeAgentRunner([completion])
     req = RunRequest(
         name="Planner",
         prompt_file=Path("/p.md"),
         mount_path=Path("/w"),
     )
     result = asyncio.run(fake.run(req))
-    assert result == "result"
+    assert result is completion
     assert fake.calls[0] is req

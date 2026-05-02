@@ -4,6 +4,7 @@ import dataclasses
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from pycastle.agent_output_protocol import IssueOutput, IssueParseError
 from pycastle.config import Config
 from pycastle.services import GitCommandError, GitService
 from pycastle.services import GithubService
@@ -163,7 +164,7 @@ def test_preflight_phase_returns_hitl_on_hitl_preflight_verdict(
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     fake = FakeAgentRunner(
-        ['<issue>{"number": 55, "labels": ["bug", "ready-for-human"]}</issue>'],
+        [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
 
@@ -187,7 +188,7 @@ def test_preflight_phase_returns_afk_on_afk_preflight_verdict(
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     github_svc.get_issue_title.return_value = "Fix preflight issue"
     fake = FakeAgentRunner(
-        ['<issue>{"number": 42, "labels": ["bug", "ready-for-agent"]}</issue>'],
+        [IssueOutput(number=42, labels=["bug", "ready-for-agent"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
 
@@ -207,7 +208,7 @@ def test_preflight_phase_hitl_routing_uses_configured_hitl_label(
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     fake = FakeAgentRunner(
-        ['<issue>{"number": 55, "labels": ["custom-bug", "custom-human"]}</issue>'],
+        [IssueOutput(number=55, labels=["custom-bug", "custom-human"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
 
@@ -239,7 +240,7 @@ def test_preflight_phase_raises_runtime_error_when_preflight_agent_returns_no_is
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     fake = FakeAgentRunner(
-        ["<promise>COMPLETE</promise>no issue tag here"],
+        [IssueParseError("Agent produced no <issue>...</issue> tag.")],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
 
@@ -275,7 +276,7 @@ def test_preflight_phase_removes_worktree_when_preflight_fails(
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     github_svc.get_issue_title.return_value = "Preflight issue"
     fake = FakeAgentRunner(
-        ['<issue>{"number": 42, "labels": ["bug", "ready-for-agent"]}</issue>'],
+        [IssueOutput(number=42, labels=["bug", "ready-for-agent"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
 
@@ -406,7 +407,7 @@ def test_preflight_phase_prints_no_confirmation_when_check_fails(
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     github_svc.get_issue_title.return_value = "Fix bug"
     fake = FakeAgentRunner(
-        ['<issue>{"number": 42, "labels": ["ready-for-agent"]}</issue>'],
+        [IssueOutput(number=42, labels=["ready-for-agent"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
     recording = RecordingStatusDisplay()
@@ -428,7 +429,7 @@ def test_preflight_failure_uses_pre_flight_reporter_as_agent_name(
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     fake = FakeAgentRunner(
-        ['<issue>{"number": 42, "labels": ["ready-for-human"]}</issue>'],
+        [IssueOutput(number=42, labels=["ready-for-human"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
     deps = _make_deps(
@@ -446,7 +447,7 @@ def test_preflight_failure_passes_reporting_work_body_to_run(tmp_path, git_svc, 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     fake = FakeAgentRunner(
-        ['<issue>{"number": 42, "labels": ["ready-for-human"]}</issue>'],
+        [IssueOutput(number=42, labels=["ready-for-human"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
     deps = _make_deps(

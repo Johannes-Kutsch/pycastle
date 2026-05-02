@@ -1,9 +1,9 @@
 import asyncio
-import json
 
 import pytest
 from unittest.mock import MagicMock
 
+from pycastle.agent_output_protocol import PlanParseError, PlannerOutput
 from pycastle.agent_result import PreflightFailure
 from pycastle.config import Config
 from pycastle.services import GitService
@@ -17,8 +17,10 @@ from pycastle.status_display import PlainStatusDisplay
 from pycastle.iteration.planning import PlanReady, planning_phase
 
 
-def _plan_json(issues: list[dict]) -> str:
-    return f"<promise>COMPLETE</promise><plan>{json.dumps({'issues': issues})}</plan>"
+def _plan_output(issues: list[dict]) -> PlannerOutput:
+    return PlannerOutput(
+        issues=[{"number": i["number"], "title": i["title"]} for i in issues]
+    )
 
 
 @pytest.fixture
@@ -63,14 +65,7 @@ def test_planning_phase_returns_plan_ready_with_issues_sorted_by_number(
         {"number": 1, "title": "A"},
         {"number": 2, "title": "B"},
     ]
-    plan_output = _plan_json(
-        [
-            {"number": 3, "title": "C"},
-            {"number": 1, "title": "A"},
-            {"number": 2, "title": "B"},
-        ]
-    )
-    fake = FakeAgentRunner([plan_output])
+    fake = FakeAgentRunner([_plan_output(issues)])
 
     deps = _make_deps(
         tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -89,8 +84,7 @@ def test_planning_phase_invokes_planner_with_skip_preflight_true(
     tmp_path, git_svc, github_svc, logger
 ):
     issues = [{"number": 1, "title": "A"}]
-    plan_output = _plan_json([{"number": 1, "title": "A"}])
-    fake = FakeAgentRunner([plan_output])
+    fake = FakeAgentRunner([_plan_output(issues)])
 
     deps = _make_deps(
         tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -108,8 +102,7 @@ def test_planning_phase_removes_worktree_after_success(
     tmp_path, git_svc, github_svc, logger
 ):
     issues = [{"number": 1, "title": "A"}]
-    plan_output = _plan_json([{"number": 1, "title": "A"}])
-    fake = FakeAgentRunner([plan_output])
+    fake = FakeAgentRunner([_plan_output(issues)])
 
     deps = _make_deps(
         tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -158,7 +151,7 @@ def test_planning_phase_raises_runtime_error_when_planner_output_has_no_plan_tag
     tmp_path, git_svc, github_svc, logger
 ):
     issues = [{"number": 1, "title": "A"}]
-    fake = FakeAgentRunner(["output without a plan tag"])
+    fake = FakeAgentRunner([PlanParseError("Planner produced no <plan> tag.")])
 
     deps = _make_deps(
         tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -173,7 +166,7 @@ def test_planning_phase_raises_runtime_error_when_planner_output_has_no_plan_tag
 def test_planning_phase_with_empty_issues_list_still_invokes_planner_and_returns_ready(
     tmp_path, git_svc, github_svc, logger
 ):
-    fake = FakeAgentRunner([_plan_json([])])
+    fake = FakeAgentRunner([_plan_output([])])
 
     deps = _make_deps(
         tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger

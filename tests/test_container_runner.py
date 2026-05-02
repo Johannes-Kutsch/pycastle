@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pycastle.agent_output_protocol import AgentRole, CompletionOutput
 from pycastle.config import Config
 from pycastle.container_runner import (
     ContainerRunner,
@@ -14,6 +15,17 @@ from pycastle.container_runner import (
 )
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.iteration._deps import RecordingStatusDisplay
+
+_ROLE = AgentRole.IMPLEMENTER
+
+
+def _NOOP(t: str) -> None:
+    pass
+
+
+_COMPLETE_LINE = (
+    b'{"type":"result","result":"<promise>COMPLETE</promise>","is_error":false}\n'
+)
 
 
 # ── Issue 153: docker_client injection ───────────────────────────────────────
@@ -276,7 +288,7 @@ def test_run_streaming_raises_agent_timeout_error_when_idle(tmp_path):
     runner.__enter__()
 
     with pytest.raises(AgentTimeoutError):
-        runner.run_streaming()
+        runner.run_streaming(_ROLE, _NOOP)
 
 
 # ── Issue 310: run_streaming produces no stdout ──────────────────────────────
@@ -284,14 +296,17 @@ def test_run_streaming_raises_agent_timeout_error_when_idle(tmp_path):
 
 def test_run_streaming_produces_no_stdout(tmp_path, capsys):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working on it"}]}}\n'
-    runner = _streaming_runner("TestAgent", [json_line], tmp_path)
-    runner.run_streaming()
+    runner = _streaming_runner("TestAgent", [json_line, _COMPLETE_LINE], tmp_path)
+    runner.run_streaming(_ROLE, _NOOP)
     assert capsys.readouterr().out == ""
 
 
 def test_run_streaming_produces_no_stdout_for_plain_text(tmp_path, capsys):
+    from pycastle.agent_output_protocol import PromiseParseError
+
     runner = _streaming_runner("Bot", [b"line one\nline two\n"], tmp_path)
-    runner.run_streaming()
+    with pytest.raises(PromiseParseError):
+        runner.run_streaming(_ROLE, _NOOP)
     assert capsys.readouterr().out == ""
 
 
@@ -299,16 +314,22 @@ def test_run_streaming_produces_no_stdout_for_plain_text(tmp_path, capsys):
 
 
 def test_run_streaming_log_file_is_raw_unprefixed(tmp_path):
+    from pycastle.agent_output_protocol import PromiseParseError
+
     runner = _streaming_runner("TestAgent", [b"hello world\n"], tmp_path)
-    runner.run_streaming()
+    with pytest.raises(PromiseParseError):
+        runner.run_streaming(_ROLE, _NOOP)
     assert runner._log_path.read_text() == "hello world\n"
     assert "[TestAgent]" not in runner._log_path.read_text()
 
 
 def test_run_streaming_log_file_contains_full_raw_output(tmp_path):
     """Log file must capture all raw bytes, including multi-chunk output."""
+    from pycastle.agent_output_protocol import PromiseParseError
+
     runner = _streaming_runner("Bot", [b"line one\n", b"line two\n"], tmp_path)
-    runner.run_streaming()
+    with pytest.raises(PromiseParseError):
+        runner.run_streaming(_ROLE, _NOOP)
     content = runner._log_path.read_text()
     assert content == "line one\nline two\n"
 
@@ -319,21 +340,23 @@ def test_run_streaming_log_file_contains_full_raw_output(tmp_path):
 def test_run_streaming_calls_reset_idle_timer_per_chunk(tmp_path):
     tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [tool_chunk, tool_chunk], tmp_path, display)
+    runner = _streaming_runner(
+        "Bot", [tool_chunk, tool_chunk, _COMPLETE_LINE], tmp_path, display
+    )
 
-    runner.run_streaming()
+    runner.run_streaming(_ROLE, _NOOP)
 
     reset_calls = [c for c in display.calls if c[0] == "reset_idle_timer"]
-    assert len(reset_calls) == 2
+    assert len(reset_calls) == 3
     assert all(c == ("reset_idle_timer", "Bot") for c in reset_calls)
 
 
 def test_run_streaming_tool_use_only_line_resets_timer(tmp_path):
     tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [tool_chunk], tmp_path, display)
+    runner = _streaming_runner("Bot", [tool_chunk, _COMPLETE_LINE], tmp_path, display)
 
-    runner.run_streaming()
+    runner.run_streaming(_ROLE, _NOOP)
 
     assert ("reset_idle_timer", "Bot") in display.calls
 
@@ -341,19 +364,21 @@ def test_run_streaming_tool_use_only_line_resets_timer(tmp_path):
 def test_run_streaming_system_line_resets_timer(tmp_path):
     system_chunk = b'{"type":"system","subtype":"init","session_id":"abc","tools":[]}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [system_chunk], tmp_path, display)
+    runner = _streaming_runner("Bot", [system_chunk, _COMPLETE_LINE], tmp_path, display)
 
-    runner.run_streaming()
+    runner.run_streaming(_ROLE, _NOOP)
 
     assert ("reset_idle_timer", "Bot") in display.calls
 
 
 def test_run_streaming_result_line_resets_timer(tmp_path):
-    result_chunk = b'{"type":"result","result":"Final answer","session_id":"abc"}\n'
+    result_chunk = (
+        b'{"type":"result","result":"<promise>COMPLETE</promise>","is_error":false}\n'
+    )
     display = RecordingStatusDisplay()
     runner = _streaming_runner("Bot", [result_chunk], tmp_path, display)
 
-    runner.run_streaming()
+    runner.run_streaming(_ROLE, _NOOP)
 
     assert ("reset_idle_timer", "Bot") in display.calls
 
@@ -361,9 +386,11 @@ def test_run_streaming_result_line_resets_timer(tmp_path):
 def test_run_streaming_partial_chunk_resets_timer(tmp_path):
     partial_chunk = b'{"type":"assistant","message":{"content":[{"type":"text","text":"no newline here"}'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [partial_chunk], tmp_path, display)
+    runner = _streaming_runner(
+        "Bot", [partial_chunk, _COMPLETE_LINE], tmp_path, display
+    )
 
-    runner.run_streaming()
+    runner.run_streaming(_ROLE, _NOOP)
 
     assert ("reset_idle_timer", "Bot") in display.calls
 
@@ -376,9 +403,11 @@ def test_run_streaming_single_chunk_with_multiple_lines_resets_timer_once(tmp_pa
         b'{"type":"assistant","message":{"content":[{"type":"text","text":"World"}]}}\n'
     )
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [line_a + line_b], tmp_path, display)
+    runner = _streaming_runner(
+        "Bot", [line_a + line_b + _COMPLETE_LINE], tmp_path, display
+    )
 
-    runner.run_streaming()
+    runner.run_streaming(_ROLE, _NOOP)
 
     reset_calls = [c for c in display.calls if c[0] == "reset_idle_timer"]
     assert len(reset_calls) == 1
@@ -415,10 +444,10 @@ def test_build_claude_command_includes_both_flags_when_set():
 
 def test_run_streaming_includes_model_flag_when_set(tmp_path):
     """run_streaming must pass --model to exec_run when model is set on runner."""
-    runner = _streaming_runner("Agent", [b"done\n"], tmp_path)
+    runner = _streaming_runner("Agent", [_COMPLETE_LINE], tmp_path)
     runner.model = "claude-sonnet-4-6"
     runner.effort = ""
-    runner.run_streaming()
+    runner.run_streaming(_ROLE, _NOOP)
 
     streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
     assert "--model claude-sonnet-4-6" in streaming_cmd
@@ -426,10 +455,10 @@ def test_run_streaming_includes_model_flag_when_set(tmp_path):
 
 def test_run_streaming_includes_effort_flag_when_set(tmp_path):
     """run_streaming must pass --effort to exec_run when effort is set on runner."""
-    runner = _streaming_runner("Agent", [b"done\n"], tmp_path)
+    runner = _streaming_runner("Agent", [_COMPLETE_LINE], tmp_path)
     runner.model = ""
     runner.effort = "high"
-    runner.run_streaming()
+    runner.run_streaming(_ROLE, _NOOP)
 
     streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
     assert "--effort high" in streaming_cmd
@@ -677,8 +706,8 @@ def test_prepare_expands_shell_expressions_via_container_exec(tmp_path):
 def test_run_streaming_suppresses_system_init_line(tmp_path, capsys):
     """System init JSON must produce no terminal output at all."""
     json_line = b'{"type":"system","subtype":"init","session_id":"s1","tools":[]}\n'
-    runner = _streaming_runner("Planner", [json_line], tmp_path)
-    runner.run_streaming()
+    runner = _streaming_runner("Planner", [json_line, _COMPLETE_LINE], tmp_path)
+    runner.run_streaming(_ROLE, _NOOP)
     out = capsys.readouterr().out
     assert out == ""
 
@@ -686,9 +715,9 @@ def test_run_streaming_suppresses_system_init_line(tmp_path, capsys):
 def test_run_streaming_log_file_unchanged_for_json_lines(tmp_path):
     """Log file must still contain the raw, unmodified JSON bytes."""
     raw = b'{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}\n'
-    runner = _streaming_runner("Planner", [raw], tmp_path)
-    runner.run_streaming()
-    assert runner._log_path.read_bytes() == raw
+    runner = _streaming_runner("Planner", [raw, _COMPLETE_LINE], tmp_path)
+    runner.run_streaming(_ROLE, _NOOP)
+    assert raw in runner._log_path.read_bytes()
 
 
 # ── Issue 180: UsageLimitError stream detection ───────────────────────────────
@@ -701,7 +730,7 @@ def test_run_streaming_raises_usage_limit_error_on_session_limit_line(tmp_path):
         tmp_path,
     )
     with pytest.raises(UsageLimitError):
-        runner.run_streaming()
+        runner.run_streaming(_ROLE, _NOOP)
 
 
 def test_run_streaming_raises_usage_limit_error_case_insensitive(tmp_path):
@@ -711,7 +740,7 @@ def test_run_streaming_raises_usage_limit_error_case_insensitive(tmp_path):
         tmp_path,
     )
     with pytest.raises(UsageLimitError):
-        runner.run_streaming()
+        runner.run_streaming(_ROLE, _NOOP)
 
 
 def test_run_streaming_raises_usage_limit_error_on_credit_balance_line(tmp_path):
@@ -721,16 +750,16 @@ def test_run_streaming_raises_usage_limit_error_on_credit_balance_line(tmp_path)
         tmp_path,
     )
     with pytest.raises(UsageLimitError):
-        runner.run_streaming()
+        runner.run_streaming(_ROLE, _NOOP)
 
 
 def test_run_streaming_does_not_raise_for_normal_line(tmp_path):
     runner = _streaming_runner(
         "Agent",
-        [b"All good, processing normally\n"],
+        [b"All good, processing normally\n", _COMPLETE_LINE],
         tmp_path,
     )
-    runner.run_streaming()
+    runner.run_streaming(_ROLE, _NOOP)
 
 
 def test_run_streaming_raises_when_pattern_split_across_chunks(tmp_path):
@@ -740,7 +769,7 @@ def test_run_streaming_raises_when_pattern_split_across_chunks(tmp_path):
         tmp_path,
     )
     with pytest.raises(UsageLimitError):
-        runner.run_streaming()
+        runner.run_streaming(_ROLE, _NOOP)
 
 
 def test_run_streaming_error_carries_original_casing(tmp_path):
@@ -750,7 +779,7 @@ def test_run_streaming_error_carries_original_casing(tmp_path):
         tmp_path,
     )
     with pytest.raises(UsageLimitError) as exc_info:
-        runner.run_streaming()
+        runner.run_streaming(_ROLE, _NOOP)
     assert str(exc_info.value) == "YOU'VE HIT YOUR SESSION LIMIT"
 
 
@@ -779,10 +808,10 @@ def test_run_streaming_does_not_raise_for_json_line_containing_usage_limit_phras
     )
     runner = _streaming_runner(
         "Agent",
-        [(json_line + "\n").encode()],
+        [(json_line + "\n").encode(), _COMPLETE_LINE],
         tmp_path,
     )
-    runner.run_streaming()  # must not raise
+    runner.run_streaming(_ROLE, _NOOP)  # must not raise
 
 
 # ── Issue 232: JSON result line with 429 not caught ───────────────────────────
@@ -807,7 +836,7 @@ def test_run_streaming_raises_usage_limit_error_on_json_result_with_429(tmp_path
         tmp_path,
     )
     with pytest.raises(UsageLimitError):
-        runner.run_streaming()
+        runner.run_streaming(_ROLE, _NOOP)
 
 
 def test_run_streaming_raises_usage_limit_error_on_json_result_matching_pattern(
@@ -830,7 +859,7 @@ def test_run_streaming_raises_usage_limit_error_on_json_result_matching_pattern(
         tmp_path,
     )
     with pytest.raises(UsageLimitError):
-        runner.run_streaming()
+        runner.run_streaming(_ROLE, _NOOP)
 
 
 def test_run_streaming_does_not_raise_for_successful_json_result(tmp_path):
@@ -842,7 +871,7 @@ def test_run_streaming_does_not_raise_for_successful_json_result(tmp_path):
             "type": "result",
             "subtype": "success",
             "is_error": False,
-            "result": "Task completed successfully.",
+            "result": "<promise>COMPLETE</promise>",
         }
     )
     runner = _streaming_runner(
@@ -850,12 +879,14 @@ def test_run_streaming_does_not_raise_for_successful_json_result(tmp_path):
         [(json_line + "\n").encode()],
         tmp_path,
     )
-    runner.run_streaming()  # must not raise
+    result = runner.run_streaming(_ROLE, _NOOP)  # must not raise
+    assert isinstance(result, CompletionOutput)
 
 
 def test_run_streaming_does_not_crash_on_json_result_with_null_result_field(tmp_path):
     """A JSON result error with result=null must not raise AttributeError or UsageLimitError."""
     import json
+    from pycastle.agent_output_protocol import PromiseParseError
 
     json_line = json.dumps(
         {
@@ -870,7 +901,10 @@ def test_run_streaming_does_not_crash_on_json_result_with_null_result_field(tmp_
         [(json_line + "\n").encode()],
         tmp_path,
     )
-    runner.run_streaming()  # must not raise
+    with pytest.raises(PromiseParseError):
+        runner.run_streaming(
+            _ROLE, _NOOP
+        )  # must not raise AttributeError or UsageLimitError
 
 
 # ── Issue 203: cfg injection into ContainerRunner ─────────────────────────────
@@ -905,11 +939,13 @@ def test_run_streaming_uses_usage_limit_patterns_from_cfg(tmp_path):
     runner.__enter__()
 
     with pytest.raises(UsageLimitError):
-        runner.run_streaming()
+        runner.run_streaming(_ROLE, _NOOP)
 
 
 def test_run_streaming_default_patterns_not_triggered_by_custom_cfg(tmp_path):
     """Default usage_limit_patterns must not trigger when cfg overrides them."""
+    from pycastle.agent_output_protocol import PromiseParseError
+
     mock_client = MagicMock()
     mock_result = MagicMock()
     # Default pattern "You've hit your" should NOT trigger with the custom cfg
@@ -924,8 +960,12 @@ def test_run_streaming_default_patterns_not_triggered_by_custom_cfg(tmp_path):
     )
     runner.__enter__()
 
-    result = runner.run_streaming()
-    assert "You've hit your session limit" in result
+    # The default pattern is not active, so no UsageLimitError is raised.
+    # The stream has no valid NDJSON result line, so PromiseParseError is raised instead.
+    with pytest.raises(PromiseParseError):
+        runner.run_streaming(_ROLE, _NOOP)
+    # Verify the raw text was written to the log (no UsageLimitError intercepted it)
+    assert "You've hit your session limit" in runner._log_path.read_text()
 
 
 # ── Issue 310: StatusDisplay lifecycle wiring ─────────────────────────────────
@@ -968,18 +1008,20 @@ def test_setup_registers_agent_with_name(tmp_path):
 
 def test_work_calls_update_phase_work(tmp_path):
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("implementer-42", [b"done\n"], tmp_path, display)
+    runner = _streaming_runner("implementer-42", [_COMPLETE_LINE], tmp_path, display)
 
-    asyncio.run(runner.work())
+    asyncio.run(runner.work(_ROLE))
     assert ("update_phase", "implementer-42", "Work") in display.calls
 
 
 def test_work_produces_no_stdout(tmp_path, capsys):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("implementer-42", [json_line], tmp_path, display)
+    runner = _streaming_runner(
+        "implementer-42", [json_line, _COMPLETE_LINE], tmp_path, display
+    )
 
-    asyncio.run(runner.work())
+    asyncio.run(runner.work(_ROLE))
     assert capsys.readouterr().out == ""
 
 
@@ -1056,9 +1098,11 @@ def test_exit_swallows_close_exception():
 def test_run_streaming_in_work_phase_prints_complete_turn(tmp_path):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Analysing issues"}]}}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Implementer #1", [json_line], tmp_path, display)
+    runner = _streaming_runner(
+        "Implementer #1", [json_line, _COMPLETE_LINE], tmp_path, display
+    )
 
-    runner.run_streaming(print_output=True)
+    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
@@ -1069,9 +1113,9 @@ def test_run_streaming_in_work_phase_prints_complete_turn(tmp_path):
 def test_run_streaming_without_print_output_does_not_call_print(tmp_path):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Analysing issues"}]}}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [json_line], tmp_path, display)
+    runner = _streaming_runner("Bot", [json_line, _COMPLETE_LINE], tmp_path, display)
 
-    runner.run_streaming(print_output=False)
+    runner.run_streaming(_ROLE, _NOOP)
 
     assert not any(c[0] == "print" for c in display.calls)
 
@@ -1079,9 +1123,9 @@ def test_run_streaming_without_print_output_does_not_call_print(tmp_path):
 def test_run_streaming_tool_use_only_does_not_call_print_in_work_phase(tmp_path):
     tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [tool_chunk], tmp_path, display)
+    runner = _streaming_runner("Bot", [tool_chunk, _COMPLETE_LINE], tmp_path, display)
 
-    runner.run_streaming(print_output=True)
+    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
 
     assert not any(c[0] == "print" for c in display.calls)
 
@@ -1089,9 +1133,11 @@ def test_run_streaming_tool_use_only_does_not_call_print_in_work_phase(tmp_path)
 def test_work_calls_print_for_complete_assistant_turn(tmp_path):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Fixing bug"}]}}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Implementer #3", [json_line], tmp_path, display)
+    runner = _streaming_runner(
+        "Implementer #3", [json_line, _COMPLETE_LINE], tmp_path, display
+    )
 
-    asyncio.run(runner.work())
+    asyncio.run(runner.work(_ROLE))
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
@@ -1102,9 +1148,11 @@ def test_work_calls_print_for_complete_assistant_turn(tmp_path):
 def test_work_does_not_call_print_for_tool_use_turns(tmp_path):
     tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","id":"t1","input":{}}]}}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Implementer #3", [tool_chunk], tmp_path, display)
+    runner = _streaming_runner(
+        "Implementer #3", [tool_chunk, _COMPLETE_LINE], tmp_path, display
+    )
 
-    asyncio.run(runner.work())
+    asyncio.run(runner.work(_ROLE))
 
     assert not any(c[0] == "print" for c in display.calls)
 
@@ -1112,9 +1160,9 @@ def test_work_does_not_call_print_for_tool_use_turns(tmp_path):
 def test_run_streaming_with_print_output_still_calls_reset_idle_timer(tmp_path):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [json_line], tmp_path, display)
+    runner = _streaming_runner("Bot", [json_line, _COMPLETE_LINE], tmp_path, display)
 
-    runner.run_streaming(print_output=True)
+    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
 
     assert ("reset_idle_timer", "Bot") in display.calls
 
@@ -1123,9 +1171,11 @@ def test_run_streaming_multiple_turns_prints_each_one(tmp_path):
     line_a = b'{"type":"assistant","message":{"content":[{"type":"text","text":"First turn"}]}}\n'
     line_b = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Second turn"}]}}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [line_a + line_b], tmp_path, display)
+    runner = _streaming_runner(
+        "Bot", [line_a + line_b + _COMPLETE_LINE], tmp_path, display
+    )
 
-    runner.run_streaming(print_output=True)
+    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 2
@@ -1142,9 +1192,11 @@ def test_run_streaming_agent_message_has_no_trailing_newline(tmp_path):
     )
     line_b = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Second"}]}}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [line_a + line_b], tmp_path, display)
+    runner = _streaming_runner(
+        "Bot", [line_a + line_b + _COMPLETE_LINE], tmp_path, display
+    )
 
-    runner.run_streaming(print_output=True)
+    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 2
@@ -1159,9 +1211,9 @@ def test_run_streaming_agent_message_has_no_trailing_newline(tmp_path):
 def test_run_streaming_multiblock_turn_prints_as_single_call(tmp_path):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"First paragraph"},{"type":"text","text":"Second paragraph"}]}}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [json_line], tmp_path, display)
+    runner = _streaming_runner("Bot", [json_line, _COMPLETE_LINE], tmp_path, display)
 
-    runner.run_streaming(print_output=True)
+    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
@@ -1175,9 +1227,11 @@ def test_run_streaming_multiblock_turn_prints_as_single_call(tmp_path):
 def test_run_streaming_print_uses_agent_name_as_caller(tmp_path):
     json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("Implementer #1", [json_line], tmp_path, display)
+    runner = _streaming_runner(
+        "Implementer #1", [json_line, _COMPLETE_LINE], tmp_path, display
+    )
 
-    runner.run_streaming(print_output=True)
+    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert len(print_calls) == 1
@@ -1191,8 +1245,8 @@ def test_run_streaming_print_uses_agent_name_as_caller(tmp_path):
 def test_container_runner_run_streaming_uses_status_display_from_constructor(tmp_path):
     """run_streaming must call reset_idle_timer on the display passed at construction."""
     display = RecordingStatusDisplay()
-    runner = _streaming_runner("test", [b"chunk\n"], tmp_path, display)
-    runner.run_streaming()
+    runner = _streaming_runner("test", [_COMPLETE_LINE], tmp_path, display)
+    runner.run_streaming(_ROLE, _NOOP)
     assert any(c[0] == "reset_idle_timer" for c in display.calls)
 
 
@@ -1200,10 +1254,10 @@ def test_run_streaming_rejects_status_display_argument(tmp_path):
     """Passing status_display to run_streaming must raise TypeError."""
     runner = _streaming_runner("Bot", [], tmp_path)
     with pytest.raises(TypeError):
-        runner.run_streaming(status_display=MagicMock())
+        runner.run_streaming(_ROLE, _NOOP, status_display=MagicMock())
 
 
 def test_container_runner_without_status_display_runs_streaming_without_error(tmp_path):
     """ContainerRunner constructed without status_display must complete run_streaming without error."""
-    runner = _streaming_runner("Bot", [b"chunk\n"], tmp_path)
-    runner.run_streaming()
+    runner = _streaming_runner("Bot", [_COMPLETE_LINE], tmp_path)
+    runner.run_streaming(_ROLE, _NOOP)

@@ -1,6 +1,5 @@
 import asyncio
 import io
-import json
 import os
 import queue
 import re
@@ -8,11 +7,13 @@ import shlex
 import sys
 import tarfile
 import threading
+from collections.abc import Callable, Generator
 from pathlib import Path
 
 import docker
 from docker.models.containers import Container as DockerContainer
 
+from .agent_output_protocol import AgentOutput, AgentRole, process_stream
 from .config import Config
 from .errors import (
     AgentTimeoutError,
@@ -21,31 +22,10 @@ from .errors import (
     UsageLimitError,
 )
 from .status_display import PlainStatusDisplay
-from .stream_parser import StreamParser
 from .worktree import (
     CONTAINER_PARENT_GIT,
     patch_gitdir_for_container,
 )
-
-
-def _is_usage_limit_line(line: str, patterns: tuple[str, ...]) -> bool:
-    """Return True if line signals a usage limit — plain-text or a JSON result error."""
-    try:
-        obj = json.loads(line)
-        if isinstance(obj, dict):
-            if obj.get("type") == "result" and obj.get("is_error"):
-                if obj.get("api_error_status") == 429:
-                    return True
-                result_text = obj.get("result")
-                if isinstance(result_text, str) and any(
-                    p.lower() in result_text.lower() for p in patterns
-                ):
-                    return True
-            return False
-    except json.JSONDecodeError:
-        pass
-    line_lower = line.lower()
-    return any(p.lower() in line_lower for p in patterns)
 
 
 def _build_claude_command(model: str = "", effort: str = "") -> str:
@@ -297,16 +277,19 @@ class ContainerRunner:
 
         self._prompt = await prepare_prompt(prompt_file, prompt_args, container_exec)
 
-    async def work(self) -> str:
+    async def work(self, role: AgentRole) -> AgentOutput:
         self._status_display.update_phase(self.name, "Work")
         loop = asyncio.get_running_loop()
+        on_turn: Callable[[str], None] = lambda turn: self._status_display.print(
+            self.name, turn
+        )
         return await loop.run_in_executor(
-            None, lambda: self.run_streaming(print_output=True)
+            None, lambda: self.run_streaming(role=role, on_turn=on_turn)
         )
 
-    def run_streaming(self, print_output: bool = False) -> str:
+    def run_streaming(self, role: AgentRole, on_turn: Callable[[str], None]) -> AgentOutput:
         self.write_file(self._prompt, "/tmp/.pycastle_prompt")
-        result = self._active_container.exec_run(
+        exec_result = self._active_container.exec_run(
             ["bash", "-c", _build_claude_command(model=self.model, effort=self.effort)],
             stream=True,
             workdir=self._worktree_path,
@@ -317,18 +300,17 @@ class ContainerRunner:
 
         def _feed():
             try:
-                for chunk in result.output:
+                for chunk in exec_result.output:
                     q.put(chunk)
             finally:
                 q.put(_sentinel)
 
         threading.Thread(target=_feed, daemon=True).start()
 
-        parts: list[str] = []
-        line_buf = ""
-        parser = StreamParser()
+        log = open(self._log_path, "wb")  # noqa: WPS515
         try:
-            with open(self._log_path, "wb") as log:
+            def _lines() -> Generator[str, None, None]:
+                line_buf = ""
                 while True:
                     try:
                         chunk = q.get(timeout=self._cfg.idle_timeout)
@@ -337,21 +319,19 @@ class ContainerRunner:
                             f"Agent idle for more than {self._cfg.idle_timeout}s"
                         )
                     if chunk is _sentinel:
-                        break
+                        return
                     log.write(chunk)
                     log.flush()
                     text = chunk.decode("utf-8", errors="replace")
-                    parts.append(text)
                     self._status_display.reset_idle_timer(self.name)
                     line_buf += text
                     while "\n" in line_buf:
                         line, line_buf = line_buf.split("\n", 1)
-                        if _is_usage_limit_line(line, self._cfg.usage_limit_patterns):
-                            raise UsageLimitError(line)
-                        turn = parser.feed(line)
-                        if print_output and turn is not None:
-                            self._status_display.print(self.name, turn)
+                        yield line
+
+            return process_stream(_lines(), on_turn, role, self._cfg.usage_limit_patterns)
         finally:
+            log.close()
             try:
                 self._active_container.exec_run(
                     ["bash", "-c", "rm -f /tmp/.pycastle_prompt"],
@@ -359,4 +339,3 @@ class ContainerRunner:
                 )
             except Exception:
                 pass
-        return "".join(parts)

@@ -1,7 +1,7 @@
 import dataclasses
 import sys
 
-from ..agent_output_protocol import assert_complete
+from ..agent_output_protocol import AgentRole
 from ..agent_result import PreflightFailure
 from ..agent_runner import RunRequest
 from ..services import GitCommandError
@@ -75,6 +75,7 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                         name="Merge Agent",
                         prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
                         mount_path=sandbox_path,
+                        role=AgentRole.MERGER,
                         prompt_args={
                             "BRANCHES": "\n".join(
                                 f"- {branch_for(i['number'])}" for i in conflict_issues
@@ -92,7 +93,6 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                     raise RuntimeError(
                         "Merger preflight checks failed; merge did not complete"
                     )
-                assert_complete(merger_result)
                 deps.git_svc.fast_forward_branch(
                     deps.repo_root, target_branch, MERGE_SANDBOX
                 )
