@@ -1,6 +1,4 @@
-import asyncio
 import dataclasses
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -8,10 +6,9 @@ from .agent_output_protocol import AgentOutput, AgentRole
 from .agent_result import CancellationToken, PreflightFailure
 from .config import Config
 from .container_runner import ContainerRunner
-from .errors import AgentTimeoutError, BranchCollisionError, UsageLimitError
+from .errors import AgentTimeoutError, UsageLimitError
 from .services import GitService
 from .status_display import PlainStatusDisplay
-from .worktree import patch_gitdir_for_container, worktree_name_for_branch
 
 
 @dataclasses.dataclass
@@ -21,8 +18,6 @@ class RunRequest:
     mount_path: Path
     role: AgentRole = AgentRole.IMPLEMENTER
     prompt_args: dict[str, str] | None = None
-    branch: str | None = None
-    sha: str | None = None
     skip_preflight: bool = False
     model: str = ""
     effort: str = ""
@@ -59,15 +54,12 @@ class AgentRunner:
         self._cfg = cfg
         self._git_service = git_service
         self._docker_client = docker_client
-        self._branch_locks: dict[str, asyncio.Lock] = {}
 
     async def run(self, request: RunRequest) -> AgentOutput | PreflightFailure:
         name = request.name
         prompt_file = request.prompt_file
         mount_path = request.mount_path
         prompt_args = request.prompt_args
-        branch = request.branch
-        sha = request.sha
         skip_preflight = request.skip_preflight
         model = request.model
         effort = request.effort
@@ -82,105 +74,49 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError("Agent cancelled due to usage limit")
 
-        lock: asyncio.Lock | None = None
-        if branch:
-            if branch not in self._branch_locks:
-                self._branch_locks[branch] = asyncio.Lock()
-            lock = self._branch_locks[branch]
-            if lock.locked():
-                raise BranchCollisionError(
-                    f"Branch {branch!r} already has an agent running"
-                )
-            await lock.acquire()
-
-        worktree_host_path: Path | None = None
-        gitdir_overlay: Path | None = None
+        runner = ContainerRunner(
+            name,
+            mount_path,
+            self._env,
+            model=model,
+            effort=effort,
+            docker_client=self._docker_client,
+            status_display=status_display,
+            cfg=self._cfg,
+        )
         try:
-            if branch:
-                worktree_name = worktree_name_for_branch(branch)
-                worktree_host_path = (
-                    mount_path / self._cfg.pycastle_dir / ".worktrees" / worktree_name
-                )
-                self._git_service.create_worktree(
-                    mount_path, worktree_host_path, branch, sha
-                )
-                gitdir_overlay = patch_gitdir_for_container(worktree_host_path)
-
             git_name = self._git_service.get_user_name()
             git_email = self._git_service.get_user_email()
-            runner = ContainerRunner(
-                name,
-                mount_path,
-                self._env,
-                branch=branch,
-                worktree_host_path=worktree_host_path,
-                gitdir_overlay=gitdir_overlay,
-                model=model,
-                effort=effort,
-                docker_client=self._docker_client,
-                status_display=status_display,
-                cfg=self._cfg,
-            )
-
-            @asynccontextmanager
-            async def _worktree_lifecycle():
+            await runner.setup(git_name, git_email, work_body)
+            await runner.prepare(prompt_file, prompt_args or {})
+            if not skip_preflight:
+                failures = await runner.preflight(list(self._cfg.preflight_checks))
+                if failures:
+                    return PreflightFailure(failures=tuple(failures))
+            retries_left = self._cfg.timeout_retries
+            while True:
                 try:
-                    yield
-                finally:
-                    exc: BaseException | None = None
-                    try:
-                        runner.__exit__(None, None, None)
-                    except BaseException as e:
-                        exc = e
-                    if worktree_host_path and not _token.wants_worktree_preserved:
-                        try:
-                            clean = self._git_service.is_working_tree_clean(
-                                worktree_host_path
-                            )
-                        except Exception:
-                            clean = False
-                        if clean:
-                            try:
-                                self._git_service.remove_worktree(
-                                    mount_path, worktree_host_path
-                                )
-                            except BaseException as e:
-                                if exc is None:
-                                    exc = e
-                    if gitdir_overlay:
-                        gitdir_overlay.unlink(missing_ok=True)
-                    if exc is not None:
-                        raise exc
-
-            async with _worktree_lifecycle():
-                await runner.setup(git_name, git_email, work_body)
-                await runner.prepare(prompt_file, prompt_args or {})
-                if not skip_preflight:
-                    failures = await runner.preflight(list(self._cfg.preflight_checks))
-                    if failures:
-                        return PreflightFailure(failures=tuple(failures))
-                retries_left = self._cfg.timeout_retries
-                while True:
-                    try:
-                        output = await runner.work(request.role)
-                        return output
-                    except AgentTimeoutError:
-                        if retries_left <= 0:
-                            raise
-                        restart_num = self._cfg.timeout_retries - retries_left + 1
-                        status_display.print(
-                            name,
-                            f"Timeout — restarting"
-                            f" (attempt {restart_num}/{self._cfg.timeout_retries})",
-                        )
-                        retries_left -= 1
-                    except UsageLimitError:
-                        _token.cancel(preserve_worktree=True)
+                    output = await runner.work(request.role)
+                    return output
+                except AgentTimeoutError:
+                    if retries_left <= 0:
                         raise
+                    restart_num = self._cfg.timeout_retries - retries_left + 1
+                    status_display.print(
+                        name,
+                        f"Timeout — restarting"
+                        f" (attempt {restart_num}/{self._cfg.timeout_retries})",
+                    )
+                    retries_left -= 1
+                except UsageLimitError:
+                    _token.cancel(preserve_worktree=True)
+                    raise
         finally:
             status_display.remove(name)
-            if lock is not None and lock.locked():
-                lock.release()
+            try:
+                runner.__exit__(None, None, None)
+            except Exception:
+                pass
 
     async def run_preflight(
         self,

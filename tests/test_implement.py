@@ -264,7 +264,7 @@ def test_implement_phase_reviewer_usage_limit_signals_in_result(tmp_path):
 
 
 def test_run_issue_derives_branch_from_issue_number(tmp_path):
-    """run_issue must derive the branch via branch_for(number) and include it in prompt_args."""
+    """run_issue must derive the branch via branch_for(number) and pass it to create_worktree and prompt_args."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
 
     issue = {"number": 7, "title": "Fix thing"}
@@ -272,8 +272,9 @@ def test_run_issue_derives_branch_from_issue_number(tmp_path):
     asyncio.run(run_issue(issue, deps))
 
     implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert implementer_call.branch == "pycastle/issue-7"
     assert implementer_call.prompt_args["BRANCH"] == "pycastle/issue-7"
+    branch_arg = deps.git_svc.create_worktree.call_args_list[0][0][2]
+    assert branch_arg == "pycastle/issue-7"
 
 
 def test_run_issue_passes_feedback_commands_to_implementer(tmp_path):
@@ -563,3 +564,89 @@ def test_agent_worktree_removes_gitdir_overlay_even_when_body_raises(
         asyncio.run(_run())
 
     assert not overlay.exists()
+
+
+# ── run_issue: worktree lifecycle ─────────────────────────────────────────────
+
+
+def test_run_issue_creates_two_worktrees_implementer_and_reviewer(tmp_path):
+    """run_issue must call create_worktree twice: once for the Implementer, once for the Reviewer."""
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    issue = {"number": 10, "title": "Fix thing"}
+    asyncio.run(run_issue(issue, deps))
+
+    assert deps.git_svc.create_worktree.call_count == 2
+
+
+def test_run_issue_removes_worktrees_after_successful_run(tmp_path):
+    """run_issue must remove both worktrees when the working tree is clean."""
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    issue = {"number": 11, "title": "Fix thing"}
+    asyncio.run(run_issue(issue, deps))
+
+    assert deps.git_svc.remove_worktree.call_count == 2
+
+
+def test_run_issue_preserves_worktree_on_usage_limit(tmp_path):
+    """run_issue must not remove the Implementer worktree when usage limit is hit."""
+    token = CancellationToken()
+
+    async def _side_effect(request: RunRequest):
+        if "Implement Agent" in request.name:
+            token.cancel(preserve_worktree=True)
+            raise UsageLimitError("")
+        return CompletionOutput()
+
+    fake = FakeAgentRunner(side_effect=_side_effect)
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    issue = {"number": 12, "title": "Fix thing"}
+    with pytest.raises(UsageLimitError):
+        asyncio.run(run_issue(issue, deps, token=token))
+
+    deps.git_svc.remove_worktree.assert_not_called()
+
+
+def test_run_issue_preserves_worktree_when_dirty(tmp_path):
+    """run_issue must not remove the worktree when the working tree is dirty."""
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = False
+
+    issue = {"number": 13, "title": "Fix thing"}
+    asyncio.run(run_issue(issue, deps))
+
+    deps.git_svc.remove_worktree.assert_not_called()
+
+
+def test_run_issue_raises_branch_collision_for_concurrent_same_issue(tmp_path):
+    """run_issue raises BranchCollisionError when two calls race on the same issue number."""
+    from pycastle.errors import BranchCollisionError
+
+    async def _yielding_side_effect(request: RunRequest):
+        if "Implement Agent" in request.name:
+            await asyncio.sleep(0)  # yield so Task 2 can observe the held lock
+        return CompletionOutput()
+
+    fake = FakeAgentRunner(side_effect=_yielding_side_effect)
+    deps = _make_deps(tmp_path, fake)
+    branch_locks: dict[str, asyncio.Lock] = {}
+    issue = {"number": 14, "title": "Fix thing"}
+
+    async def _two_concurrent():
+        return await asyncio.gather(
+            run_issue(issue, deps, branch_locks=branch_locks),
+            run_issue(issue, deps, branch_locks=branch_locks),
+            return_exceptions=True,
+        )
+
+    results = asyncio.run(_two_concurrent())
+    errors = [r for r in results if isinstance(r, Exception)]
+    assert any(isinstance(e, BranchCollisionError) for e in errors)

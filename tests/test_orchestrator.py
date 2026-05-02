@@ -1143,8 +1143,7 @@ def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
 def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
     tmp_path,
 ):
-    """After plan-sandbox preflight passes, the HEAD SHA must be captured and passed to implementers."""
-    captured_shas: list[str | None] = []
+    """After plan-sandbox preflight passes, the HEAD SHA must be used when creating the Implementer worktree."""
     fake_sha = "deadbeef123"
 
     mock_git = _make_git_svc(try_merge_side_effect=[True])
@@ -1152,7 +1151,6 @@ def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
 
     async def _fake_run_agent(request: RunRequest):
         if "Implement Agent" in request.name:
-            captured_shas.append(request.sha)
             return CompletionOutput()
         return _plan_output([{"number": 1, "title": "Fix"}])
 
@@ -1163,8 +1161,13 @@ def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
         github_service=_make_github_svc(),
     )
 
-    assert captured_shas == [fake_sha], (
-        f"Implementer must receive sha={fake_sha!r}; got {captured_shas}"
+    sha_calls = [
+        call[0][3]
+        for call in mock_git.create_worktree.call_args_list
+        if call[0][3] is not None
+    ]
+    assert sha_calls == [fake_sha], (
+        f"Implementer worktree must use sha={fake_sha!r}; got {sha_calls}"
     )
 
 
@@ -1188,8 +1191,7 @@ def test_preplanning_preflight_runs_on_cold_startup(tmp_path):
 
 
 def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
-    """The pinned SHA must be passed as sha= to run_agent for every implementer in the batch."""
-    captured_calls: list[dict] = []
+    """The pinned SHA must be passed to create_worktree for every Implementer worktree."""
     fake_sha = "cafebabe000"
 
     mock_git = _make_git_svc(try_merge_side_effect=[True, True])
@@ -1201,7 +1203,6 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
     ]
 
     async def _fake_run_agent(request: RunRequest):
-        captured_calls.append({"name": request.name, "sha": request.sha})
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return _plan_output(issues)
@@ -1213,11 +1214,19 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    impl_calls = [c for c in captured_calls if "Implement Agent" in c["name"]]
-    assert len(impl_calls) == 2, f"Expected 2 implementer calls; got {impl_calls}"
-    for call in impl_calls:
-        assert call["sha"] == fake_sha, (
-            f"Implementer {call['name']} must receive sha={fake_sha!r}; got {call['sha']!r}"
+    # Each issue has 2 worktree calls: implementer (with sha) and reviewer (sha=None).
+    # The first call per issue must use the pinned SHA.
+    sha_calls = [
+        call[0][3]
+        for call in mock_git.create_worktree.call_args_list
+        if call[0][3] is not None
+    ]
+    assert len(sha_calls) == 2, (
+        f"Expected 2 implementer worktree calls with sha; got {sha_calls}"
+    )
+    for sha_val in sha_calls:
+        assert sha_val == fake_sha, (
+            f"Implementer worktree must use sha={fake_sha!r}; got {sha_val!r}"
         )
 
 
