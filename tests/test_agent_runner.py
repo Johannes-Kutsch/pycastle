@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from pycastle.agent_result import CancellationToken, PreflightFailure
-from pycastle.agent_runner import AgentRunner
+from pycastle.agent_runner import AgentRunner, RunRequest
 from pycastle.config import Config
 from pycastle.errors import (
     AgentTimeoutError,
@@ -27,9 +27,11 @@ def test_fake_agent_runner_returns_queued_string_response():
     fake = FakeAgentRunner(["<promise>COMPLETE</promise>"])
     result = asyncio.run(
         fake.run(
-            name="Tester",
-            prompt_file=Path("/prompt.md"),
-            mount_path=Path("/workspace"),
+            RunRequest(
+                name="Tester",
+                prompt_file=Path("/prompt.md"),
+                mount_path=Path("/workspace"),
+            )
         )
     )
     assert result == "<promise>COMPLETE</promise>"
@@ -40,9 +42,11 @@ def test_fake_agent_runner_returns_queued_preflight_failure():
     fake = FakeAgentRunner([failure])
     result = asyncio.run(
         fake.run(
-            name="Tester",
-            prompt_file=Path("/prompt.md"),
-            mount_path=Path("/workspace"),
+            RunRequest(
+                name="Tester",
+                prompt_file=Path("/prompt.md"),
+                mount_path=Path("/workspace"),
+            )
         )
     )
     assert result is failure
@@ -53,9 +57,11 @@ def test_fake_agent_runner_raises_queued_exception():
     with pytest.raises(RuntimeError, match="boom"):
         asyncio.run(
             fake.run(
-                name="Tester",
-                prompt_file=Path("/prompt.md"),
-                mount_path=Path("/workspace"),
+                RunRequest(
+                    name="Tester",
+                    prompt_file=Path("/prompt.md"),
+                    mount_path=Path("/workspace"),
+                )
             )
         )
 
@@ -65,9 +71,11 @@ def test_fake_agent_runner_raises_assertion_error_when_queue_exhausted():
     with pytest.raises(AssertionError, match="queue exhausted"):
         asyncio.run(
             fake.run(
-                name="Unexpected",
-                prompt_file=Path("/prompt.md"),
-                mount_path=Path("/workspace"),
+                RunRequest(
+                    name="Unexpected",
+                    prompt_file=Path("/prompt.md"),
+                    mount_path=Path("/workspace"),
+                )
             )
         )
 
@@ -77,9 +85,11 @@ def test_fake_agent_runner_exhaustion_error_includes_agent_name():
     with pytest.raises(AssertionError, match="MyAgent"):
         asyncio.run(
             fake.run(
-                name="MyAgent",
-                prompt_file=Path("/prompt.md"),
-                mount_path=Path("/workspace"),
+                RunRequest(
+                    name="MyAgent",
+                    prompt_file=Path("/prompt.md"),
+                    mount_path=Path("/workspace"),
+                )
             )
         )
 
@@ -89,11 +99,11 @@ def test_fake_agent_runner_pops_responses_in_order():
     run = fake.run
 
     async def _collect():
-        kwargs = {"prompt_file": Path("/p.md"), "mount_path": Path("/w")}
+        p, m = Path("/p.md"), Path("/w")
         return [
-            await run(name="A", **kwargs),
-            await run(name="B", **kwargs),
-            await run(name="C", **kwargs),
+            await run(RunRequest(name="A", prompt_file=p, mount_path=m)),
+            await run(RunRequest(name="B", prompt_file=p, mount_path=m)),
+            await run(RunRequest(name="C", prompt_file=p, mount_path=m)),
         ]
 
     results = asyncio.run(_collect())
@@ -105,12 +115,12 @@ def test_fake_agent_runner_records_all_calls():
     prompt = Path("/prompt.md")
     mount = Path("/workspace")
 
-    asyncio.run(fake.run(name="X", prompt_file=prompt, mount_path=mount))
-    asyncio.run(fake.run(name="Y", prompt_file=prompt, mount_path=mount))
+    asyncio.run(fake.run(RunRequest(name="X", prompt_file=prompt, mount_path=mount)))
+    asyncio.run(fake.run(RunRequest(name="Y", prompt_file=prompt, mount_path=mount)))
 
     assert len(fake.calls) == 2
-    assert fake.calls[0]["name"] == "X"
-    assert fake.calls[1]["name"] == "Y"
+    assert fake.calls[0].name == "X"
+    assert fake.calls[1].name == "Y"
 
 
 def test_fake_agent_runner_records_call_kwargs():
@@ -120,30 +130,32 @@ def test_fake_agent_runner_records_call_kwargs():
 
     asyncio.run(
         fake.run(
-            name="Planner",
-            prompt_file=prompt,
-            mount_path=mount,
-            prompt_args={"KEY": "val"},
-            branch="my-branch",
-            sha="abc123",
-            skip_preflight=True,
-            model="claude-3",
-            effort="high",
-            stage="plan",
+            RunRequest(
+                name="Planner",
+                prompt_file=prompt,
+                mount_path=mount,
+                prompt_args={"KEY": "val"},
+                branch="my-branch",
+                sha="abc123",
+                skip_preflight=True,
+                model="claude-3",
+                effort="high",
+                stage="plan",
+            )
         )
     )
 
     call = fake.calls[0]
-    assert call["name"] == "Planner"
-    assert call["prompt_file"] == prompt
-    assert call["mount_path"] == mount
-    assert call["prompt_args"] == {"KEY": "val"}
-    assert call["branch"] == "my-branch"
-    assert call["sha"] == "abc123"
-    assert call["skip_preflight"] is True
-    assert call["model"] == "claude-3"
-    assert call["effort"] == "high"
-    assert call["stage"] == "plan"
+    assert call.name == "Planner"
+    assert call.prompt_file == prompt
+    assert call.mount_path == mount
+    assert call.prompt_args == {"KEY": "val"}
+    assert call.branch == "my-branch"
+    assert call.sha == "abc123"
+    assert call.skip_preflight is True
+    assert call.model == "claude-3"
+    assert call.effort == "high"
+    assert call.stage == "plan"
 
 
 def test_fake_agent_runner_starts_with_empty_calls():
@@ -154,19 +166,19 @@ def test_fake_agent_runner_starts_with_empty_calls():
 # ── FakeAgentRunner: side_effect mode ────────────────────────────────────────
 
 
-def test_fake_agent_runner_side_effect_is_called_with_kwargs():
+def test_fake_agent_runner_side_effect_is_called_with_run_request():
     received: dict = {}
 
-    async def _effect(name, **kwargs):
-        received["name"] = name
+    async def _effect(request: RunRequest):
+        received["name"] = request.name
         return "from side effect"
 
     fake = FakeAgentRunner(side_effect=_effect)
     result = asyncio.run(
         fake.run(
-            name="SideEffectAgent",
-            prompt_file=Path("/p.md"),
-            mount_path=Path("/w"),
+            RunRequest(
+                name="SideEffectAgent", prompt_file=Path("/p.md"), mount_path=Path("/w")
+            )
         )
     )
 
@@ -175,47 +187,45 @@ def test_fake_agent_runner_side_effect_is_called_with_kwargs():
 
 
 def test_fake_agent_runner_side_effect_can_raise():
-    async def _effect(**kwargs):
+    async def _effect(request: RunRequest):
         raise ValueError("side effect error")
 
     fake = FakeAgentRunner(side_effect=_effect)
     with pytest.raises(ValueError, match="side effect error"):
         asyncio.run(
             fake.run(
-                name="Agent",
-                prompt_file=Path("/p.md"),
-                mount_path=Path("/w"),
+                RunRequest(
+                    name="Agent", prompt_file=Path("/p.md"), mount_path=Path("/w")
+                )
             )
         )
 
 
 def test_fake_agent_runner_side_effect_still_records_calls():
-    async def _effect(**kwargs):
+    async def _effect(request: RunRequest):
         return "ok"
 
     fake = FakeAgentRunner(side_effect=_effect)
     asyncio.run(
         fake.run(
-            name="Recorded",
-            prompt_file=Path("/p.md"),
-            mount_path=Path("/w"),
+            RunRequest(
+                name="Recorded", prompt_file=Path("/p.md"), mount_path=Path("/w")
+            )
         )
     )
 
     assert len(fake.calls) == 1
-    assert fake.calls[0]["name"] == "Recorded"
+    assert fake.calls[0].name == "Recorded"
 
 
 def test_fake_agent_runner_side_effect_can_be_synchronous():
-    def _sync_effect(**kwargs):
+    def _sync_effect(request: RunRequest):
         return "sync result"
 
     fake = FakeAgentRunner(side_effect=_sync_effect)
     result = asyncio.run(
         fake.run(
-            name="Agent",
-            prompt_file=Path("/p.md"),
-            mount_path=Path("/w"),
+            RunRequest(name="Agent", prompt_file=Path("/p.md"), mount_path=Path("/w"))
         )
     )
 
@@ -270,7 +280,12 @@ def test_agent_runner_run_returns_agent_output(tmp_path):
 
     result = asyncio.run(
         runner.run(
-            name="Test", prompt_file=prompt, mount_path=tmp_path, skip_preflight=True
+            RunRequest(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+            )
         )
     )
 
@@ -299,7 +314,7 @@ def test_agent_runner_run_returns_preflight_failure_when_check_fails(tmp_path):
     prompt.write_text("Test prompt")
 
     result = asyncio.run(
-        runner.run(name="Test", prompt_file=prompt, mount_path=tmp_path)
+        runner.run(RunRequest(name="Test", prompt_file=prompt, mount_path=tmp_path))
     )
 
     assert isinstance(result, PreflightFailure)
@@ -332,7 +347,12 @@ def test_agent_runner_run_skips_preflight_when_skip_preflight_true(tmp_path):
 
     result = asyncio.run(
         runner.run(
-            name="Test", prompt_file=prompt, mount_path=tmp_path, skip_preflight=True
+            RunRequest(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+            )
         )
     )
 
@@ -355,7 +375,9 @@ def test_agent_runner_run_raises_usage_limit_error_when_token_pre_cancelled(tmp_
     with pytest.raises(UsageLimitError):
         asyncio.run(
             runner.run(
-                name="Test", prompt_file=prompt, mount_path=tmp_path, token=token
+                RunRequest(
+                    name="Test", prompt_file=prompt, mount_path=tmp_path, token=token
+                )
             )
         )
 
@@ -374,11 +396,13 @@ def test_agent_runner_run_cancels_token_and_raises_on_usage_limit_in_stream(tmp_
     with pytest.raises(UsageLimitError):
         asyncio.run(
             runner.run(
-                name="Test",
-                prompt_file=prompt,
-                mount_path=tmp_path,
-                skip_preflight=True,
-                token=token,
+                RunRequest(
+                    name="Test",
+                    prompt_file=prompt,
+                    mount_path=tmp_path,
+                    skip_preflight=True,
+                    token=token,
+                )
             )
         )
 
@@ -398,18 +422,22 @@ def test_agent_runner_run_raises_branch_collision_for_concurrent_same_branch(tmp
     async def _two_on_same_branch():
         return await asyncio.gather(
             runner.run(
-                name="A1",
-                prompt_file=prompt,
-                mount_path=tmp_path,
-                branch="feature/collision",
-                skip_preflight=True,
+                RunRequest(
+                    name="A1",
+                    prompt_file=prompt,
+                    mount_path=tmp_path,
+                    branch="feature/collision",
+                    skip_preflight=True,
+                )
             ),
             runner.run(
-                name="A2",
-                prompt_file=prompt,
-                mount_path=tmp_path,
-                branch="feature/collision",
-                skip_preflight=True,
+                RunRequest(
+                    name="A2",
+                    prompt_file=prompt,
+                    mount_path=tmp_path,
+                    branch="feature/collision",
+                    skip_preflight=True,
+                )
             ),
             return_exceptions=True,
         )
@@ -440,10 +468,12 @@ def test_agent_runner_run_raises_agent_timeout_error_when_retries_exhausted(tmp_
     with pytest.raises(AgentTimeoutError):
         asyncio.run(
             runner.run(
-                name="Test",
-                prompt_file=prompt,
-                mount_path=tmp_path,
-                skip_preflight=True,
+                RunRequest(
+                    name="Test",
+                    prompt_file=prompt,
+                    mount_path=tmp_path,
+                    skip_preflight=True,
+                )
             )
         )
 
@@ -473,7 +503,12 @@ def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
 
     result = asyncio.run(
         runner.run(
-            name="Test", prompt_file=prompt, mount_path=tmp_path, skip_preflight=True
+            RunRequest(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+            )
         )
     )
 
@@ -494,11 +529,13 @@ def test_agent_runner_creates_worktree_at_issue_path(tmp_path):
 
     asyncio.run(
         runner.run(
-            name="Test",
-            prompt_file=prompt,
-            mount_path=tmp_path,
-            branch="pycastle/issue-42",
-            skip_preflight=True,
+            RunRequest(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                branch="pycastle/issue-42",
+                skip_preflight=True,
+            )
         )
     )
 
@@ -517,11 +554,13 @@ def test_agent_runner_sanitizes_branch_name_for_worktree_path(tmp_path):
 
     asyncio.run(
         runner.run(
-            name="Test",
-            prompt_file=prompt,
-            mount_path=tmp_path,
-            branch="feature/My Cool Branch",
-            skip_preflight=True,
+            RunRequest(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                branch="feature/My Cool Branch",
+                skip_preflight=True,
+            )
         )
     )
 
@@ -541,11 +580,13 @@ def test_agent_runner_removes_worktree_when_clean(tmp_path):
 
     asyncio.run(
         runner.run(
-            name="Test",
-            prompt_file=prompt,
-            mount_path=tmp_path,
-            branch="feature/test",
-            skip_preflight=True,
+            RunRequest(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                branch="feature/test",
+                skip_preflight=True,
+            )
         )
     )
 
@@ -564,11 +605,13 @@ def test_agent_runner_preserves_worktree_when_dirty(tmp_path):
 
     asyncio.run(
         runner.run(
-            name="Test",
-            prompt_file=prompt,
-            mount_path=tmp_path,
-            branch="feature/test",
-            skip_preflight=True,
+            RunRequest(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                branch="feature/test",
+                skip_preflight=True,
+            )
         )
     )
 
@@ -587,11 +630,13 @@ def test_agent_runner_preserves_worktree_on_usage_limit(tmp_path):
     with pytest.raises(UsageLimitError):
         asyncio.run(
             runner.run(
-                name="Test",
-                prompt_file=prompt,
-                mount_path=tmp_path,
-                branch="feature/test",
-                skip_preflight=True,
+                RunRequest(
+                    name="Test",
+                    prompt_file=prompt,
+                    mount_path=tmp_path,
+                    branch="feature/test",
+                    skip_preflight=True,
+                )
             )
         )
 
@@ -611,11 +656,13 @@ def test_agent_runner_does_not_start_container_when_create_worktree_fails(tmp_pa
     with pytest.raises(RuntimeError, match="worktree add failed"):
         asyncio.run(
             runner.run(
-                name="Test",
-                prompt_file=prompt,
-                mount_path=tmp_path,
-                branch="feature/test",
-                skip_preflight=True,
+                RunRequest(
+                    name="Test",
+                    prompt_file=prompt,
+                    mount_path=tmp_path,
+                    branch="feature/test",
+                    skip_preflight=True,
+                )
             )
         )
 
@@ -635,10 +682,12 @@ def test_agent_runner_propagates_git_user_name_error(tmp_path):
     with pytest.raises(GitCommandError):
         asyncio.run(
             runner.run(
-                name="Test",
-                prompt_file=prompt,
-                mount_path=tmp_path,
-                skip_preflight=True,
+                RunRequest(
+                    name="Test",
+                    prompt_file=prompt,
+                    mount_path=tmp_path,
+                    skip_preflight=True,
+                )
             )
         )
 
@@ -659,11 +708,13 @@ def test_agent_runner_remove_agent_called_on_success(tmp_path):
 
     asyncio.run(
         runner.run(
-            name="Test",
-            prompt_file=prompt,
-            mount_path=tmp_path,
-            skip_preflight=True,
-            status_display=display,
+            RunRequest(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+                status_display=display,
+            )
         )
     )
 
@@ -685,11 +736,13 @@ def test_agent_runner_remove_agent_called_on_error(tmp_path):
     with pytest.raises(RuntimeError, match="git failure"):
         asyncio.run(
             runner.run(
-                name="Test",
-                prompt_file=prompt,
-                mount_path=tmp_path,
-                skip_preflight=True,
-                status_display=display,
+                RunRequest(
+                    name="Test",
+                    prompt_file=prompt,
+                    mount_path=tmp_path,
+                    skip_preflight=True,
+                    status_display=display,
+                )
             )
         )
 
@@ -932,3 +985,34 @@ def test_agent_runner_run_preflight_removes_status_row_when_exception_propagates
         )
 
     assert ("remove_agent", "preflight-checks") in display.calls
+
+
+# ── RunRequest: core interface ────────────────────────────────────────────────
+
+
+def test_run_request_stores_required_fields():
+    req = RunRequest(
+        name="Agent",
+        prompt_file=Path("/prompt.md"),
+        mount_path=Path("/workspace"),
+    )
+    assert req.name == "Agent"
+    assert req.prompt_file == Path("/prompt.md")
+    assert req.mount_path == Path("/workspace")
+    assert req.skip_preflight is False
+    assert req.model == ""
+    assert req.branch is None
+    assert req.token is None
+    assert req.work_body == ""
+
+
+def test_fake_agent_runner_accepts_run_request_and_records_it():
+    fake = FakeAgentRunner(["result"])
+    req = RunRequest(
+        name="Planner",
+        prompt_file=Path("/p.md"),
+        mount_path=Path("/w"),
+    )
+    result = asyncio.run(fake.run(req))
+    assert result == "result"
+    assert fake.calls[0] is req

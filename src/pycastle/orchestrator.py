@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .agent_result import PreflightFailure
-from .agent_runner import AgentRunner, AgentRunnerProtocol
+from .agent_runner import AgentRunner, AgentRunnerProtocol, RunRequest
 from .config import Config, load_config
 from .services import ClaudeService, GitCommandError, GitService
 from .services import GithubNotFoundError, GithubService
@@ -112,13 +112,13 @@ async def wait_for_clean_working_tree(
 
 
 class _CallableAgentRunner:
-    """Wraps a plain async callable as an AgentRunnerProtocol (backward compat for tests)."""
+    """Wraps a plain async callable as an AgentRunnerProtocol."""
 
     def __init__(self, fn: Any) -> None:
         self._fn = fn
 
-    async def run(self, **kwargs: Any) -> Any:
-        return await self._fn(**kwargs)
+    async def run(self, request: RunRequest) -> Any:
+        return await self._fn(request)
 
     async def run_preflight(self, **kwargs: Any) -> list[tuple[str, str, str]]:
         return []

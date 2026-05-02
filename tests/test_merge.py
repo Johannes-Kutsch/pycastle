@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from pycastle.agent_runner import RunRequest
 from pycastle.config import Config
 from pycastle.services import GitCommandError, GitService
 from pycastle.services import GithubService
@@ -140,9 +141,9 @@ def test_conflict_spawns_merger_with_conflict_branches_only(
     git_svc.try_merge.side_effect = _conflict_on([2])
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
     _run(issues, deps)
-    merger_calls = [c for c in agent_runner.calls if c["name"] == "Merger"]
+    merger_calls = [c for c in agent_runner.calls if c.name == "Merger"]
     assert len(merger_calls) == 1
-    branches_arg = merger_calls[0]["prompt_args"]["BRANCHES"]
+    branches_arg = merger_calls[0].prompt_args["BRANCHES"]
     assert "pycastle/issue-2" in branches_arg
     assert "pycastle/issue-1" not in branches_arg
 
@@ -195,9 +196,9 @@ def test_merger_does_not_receive_issues_prompt_arg(deps, git_svc, agent_runner):
     git_svc.try_merge.return_value = False
     issues = [{"number": 3, "title": "Conflict"}]
     _run(issues, deps)
-    merger_calls = [c for c in agent_runner.calls if c["name"] == "Merger"]
+    merger_calls = [c for c in agent_runner.calls if c.name == "Merger"]
     assert len(merger_calls) == 1
-    assert "ISSUES" not in merger_calls[0]["prompt_args"]
+    assert "ISSUES" not in merger_calls[0].prompt_args
 
 
 # ── Branch deletion edge cases ────────────────────────────────────────────────
@@ -319,21 +320,21 @@ def test_merger_receives_worktree_path_as_mount(deps, git_svc, agent_runner):
     git_svc.try_merge.return_value = False
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
-    merger_calls = [c for c in agent_runner.calls if c["name"] == "Merger"]
+    merger_calls = [c for c in agent_runner.calls if c.name == "Merger"]
     assert len(merger_calls) == 1
     expected_path = (
         deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "merge-sandbox"
     )
-    assert merger_calls[0]["mount_path"] == expected_path
+    assert merger_calls[0].mount_path == expected_path
 
 
 def test_merger_has_no_branch_argument(deps, git_svc, agent_runner):
     git_svc.try_merge.return_value = False
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
-    merger_calls = [c for c in agent_runner.calls if c["name"] == "Merger"]
+    merger_calls = [c for c in agent_runner.calls if c.name == "Merger"]
     assert len(merger_calls) == 1
-    assert merger_calls[0]["branch"] is None
+    assert merger_calls[0].branch is None
 
 
 def test_worktree_removed_after_merger(deps, git_svc):
@@ -560,8 +561,8 @@ def test_merge_row_removed_before_merger_spawned(tmp_path, git_svc, github_svc):
     recording = RecordingStatusDisplay()
     removed_when_merger_ran: list[bool] = []
 
-    async def side_effect(**kwargs):
-        if kwargs["name"] == "Merger":
+    async def side_effect(request: RunRequest):
+        if request.name == "Merger":
             removed_when_merger_ran.append(("remove_agent", "merge") in recording.calls)
         return "<promise>COMPLETE</promise>"
 
@@ -597,6 +598,6 @@ def test_merger_run_call_passes_work_body_with_conflict_count(
 
     _run(conflict_issues, deps)
 
-    merger_calls = [c for c in recording_runner.calls if c["name"] == "Merger"]
+    merger_calls = [c for c in recording_runner.calls if c.name == "Merger"]
     assert len(merger_calls) == 1
-    assert merger_calls[0]["work_body"] == f"Merging {len(conflict_issues)} Branches"
+    assert merger_calls[0].work_body == f"Merging {len(conflict_issues)} Branches"
