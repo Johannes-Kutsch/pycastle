@@ -15,13 +15,11 @@ class PlainStatusDisplay:
     def __init__(self) -> None:
         self._last_caller: str | None = None
 
-    def _needs_blank(self, caller: str) -> bool:
-        if self._last_caller is None:
-            return False
-        return caller == "" or caller != self._last_caller
+    def _blank_before(self, caller: str) -> bool:
+        return self._last_caller is not None and (caller != self._last_caller or caller == "")
 
     def register(self, caller: str, startup_message: str = "started", work_body: str = "") -> None:
-        if self._needs_blank(caller):
+        if self._blank_before(caller):
             builtins.print()
         if caller:
             builtins.print(f"[{caller}] {startup_message}")
@@ -36,7 +34,7 @@ class PlainStatusDisplay:
         pass
 
     def remove(self, caller: str, shutdown_message: str = "finished", shutdown_style: str = "success") -> None:
-        if self._needs_blank(caller):
+        if self._blank_before(caller):
             builtins.print()
         if caller:
             builtins.print(f"[{caller}] {shutdown_message}")
@@ -45,7 +43,7 @@ class PlainStatusDisplay:
         self._last_caller = caller
 
     def print(self, caller: str, message: object, style: str | None = None) -> None:
-        if self._needs_blank(caller):
+        if self._blank_before(caller):
             builtins.print()
         if caller:
             builtins.print(f"[{caller}] {message}")

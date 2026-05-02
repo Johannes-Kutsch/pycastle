@@ -594,8 +594,9 @@ def test_rich_new_api_print_error_style_renders_entire_line_in_red() -> None:
     d = RichStatusDisplay(console=console)
     d.print("X", "msg", style="error")
     ansi = buf.getvalue()
-    assert "[X] msg" in ansi
-    assert _has_code(ansi[: ansi.find("[X] msg")], 31)  # red precedes text
+    caller_idx = ansi.find("[X]")
+    assert caller_idx >= 0 and "msg" in ansi
+    assert _has_code(ansi[:caller_idx], 31)  # red precedes [X]
 
 
 def test_rich_new_api_print_success_style_renders_entire_line_in_green() -> None:
@@ -603,8 +604,9 @@ def test_rich_new_api_print_success_style_renders_entire_line_in_green() -> None
     d = RichStatusDisplay(console=console)
     d.print("X", "msg", style="success")
     ansi = buf.getvalue()
-    assert "[X] msg" in ansi
-    assert _has_code(ansi[: ansi.find("[X] msg")], 32)  # green precedes text
+    caller_idx = ansi.find("[X]")
+    assert caller_idx >= 0 and "msg" in ansi
+    assert _has_code(ansi[:caller_idx], 32)  # green precedes [X]
 
 
 def test_rich_new_api_register_prints_started(capsys) -> None:
@@ -725,6 +727,127 @@ def test_rich_multiple_registers_use_single_live(capsys) -> None:
     assert "[B] started" in out
 
 
+def test_rich_register_inserts_blank_line_when_caller_changes(capsys) -> None:
+    d = RichStatusDisplay()
+    d.register("X")
+    d.register("Y")
+    d.stop()
+    out = capsys.readouterr().out
+    assert "[X] started\n\n[Y] started" in out
+
+
+def test_rich_register_no_blank_line_before_first_output(capsys) -> None:
+    d = RichStatusDisplay()
+    d.register("X")
+    d.stop()
+    out = capsys.readouterr().out
+    assert out.startswith("[X]")
+
+
+def test_rich_remove_inserts_blank_line_when_caller_changes(capsys) -> None:
+    d = RichStatusDisplay()
+    d.remove("X")
+    d.remove("Y")
+    out = capsys.readouterr().out
+    assert "[X] finished\n\n[Y] finished" in out
+
+
+def test_rich_remove_no_blank_line_before_first_output(capsys) -> None:
+    d = RichStatusDisplay()
+    d.remove("X")
+    out = capsys.readouterr().out
+    assert out.startswith("[X]")
+
+
+def test_rich_cross_method_blank_line_register_then_print(capsys) -> None:
+    d = RichStatusDisplay()
+    d.register("X")
+    d.print("Y", "msg")
+    d.stop()
+    out = capsys.readouterr().out
+    assert "[X] started\n\n[Y] msg" in out
+
+
+def test_rich_print_anonymous_caller_always_inserts_blank_line(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("", "first")
+    d.print("", "second")
+    out = capsys.readouterr().out
+    assert "first\n\nsecond" in out
+
+
+def test_rich_print_caller_prefix_is_bold() -> None:
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.print("Plan", "some message")
+    ansi = buf.getvalue()
+    caller_idx = ansi.find("[Plan]")
+    assert caller_idx >= 0
+    before_caller = ansi[:caller_idx]
+    assert _has_code(before_caller, 1)  # bold before [Plan]
+
+
+def test_rich_print_message_after_caller_prefix_is_not_bold() -> None:
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.print("Plan", "some message")
+    ansi = buf.getvalue()
+    msg_idx = ansi.find("some message")
+    assert msg_idx >= 0
+    # Between "] " and "some message" bold must be reset
+    between = ansi[ansi.find("[Plan]") + len("[Plan]") : msg_idx]
+    assert _has_code(between, 22) or not _has_code(ansi[msg_idx - 10 : msg_idx], 1)
+
+
+def test_rich_register_no_blank_line_on_same_caller(capsys) -> None:
+    d = RichStatusDisplay()
+    d.register("X")
+    d.register("X")
+    d.stop()
+    out = capsys.readouterr().out
+    assert "[X] started\n[X] started" in out
+
+
+def test_rich_remove_no_blank_line_on_same_caller(capsys) -> None:
+    d = RichStatusDisplay()
+    d.remove("X")
+    d.remove("X")
+    out = capsys.readouterr().out
+    assert "[X] finished\n[X] finished" in out
+
+
+def test_rich_named_to_anonymous_print_inserts_blank(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("Alice", "hello")
+    d.print("", "anon")
+    out = capsys.readouterr().out
+    assert "hello\n\nanon" in out
+
+
+def test_rich_anonymous_to_named_print_inserts_blank(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("", "anon")
+    d.print("Alice", "hello")
+    out = capsys.readouterr().out
+    assert "anon\n\n[Alice] hello" in out
+
+
+def test_rich_first_anonymous_print_has_no_leading_blank(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("", "first anon")
+    out = capsys.readouterr().out
+    assert out.startswith("first anon")
+
+
+def test_rich_register_anonymous_after_named_inserts_blank(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("Alice", "hello")
+    d.register("", "anon start")
+    d.stop()
+    out = capsys.readouterr().out
+    assert "hello\n\nanon start" in out
+
+
 def test_plain_status_display_satisfies_protocol() -> None:
     assert isinstance(PlainStatusDisplay(), StatusDisplay)
 
@@ -838,6 +961,92 @@ def test_plain_remove_with_empty_caller_prints_message_only(capsys) -> None:
     d = PlainStatusDisplay()
     d.remove("", shutdown_message="done")
     assert capsys.readouterr().out == "done\n"
+
+
+def test_plain_register_inserts_blank_line_when_caller_changes(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.register("X")
+    d.register("Y")
+    out = capsys.readouterr().out
+    assert out == "[X] started\n\n[Y] started\n"
+
+
+def test_plain_register_no_blank_line_before_first_output(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.register("X")
+    out = capsys.readouterr().out
+    assert out.startswith("[X]")
+
+
+def test_plain_register_no_blank_line_on_same_caller(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.register("X")
+    d.register("X")
+    out = capsys.readouterr().out
+    assert out == "[X] started\n[X] started\n"
+
+
+def test_plain_remove_inserts_blank_line_when_caller_changes(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.remove("X")
+    d.remove("Y")
+    out = capsys.readouterr().out
+    assert out == "[X] finished\n\n[Y] finished\n"
+
+
+def test_plain_remove_no_blank_line_before_first_output(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.remove("X")
+    out = capsys.readouterr().out
+    assert out.startswith("[X]")
+
+
+def test_plain_print_anonymous_caller_always_inserts_blank_line(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("", "first")
+    d.print("", "second")
+    out = capsys.readouterr().out
+    assert out == "first\n\nsecond\n"
+
+
+def test_plain_cross_method_blank_line_register_then_print(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.register("X")
+    d.print("Y", "msg")
+    out = capsys.readouterr().out
+    assert out == "[X] started\n\n[Y] msg\n"
+
+
+def test_plain_cross_method_blank_line_print_then_remove(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("X", "msg")
+    d.remove("Y")
+    out = capsys.readouterr().out
+    assert out == "[X] msg\n\n[Y] finished\n"
+
+
+def test_plain_named_to_anonymous_print_inserts_blank(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("Alice", "hello")
+    d.print("", "anon")
+    out = capsys.readouterr().out
+    assert out == "[Alice] hello\n\nanon\n"
+
+
+def test_plain_anonymous_to_named_print_inserts_blank(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("", "anon")
+    d.print("Alice", "hello")
+    out = capsys.readouterr().out
+    assert out == "anon\n\n[Alice] hello\n"
+
+
+def test_plain_same_caller_remove_after_print_no_blank(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("X", "msg")
+    d.remove("X")
+    out = capsys.readouterr().out
+    assert out == "[X] msg\n[X] finished\n"
 
 
 # ── RecordingStatusDisplay behaviour ─────────────────────────────────────────
