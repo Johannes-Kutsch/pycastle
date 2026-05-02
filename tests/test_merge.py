@@ -598,6 +598,32 @@ def test_merge_row_removed_before_merger_spawned(tmp_path, git_svc, github_svc):
     assert removed_when_merger_ran == [True]
 
 
+def test_merge_row_removed_with_failed_style_when_exception_raised(
+    tmp_path, git_svc, github_svc
+):
+    """merge_phase must remove the 'Merge' row with 'failed' style when an exception occurs."""
+    recording = RecordingStatusDisplay()
+    git_svc.try_merge.side_effect = GitCommandError(
+        "merge exploded", returncode=1, stderr=""
+    )
+    agent_runner = FakeAgentRunner([])
+    deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        agent_runner=agent_runner,
+        cfg=Config(),
+        logger=RecordingLogger(),
+        status_display=recording,
+    )
+
+    with pytest.raises(GitCommandError):
+        asyncio.run(merge_phase([{"number": 1, "title": "Fix A"}], deps))
+
+    assert ("remove", "Merge", "failed", "error") in recording.calls
+
+
 # ── Merger work_body ──────────────────────────────────────────────────────────
 
 

@@ -43,61 +43,69 @@ def _delete_merged_branches(branches: list[str], deps: Deps) -> None:
 
 async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
     deps.status_display.register("Merge", work_body="Merging")
-    await _wait_for_clean_working_tree(deps)
+    _merge_row_active = True
+    try:
+        await _wait_for_clean_working_tree(deps)
 
-    conflict_issues: list[dict] = []
-    for issue in completed:
-        if deps.git_svc.try_merge(deps.repo_root, branch_for(issue["number"])):
-            deps.github_svc.close_issue(issue["number"])
-        else:
-            conflict_issues.append(issue)
+        conflict_issues: list[dict] = []
+        for issue in completed:
+            if deps.git_svc.try_merge(deps.repo_root, branch_for(issue["number"])):
+                deps.github_svc.close_issue(issue["number"])
+            else:
+                conflict_issues.append(issue)
 
-    clean_issues = [i for i in completed if i not in conflict_issues]
+        clean_issues = [i for i in completed if i not in conflict_issues]
 
-    if clean_issues:
-        deps.github_svc.close_completed_parent_issues()
+        if clean_issues:
+            deps.github_svc.close_completed_parent_issues()
 
-    _delete_merged_branches([branch_for(i["number"]) for i in clean_issues], deps)
+        _delete_merged_branches([branch_for(i["number"]) for i in clean_issues], deps)
 
-    if not conflict_issues:
-        deps.status_display.remove("Merge")
-    else:
-        target_branch = deps.git_svc.get_current_branch(deps.repo_root)
-        sha = deps.git_svc.get_head_sha(deps.repo_root)
-        async with branch_worktree("merge-sandbox", MERGE_SANDBOX, sha, deps) as sandbox_path:
+        if not conflict_issues:
             deps.status_display.remove("Merge")
-            merger_result = await deps.agent_runner.run(
-                RunRequest(
-                    name="Merge Agent",
-                    prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
-                    mount_path=sandbox_path,
-                    prompt_args={
-                        "BRANCHES": "\n".join(
-                            f"- {branch_for(i['number'])}" for i in conflict_issues
-                        ),
-                        "CHECKS": " && ".join(cmd for _, cmd in deps.cfg.preflight_checks),
-                    },
-                    model=deps.cfg.merge_override.model,
-                    status_display=deps.status_display,
-                    effort=deps.cfg.merge_override.effort,
-                    stage="pre-merge",
-                    work_body=f"Merging {len(conflict_issues)} Branches",
+            _merge_row_active = False
+        else:
+            target_branch = deps.git_svc.get_current_branch(deps.repo_root)
+            sha = deps.git_svc.get_head_sha(deps.repo_root)
+            async with branch_worktree("merge-sandbox", MERGE_SANDBOX, sha, deps) as sandbox_path:
+                deps.status_display.remove("Merge")
+                _merge_row_active = False
+                merger_result = await deps.agent_runner.run(
+                    RunRequest(
+                        name="Merge Agent",
+                        prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
+                        mount_path=sandbox_path,
+                        prompt_args={
+                            "BRANCHES": "\n".join(
+                                f"- {branch_for(i['number'])}" for i in conflict_issues
+                            ),
+                            "CHECKS": " && ".join(cmd for _, cmd in deps.cfg.preflight_checks),
+                        },
+                        model=deps.cfg.merge_override.model,
+                        status_display=deps.status_display,
+                        effort=deps.cfg.merge_override.effort,
+                        stage="pre-merge",
+                        work_body=f"Merging {len(conflict_issues)} Branches",
+                    )
                 )
-            )
-            if isinstance(merger_result, PreflightFailure):
-                raise RuntimeError(
-                    "Merger preflight checks failed; merge did not complete"
+                if isinstance(merger_result, PreflightFailure):
+                    raise RuntimeError(
+                        "Merger preflight checks failed; merge did not complete"
+                    )
+                assert_complete(merger_result)
+                deps.git_svc.fast_forward_branch(
+                    deps.repo_root, target_branch, MERGE_SANDBOX
                 )
-            assert_complete(merger_result)
-            deps.git_svc.fast_forward_branch(
-                deps.repo_root, target_branch, MERGE_SANDBOX
+            deps.status_display.print("pycastle", "Branches merged.")
+            _delete_merged_branches(
+                [branch_for(i["number"]) for i in conflict_issues], deps
             )
-        deps.status_display.print("pycastle", "Branches merged.")
-        _delete_merged_branches(
-            [branch_for(i["number"]) for i in conflict_issues], deps
-        )
-        for issue in conflict_issues:
-            deps.github_svc.close_issue(issue["number"])
-        deps.github_svc.close_completed_parent_issues()
+            for issue in conflict_issues:
+                deps.github_svc.close_issue(issue["number"])
+            deps.github_svc.close_completed_parent_issues()
 
-    return MergeResult(clean=clean_issues, conflicts=conflict_issues)
+        return MergeResult(clean=clean_issues, conflicts=conflict_issues)
+    except BaseException:
+        if _merge_row_active:
+            deps.status_display.remove("Merge", shutdown_message="failed", shutdown_style="error")
+        raise
