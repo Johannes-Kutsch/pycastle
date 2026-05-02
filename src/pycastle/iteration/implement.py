@@ -6,6 +6,7 @@ from typing import Any
 
 from ..agent_output_protocol import assert_complete
 from ..agent_result import CancellationToken, PreflightFailure
+from ..agent_runner import RunRequest
 from ..errors import UsageLimitError
 from ..prompt_utils import load_standards
 from ._deps import Deps
@@ -47,24 +48,27 @@ async def run_issue(
         **_standards,
     }
 
-    async def _bounded_run_agent(**kwargs: Any) -> Any:
+    async def _bounded_run_agent(request: RunRequest) -> Any:
         async with semaphore or contextlib.nullcontext():
-            return await deps.agent_runner.run(**kwargs, token=token)
+            return await deps.agent_runner.run(request)
 
     result = await _bounded_run_agent(
-        name=f"Implementer #{issue['number']}",
-        prompt_file=deps.cfg.prompts_dir / "implement-prompt.md",
-        mount_path=deps.repo_root,
-        prompt_args=prompt_args,
-        branch=_branch,
-        model=deps.cfg.implement_override.model,
-        effort=deps.cfg.implement_override.effort,
-        stage="pre-implementation",
-        sha=sha,
-        skip_preflight=True,
-        status_display=deps.status_display,
-        issue_title=issue["title"],
-        work_body=f'working on "{issue["title"]}"',
+        RunRequest(
+            name=f"Implementer #{issue['number']}",
+            prompt_file=deps.cfg.prompts_dir / "implement-prompt.md",
+            mount_path=deps.repo_root,
+            prompt_args=prompt_args,
+            branch=_branch,
+            model=deps.cfg.implement_override.model,
+            effort=deps.cfg.implement_override.effort,
+            stage="pre-implementation",
+            sha=sha,
+            skip_preflight=True,
+            status_display=deps.status_display,
+            issue_title=issue["title"],
+            work_body=f'working on "{issue["title"]}"',
+            token=token,
+        )
     )
     if isinstance(result, PreflightFailure):
         return result
@@ -73,18 +77,21 @@ async def run_issue(
     deps.logger.log_agent_output(f"Implementer #{issue['number']}", result)
 
     review_result = await _bounded_run_agent(
-        name=f"Reviewer #{issue['number']}",
-        prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
-        mount_path=deps.repo_root,
-        prompt_args=prompt_args,
-        branch=_branch,
-        model=deps.cfg.review_override.model,
-        effort=deps.cfg.review_override.effort,
-        stage="pre-review",
-        skip_preflight=True,
-        status_display=deps.status_display,
-        issue_title=issue["title"],
-        work_body=f'working on "{issue["title"]}"',
+        RunRequest(
+            name=f"Reviewer #{issue['number']}",
+            prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
+            mount_path=deps.repo_root,
+            prompt_args=prompt_args,
+            branch=_branch,
+            model=deps.cfg.review_override.model,
+            effort=deps.cfg.review_override.effort,
+            stage="pre-review",
+            skip_preflight=True,
+            status_display=deps.status_display,
+            issue_title=issue["title"],
+            work_body=f'working on "{issue["title"]}"',
+            token=token,
+        )
     )
     assert_complete(review_result)
     return issue

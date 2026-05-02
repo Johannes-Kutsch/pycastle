@@ -8,6 +8,7 @@ import pytest
 from pycastle.agent_result import (
     PreflightFailure,
 )
+from pycastle.agent_runner import RunRequest
 from pycastle.services import ClaudeService
 from pycastle.config import Config, StageOverride
 from pycastle.errors import ClaudeServiceError, ConfigValidationError, UsageLimitError
@@ -148,11 +149,11 @@ def test_run_does_not_crash_when_planner_omits_branch_field(tmp_path):
     """run() must not KeyError when planner output has no 'branch' key in issues."""
     dispatched: list[str] = []
 
-    async def _fake_run_agent(name, prompt_args=None, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return '<promise>COMPLETE</promise><plan>{"issues": [{"number": 193, "title": "Fix branch bug"}]}</plan>'
-        if "Implementer" in name:
-            dispatched.append((prompt_args or {}).get("BRANCH", ""))
+        if "Implementer" in request.name:
+            dispatched.append((request.prompt_args or {}).get("BRANCH", ""))
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -173,11 +174,11 @@ def test_run_computes_branch_from_issue_number_not_planner_slug(tmp_path):
     """After parse_plan, each issue branch must be pycastle/issue-N, ignoring planner slug."""
     captured_branches: list[str] = []
 
-    async def _fake_run_agent(name, prompt_args=None, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return '<promise>COMPLETE</promise><plan>{"issues": [{"number": 42, "title": "Fix thing"}]}</plan>'
-        if "Implementer" in name:
-            captured_branches.append((prompt_args or {}).get("BRANCH", ""))
+        if "Implementer" in request.name:
+            captured_branches.append((request.prompt_args or {}).get("BRANCH", ""))
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -197,11 +198,11 @@ def test_preflight_issue_branch_uses_pycastle_format(tmp_path):
     """A preflight fix issue must use branch pycastle/issue-N, not issue/N."""
     captured_branches: list[str] = []
 
-    async def _fake_run_agent(name, prompt_args=None, branch=None, **kwargs):
-        if "Pre-Flight Reporter" in name:
+    async def _fake_run_agent(request: RunRequest):
+        if "Pre-Flight Reporter" in request.name:
             return '<issue>{"number": 77, "labels": ["ready-for-agent"]}</issue>'
-        if "Implementer" in name:
-            captured_branches.append((prompt_args or {}).get("BRANCH", ""))
+        if "Implementer" in request.name:
+            captured_branches.append((request.prompt_args or {}).get("BRANCH", ""))
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -320,8 +321,8 @@ def test_failed_agent_appends_traceback_to_errors_log(tmp_path):
 
     boom = RuntimeError("something went wrong")
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return _plan_json([{"number": 1, "title": "Fix thing"}])
         raise boom
 
@@ -342,8 +343,8 @@ def test_failed_agent_errors_log_has_timestamp_separator(tmp_path):
     logs_dir.mkdir(parents=True)
     errors_log = logs_dir / "errors.log"
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return _plan_json([{"number": 1, "title": "Fix thing"}])
         raise RuntimeError("boom")
 
@@ -361,8 +362,8 @@ def test_failed_agent_prints_traceback_to_stderr(tmp_path, capsys):
     logs_dir = tmp_path / "pycastle" / "logs"
     logs_dir.mkdir(parents=True)
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return _plan_json([{"number": 1, "title": "Fix thing"}])
         raise RuntimeError("stderr traceback check")
 
@@ -400,7 +401,7 @@ def test_run_resolves_models_before_any_agent(tmp_path):
         "max_parallel = 4\nmax_iterations = 1\n"
     )
 
-    async def _fake_run_agent(*args, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         call_order.append("agent")
         return _plan_json([])
 
@@ -422,8 +423,8 @@ def test_run_config_validation_error_propagates_no_agents_started(tmp_path):
     """ConfigValidationError from load_config must propagate and prevent all agents."""
     agents_started: list[str] = []
 
-    async def _fake_run_agent(*args, **kwargs):
-        agents_started.append(kwargs.get("name", "?"))
+    async def _fake_run_agent(request: RunRequest):
+        agents_started.append(request.name)
         return "<promise>COMPLETE</promise>"
 
     svc = MagicMock(spec=ClaudeService)
@@ -457,9 +458,9 @@ def test_planner_receives_plan_stage_model_and_effort(tmp_path):
     """Planner run_agent call must include model and effort from plan stage override."""
     captured: list[dict] = []
 
-    async def _fake_run_agent(name, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         captured.append(
-            {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
+            {"name": request.name, "model": request.model, "effort": request.effort}
         )
         return _plan_json([])
 
@@ -479,11 +480,11 @@ def test_implementer_receives_implement_stage_model_and_effort(tmp_path):
     """Each Implementer run_agent call must include model and effort from implement stage."""
     captured: list[dict] = []
 
-    async def _fake_run_agent(name, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         captured.append(
-            {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
+            {"name": request.name, "model": request.model, "effort": request.effort}
         )
-        if "Implementer" in name:
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix"}])
 
@@ -504,11 +505,11 @@ def test_reviewer_receives_review_stage_model_and_effort(tmp_path):
     """Each Reviewer run_agent call must include model and effort from review stage."""
     captured: list[dict] = []
 
-    async def _fake_run_agent(name, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         captured.append(
-            {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
+            {"name": request.name, "model": request.model, "effort": request.effort}
         )
-        if "Implementer" in name:
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix"}])
 
@@ -529,11 +530,11 @@ def test_merger_receives_merge_stage_model_and_effort(tmp_path):
     """Merger run_agent call must include model and effort from merge stage override."""
     captured: list[dict] = []
 
-    async def _fake_run_agent(name, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         captured.append(
-            {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
+            {"name": request.name, "model": request.model, "effort": request.effort}
         )
-        if "Implementer" in name:
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix"}])
 
@@ -554,9 +555,9 @@ def test_empty_stage_override_passes_empty_strings(tmp_path):
     """Empty model and effort in stage override must pass empty strings to run_agent."""
     captured: list[dict] = []
 
-    async def _fake_run_agent(name, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         captured.append(
-            {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
+            {"name": request.name, "model": request.model, "effort": request.effort}
         )
         return _plan_json([])
 
@@ -575,11 +576,11 @@ def test_stage_overrides_are_independent(tmp_path):
     """Different stages must receive their own independent model/effort values."""
     captured: list[dict] = []
 
-    async def _fake_run_agent(name, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         captured.append(
-            {"name": name, "model": kwargs.get("model"), "effort": kwargs.get("effort")}
+            {"name": request.name, "model": request.model, "effort": request.effort}
         )
-        if "Implementer" in name:
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix"}])
 
@@ -612,9 +613,11 @@ def test_merger_receives_checks_prompt_arg_from_preflight_checks(tmp_path):
     """Merger must receive CHECKS built from preflight_checks commands joined by ' && '."""
     captured: list[dict] = []
 
-    async def _fake_run_agent(name, **kwargs):
-        captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        captured.append(
+            {"name": request.name, "prompt_args": (request.prompt_args or {})}
+        )
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix"}])
 
@@ -634,9 +637,9 @@ def test_each_agent_passes_correct_stage_string(tmp_path):
     """Planner, Implementer, Reviewer, and Merger must each pass the correct stage= string."""
     captured: list[dict] = []
 
-    async def _fake_run_agent(name, **kwargs):
-        captured.append({"name": name, "stage": kwargs.get("stage")})
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        captured.append({"name": request.name, "stage": request.stage})
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix"}])
 
@@ -662,20 +665,20 @@ def test_multiple_implementers_run_in_parallel(tmp_path):
     active_implementers: set[str] = set()
     max_concurrent = 0
 
-    async def _fake_run_agent(name, prompt_file, mount_path, prompt_args=None, **kw):
+    async def _fake_run_agent(request: RunRequest):
         nonlocal max_concurrent
-        if name == "Planner":
+        if request.name == "Planner":
             return _plan_json(
                 [
                     {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
                     for i in range(1, 4)
                 ]
             )
-        if "Implementer" in name:
-            active_implementers.add(name)
+        if "Implementer" in request.name:
+            active_implementers.add(request.name)
             max_concurrent = max(max_concurrent, len(active_implementers))
             await asyncio.sleep(0.05)
-            active_implementers.discard(name)
+            active_implementers.discard(request.name)
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -697,9 +700,9 @@ def test_concurrent_agents_never_exceed_max_parallel(tmp_path):
     max_active = 0
     max_parallel = 3
 
-    async def _fake_run_agent(name, prompt_file, mount_path, prompt_args=None, **kw):
+    async def _fake_run_agent(request: RunRequest):
         nonlocal active_count, max_active
-        if name == "Planner":
+        if request.name == "Planner":
             return _plan_json(
                 [
                     {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
@@ -710,7 +713,7 @@ def test_concurrent_agents_never_exceed_max_parallel(tmp_path):
         max_active = max(max_active, active_count)
         await asyncio.sleep(0.01)
         active_count -= 1
-        if "Implementer" in name:
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -731,18 +734,18 @@ def test_implementer_starts_while_reviewer_runs(tmp_path):
     """A new Implementer must be able to start while a prior issue's Reviewer is running."""
     events: list[str] = []
 
-    async def _fake_run_agent(name, prompt_file, mount_path, prompt_args=None, **kw):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return _plan_json(
                 [
                     {"number": i, "title": f"Issue {i}", "branch": f"issue/{i}"}
                     for i in range(1, 4)
                 ]
             )
-        events.append(f"start:{name}")
+        events.append(f"start:{request.name}")
         await asyncio.sleep(0.03)
-        events.append(f"end:{name}")
-        if "Implementer" in name:
+        events.append(f"end:{request.name}")
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -778,9 +781,9 @@ def test_clean_merges_skip_merger(tmp_path):
         {"number": 2, "title": "Fix B"},
     ]
 
-    async def _fake_run_agent(name, **kwargs):
-        agent_names.append(name)
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        agent_names.append(request.name)
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json(issues)
 
@@ -806,8 +809,8 @@ def test_clean_merge_calls_close_issue_per_issue_and_close_completed_parent_issu
         {"number": 8, "title": "Fix B"},
     ]
 
-    async def _fake_run_agent(name, **kwargs):
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json(issues)
 
@@ -835,9 +838,11 @@ def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
         {"number": 2, "title": "Conflict"},
     ]
 
-    async def _fake_run_agent(name, **kwargs):
-        captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        captured.append(
+            {"name": request.name, "prompt_args": (request.prompt_args or {})}
+        )
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json(issues)
 
@@ -864,8 +869,8 @@ def test_conflict_branch_closed_after_merger_agent(tmp_path):
         {"number": 2, "title": "Conflict"},
     ]
 
-    async def _fake_run_agent(name, **kwargs):
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json(issues)
 
@@ -888,8 +893,8 @@ def test_conflict_merge_calls_close_completed_parent_issues(tmp_path):
     """After conflict branches are merged, close_completed_parent_issues must be called once."""
     issues = [{"number": 5, "title": "Conflict"}]
 
-    async def _fake_run_agent(name, **kwargs):
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json(issues)
 
@@ -915,9 +920,11 @@ def test_merger_does_not_receive_issues_prompt_arg(tmp_path):
         {"number": 4, "title": "Conflict issue"},
     ]
 
-    async def _fake_run_agent(name, **kwargs):
-        captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        captured.append(
+            {"name": request.name, "prompt_args": (request.prompt_args or {})}
+        )
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json(issues)
 
@@ -943,8 +950,8 @@ def test_multiple_conflict_issues_all_closed_after_merger(tmp_path):
         {"number": 12, "title": "Conflict C"},
     ]
 
-    async def _fake_run_agent(name, **kwargs):
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json(issues)
 
@@ -967,9 +974,11 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
     """preflight-issue agent must receive exact COMMAND and OUTPUT from the failing check."""
     captured: list[dict] = []
 
-    async def _fake_run_agent(name, **kwargs):
-        captured.append({"name": name, "prompt_args": kwargs.get("prompt_args", {})})
-        if "Pre-Flight Reporter" in name:
+    async def _fake_run_agent(request: RunRequest):
+        captured.append(
+            {"name": request.name, "prompt_args": (request.prompt_args or {})}
+        )
+        if "Pre-Flight Reporter" in request.name:
             return '<issue>{"number": 70, "labels": ["ready-for-human"]}</issue>'
         return "<promise>COMPLETE</promise>"
 
@@ -1048,8 +1057,8 @@ def test_delete_merged_branches_prints_deleted_branch_name(tmp_path, capsys):
 
 
 def test_clean_merged_branches_are_deleted_after_try_merge(tmp_path):
-    async def _fake_run_agent(name, **kwargs):
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix A"}])
 
@@ -1067,8 +1076,8 @@ def test_clean_merged_branches_are_deleted_after_try_merge(tmp_path):
 def test_conflict_branches_are_deleted_after_merger_agent(tmp_path):
     """Branches resolved by the Merger agent must be deleted after it returns."""
 
-    async def _fake_run_agent(name, **kwargs):
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 2, "title": "Conflict"}])
 
@@ -1086,8 +1095,8 @@ def test_conflict_branches_are_deleted_after_merger_agent(tmp_path):
 def test_non_ancestor_branch_not_deleted(tmp_path):
     """A branch that is not an ancestor of HEAD must not be deleted."""
 
-    async def _fake_run_agent(name, **kwargs):
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix A"}])
 
@@ -1105,8 +1114,8 @@ def test_non_ancestor_branch_not_deleted(tmp_path):
 def test_delete_branch_error_does_not_abort_run(tmp_path):
     """A GitCommandError on delete_branch must not propagate out of run()."""
 
-    async def _fake_run_agent(name, **kwargs):
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix A"}])
 
@@ -1125,8 +1134,8 @@ def test_delete_branch_error_does_not_abort_run(tmp_path):
 def test_run_incomplete_implementers_skip_merge(tmp_path):
     """When no implementer produces COMPLETE, try_merge must never be called."""
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return _plan_json([{"number": 1, "title": "Fix"}])
         return ""  # implementer does not return COMPLETE
 
@@ -1148,8 +1157,8 @@ def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
     """run() must create logs_dir with parents if it does not exist before writing errors.log."""
     logs_dir = tmp_path / "new" / "nested" / "logs"
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return _plan_json([{"number": 1, "title": "Fix"}])
         raise RuntimeError("agent failed")
 
@@ -1246,9 +1255,9 @@ def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
     mock_git = _make_git_svc(try_merge_side_effect=[True])
     mock_git.get_head_sha.return_value = fake_sha
 
-    async def _fake_run_agent(name, sha=None, **kwargs):
-        if "Implementer" in name:
-            captured_shas.append(sha)
+    async def _fake_run_agent(request: RunRequest):
+        if "Implementer" in request.name:
+            captured_shas.append(request.sha)
             return "<promise>COMPLETE</promise>"
         return _plan_json([{"number": 1, "title": "Fix"}])
 
@@ -1268,9 +1277,9 @@ def test_preplanning_preflight_runs_on_cold_startup(tmp_path):
     """On cold startup the Planner must not be called when get_open_issues returns empty."""
     planner_calls: list[str] = []
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
-            planner_calls.append(name)
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
+            planner_calls.append(request.name)
             return _plan_json([])
         return "<promise>COMPLETE</promise>"
 
@@ -1296,9 +1305,9 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
         {"number": 2, "title": "Fix B"},
     ]
 
-    async def _fake_run_agent(name, sha=None, **kwargs):
-        captured_calls.append({"name": name, "sha": sha})
-        if "Implementer" in name:
+    async def _fake_run_agent(request: RunRequest):
+        captured_calls.append({"name": request.name, "sha": request.sha})
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return _plan_json(issues)
 
@@ -1325,11 +1334,11 @@ def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
     and exactly one Implementer must be spawned for the preflight issue."""
     agent_names: list[str] = []
 
-    async def _fake_run_agent(name, **kwargs):
-        agent_names.append(name)
-        if "Pre-Flight Reporter" in name:
+    async def _fake_run_agent(request: RunRequest):
+        agent_names.append(request.name)
+        if "Pre-Flight Reporter" in request.name:
             return '<issue>{"number": 42, "labels": ["ready-for-agent"]}</issue>'
-        if "Implementer" in name:
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -1357,11 +1366,11 @@ def test_preflight_failure_hitl_exits_nonzero_no_implementer(tmp_path):
     and no Implementer must be spawned."""
     implementer_calls: list[str] = []
 
-    async def _fake_run_agent(name, **kwargs):
-        if "Pre-Flight Reporter" in name:
+    async def _fake_run_agent(request: RunRequest):
+        if "Pre-Flight Reporter" in request.name:
             return '<issue>{"number": 99, "labels": ["ready-for-human"]}</issue>'
-        if "Implementer" in name:
-            implementer_calls.append(name)
+        if "Implementer" in request.name:
+            implementer_calls.append(request.name)
         return "<promise>COMPLETE</promise>"
 
     with pytest.raises(SystemExit) as exc_info:
@@ -1384,10 +1393,10 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
     """When multiple preflight checks fail, only the first (by order) must be acted on."""
     preflight_issue_calls: list[dict] = []
 
-    async def _fake_run_agent(name, prompt_args=None, **kwargs):
-        if "Pre-Flight Reporter" in name:
+    async def _fake_run_agent(request: RunRequest):
+        if "Pre-Flight Reporter" in request.name:
             preflight_issue_calls.append(
-                {"name": name, "prompt_args": prompt_args or {}}
+                {"name": request.name, "prompt_args": request.prompt_args or {}}
             )
             return '<issue>{"number": 10, "labels": ["ready-for-human"]}</issue>'
         return "<promise>COMPLETE</promise>"
@@ -1426,8 +1435,8 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
 def test_usage_limit_error_exits_with_code_1(tmp_path):
     """When UsageLimitError is raised by an agent task, orchestrator must exit with code 1."""
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return _plan_json([{"number": 1, "title": "Fix"}])
         raise UsageLimitError("")
 
@@ -1440,8 +1449,8 @@ def test_usage_limit_error_exits_with_code_1(tmp_path):
 def test_usage_limit_error_prints_resume_message_to_stderr(tmp_path, capsys):
     """When UsageLimitError is raised by an agent task, the resume message must be printed to stderr."""
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return _plan_json([{"number": 1, "title": "Fix"}])
         raise UsageLimitError("")
 
@@ -1462,8 +1471,8 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
     logs_dir.mkdir(parents=True)
     errors_log = logs_dir / "errors.log"
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return _plan_json([{"number": 1, "title": "Fix"}])
         raise UsageLimitError("")
 
@@ -1485,14 +1494,14 @@ def test_usage_limit_error_alongside_regular_exception_exits_with_code_1(
 ):
     """When one task raises UsageLimitError and another raises a regular exception, exit cleanly with code 1."""
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return _plan_json(
                 [{"number": 1, "title": "Limit"}, {"number": 2, "title": "Other"}]
             )
-        if "Implementer #1" in name:
+        if "Implementer #1" in request.name:
             raise UsageLimitError("")
-        if "Implementer #2" in name:
+        if "Implementer #2" in request.name:
             raise RuntimeError("unrelated failure")
 
     with pytest.raises(SystemExit) as exc_info:
@@ -1517,8 +1526,8 @@ def test_planner_not_invoked_when_no_ready_for_agent_issues(tmp_path):
     """Planner must not be spawned when has_open_issues_with_label returns False."""
     agent_names: list[str] = []
 
-    async def _fake_run_agent(name, **kwargs):
-        agent_names.append(name)
+    async def _fake_run_agent(request: RunRequest):
+        agent_names.append(request.name)
         return "<promise>COMPLETE</promise>"
 
     mock_github = _make_github_svc()
@@ -1535,8 +1544,8 @@ def test_skip_message_emitted_before_any_agent_when_no_issues(tmp_path, capsys):
     """'No issues with label ... found. Skipping.' must be printed and no agent must run."""
     agent_names: list[str] = []
 
-    async def _fake_run_agent(name, **kwargs):
-        agent_names.append(name)
+    async def _fake_run_agent(request: RunRequest):
+        agent_names.append(request.name)
         return "<promise>COMPLETE</promise>"
 
     mock_github = _make_github_svc()
@@ -1557,11 +1566,11 @@ def test_planner_invoked_when_ready_for_agent_issues_exist(tmp_path):
     """Planner must be spawned when has_open_issues_with_label returns True."""
     agent_names: list[str] = []
 
-    async def _fake_run_agent(name, **kwargs):
-        agent_names.append(name)
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        agent_names.append(request.name)
+        if request.name == "Planner":
             return _plan_json([{"number": 1, "title": "Do thing"}])
-        if "Implementer" in name:
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -1587,11 +1596,11 @@ def test_planner_receives_open_issues_json_not_issue_label(tmp_path):
     """run() must pass OPEN_ISSUES_JSON (not ISSUE_LABEL) in planner prompt_args."""
     captured_planner_args: dict = {}
 
-    async def _fake_run_agent(name, prompt_args=None, **kwargs):
-        if name == "Planner":
-            captured_planner_args.update(prompt_args or {})
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
+            captured_planner_args.update(request.prompt_args or {})
             return _plan_json([{"number": 1, "title": "Fix"}])
-        if "Implementer" in name:
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -1632,8 +1641,8 @@ def test_run_stops_after_max_iterations_from_cfg(tmp_path):
     """run() with cfg=Config(max_iterations=2) must stop after 2 iteration cycles."""
     planner_calls = [0]
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             planner_calls[0] += 1
             if planner_calls[0] < 2:
                 return _plan_json([{"number": 1, "title": "Fix"}])
@@ -1655,9 +1664,9 @@ def test_run_limits_concurrency_to_max_parallel_from_cfg(tmp_path):
     active_count = 0
     max_active = 0
 
-    async def _fake_run_agent(name, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         nonlocal active_count, max_active
-        if name == "Planner":
+        if request.name == "Planner":
             return _plan_json(
                 [{"number": i, "title": f"Issue {i}"} for i in range(1, 6)]
             )
@@ -1665,7 +1674,7 @@ def test_run_limits_concurrency_to_max_parallel_from_cfg(tmp_path):
         max_active = max(max_active, active_count)
         await asyncio.sleep(0.01)
         active_count -= 1
-        if "Implementer" in name:
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -1705,8 +1714,8 @@ def test_run_no_agents_start_when_gh_not_found(tmp_path):
     """run() must not spawn any agents when gh is absent."""
     agents_started: list[str] = []
 
-    async def _fake_run_agent(name, **kwargs):
-        agents_started.append(name)
+    async def _fake_run_agent(request: RunRequest):
+        agents_started.append(request.name)
         return "<promise>COMPLETE</promise>"
 
     with patch("pycastle.orchestrator.shutil.which", return_value=None):
@@ -1729,7 +1738,7 @@ def test_run_raises_github_not_found_error_when_gh_invocation_fails(tmp_path):
 def test_run_skips_gh_check_when_github_service_injected(tmp_path):
     """run() must not check for gh CLI when a github_service is already injected."""
 
-    async def _fake_run_agent(name, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         return _plan_json([])
 
     with patch("pycastle.orchestrator.shutil.which", return_value=None):
@@ -1741,7 +1750,7 @@ def test_run_skips_gh_check_when_github_service_injected(tmp_path):
 def test_run_with_empty_repo_root_completes(tmp_path):
     """run() with empty repo_root completes without error using default config."""
 
-    async def _fake_run_agent(name, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         return _plan_json([])
 
     _run(
@@ -1812,8 +1821,8 @@ def test_run_no_agents_start_when_git_identity_not_configured(tmp_path):
     """run() must not spawn any agents when git identity is missing."""
     agents_started: list[str] = []
 
-    async def _fake_run_agent(name, **kwargs):
-        agents_started.append(name)
+    async def _fake_run_agent(request: RunRequest):
+        agents_started.append(request.name)
         return "<promise>COMPLETE</promise>"
 
     with pytest.raises(SystemExit):
@@ -1833,10 +1842,10 @@ def test_run_passes_plan_override_model_and_effort_to_planner(tmp_path):
     """run() with plan_override must pass its model and effort to the Planner agent."""
     captured_planner: dict = {}
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
-            captured_planner["model"] = kwargs.get("model")
-            captured_planner["effort"] = kwargs.get("effort")
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
+            captured_planner["model"] = request.model
+            captured_planner["effort"] = request.effort
             return _plan_json([])
         return "<promise>COMPLETE</promise>"
 
@@ -1855,9 +1864,9 @@ def test_run_model_shorthand_resolved_before_agent_calls(tmp_path):
     """Model shorthand must be resolved to a full model ID before it reaches agent calls."""
     captured_model: list[str] = []
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
-            captured_model.append(kwargs.get("model", ""))
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
+            captured_model.append(request.model)
             return _plan_json([])
         return "<promise>COMPLETE</promise>"
 
@@ -1891,11 +1900,11 @@ def test_worktree_sha_set_at_iteration_start(tmp_path):
 
     mock_git.get_head_sha.side_effect = _tracking_get_head_sha
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             call_order.append("Planner")
             return _plan_json([{"number": 1, "title": "Fix"}])
-        if "Implementer" in name:
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -1925,14 +1934,14 @@ def test_worktree_sha_refreshed_each_iteration(tmp_path):
         call_order.append("get_head_sha") or "sha"
     )
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             planner_count[0] += 1
             call_order.append(f"Planner-{planner_count[0]}")
             if planner_count[0] == 1:
                 return _plan_json([{"number": 1, "title": "Fix"}])
             return _plan_json([])
-        if "Implementer" in name:
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -1970,13 +1979,13 @@ def test_implementer_preflight_error_siblings_complete(tmp_path):
         {"number": 2, "title": "Issue two"},
     ]
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return _plan_json(issues)
-        if name == "Implementer #1":
+        if request.name == "Implementer #1":
             return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        if "Implementer" in name:
-            completed_issues.append(int(name.split("#")[1]))
+        if "Implementer" in request.name:
+            completed_issues.append(int(request.name.split("#")[1]))
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -1995,8 +2004,8 @@ def test_implementer_preflight_error_siblings_complete(tmp_path):
 def test_implementer_preflight_error_logs_check_details(tmp_path, capsys):
     """An implementer PreflightFailure must print the failed check name and command to stdout."""
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return _plan_json([{"number": 3, "title": "Fix types"}])
         return PreflightFailure(
             failures=(("mypy", "mypy .", "error: Cannot find module"),)
@@ -2051,10 +2060,10 @@ def test_run_full_iteration_cold_path(git_repo):
     mock_github = _make_github_svc()
     mock_github.close_issue.side_effect = lambda n: closed_issues.append(n)
 
-    async def _fake_run_agent(name, **kwargs):
-        if name == "Planner":
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Planner":
             return _plan_json([{"number": 1, "title": "Fix thing"}])
-        if "Implementer" in name:
+        if "Implementer" in request.name:
             return "<promise>COMPLETE</promise>"
         return "<promise>COMPLETE</promise>"
 
@@ -2083,7 +2092,7 @@ def test_run_full_iteration_cold_path(git_repo):
 def test_planner_preflight_error_spawns_no_implementers(tmp_path):
     """On plan-sandbox PreflightError with HITL verdict, run must exit immediately."""
 
-    async def _fake_run_agent(name, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         return '<issue>{"number": 77, "labels": ["ready-for-human"]}</issue>'
 
     with pytest.raises(SystemExit):
@@ -2100,7 +2109,7 @@ def test_planner_preflight_error_spawns_no_implementers(tmp_path):
 def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
     """HITL preflight failure must print a message referencing the filed issue number."""
 
-    async def _fake_run_agent(name, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         return '<issue>{"number": 88, "labels": ["ready-for-human"]}</issue>'
 
     with pytest.raises(SystemExit):
@@ -2161,7 +2170,7 @@ def test_startup_row_added_before_checks_and_removed_after_success(tmp_path):
     """run() must add a 'startup' row before any startup check and remove it after all checks pass."""
     recording = RecordingStatusDisplay()
 
-    async def _fake_run_agent(name, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         return _plan_json([])
 
     _run(
@@ -2188,7 +2197,7 @@ def test_startup_row_phase_cycles_git_identity_then_credentials(tmp_path):
     """startup row must start with 'Git identity' phase then update to 'Credentials'."""
     recording = RecordingStatusDisplay()
 
-    async def _fake_run_agent(name, **kwargs):
+    async def _fake_run_agent(request: RunRequest):
         return _plan_json([])
 
     _run(

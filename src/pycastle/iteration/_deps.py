@@ -5,8 +5,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from ..agent_result import CancellationToken, PreflightFailure
-from ..agent_runner import AgentRunnerProtocol
+from ..agent_result import PreflightFailure
+from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..services import GitService
 from ..services import GithubService
@@ -92,51 +92,19 @@ class FakeAgentRunner:
         self._preflight_responses: list[list[tuple[str, str, str]] | BaseException] = list(
             preflight_responses or []
         )
-        self.calls: list[dict] = []
+        self.calls: list[RunRequest] = []
         self.preflight_calls: list[dict] = []
 
-    async def run(
-        self,
-        *,
-        name: str,
-        prompt_file: Path,
-        mount_path: Path,
-        prompt_args: dict[str, str] | None = None,
-        branch: str | None = None,
-        sha: str | None = None,
-        skip_preflight: bool = False,
-        model: str = "",
-        effort: str = "",
-        stage: str = "",
-        token: CancellationToken | None = None,
-        status_display: "StatusDisplay | None" = None,
-        issue_title: str = "",
-        work_body: str = "",
-    ) -> str | PreflightFailure:
-        call = {
-            "name": name,
-            "prompt_file": prompt_file,
-            "mount_path": mount_path,
-            "prompt_args": prompt_args,
-            "branch": branch,
-            "sha": sha,
-            "skip_preflight": skip_preflight,
-            "model": model,
-            "effort": effort,
-            "stage": stage,
-            "token": token,
-            "issue_title": issue_title,
-            "work_body": work_body,
-        }
-        self.calls.append(call)
+    async def run(self, request: RunRequest) -> str | PreflightFailure:
+        self.calls.append(request)
         if self._side_effect is not None:
-            result = self._side_effect(**call)
+            result = self._side_effect(request)
             if asyncio.iscoroutine(result):
                 return await result
             return result
         if not self._responses:
             raise AssertionError(
-                f"FakeAgentRunner queue exhausted — unexpected call for agent {name!r}"
+                f"FakeAgentRunner queue exhausted — unexpected call for agent {request.name!r}"
             )
         response = self._responses.pop(0)
         if isinstance(response, BaseException):

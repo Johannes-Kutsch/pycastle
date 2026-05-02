@@ -1,0 +1,10 @@
+click
+docker
+python-dotenv
+rich
+
+[dev]
+pytest
+mypy
+ruff
+types-docker
