@@ -12,6 +12,8 @@ from pycastle.worktree import (
     managed_worktree,
     patch_gitdir_for_container,
     remove_worktree,
+    worktree_name_for_branch,
+    worktree_path,
 )
 
 
@@ -628,3 +630,37 @@ def test_managed_worktree_removes_worktree_on_exception(tmp_path):
     asyncio.run(_run())
 
     mock_svc.remove_worktree.assert_called_once_with(tmp_path, wt_path)
+
+
+# ── worktree_name_for_branch ──────────────────────────────────────────────────
+
+
+def test_worktree_name_for_branch_extracts_issue_number_from_slug():
+    assert worktree_name_for_branch("pycastle/issue-42-fix-the-bug") == "issue-42"
+
+
+def test_worktree_name_for_branch_extracts_issue_number_without_slug():
+    assert worktree_name_for_branch("pycastle/issue-7") == "issue-7"
+
+
+def test_worktree_name_for_branch_falls_back_to_sanitised_slug():
+    assert (
+        worktree_name_for_branch("feature/my-cool-branch") == "feature-my-cool-branch"
+    )
+
+
+def test_worktree_name_for_branch_sanitises_special_chars():
+    assert worktree_name_for_branch("UPPER/Case_Branch!") == "upper-case-branch"
+
+
+# ── worktree_path ─────────────────────────────────────────────────────────────
+
+
+def test_worktree_path_constructs_correct_path(tmp_path):
+    from types import SimpleNamespace
+    from pycastle.config import Config
+
+    cfg = Config(pycastle_dir=".pycastle")
+    deps = SimpleNamespace(repo_root=tmp_path, cfg=cfg)
+    result = worktree_path("issue-42", deps)
+    assert result == tmp_path / ".pycastle" / ".worktrees" / "issue-42"

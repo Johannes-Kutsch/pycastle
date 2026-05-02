@@ -1,5 +1,4 @@
 import asyncio
-import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Protocol
@@ -9,7 +8,7 @@ from .config import Config
 from .container_runner import ContainerRunner, _preflight, _prepare, _setup, _work
 from .errors import AgentTimeoutError, BranchCollisionError, UsageLimitError
 from .services import GitService
-from .worktree import patch_gitdir_for_container
+from .worktree import patch_gitdir_for_container, worktree_name_for_branch
 
 
 class AgentRunnerProtocol(Protocol):
@@ -99,12 +98,7 @@ class AgentRunner:
         gitdir_overlay: Path | None = None
         try:
             if branch:
-                m = re.search(r"issue-(\d+)", branch)
-                worktree_name = (
-                    f"issue-{m.group(1)}"
-                    if m
-                    else re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
-                )
+                worktree_name = worktree_name_for_branch(branch)
                 worktree_host_path = (
                     mount_path / self._cfg.pycastle_dir / ".worktrees" / worktree_name
                 )
@@ -159,10 +153,23 @@ class AgentRunner:
 
             async with _worktree_lifecycle():
                 await _setup(
-                    name, runner, loop, None, self._git_service, self._cfg, status_display, work_body
+                    name,
+                    runner,
+                    loop,
+                    None,
+                    self._git_service,
+                    self._cfg,
+                    status_display,
+                    work_body,
                 )
                 await _prepare(
-                    name, runner, loop, None, prompt_file, prompt_args or {}, status_display
+                    name,
+                    runner,
+                    loop,
+                    None,
+                    prompt_file,
+                    prompt_args or {},
+                    status_display,
                 )
                 if not skip_preflight:
                     failures = await _preflight(
@@ -222,7 +229,16 @@ class AgentRunner:
             cfg=self._cfg,
         )
         try:
-            await _setup(name, runner, loop, None, self._git_service, self._cfg, status_display, work_body)
+            await _setup(
+                name,
+                runner,
+                loop,
+                None,
+                self._git_service,
+                self._cfg,
+                status_display,
+                work_body,
+            )
             return await _preflight(
                 name,
                 runner,

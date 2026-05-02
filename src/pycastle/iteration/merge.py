@@ -1,11 +1,10 @@
 import dataclasses
-import re
 import sys
-from pathlib import Path
 
 from ..agent_output_protocol import assert_complete
 from ..agent_result import PreflightFailure
 from ..services import GitCommandError
+from ..worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
 from ._utils import _wait_for_clean_working_tree
 from .implement import branch_for
@@ -19,30 +18,21 @@ class MergeResult:
     conflicts: list[dict]
 
 
-def _worktree_path_for_branch(branch: str, deps: Deps) -> Path:
-    m = re.match(r"pycastle/issue-(\d+)", branch)
-    worktree_name = (
-        f"issue-{m.group(1)}"
-        if m
-        else re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
-    )
-    return deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / worktree_name
-
-
 def _delete_merged_branches(branches: list[str], deps: Deps) -> None:
     registered_worktrees = deps.git_svc.list_worktrees(deps.repo_root)
     for branch in branches:
         if not deps.git_svc.is_ancestor(branch, deps.repo_root):
             continue
-        worktree_path = _worktree_path_for_branch(branch, deps)
-        if worktree_path in registered_worktrees:
+        worktree_path_ = worktree_path(worktree_name_for_branch(branch), deps)
+        if worktree_path_ in registered_worktrees:
             try:
-                deps.git_svc.remove_worktree(deps.repo_root, worktree_path)
+                deps.git_svc.remove_worktree(deps.repo_root, worktree_path_)
             except Exception as e:
                 print(
                     f"Warning: could not remove worktree for {branch!r}: {e}",
                     file=sys.stderr,
                 )
+
         try:
             deps.git_svc.delete_branch(branch, deps.repo_root)
             deps.status_display.print(f"Deleted merged branch: {branch}")
@@ -73,16 +63,14 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
     else:
         target_branch = deps.git_svc.get_current_branch(deps.repo_root)
         sha = deps.git_svc.get_head_sha(deps.repo_root)
-        worktree_path = (
-            deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "merge-sandbox"
-        )
-        deps.git_svc.create_worktree(deps.repo_root, worktree_path, MERGE_SANDBOX, sha)
+        sandbox_path = worktree_path("merge-sandbox", deps)
+        deps.git_svc.create_worktree(deps.repo_root, sandbox_path, MERGE_SANDBOX, sha)
         deps.status_display.remove_agent("merge")
         try:
             merger_result = await deps.agent_runner.run(
                 name="Merger",
                 prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
-                mount_path=worktree_path,
+                mount_path=sandbox_path,
                 prompt_args={
                     "BRANCHES": "\n".join(
                         f"- {branch_for(i['number'])}" for i in conflict_issues
@@ -105,7 +93,7 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
             )
         finally:
             try:
-                deps.git_svc.remove_worktree(deps.repo_root, worktree_path)
+                deps.git_svc.remove_worktree(deps.repo_root, sandbox_path)
             except Exception as exc:
                 print(
                     f"Warning: could not remove merge worktree: {exc}", file=sys.stderr
