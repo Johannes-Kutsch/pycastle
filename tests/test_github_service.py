@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.config import Config
-from pycastle.github_service import (
+from pycastle.services import (
     GithubCommandError,
     GithubNotFoundError,
     GithubService,

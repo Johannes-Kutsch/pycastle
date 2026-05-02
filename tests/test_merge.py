@@ -6,7 +6,7 @@ import pytest
 
 from pycastle.config import Config
 from pycastle.services import GitCommandError, GitService
-from pycastle.github_service import GithubService
+from pycastle.services import GithubService
 from pycastle.iteration._deps import (
     Deps,
     FakeAgentRunner,

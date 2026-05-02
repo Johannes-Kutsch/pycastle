@@ -12,7 +12,7 @@ from .agent_runner import AgentRunner, AgentRunnerProtocol
 from .claude_service import ClaudeService
 from .config import Config, load_config
 from .services import GitCommandError, GitService
-from .github_service import GithubNotFoundError, GithubService
+from .services import GithubNotFoundError, GithubService
 from .iteration import (
     AbortedHITL,
     AbortedUsageLimit,
