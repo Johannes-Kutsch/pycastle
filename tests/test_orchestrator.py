@@ -8,7 +8,7 @@ import pytest
 from pycastle.agent_result import (
     PreflightFailure,
 )
-from pycastle.claude_service import ClaudeService
+from pycastle.services import ClaudeService
 from pycastle.config import Config, StageOverride
 from pycastle.errors import ClaudeServiceError, ConfigValidationError, UsageLimitError
 from pycastle.services import GitCommandError, GitService

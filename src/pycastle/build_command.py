@@ -4,8 +4,8 @@ import sys
 from pathlib import Path
 
 from .config import Config, load_config
-from .docker_service import DockerService
 from .errors import DockerServiceError
+from .services import DockerService
 
 
 def main(

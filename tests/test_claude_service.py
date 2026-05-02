@@ -38,7 +38,7 @@ def test_claude_command_error_is_claude_service_error():
 
 @pytest.fixture(autouse=True)
 def _clear_list_models_cache():
-    from pycastle.claude_service import _list_models
+    from pycastle.services.claude_service import _list_models
 
     _list_models.cache_clear()
     yield
@@ -53,7 +53,7 @@ def _with_claude(found: bool = True):
 
 
 def test_list_models_returns_tuple_of_model_ids():
-    from pycastle.claude_service import ClaudeService
+    from pycastle.services.claude_service import ClaudeService
 
     with _with_claude():
         models = ClaudeService().list_models()
@@ -62,7 +62,7 @@ def test_list_models_returns_tuple_of_model_ids():
 
 
 def test_list_models_returns_known_haiku_model():
-    from pycastle.claude_service import ClaudeService
+    from pycastle.services.claude_service import ClaudeService
 
     with _with_claude():
         models = ClaudeService().list_models()
@@ -70,7 +70,7 @@ def test_list_models_returns_known_haiku_model():
 
 
 def test_list_models_returns_known_opus_model():
-    from pycastle.claude_service import ClaudeService
+    from pycastle.services.claude_service import ClaudeService
 
     with _with_claude():
         models = ClaudeService().list_models()
@@ -78,7 +78,7 @@ def test_list_models_returns_known_opus_model():
 
 
 def test_list_models_contains_no_blank_entries():
-    from pycastle.claude_service import ClaudeService
+    from pycastle.services.claude_service import ClaudeService
 
     with _with_claude():
         models = ClaudeService().list_models()
@@ -89,7 +89,7 @@ def test_list_models_contains_no_blank_entries():
 
 
 def test_list_models_raises_claude_cli_not_found_error_when_cli_missing():
-    from pycastle.claude_service import ClaudeService
+    from pycastle.services.claude_service import ClaudeService
 
     with _with_claude(found=False):
         with pytest.raises(ClaudeCliNotFoundError):
@@ -97,7 +97,7 @@ def test_list_models_raises_claude_cli_not_found_error_when_cli_missing():
 
 
 def test_cli_not_found_error_message_mentions_claude():
-    from pycastle.claude_service import ClaudeService
+    from pycastle.services.claude_service import ClaudeService
 
     with _with_claude(found=False):
         with pytest.raises(ClaudeCliNotFoundError) as exc_info:
@@ -106,7 +106,7 @@ def test_cli_not_found_error_message_mentions_claude():
 
 
 def test_cli_not_found_error_is_claude_service_error():
-    from pycastle.claude_service import ClaudeService
+    from pycastle.services.claude_service import ClaudeService
 
     with _with_claude(found=False):
         with pytest.raises(ClaudeServiceError):
@@ -117,7 +117,7 @@ def test_cli_not_found_error_is_claude_service_error():
 
 
 def test_list_models_called_once_across_multiple_calls():
-    from pycastle.claude_service import ClaudeService
+    from pycastle.services.claude_service import ClaudeService
 
     service = ClaudeService()
     with _with_claude() as mock_which:
@@ -128,7 +128,7 @@ def test_list_models_called_once_across_multiple_calls():
 
 
 def test_list_models_cache_is_shared_across_instances():
-    from pycastle.claude_service import ClaudeService
+    from pycastle.services.claude_service import ClaudeService
 
     with _with_claude() as mock_which:
         ClaudeService().list_models()

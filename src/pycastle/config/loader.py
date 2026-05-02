@@ -90,7 +90,7 @@ def load_config(
 
     cfg = Config(**kwargs)
 
-    from pycastle.claude_service import ClaudeService
+    from pycastle.services import ClaudeService
 
     from .validator import validate_config
 

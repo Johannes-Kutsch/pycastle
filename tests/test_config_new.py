@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.claude_service import ClaudeService
+from pycastle.services import ClaudeService
 from pycastle.config import Config, StageOverride, load_config
 from pycastle.errors import (
     ClaudeCliNotFoundError,

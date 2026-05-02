@@ -1,3 +1,5 @@
+from .claude_service import ClaudeService
+from .docker_service import DockerService
 from .git_service import (
     GitCommandError,
     GitNotFoundError,
@@ -14,6 +16,8 @@ from .github_service import (
 )
 
 __all__ = [
+    "ClaudeService",
+    "DockerService",
     "GitCommandError",
     "GitNotFoundError",
     "GitService",

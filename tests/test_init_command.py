@@ -109,7 +109,7 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
     """load_config on a freshly scaffolded project must return the expected StageOverride values."""
     from unittest.mock import MagicMock
 
-    from pycastle.claude_service import ClaudeService
+    from pycastle.services import ClaudeService
     from pycastle.config import StageOverride, load_config
     from pycastle.init_command import main
 
