@@ -646,6 +646,33 @@ def test_plain_first_print_has_no_leading_blank_line(capsys) -> None:
     assert out.startswith("[X]")
 
 
+def test_plain_print_accepts_non_string_message(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("X", 42)
+    assert capsys.readouterr().out == "[X] 42\n"
+
+
+def test_plain_print_caller_switch_and_back_inserts_blank_lines(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.print("X", "first")
+    d.print("Y", "second")
+    d.print("X", "third")
+    out = capsys.readouterr().out
+    assert out == "[X] first\n\n[Y] second\n\n[X] third\n"
+
+
+def test_plain_register_with_empty_caller_prints_message_only(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.register("", startup_message="booting")
+    assert capsys.readouterr().out == "booting\n"
+
+
+def test_plain_remove_with_empty_caller_prints_message_only(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.remove("", shutdown_message="done")
+    assert capsys.readouterr().out == "done\n"
+
+
 # ── RecordingStatusDisplay behaviour ─────────────────────────────────────────
 
 
