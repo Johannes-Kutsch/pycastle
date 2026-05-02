@@ -9,6 +9,7 @@ from ..agent_output_protocol import (
     parse,
 )
 from ..agent_result import PreflightFailure
+from ..agent_runner import RunRequest
 from ..services import GitCommandError
 from ..worktree import detached_worktree
 from ._deps import Deps
@@ -60,20 +61,22 @@ async def handle_preflight_failure(
 ) -> tuple[str, int]:
     check_name, command, output = failures[0]
     agent_result = await deps.agent_runner.run(
-        name="Pre-Flight Reporter",
-        prompt_file=deps.cfg.prompts_dir / "preflight-issue.md",
-        mount_path=mount_path,
-        prompt_args={
-            "CHECK_NAME": check_name,
-            "COMMAND": command,
-            "OUTPUT": output,
-            "BUG_LABEL": deps.cfg.bug_label,
-            "ISSUE_LABEL": deps.cfg.issue_label,
-            "HITL_LABEL": deps.cfg.hitl_label,
-        },
-        skip_preflight=True,
-        status_display=deps.status_display,
-        work_body=f"reporting {check_name} issue",
+        RunRequest(
+            name="Pre-Flight Reporter",
+            prompt_file=deps.cfg.prompts_dir / "preflight-issue.md",
+            mount_path=mount_path,
+            prompt_args={
+                "CHECK_NAME": check_name,
+                "COMMAND": command,
+                "OUTPUT": output,
+                "BUG_LABEL": deps.cfg.bug_label,
+                "ISSUE_LABEL": deps.cfg.issue_label,
+                "HITL_LABEL": deps.cfg.hitl_label,
+            },
+            skip_preflight=True,
+            status_display=deps.status_display,
+            work_body=f"reporting {check_name} issue",
+        )
     )
     if isinstance(agent_result, PreflightFailure):
         raise RuntimeError(

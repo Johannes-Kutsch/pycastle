@@ -440,7 +440,7 @@ def test_preflight_failure_uses_pre_flight_reporter_as_agent_name(
     asyncio.run(preflight_phase(deps))
 
     assert len(fake.calls) == 1
-    assert fake.calls[0]["name"] == "Pre-Flight Reporter"
+    assert fake.calls[0].name == "Pre-Flight Reporter"
 
 
 def test_preflight_failure_passes_reporting_work_body_to_run(tmp_path, git_svc, logger):
@@ -457,7 +457,7 @@ def test_preflight_failure_passes_reporting_work_body_to_run(tmp_path, git_svc, 
 
     asyncio.run(preflight_phase(deps))
 
-    assert fake.calls[0]["work_body"] == f"reporting {check_name} issue"
+    assert fake.calls[0].work_body == f"reporting {check_name} issue"
 
 
 # ── preflight_phase: preflight pull ──────────────────────────────────────────

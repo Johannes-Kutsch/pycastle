@@ -3,6 +3,7 @@ import sys
 
 from ..agent_output_protocol import assert_complete
 from ..agent_result import PreflightFailure
+from ..agent_runner import RunRequest
 from ..services import GitCommandError
 from ..worktree import branch_worktree, worktree_name_for_branch, worktree_path
 from ._deps import Deps
@@ -66,20 +67,22 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
         async with branch_worktree("merge-sandbox", MERGE_SANDBOX, sha, deps) as sandbox_path:
             deps.status_display.remove_agent("merge")
             merger_result = await deps.agent_runner.run(
-                name="Merger",
-                prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
-                mount_path=sandbox_path,
-                prompt_args={
-                    "BRANCHES": "\n".join(
-                        f"- {branch_for(i['number'])}" for i in conflict_issues
-                    ),
-                    "CHECKS": " && ".join(cmd for _, cmd in deps.cfg.preflight_checks),
-                },
-                model=deps.cfg.merge_override.model,
-                status_display=deps.status_display,
-                effort=deps.cfg.merge_override.effort,
-                stage="pre-merge",
-                work_body=f"Merging {len(conflict_issues)} Branches",
+                RunRequest(
+                    name="Merger",
+                    prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
+                    mount_path=sandbox_path,
+                    prompt_args={
+                        "BRANCHES": "\n".join(
+                            f"- {branch_for(i['number'])}" for i in conflict_issues
+                        ),
+                        "CHECKS": " && ".join(cmd for _, cmd in deps.cfg.preflight_checks),
+                    },
+                    model=deps.cfg.merge_override.model,
+                    status_display=deps.status_display,
+                    effort=deps.cfg.merge_override.effort,
+                    stage="pre-merge",
+                    work_body=f"Merging {len(conflict_issues)} Branches",
+                )
             )
             if isinstance(merger_result, PreflightFailure):
                 raise RuntimeError(
