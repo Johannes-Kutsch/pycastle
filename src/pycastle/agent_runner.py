@@ -6,7 +6,7 @@ from typing import Any, Protocol
 
 from .agent_result import CancellationToken, PreflightFailure
 from .config import Config
-from .container_runner import ContainerRunner, _preflight, _prepare, _setup, _work
+from .container_runner import ContainerRunner
 from .errors import AgentTimeoutError, BranchCollisionError, UsageLimitError
 from .services import GitService
 from .worktree import patch_gitdir_for_container, worktree_name_for_branch
@@ -105,7 +105,8 @@ class AgentRunner:
                 )
                 gitdir_overlay = patch_gitdir_for_container(worktree_host_path)
 
-            loop = asyncio.get_event_loop()
+            git_name = self._git_service.get_user_name()
+            git_email = self._git_service.get_user_email()
             runner = ContainerRunner(
                 name,
                 mount_path,
@@ -151,41 +152,17 @@ class AgentRunner:
                         raise exc
 
             async with _worktree_lifecycle():
-                await _setup(
-                    name,
-                    runner,
-                    loop,
-                    None,
-                    self._git_service,
-                    self._cfg,
-                    status_display,
-                    work_body,
-                )
-                await _prepare(
-                    name,
-                    runner,
-                    loop,
-                    None,
-                    prompt_file,
-                    prompt_args or {},
-                    status_display,
-                )
+                await runner.setup(git_name, git_email, work_body)
+                await runner.prepare(prompt_file, prompt_args or {})
                 if not skip_preflight:
-                    failures = await _preflight(
-                        name,
-                        runner,
-                        loop,
-                        None,
-                        list(self._cfg.preflight_checks),
-                        status_display,
-                    )
+                    failures = await runner.preflight(list(self._cfg.preflight_checks))
                     if failures:
                         return PreflightFailure(failures=tuple(failures))
                 output = ""
                 retries_left = self._cfg.timeout_retries
                 while True:
                     try:
-                        output = await _work(name, runner, loop, status_display)
+                        output = await runner.work()
                         break
                     except AgentTimeoutError:
                         if retries_left <= 0:
@@ -220,7 +197,8 @@ class AgentRunner:
 
             status_display = NullStatusDisplay()
 
-        loop = asyncio.get_event_loop()
+        git_name = self._git_service.get_user_name()
+        git_email = self._git_service.get_user_email()
         runner = ContainerRunner(
             name,
             mount_path,
@@ -230,24 +208,8 @@ class AgentRunner:
             cfg=self._cfg,
         )
         try:
-            await _setup(
-                name,
-                runner,
-                loop,
-                None,
-                self._git_service,
-                self._cfg,
-                status_display,
-                work_body,
-            )
-            return await _preflight(
-                name,
-                runner,
-                loop,
-                None,
-                list(self._cfg.preflight_checks),
-                status_display,
-            )
+            await runner.setup(git_name, git_email, work_body)
+            return await runner.preflight(list(self._cfg.preflight_checks))
         finally:
             status_display.remove_agent(name)
             try:
