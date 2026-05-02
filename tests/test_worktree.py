@@ -10,6 +10,7 @@ from pycastle.config import Config
 from pycastle.errors import WorktreeTimeoutError
 from pycastle.services import GitService, GitTimeoutError
 from pycastle.worktree import (
+    branch_worktree,
     create_worktree,
     detached_worktree,
     managed_worktree,
@@ -755,3 +756,85 @@ def test_detached_worktree_does_not_remove_worktree_when_checkout_fails(detached
 
     asyncio.run(_run())
     detached_deps.git_svc.remove_worktree.assert_not_called()
+
+
+# ── branch_worktree ───────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def branch_deps(tmp_path):
+    mock_svc = MagicMock(spec=GitService)
+    cfg = Config(pycastle_dir=".pycastle")
+
+    def _fake_create(repo, wt, branch, sha=None):
+        wt.mkdir(parents=True, exist_ok=True)
+        (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
+
+    mock_svc.verify_ref_exists.return_value = False
+    mock_svc.list_worktrees.return_value = []
+    mock_svc.create_worktree.side_effect = _fake_create
+    return SimpleNamespace(repo_root=tmp_path, cfg=cfg, git_svc=mock_svc)
+
+
+def test_branch_worktree_creates_worktree_on_enter_and_yields_correct_path(branch_deps):
+    expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
+
+    async def _run():
+        async with branch_worktree(
+            "issue-42", "pycastle/issue-42", "abc123", branch_deps
+        ) as path:
+            assert path == expected_path
+            branch_deps.git_svc.create_worktree.assert_called_once()
+
+    asyncio.run(_run())
+
+
+def test_branch_worktree_removes_worktree_and_branch_on_clean_exit(branch_deps):
+    expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
+
+    async def _run():
+        async with branch_worktree(
+            "issue-42", "pycastle/issue-42", "abc123", branch_deps
+        ):
+            pass
+
+    asyncio.run(_run())
+    branch_deps.git_svc.remove_worktree.assert_called_once_with(
+        branch_deps.repo_root, expected_path
+    )
+    branch_deps.git_svc.delete_branch.assert_called_once_with(
+        "pycastle/issue-42", branch_deps.repo_root
+    )
+
+
+def test_branch_worktree_removes_worktree_but_not_branch_when_delete_branch_false(
+    branch_deps,
+):
+    async def _run():
+        async with branch_worktree(
+            "issue-42", "pycastle/issue-42", "abc123", branch_deps, delete_branch=False
+        ):
+            pass
+
+    asyncio.run(_run())
+    branch_deps.git_svc.remove_worktree.assert_called_once()
+    branch_deps.git_svc.delete_branch.assert_not_called()
+
+
+def test_branch_worktree_cleans_up_on_exception(branch_deps):
+    expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
+
+    async def _run():
+        with pytest.raises(RuntimeError, match="body error"):
+            async with branch_worktree(
+                "issue-42", "pycastle/issue-42", "abc123", branch_deps
+            ):
+                raise RuntimeError("body error")
+
+    asyncio.run(_run())
+    branch_deps.git_svc.remove_worktree.assert_called_once_with(
+        branch_deps.repo_root, expected_path
+    )
+    branch_deps.git_svc.delete_branch.assert_called_once_with(
+        "pycastle/issue-42", branch_deps.repo_root
+    )

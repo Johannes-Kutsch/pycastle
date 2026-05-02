@@ -32,6 +32,8 @@ def _plan_json(issues: list[dict]) -> str:
 def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
     mock_svc = MagicMock(spec=GitService)
     mock_svc.get_head_sha.return_value = "abc1234"
+    mock_svc.verify_ref_exists.return_value = False
+    mock_svc.list_worktrees.return_value = []
     if try_merge_side_effect is not None:
         results = list(try_merge_side_effect)
         idx = [0]
@@ -45,6 +47,12 @@ def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
     else:
         mock_svc.try_merge.return_value = True
     mock_svc.is_ancestor.return_value = is_ancestor
+
+    def _fake_create_worktree(repo, wt, branch, sha=None):
+        wt.mkdir(parents=True, exist_ok=True)
+        (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
+
+    mock_svc.create_worktree.side_effect = _fake_create_worktree
     return mock_svc
 
 
