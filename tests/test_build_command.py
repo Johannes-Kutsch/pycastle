@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.config import Config
-from pycastle.services.docker_service import DockerService
+from pycastle.services import DockerService
 from pycastle.errors import DockerBuildError, DockerServiceError
 
 _cfg = Config(docker_image_name="test-image")
