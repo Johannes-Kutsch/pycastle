@@ -150,6 +150,19 @@ def process_stream(
         turn = _extract_turn(line)
         if turn is not None:
             on_turn(turn)
+            if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER, AgentRole.MERGER):
+                if re.search(r"<promise>COMPLETE</promise>", turn):
+                    return CompletionOutput()
+            elif role == AgentRole.PLANNER:
+                try:
+                    return _extract_planner_output(turn)
+                except PlanParseError:
+                    pass
+            elif role == AgentRole.PREFLIGHT_ISSUE:
+                try:
+                    return _extract_issue_output(turn)
+                except IssueParseError:
+                    pass
         try:
             obj = json.loads(line)
         except json.JSONDecodeError:
@@ -158,6 +171,7 @@ def process_stream(
             r = obj.get("result")
             if isinstance(r, str):
                 result_text = r
+                break
     text = result_text if result_text is not None else "\n".join(collected)
     tail = f"\nOutput tail: {text[-300:]!r}"
     if role == AgentRole.PREFLIGHT_ISSUE:

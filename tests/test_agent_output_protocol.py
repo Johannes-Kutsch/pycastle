@@ -413,7 +413,7 @@ def test_process_stream_null_result_in_envelope_falls_back_to_collected_lines():
     assert isinstance(result, CompletionOutput)
 
 
-def test_process_stream_last_result_envelope_wins_when_multiple_present():
+def test_process_stream_first_result_envelope_wins_when_multiple_present():
     lines = [
         _result_line('<plan>{"issues": [{"number": 1, "title": "First"}]}</plan>'),
         _result_line('<plan>{"issues": [{"number": 2, "title": "Last"}]}</plan>'),
@@ -422,7 +422,136 @@ def test_process_stream_last_result_envelope_wins_when_multiple_present():
         lines, on_turn=lambda t: None, role=AgentRole.PLANNER, usage_limit_patterns=()
     )
     assert isinstance(result, PlannerOutput)
-    assert result.issues == [{"number": 2, "title": "Last"}]
+    assert result.issues == [{"number": 1, "title": "First"}]
+
+
+def test_process_stream_implementer_stops_consuming_after_turn_with_promise():
+    consumed: list[str] = []
+
+    def tracking_iter():
+        for line in [
+            _assistant_line("<promise>COMPLETE</promise>"),
+            _assistant_line("This line must not be consumed"),
+            _result_line("<promise>COMPLETE</promise>"),
+        ]:
+            consumed.append(line)
+            yield line
+
+    result = process_stream(
+        tracking_iter(),
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        usage_limit_patterns=(),
+    )
+    assert isinstance(result, CompletionOutput)
+    assert len(consumed) == 1
+
+
+def test_process_stream_planner_stops_consuming_after_turn_with_plan():
+    consumed: list[str] = []
+
+    def tracking_iter():
+        for line in [
+            _assistant_line('<plan>{"issues": [{"number": 1, "title": "T"}]}</plan>'),
+            _assistant_line("This line must not be consumed"),
+            _result_line('<plan>{"issues": [{"number": 2, "title": "T2"}]}</plan>'),
+        ]:
+            consumed.append(line)
+            yield line
+
+    result = process_stream(
+        tracking_iter(),
+        on_turn=lambda t: None,
+        role=AgentRole.PLANNER,
+        usage_limit_patterns=(),
+    )
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == [{"number": 1, "title": "T"}]
+    assert len(consumed) == 1
+
+
+def test_process_stream_preflight_issue_stops_consuming_after_turn_with_issue():
+    consumed: list[str] = []
+
+    def tracking_iter():
+        for line in [
+            _assistant_line('<issue>{"number": 7, "labels": ["bug"]}</issue>'),
+            _assistant_line("This line must not be consumed"),
+            _result_line('<issue>{"number": 8, "labels": ["other"]}</issue>'),
+        ]:
+            consumed.append(line)
+            yield line
+
+    result = process_stream(
+        tracking_iter(),
+        on_turn=lambda t: None,
+        role=AgentRole.PREFLIGHT_ISSUE,
+        usage_limit_patterns=(),
+    )
+    assert isinstance(result, IssueOutput)
+    assert result.number == 7
+    assert len(consumed) == 1
+
+
+def test_process_stream_stops_consuming_after_result_line():
+    consumed: list[str] = []
+
+    def tracking_iter():
+        for line in [
+            _result_line("<promise>COMPLETE</promise>"),
+            _assistant_line("This line must not be consumed"),
+        ]:
+            consumed.append(line)
+            yield line
+
+    result = process_stream(
+        tracking_iter(),
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        usage_limit_patterns=(),
+    )
+    assert isinstance(result, CompletionOutput)
+    assert len(consumed) == 1
+
+
+def test_process_stream_planner_skips_malformed_turn_and_exits_on_later_valid_turn():
+    lines = [
+        _assistant_line("no plan tag here"),
+        _assistant_line('<plan>{"issues": [{"number": 3, "title": "Real"}]}</plan>'),
+        _assistant_line("This line must not be consumed"),
+    ]
+    result = process_stream(
+        lines, on_turn=lambda t: None, role=AgentRole.PLANNER, usage_limit_patterns=()
+    )
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == [{"number": 3, "title": "Real"}]
+
+
+def test_process_stream_preflight_issue_skips_malformed_turn_and_exits_on_later_valid_turn():
+    lines = [
+        _assistant_line("no issue tag here"),
+        _assistant_line('<issue>{"number": 5, "labels": ["bug"]}</issue>'),
+        _assistant_line("This line must not be consumed"),
+    ]
+    result = process_stream(
+        lines,
+        on_turn=lambda t: None,
+        role=AgentRole.PREFLIGHT_ISSUE,
+        usage_limit_patterns=(),
+    )
+    assert isinstance(result, IssueOutput)
+    assert result.number == 5
+
+
+def test_process_stream_on_turn_receives_signal_turn_before_early_exit():
+    received: list[str] = []
+    process_stream(
+        [_assistant_line("<promise>COMPLETE</promise>")],
+        on_turn=received.append,
+        role=AgentRole.IMPLEMENTER,
+        usage_limit_patterns=(),
+    )
+    assert received == ["<promise>COMPLETE</promise>"]
 
 
 def test_process_stream_non_error_result_with_pattern_text_does_not_raise():
