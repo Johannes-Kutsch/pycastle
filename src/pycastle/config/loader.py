@@ -46,6 +46,7 @@ class Config:
             "pytest",
         )
     )
+    auto_push: bool = True
     timeout_retries: int = 1
     usage_limit_patterns: tuple[str, ...] = dataclasses.field(
         default_factory=lambda: ("You've hit your", "Credit balance is too low")
