@@ -339,12 +339,19 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
 
 
 def test_run_iteration_routes_planning_complete_through_status_display(
-    tmp_path, git_svc, github_svc, logger, capsys
+    tmp_path, git_svc, logger, capsys
 ):
-    """run_iteration must route the planning-complete summary through status_display.print()."""
+    """run_iteration must route the planning-complete summary through status_display (as the Plan row close message)."""
     recording = RecordingStatusDisplay()
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Issue A"},
+        {"number": 2, "title": "Issue B"},
+    ]
 
     async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Issue A"}])
         return CompletionOutput()
 
     deps = _make_deps(
@@ -357,15 +364,17 @@ def test_run_iteration_routes_planning_complete_through_status_display(
     )
     asyncio.run(run_iteration(deps))
 
-    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
-    assert any("Planning complete" in msg for msg in print_messages)
+    remove_messages = [
+        c[2] for c in recording.calls if c[0] == "remove" and c[1] == "Plan"
+    ]
+    assert any("Planning complete" in msg for msg in remove_messages)
     assert "Planning complete" not in capsys.readouterr().out
 
 
 def test_run_iteration_execution_complete_uses_consistent_source(
     tmp_path, git_svc, github_svc, logger
 ):
-    """The execution-complete block must use a single consistent source for automatic blank-line separation."""
+    """The execution-complete summary is emitted as the Implement row close message with caller 'Implement'."""
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(request: RunRequest):
@@ -381,18 +390,18 @@ def test_run_iteration_execution_complete_uses_consistent_source(
     )
     asyncio.run(run_iteration(deps))
 
-    exec_prints = [
-        (caller, msg)
+    impl_removes = [
+        c
         for c in recording.calls
-        if c[0] == "print"
-        for caller, msg in [(c[1], c[2])]
-        if "Execution complete" in str(msg) or str(msg).startswith("  pycastle/")
+        if c[0] == "remove"
+        and c[1] == "Implement"
+        and "Execution complete" in str(c[2])
     ]
-    assert exec_prints, "Expected execution-complete messages"
-    callers = {caller for caller, _ in exec_prints}
-    assert len(callers) == 1, (
-        f"Expected all execution-complete messages to share one caller, got: {callers}"
+    assert impl_removes, (
+        "Expected Implement row removed with 'Execution complete' message"
     )
+    msg = impl_removes[0][2]
+    assert "pycastle/issue-" in msg, "Branch name must appear in the close message"
 
 
 def test_run_iteration_routes_hitl_abort_message_through_status_display(
@@ -425,7 +434,7 @@ def test_run_iteration_routes_hitl_abort_message_through_status_display(
 def test_run_iteration_routes_no_commits_message_through_status_display(
     tmp_path, git_svc, github_svc, logger, capsys
 ):
-    """run_iteration must route 'No commits produced' through status_display.print()."""
+    """run_iteration must route 'No commits produced' through status_display (as the Implement row close message)."""
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(request: RunRequest):
@@ -443,8 +452,10 @@ def test_run_iteration_routes_no_commits_message_through_status_display(
     )
     asyncio.run(run_iteration(deps))
 
-    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
-    assert any("No commits" in msg for msg in print_messages)
+    remove_messages = [
+        c[2] for c in recording.calls if c[0] == "remove" and c[1] == "Implement"
+    ]
+    assert any("No commits" in msg for msg in remove_messages)
     assert "No commits" not in capsys.readouterr().out
 
 
@@ -672,7 +683,7 @@ def test_run_iteration_plan_row_removed_even_if_planning_raises(
     with pytest.raises(RuntimeError, match="planner exploded"):
         asyncio.run(run_iteration(deps))
 
-    assert ("remove", "Plan", "finished", "success") in recording.calls
+    assert ("remove", "Plan", "failed", "error") in recording.calls
 
 
 def test_run_iteration_implement_row_removed_on_usage_limit(
@@ -967,3 +978,182 @@ def test_run_iteration_detects_in_flight_via_both_branch_and_worktree_signals(
     assert not any("Implement Agent #10" in n for n in agent_names), (
         "Deferred issue must not run"
     )
+
+
+# ── Plan phase row.close() message ────────────────────────────────────────────
+
+
+def test_run_iteration_plan_close_message_contains_issue_details(
+    tmp_path, git_svc, logger
+):
+    """Plan phase row.close() emits 'Planning complete, N issue(s):' with each issue on a sub-line."""
+    recording = RecordingStatusDisplay()
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 3, "title": "Issue A"},
+        {"number": 7, "title": "Issue B"},
+    ]
+
+    async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 3, "title": "Issue A"}])
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must be removed"
+    msg = plan_removes[0][2]
+    assert "Planning complete, 1 issue(s):" in msg
+    assert "#3: Issue A → pycastle/issue-3" in msg
+
+
+def test_run_iteration_implement_close_message_success_format(
+    tmp_path, git_svc, github_svc, logger
+):
+    """Implement row close message on success is 'Execution complete, N branch(es) with commits:\n  branch'."""
+    recording = RecordingStatusDisplay()
+
+    async def _fake_agent(request: RunRequest):
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    impl_removes = [
+        c for c in recording.calls if c[0] == "remove" and c[1] == "Implement"
+    ]
+    assert impl_removes, "Implement row must be removed"
+    msg, style = impl_removes[0][2], impl_removes[0][3]
+    assert "Execution complete, 1 branch(es) with commits:" in msg
+    assert "pycastle/issue-1" in msg
+    assert style == "success"
+
+
+def test_run_iteration_no_commits_close_uses_warning_style(
+    tmp_path, git_svc, github_svc, logger
+):
+    """Implement row close on no-commits path uses shutdown_style='warning'."""
+    recording = RecordingStatusDisplay()
+
+    async def _fake_agent(request: RunRequest):
+        raise PromiseParseError("no promise tag")
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    impl_removes = [
+        c for c in recording.calls if c[0] == "remove" and c[1] == "Implement"
+    ]
+    assert impl_removes, "Implement row must be removed"
+    msg, style = impl_removes[0][2], impl_removes[0][3]
+    assert "No commits produced. Nothing to merge." in msg
+    assert style == "warning"
+
+
+def test_run_iteration_preflight_failure_errors_use_implement_caller(
+    tmp_path, git_svc, github_svc, logger
+):
+    """PreflightFailure error lines must be printed with caller='Implement'."""
+    from pycastle.agent_result import PreflightFailure as PF
+
+    recording = RecordingStatusDisplay()
+
+    async def _fake_agent(request: RunRequest):
+        return PF(failures=(("ruff", "ruff check .", "E501"),))
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    error_prints = [
+        c
+        for c in recording.calls
+        if c[0] == "print" and c[1] == "Implement" and "pre-flight failed" in str(c[2])
+    ]
+    assert error_prints, (
+        "PreflightFailure message must be printed with caller='Implement'"
+    )
+
+
+def test_run_iteration_generic_error_uses_implement_caller(
+    tmp_path, git_svc, github_svc, logger
+):
+    """Generic implement errors must be printed with caller='Implement'."""
+    recording = RecordingStatusDisplay()
+
+    async def _fake_agent(request: RunRequest):
+        raise PromiseParseError("bad output")
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    error_prints = [
+        c
+        for c in recording.calls
+        if c[0] == "print" and c[1] == "Implement" and "failed" in str(c[2])
+    ]
+    assert error_prints, "Generic error message must be printed with caller='Implement'"
+
+
+def test_run_iteration_hitl_message_uses_preflight_caller(tmp_path, git_svc, logger):
+    """'Preflight issue requires human intervention' must be printed with caller='Preflight'."""
+    recording = RecordingStatusDisplay()
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+
+    async def _fake_agent(request: RunRequest):
+        return IssueOutput(number=42, labels=["ready-for-human"])
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+        preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+    )
+    asyncio.run(run_iteration(deps))
+
+    hitl_prints = [
+        c
+        for c in recording.calls
+        if c[0] == "print" and c[1] == "Preflight" and "human intervention" in str(c[2])
+    ]
+    assert hitl_prints, "HITL message must be printed with caller='Preflight'"
