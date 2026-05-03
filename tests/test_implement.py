@@ -667,6 +667,78 @@ def test_run_issue_does_not_create_reviewer_worktree_on_preflight_failure(tmp_pa
     assert deps.git_svc.create_worktree.call_count == 1
 
 
+# ── run_issue: RALPH commit prefix skip logic ────────────────────────────────
+
+
+def test_run_issue_review_skip_returns_issue_without_invoking_any_agent(tmp_path):
+    """When branch has a RALPH: Review - commit, run_issue returns the issue without spawning agents."""
+    fake = FakeAgentRunner([])
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Review - fix auth"]
+
+    issue = {"number": 20, "title": "Fix auth"}
+    result = asyncio.run(run_issue(issue, deps))
+
+    assert result == issue
+    assert fake.calls == []
+
+
+def test_run_issue_review_skip_creates_no_worktree(tmp_path):
+    """When branch has a RALPH: Review - commit, no worktree is created."""
+    fake = FakeAgentRunner([])
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Review - fix auth"]
+
+    issue = {"number": 21, "title": "Fix auth"}
+    asyncio.run(run_issue(issue, deps))
+
+    deps.git_svc.create_worktree.assert_not_called()
+
+
+def test_run_issue_implement_skip_invokes_only_reviewer(tmp_path):
+    """When branch has a RALPH: (non-review) commit, run_issue skips Implementer and runs only Reviewer."""
+    fake = FakeAgentRunner([CompletionOutput()])
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Fix auth"]
+
+    issue = {"number": 22, "title": "Fix auth"}
+    result = asyncio.run(run_issue(issue, deps))
+
+    assert result == issue
+    assert len(fake.calls) == 1
+    assert "Review Agent" in fake.calls[0].name
+
+
+def test_run_issue_implement_skip_creates_no_implementer_worktree(tmp_path):
+    """When branch has a RALPH: (non-review) commit, no Implementer worktree is created."""
+    fake = FakeAgentRunner([CompletionOutput()])
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Fix auth"]
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    issue = {"number": 23, "title": "Fix auth"}
+    asyncio.run(run_issue(issue, deps))
+
+    assert deps.git_svc.create_worktree.call_count == 1
+    branch_arg = deps.git_svc.create_worktree.call_args[0][2]
+    assert branch_arg == "pycastle/issue-23"
+
+
+def test_run_issue_no_ralph_commit_runs_both_agents(tmp_path):
+    """When branch has no RALPH: commit, run_issue runs both Implementer and Reviewer normally."""
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.get_branch_commit_subjects.return_value = []
+
+    issue = {"number": 24, "title": "Fix auth"}
+    result = asyncio.run(run_issue(issue, deps))
+
+    assert result == issue
+    assert len(fake.calls) == 2
+    assert "Implement Agent" in fake.calls[0].name
+    assert "Review Agent" in fake.calls[1].name
+
+
 def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
     """run_issue must create the Reviewer worktree without a pinned SHA (existing-branch path)."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)

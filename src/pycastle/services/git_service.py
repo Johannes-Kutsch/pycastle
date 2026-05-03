@@ -202,6 +202,17 @@ class GitService(_SubprocessService):
             cwd=repo_path,
         )
 
+    def get_branch_commit_subjects(self, branch: str, repo_path: Path) -> list[str]:
+        result = self._run(
+            ["git", "log", f"main..{branch}", "--format=%s"],
+            cwd=repo_path,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            return []
+        output = self._decode(result.stdout)
+        return [line for line in output.splitlines() if line]
+
     def remove_worktree(self, repo_path: Path, worktree_path: Path) -> None:
         result = self._run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
