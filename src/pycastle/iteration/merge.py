@@ -67,7 +67,9 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
         else:
             target_branch = deps.git_svc.get_current_branch(deps.repo_root)
             sha = deps.git_svc.get_head_sha(deps.repo_root)
-            async with branch_worktree("merge-sandbox", MERGE_SANDBOX, sha, deps) as sandbox_path:
+            async with branch_worktree(
+                "merge-sandbox", MERGE_SANDBOX, sha, deps
+            ) as sandbox_path:
                 deps.status_display.remove("Merge")
                 _merge_row_active = False
                 merger_result = await deps.agent_runner.run(
@@ -80,7 +82,9 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                             "BRANCHES": "\n".join(
                                 f"- {branch_for(i['number'])}" for i in conflict_issues
                             ),
-                            "CHECKS": " && ".join(cmd for _, cmd in deps.cfg.preflight_checks),
+                            "CHECKS": " && ".join(
+                                cmd for _, cmd in deps.cfg.preflight_checks
+                            ),
                         },
                         model=deps.cfg.merge_override.model,
                         status_display=deps.status_display,
@@ -95,6 +99,8 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                         "Merge-time preflight failed; skipping conflict branch merge. "
                         "Conflict issues remain open for recovery in the next iteration.",
                     )
+                    if deps.cfg.auto_push and clean_issues:
+                        deps.git_svc.push(deps.repo_root)
                     return MergeResult(clean=clean_issues, conflicts=conflict_issues)
                 deps.git_svc.fast_forward_branch(
                     deps.repo_root, target_branch, MERGE_SANDBOX
@@ -107,8 +113,12 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                 deps.github_svc.close_issue(issue["number"])
             deps.github_svc.close_completed_parent_issues()
 
+        if deps.cfg.auto_push and (clean_issues or conflict_issues):
+            deps.git_svc.push(deps.repo_root)
         return MergeResult(clean=clean_issues, conflicts=conflict_issues)
     except BaseException:
         if _merge_row_active:
-            deps.status_display.remove("Merge", shutdown_message="failed", shutdown_style="error")
+            deps.status_display.remove(
+                "Merge", shutdown_message="failed", shutdown_style="error"
+            )
         raise
