@@ -83,14 +83,14 @@ async def run_issue(
         **_standards,
     }
 
-    _on_started = on_started
+    _started_fired = False
 
     async def _bounded_run_agent(request: RunRequest) -> Any:
-        nonlocal _on_started
+        nonlocal _started_fired
         async with semaphore or contextlib.nullcontext():
-            if _on_started is not None:
-                _on_started()
-                _on_started = None
+            if not _started_fired and on_started is not None:
+                on_started()
+                _started_fired = True
             return await deps.agent_runner.run(request)
 
     lock: asyncio.Lock | None = None
