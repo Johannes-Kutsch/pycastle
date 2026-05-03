@@ -17,6 +17,7 @@ from pycastle.iteration._deps import (
     Deps,
     FakeAgentRunner,
     RecordingLogger,
+    RecordingStatusDisplay,
 )
 from pycastle.status_display import PlainStatusDisplay
 from pycastle.iteration.implement import (
@@ -30,7 +31,7 @@ from pycastle.iteration.implement import (
 _cfg = Config()
 
 
-def _make_deps(tmp_path, agent_runner, logger=None) -> Deps:
+def _make_deps(tmp_path, agent_runner, logger=None, status_display=None) -> Deps:
     return Deps(
         env={},
         repo_root=tmp_path,
@@ -39,7 +40,7 @@ def _make_deps(tmp_path, agent_runner, logger=None) -> Deps:
         agent_runner=agent_runner,
         cfg=Config(max_parallel=4, max_iterations=1),
         logger=logger or RecordingLogger(),
-        status_display=PlainStatusDisplay(),  # type: ignore[arg-type]
+        status_display=status_display or PlainStatusDisplay(),  # type: ignore[arg-type]
     )
 
 
@@ -768,3 +769,104 @@ def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
     assert deps.git_svc.create_worktree.call_count == 2
     reviewer_sha = deps.git_svc.create_worktree.call_args_list[1][0][3]
     assert reviewer_sha is None
+
+
+# ── Issue 437: live agent-start progress counter ──────────────────────────────
+
+
+def test_implement_phase_sets_initial_progress_text(tmp_path):
+    """implement_phase registers 'Running: started Agents for 0/Y issues' before any agent runs."""
+    issues = [{"number": 1, "title": "A"}, {"number": 2, "title": "B"}]
+    fake = FakeAgentRunner([CompletionOutput()] * 4)
+    sd = RecordingStatusDisplay()
+    deps = _make_deps(tmp_path, fake, status_display=sd)
+
+    asyncio.run(implement_phase(issues, None, deps))
+
+    update_phase_calls = [
+        c for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
+    ]
+    assert update_phase_calls[0] == (
+        "update_phase",
+        "Implement",
+        "Running: started Agents for 0/2 issues",
+    )
+
+
+def test_implement_phase_increments_progress_text_per_semaphore_acquisition(tmp_path):
+    """implement_phase increments the counter each time a new issue acquires the semaphore."""
+    issues = [
+        {"number": 1, "title": "A"},
+        {"number": 2, "title": "B"},
+        {"number": 3, "title": "C"},
+    ]
+    fake = FakeAgentRunner([CompletionOutput()] * 6)
+    sd = RecordingStatusDisplay()
+    deps = _make_deps(tmp_path, fake, status_display=sd)
+
+    asyncio.run(implement_phase(issues, None, deps))
+
+    update_phase_calls = [
+        c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
+    ]
+    assert "Running: started Agents for 0/3 issues" in update_phase_calls
+    assert "Running: started Agents for 1/3 issues" in update_phase_calls
+    assert "Running: started Agents for 2/3 issues" in update_phase_calls
+    assert "Running: started Agents for 3/3 issues" in update_phase_calls
+
+
+def test_implement_phase_progress_total_matches_issue_count(tmp_path):
+    """Y in the progress text equals the number of issues passed to implement_phase."""
+    issues = [{"number": i, "title": f"Issue {i}"} for i in range(1, 6)]
+    fake = FakeAgentRunner([CompletionOutput()] * 10)
+    sd = RecordingStatusDisplay()
+    deps = _make_deps(tmp_path, fake, status_display=sd)
+
+    asyncio.run(implement_phase(issues, None, deps))
+
+    initial = next(
+        c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
+    )
+    assert initial == "Running: started Agents for 0/5 issues"
+
+
+def test_implement_phase_counter_is_monotonic(tmp_path):
+    """Counter in progress text only increases and never decrements."""
+    issues = [{"number": i, "title": f"Issue {i}"} for i in range(1, 4)]
+    fake = FakeAgentRunner([CompletionOutput()] * 6)
+    sd = RecordingStatusDisplay()
+    deps = _make_deps(tmp_path, fake, status_display=sd)
+
+    asyncio.run(implement_phase(issues, None, deps))
+
+    counts = [
+        int(c[2].split("for ")[1].split("/")[0])
+        for c in sd.calls
+        if c[0] == "update_phase" and c[1] == "Implement"
+    ]
+    assert counts == sorted(counts)
+
+
+def test_run_issue_calls_on_started_once_per_issue(tmp_path):
+    """run_issue calls on_started exactly once regardless of how many agents run."""
+    fired: list[int] = []
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+
+    issue = {"number": 1, "title": "Fix thing"}
+    asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))
+
+    assert fired == [1]
+
+
+def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
+    """run_issue does not call on_started when review skip path is taken (no semaphore acquired)."""
+    fired: list[int] = []
+    fake = FakeAgentRunner([])
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Review - fix auth"]
+
+    issue = {"number": 1, "title": "Fix thing"}
+    asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))
+
+    assert fired == []
