@@ -6,8 +6,8 @@ from ..agent_result import PreflightFailure
 from ..agent_runner import RunRequest
 from ..services import GitCommandError
 from ..worktree import (
-    _remove_worktrees_dir_if_empty,
     branch_worktree,
+    remove_worktrees_dir_if_empty,
     worktree_name_for_branch,
     worktree_path,
 )
@@ -33,7 +33,7 @@ def _delete_merged_branches(branches: list[str], deps: Deps) -> None:
         if worktree_path_ in registered_worktrees:
             try:
                 deps.git_svc.remove_worktree(deps.repo_root, worktree_path_)
-                _remove_worktrees_dir_if_empty(worktree_path_.parent)
+                remove_worktrees_dir_if_empty(worktree_path_.parent)
             except Exception as e:
                 print(
                     f"Warning: could not remove worktree for {branch!r}: {e}",

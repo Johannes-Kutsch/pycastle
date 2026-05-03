@@ -39,7 +39,7 @@ def _wrap_git_errors():
         raise WorktreeError(str(exc)) from exc
 
 
-def _remove_worktrees_dir_if_empty(worktrees_dir: Path) -> None:
+def remove_worktrees_dir_if_empty(worktrees_dir: Path) -> None:
     if worktrees_dir.exists() and not any(worktrees_dir.iterdir()):
         worktrees_dir.rmdir()
 
@@ -131,7 +131,7 @@ async def branch_worktree(
                 if delete_branch:
                     deps.git_svc.delete_branch(branch, deps.repo_root)
         finally:
-            _remove_worktrees_dir_if_empty(path.parent)
+            remove_worktrees_dir_if_empty(path.parent)
 
 
 @asynccontextmanager
@@ -144,7 +144,7 @@ async def detached_worktree(name: str, sha: str, deps: _WorktreeDeps):
         try:
             deps.git_svc.remove_worktree(deps.repo_root, path)
         finally:
-            _remove_worktrees_dir_if_empty(path.parent)
+            remove_worktrees_dir_if_empty(path.parent)
 
 
 def patch_gitdir_for_container(worktree_path: Path) -> Path | None:
