@@ -247,6 +247,15 @@ def test_register_initial_phase_does_not_affect_output(
     assert out == "\n[Alice] started\n"
 
 
+def test_register_work_body_does_not_affect_output(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.register("Alice", work_body="implementing issue #1")
+    out = capsys.readouterr().out
+    assert out == "\n[Alice] started\n"
+
+
 def test_remove_custom_shutdown_message(capsys: pytest.CaptureFixture[str]) -> None:
     d = PlainStatusDisplay()
     d.remove("Alice", shutdown_message="aborted")
