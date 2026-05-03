@@ -1157,3 +1157,129 @@ def test_run_iteration_hitl_message_uses_preflight_caller(tmp_path, git_svc, log
         if c[0] == "print" and c[1] == "Preflight" and "human intervention" in str(c[2])
     ]
     assert hitl_prints, "HITL message must be printed with caller='Preflight'"
+
+
+# ── Edge cases ────────────────────────────────────────────────────────────────
+
+
+def test_run_iteration_plan_close_message_with_zero_issues(tmp_path, git_svc, logger):
+    """When the planner returns no issues, Plan row closes with '0 issue(s):' and no sub-lines."""
+    recording = RecordingStatusDisplay()
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Issue A"},
+        {"number": 2, "title": "Issue B"},
+    ]
+
+    async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([])
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must be removed"
+    assert "Planning complete, 0 issue(s):" in plan_removes[0][2]
+
+
+def test_run_iteration_implement_success_message_includes_all_branches(
+    tmp_path, git_svc, logger
+):
+    """When multiple issues complete, every branch name appears in the Implement close message."""
+    recording = RecordingStatusDisplay()
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 5, "title": "Issue Five"},
+        {"number": 6, "title": "Issue Six"},
+    ]
+
+    async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [
+                    {"number": 5, "title": "Issue Five"},
+                    {"number": 6, "title": "Issue Six"},
+                ]
+            )
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    impl_removes = [
+        c
+        for c in recording.calls
+        if c[0] == "remove"
+        and c[1] == "Implement"
+        and "Execution complete" in str(c[2])
+    ]
+    assert impl_removes, "Implement row must close with success message"
+    msg = impl_removes[0][2]
+    assert "2 branch(es) with commits:" in msg
+    assert "pycastle/issue-5" in msg
+    assert "pycastle/issue-6" in msg
+
+
+def test_run_iteration_success_close_excludes_failed_branches(
+    tmp_path, git_svc, logger
+):
+    """When some issues fail and others succeed, only completed branches appear in the close message."""
+    from pycastle.agent_result import PreflightFailure as PF
+
+    recording = RecordingStatusDisplay()
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 3, "title": "Issue Three"},
+        {"number": 4, "title": "Issue Four"},
+    ]
+
+    async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [
+                    {"number": 3, "title": "Issue Three"},
+                    {"number": 4, "title": "Issue Four"},
+                ]
+            )
+        if request.name == "Implement Agent #3":
+            return PF(failures=(("ruff", "ruff check .", "E501"),))
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    impl_removes = [
+        c
+        for c in recording.calls
+        if c[0] == "remove"
+        and c[1] == "Implement"
+        and "Execution complete" in str(c[2])
+    ]
+    assert impl_removes, "Implement row must close with success message"
+    msg = impl_removes[0][2]
+    assert "1 branch(es) with commits:" in msg
+    assert "pycastle/issue-4" in msg
+    assert "pycastle/issue-3" not in msg
