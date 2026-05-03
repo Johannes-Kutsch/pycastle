@@ -10,11 +10,11 @@ def test_plain_status_display_satisfies_protocol() -> None:
 # --- Blank-line separator logic ---
 
 
-def test_no_blank_line_before_first_output(capsys: pytest.CaptureFixture[str]) -> None:
+def test_blank_line_before_first_output(capsys: pytest.CaptureFixture[str]) -> None:
     d = PlainStatusDisplay()
     d.print("Alice", "hello")
     out = capsys.readouterr().out
-    assert out == "[Alice] hello\n"
+    assert out == "\n[Alice] hello\n"
 
 
 def test_print_no_blank_between_same_caller(capsys: pytest.CaptureFixture[str]) -> None:
@@ -22,7 +22,7 @@ def test_print_no_blank_between_same_caller(capsys: pytest.CaptureFixture[str]) 
     d.print("Alice", "first")
     d.print("Alice", "second")
     out = capsys.readouterr().out
-    assert out == "[Alice] first\n[Alice] second\n"
+    assert out == "\n[Alice] first\n[Alice] second\n"
 
 
 def test_print_blank_when_caller_changes(capsys: pytest.CaptureFixture[str]) -> None:
@@ -30,7 +30,7 @@ def test_print_blank_when_caller_changes(capsys: pytest.CaptureFixture[str]) -> 
     d.print("Alice", "hello")
     d.print("Bob", "world")
     out = capsys.readouterr().out
-    assert out == "[Alice] hello\n\n[Bob] world\n"
+    assert out == "\n[Alice] hello\n\n[Bob] world\n"
 
 
 def test_print_blank_for_anonymous_caller_even_if_previous_was_same(
@@ -40,21 +40,21 @@ def test_print_blank_for_anonymous_caller_even_if_previous_was_same(
     d.print("", "first")
     d.print("", "second")
     out = capsys.readouterr().out
-    assert out == "first\n\nsecond\n"
+    assert out == "\nfirst\n\nsecond\n"
 
 
 def test_print_anonymous_caller_no_brackets(capsys: pytest.CaptureFixture[str]) -> None:
     d = PlainStatusDisplay()
     d.print("", "message")
     out = capsys.readouterr().out
-    assert out == "message\n"
+    assert out == "\nmessage\n"
 
 
 def test_print_named_caller_has_brackets(capsys: pytest.CaptureFixture[str]) -> None:
     d = PlainStatusDisplay()
     d.print("Alice", "message")
     out = capsys.readouterr().out
-    assert out == "[Alice] message\n"
+    assert out == "\n[Alice] message\n"
 
 
 def test_register_blank_when_caller_changes(capsys: pytest.CaptureFixture[str]) -> None:
@@ -62,16 +62,16 @@ def test_register_blank_when_caller_changes(capsys: pytest.CaptureFixture[str]) 
     d.print("Alice", "hello")
     d.register("Bob")
     out = capsys.readouterr().out
-    assert out == "[Alice] hello\n\n[Bob] started\n"
+    assert out == "\n[Alice] hello\n\n[Bob] started\n"
 
 
-def test_register_no_blank_before_first_output(
+def test_register_blank_before_first_output(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     d = PlainStatusDisplay()
     d.register("Alice")
     out = capsys.readouterr().out
-    assert out == "[Alice] started\n"
+    assert out == "\n[Alice] started\n"
 
 
 def test_register_no_blank_same_caller_as_previous(
@@ -81,7 +81,7 @@ def test_register_no_blank_same_caller_as_previous(
     d.print("Alice", "hello")
     d.register("Alice")
     out = capsys.readouterr().out
-    assert out == "[Alice] hello\n[Alice] started\n"
+    assert out == "\n[Alice] hello\n[Alice] started\n"
 
 
 def test_register_updates_last_caller_for_subsequent_output(
@@ -91,7 +91,7 @@ def test_register_updates_last_caller_for_subsequent_output(
     d.register("Alice")
     d.print("Alice", "message")
     out = capsys.readouterr().out
-    assert out == "[Alice] started\n[Alice] message\n"
+    assert out == "\n[Alice] started\n[Alice] message\n"
 
 
 def test_remove_blank_when_caller_changes(capsys: pytest.CaptureFixture[str]) -> None:
@@ -99,16 +99,16 @@ def test_remove_blank_when_caller_changes(capsys: pytest.CaptureFixture[str]) ->
     d.print("Alice", "hello")
     d.remove("Bob")
     out = capsys.readouterr().out
-    assert out == "[Alice] hello\n\n[Bob] finished\n"
+    assert out == "\n[Alice] hello\n\n[Bob] finished\n"
 
 
-def test_remove_no_blank_before_first_output(
+def test_remove_blank_before_first_output(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     d = PlainStatusDisplay()
     d.remove("Alice")
     out = capsys.readouterr().out
-    assert out == "[Alice] finished\n"
+    assert out == "\n[Alice] finished\n"
 
 
 def test_remove_no_blank_same_caller_as_previous(
@@ -118,7 +118,7 @@ def test_remove_no_blank_same_caller_as_previous(
     d.print("Alice", "hello")
     d.remove("Alice")
     out = capsys.readouterr().out
-    assert out == "[Alice] hello\n[Alice] finished\n"
+    assert out == "\n[Alice] hello\n[Alice] finished\n"
 
 
 def test_remove_updates_last_caller_for_subsequent_output(
@@ -128,7 +128,7 @@ def test_remove_updates_last_caller_for_subsequent_output(
     d.remove("Alice")
     d.print("Alice", "message")
     out = capsys.readouterr().out
-    assert out == "[Alice] finished\n[Alice] message\n"
+    assert out == "\n[Alice] finished\n[Alice] message\n"
 
 
 def test_register_then_remove_same_caller_no_blank(
@@ -138,7 +138,7 @@ def test_register_then_remove_same_caller_no_blank(
     d.register("Alice")
     d.remove("Alice")
     out = capsys.readouterr().out
-    assert out == "[Alice] started\n[Alice] finished\n"
+    assert out == "\n[Alice] started\n[Alice] finished\n"
 
 
 def test_print_anonymous_caller_after_named_caller_gets_blank(
@@ -148,7 +148,7 @@ def test_print_anonymous_caller_after_named_caller_gets_blank(
     d.print("Alice", "hello")
     d.print("", "anonymous")
     out = capsys.readouterr().out
-    assert out == "[Alice] hello\n\nanonymous\n"
+    assert out == "\n[Alice] hello\n\nanonymous\n"
 
 
 def test_register_anonymous_caller_blank_when_caller_changes(
@@ -158,7 +158,7 @@ def test_register_anonymous_caller_blank_when_caller_changes(
     d.print("Alice", "hello")
     d.register("")
     out = capsys.readouterr().out
-    assert out == "[Alice] hello\n\nstarted\n"
+    assert out == "\n[Alice] hello\n\nstarted\n"
 
 
 def test_remove_anonymous_caller_blank_when_caller_changes(
@@ -168,7 +168,7 @@ def test_remove_anonymous_caller_blank_when_caller_changes(
     d.print("Alice", "hello")
     d.remove("")
     out = capsys.readouterr().out
-    assert out == "[Alice] hello\n\nfinished\n"
+    assert out == "\n[Alice] hello\n\nfinished\n"
 
 
 def test_print_named_caller_after_anonymous_gets_blank(
@@ -178,7 +178,7 @@ def test_print_named_caller_after_anonymous_gets_blank(
     d.print("", "anonymous")
     d.print("Alice", "named")
     out = capsys.readouterr().out
-    assert out == "anonymous\n\n[Alice] named\n"
+    assert out == "\nanonymous\n\n[Alice] named\n"
 
 
 def test_register_blank_for_consecutive_anonymous_callers(
@@ -188,7 +188,7 @@ def test_register_blank_for_consecutive_anonymous_callers(
     d.register("")
     d.register("")
     out = capsys.readouterr().out
-    assert out == "started\n\nstarted\n"
+    assert out == "\nstarted\n\nstarted\n"
 
 
 def test_remove_blank_for_consecutive_anonymous_callers(
@@ -198,7 +198,7 @@ def test_remove_blank_for_consecutive_anonymous_callers(
     d.remove("")
     d.remove("")
     out = capsys.readouterr().out
-    assert out == "finished\n\nfinished\n"
+    assert out == "\nfinished\n\nfinished\n"
 
 
 def test_register_then_print_different_callers_blank(
@@ -208,7 +208,7 @@ def test_register_then_print_different_callers_blank(
     d.register("Alice")
     d.print("Bob", "message")
     out = capsys.readouterr().out
-    assert out == "[Alice] started\n\n[Bob] message\n"
+    assert out == "\n[Alice] started\n\n[Bob] message\n"
 
 
 def test_register_then_remove_different_callers_blank(
@@ -218,7 +218,7 @@ def test_register_then_remove_different_callers_blank(
     d.register("Alice")
     d.remove("Bob")
     out = capsys.readouterr().out
-    assert out == "[Alice] started\n\n[Bob] finished\n"
+    assert out == "\n[Alice] started\n\n[Bob] finished\n"
 
 
 def test_cross_method_consecutive_anonymous_blank(
@@ -228,14 +228,14 @@ def test_cross_method_consecutive_anonymous_blank(
     d.print("", "first")
     d.register("", "second")
     out = capsys.readouterr().out
-    assert out == "first\n\nsecond\n"
+    assert out == "\nfirst\n\nsecond\n"
 
 
 def test_register_custom_startup_message(capsys: pytest.CaptureFixture[str]) -> None:
     d = PlainStatusDisplay()
     d.register("Alice", startup_message="connecting")
     out = capsys.readouterr().out
-    assert out == "[Alice] connecting\n"
+    assert out == "\n[Alice] connecting\n"
 
 
 def test_register_initial_phase_does_not_affect_output(
@@ -244,14 +244,14 @@ def test_register_initial_phase_does_not_affect_output(
     d = PlainStatusDisplay()
     d.register("Alice", initial_phase="Running")
     out = capsys.readouterr().out
-    assert out == "[Alice] started\n"
+    assert out == "\n[Alice] started\n"
 
 
 def test_remove_custom_shutdown_message(capsys: pytest.CaptureFixture[str]) -> None:
     d = PlainStatusDisplay()
     d.remove("Alice", shutdown_message="aborted")
     out = capsys.readouterr().out
-    assert out == "[Alice] aborted\n"
+    assert out == "\n[Alice] aborted\n"
 
 
 def test_full_lifecycle_interleaved_callers(capsys: pytest.CaptureFixture[str]) -> None:
@@ -264,6 +264,7 @@ def test_full_lifecycle_interleaved_callers(capsys: pytest.CaptureFixture[str]) 
     d.remove("Bob")
     out = capsys.readouterr().out
     assert out == (
+        "\n"
         "[Alice] started\n"
         "[Alice] working\n"
         "\n"
