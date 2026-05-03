@@ -1,5 +1,6 @@
 import json
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -49,7 +50,11 @@ def _usage_limit_line() -> bytes:
     )
 
 
-def _noop(_: str) -> None:
+def _noop(turn: str) -> None:
+    pass
+
+
+def _noop_chunk() -> None:
     pass
 
 
@@ -57,15 +62,13 @@ def _make_workstream(
     chunks,
     tmp_path: Path,
     idle_timeout: float = 5.0,
-    on_chunk=None,
+    on_chunk: Callable[[], None] | None = None,
 ) -> WorkStream:
-    if on_chunk is None:
-        on_chunk = lambda: None  # noqa: E731
     return WorkStream(
         chunks=chunks,
         log_path=tmp_path / "test.log",
         idle_timeout=idle_timeout,
-        on_chunk=on_chunk,
+        on_chunk=on_chunk if on_chunk is not None else _noop_chunk,
     )
 
 
@@ -164,3 +167,32 @@ def test_usage_limit_chunk_raises_usage_limit_error(tmp_path):
     ws = _make_workstream(chunks, tmp_path)
     with pytest.raises(UsageLimitError):
         ws.run(AgentRole.IMPLEMENTER, _noop, ())
+
+
+# ── Partial final line (no trailing newline) ──────────────────────────────────
+
+
+def test_result_line_without_trailing_newline_is_processed(tmp_path):
+    line_bytes = (
+        b'{"type":"result","result":"<promise>COMPLETE</promise>","is_error":false}'
+    )
+    ws = _make_workstream([line_bytes], tmp_path)
+    result = ws.run(AgentRole.IMPLEMENTER, _noop, ())
+    assert isinstance(result, CompletionOutput)
+
+
+# ── Multi-newline chunk ───────────────────────────────────────────────────────
+
+
+def test_chunk_containing_multiple_newlines_yields_all_lines(tmp_path):
+    line1 = (
+        b'{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}\n'
+    )
+    line2 = (
+        b'{"type":"result","result":"<promise>COMPLETE</promise>","is_error":false}\n'
+    )
+    ws = _make_workstream([line1 + line2], tmp_path)
+    turns: list[str] = []
+    result = ws.run(AgentRole.IMPLEMENTER, turns.append, ())
+    assert isinstance(result, CompletionOutput)
+    assert turns == ["hello"]
