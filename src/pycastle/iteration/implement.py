@@ -1,7 +1,7 @@
 import asyncio
 import contextlib
 import dataclasses
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -70,6 +70,7 @@ async def run_issue(
     token: CancellationToken | None = None,
     sha: str | None = None,
     branch_locks: dict[str, asyncio.Lock] | None = None,
+    on_started: Callable[[], None] | None = None,
 ) -> dict | PreflightFailure:
     _branch = branch_for(issue["number"])
     _token = token if token is not None else CancellationToken()
@@ -82,8 +83,14 @@ async def run_issue(
         **_standards,
     }
 
+    _on_started = on_started
+
     async def _bounded_run_agent(request: RunRequest) -> Any:
+        nonlocal _on_started
         async with semaphore or contextlib.nullcontext():
+            if _on_started is not None:
+                _on_started()
+                _on_started = None
             return await deps.agent_runner.run(request)
 
     lock: asyncio.Lock | None = None
@@ -162,10 +169,29 @@ async def implement_phase(
     _token = token if token is not None else CancellationToken()
     semaphore = asyncio.Semaphore(deps.cfg.max_parallel)
     branch_locks: dict[str, asyncio.Lock] = {}
+    total = len(issues)
+    started = 0
+    deps.status_display.update_phase(
+        "Implement", f"Running: started Agents for 0/{total} issues"
+    )
+
+    def _on_started() -> None:
+        nonlocal started
+        started += 1
+        deps.status_display.update_phase(
+            "Implement", f"Running: started Agents for {started}/{total} issues"
+        )
+
     results = await asyncio.gather(
         *[
             run_issue(
-                issue, deps, semaphore, token=_token, sha=sha, branch_locks=branch_locks
+                issue,
+                deps,
+                semaphore,
+                token=_token,
+                sha=sha,
+                branch_locks=branch_locks,
+                on_started=_on_started,
             )
             for issue in issues
         ],
