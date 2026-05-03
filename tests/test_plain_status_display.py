@@ -238,6 +238,15 @@ def test_register_custom_startup_message(capsys: pytest.CaptureFixture[str]) -> 
     assert out == "[Alice] connecting\n"
 
 
+def test_register_initial_phase_does_not_affect_output(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.register("Alice", initial_phase="Running")
+    out = capsys.readouterr().out
+    assert out == "[Alice] started\n"
+
+
 def test_remove_custom_shutdown_message(capsys: pytest.CaptureFixture[str]) -> None:
     d = PlainStatusDisplay()
     d.remove("Alice", shutdown_message="aborted")
