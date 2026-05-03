@@ -568,6 +568,16 @@ def test_prepare_expands_shell_expressions_via_container_exec(tmp_path):
     assert runner._prompt == "Result: exec_output"
 
 
+# ── Issue 435: on_chunk wired to status_display.reset_idle_timer ─────────────
+
+
+def test_run_streaming_calls_reset_idle_timer_with_runner_name(tmp_path):
+    display = RecordingStatusDisplay()
+    runner = _streaming_runner("MyAgent", [_COMPLETE_LINE], tmp_path, display)
+    runner.run_streaming(_ROLE, _NOOP)
+    assert ("reset_idle_timer", "MyAgent") in display.calls
+
+
 # ── Cycle 65-6: run_streaming writes raw log, suppresses all stdout ──────────
 
 
