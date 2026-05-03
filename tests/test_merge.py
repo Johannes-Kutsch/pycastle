@@ -580,7 +580,7 @@ def test_close_message_combines_clean_and_conflict_deleted_branches(
     shutdown_msg = remove_calls[-1][2]
     assert "pycastle/issue-1" in shutdown_msg
     assert "pycastle/issue-2" in shutdown_msg
-    assert "2 branch(es) deleted" in shutdown_msg
+    assert "2 branch(es) merged" in shutdown_msg
 
 
 def test_merge_phase_routes_dirty_tree_message_through_status_display(
@@ -717,15 +717,15 @@ def test_merge_row_removed_when_completed_is_empty(recording_deps):
     assert remove_calls[-1][3] == "success"
 
 
-def test_close_message_shows_zero_branches_deleted_when_no_issues(recording_deps):
-    """When completed is empty, the Merge row close message reports 0 branches deleted."""
+def test_close_message_shows_zero_branches_merged_when_no_issues(recording_deps):
+    """When completed is empty, the Merge row close message reports 0 branches merged."""
     deps, recording = recording_deps
     _run([], deps)
     remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
     assert remove_calls
     shutdown_msg = remove_calls[-1][2]
     assert "Execution complete" in shutdown_msg
-    assert "0 branch(es) deleted" in shutdown_msg
+    assert "0 branch(es) merged" in shutdown_msg
 
 
 def test_merge_row_still_active_while_merger_runs(tmp_path, git_svc, github_svc):
