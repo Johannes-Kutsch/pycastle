@@ -42,7 +42,7 @@ def _delete_merged_branches(branches: list[str], deps: Deps) -> None:
 
 
 async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
-    deps.status_display.register("Merge", work_body="Merging")
+    deps.status_display.register("Merge", initial_phase="Merging")
     _merge_row_active = True
     try:
         await _wait_for_clean_working_tree(deps)

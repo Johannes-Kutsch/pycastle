@@ -734,6 +734,79 @@ def test_run_iteration_registers_preflight_row_before_preflight_phase(
     assert register_idx < remove_idx
 
 
+def test_run_iteration_registers_preflight_row_with_running_phase(
+    tmp_path, git_svc, github_svc, logger
+):
+    """run_iteration must register the 'Preflight' row with initial_phase='Running'."""
+    recording = RecordingStatusDisplay()
+
+    async def _noop_agent(request: RunRequest):
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _noop_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    assert ("register", "Preflight", "started", "Running") in recording.calls
+
+
+def test_run_iteration_registers_plan_row_with_planning_phase(
+    tmp_path, git_svc, logger
+):
+    """run_iteration must register the 'Plan' row with initial_phase='Planning'."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Issue A"},
+        {"number": 2, "title": "Issue B"},
+    ]
+    recording = RecordingStatusDisplay()
+
+    async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Issue A"}])
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    assert ("register", "Plan", "started", "Planning") in recording.calls
+
+
+def test_run_iteration_registers_implement_row_with_running_phase(
+    tmp_path, git_svc, github_svc, logger
+):
+    """run_iteration must register the 'Implement' row with initial_phase='Running'."""
+    recording = RecordingStatusDisplay()
+
+    async def _noop_agent(request: RunRequest):
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _noop_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    asyncio.run(run_iteration(deps))
+
+    assert ("register", "Implement", "started", "Running") in recording.calls
+
+
 # ── Planning skip when in-flight branches or worktrees exist ─────────────────
 
 

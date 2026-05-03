@@ -34,8 +34,8 @@ class RecordingStatusDisplay:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
 
-    def register(self, caller: str, startup_message: str = "started", work_body: str = "") -> None:
-        self.calls.append(("register", caller, startup_message, work_body))
+    def register(self, caller: str, startup_message: str = "started", work_body: str = "", initial_phase: str = "Setup") -> None:
+        self.calls.append(("register", caller, startup_message, initial_phase))
 
     def update_phase(self, name: str, phase: str) -> None:
         self.calls.append(("update_phase", name, phase))
