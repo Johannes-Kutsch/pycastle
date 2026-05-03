@@ -135,6 +135,16 @@ def test_get_branch_commit_subjects_returns_empty_list_when_branch_missing():
     assert result == []
 
 
+def test_get_branch_commit_subjects_raises_git_timeout_error_on_timeout():
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    ):
+        with pytest.raises(GitTimeoutError):
+            svc.get_branch_commit_subjects("pycastle/issue-1", Path("/repo"))
+
+
 # ── get_user_email() ───────────────────────────────────────────────────────────
 
 
