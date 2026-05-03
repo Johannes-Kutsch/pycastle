@@ -37,6 +37,7 @@
 | **CLI default** | The behavior when no `--model` or `--effort` flag is injected — triggered by an empty string in STAGE_OVERRIDES | default model, unset |
 | **validate_config** | Public function in the config validator module; takes a `Config` and a `ClaudeService`, resolves model shorthands to full model IDs, validates all stage overrides, and returns a new immutable `Config`; raises `ConfigValidationError` on any invalid entry | config validation, startup check |
 | **ConfigValidationError** | Error raised by validate_config when a model shorthand or effort level is unrecognised; includes the invalid value, closest valid suggestion, and full list of valid options | validation error, config error |
+| **auto_push** | Boolean config entry (default `True`) that controls whether `merge_phase` pushes local main to the remote after any merges produce commits; set to `False` to disable automatic pushing | push_after_merge, AUTO_PUSH |
 
 ## GitHub Integration
 
