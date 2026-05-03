@@ -51,6 +51,8 @@ class WorkStream:
                             f"Agent idle for more than {self._idle_timeout}s"
                         )
                     if chunk is _sentinel:
+                        if line_buf:
+                            yield line_buf
                         return
                     log.write(chunk)
                     log.flush()
