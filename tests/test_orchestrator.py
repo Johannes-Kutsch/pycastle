@@ -323,6 +323,22 @@ def test_prune_orphan_worktrees_removes_parent_when_already_empty(tmp_path):
     assert not worktrees_dir.exists()
 
 
+def test_prune_orphan_worktrees_keeps_parent_when_non_dir_file_remains(tmp_path):
+    """A file (not directory) left in the worktrees dir blocks parent removal."""
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+    orphan = worktrees_dir / "orphan-branch"
+    orphan.mkdir()
+    leftover_file = worktrees_dir / "stale.lock"
+    leftover_file.write_text("lock")
+
+    prune_orphan_worktrees(tmp_path, git_service=_make_git_service_for_prune([]))
+
+    assert not orphan.exists()
+    assert leftover_file.exists()
+    assert worktrees_dir.exists()
+
+
 # ── Cycle 24-C1/C2: error logging on agent failure ───────────────────────────
 
 

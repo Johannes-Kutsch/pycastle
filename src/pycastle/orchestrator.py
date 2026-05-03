@@ -22,6 +22,7 @@ from .iteration import (
 from .iteration._deps import Deps as IterationDeps
 from .rich_status_display import RichStatusDisplay
 from .status_display import StatusDisplay
+from .worktree import _remove_worktrees_dir_if_empty
 
 
 class FileLogger:
@@ -58,8 +59,7 @@ def prune_orphan_worktrees(
     for child in worktrees_dir.iterdir():
         if str(child.resolve()) not in active and child.is_dir():
             shutil.rmtree(child)
-    if not any(worktrees_dir.iterdir()):
-        worktrees_dir.rmdir()
+    _remove_worktrees_dir_if_empty(worktrees_dir)
 
 
 def _get_repo(repo_root: Path) -> str:
