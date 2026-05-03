@@ -31,10 +31,12 @@ class PlainStatusDisplay:
         self.print(caller, shutdown_message)
 
     def print(self, caller: str, message: object, style: str | None = None) -> None:
+        lines = str(message).split("\n")
         if self._blank_before(caller):
             builtins.print()
-        if caller:
-            builtins.print(f"[{caller}] {message}")
-        else:
-            builtins.print(message)
         self._last_caller = caller
+        for line in lines:
+            if caller:
+                builtins.print(f"[{caller}] {line}")
+            else:
+                builtins.print(line)

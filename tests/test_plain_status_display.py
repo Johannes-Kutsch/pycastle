@@ -284,3 +284,44 @@ def test_full_lifecycle_interleaved_callers(capsys: pytest.CaptureFixture[str]) 
         "\n"
         "[Bob] finished\n"
     )
+
+
+# --- Multi-line message splitting ---
+
+
+def test_remove_multiline_message_emits_each_line_with_caller_prefix(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.remove("Alice", "line1\nline2\nline3")
+    out = capsys.readouterr().out
+    assert out == "\n[Alice] line1\n[Alice] line2\n[Alice] line3\n"
+
+
+def test_print_multiline_message_emits_each_line_with_caller_prefix(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.print("Alice", "line1\nline2")
+    out = capsys.readouterr().out
+    assert out == "\n[Alice] line1\n[Alice] line2\n"
+
+
+def test_multiline_blank_before_fires_once_not_between_continuation_lines(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.print("Alice", "hello")
+    d.print("Bob", "line1\nline2")
+    out = capsys.readouterr().out
+    assert out == "\n[Alice] hello\n\n[Bob] line1\n[Bob] line2\n"
+
+
+def test_remove_multiline_blank_before_fires_once(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.print("Alice", "hello")
+    d.remove("Bob", "line1\nline2")
+    out = capsys.readouterr().out
+    assert out == "\n[Alice] hello\n\n[Bob] line1\n[Bob] line2\n"

@@ -181,22 +181,26 @@ class RichStatusDisplay:
         message: object,
         style: str | None = None,
     ) -> None:
+        lines = str(message).split("\n")
         with self._lock:
             prepend_blank = self._blank_before(caller)
             self._last_caller = caller
         if prepend_blank:
             self._console.print()
-        if caller:
-            text = Text()
-            text.append(f"[{caller}]", style="bold")
-            text.append(f" {message}")
-        else:
-            text = Text(str(message))
-        if style == "error":
-            text.stylize("red")
-        elif style == "success":
-            text.stylize("green")
-        self._console.print(text)
+        for line in lines:
+            if caller:
+                text = Text()
+                text.append(f"[{caller}]", style="bold")
+                text.append(f" {line}")
+            else:
+                text = Text(line)
+            if style == "error":
+                text.stylize("red")
+            elif style == "success":
+                text.stylize("green")
+            elif style == "warning":
+                text.stylize("yellow")
+            self._console.print(text)
 
     def stop(self) -> None:
         live_to_stop: Live | None = None
