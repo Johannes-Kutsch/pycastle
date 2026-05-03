@@ -247,20 +247,6 @@ def test_incomplete_merger_raises_and_does_not_fast_forward(
     git_svc.fast_forward_branch.assert_not_called()
 
 
-def test_preflight_failure_from_merger_does_not_fast_forward(
-    tmp_path, git_svc, github_svc
-):
-    from pycastle.agent_result import PreflightFailure
-
-    git_svc.try_merge.return_value = False
-    failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-    fake = FakeAgentRunner([failure])
-    local_deps = _make_deps(tmp_path, git_svc, github_svc, fake)
-    issues = [{"number": 1, "title": "Conflict"}]
-    _run(issues, local_deps)
-    git_svc.fast_forward_branch.assert_not_called()
-
-
 # ── Graceful merge-time preflight skip ───────────────────────────────────────
 
 
@@ -321,25 +307,28 @@ def test_preflight_failure_does_not_fast_forward(tmp_path, git_svc, github_svc):
 
 
 def test_preflight_failure_prints_skip_message(tmp_path, git_svc, github_svc):
-    from pycastle.agent_result import PreflightFailure
-
-    failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-    git_svc.try_merge.return_value = False
     recording = RecordingStatusDisplay()
-    local_deps = Deps(
-        env={},
-        repo_root=tmp_path,
-        git_svc=git_svc,
-        github_svc=MagicMock(spec=GithubService),
-        agent_runner=FakeAgentRunner([failure]),
-        cfg=Config(),
-        logger=RecordingLogger(),
+    local_deps = dataclasses.replace(
+        _preflight_failure_deps(tmp_path, git_svc, github_svc),
         status_display=recording,
     )
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, local_deps)
     print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert any("preflight" in msg.lower() for msg in print_messages)
+
+
+def test_preflight_failure_closes_parent_issues_for_clean_issues(
+    tmp_path, git_svc, github_svc
+):
+    from pycastle.agent_result import PreflightFailure
+
+    failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
+    git_svc.try_merge.side_effect = _conflict_on([2])
+    local_deps = _make_deps(tmp_path, git_svc, github_svc, FakeAgentRunner([failure]))
+    issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
+    _run(issues, local_deps)
+    local_deps.github_svc.close_completed_parent_issues.assert_called_once()
 
 
 def test_preflight_failure_worktree_still_removed(tmp_path, git_svc, github_svc):
@@ -355,26 +344,6 @@ def test_preflight_failure_worktree_still_removed(tmp_path, git_svc, github_svc)
     local_deps.git_svc.remove_worktree.assert_called_once_with(
         local_deps.repo_root, expected_path
     )
-
-
-def test_preflight_failure_from_merger_still_removes_worktree(
-    tmp_path, git_svc, github_svc
-):
-    from pycastle.agent_result import PreflightFailure
-
-    git_svc.try_merge.return_value = False
-    failure = PreflightFailure(failures=(("mypy", "mypy .", "error"),))
-    fake = FakeAgentRunner([failure])
-    local_deps = _make_deps(tmp_path, git_svc, github_svc, fake)
-    issues = [{"number": 1, "title": "Conflict"}]
-    _run(issues, local_deps)
-    expected_path = (
-        local_deps.repo_root
-        / local_deps.cfg.pycastle_dir
-        / ".worktrees"
-        / "merge-sandbox"
-    )
-    git_svc.remove_worktree.assert_called_once_with(local_deps.repo_root, expected_path)
 
 
 # ── Exception safety ──────────────────────────────────────────────────────────
