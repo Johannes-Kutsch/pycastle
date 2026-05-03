@@ -1,28 +1,26 @@
 import asyncio
 import io
 import os
-import queue
 import re
 import shlex
 import sys
 import tarfile
-import threading
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import cast
 
 import docker
 from docker.models.containers import Container as DockerContainer
 
-from .agent_output_protocol import AgentOutput, AgentRole, process_stream
+from .agent_output_protocol import AgentOutput, AgentRole
 from .config import Config
 from .errors import (
-    AgentTimeoutError,
     DockerError,
     DockerTimeoutError,
-    UsageLimitError,
 )
 from .prompt_pipeline import prepare_prompt
 from .status_display import PlainStatusDisplay
+from .stream_session import WorkStream
 from .worktree import (
     CONTAINER_PARENT_GIT,
     patch_gitdir_for_container,
@@ -293,44 +291,15 @@ class ContainerRunner:
             stream=True,
             workdir=self._worktree_path,
         )
-
-        q: queue.Queue = queue.Queue()
-        _sentinel = object()
-
-        def _feed():
-            try:
-                for chunk in exec_result.output:
-                    q.put(chunk)
-            finally:
-                q.put(_sentinel)
-
-        threading.Thread(target=_feed, daemon=True).start()
-
-        log = open(self._log_path, "wb")  # noqa: WPS515
         try:
-            def _lines() -> Generator[str, None, None]:
-                line_buf = ""
-                while True:
-                    try:
-                        chunk = q.get(timeout=self._cfg.idle_timeout)
-                    except queue.Empty:
-                        raise AgentTimeoutError(
-                            f"Agent idle for more than {self._cfg.idle_timeout}s"
-                        )
-                    if chunk is _sentinel:
-                        return
-                    log.write(chunk)
-                    log.flush()
-                    text = chunk.decode("utf-8", errors="replace")
-                    self._status_display.reset_idle_timer(self.name)
-                    line_buf += text
-                    while "\n" in line_buf:
-                        line, line_buf = line_buf.split("\n", 1)
-                        yield line
-
-            return process_stream(_lines(), on_turn, role, self._cfg.usage_limit_patterns)
+            ws = WorkStream(
+                cast(Iterator[bytes], exec_result.output),
+                self._log_path,
+                self._cfg.idle_timeout,
+                lambda: self._status_display.reset_idle_timer(self.name),
+            )
+            return ws.run(role, on_turn, self._cfg.usage_limit_patterns)
         finally:
-            log.close()
             try:
                 self._active_container.exec_run(
                     ["bash", "-c", "rm -f /tmp/.pycastle_prompt"],

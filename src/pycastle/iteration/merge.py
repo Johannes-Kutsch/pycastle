@@ -52,8 +52,8 @@ def _delete_merged_branches(branches: list[str], deps: Deps) -> list[str]:
 
 def _build_close_message(deleted: list[str]) -> str:
     if not deleted:
-        return "Execution complete, 0 branch(es) merged"
-    header = f"Execution complete, {len(deleted)} branch(es) merged:"
+        return "Execution complete, 0 branch(es) deleted"
+    header = f"Execution complete, {len(deleted)} branch(es) deleted:"
     lines = "\n".join(f"  Deleted merged branch: {b}" for b in deleted)
     return f"{header}\n{lines}"
 
