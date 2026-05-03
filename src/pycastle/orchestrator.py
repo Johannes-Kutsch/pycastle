@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .agent_result import PreflightFailure
+from .worktree import _remove_worktrees_dir_if_empty
 from .agent_runner import AgentRunner, AgentRunnerProtocol, RunRequest
 from .config import Config, load_config
 from .services import ClaudeService, GitCommandError, GitService
@@ -58,8 +59,7 @@ def prune_orphan_worktrees(
     for child in worktrees_dir.iterdir():
         if str(child.resolve()) not in active and child.is_dir():
             shutil.rmtree(child)
-    if not any(worktrees_dir.iterdir()):
-        worktrees_dir.rmdir()
+    _remove_worktrees_dir_if_empty(worktrees_dir)
 
 
 def _get_repo(repo_root: Path) -> str:

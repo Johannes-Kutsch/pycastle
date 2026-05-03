@@ -39,6 +39,11 @@ def _wrap_git_errors():
         raise WorktreeError(str(exc)) from exc
 
 
+def _remove_worktrees_dir_if_empty(worktrees_dir: Path) -> None:
+    if worktrees_dir.exists() and not any(worktrees_dir.iterdir()):
+        worktrees_dir.rmdir()
+
+
 def _has_project_files(path: Path) -> bool:
     return (path / "pyproject.toml").exists() or (path / "requirements.txt").exists()
 
