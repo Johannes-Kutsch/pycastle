@@ -11,6 +11,8 @@ class PhaseRow:
         self._closed = False
 
     def close(self, shutdown_message: str, shutdown_style: str = "success") -> None:
+        if self._closed:
+            return
         self._status_display.remove(self._caller, shutdown_message, shutdown_style)
         self._closed = True
 
