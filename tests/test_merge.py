@@ -365,6 +365,30 @@ def test_preflight_failure_worktree_still_removed(tmp_path, git_svc, github_svc)
     )
 
 
+def test_preflight_failure_close_message_lists_clean_deleted_branches(
+    tmp_path, git_svc, github_svc
+):
+    """When preflight fails after some clean merges, the close message lists the clean-deleted branches."""
+    from pycastle.agent_result import PreflightFailure
+
+    failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
+    git_svc.try_merge.side_effect = _conflict_on([2])
+    recording = RecordingStatusDisplay()
+    local_deps = dataclasses.replace(
+        _make_deps(tmp_path, git_svc, github_svc, FakeAgentRunner([failure])),
+        status_display=recording,
+    )
+    issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
+    _run(issues, local_deps)
+
+    remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
+    assert remove_calls, "Merge row must be removed"
+    shutdown_msg = remove_calls[-1][2]
+    assert "Execution complete" in shutdown_msg
+    assert "pycastle/issue-1" in shutdown_msg
+    assert "pycastle/issue-2" not in shutdown_msg
+
+
 # ── Exception safety ──────────────────────────────────────────────────────────
 
 
@@ -542,6 +566,23 @@ def test_merge_phase_close_summary_lists_conflict_deleted_branches(
     assert "Branches merged" not in capsys.readouterr().out
 
 
+def test_close_message_combines_clean_and_conflict_deleted_branches(
+    recording_deps, git_svc
+):
+    """The Merge row close message must list both clean-merged and conflict-merged deleted branches."""
+    deps, recording = recording_deps
+    git_svc.try_merge.side_effect = _conflict_on([2])
+    issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
+    _run(issues, deps)
+
+    remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
+    assert remove_calls, "Merge row must be removed"
+    shutdown_msg = remove_calls[-1][2]
+    assert "pycastle/issue-1" in shutdown_msg
+    assert "pycastle/issue-2" in shutdown_msg
+    assert "2 branch(es) deleted" in shutdown_msg
+
+
 def test_merge_phase_routes_dirty_tree_message_through_status_display(
     recording_deps, git_svc, capsys
 ):
@@ -630,6 +671,19 @@ def test_merge_phase_polls_dirty_tree_every_10_seconds(recording_deps, git_svc):
     assert all(call.args[0] == 10 for call in mock_sleep.call_args_list)
 
 
+def test_dirty_tree_message_printed_once_across_multiple_polls(recording_deps, git_svc):
+    """The 'Working tree has uncommitted changes' message must be printed exactly once, not once per poll."""
+    deps, recording = recording_deps
+    git_svc.is_working_tree_clean.side_effect = [False, False, False, True]
+    issues = [{"number": 1, "title": "Fix A"}]
+    with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
+        _run(issues, deps)
+    dirty_prints = [
+        c for c in recording.calls if c[0] == "print" and "Working tree" in str(c[2])
+    ]
+    assert len(dirty_prints) == 1
+
+
 # ── Merge status row ──────────────────────────────────────────────────────────
 
 
@@ -661,6 +715,17 @@ def test_merge_row_removed_when_completed_is_empty(recording_deps):
     remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
     assert remove_calls, "Merge row must be removed"
     assert remove_calls[-1][3] == "success"
+
+
+def test_close_message_shows_zero_branches_deleted_when_no_issues(recording_deps):
+    """When completed is empty, the Merge row close message reports 0 branches deleted."""
+    deps, recording = recording_deps
+    _run([], deps)
+    remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
+    assert remove_calls
+    shutdown_msg = remove_calls[-1][2]
+    assert "Execution complete" in shutdown_msg
+    assert "0 branch(es) deleted" in shutdown_msg
 
 
 def test_merge_row_still_active_while_merger_runs(tmp_path, git_svc, github_svc):
