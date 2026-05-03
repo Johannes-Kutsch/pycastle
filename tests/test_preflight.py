@@ -571,7 +571,7 @@ def test_preflight_phase_waits_for_clean_working_tree_before_pulling(
     assert any("preflight" in msg for msg in print_messages)
 
 
-def test_wait_for_clean_working_tree_uses_preflight_caller_with_error_style(
+def test_dirty_working_tree_message_uses_preflight_caller_with_error_style(
     tmp_path, git_svc, github_svc, logger
 ):
     """Working-tree uncommitted-changes message must use 'Preflight' caller, style='error', no [red] markup."""
