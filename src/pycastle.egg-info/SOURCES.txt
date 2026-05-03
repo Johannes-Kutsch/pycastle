@@ -71,6 +71,7 @@ src/pycastle/defaults/prompts/coding-standards/refactoring.md
 src/pycastle/defaults/prompts/coding-standards/tests.md
 src/pycastle/iteration/__init__.py
 src/pycastle/iteration/_deps.py
+src/pycastle/iteration/_phase_row.py
 src/pycastle/iteration/_utils.py
 src/pycastle/iteration/implement.py
 src/pycastle/iteration/merge.py
@@ -118,6 +119,7 @@ tests/test_labels.py
 tests/test_main.py
 tests/test_merge.py
 tests/test_orchestrator.py
+tests/test_phase_row.py
 tests/test_plain_status_display.py
 tests/test_plan.py
 tests/test_planning.py
