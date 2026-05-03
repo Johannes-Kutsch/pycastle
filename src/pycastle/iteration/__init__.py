@@ -73,7 +73,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 ]
                 row.close(
                     "\n".join(
-                        [f"Planning complete, {len(plan_result.issues)} issue(s):"] + issue_lines
+                        [f"Planning complete, implementing {len(plan_result.issues)} issue(s):"] + issue_lines
                     )
                 )
                 sha = plan_result.worktree_sha

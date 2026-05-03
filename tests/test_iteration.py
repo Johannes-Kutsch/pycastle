@@ -986,7 +986,7 @@ def test_run_iteration_detects_in_flight_via_both_branch_and_worktree_signals(
 def test_run_iteration_plan_close_message_contains_issue_details(
     tmp_path, git_svc, logger
 ):
-    """Plan phase row.close() emits 'Planning complete, N issue(s):' with each issue on a sub-line."""
+    """Plan phase row.close() emits 'Planning complete, implementing N issue(s):' with each issue on a sub-line."""
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
@@ -1012,7 +1012,7 @@ def test_run_iteration_plan_close_message_contains_issue_details(
     plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
     assert plan_removes, "Plan row must be removed"
     msg = plan_removes[0][2]
-    assert "Planning complete, 1 issue(s):" in msg
+    assert "Planning complete, implementing 1 issue(s):" in msg
     assert "#3: Issue A → pycastle/issue-3" in msg
 
 
@@ -1188,7 +1188,7 @@ def test_run_iteration_plan_close_message_with_zero_issues(tmp_path, git_svc, lo
 
     plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
     assert plan_removes, "Plan row must be removed"
-    assert "Planning complete, 0 issue(s):" in plan_removes[0][2]
+    assert "Planning complete, implementing 0 issue(s):" in plan_removes[0][2]
 
 
 def test_run_iteration_implement_success_message_includes_all_branches(
