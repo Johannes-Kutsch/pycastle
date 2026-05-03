@@ -871,6 +871,22 @@ def test_rich_remove_multiline_warning_style_renders_all_lines_in_yellow() -> No
     assert _has_code(ansi[first_x:second_x], 33)  # yellow before second [X]
 
 
+def test_rich_print_multiline_emits_each_line_with_caller_prefix(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("Alice", "line1\nline2")
+    out = capsys.readouterr().out
+    assert "[Alice] line1" in out
+    assert "[Alice] line2" in out
+
+
+def test_rich_print_multiline_blank_before_fires_once(capsys) -> None:
+    d = RichStatusDisplay()
+    d.print("Alice", "hello")
+    d.print("Bob", "line1\nline2")
+    out = capsys.readouterr().out
+    assert "hello\n\n[Bob] line1\n[Bob] line2" in out
+
+
 def test_rich_print_message_after_caller_prefix_is_not_bold() -> None:
     buf, console = _make_ansi_console()
     d = RichStatusDisplay(console=console)
