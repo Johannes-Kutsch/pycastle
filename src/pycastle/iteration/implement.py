@@ -97,27 +97,37 @@ async def run_issue(
             )
         await lock.acquire()
 
+    subjects = deps.git_svc.get_branch_commit_subjects(_branch, deps.repo_root)
+    review_done = any(s.startswith("RALPH: Review -") for s in subjects)
+    implement_done = any(s.startswith("RALPH:") for s in subjects)
+
+    if review_done:
+        if lock is not None and lock.locked():
+            lock.release()
+        return issue
+
     try:
-        async with _agent_worktree(_branch, sha, _token, deps) as impl_mount_path:
-            result = await _bounded_run_agent(
-                RunRequest(
-                    name=f"Implement Agent #{issue['number']}",
-                    prompt_file=deps.cfg.prompts_dir / "implement-prompt.md",
-                    mount_path=impl_mount_path,
-                    role=AgentRole.IMPLEMENTER,
-                    prompt_args=prompt_args,
-                    model=deps.cfg.implement_override.model,
-                    effort=deps.cfg.implement_override.effort,
-                    stage="pre-implementation",
-                    skip_preflight=True,
-                    status_display=deps.status_display,
-                    issue_title=issue["title"],
-                    work_body=f'implementing "{issue["title"]}"',
-                    token=_token,
+        if not implement_done:
+            async with _agent_worktree(_branch, sha, _token, deps) as impl_mount_path:
+                result = await _bounded_run_agent(
+                    RunRequest(
+                        name=f"Implement Agent #{issue['number']}",
+                        prompt_file=deps.cfg.prompts_dir / "implement-prompt.md",
+                        mount_path=impl_mount_path,
+                        role=AgentRole.IMPLEMENTER,
+                        prompt_args=prompt_args,
+                        model=deps.cfg.implement_override.model,
+                        effort=deps.cfg.implement_override.effort,
+                        stage="pre-implementation",
+                        skip_preflight=True,
+                        status_display=deps.status_display,
+                        issue_title=issue["title"],
+                        work_body=f'implementing "{issue["title"]}"',
+                        token=_token,
+                    )
                 )
-            )
-            if isinstance(result, PreflightFailure):
-                return result
+                if isinstance(result, PreflightFailure):
+                    return result
 
         async with _agent_worktree(_branch, None, _token, deps) as review_mount_path:
             await _bounded_run_agent(
