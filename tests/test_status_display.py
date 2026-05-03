@@ -397,6 +397,19 @@ def test_rich_body_reverts_to_phase_name_after_transitioning_from_work() -> None
     assert "Creating Plan from 3 issues" not in output
 
 
+def test_rich_register_with_initial_phase_shows_that_phase() -> None:
+    d = RichStatusDisplay()
+    d.register("Preflight", initial_phase="Running")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "Running" in output
+    assert "Setup" not in output
+
+
 def test_rich_pre_flight_agent_sorts_before_implementers() -> None:
     d = RichStatusDisplay()
     d.register("Implement Agent #1")
@@ -1060,13 +1073,13 @@ def test_recording_starts_empty() -> None:
 def test_recording_captures_register() -> None:
     d = RecordingStatusDisplay()
     d.register("Plan")
-    assert d.calls == [("register", "Plan", "started", "")]
+    assert d.calls == [("register", "Plan", "started", "Setup")]
 
 
-def test_recording_captures_register_with_custom_args() -> None:
+def test_recording_captures_register_with_initial_phase() -> None:
     d = RecordingStatusDisplay()
-    d.register("Plan", startup_message="running", work_body="issue list")
-    assert d.calls == [("register", "Plan", "running", "issue list")]
+    d.register("Plan", startup_message="running", initial_phase="Planning")
+    assert d.calls == [("register", "Plan", "running", "Planning")]
 
 
 def test_recording_captures_remove() -> None:
@@ -1128,7 +1141,7 @@ def test_recording_accumulates_multiple_new_api_calls() -> None:
     d.remove("Plan")
 
     assert d.calls == [
-        ("register", "Plan", "started", ""),
+        ("register", "Plan", "started", "Setup"),
         ("update_phase", "Plan", "Work"),
         ("remove", "Plan", "finished", "success"),
     ]

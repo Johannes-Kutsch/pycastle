@@ -142,12 +142,12 @@ class RichStatusDisplay:
         return self._last_caller is not None and (caller != self._last_caller or caller == "")
 
     def register(
-        self, caller: str, startup_message: str = "started", work_body: str = ""
+        self, caller: str, startup_message: str = "started", work_body: str = "", initial_phase: str = "Setup"
     ) -> None:
         with self._lock:
             prepend_blank = self._blank_before(caller)
             self._last_caller = caller
-            self._rows[caller] = _AgentRow(caller, "Setup", work_body)
+            self._rows[caller] = _AgentRow(caller, initial_phase, work_body)
             live_to_start = self._acquire_live()
         if live_to_start is not None:
             live_to_start.start()
