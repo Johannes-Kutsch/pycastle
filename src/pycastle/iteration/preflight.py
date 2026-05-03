@@ -93,7 +93,7 @@ async def handle_preflight_failure(
 
 
 async def preflight_phase(deps: Deps) -> PreflightResult:
-    await _wait_for_clean_working_tree(deps, phase="preflight")
+    await _wait_for_clean_working_tree(deps, "", "preflight")
     try:
         deps.git_svc.pull(deps.repo_root)
     except GitCommandError:

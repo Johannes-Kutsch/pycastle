@@ -318,6 +318,25 @@ def test_preflight_failure_prints_skip_message(tmp_path, git_svc, github_svc):
     assert any("preflight" in msg.lower() for msg in print_messages)
 
 
+def test_preflight_failure_skip_message_uses_merge_caller(
+    tmp_path, git_svc, github_svc
+):
+    recording = RecordingStatusDisplay()
+    local_deps = dataclasses.replace(
+        _preflight_failure_deps(tmp_path, git_svc, github_svc),
+        status_display=recording,
+    )
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, local_deps)
+    preflight_calls = [
+        c
+        for c in recording.calls
+        if c[0] == "print" and "preflight" in str(c[2]).lower()
+    ]
+    assert preflight_calls, "Merge-time preflight failure message must be printed"
+    assert all(c[1] == "Merge" for c in preflight_calls)
+
+
 def test_preflight_failure_closes_parent_issues_for_clean_issues(
     tmp_path, git_svc, github_svc
 ):
@@ -494,27 +513,32 @@ def recording_deps(tmp_path, git_svc, github_svc, agent_runner):
 def test_merge_phase_routes_deleted_branch_through_status_display(
     recording_deps, git_svc, capsys
 ):
-    """merge_phase must route 'Deleted merged branch' through status_display.print()."""
+    """merge_phase must route 'Deleted merged branch' via the Merge row close summary."""
     deps, recording = recording_deps
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
-    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
-    assert any("Deleted merged branch" in msg for msg in print_messages)
+    remove_messages = [
+        c[2] for c in recording.calls if c[0] == "remove" and c[1] == "Merge"
+    ]
+    assert any("Deleted merged branch" in msg for msg in remove_messages)
     assert "Deleted merged branch" not in capsys.readouterr().out
 
 
-def test_merge_phase_routes_branches_merged_through_status_display(
+def test_merge_phase_close_summary_lists_conflict_deleted_branches(
     recording_deps, git_svc, capsys
 ):
-    """merge_phase must route 'Branches merged' through status_display.print() after conflict resolution."""
+    """After conflict resolution, the Merge row close summary must list all deleted branches."""
     deps, recording = recording_deps
     git_svc.try_merge.return_value = False
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
 
-    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
-    assert any("Branches merged" in msg for msg in print_messages)
+    remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
+    assert remove_calls, "Merge row must be removed"
+    shutdown_msg = remove_calls[-1][2]
+    assert "Execution complete" in shutdown_msg
+    assert "pycastle/issue-1" in shutdown_msg
     assert "Branches merged" not in capsys.readouterr().out
 
 
@@ -533,7 +557,7 @@ def test_merge_phase_routes_dirty_tree_message_through_status_display(
 
 
 def test_merge_phase_dirty_tree_message_uses_error_style(recording_deps, git_svc):
-    """The dirty-tree wait message must use style='error' and contain no [red] markup."""
+    """The dirty-tree wait message must use style='error', caller='Merge', and contain no [red] markup."""
     deps, recording = recording_deps
     git_svc.is_working_tree_clean.side_effect = [False, True]
     issues = [{"number": 1, "title": "Fix A"}]
@@ -544,8 +568,8 @@ def test_merge_phase_dirty_tree_message_uses_error_style(recording_deps, git_svc
     ]
     assert dirty_calls, "Dirty-tree message must be printed"
     for call in dirty_calls:
-        assert call[1] == "", (
-            f"Dirty-tree message must use anonymous caller; got {call[1]!r}"
+        assert call[1] == "Merge", (
+            f"Dirty-tree message must use caller='Merge'; got {call[1]!r}"
         )
         assert call[3] == "error", (
             f"Dirty-tree message must use style='error'; got {call[3]!r}"
@@ -618,30 +642,38 @@ def test_merge_row_added_at_start_of_merge_phase(recording_deps):
 
 
 def test_merge_row_removed_after_clean_merges(recording_deps):
-    """merge_phase must remove the 'merge' row once programmatic merges complete."""
+    """merge_phase must remove the 'Merge' row with a branch-list summary after clean merges."""
     deps, recording = recording_deps
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
-    assert ("remove", "Merge", "finished", "success") in recording.calls
+    remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
+    assert remove_calls, "Merge row must be removed"
+    shutdown_msg = remove_calls[-1][2]
+    assert "Execution complete" in shutdown_msg
+    assert "pycastle/issue-1" in shutdown_msg
+    assert remove_calls[-1][3] == "success"
 
 
 def test_merge_row_removed_when_completed_is_empty(recording_deps):
     """merge_phase must remove the 'Merge' row even when there is nothing to merge."""
     deps, recording = recording_deps
     _run([], deps)
-    assert ("remove", "Merge", "finished", "success") in recording.calls
+    remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
+    assert remove_calls, "Merge row must be removed"
+    assert remove_calls[-1][3] == "success"
 
 
-def test_merge_row_removed_before_merger_spawned(tmp_path, git_svc, github_svc):
-    """merge_phase must remove the 'Merge' row before spawning the Merge Agent."""
+def test_merge_row_still_active_while_merger_runs(tmp_path, git_svc, github_svc):
+    """The 'Merge' phase row must remain open (not yet closed) while the Merge Agent runs."""
     recording = RecordingStatusDisplay()
-    removed_when_merger_ran: list[bool] = []
+    row_open_when_merger_ran: list[bool] = []
 
     async def side_effect(request: RunRequest):
         if request.name == "Merge Agent":
-            removed_when_merger_ran.append(
-                ("remove", "Merge", "finished", "success") in recording.calls
-            )
+            remove_calls = [
+                c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"
+            ]
+            row_open_when_merger_ran.append(len(remove_calls) == 0)
         return CompletionOutput()
 
     agent_runner = FakeAgentRunner(side_effect=side_effect)
@@ -657,7 +689,7 @@ def test_merge_row_removed_before_merger_spawned(tmp_path, git_svc, github_svc):
     )
     git_svc.try_merge.return_value = False
     _run([{"number": 1, "title": "Conflict"}], deps)
-    assert removed_when_merger_ran == [True]
+    assert row_open_when_merger_ran == [True]
 
 
 def test_merge_row_removed_with_failed_style_when_exception_raised(

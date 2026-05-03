@@ -18,8 +18,10 @@ class PhaseRow:
 
 
 @asynccontextmanager
-async def phase_row(status_display: StatusDisplay, caller: str) -> AsyncGenerator[PhaseRow, None]:
-    status_display.register(caller)
+async def phase_row(
+    status_display: StatusDisplay, caller: str, initial_phase: str = "Setup"
+) -> AsyncGenerator[PhaseRow, None]:
+    status_display.register(caller, initial_phase=initial_phase)
     row = PhaseRow(status_display, caller)
     try:
         yield row
