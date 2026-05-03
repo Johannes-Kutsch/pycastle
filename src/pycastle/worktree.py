@@ -125,10 +125,13 @@ async def branch_worktree(
         yield path
     finally:
         try:
-            deps.git_svc.remove_worktree(deps.repo_root, path)
+            try:
+                deps.git_svc.remove_worktree(deps.repo_root, path)
+            finally:
+                if delete_branch:
+                    deps.git_svc.delete_branch(branch, deps.repo_root)
         finally:
-            if delete_branch:
-                deps.git_svc.delete_branch(branch, deps.repo_root)
+            _remove_worktrees_dir_if_empty(path.parent)
 
 
 @asynccontextmanager
@@ -138,7 +141,10 @@ async def detached_worktree(name: str, sha: str, deps: _WorktreeDeps):
     try:
         yield path
     finally:
-        deps.git_svc.remove_worktree(deps.repo_root, path)
+        try:
+            deps.git_svc.remove_worktree(deps.repo_root, path)
+        finally:
+            _remove_worktrees_dir_if_empty(path.parent)
 
 
 def patch_gitdir_for_container(worktree_path: Path) -> Path | None:
