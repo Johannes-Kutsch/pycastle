@@ -821,12 +821,76 @@ def test_run_iteration_uses_only_in_flight_issues_when_some_have_existing_branch
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
     )
-    asyncio.run(run_iteration(deps))
+    result = asyncio.run(run_iteration(deps))
 
+    assert isinstance(result, Continue)
     assert "Plan Agent" not in agent_names, (
         "Plan Agent must not be called when some branches exist"
     )
     assert "Implement Agent #5" in agent_names, "In-flight issue must be implemented"
     assert not any("Implement Agent #6" in n for n in agent_names), (
         "Deferred issue must not be implemented"
+    )
+
+
+def test_run_iteration_uses_preflight_sha_for_in_flight_issues(
+    tmp_path, git_svc, logger
+):
+    """When in-flight issues are used, the implement phase receives the preflight SHA
+    unchanged — the in-flight path must not re-pin the SHA from a plan-sandbox."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 7, "title": "In flight"}]
+    git_svc.verify_ref_exists.return_value = True
+    git_svc.get_head_sha.return_value = "preflight-sha-abc"
+
+    async def _fake_agent(request: RunRequest):
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    asyncio.run(run_iteration(deps))
+
+    implement_shas = {
+        c.args[3]
+        for c in git_svc.create_worktree.call_args_list
+        if c.args[3] is not None
+    }
+    assert "preflight-sha-abc" in implement_shas, (
+        "Implement phase must use the preflight SHA, not a re-pinned SHA"
+    )
+
+
+def test_run_iteration_detects_in_flight_via_both_branch_and_worktree_signals(
+    tmp_path, git_svc, logger
+):
+    """Both detection signals (branch and worktree) are checked independently:
+    an issue with only a branch, an issue with only a worktree directory, and
+    an issue with neither are handled correctly in a single iteration."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 8, "title": "Branch only"},
+        {"number": 9, "title": "Worktree only"},
+        {"number": 10, "title": "Deferred"},
+    ]
+    git_svc.verify_ref_exists.side_effect = lambda ref, path: ref == "pycastle/issue-8"
+    (tmp_path / "pycastle" / ".worktrees" / "issue-9").mkdir(parents=True)
+
+    agent_names: list[str] = []
+
+    async def _fake_agent(request: RunRequest):
+        agent_names.append(request.name)
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    assert "Plan Agent" not in agent_names
+    assert "Implement Agent #8" in agent_names, "Branch-only in-flight issue must run"
+    assert "Implement Agent #9" in agent_names, "Worktree-only in-flight issue must run"
+    assert not any("Implement Agent #10" in n for n in agent_names), (
+        "Deferred issue must not run"
     )
