@@ -90,9 +90,12 @@ async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
                     )
                 )
                 if isinstance(merger_result, PreflightFailure):
-                    raise RuntimeError(
-                        "Merger preflight checks failed; merge did not complete"
+                    deps.status_display.print(
+                        "",
+                        "Merge-time preflight failed; skipping conflict branch merge. "
+                        "Conflict issues remain open for recovery in the next iteration.",
                     )
+                    return MergeResult(clean=clean_issues, conflicts=conflict_issues)
                 deps.git_svc.fast_forward_branch(
                     deps.repo_root, target_branch, MERGE_SANDBOX
                 )
