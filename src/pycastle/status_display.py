@@ -4,7 +4,7 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class StatusDisplay(Protocol):
-    def register(self, caller: str, startup_message: str = "started", work_body: str = "") -> None: ...
+    def register(self, caller: str, startup_message: str = "started", work_body: str = "", initial_phase: str = "Setup") -> None: ...
     def update_phase(self, name: str, phase: str) -> None: ...
     def reset_idle_timer(self, name: str) -> None: ...
     def remove(self, caller: str, shutdown_message: str = "finished", shutdown_style: str = "success") -> None: ...
@@ -18,7 +18,7 @@ class PlainStatusDisplay:
     def _blank_before(self, caller: str) -> bool:
         return self._last_caller is not None and (caller != self._last_caller or caller == "")
 
-    def register(self, caller: str, startup_message: str = "started", work_body: str = "") -> None:
+    def register(self, caller: str, startup_message: str = "started", work_body: str = "", initial_phase: str = "Setup") -> None:
         if self._blank_before(caller):
             builtins.print()
         if caller:

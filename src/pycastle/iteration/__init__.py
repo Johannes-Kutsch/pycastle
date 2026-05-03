@@ -42,7 +42,7 @@ def _is_in_flight(issue: dict, deps: Deps) -> bool:
 
 
 async def run_iteration(deps: Deps) -> IterationOutcome:
-    deps.status_display.register("Preflight")
+    deps.status_display.register("Preflight", initial_phase="Running")
     try:
         preflight_result = await preflight_phase(deps)
     finally:
@@ -64,7 +64,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         if in_flight:
             issues = in_flight
         elif len(open_issues) >= 2:
-            deps.status_display.register("Plan")
+            deps.status_display.register("Plan", initial_phase="Planning")
             try:
                 plan_result = await planning_phase(deps, sha, open_issues)
             finally:
@@ -87,7 +87,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
 
     token = CancellationToken()
-    deps.status_display.register("Implement")
+    deps.status_display.register("Implement", initial_phase="Running")
     try:
         impl_result = await implement_phase(issues, sha, deps, token=token)
     finally:
