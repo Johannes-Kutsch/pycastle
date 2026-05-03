@@ -325,3 +325,22 @@ def test_remove_multiline_blank_before_fires_once(
     d.remove("Bob", "line1\nline2")
     out = capsys.readouterr().out
     assert out == "\n[Alice] hello\n\n[Bob] line1\n[Bob] line2\n"
+
+
+def test_print_multiline_anonymous_caller_emits_lines_without_brackets(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.print("", "line1\nline2")
+    out = capsys.readouterr().out
+    assert out == "\nline1\nline2\n"
+
+
+def test_print_multiline_same_caller_consecutive_no_blank_between_calls(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+    d.print("Alice", "a1\na2")
+    d.print("Alice", "b1\nb2")
+    out = capsys.readouterr().out
+    assert out == "\n[Alice] a1\n[Alice] a2\n[Alice] b1\n[Alice] b2\n"
