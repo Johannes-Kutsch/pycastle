@@ -501,10 +501,10 @@ def test_preflight_phase_propagates_error_when_pull_fails(
     git_svc.get_head_sha.assert_not_called()
 
 
-def test_preflight_phase_prints_pull_error_message_with_no_markup(
+def test_preflight_phase_prints_pull_error_message_with_preflight_caller(
     tmp_path, git_svc, github_svc, logger
 ):
-    """Pull failure message must contain the error text, use '' caller, style='error', no [red] markup."""
+    """Pull failure message must use 'Preflight' caller, style='error', no [red] markup."""
     git_svc.pull.side_effect = GitCommandError("git pull --ff-only failed")
     github_svc.get_open_issues.return_value = []
     fake = FakeAgentRunner([], preflight_responses=[])
@@ -522,7 +522,9 @@ def test_preflight_phase_prints_pull_error_message_with_no_markup(
     error_calls = [c for c in print_calls if "git pull" in str(c[2])]
     assert error_calls, "Pull failure message must be printed"
     for call in error_calls:
-        assert call[1] == "", f"Pull error must use anonymous caller; got {call[1]!r}"
+        assert call[1] == "Preflight", (
+            f"Pull error must use 'Preflight' caller; got {call[1]!r}"
+        )
         assert call[3] == "error", f"Pull error must use style='error'; got {call[3]!r}"
         assert "[red]" not in str(call[2]), (
             f"Message must not contain [red] markup: {call[2]!r}"
@@ -569,10 +571,10 @@ def test_preflight_phase_waits_for_clean_working_tree_before_pulling(
     assert any("preflight" in msg for msg in print_messages)
 
 
-def test_wait_for_clean_working_tree_uses_anonymous_caller_with_error_style(
+def test_dirty_working_tree_message_uses_preflight_caller_with_error_style(
     tmp_path, git_svc, github_svc, logger
 ):
-    """Working-tree uncommitted-changes message must use '' caller, style='error', no [red] markup."""
+    """Working-tree uncommitted-changes message must use 'Preflight' caller, style='error', no [red] markup."""
     git_svc.is_working_tree_clean.side_effect = [False, True]
     github_svc.get_open_issues.return_value = []
     fake = FakeAgentRunner([], preflight_responses=[])
@@ -593,8 +595,8 @@ def test_wait_for_clean_working_tree_uses_anonymous_caller_with_error_style(
     ]
     assert wt_calls, "Working-tree error message must be printed"
     for call in wt_calls:
-        assert call[1] == "", (
-            f"Working-tree error must use anonymous caller; got {call[1]!r}"
+        assert call[1] == "Preflight", (
+            f"Working-tree error must use 'Preflight' caller; got {call[1]!r}"
         )
         assert call[3] == "error", (
             f"Working-tree error must use style='error'; got {call[3]!r}"
