@@ -16,7 +16,7 @@ class PlainStatusDisplay:
         self._last_caller: str | None = None
 
     def _blank_before(self, caller: str) -> bool:
-        return self._last_caller is not None and (caller != self._last_caller or caller == "")
+        return caller != self._last_caller or caller == ""
 
     def register(self, caller: str, startup_message: str = "started", work_body: str = "", initial_phase: str = "Setup") -> None:
         if self._blank_before(caller):
