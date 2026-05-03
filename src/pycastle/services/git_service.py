@@ -202,6 +202,13 @@ class GitService(_SubprocessService):
             cwd=repo_path,
         )
 
+    def push(self, repo_path: Path) -> None:
+        self._run_or_raise(
+            ["git", "push"],
+            "git push failed",
+            cwd=repo_path,
+        )
+
     def get_branch_commit_subjects(self, branch: str, repo_path: Path) -> list[str]:
         result = self._run(
             ["git", "log", f"main..{branch}", "--format=%s"],
