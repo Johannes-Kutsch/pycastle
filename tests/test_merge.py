@@ -763,40 +763,39 @@ def test_auto_push_does_not_call_push_in_preflight_skip_when_no_clean_issues(
     local_deps.git_svc.push.assert_not_called()
 
 
-def test_auto_push_false_does_not_call_push_on_clean_merge(
-    tmp_path, git_svc, github_svc, agent_runner
-):
-    local_deps = Deps(
-        env={},
-        repo_root=tmp_path,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        agent_runner=agent_runner,
-        cfg=Config(auto_push=False),
-        logger=RecordingLogger(),
-        status_display=PlainStatusDisplay(),
-    )
+def test_auto_push_false_does_not_call_push_on_clean_merge(deps, git_svc):
+    local_deps = dataclasses.replace(deps, cfg=Config(auto_push=False))
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, local_deps)
     git_svc.push.assert_not_called()
 
 
-def test_auto_push_false_does_not_call_push_on_conflict_path(
-    tmp_path, git_svc, github_svc, agent_runner
-):
+def test_auto_push_false_does_not_call_push_on_conflict_path(deps, git_svc):
     git_svc.try_merge.return_value = False
-    local_deps = Deps(
-        env={},
-        repo_root=tmp_path,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        agent_runner=agent_runner,
-        cfg=Config(auto_push=False),
-        logger=RecordingLogger(),
-        status_display=PlainStatusDisplay(),
-    )
+    local_deps = dataclasses.replace(deps, cfg=Config(auto_push=False))
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, local_deps)
+    git_svc.push.assert_not_called()
+
+
+def test_auto_push_false_does_not_call_push_in_preflight_skip(
+    tmp_path, git_svc, github_svc
+):
+    from pycastle.agent_result import PreflightFailure
+
+    failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
+    git_svc.try_merge.side_effect = _conflict_on([2])
+    local_deps = dataclasses.replace(
+        _make_deps(tmp_path, git_svc, github_svc, FakeAgentRunner([failure])),
+        cfg=Config(auto_push=False),
+    )
+    issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
+    _run(issues, local_deps)
+    git_svc.push.assert_not_called()
+
+
+def test_auto_push_does_not_push_when_no_issues_processed(deps, git_svc):
+    _run([], deps)
     git_svc.push.assert_not_called()
 
 
