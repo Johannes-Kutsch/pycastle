@@ -145,16 +145,11 @@ class RichStatusDisplay:
         self, caller: str, startup_message: str = "started", work_body: str = "", initial_phase: str = "Setup"
     ) -> None:
         with self._lock:
-            prepend_blank = self._blank_before(caller)
-            self._last_caller = caller
             self._rows[caller] = _AgentRow(caller, initial_phase, work_body)
             live_to_start = self._acquire_live()
         if live_to_start is not None:
             live_to_start.start()
-        if prepend_blank:
-            self._console.print()
-        line = f"[{caller}] {startup_message}" if caller else startup_message
-        self._console.print(Text(line))
+        self.print(caller, startup_message)
 
     def update_phase(self, name: str, phase: str) -> None:
         with self._lock:
@@ -174,21 +169,11 @@ class RichStatusDisplay:
         shutdown_style: str = "success",
     ) -> None:
         with self._lock:
-            prepend_blank = self._blank_before(caller)
-            self._last_caller = caller
             self._rows.pop(caller, None)
             live_to_stop = self._release_live_if_empty()
         if live_to_stop is not None:
             live_to_stop.stop()
-        if prepend_blank:
-            self._console.print()
-        line = f"[{caller}] {shutdown_message}" if caller else shutdown_message
-        text = Text(line)
-        if shutdown_style == "success":
-            text.stylize("green")
-        elif shutdown_style == "error":
-            text.stylize("red")
-        self._console.print(text)
+        self.print(caller, shutdown_message, style=shutdown_style)
 
     def print(
         self,

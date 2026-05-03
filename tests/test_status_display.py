@@ -641,8 +641,9 @@ def test_rich_new_api_remove_prints_finished_in_green() -> None:
     d = RichStatusDisplay(console=console)
     d.remove("X")
     ansi = buf.getvalue()
-    assert "[X] finished" in ansi
-    assert _has_code(ansi[: ansi.find("[X] finished")], 32)
+    assert "[X]" in ansi and "finished" in ansi
+    # Green (32) must appear before [X] — [X] and message are separate bold/green spans
+    assert _has_code(ansi[: ansi.find("[X]")], 32)
 
 
 def test_rich_new_api_remove_error_style_prints_in_red() -> None:
@@ -650,8 +651,9 @@ def test_rich_new_api_remove_error_style_prints_in_red() -> None:
     d = RichStatusDisplay(console=console)
     d.remove("X", shutdown_message="failed", shutdown_style="error")
     ansi = buf.getvalue()
-    assert "[X] failed" in ansi
-    assert _has_code(ansi[: ansi.find("[X] failed")], 31)
+    assert "[X]" in ansi and "failed" in ansi
+    # Red (31) must appear before [X]
+    assert _has_code(ansi[: ansi.find("[X]")], 31)
 
 
 def test_rich_new_api_blank_line_on_caller_change(capsys) -> None:
@@ -798,6 +800,27 @@ def test_rich_print_caller_prefix_is_bold() -> None:
     assert caller_idx >= 0
     before_caller = ansi[:caller_idx]
     assert _has_code(before_caller, 1)  # bold before [Plan]
+
+
+def test_rich_register_caller_prefix_is_bold() -> None:
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.register("Plan", startup_message="started")
+    ansi = buf.getvalue()
+    # Bold code (1) must appear in the ANSI escape immediately before [Plan].
+    # The Live panel renders "Plan" without brackets, so this pattern is unique
+    # to the startup message line.
+    assert re.search(r"\x1b\[(?:\d+;)*1(?:;\d+)*m\[Plan\]", ansi)
+
+
+def test_rich_remove_caller_prefix_is_bold() -> None:
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.remove("Plan", shutdown_message="finished")
+    ansi = buf.getvalue()
+    # Bold code (1) must appear immediately before [Plan]; may be combined with
+    # green (e.g. \x1b[1;32m) since shutdown styling is applied to the whole line.
+    assert re.search(r"\x1b\[(?:\d+;)*1(?:;\d+)*m\[Plan\]", ansi)
 
 
 def test_rich_print_message_after_caller_prefix_is_not_bold() -> None:
