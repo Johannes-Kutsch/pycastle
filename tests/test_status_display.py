@@ -850,6 +850,27 @@ def test_rich_remove_caller_prefix_is_bold_with_error_style() -> None:
     assert _has_code(ansi[: ansi.find("[Plan]")], 31)
 
 
+def test_rich_remove_warning_style_renders_in_yellow() -> None:
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.remove("X", shutdown_message="warning msg", shutdown_style="warning")
+    ansi = buf.getvalue()
+    assert "[X]" in ansi and "warning msg" in ansi
+    assert _has_code(ansi[: ansi.find("[X]")], 33)  # yellow precedes [X]
+
+
+def test_rich_remove_multiline_warning_style_renders_all_lines_in_yellow() -> None:
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.remove("X", shutdown_message="line1\nline2", shutdown_style="warning")
+    ansi = buf.getvalue()
+    first_x = ansi.find("[X]")
+    second_x = ansi.find("[X]", first_x + 1)
+    assert first_x >= 0 and second_x >= 0
+    assert _has_code(ansi[:first_x], 33)  # yellow before first [X]
+    assert _has_code(ansi[first_x:second_x], 33)  # yellow before second [X]
+
+
 def test_rich_print_message_after_caller_prefix_is_not_bold() -> None:
     buf, console = _make_ansi_console()
     d = RichStatusDisplay(console=console)
