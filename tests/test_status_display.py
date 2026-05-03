@@ -783,6 +783,22 @@ def test_rich_cross_method_blank_line_register_then_print(capsys) -> None:
     assert "[X] started\n\n[Y] msg" in out
 
 
+def test_rich_cross_method_blank_line_remove_then_print(capsys) -> None:
+    d = RichStatusDisplay()
+    d.remove("X")
+    d.print("Y", "msg")
+    out = capsys.readouterr().out
+    assert "[X] finished\n\n[Y] msg" in out
+
+
+def test_rich_cross_method_no_blank_register_then_remove_same_caller(capsys) -> None:
+    d = RichStatusDisplay()
+    d.register("X")
+    d.remove("X")
+    out = capsys.readouterr().out
+    assert "[X] started\n[X] finished" in out
+
+
 def test_rich_print_anonymous_caller_always_inserts_blank_line(capsys) -> None:
     d = RichStatusDisplay()
     d.print("", "first")
@@ -821,6 +837,17 @@ def test_rich_remove_caller_prefix_is_bold() -> None:
     # Bold code (1) must appear immediately before [Plan]; may be combined with
     # green (e.g. \x1b[1;32m) since shutdown styling is applied to the whole line.
     assert re.search(r"\x1b\[(?:\d+;)*1(?:;\d+)*m\[Plan\]", ansi)
+
+
+def test_rich_remove_caller_prefix_is_bold_with_error_style() -> None:
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.remove("Plan", shutdown_message="failed", shutdown_style="error")
+    ansi = buf.getvalue()
+    # Bold (1) must appear immediately before [Plan]; red styling is combined (e.g. \x1b[1;31m).
+    assert re.search(r"\x1b\[(?:\d+;)*1(?:;\d+)*m\[Plan\]", ansi)
+    # Red (31) must also appear before [Plan].
+    assert _has_code(ansi[: ansi.find("[Plan]")], 31)
 
 
 def test_rich_print_message_after_caller_prefix_is_not_bold() -> None:
