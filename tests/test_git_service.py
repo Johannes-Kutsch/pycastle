@@ -1097,3 +1097,52 @@ def test_pull_raises_git_timeout_error_on_timeout(tmp_path):
     ):
         with pytest.raises(GitTimeoutError):
             svc.pull(tmp_path)
+
+
+# ── push() ────────────────────────────────────────────────────────────────────
+
+
+def test_push_runs_git_push(tmp_path):
+    svc = GitService(_cfg)
+    captured: list[tuple[list[str], object]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append((list(cmd), kwargs.get("cwd")))
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        svc.push(tmp_path)
+
+    assert len(captured) == 1
+    cmd, cwd = captured[0]
+    assert cmd == ["git", "push"]
+    assert cwd == tmp_path
+
+
+def test_push_succeeds_on_zero_exit(tmp_path):
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
+    ):
+        svc.push(tmp_path)  # must not raise
+
+
+def test_push_raises_git_command_error_on_nonzero_exit(tmp_path):
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=1, stdout=b"", stderr=b"rejected"),
+    ):
+        with pytest.raises(GitCommandError):
+            svc.push(tmp_path)
+
+
+def test_push_raises_git_timeout_error_on_timeout(tmp_path):
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    ):
+        with pytest.raises(GitTimeoutError):
+            svc.push(tmp_path)
