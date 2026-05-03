@@ -739,6 +739,23 @@ def test_run_issue_no_ralph_commit_runs_both_agents(tmp_path):
     assert "Review Agent" in fake.calls[1].name
 
 
+def test_run_issue_releases_lock_when_get_branch_commit_subjects_raises(tmp_path):
+    """If get_branch_commit_subjects raises, run_issue must still release the branch lock."""
+    from pycastle.services import GitTimeoutError
+
+    fake = FakeAgentRunner([])
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.get_branch_commit_subjects.side_effect = GitTimeoutError("timed out")
+
+    branch_locks: dict[str, asyncio.Lock] = {}
+    issue = {"number": 25, "title": "Fix auth"}
+
+    with pytest.raises(GitTimeoutError):
+        asyncio.run(run_issue(issue, deps, branch_locks=branch_locks))
+
+    assert not branch_locks["pycastle/issue-25"].locked()
+
+
 def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
     """run_issue must create the Reviewer worktree without a pinned SHA (existing-branch path)."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)

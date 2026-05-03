@@ -97,16 +97,14 @@ async def run_issue(
             )
         await lock.acquire()
 
-    subjects = deps.git_svc.get_branch_commit_subjects(_branch, deps.repo_root)
-    review_done = any(s.startswith("RALPH: Review -") for s in subjects)
-    implement_done = any(s.startswith("RALPH:") for s in subjects)
-
-    if review_done:
-        if lock is not None and lock.locked():
-            lock.release()
-        return issue
-
     try:
+        subjects = deps.git_svc.get_branch_commit_subjects(_branch, deps.repo_root)
+        review_done = any(s.startswith("RALPH: Review -") for s in subjects)
+        implement_done = any(s.startswith("RALPH:") for s in subjects)
+
+        if review_done:
+            return issue
+
         if not implement_done:
             async with _agent_worktree(_branch, sha, _token, deps) as impl_mount_path:
                 result = await _bounded_run_agent(
