@@ -870,3 +870,16 @@ def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
     asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))
 
     assert fired == []
+
+
+def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
+    """run_issue calls on_started once when implement is already done but review hasn't run yet."""
+    fired: list[int] = []
+    fake = FakeAgentRunner([CompletionOutput()])
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Fix auth"]
+
+    issue = {"number": 1, "title": "Fix auth"}
+    asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))
+
+    assert fired == [1]
