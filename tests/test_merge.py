@@ -719,3 +719,89 @@ def test_merger_run_call_passes_work_body_with_conflict_count(
     merger_calls = [c for c in recording_runner.calls if c.name == "Merge Agent"]
     assert len(merger_calls) == 1
     assert merger_calls[0].work_body == f"Merging {len(conflict_issues)} Branches"
+
+
+# ── auto_push wiring ──────────────────────────────────────────────────────────
+
+
+def test_auto_push_calls_push_after_clean_merges(deps, git_svc):
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, deps)
+    git_svc.push.assert_called_once_with(deps.repo_root)
+
+
+def test_auto_push_calls_push_after_merger_fast_forward(deps, git_svc):
+    git_svc.try_merge.return_value = False
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+    git_svc.push.assert_called_once_with(deps.repo_root)
+
+
+def test_auto_push_calls_push_in_preflight_skip_when_clean_issues_exist(
+    tmp_path, git_svc, github_svc
+):
+    from pycastle.agent_result import PreflightFailure
+
+    failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
+    git_svc.try_merge.side_effect = _conflict_on([2])
+    local_deps = _make_deps(tmp_path, git_svc, github_svc, FakeAgentRunner([failure]))
+    issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
+    _run(issues, local_deps)
+    local_deps.git_svc.push.assert_called_once_with(local_deps.repo_root)
+
+
+def test_auto_push_does_not_call_push_in_preflight_skip_when_no_clean_issues(
+    tmp_path, git_svc, github_svc
+):
+    from pycastle.agent_result import PreflightFailure
+
+    failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
+    git_svc.try_merge.return_value = False
+    local_deps = _make_deps(tmp_path, git_svc, github_svc, FakeAgentRunner([failure]))
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, local_deps)
+    local_deps.git_svc.push.assert_not_called()
+
+
+def test_auto_push_false_does_not_call_push_on_clean_merge(
+    tmp_path, git_svc, github_svc, agent_runner
+):
+    local_deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        agent_runner=agent_runner,
+        cfg=Config(auto_push=False),
+        logger=RecordingLogger(),
+        status_display=PlainStatusDisplay(),
+    )
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, local_deps)
+    git_svc.push.assert_not_called()
+
+
+def test_auto_push_false_does_not_call_push_on_conflict_path(
+    tmp_path, git_svc, github_svc, agent_runner
+):
+    git_svc.try_merge.return_value = False
+    local_deps = Deps(
+        env={},
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        agent_runner=agent_runner,
+        cfg=Config(auto_push=False),
+        logger=RecordingLogger(),
+        status_display=PlainStatusDisplay(),
+    )
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, local_deps)
+    git_svc.push.assert_not_called()
+
+
+def test_push_git_command_error_propagates(deps, git_svc):
+    git_svc.push.side_effect = GitCommandError("push failed", returncode=1, stderr="")
+    issues = [{"number": 1, "title": "Fix A"}]
+    with pytest.raises(GitCommandError):
+        _run(issues, deps)
