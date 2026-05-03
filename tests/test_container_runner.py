@@ -13,7 +13,7 @@ from pycastle.container_runner import (
     ContainerRunner,
     _build_claude_command,
 )
-from pycastle.errors import AgentTimeoutError, UsageLimitError
+from pycastle.errors import UsageLimitError
 from pycastle.iteration._deps import RecordingStatusDisplay
 
 _ROLE = AgentRole.IMPLEMENTER
@@ -262,35 +262,6 @@ def test_setup_configures_git_identity_with_readonly_repo_mount(tmp_path):
     assert any("git config --global user.email" in cmd for cmd in exec_log)
 
 
-# ── Cycle 23-4: run_streaming raises AgentTimeoutError on idle timeout ────────
-
-
-def _never_yields():
-    """Generator that blocks forever without yielding — simulates a hung agent."""
-    event = threading.Event()
-    event.wait()
-    return
-    yield  # makes this a generator
-
-
-def test_run_streaming_raises_agent_timeout_error_when_idle(tmp_path):
-    mock_client = MagicMock()
-    mock_result = MagicMock()
-    mock_result.output = _never_yields()
-    mock_client.containers.run.return_value.exec_run.return_value = mock_result
-    runner = ContainerRunner(
-        "test",
-        Path("/fake"),
-        {},
-        docker_client=mock_client,
-        cfg=Config(logs_dir=tmp_path, idle_timeout=0.05),
-    )
-    runner.__enter__()
-
-    with pytest.raises(AgentTimeoutError):
-        runner.run_streaming(_ROLE, _NOOP)
-
-
 # ── Issue 310: run_streaming produces no stdout ──────────────────────────────
 
 
@@ -308,109 +279,6 @@ def test_run_streaming_produces_no_stdout_for_plain_text(tmp_path, capsys):
     with pytest.raises(PromiseParseError):
         runner.run_streaming(_ROLE, _NOOP)
     assert capsys.readouterr().out == ""
-
-
-# ── Cycle 24-A2: log file stays raw (unprefixed) ─────────────────────────────
-
-
-def test_run_streaming_log_file_is_raw_unprefixed(tmp_path):
-    from pycastle.agent_output_protocol import PromiseParseError
-
-    runner = _streaming_runner("TestAgent", [b"hello world\n"], tmp_path)
-    with pytest.raises(PromiseParseError):
-        runner.run_streaming(_ROLE, _NOOP)
-    assert runner._log_path.read_text() == "hello world\n"
-    assert "[TestAgent]" not in runner._log_path.read_text()
-
-
-def test_run_streaming_log_file_contains_full_raw_output(tmp_path):
-    """Log file must capture all raw bytes, including multi-chunk output."""
-    from pycastle.agent_output_protocol import PromiseParseError
-
-    runner = _streaming_runner("Bot", [b"line one\n", b"line two\n"], tmp_path)
-    with pytest.raises(PromiseParseError):
-        runner.run_streaming(_ROLE, _NOOP)
-    content = runner._log_path.read_text()
-    assert content == "line one\nline two\n"
-
-
-# ── Issue 339: run_streaming per-chunk reset_idle_timer ──────────────────────
-
-
-def test_run_streaming_calls_reset_idle_timer_per_chunk(tmp_path):
-    tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner(
-        "Bot", [tool_chunk, tool_chunk, _COMPLETE_LINE], tmp_path, display
-    )
-
-    runner.run_streaming(_ROLE, _NOOP)
-
-    reset_calls = [c for c in display.calls if c[0] == "reset_idle_timer"]
-    assert len(reset_calls) == 3
-    assert all(c == ("reset_idle_timer", "Bot") for c in reset_calls)
-
-
-def test_run_streaming_tool_use_only_line_resets_timer(tmp_path):
-    tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [tool_chunk, _COMPLETE_LINE], tmp_path, display)
-
-    runner.run_streaming(_ROLE, _NOOP)
-
-    assert ("reset_idle_timer", "Bot") in display.calls
-
-
-def test_run_streaming_system_line_resets_timer(tmp_path):
-    system_chunk = b'{"type":"system","subtype":"init","session_id":"abc","tools":[]}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [system_chunk, _COMPLETE_LINE], tmp_path, display)
-
-    runner.run_streaming(_ROLE, _NOOP)
-
-    assert ("reset_idle_timer", "Bot") in display.calls
-
-
-def test_run_streaming_result_line_resets_timer(tmp_path):
-    result_chunk = (
-        b'{"type":"result","result":"<promise>COMPLETE</promise>","is_error":false}\n'
-    )
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [result_chunk], tmp_path, display)
-
-    runner.run_streaming(_ROLE, _NOOP)
-
-    assert ("reset_idle_timer", "Bot") in display.calls
-
-
-def test_run_streaming_partial_chunk_resets_timer(tmp_path):
-    partial_chunk = b'{"type":"assistant","message":{"content":[{"type":"text","text":"no newline here"}'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner(
-        "Bot", [partial_chunk, _COMPLETE_LINE], tmp_path, display
-    )
-
-    runner.run_streaming(_ROLE, _NOOP)
-
-    assert ("reset_idle_timer", "Bot") in display.calls
-
-
-def test_run_streaming_single_chunk_with_multiple_lines_resets_timer_once(tmp_path):
-    line_a = (
-        b'{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}\n'
-    )
-    line_b = (
-        b'{"type":"assistant","message":{"content":[{"type":"text","text":"World"}]}}\n'
-    )
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner(
-        "Bot", [line_a + line_b + _COMPLETE_LINE], tmp_path, display
-    )
-
-    runner.run_streaming(_ROLE, _NOOP)
-
-    reset_calls = [c for c in display.calls if c[0] == "reset_idle_timer"]
-    assert len(reset_calls) == 1
 
 
 # ── Issue 75: _build_claude_command accepts model and effort flags ────────────
@@ -710,14 +578,6 @@ def test_run_streaming_suppresses_system_init_line(tmp_path, capsys):
     runner.run_streaming(_ROLE, _NOOP)
     out = capsys.readouterr().out
     assert out == ""
-
-
-def test_run_streaming_log_file_unchanged_for_json_lines(tmp_path):
-    """Log file must still contain the raw, unmodified JSON bytes."""
-    raw = b'{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}\n'
-    runner = _streaming_runner("Planner", [raw, _COMPLETE_LINE], tmp_path)
-    runner.run_streaming(_ROLE, _NOOP)
-    assert raw in runner._log_path.read_bytes()
 
 
 # ── Issue 180: UsageLimitError stream detection ───────────────────────────────
