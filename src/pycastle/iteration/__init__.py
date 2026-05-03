@@ -2,6 +2,7 @@ import dataclasses
 from typing import TypeAlias
 
 from ..agent_result import CancellationToken, PreflightFailure
+from ..worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
 from .implement import branch_for, implement_phase
 from .merge import merge_phase
@@ -32,6 +33,14 @@ class AbortedUsageLimit:
 IterationOutcome: TypeAlias = Continue | Done | AbortedHITL | AbortedUsageLimit
 
 
+def _is_in_flight(issue: dict, deps: Deps) -> bool:
+    branch = branch_for(issue["number"])
+    if deps.git_svc.verify_ref_exists(branch, deps.repo_root):
+        return True
+    name = worktree_name_for_branch(branch)
+    return worktree_path(name, deps).exists()
+
+
 async def run_iteration(deps: Deps) -> IterationOutcome:
     deps.status_display.register("Preflight")
     try:
@@ -51,7 +60,10 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             return Done()
         sha = preflight_result.sha
         open_issues = preflight_result.issues
-        if len(open_issues) >= 2:
+        in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
+        if in_flight:
+            issues = in_flight
+        elif len(open_issues) >= 2:
             deps.status_display.register("Plan")
             try:
                 plan_result = await planning_phase(deps, sha, open_issues)

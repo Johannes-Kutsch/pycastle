@@ -58,7 +58,14 @@ def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
         wt.mkdir(parents=True, exist_ok=True)
         (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
 
+    def _fake_remove_worktree(repo, wt):
+        import shutil
+
+        if isinstance(wt, Path) and wt.exists():
+            shutil.rmtree(wt)
+
     mock_svc.create_worktree.side_effect = _fake_create_worktree
+    mock_svc.remove_worktree.side_effect = _fake_remove_worktree
     return mock_svc
 
 

@@ -44,6 +44,7 @@ def git_svc():
     svc.is_working_tree_clean.return_value = True
     svc.try_merge.return_value = True
     svc.is_ancestor.return_value = True
+    svc.verify_ref_exists.return_value = False
     return svc
 
 
@@ -731,3 +732,101 @@ def test_run_iteration_registers_preflight_row_before_preflight_phase(
     assert register_idx is not None, "Preflight row must be registered"
     assert remove_idx is not None, "Preflight row must be removed"
     assert register_idx < remove_idx
+
+
+# ── Planning skip when in-flight branches or worktrees exist ─────────────────
+
+
+def test_run_iteration_skips_planning_when_all_issues_have_existing_branches(
+    tmp_path, git_svc, logger
+):
+    """When all open issues have an existing branch, planning_phase is not invoked
+    and the iteration proceeds with those issues as the working set."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix A"},
+        {"number": 2, "title": "Fix B"},
+    ]
+    git_svc.verify_ref_exists.return_value = True
+
+    agent_names: list[str] = []
+
+    async def _fake_agent(request: RunRequest):
+        agent_names.append(request.name)
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    assert "Plan Agent" not in agent_names, (
+        "Plan Agent must not be called when all branches exist"
+    )
+    assert any("Implement Agent" in n for n in agent_names), (
+        "Implement Agent must still run"
+    )
+
+
+def test_run_iteration_skips_planning_when_all_issues_have_existing_worktrees(
+    tmp_path, git_svc, logger
+):
+    """When all open issues have an existing worktree directory (but no branch),
+    planning_phase is not invoked."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 3, "title": "Fix C"},
+        {"number": 4, "title": "Fix D"},
+    ]
+    git_svc.verify_ref_exists.return_value = False
+    for n in [3, 4]:
+        (tmp_path / "pycastle" / ".worktrees" / f"issue-{n}").mkdir(parents=True)
+
+    agent_names: list[str] = []
+
+    async def _fake_agent(request: RunRequest):
+        agent_names.append(request.name)
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    assert "Plan Agent" not in agent_names, (
+        "Plan Agent must not be called when all worktrees exist"
+    )
+
+
+def test_run_iteration_uses_only_in_flight_issues_when_some_have_existing_branch(
+    tmp_path, git_svc, logger
+):
+    """When only some open issues have an existing branch, only those in-flight issues
+    are used as the working set and planning_phase is not invoked."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 5, "title": "In flight"},
+        {"number": 6, "title": "Deferred"},
+    ]
+    git_svc.verify_ref_exists.side_effect = lambda ref, path: ref == "pycastle/issue-5"
+
+    agent_names: list[str] = []
+
+    async def _fake_agent(request: RunRequest):
+        agent_names.append(request.name)
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    asyncio.run(run_iteration(deps))
+
+    assert "Plan Agent" not in agent_names, (
+        "Plan Agent must not be called when some branches exist"
+    )
+    assert "Implement Agent #5" in agent_names, "In-flight issue must be implemented"
+    assert not any("Implement Agent #6" in n for n in agent_names), (
+        "Deferred issue must not be implemented"
+    )
