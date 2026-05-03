@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from .agent_result import PreflightFailure
-from .worktree import _remove_worktrees_dir_if_empty
 from .agent_runner import AgentRunner, AgentRunnerProtocol, RunRequest
 from .config import Config, load_config
 from .services import ClaudeService, GitCommandError, GitService
@@ -23,6 +22,7 @@ from .iteration import (
 from .iteration._deps import Deps as IterationDeps
 from .rich_status_display import RichStatusDisplay
 from .status_display import StatusDisplay
+from .worktree import _remove_worktrees_dir_if_empty
 
 
 class FileLogger:
