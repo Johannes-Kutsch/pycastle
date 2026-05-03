@@ -1104,17 +1104,19 @@ def test_pull_raises_git_timeout_error_on_timeout(tmp_path):
 
 def test_push_runs_git_push(tmp_path):
     svc = GitService(_cfg)
-    captured: list[list[str]] = []
+    captured: list[tuple[list[str], object]] = []
 
     def fake_run(cmd, **kwargs):
-        captured.append(list(cmd))
+        captured.append((list(cmd), kwargs.get("cwd")))
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
     with patch("subprocess.run", side_effect=fake_run):
         svc.push(tmp_path)
 
     assert len(captured) == 1
-    assert captured[0] == ["git", "push"]
+    cmd, cwd = captured[0]
+    assert cmd == ["git", "push"]
+    assert cwd == tmp_path
 
 
 def test_push_succeeds_on_zero_exit(tmp_path):
