@@ -5,6 +5,7 @@ from pycastle import StageOverride
 # max_parallel = 1
 # worktree_timeout = 30
 # idle_timeout = 300
+# auto_push = True
 
 # --- Docker ---
 # Name for the Docker image built by `pycastle build`.

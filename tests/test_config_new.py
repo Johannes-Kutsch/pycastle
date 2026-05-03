@@ -608,6 +608,21 @@ def test_load_config_validate_empty_models_tuple_raises_for_any_shorthand(tmp_pa
     assert exc_info.value.valid_options == []
 
 
+# ── Issue 418: auto_push config field ────────────────────────────────────────
+
+
+def test_config_auto_push_defaults_to_true():
+    cfg = Config()
+    assert cfg.auto_push is True
+
+
+def test_load_config_applies_auto_push_false_from_local_file(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text("auto_push = False\n")
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.auto_push is False
+
+
 def test_load_config_validate_non_claude_models_only_raises_for_shorthand(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(
