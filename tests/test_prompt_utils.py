@@ -1,7 +1,6 @@
 import asyncio
 
-from pycastle.prompt_pipeline import prepare_prompt
-from pycastle.prompt_utils import load_standards
+from pycastle.prompt_pipeline import load_standards, prepare_prompt
 
 
 def _run(coro):

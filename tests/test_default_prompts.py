@@ -5,8 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pycastle.prompt_pipeline import PromptRenderError, prepare_prompt
-from pycastle.prompt_utils import load_standards
+from pycastle.prompt_pipeline import PromptRenderError, load_standards, prepare_prompt
 
 _DEFAULTS = Path(__file__).parent.parent / "src" / "pycastle" / "defaults" / "prompts"
 

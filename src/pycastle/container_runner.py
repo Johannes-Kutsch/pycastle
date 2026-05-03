@@ -21,6 +21,7 @@ from .errors import (
     DockerTimeoutError,
     UsageLimitError,
 )
+from .prompt_pipeline import prepare_prompt
 from .status_display import PlainStatusDisplay
 from .worktree import (
     CONTAINER_PARENT_GIT,
@@ -267,8 +268,6 @@ class ContainerRunner:
         return failures
 
     async def prepare(self, prompt_file: Path, prompt_args: dict[str, str]) -> None:
-        from .prompt_pipeline import prepare_prompt
-
         self._status_display.update_phase(self.name, "Prepare")
         loop = asyncio.get_running_loop()
 

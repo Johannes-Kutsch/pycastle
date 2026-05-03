@@ -9,7 +9,7 @@ from ..agent_output_protocol import AgentRole
 from ..agent_result import CancellationToken, PreflightFailure
 from ..agent_runner import RunRequest
 from ..errors import BranchCollisionError, UsageLimitError
-from ..prompt_utils import load_standards
+from ..prompt_pipeline import load_standards
 from ..worktree import (
     patch_gitdir_for_container,
     worktree_name_for_branch,
