@@ -51,7 +51,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
     if isinstance(preflight_result, PreflightHITL):
         deps.status_display.print(
-            "",
+            "Preflight",
             f"Preflight issue #{preflight_result.issue_number} requires human intervention. Exiting.",
         )
         return AbortedHITL(issue_number=preflight_result.issue_number)
@@ -65,13 +65,19 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         if in_flight:
             issues = in_flight
         elif len(open_issues) >= 2:
-            deps.status_display.register("Plan", initial_phase="Planning")
-            try:
+            async with phase_row(deps.status_display, "Plan", initial_phase="Planning") as row:
                 plan_result = await planning_phase(deps, sha, open_issues)
-            finally:
-                deps.status_display.remove("Plan")
-            sha = plan_result.worktree_sha
-            issues = plan_result.issues
+                issue_lines = [
+                    f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
+                    for i in plan_result.issues
+                ]
+                row.close(
+                    "\n".join(
+                        [f"Planning complete, {len(plan_result.issues)} issue(s):"] + issue_lines
+                    )
+                )
+                sha = plan_result.worktree_sha
+                issues = plan_result.issues
         else:
             issues = open_issues
     elif isinstance(preflight_result, PreflightAFK):
@@ -80,53 +86,44 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
     issues = issues[: deps.cfg.max_parallel]
 
-    deps.status_display.print("", f"Planning complete. {len(issues)} issue(s):")
-    for issue in issues:
-        deps.status_display.print(
-            "",
-            f"  #{issue['number']}: {issue['title']} → {branch_for(issue['number'])}",
-        )
-
     token = CancellationToken()
-    deps.status_display.register("Implement", initial_phase="Running")
-    try:
+    async with phase_row(deps.status_display, "Implement", initial_phase="Running") as row:
         impl_result = await implement_phase(issues, sha, deps, token=token)
-    finally:
-        deps.status_display.remove("Implement")
 
-    if impl_result.usage_limit_hit:
-        return AbortedUsageLimit()
+        if impl_result.usage_limit_hit:
+            row.close("finished")
+            return AbortedUsageLimit()
 
-    for issue, error in impl_result.errors:
-        match error:
-            case PreflightFailure(failures=fs):
-                deps.status_display.print(
-                    "",
-                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) pre-flight failed:",
-                )
-                for check_name, command, output in fs:
+        for issue, error in impl_result.errors:
+            match error:
+                case PreflightFailure(failures=fs):
                     deps.status_display.print(
-                        "",
-                        f"    ✗ {check_name} ({command}): {output}",
+                        "Implement",
+                        f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) pre-flight failed:",
                     )
-            case _:
-                deps.status_display.print(
-                    "",
-                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}",
-                )
+                    for check_name, command, output in fs:
+                        deps.status_display.print(
+                            "Implement",
+                            f"    ✗ {check_name} ({command}): {output}",
+                        )
+                case _:
+                    deps.status_display.print(
+                        "Implement",
+                        f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}",
+                    )
 
-    completed = impl_result.completed
+        completed = impl_result.completed
 
-    if not completed:
-        deps.status_display.print("", "No commits produced. Nothing to merge.")
-        return Continue()
+        if not completed:
+            row.close("No commits produced. Nothing to merge.", shutdown_style="warning")
+            return Continue()
 
-    deps.status_display.print(
-        "",
-        f"Execution complete. {len(completed)} branch(es) with commits:",
-    )
-    for i in completed:
-        deps.status_display.print("", f"  {branch_for(i['number'])}")
+        branch_lines = [f"  {branch_for(i['number'])}" for i in completed]
+        row.close(
+            "\n".join(
+                [f"Execution complete, {len(completed)} branch(es) with commits:"] + branch_lines
+            )
+        )
 
     await merge_phase(completed, deps)
 
