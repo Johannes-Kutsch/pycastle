@@ -39,11 +39,11 @@ def test_rich_print_outputs_message(capsys) -> None:
     assert "hello world" in capsys.readouterr().out
 
 
-def test_rich_print_no_blank_line_on_first_print(capsys) -> None:
+def test_rich_print_blank_line_on_first_print(capsys) -> None:
     d = RichStatusDisplay()
     d.print("test", "hello")
     out = capsys.readouterr().out
-    assert out.startswith("[test]")
+    assert out.startswith("\n") and "[test] hello" in out
 
 
 def test_rich_print_no_blank_line_on_same_caller_repeat(capsys) -> None:
@@ -700,11 +700,11 @@ def test_rich_preflight_agent_sorts_before_plan_agent() -> None:
     assert output.find("Preflight Agent") < output.find("Plan Agent")
 
 
-def test_rich_new_api_first_print_has_no_leading_blank_line(capsys) -> None:
+def test_rich_new_api_first_print_has_leading_blank_line(capsys) -> None:
     d = RichStatusDisplay()
     d.print("A", "hello")
     out = capsys.readouterr().out
-    assert out.startswith("[A]")
+    assert out.startswith("\n") and "[A] hello" in out
 
 
 def test_rich_register_with_empty_caller_prints_message_only(capsys) -> None:
@@ -749,12 +749,12 @@ def test_rich_register_inserts_blank_line_when_caller_changes(capsys) -> None:
     assert "[X] started\n\n[Y] started" in out
 
 
-def test_rich_register_no_blank_line_before_first_output(capsys) -> None:
+def test_rich_register_blank_line_before_first_output(capsys) -> None:
     d = RichStatusDisplay()
     d.register("X")
     d.stop()
     out = capsys.readouterr().out
-    assert out.startswith("[X]")
+    assert out.startswith("\n") and "[X] started" in out
 
 
 def test_rich_remove_inserts_blank_line_when_caller_changes(capsys) -> None:
@@ -765,11 +765,11 @@ def test_rich_remove_inserts_blank_line_when_caller_changes(capsys) -> None:
     assert "[X] finished\n\n[Y] finished" in out
 
 
-def test_rich_remove_no_blank_line_before_first_output(capsys) -> None:
+def test_rich_remove_blank_line_before_first_output(capsys) -> None:
     d = RichStatusDisplay()
     d.remove("X")
     out = capsys.readouterr().out
-    assert out.startswith("[X]")
+    assert out.startswith("\n") and "[X] finished" in out
 
 
 def test_rich_cross_method_blank_line_register_then_print(capsys) -> None:
@@ -845,11 +845,11 @@ def test_rich_anonymous_to_named_print_inserts_blank(capsys) -> None:
     assert "anon\n\n[Alice] hello" in out
 
 
-def test_rich_first_anonymous_print_has_no_leading_blank(capsys) -> None:
+def test_rich_first_anonymous_print_has_leading_blank(capsys) -> None:
     d = RichStatusDisplay()
     d.print("", "first anon")
     out = capsys.readouterr().out
-    assert out.startswith("first anon")
+    assert out.startswith("\n") and "first anon" in out
 
 
 def test_rich_register_anonymous_after_named_inserts_blank(capsys) -> None:
@@ -887,43 +887,43 @@ def test_plain_reset_idle_timer_produces_no_output(capsys) -> None:
 def test_plain_print_with_caller_outputs_bracketed_prefix(capsys) -> None:
     d = PlainStatusDisplay()
     d.print("Plan", "Planning complete. 3 issue(s)")
-    assert capsys.readouterr().out == "[Plan] Planning complete. 3 issue(s)\n"
+    assert capsys.readouterr().out == "\n[Plan] Planning complete. 3 issue(s)\n"
 
 
 def test_plain_print_with_empty_caller_outputs_message_verbatim(capsys) -> None:
     d = PlainStatusDisplay()
     d.print("", "no prefix here")
-    assert capsys.readouterr().out == "no prefix here\n"
+    assert capsys.readouterr().out == "\nno prefix here\n"
 
 
 def test_plain_print_style_is_ignored(capsys) -> None:
     d = PlainStatusDisplay()
     d.print("X", "msg", style="error")
-    assert capsys.readouterr().out == "[X] msg\n"
+    assert capsys.readouterr().out == "\n[X] msg\n"
 
 
 def test_plain_register_defaults_print_started(capsys) -> None:
     d = PlainStatusDisplay()
     d.register("X")
-    assert capsys.readouterr().out == "[X] started\n"
+    assert capsys.readouterr().out == "\n[X] started\n"
 
 
 def test_plain_register_with_custom_startup_message(capsys) -> None:
     d = PlainStatusDisplay()
     d.register("X", startup_message="custom")
-    assert capsys.readouterr().out == "[X] custom\n"
+    assert capsys.readouterr().out == "\n[X] custom\n"
 
 
 def test_plain_remove_defaults_print_finished(capsys) -> None:
     d = PlainStatusDisplay()
     d.remove("X")
-    assert capsys.readouterr().out == "[X] finished\n"
+    assert capsys.readouterr().out == "\n[X] finished\n"
 
 
 def test_plain_remove_with_custom_shutdown_message(capsys) -> None:
     d = PlainStatusDisplay()
     d.remove("X", shutdown_message="failed", shutdown_style="error")
-    assert capsys.readouterr().out == "[X] failed\n"
+    assert capsys.readouterr().out == "\n[X] failed\n"
 
 
 def test_plain_consecutive_same_caller_no_blank_line(capsys) -> None:
@@ -931,7 +931,7 @@ def test_plain_consecutive_same_caller_no_blank_line(capsys) -> None:
     d.print("X", "first")
     d.print("X", "second")
     out = capsys.readouterr().out
-    assert out == "[X] first\n[X] second\n"
+    assert out == "\n[X] first\n[X] second\n"
 
 
 def test_plain_different_caller_inserts_blank_line(capsys) -> None:
@@ -939,20 +939,20 @@ def test_plain_different_caller_inserts_blank_line(capsys) -> None:
     d.print("X", "from X")
     d.print("Y", "from Y")
     out = capsys.readouterr().out
-    assert out == "[X] from X\n\n[Y] from Y\n"
+    assert out == "\n[X] from X\n\n[Y] from Y\n"
 
 
-def test_plain_first_print_has_no_leading_blank_line(capsys) -> None:
+def test_plain_first_print_has_leading_blank_line(capsys) -> None:
     d = PlainStatusDisplay()
     d.print("X", "msg")
     out = capsys.readouterr().out
-    assert out.startswith("[X]")
+    assert out.startswith("\n") and "[X] msg" in out
 
 
 def test_plain_print_accepts_non_string_message(capsys) -> None:
     d = PlainStatusDisplay()
     d.print("X", 42)
-    assert capsys.readouterr().out == "[X] 42\n"
+    assert capsys.readouterr().out == "\n[X] 42\n"
 
 
 def test_plain_print_caller_switch_and_back_inserts_blank_lines(capsys) -> None:
@@ -961,19 +961,19 @@ def test_plain_print_caller_switch_and_back_inserts_blank_lines(capsys) -> None:
     d.print("Y", "second")
     d.print("X", "third")
     out = capsys.readouterr().out
-    assert out == "[X] first\n\n[Y] second\n\n[X] third\n"
+    assert out == "\n[X] first\n\n[Y] second\n\n[X] third\n"
 
 
 def test_plain_register_with_empty_caller_prints_message_only(capsys) -> None:
     d = PlainStatusDisplay()
     d.register("", startup_message="booting")
-    assert capsys.readouterr().out == "booting\n"
+    assert capsys.readouterr().out == "\nbooting\n"
 
 
 def test_plain_remove_with_empty_caller_prints_message_only(capsys) -> None:
     d = PlainStatusDisplay()
     d.remove("", shutdown_message="done")
-    assert capsys.readouterr().out == "done\n"
+    assert capsys.readouterr().out == "\ndone\n"
 
 
 def test_plain_register_inserts_blank_line_when_caller_changes(capsys) -> None:
@@ -981,14 +981,14 @@ def test_plain_register_inserts_blank_line_when_caller_changes(capsys) -> None:
     d.register("X")
     d.register("Y")
     out = capsys.readouterr().out
-    assert out == "[X] started\n\n[Y] started\n"
+    assert out == "\n[X] started\n\n[Y] started\n"
 
 
-def test_plain_register_no_blank_line_before_first_output(capsys) -> None:
+def test_plain_register_blank_line_before_first_output(capsys) -> None:
     d = PlainStatusDisplay()
     d.register("X")
     out = capsys.readouterr().out
-    assert out.startswith("[X]")
+    assert out.startswith("\n") and "[X] started" in out
 
 
 def test_plain_register_no_blank_line_on_same_caller(capsys) -> None:
@@ -996,7 +996,7 @@ def test_plain_register_no_blank_line_on_same_caller(capsys) -> None:
     d.register("X")
     d.register("X")
     out = capsys.readouterr().out
-    assert out == "[X] started\n[X] started\n"
+    assert out == "\n[X] started\n[X] started\n"
 
 
 def test_plain_remove_inserts_blank_line_when_caller_changes(capsys) -> None:
@@ -1004,14 +1004,14 @@ def test_plain_remove_inserts_blank_line_when_caller_changes(capsys) -> None:
     d.remove("X")
     d.remove("Y")
     out = capsys.readouterr().out
-    assert out == "[X] finished\n\n[Y] finished\n"
+    assert out == "\n[X] finished\n\n[Y] finished\n"
 
 
-def test_plain_remove_no_blank_line_before_first_output(capsys) -> None:
+def test_plain_remove_blank_line_before_first_output(capsys) -> None:
     d = PlainStatusDisplay()
     d.remove("X")
     out = capsys.readouterr().out
-    assert out.startswith("[X]")
+    assert out.startswith("\n") and "[X] finished" in out
 
 
 def test_plain_print_anonymous_caller_always_inserts_blank_line(capsys) -> None:
@@ -1019,7 +1019,7 @@ def test_plain_print_anonymous_caller_always_inserts_blank_line(capsys) -> None:
     d.print("", "first")
     d.print("", "second")
     out = capsys.readouterr().out
-    assert out == "first\n\nsecond\n"
+    assert out == "\nfirst\n\nsecond\n"
 
 
 def test_plain_cross_method_blank_line_register_then_print(capsys) -> None:
@@ -1027,7 +1027,7 @@ def test_plain_cross_method_blank_line_register_then_print(capsys) -> None:
     d.register("X")
     d.print("Y", "msg")
     out = capsys.readouterr().out
-    assert out == "[X] started\n\n[Y] msg\n"
+    assert out == "\n[X] started\n\n[Y] msg\n"
 
 
 def test_plain_cross_method_blank_line_print_then_remove(capsys) -> None:
@@ -1035,7 +1035,7 @@ def test_plain_cross_method_blank_line_print_then_remove(capsys) -> None:
     d.print("X", "msg")
     d.remove("Y")
     out = capsys.readouterr().out
-    assert out == "[X] msg\n\n[Y] finished\n"
+    assert out == "\n[X] msg\n\n[Y] finished\n"
 
 
 def test_plain_named_to_anonymous_print_inserts_blank(capsys) -> None:
@@ -1043,7 +1043,7 @@ def test_plain_named_to_anonymous_print_inserts_blank(capsys) -> None:
     d.print("Alice", "hello")
     d.print("", "anon")
     out = capsys.readouterr().out
-    assert out == "[Alice] hello\n\nanon\n"
+    assert out == "\n[Alice] hello\n\nanon\n"
 
 
 def test_plain_anonymous_to_named_print_inserts_blank(capsys) -> None:
@@ -1051,7 +1051,7 @@ def test_plain_anonymous_to_named_print_inserts_blank(capsys) -> None:
     d.print("", "anon")
     d.print("Alice", "hello")
     out = capsys.readouterr().out
-    assert out == "anon\n\n[Alice] hello\n"
+    assert out == "\nanon\n\n[Alice] hello\n"
 
 
 def test_plain_same_caller_remove_after_print_no_blank(capsys) -> None:
@@ -1059,7 +1059,7 @@ def test_plain_same_caller_remove_after_print_no_blank(capsys) -> None:
     d.print("X", "msg")
     d.remove("X")
     out = capsys.readouterr().out
-    assert out == "[X] msg\n[X] finished\n"
+    assert out == "\n[X] msg\n[X] finished\n"
 
 
 # ── RecordingStatusDisplay behaviour ─────────────────────────────────────────
