@@ -93,12 +93,12 @@ async def handle_preflight_failure(
 
 
 async def preflight_phase(deps: Deps) -> PreflightResult:
-    await _wait_for_clean_working_tree(deps, "", "preflight")
+    await _wait_for_clean_working_tree(deps, "Preflight")
     try:
         deps.git_svc.pull(deps.repo_root)
     except GitCommandError:
         deps.status_display.print(
-            "",
+            "Preflight",
             "git pull --ff-only failed — remote branch has diverged or is unreachable. "
             "Resolve manually and retry.",
             style="error",
