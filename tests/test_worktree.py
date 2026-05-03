@@ -710,6 +710,24 @@ def test_branch_worktree_does_not_run_cleanup_when_create_fails(branch_deps):
     branch_deps.git_svc.delete_branch.assert_not_called()
 
 
+def test_branch_worktree_keeps_worktrees_dir_when_sibling_worktree_remains(
+    real_branch_deps,
+):
+    worktrees_dir = real_branch_deps.repo_root / ".pycastle" / ".worktrees"
+
+    async def _run():
+        async with branch_worktree(
+            "issue-10", "pycastle/issue-10", None, real_branch_deps, delete_branch=False
+        ):
+            async with branch_worktree(
+                "issue-11", "pycastle/issue-11", None, real_branch_deps
+            ):
+                pass
+            assert worktrees_dir.exists()
+
+    asyncio.run(_run())
+
+
 def test_branch_worktree_removes_worktrees_dir_when_last_worktree_exits(
     real_branch_deps,
 ):
@@ -729,12 +747,7 @@ def test_detached_worktree_removes_worktrees_dir_when_last_worktree_exits(
     real_branch_deps,
 ):
     worktrees_dir = real_branch_deps.repo_root / ".pycastle" / ".worktrees"
-    sha = subprocess.run(
-        ["git", "-C", str(real_branch_deps.repo_root), "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
+    sha = real_branch_deps.git_svc.get_head_sha(real_branch_deps.repo_root)
 
     async def _run():
         async with detached_worktree("sandbox", sha, real_branch_deps):
