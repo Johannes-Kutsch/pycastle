@@ -20,12 +20,6 @@ def _make_deps(tmp_path: Path, *, clean: bool = True) -> _MinimalDeps:
     return _MinimalDeps(git_svc=git_svc, repo_root=tmp_path, status_display=MagicMock())
 
 
-def test_util_deps_protocol_satisfied_by_minimal_object(tmp_path):
-    """_wait_for_clean_working_tree accepts any object with the three required fields, not just Deps."""
-    deps = _make_deps(tmp_path, clean=True)
-    asyncio.run(_wait_for_clean_working_tree(deps, "Test"))
-
-
 def test_returns_immediately_when_tree_is_clean(tmp_path):
     deps = _make_deps(tmp_path, clean=True)
     asyncio.run(_wait_for_clean_working_tree(deps, "Test"))
@@ -43,4 +37,18 @@ def test_waits_then_proceeds_when_tree_becomes_clean(tmp_path):
     call_args = deps.status_display.print.call_args
     assert call_args[0][0] == "Preflight"
     assert "uncommitted changes" in call_args[0][1]
+    assert "preflight" in call_args[0][1]
     assert call_args[1]["style"] == "error"
+
+
+def test_polls_multiple_times_until_tree_is_clean(tmp_path):
+    deps = _make_deps(tmp_path)
+    deps.git_svc.is_working_tree_clean.side_effect = [False, False, False, True]
+
+    with patch(
+        "pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        asyncio.run(_wait_for_clean_working_tree(deps, "Merge"))
+
+    assert mock_sleep.call_count == 2
+    deps.status_display.print.assert_called_once()
