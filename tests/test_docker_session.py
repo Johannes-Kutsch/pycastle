@@ -468,6 +468,76 @@ def test_docker_session_exit_deletes_auto_overlay(tmp_path):
     assert not overlay.exists()
 
 
+def test_docker_session_exec_simple_raises_before_enter():
+    """exec_simple raises DockerError when called before __enter__."""
+    mock_client = MagicMock()
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+
+    with pytest.raises(DockerError, match="Container not started"):
+        session.exec_simple("echo hi")
+
+
+def test_docker_session_exec_simple_prints_stderr_when_no_stdout(capsys):
+    """exec_simple prints stderr to sys.stderr and returns empty string when stdout is empty."""
+    mock_client = _mock_client(exit_code=0, stdout=b"", stderr=b"warning: something")
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+    session.__enter__()
+
+    result = session.exec_simple("some command")
+
+    assert result == ""
+    captured = capsys.readouterr()
+    assert "warning: something" in captured.err
+
+
+def test_docker_session_exec_simple_reraises_docker_api_exception():
+    """exec_simple re-raises exceptions thrown by the Docker API itself."""
+    mock_client = MagicMock()
+    mock_client.containers.run.return_value.exec_run.side_effect = RuntimeError(
+        "API down"
+    )
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+    session.__enter__()
+
+    with pytest.raises(RuntimeError, match="API down"):
+        session.exec_simple("any command")
+
+
+def test_docker_session_exit_before_enter_is_noop():
+    """__exit__ before __enter__ completes without error."""
+    mock_client = MagicMock()
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+
+    session.__exit__(None, None, None)
+
+    mock_client.containers.run.return_value.stop.assert_not_called()
+    mock_client.containers.run.return_value.remove.assert_not_called()
+
+
 def test_docker_session_write_file_puts_archive_with_correct_content():
     """write_file calls put_archive with a tar containing the file at the right path."""
     mock_client = MagicMock()

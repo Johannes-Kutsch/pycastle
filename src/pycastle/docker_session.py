@@ -1,5 +1,4 @@
 import io
-import os
 import re
 import sys
 import tarfile
@@ -125,6 +124,7 @@ class DockerSession:
                 self._container.remove(force=True)
             except Exception:
                 pass
+            self._container = None
         if self._owns_client:
             try:
                 self._client.close()
@@ -170,10 +170,11 @@ class DockerSession:
 
     def write_file(self, content: str, container_path: str) -> None:
         data = content.encode("utf-8")
+        path = Path(container_path)
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w") as tar:
-            info = tarfile.TarInfo(name=os.path.basename(container_path))
+            info = tarfile.TarInfo(name=path.name)
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
         buf.seek(0)
-        self._active_container.put_archive(os.path.dirname(container_path), buf)
+        self._active_container.put_archive(str(path.parent), buf)
