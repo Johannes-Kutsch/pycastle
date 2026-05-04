@@ -1,6 +1,6 @@
 *.idea
 *.claude
-pycastle/
+/pycastle/
 *.pyc
 
 # Byte-compiled / optimized / DLL files

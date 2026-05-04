@@ -96,9 +96,9 @@ class ContainerRunner:
         prompt = await prepare_prompt(prompt_file, prompt_args, container_exec)
 
         self._status_display.update_phase(self.name, "Work")
-        on_turn: Callable[[str], None] = lambda turn: self._status_display.print(
-            self.name, turn
-        )
+        def on_turn(turn: str) -> None:
+            self._status_display.print(self.name, turn)
+
         return await loop.run_in_executor(
             None, lambda: self._run_streaming(role, prompt, on_turn)
         )
