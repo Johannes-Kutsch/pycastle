@@ -24,7 +24,7 @@ async def phase_row(
     initial_phase: str = "Setup",
     startup_message: str = "started",
 ) -> AsyncGenerator[PhaseRow, None]:
-    status_display.register(caller, startup_message=startup_message, initial_phase=initial_phase)
+    status_display.register(caller, "phase", startup_message=startup_message, initial_phase=initial_phase)
     row = PhaseRow(status_display, caller)
     try:
         yield row

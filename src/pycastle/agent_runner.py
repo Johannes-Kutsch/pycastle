@@ -103,7 +103,7 @@ class AgentRunner:
             status_display=status_display,
             cfg=self._cfg,
         )
-        status_display.register(name, work_body=work_body)
+        status_display.register(name, "agent", work_body=work_body)
         try:
             git_name = self._git_service.get_user_name()
             git_email = self._git_service.get_user_email()
@@ -160,7 +160,7 @@ class AgentRunner:
             status_display=status_display,
             cfg=self._cfg,
         )
-        status_display.register(name, work_body=work_body)
+        status_display.register(name, "agent", work_body=work_body)
         try:
             await runner.setup(git_name, git_email, work_body)
             self._inject_claude_credentials(session)

@@ -537,7 +537,7 @@ def test_agent_runner_run_registers_and_removes_status_row_on_success(tmp_path):
         )
     )
 
-    assert ("register", "Test", "started", "Setup") in display.calls
+    assert ("register", "Test", "agent", "started", "Setup") in display.calls
     assert ("remove", "Test", "finished", "success") in display.calls
 
 
@@ -564,7 +564,7 @@ def test_agent_runner_run_removes_status_row_when_setup_fails(tmp_path):
             )
         )
 
-    assert ("register", "Test", "started", "Setup") in display.calls
+    assert ("register", "Test", "agent", "started", "Setup") in display.calls
     assert ("remove", "Test", "finished", "success") in display.calls
 
 
@@ -778,7 +778,13 @@ def test_agent_runner_run_preflight_registers_and_removes_status_row_on_success(
         )
     )
 
-    assert ("register", "preflight-checks", "started", "Setup") in display.calls
+    assert (
+        "register",
+        "preflight-checks",
+        "agent",
+        "started",
+        "Setup",
+    ) in display.calls
     assert ("remove", "preflight-checks", "finished", "success") in display.calls
 
 

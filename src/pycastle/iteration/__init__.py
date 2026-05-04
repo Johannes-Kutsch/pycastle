@@ -44,11 +44,13 @@ def _is_in_flight(issue: dict, deps: Deps) -> bool:
 
 
 async def run_iteration(deps: Deps) -> IterationOutcome:
-    deps.status_display.register("Preflight", initial_phase="Running")
-    try:
+    async with phase_row(
+        deps.status_display,
+        "Preflight",
+        initial_phase="Running",
+    ) as preflight_row:
         preflight_result = await preflight_phase(deps)
-    finally:
-        deps.status_display.remove("Preflight")
+        preflight_row.close("finished")
 
     if isinstance(preflight_result, PreflightHITL):
         deps.status_display.print(
