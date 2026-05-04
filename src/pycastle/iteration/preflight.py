@@ -1,7 +1,7 @@
 import dataclasses
 import re
 from pathlib import Path
-from typing import TypeAlias
+from typing import Protocol, TypeAlias
 
 from ..agent_output_protocol import (
     AgentOutputProtocolError,
@@ -9,11 +9,21 @@ from ..agent_output_protocol import (
     IssueOutput,
 )
 from ..agent_result import PreflightFailure
-from ..agent_runner import RunRequest
-from ..services import GitCommandError
+from ..agent_runner import AgentRunnerProtocol, RunRequest
+from ..config import Config
+from ..services import GitCommandError, GitService, GithubService
+from ..status_display import StatusDisplay
 from ..worktree import detached_worktree
-from ._deps import Deps
 from ._utils import _wait_for_clean_working_tree
+
+
+class _PreflightDeps(Protocol):
+    git_svc: GitService
+    github_svc: GithubService
+    cfg: Config
+    status_display: StatusDisplay
+    agent_runner: AgentRunnerProtocol
+    repo_root: Path
 
 
 def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
@@ -56,7 +66,7 @@ PreflightResult: TypeAlias = PreflightReady | PreflightHITL | PreflightAFK
 
 async def handle_preflight_failure(
     failures: tuple[tuple[str, str, str], ...],
-    deps: Deps,
+    deps: _PreflightDeps,
     mount_path: Path,
 ) -> tuple[str, int]:
     check_name, command, output = failures[0]
@@ -92,7 +102,7 @@ async def handle_preflight_failure(
     return "afk", agent_result.number
 
 
-async def preflight_phase(deps: Deps) -> PreflightResult:
+async def preflight_phase(deps: _PreflightDeps) -> PreflightResult:
     await _wait_for_clean_working_tree(deps, "Preflight")
     try:
         deps.git_svc.pull(deps.repo_root)
