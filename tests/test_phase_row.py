@@ -69,3 +69,18 @@ def test_phase_row_custom_startup_message_appears_in_output(
         out
         == "\n[Plan] started planning for 3 issue(s) labeled ready-for-agent\n[Plan] done\n"
     )
+
+
+def test_phase_row_custom_startup_message_appears_on_exception_path(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+
+    async def run() -> None:
+        async with phase_row(d, "Plan", startup_message="custom message") as _row:
+            raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(run())
+    out = capsys.readouterr().out
+    assert out == "\n[Plan] custom message\n[Plan] failed\n"
