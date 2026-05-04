@@ -11,7 +11,7 @@ from pycastle.agent_output_protocol import (
     IssueParseError,
 )
 from pycastle.agent_result import PreflightFailure
-from pycastle.config import Config
+from pycastle.config import Config, StageOverride
 from pycastle.services import GitCommandError, GitService
 from pycastle.services import GithubService
 from pycastle.iteration._deps import (
@@ -422,6 +422,32 @@ def test_preflight_failure_uses_pre_flight_reporter_as_agent_name(tmp_path, git_
 
     assert len(fake.calls) == 1
     assert fake.calls[0].name == "Pre-Flight Reporter"
+
+
+def test_preflight_failure_passes_configured_model_and_effort_to_run_request(
+    tmp_path, git_svc
+):
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+    fake = FakeAgentRunner(
+        [IssueOutput(number=42, labels=["ready-for-human"])],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    deps = dataclasses.replace(
+        deps,
+        cfg=Config(
+            max_parallel=4,
+            max_iterations=1,
+            preflight_issue_override=StageOverride(model="opus", effort="high"),
+        ),
+    )
+
+    asyncio.run(preflight_phase(deps))
+
+    assert len(fake.calls) == 1
+    assert fake.calls[0].model == "opus"
+    assert fake.calls[0].effort == "high"
 
 
 def test_preflight_failure_passes_reporting_work_body_to_run(tmp_path, git_svc):
