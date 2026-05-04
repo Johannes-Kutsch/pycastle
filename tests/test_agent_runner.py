@@ -565,7 +565,7 @@ def test_agent_runner_run_removes_status_row_when_setup_fails(tmp_path):
         )
 
     assert ("register", "Test", "agent", "started", "Setup") in display.calls
-    assert ("remove", "Test", "finished", "success") in display.calls
+    assert ("remove", "Test", "failed", "error") in display.calls
 
 
 # ── AgentRunner: CLAUDE_ACCOUNT_JSON injection ───────────────────────────────
@@ -847,7 +847,7 @@ def test_agent_runner_run_preflight_removes_status_row_when_exception_propagates
             )
         )
 
-    assert ("remove", "preflight-checks", "finished", "success") in display.calls
+    assert ("remove", "preflight-checks", "failed", "error") in display.calls
 
 
 def test_agent_runner_run_preflight_propagates_git_user_name_error(tmp_path):

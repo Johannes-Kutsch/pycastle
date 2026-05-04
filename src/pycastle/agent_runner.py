@@ -76,6 +76,8 @@ class AgentRunner:
             session.write_file(claude_json, "/home/agent/.claude.json")
 
     async def run(self, request: RunRequest) -> AgentOutput | PreflightFailure:
+        from .iteration._rows import agent_row
+
         name = request.name
         prompt_file = request.prompt_file
         mount_path = request.mount_path
@@ -94,50 +96,49 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError(reset_time=None)
 
-        session = self._build_session(mount_path)
-        runner = ContainerRunner(
-            name,
-            session,
-            model=model,
-            effort=effort,
-            status_display=status_display,
-            cfg=self._cfg,
-        )
-        status_display.register(name, "agent", work_body=work_body)
-        try:
-            git_name = self._git_service.get_user_name()
-            git_email = self._git_service.get_user_email()
-            await runner.setup(git_name, git_email, work_body)
-            self._inject_claude_credentials(session)
-            if not skip_preflight:
-                failures = await runner.preflight(list(self._cfg.preflight_checks))
-                if failures:
-                    return PreflightFailure(failures=tuple(failures))
-            retries_left = self._cfg.timeout_retries
-            while True:
-                try:
-                    return await runner.work(
-                        request.role, prompt_file, prompt_args or {}
-                    )
-                except AgentTimeoutError:
-                    if retries_left <= 0:
-                        raise
-                    restart_num = self._cfg.timeout_retries - retries_left + 1
-                    status_display.print(
-                        name,
-                        f"Timeout — restarting"
-                        f" (attempt {restart_num}/{self._cfg.timeout_retries})",
-                    )
-                    retries_left -= 1
-                except UsageLimitError:
-                    _token.cancel(preserve_worktree=True)
-                    raise
-        finally:
-            status_display.remove(name)
+        async with agent_row(status_display, name, work_body):
+            session = self._build_session(mount_path)
+            runner = ContainerRunner(
+                name,
+                session,
+                model=model,
+                effort=effort,
+                status_display=status_display,
+                cfg=self._cfg,
+            )
             try:
-                session.__exit__(None, None, None)
-            except Exception:
-                pass
+                git_name = self._git_service.get_user_name()
+                git_email = self._git_service.get_user_email()
+                await runner.setup(git_name, git_email, work_body)
+                self._inject_claude_credentials(session)
+                if not skip_preflight:
+                    failures = await runner.preflight(list(self._cfg.preflight_checks))
+                    if failures:
+                        return PreflightFailure(failures=tuple(failures))
+                retries_left = self._cfg.timeout_retries
+                while True:
+                    try:
+                        return await runner.work(
+                            request.role, prompt_file, prompt_args or {}
+                        )
+                    except AgentTimeoutError:
+                        if retries_left <= 0:
+                            raise
+                        restart_num = self._cfg.timeout_retries - retries_left + 1
+                        status_display.print(
+                            name,
+                            f"Timeout — restarting"
+                            f" (attempt {restart_num}/{self._cfg.timeout_retries})",
+                        )
+                        retries_left -= 1
+                    except UsageLimitError:
+                        _token.cancel(preserve_worktree=True)
+                        raise
+            finally:
+                try:
+                    session.__exit__(None, None, None)
+                except Exception:
+                    pass
 
     async def run_preflight(
         self,
@@ -148,26 +149,27 @@ class AgentRunner:
         status_display=None,
         work_body: str = "",
     ) -> list[tuple[str, str, str]]:
+        from .iteration._rows import agent_row
+
         if status_display is None:
             status_display = PlainStatusDisplay()
 
         git_name = self._git_service.get_user_name()
         git_email = self._git_service.get_user_email()
-        session = self._build_session(mount_path)
-        runner = ContainerRunner(
-            name,
-            session,
-            status_display=status_display,
-            cfg=self._cfg,
-        )
-        status_display.register(name, "agent", work_body=work_body)
-        try:
-            await runner.setup(git_name, git_email, work_body)
-            self._inject_claude_credentials(session)
-            return await runner.preflight(list(self._cfg.preflight_checks))
-        finally:
-            status_display.remove(name)
+        async with agent_row(status_display, name, work_body):
+            session = self._build_session(mount_path)
+            runner = ContainerRunner(
+                name,
+                session,
+                status_display=status_display,
+                cfg=self._cfg,
+            )
             try:
-                session.__exit__(None, None, None)
-            except Exception:
-                pass
+                await runner.setup(git_name, git_email, work_body)
+                self._inject_claude_credentials(session)
+                return await runner.preflight(list(self._cfg.preflight_checks))
+            finally:
+                try:
+                    session.__exit__(None, None, None)
+                except Exception:
+                    pass
