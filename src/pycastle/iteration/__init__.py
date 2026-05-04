@@ -6,11 +6,14 @@ from ..agent_result import CancellationToken, PreflightFailure
 from ..errors import UsageLimitError
 from ..worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
-from ._rows import PhaseRow, agent_row, phase_row
+from ._rows import PhaseRow as PhaseRow
+from ._rows import agent_row as agent_row
+from ._rows import phase_row
 from .implement import branch_for, implement_phase
 from .merge import merge_phase
+from .planning import PlanReady as PlanReady
+from .planning import planning_phase
 from .preflight import PreflightAFK, PreflightHITL, PreflightReady, preflight_phase
-from .planning import PlanReady, planning_phase
 
 
 @dataclasses.dataclass(frozen=True)
