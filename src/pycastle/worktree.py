@@ -44,6 +44,13 @@ def remove_worktrees_dir_if_empty(worktrees_dir: Path) -> None:
         worktrees_dir.rmdir()
 
 
+def teardown_worktree(svc: GitService, repo_root: Path, path: Path) -> None:
+    try:
+        svc.remove_worktree(repo_root, path)
+    finally:
+        remove_worktrees_dir_if_empty(path.parent)
+
+
 def _has_project_files(path: Path) -> bool:
     return (path / "pyproject.toml").exists() or (path / "requirements.txt").exists()
 
@@ -125,13 +132,10 @@ async def branch_worktree(
         yield path
     finally:
         try:
-            try:
-                deps.git_svc.remove_worktree(deps.repo_root, path)
-            finally:
-                if delete_branch:
-                    deps.git_svc.delete_branch(branch, deps.repo_root)
+            teardown_worktree(deps.git_svc, deps.repo_root, path)
         finally:
-            remove_worktrees_dir_if_empty(path.parent)
+            if delete_branch:
+                deps.git_svc.delete_branch(branch, deps.repo_root)
 
 
 @asynccontextmanager
@@ -141,10 +145,7 @@ async def detached_worktree(name: str, sha: str, deps: _WorktreeDeps):
     try:
         yield path
     finally:
-        try:
-            deps.git_svc.remove_worktree(deps.repo_root, path)
-        finally:
-            remove_worktrees_dir_if_empty(path.parent)
+        teardown_worktree(deps.git_svc, deps.repo_root, path)
 
 
 def patch_gitdir_for_container(worktree_path: Path) -> Path | None:

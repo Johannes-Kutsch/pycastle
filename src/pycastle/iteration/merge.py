@@ -11,7 +11,7 @@ from ..services import GitCommandError, GitService, GithubService
 from ..status_display import StatusDisplay
 from ..worktree import (
     branch_worktree,
-    remove_worktrees_dir_if_empty,
+    teardown_worktree,
     worktree_name_for_branch,
     worktree_path,
 )
@@ -47,8 +47,7 @@ def _delete_merged_branches(branches: list[str], deps: _MergeDeps) -> list[str]:
         worktree_path_ = worktree_path(worktree_name_for_branch(branch), deps)
         if worktree_path_ in registered_worktrees:
             try:
-                deps.git_svc.remove_worktree(deps.repo_root, worktree_path_)
-                remove_worktrees_dir_if_empty(worktree_path_.parent)
+                teardown_worktree(deps.git_svc, deps.repo_root, worktree_path_)
             except Exception as e:
                 print(
                     f"Warning: could not remove worktree for {branch!r}: {e}",
