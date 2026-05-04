@@ -15,6 +15,7 @@ classifiers = [
 dependencies = [
     "click",
     "docker",
+    "platformdirs",
     "python-dotenv",
     "rich",
 ]

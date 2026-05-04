@@ -34,6 +34,7 @@ Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: click
 Requires-Dist: docker
+Requires-Dist: platformdirs
 Requires-Dist: python-dotenv
 Requires-Dist: rich
 Provides-Extra: dev

@@ -1,8 +1,10 @@
 import dataclasses
+from pathlib import Path
 
 import pytest
 
 from pycastle.config import Config, StageOverride, load_config
+from pycastle.config.loader import resolve_global_dir
 from pycastle.errors import (
     ConfigValidationError,
     PycastleError,
@@ -316,3 +318,132 @@ def test_load_config_validate_effort_error_names_the_stage(tmp_path):
     with pytest.raises(ConfigValidationError) as exc_info:
         load_config(repo_root=tmp_path)
     assert "implement" in str(exc_info.value)
+
+
+# ── Issue 472: global config.py layer + path-field guard ───────────────────
+
+
+def test_resolve_global_dir_prefers_explicit_arg(tmp_path):
+    explicit = tmp_path / "explicit"
+    resolved = resolve_global_dir(explicit, {"PYCASTLE_HOME": "/from/env"})
+    assert resolved == explicit
+
+
+def test_resolve_global_dir_falls_back_to_env_var():
+    resolved = resolve_global_dir(None, {"PYCASTLE_HOME": "/from/env"})
+    assert resolved == Path("/from/env")
+
+
+def test_resolve_global_dir_falls_back_to_platformdirs():
+    import platformdirs
+
+    resolved = resolve_global_dir(None, {})
+    assert resolved == Path(platformdirs.user_config_dir("pycastle"))
+
+
+def test_load_config_no_global_returns_defaults(tmp_path):
+    cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
+    assert cfg.max_parallel == 1
+
+
+def test_load_config_global_only_applies(tmp_path):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text("max_parallel = 7\n")
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert cfg.max_parallel == 7
+
+
+def test_load_config_local_overrides_global(tmp_path):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text(
+        "max_parallel = 7\nbug_label = 'global-bug'\n"
+    )
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text("max_parallel = 4\n")
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+    # local overrides global for max_parallel
+    assert cfg.max_parallel == 4
+    # global value preserved when not set locally
+    assert cfg.bug_label == "global-bug"
+
+
+def test_load_config_global_path_field_pycastle_dir_raises(tmp_path):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text(
+        "from pathlib import Path\npycastle_dir = Path('elsewhere')\n"
+    )
+    with pytest.raises(ConfigValidationError) as exc_info:
+        load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert "pycastle_dir" in str(exc_info.value)
+
+
+def test_load_config_global_path_field_lists_all_offending(tmp_path):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text(
+        "from pathlib import Path\nprompts_dir = Path('p')\nlogs_dir = Path('l')\n"
+    )
+    with pytest.raises(ConfigValidationError) as exc_info:
+        load_config(repo_root=tmp_path, global_dir=global_dir)
+    msg = str(exc_info.value)
+    assert "prompts_dir" in msg
+    assert "logs_dir" in msg
+
+
+def test_load_config_local_path_fields_still_allowed(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pathlib import Path\nprompts_dir = Path('custom-prompts')\n"
+    )
+    cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
+    assert cfg.prompts_dir == Path("custom-prompts")
+
+
+def test_load_config_pycastle_home_env_resolves_global_dir(tmp_path, monkeypatch):
+    global_dir = tmp_path / "from_env"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text("max_parallel = 5\n")
+    (tmp_path / "pycastle").mkdir()  # repo_root has no pycastle/config.py
+    monkeypatch.setenv("PYCASTLE_HOME", str(global_dir))
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.max_parallel == 5
+
+
+def test_load_config_explicit_global_dir_overrides_env(tmp_path, monkeypatch):
+    env_dir = tmp_path / "env_dir"
+    env_dir.mkdir()
+    (env_dir / "config.py").write_text("max_parallel = 99\n")
+    explicit_dir = tmp_path / "explicit"
+    explicit_dir.mkdir()
+    (explicit_dir / "config.py").write_text("max_parallel = 42\n")
+    monkeypatch.setenv("PYCASTLE_HOME", str(env_dir))
+    cfg = load_config(repo_root=tmp_path, global_dir=explicit_dir)
+    assert cfg.max_parallel == 42
+
+
+def test_load_config_nonexistent_global_dir_is_hermetic(tmp_path):
+    cfg = load_config(repo_root=tmp_path, global_dir=Path("/nonexistent"))
+    assert cfg.max_parallel == 1
+
+
+def test_load_config_global_unknown_key_still_raises(tmp_path):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text("not_a_real_key = 1\n")
+    with pytest.raises(ValueError, match="not_a_real_key"):
+        load_config(repo_root=tmp_path, global_dir=global_dir)
+
+
+def test_load_config_overrides_take_precedence_over_global(tmp_path):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text("max_parallel = 7\n")
+    cfg = load_config(
+        repo_root=tmp_path,
+        global_dir=global_dir,
+        overrides={"max_parallel": 99},
+    )
+    assert cfg.max_parallel == 99
