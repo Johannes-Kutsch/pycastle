@@ -1,6 +1,6 @@
 import tarfile
 import threading
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -562,3 +562,29 @@ def test_docker_session_write_file_puts_archive_with_correct_content():
         assert member.name == "myfile.txt"
         content = tar.extractfile(member).read().decode("utf-8")
         assert content == "hello content"
+
+
+def test_docker_session_write_file_splits_container_path_as_posix_on_windows_host():
+    """Regression for #467: container paths must split as POSIX even on Windows hosts.
+
+    Simulates a Windows host by patching the module's Path symbol with PureWindowsPath.
+    With the buggy implementation, parent renders as '\\home\\agent' and Docker
+    rejects the put_archive call with a 404.
+    """
+    mock_client = MagicMock()
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+    session.__enter__()
+
+    with patch("pycastle.docker_session.Path", PureWindowsPath):
+        session.write_file("token", "/home/agent/.claude.json")
+
+    mock_container = mock_client.containers.run.return_value
+    directory, _ = mock_container.put_archive.call_args[0]
+    assert "\\" not in directory
+    assert directory == "/home/agent"
