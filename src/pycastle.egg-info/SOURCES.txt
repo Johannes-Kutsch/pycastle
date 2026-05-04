@@ -18,6 +18,7 @@ src/pycastle/agent_result.py
 src/pycastle/agent_runner.py
 src/pycastle/build_command.py
 src/pycastle/container_runner.py
+src/pycastle/docker_session.py
 src/pycastle/errors.py
 src/pycastle/init_command.py
 src/pycastle/labels.py
@@ -53,7 +54,6 @@ src/pycastle/__pycache__/stream_parser.cpython-311.pyc
 src/pycastle/__pycache__/worktree.cpython-311.pyc
 src/pycastle/config/__init__.py
 src/pycastle/config/loader.py
-src/pycastle/config/validator.py
 src/pycastle/config/__pycache__/__init__.cpython-311.pyc
 src/pycastle/config/__pycache__/loader.cpython-311.pyc
 src/pycastle/config/__pycache__/validator.cpython-311.pyc
@@ -109,6 +109,7 @@ tests/test_container_runner.py
 tests/test_default_prompts.py
 tests/test_deps.py
 tests/test_docker_service.py
+tests/test_docker_session.py
 tests/test_errors.py
 tests/test_git_service.py
 tests/test_github_service.py
@@ -130,6 +131,7 @@ tests/test_prompt_utils.py
 tests/test_status_display.py
 tests/test_stream_session.py
 tests/test_subprocess_service.py
+tests/test_utils.py
 tests/test_worktree.py
 tests/__pycache__/__init__.cpython-311.pyc
 tests/__pycache__/conftest.cpython-311-pytest-9.0.3.pyc

@@ -78,14 +78,14 @@ def _make_workstream(
 def test_implementer_stream_returns_completion_output(tmp_path):
     chunks = [_result_line("<promise>COMPLETE</promise>")]
     ws = _make_workstream(chunks, tmp_path)
-    result = ws.run(AgentRole.IMPLEMENTER, _noop, ())
+    result = ws.run(AgentRole.IMPLEMENTER, _noop)
     assert isinstance(result, CompletionOutput)
 
 
 def test_reviewer_stream_returns_completion_output(tmp_path):
     chunks = [_result_line("<promise>COMPLETE</promise>")]
     ws = _make_workstream(chunks, tmp_path)
-    result = ws.run(AgentRole.REVIEWER, _noop, ())
+    result = ws.run(AgentRole.REVIEWER, _noop)
     assert isinstance(result, CompletionOutput)
 
 
@@ -94,7 +94,7 @@ def test_planner_stream_returns_planner_output(tmp_path):
     plan_json = json.dumps({"issues": issues})
     chunks = [_assistant_line(f"<plan>{plan_json}</plan>")]
     ws = _make_workstream(chunks, tmp_path)
-    result = ws.run(AgentRole.PLANNER, _noop, ())
+    result = ws.run(AgentRole.PLANNER, _noop)
     assert isinstance(result, PlannerOutput)
     assert result.issues == issues
 
@@ -111,7 +111,7 @@ def test_idle_timeout_raises_agent_timeout_error(tmp_path):
 
     ws = _make_workstream(stalled(), tmp_path, idle_timeout=0.05)
     with pytest.raises(AgentTimeoutError):
-        ws.run(AgentRole.IMPLEMENTER, _noop, ())
+        ws.run(AgentRole.IMPLEMENTER, _noop)
 
 
 # ── Log file ──────────────────────────────────────────────────────────────────
@@ -123,7 +123,7 @@ def test_log_file_contains_all_chunk_bytes(tmp_path):
     )
     chunk2 = b"\n"
     ws = _make_workstream([chunk1, chunk2], tmp_path)
-    ws.run(AgentRole.IMPLEMENTER, _noop, ())
+    ws.run(AgentRole.IMPLEMENTER, _noop)
     assert (tmp_path / "test.log").read_bytes() == chunk1 + chunk2
 
 
@@ -141,7 +141,7 @@ def test_on_chunk_fires_once_per_chunk(tmp_path):
         b"\n",
     ]
     ws = _make_workstream(chunks, tmp_path, on_chunk=count_call)
-    ws.run(AgentRole.IMPLEMENTER, _noop, ())
+    ws.run(AgentRole.IMPLEMENTER, _noop)
     assert call_count[0] == 2
 
 
@@ -155,7 +155,7 @@ def test_lines_split_across_chunk_boundaries_are_assembled(tmp_path):
     mid = len(full_line) // 2
     chunks = [full_line[:mid], full_line[mid:]]
     ws = _make_workstream(chunks, tmp_path)
-    result = ws.run(AgentRole.IMPLEMENTER, _noop, ())
+    result = ws.run(AgentRole.IMPLEMENTER, _noop)
     assert isinstance(result, CompletionOutput)
 
 
@@ -166,7 +166,7 @@ def test_usage_limit_chunk_raises_usage_limit_error(tmp_path):
     chunks = [_usage_limit_line()]
     ws = _make_workstream(chunks, tmp_path)
     with pytest.raises(UsageLimitError):
-        ws.run(AgentRole.IMPLEMENTER, _noop, ())
+        ws.run(AgentRole.IMPLEMENTER, _noop)
 
 
 # ── Partial final line (no trailing newline) ──────────────────────────────────
@@ -177,7 +177,7 @@ def test_result_line_without_trailing_newline_is_processed(tmp_path):
         b'{"type":"result","result":"<promise>COMPLETE</promise>","is_error":false}'
     )
     ws = _make_workstream([line_bytes], tmp_path)
-    result = ws.run(AgentRole.IMPLEMENTER, _noop, ())
+    result = ws.run(AgentRole.IMPLEMENTER, _noop)
     assert isinstance(result, CompletionOutput)
 
 
@@ -193,6 +193,6 @@ def test_chunk_containing_multiple_newlines_yields_all_lines(tmp_path):
     )
     ws = _make_workstream([line1 + line2], tmp_path)
     turns: list[str] = []
-    result = ws.run(AgentRole.IMPLEMENTER, turns.append, ())
+    result = ws.run(AgentRole.IMPLEMENTER, turns.append)
     assert isinstance(result, CompletionOutput)
     assert turns == ["hello"]

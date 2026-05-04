@@ -3,9 +3,14 @@ import enum
 import json
 import re
 from collections.abc import Callable, Iterable
-from typing import TypeAlias
+from datetime import datetime, timedelta, timezone
+from typing import Literal, TypeAlias
 
 from .errors import UsageLimitError
+
+_RESET_TIME_RE = re.compile(
+    r"resets\s+(\d{1,2}:\d{2}(?:am|pm))\s+\(UTC\)", re.IGNORECASE
+)
 
 
 class AgentRole(enum.Enum):
@@ -99,23 +104,30 @@ def _extract_issue_output(text: str) -> IssueOutput:
     return IssueOutput(labels=labels, number=number)
 
 
-def _is_usage_limit_line(line: str, patterns: tuple[str, ...]) -> bool:
+def _check_usage_limit(line: str) -> datetime | None | Literal[False]:
     try:
         obj = json.loads(line)
-        if isinstance(obj, dict):
-            if obj.get("type") == "result" and obj.get("is_error"):
-                if obj.get("api_error_status") == 429:
-                    return True
-                result_text = obj.get("result")
-                if isinstance(result_text, str) and any(
-                    p.lower() in result_text.lower() for p in patterns
-                ):
-                    return True
-            return False
     except json.JSONDecodeError:
-        pass
-    line_lower = line.lower()
-    return any(p.lower() in line_lower for p in patterns)
+        return False
+    if not isinstance(obj, dict) or obj.get("api_error_status") != 429:
+        return False
+    result_text = obj.get("result")
+    if not isinstance(result_text, str):
+        return None
+    match = _RESET_TIME_RE.search(result_text)
+    if not match:
+        return None
+    try:
+        parsed = datetime.strptime(match.group(1).lower(), "%I:%M%p").time()
+    except ValueError:
+        return None
+    today_utc = datetime.now(timezone.utc).date()
+    utc_dt = datetime.combine(today_utc, parsed, tzinfo=timezone.utc)
+    local_dt = utc_dt.astimezone().replace(tzinfo=None)
+    now_local = datetime.now()
+    if local_dt < now_local - timedelta(minutes=2):
+        local_dt += timedelta(days=1)
+    return local_dt
 
 
 def _extract_turn(line: str) -> str | None:
@@ -139,14 +151,14 @@ def process_stream(
     lines: Iterable[str],
     on_turn: Callable[[str], None],
     role: AgentRole,
-    usage_limit_patterns: tuple[str, ...],
 ) -> AgentOutput:
     collected: list[str] = []
     result_text: str | None = None
     for line in lines:
         collected.append(line)
-        if _is_usage_limit_line(line, usage_limit_patterns):
-            raise UsageLimitError(line)
+        usage_limit = _check_usage_limit(line)
+        if usage_limit is not False:
+            raise UsageLimitError(reset_time=usage_limit)
         turn = _extract_turn(line)
         if turn is not None:
             on_turn(turn)

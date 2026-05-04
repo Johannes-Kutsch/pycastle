@@ -390,7 +390,12 @@ def test_agent_runner_run_raises_usage_limit_error_when_token_pre_cancelled(tmp_
 
 
 def test_agent_runner_run_cancels_token_and_raises_on_usage_limit_in_stream(tmp_path):
-    mock_client = _make_docker_client([b"You've hit your session limit\n"])
+    mock_client = _make_docker_client(
+        [
+            b'{"type":"result","is_error":true,"api_error_status":429,'
+            b'"result":"rate limited"}\n'
+        ]
+    )
     token = CancellationToken()
     runner = AgentRunner(
         {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
