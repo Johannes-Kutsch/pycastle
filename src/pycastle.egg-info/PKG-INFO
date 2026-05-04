@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: pycastle
-Version: 0.2.0.6.dev6
+Version: 0.2.0.7.dev1
 Summary: Python orchestrator for autonomous Claude Code agents in Docker
 License: MIT License
         

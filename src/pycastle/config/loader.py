@@ -2,19 +2,34 @@ from __future__ import annotations
 
 import dataclasses
 import importlib.util
+import os
 import types
+from collections.abc import Mapping
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Any
 
+import platformdirs
+
 from pycastle._types import StageOverride
 from pycastle.errors import ConfigValidationError
 
-__all__ = ["Config", "load_config"]
+__all__ = ["Config", "load_config", "resolve_global_dir"]
 
 _VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 
 _IGNORED_CONFIG_KEYS = frozenset({"usage_limit_patterns"})
+
+_GLOBAL_FORBIDDEN_FIELDS = frozenset(
+    {
+        "pycastle_dir",
+        "prompts_dir",
+        "logs_dir",
+        "worktrees_dir",
+        "env_file",
+        "dockerfile",
+    }
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -60,30 +75,43 @@ class Config:
     merge_override: StageOverride = dataclasses.field(default_factory=StageOverride)
 
 
+def resolve_global_dir(explicit: Path | None, env: Mapping[str, str]) -> Path:
+    if explicit is not None:
+        return explicit
+    env_val = env.get("PYCASTLE_HOME")
+    if env_val:
+        return Path(env_val)
+    return Path(platformdirs.user_config_dir("pycastle"))
+
+
 def load_config(
     repo_root: Path | None = None,
     overrides: dict[str, Any] | None = None,
+    global_dir: Path | None = None,
 ) -> Config:
     kwargs: dict[str, Any] = {}
     valid_fields = {f.name for f in dataclasses.fields(Config)}
 
+    resolved_global = resolve_global_dir(global_dir, os.environ)
+    global_file = resolved_global / "config.py"
+    if global_file.exists():
+        global_kwargs = _read_config_file(
+            global_file, "_pycastle_global_config", valid_fields
+        )
+        forbidden = sorted(_GLOBAL_FORBIDDEN_FIELDS & global_kwargs.keys())
+        if forbidden:
+            raise ConfigValidationError(
+                "Path-typed fields are forbidden in global config.py; "
+                f"offending field(s): {forbidden}",
+                invalid_value=", ".join(forbidden),
+                valid_options=[],
+            )
+        kwargs.update(global_kwargs)
+
     root = repo_root if repo_root is not None else Path.cwd()
     local = root / "pycastle" / "config.py"
     if local.exists():
-        spec = importlib.util.spec_from_file_location("_pycastle_local_config", local)
-        if spec is not None and spec.loader is not None:
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            for k, v in vars(mod).items():
-                if k.startswith("_"):
-                    continue
-                if isinstance(v, (type, types.ModuleType)):
-                    continue
-                if k in _IGNORED_CONFIG_KEYS:
-                    continue
-                if k not in valid_fields:
-                    raise ValueError(f"Unknown config key: {k!r}")
-                kwargs[k] = v
+        kwargs.update(_read_config_file(local, "_pycastle_local_config", valid_fields))
 
     if overrides is not None:
         for k, v in overrides.items():
@@ -93,6 +121,28 @@ def load_config(
 
     cfg = Config(**kwargs)
     return _validate_efforts(cfg)
+
+
+def _read_config_file(
+    path: Path, module_name: str, valid_fields: set[str]
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        return result
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    for k, v in vars(mod).items():
+        if k.startswith("_"):
+            continue
+        if isinstance(v, (type, types.ModuleType)):
+            continue
+        if k in _IGNORED_CONFIG_KEYS:
+            continue
+        if k not in valid_fields:
+            raise ValueError(f"Unknown config key: {k!r}")
+        result[k] = v
+    return result
 
 
 def _validate_efforts(cfg: Config) -> Config:
