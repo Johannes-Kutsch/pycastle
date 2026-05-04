@@ -4,6 +4,7 @@ import os
 import re
 import sys
 from importlib.resources import files
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Literal
 
@@ -58,7 +59,7 @@ def _read_env_values(env_file: Path) -> dict[str, str]:
     return out
 
 
-def _copy_template(rel: str, target: Path, pkg) -> None:  # type: ignore[no-untyped-def]
+def _copy_template(rel: str, target: Path, pkg: Traversable) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     src = pkg
     for part in rel.split("/"):
@@ -71,6 +72,21 @@ def _copy_template(rel: str, target: Path, pkg) -> None:  # type: ignore[no-unty
             err=True,
         )
         sys.exit(1)
+
+
+def _prompt_and_save_credential(env_file: Path, key: str, prompt_text: str) -> str:
+    value = click.prompt(prompt_text, default="", hide_input=True, show_default=False)
+    if not value:
+        return ""
+    try:
+        _write_env_key(env_file, key, value)
+    except Exception as e:
+        click.echo(
+            click.style(f"Error: could not save {key} — {e}", fg="red"),
+            err=True,
+        )
+        sys.exit(1)
+    return value
 
 
 def main(scope: Literal["global", "local"] | None = None) -> None:
@@ -139,42 +155,15 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
 
     gh_token = global_env_values.get("GH_TOKEN", "")
     if not gh_token:
-        gh_token = click.prompt(
-            "GitHub token (press Enter to skip)",
-            default="",
-            hide_input=True,
-            show_default=False,
+        gh_token = _prompt_and_save_credential(
+            env_file, "GH_TOKEN", "GitHub token (press Enter to skip)"
         )
-        if gh_token:
-            try:
-                _write_env_key(env_file, "GH_TOKEN", gh_token)
-            except Exception as e:
-                click.echo(
-                    click.style(f"Error: could not save GH_TOKEN — {e}", fg="red"),
-                    err=True,
-                )
-                sys.exit(1)
 
     claude_token = global_env_values.get("CLAUDE_CODE_OAUTH_TOKEN", "")
     if not claude_token:
-        claude_token = click.prompt(
-            "Claude token (press Enter to skip)",
-            default="",
-            hide_input=True,
-            show_default=False,
+        claude_token = _prompt_and_save_credential(
+            env_file, "CLAUDE_CODE_OAUTH_TOKEN", "Claude token (press Enter to skip)"
         )
-        if claude_token:
-            try:
-                _write_env_key(env_file, "CLAUDE_CODE_OAUTH_TOKEN", claude_token)
-            except Exception as e:
-                click.echo(
-                    click.style(
-                        f"Error: could not save CLAUDE_CODE_OAUTH_TOKEN — {e}",
-                        fg="red",
-                    ),
-                    err=True,
-                )
-                sys.exit(1)
 
     if not claude_token:
         click.echo(

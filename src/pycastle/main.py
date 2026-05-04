@@ -3,6 +3,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Literal
 
 import click
 
@@ -77,14 +78,14 @@ def init_cmd(global_flag: bool, local_flag: bool) -> None:
     if global_flag and local_flag:
         click.echo("Error: --global and --local are mutually exclusive.", err=True)
         sys.exit(1)
-    scope: str | None
+    scope: Literal["global", "local"] | None
     if global_flag:
         scope = "global"
     elif local_flag:
         scope = "local"
     else:
         scope = None
-    _init(scope=scope)  # type: ignore[arg-type]
+    _init(scope=scope)
 
 
 @main.command("labels")
