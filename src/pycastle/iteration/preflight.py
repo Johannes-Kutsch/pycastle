@@ -85,6 +85,8 @@ async def handle_preflight_failure(
                 "HITL_LABEL": deps.cfg.hitl_label,
             },
             skip_preflight=True,
+            model=deps.cfg.preflight_issue_override.model,
+            effort=deps.cfg.preflight_issue_override.effort,
             status_display=deps.status_display,
             work_body=f"reporting {check_name} issue",
         )

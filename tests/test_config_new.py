@@ -320,6 +320,39 @@ def test_load_config_validate_effort_error_names_the_stage(tmp_path):
     assert "implement" in str(exc_info.value)
 
 
+# ── Issue 479: preflight_issue_override stage override ─────────────────────
+
+
+def test_config_has_preflight_issue_override_field_with_empty_default():
+    cfg = Config()
+    assert cfg.preflight_issue_override == StageOverride()
+
+
+def test_load_config_applies_preflight_issue_override_from_local_file(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pycastle import StageOverride\n"
+        'preflight_issue_override = StageOverride(model="opus", effort="high")\n'
+    )
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.preflight_issue_override.model == "opus"
+    assert cfg.preflight_issue_override.effort == "high"
+
+
+def test_load_config_validate_invalid_effort_for_preflight_issue_override_raises(
+    tmp_path,
+):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pycastle import StageOverride\n"
+        'preflight_issue_override = StageOverride(model="", effort="turbo")\n'
+    )
+    with pytest.raises(ConfigValidationError) as exc_info:
+        load_config(repo_root=tmp_path)
+    assert exc_info.value.invalid_value == "turbo"
+    assert "preflight_issue" in str(exc_info.value)
+
+
 # ── Issue 472: global config.py layer + path-field guard ───────────────────
 
 
