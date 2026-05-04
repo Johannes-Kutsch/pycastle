@@ -27,7 +27,7 @@ def build_volume_spec(
     """
     repo_path = str(mount_path.resolve()).replace("\\", "/")
 
-    if worktree_host_path:
+    if worktree_host_path is not None:
         wt_path = str(worktree_host_path.resolve()).replace("\\", "/")
         parent_git_path = str((mount_path / ".git").resolve()).replace("\\", "/")
         volumes: dict = {
@@ -35,7 +35,7 @@ def build_volume_spec(
             repo_path: {"bind": "/home/agent/repo", "mode": "ro"},
             parent_git_path: {"bind": CONTAINER_PARENT_GIT, "mode": "rw"},
         }
-        if gitdir_overlay:
+        if gitdir_overlay is not None:
             overlay_path = str(gitdir_overlay.resolve()).replace("\\", "/")
             volumes[overlay_path] = {"bind": "/home/agent/workspace/.git", "mode": "ro"}
         return volumes, None
@@ -50,14 +50,12 @@ def build_volume_spec(
                 repo_path: {"bind": "/home/agent/workspace", "mode": "rw"},
                 parent_git_str: {"bind": CONTAINER_PARENT_GIT, "mode": "rw"},
             }
-            auto_overlay: Path | None = None
             if overlay is not None:
-                auto_overlay = overlay
                 overlay_path = str(overlay.resolve()).replace("\\", "/")
-                volumes[overlay_path] = {
-                    "bind": "/home/agent/workspace/.git",
-                    "mode": "ro",
-                }
-            return volumes, auto_overlay
+                volumes[overlay_path] = {"bind": "/home/agent/workspace/.git", "mode": "ro"}
+                return volumes, overlay
+            return volumes, None
+        if overlay is not None:
+            overlay.unlink(missing_ok=True)
 
     return {repo_path: {"bind": "/home/agent/workspace", "mode": "rw"}}, None
