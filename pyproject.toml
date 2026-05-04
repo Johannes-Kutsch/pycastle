@@ -45,6 +45,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 pycastle = [
+    "py.typed",
     "defaults/.gitignore",
     "defaults/config.py",
     "defaults/Dockerfile",
