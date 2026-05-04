@@ -508,12 +508,10 @@ def test_agent_runner_propagates_git_user_name_error(tmp_path):
         )
 
 
-# ── Issue 310: remove_agent lifecycle ────────────────────────────────────────
+# ── AgentRunner: status row lifecycle ────────────────────────────────────────
 
 
-def test_agent_runner_remove_agent_called_on_success(tmp_path):
-    from pycastle.iteration._deps import RecordingStatusDisplay
-
+def test_agent_runner_run_registers_and_removes_status_row_on_success(tmp_path):
     mock_client = _make_docker_client(_COMPLETE_STREAM)
     runner = AgentRunner(
         {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
@@ -534,12 +532,11 @@ def test_agent_runner_remove_agent_called_on_success(tmp_path):
         )
     )
 
+    assert ("register", "Test", "started", "Setup") in display.calls
     assert ("remove", "Test", "finished", "success") in display.calls
 
 
-def test_agent_runner_remove_agent_called_on_error(tmp_path):
-    from pycastle.iteration._deps import RecordingStatusDisplay
-
+def test_agent_runner_run_removes_status_row_when_setup_fails(tmp_path):
     git_svc = _make_git_service()
     git_svc.get_user_name.side_effect = RuntimeError("git failure")
     runner = AgentRunner(
@@ -562,6 +559,7 @@ def test_agent_runner_remove_agent_called_on_error(tmp_path):
             )
         )
 
+    assert ("register", "Test", "started", "Setup") in display.calls
     assert ("remove", "Test", "finished", "success") in display.calls
 
 
