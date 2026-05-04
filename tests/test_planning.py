@@ -1,4 +1,6 @@
 import asyncio
+import dataclasses
+from pathlib import Path
 
 import pytest
 from unittest.mock import MagicMock
@@ -11,14 +13,18 @@ from pycastle.agent_output_protocol import (
 from pycastle.agent_result import PreflightFailure
 from pycastle.config import Config
 from pycastle.services import GitService
-from pycastle.services import GithubService
-from pycastle.iteration._deps import (
-    Deps,
-    FakeAgentRunner,
-    RecordingLogger,
-)
+from pycastle.iteration._deps import FakeAgentRunner
 from pycastle.status_display import PlainStatusDisplay
 from pycastle.iteration.planning import PlanReady, planning_phase
+
+
+@dataclasses.dataclass
+class _PlanningStub:
+    cfg: Config
+    status_display: PlainStatusDisplay
+    agent_runner: FakeAgentRunner
+    repo_root: Path
+    git_svc: GitService
 
 
 def _plan_output(issues: list[dict]) -> PlannerOutput:
@@ -34,26 +40,12 @@ def git_svc():
     return svc
 
 
-@pytest.fixture
-def github_svc():
-    svc = MagicMock(spec=GithubService)
-    return svc
-
-
-@pytest.fixture
-def logger():
-    return RecordingLogger()
-
-
-def _make_deps(tmp_path, agent_runner, *, git_svc, github_svc, logger):
-    return Deps(
-        env={},
+def _make_deps(tmp_path, agent_runner, *, git_svc):
+    return _PlanningStub(
         repo_root=tmp_path,
         git_svc=git_svc,
-        github_svc=github_svc,
         agent_runner=agent_runner,
         cfg=Config(max_parallel=4, max_iterations=1),
-        logger=logger,
         status_display=PlainStatusDisplay(),
     )
 
@@ -62,7 +54,7 @@ def _make_deps(tmp_path, agent_runner, *, git_svc, github_svc, logger):
 
 
 def test_planning_phase_returns_plan_ready_with_issues_sorted_by_number(
-    tmp_path, git_svc, github_svc, logger
+    tmp_path, git_svc
 ):
     issues = [
         {"number": 3, "title": "C"},
@@ -71,9 +63,7 @@ def test_planning_phase_returns_plan_ready_with_issues_sorted_by_number(
     ]
     fake = FakeAgentRunner([_plan_output(issues)])
 
-    deps = _make_deps(
-        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     result = asyncio.run(planning_phase(deps, "abc123", issues))
 
     assert isinstance(result, PlanReady)
@@ -84,15 +74,11 @@ def test_planning_phase_returns_plan_ready_with_issues_sorted_by_number(
 # ── planning_phase: skip_preflight ──────────────────────────────────────────
 
 
-def test_planning_phase_invokes_planner_with_skip_preflight_true(
-    tmp_path, git_svc, github_svc, logger
-):
+def test_planning_phase_invokes_planner_with_skip_preflight_true(tmp_path, git_svc):
     issues = [{"number": 1, "title": "A"}]
     fake = FakeAgentRunner([_plan_output(issues)])
 
-    deps = _make_deps(
-        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     asyncio.run(planning_phase(deps, "abc123", issues))
 
     assert len(fake.calls) == 1
@@ -102,30 +88,22 @@ def test_planning_phase_invokes_planner_with_skip_preflight_true(
 # ── planning_phase: worktree lifecycle ──────────────────────────────────────
 
 
-def test_planning_phase_removes_worktree_after_success(
-    tmp_path, git_svc, github_svc, logger
-):
+def test_planning_phase_removes_worktree_after_success(tmp_path, git_svc):
     issues = [{"number": 1, "title": "A"}]
     fake = FakeAgentRunner([_plan_output(issues)])
 
-    deps = _make_deps(
-        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     asyncio.run(planning_phase(deps, "abc123", issues))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
 
 
-def test_planning_phase_removes_worktree_when_exception_raised(
-    tmp_path, git_svc, github_svc, logger
-):
+def test_planning_phase_removes_worktree_when_exception_raised(tmp_path, git_svc):
     issues = [{"number": 1, "title": "A"}]
     fake = FakeAgentRunner([RuntimeError("agent crashed")])
 
-    deps = _make_deps(
-        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     with pytest.raises(RuntimeError, match="agent crashed"):
         asyncio.run(planning_phase(deps, "abc123", issues))
 
@@ -137,42 +115,36 @@ def test_planning_phase_removes_worktree_when_exception_raised(
 
 
 def test_planning_phase_raises_runtime_error_when_planner_returns_preflight_failure(
-    tmp_path, git_svc, github_svc, logger
+    tmp_path, git_svc
 ):
     issues = [{"number": 1, "title": "A"}]
     fake = FakeAgentRunner(
         [PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))]
     )
 
-    deps = _make_deps(
-        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     with pytest.raises(RuntimeError, match="PreflightFailure unexpectedly"):
         asyncio.run(planning_phase(deps, "abc123", issues))
 
 
 def test_planning_phase_raises_runtime_error_when_planner_output_has_no_plan_tag(
-    tmp_path, git_svc, github_svc, logger
+    tmp_path, git_svc
 ):
     issues = [{"number": 1, "title": "A"}]
     fake = FakeAgentRunner([PlanParseError("Planner produced no <plan> tag.")])
 
-    deps = _make_deps(
-        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     with pytest.raises(RuntimeError, match="no <plan> tag"):
         asyncio.run(planning_phase(deps, "abc123", issues))
 
 
 def test_planning_phase_raises_runtime_error_when_planner_returns_wrong_output_type(
-    tmp_path, git_svc, github_svc, logger
+    tmp_path, git_svc
 ):
     issues = [{"number": 1, "title": "A"}]
     fake = FakeAgentRunner([CompletionOutput()])
 
-    deps = _make_deps(
-        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     with pytest.raises(RuntimeError, match="unexpected output type"):
         asyncio.run(planning_phase(deps, "abc123", issues))
 
@@ -181,13 +153,11 @@ def test_planning_phase_raises_runtime_error_when_planner_returns_wrong_output_t
 
 
 def test_planning_phase_with_empty_issues_list_still_invokes_planner_and_returns_ready(
-    tmp_path, git_svc, github_svc, logger
+    tmp_path, git_svc
 ):
     fake = FakeAgentRunner([_plan_output([])])
 
-    deps = _make_deps(
-        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     result = asyncio.run(planning_phase(deps, "abc123", []))
 
     assert isinstance(result, PlanReady)

@@ -1,11 +1,23 @@
 import dataclasses
 import json
+from pathlib import Path
+from typing import Protocol
 
 from ..agent_output_protocol import AgentOutputProtocolError, AgentRole, PlannerOutput
 from ..agent_result import PreflightFailure
-from ..agent_runner import RunRequest
+from ..agent_runner import AgentRunnerProtocol, RunRequest
+from ..config import Config
+from ..services import GitService
+from ..status_display import StatusDisplay
 from ..worktree import detached_worktree
-from ._deps import Deps
+
+
+class _PlanningDeps(Protocol):
+    cfg: Config
+    status_display: StatusDisplay
+    agent_runner: AgentRunnerProtocol
+    repo_root: Path
+    git_svc: GitService
 
 
 @dataclasses.dataclass(frozen=True)
@@ -14,7 +26,7 @@ class PlanReady:
     issues: list[dict]
 
 
-async def planning_phase(deps: Deps, sha: str, open_issues: list[dict]) -> PlanReady:
+async def planning_phase(deps: _PlanningDeps, sha: str, open_issues: list[dict]) -> PlanReady:
     async with detached_worktree("plan-sandbox", sha, deps) as wt:
         try:
             output = await deps.agent_runner.run(
