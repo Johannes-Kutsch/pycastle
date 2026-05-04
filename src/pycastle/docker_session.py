@@ -4,7 +4,7 @@ import sys
 import tarfile
 import threading
 from collections.abc import Iterator
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import cast
 
 import docker
@@ -180,7 +180,7 @@ class DockerSession:
 
     def write_file(self, content: str, container_path: str) -> None:
         data = content.encode("utf-8")
-        path = Path(container_path)
+        path = PurePosixPath(container_path)
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w") as tar:
             info = tarfile.TarInfo(name=path.name)
