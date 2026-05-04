@@ -1,9 +1,8 @@
 import asyncio
 import re
 import shlex
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
-from typing import cast
 
 from .agent_output_protocol import AgentOutput, AgentRole
 from .config import Config
@@ -117,7 +116,7 @@ class ContainerRunner:
         )
         try:
             ws = WorkStream(
-                cast(Iterator[bytes], chunks),
+                chunks,
                 self._log_path,
                 self._cfg.idle_timeout,
                 lambda: self._status_display.reset_idle_timer(self.name),

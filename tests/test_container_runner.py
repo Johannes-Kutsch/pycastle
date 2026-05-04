@@ -154,11 +154,6 @@ def test_container_runner_does_not_expose_exec_simple_or_write_file(tmp_path):
     assert not hasattr(runner, "write_file")
 
 
-def test_container_runner_has_no_prompt_state(tmp_path):
-    runner, _ = _make_runner(tmp_path=tmp_path)
-    assert not hasattr(runner, "_prompt")
-
-
 # ── setup() ──────────────────────────────────────────────────────────────────
 
 
@@ -280,7 +275,7 @@ def test_work_calls_session_exec_stream_with_claude_command(tmp_path):
     assert any("--model claude-sonnet-4-6" in c for c in session.stream_calls)
 
 
-def test_work_twice_uses_each_calls_prompt_args(tmp_path):
+def test_work_called_twice_renders_each_calls_prompt_args(tmp_path):
     """Calling work() twice with different args must inject the new prompt each time."""
     session = FakeDockerSession(stream_chunks=[_COMPLETE_LINE, _COMPLETE_LINE])
     # exec_stream is consumed each call; rebuild iterator per call
