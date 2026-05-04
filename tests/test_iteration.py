@@ -800,6 +800,41 @@ def test_run_iteration_registers_plan_row_with_planning_phase(
     ) in recording.calls
 
 
+def test_run_iteration_plan_row_startup_message_uses_configured_issue_label(
+    tmp_path, git_svc, logger
+):
+    """Plan row startup message uses deps.cfg.issue_label, not a hardcoded string."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Issue A"},
+        {"number": 2, "title": "Issue B"},
+    ]
+    recording = RecordingStatusDisplay()
+
+    async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Issue A"}])
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+        cfg=Config(max_parallel=4, max_iterations=1, issue_label="my-custom-label"),
+    )
+    asyncio.run(run_iteration(deps))
+
+    assert (
+        "register",
+        "Plan",
+        "started planning for 2 issue(s) labeled my-custom-label",
+        "Planning",
+    ) in recording.calls
+
+
 def test_run_iteration_registers_implement_row_with_running_phase(
     tmp_path, git_svc, github_svc, logger
 ):
