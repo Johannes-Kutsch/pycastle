@@ -15,7 +15,7 @@ from ..worktree import (
     worktree_name_for_branch,
     worktree_path,
 )
-from ._phase_row import phase_row
+from ._rows import phase_row
 from ._utils import _wait_for_clean_working_tree
 from .implement import branch_for
 
