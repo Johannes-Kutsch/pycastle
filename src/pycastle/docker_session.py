@@ -1,6 +1,16 @@
+import io
+import os
 import re
+import sys
+import tarfile
+import threading
 from pathlib import Path
 
+import docker
+from docker.models.containers import Container as DockerContainer
+
+from .config import Config
+from .errors import DockerError, DockerTimeoutError
 from .worktree import CONTAINER_PARENT_GIT, patch_gitdir_for_container
 
 
@@ -52,10 +62,118 @@ def build_volume_spec(
             }
             if overlay is not None:
                 overlay_path = str(overlay.resolve()).replace("\\", "/")
-                volumes[overlay_path] = {"bind": "/home/agent/workspace/.git", "mode": "ro"}
+                volumes[overlay_path] = {
+                    "bind": "/home/agent/workspace/.git",
+                    "mode": "ro",
+                }
                 return volumes, overlay
             return volumes, None
         if overlay is not None:
             overlay.unlink(missing_ok=True)
 
     return {repo_path: {"bind": "/home/agent/workspace", "mode": "rw"}}, None
+
+
+class DockerSession:
+    def __init__(
+        self,
+        volumes: dict,
+        container_env: dict[str, str],
+        image_name: str,
+        cfg: Config,
+        docker_client=None,
+        auto_overlay: Path | None = None,
+    ) -> None:
+        self._volumes = volumes
+        self._container_env = container_env
+        self._image_name = image_name
+        self._cfg = cfg
+        self._auto_overlay = auto_overlay
+        self._owns_client = docker_client is None
+        self._client = docker_client if docker_client is not None else docker.from_env()
+        self._container: DockerContainer | None = None
+
+    @property
+    def _active_container(self) -> DockerContainer:
+        if self._container is None:
+            raise DockerError("Container not started")
+        return self._container
+
+    def __enter__(self) -> "DockerSession":
+        self._container = self._client.containers.run(
+            self._image_name,
+            detach=True,
+            volumes=self._volumes,
+            environment=self._container_env,
+            working_dir="/home/agent/workspace",
+        )
+        return self
+
+    def __exit__(self, *_) -> None:
+        if self._auto_overlay is not None:
+            try:
+                self._auto_overlay.unlink(missing_ok=True)
+            except Exception:
+                pass
+            self._auto_overlay = None
+        if self._container is not None:
+            try:
+                self._container.stop(timeout=5)
+            except Exception:
+                pass
+            try:
+                self._container.remove(force=True)
+            except Exception:
+                pass
+        if self._owns_client:
+            try:
+                self._client.close()
+            except Exception:
+                pass
+
+    def exec_simple(self, command: str, timeout: float | None = None) -> str:
+        container = self._active_container
+        result_holder: list = [None]
+        exc_holder: list = [None]
+
+        def _run() -> None:
+            try:
+                result_holder[0] = container.exec_run(
+                    ["bash", "-c", command],
+                    demux=True,
+                    workdir="/home/agent/workspace",
+                    environment=self._container_env,
+                )
+            except Exception as exc:
+                exc_holder[0] = exc
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        thread.join(timeout=timeout)
+
+        if thread.is_alive():
+            raise DockerTimeoutError(f"Command timed out after {timeout}s: {command}")
+
+        if exc_holder[0] is not None:
+            raise exc_holder[0]
+
+        result = result_holder[0]
+        stdout = (result.output[0] or b"").decode("utf-8", errors="replace")
+        stderr = (result.output[1] or b"").decode("utf-8", errors="replace")
+        if result.exit_code != 0:
+            raise DockerError(
+                f"Command failed (exit {result.exit_code}): {stderr.strip() or stdout.strip()}"
+            )
+        if stderr and not stdout:
+            print(f"  [exec stderr] {stderr.strip()}", file=sys.stderr)
+        return stdout
+
+    def write_file(self, content: str, container_path: str) -> None:
+        data = content.encode("utf-8")
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tar:
+            info = tarfile.TarInfo(name=os.path.basename(container_path))
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        buf.seek(0)
+        self._active_container.put_archive(os.path.dirname(container_path), buf)

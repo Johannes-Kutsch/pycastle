@@ -1,7 +1,13 @@
+import tarfile
+import threading
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from pycastle.docker_session import build_volume_spec
+import pytest
+
+from pycastle.config import Config
+from pycastle.docker_session import DockerSession, build_volume_spec
+from pycastle.errors import DockerError, DockerTimeoutError
 from pycastle.worktree import CONTAINER_PARENT_GIT
 
 
@@ -297,3 +303,192 @@ def test_git_file_with_missing_parent_git_cleans_up_overlay(tmp_path):
         build_volume_spec(tmp_path)
 
     assert not fake_overlay.exists()
+
+
+# ── DockerSession tests ───────────────────────────────────────────────────────
+
+
+def _mock_client(
+    exit_code: int = 0, stdout: bytes = b"", stderr: bytes = b""
+) -> MagicMock:
+    client = MagicMock()
+    result = MagicMock()
+    result.exit_code = exit_code
+    result.output = (stdout, stderr)
+    client.containers.run.return_value.exec_run.return_value = result
+    return client
+
+
+def test_docker_session_enter_starts_container_with_volumes_and_env():
+    """__enter__ calls containers.run with the injected volumes, env, and image name."""
+    volumes = {"/host/path": {"bind": "/home/agent/workspace", "mode": "rw"}}
+    env = {"FOO": "bar"}
+    mock_client = MagicMock()
+    session = DockerSession(
+        volumes=volumes,
+        container_env=env,
+        image_name="test-image",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+
+    session.__enter__()
+
+    mock_client.containers.run.assert_called_once_with(
+        "test-image",
+        detach=True,
+        volumes=volumes,
+        environment=env,
+        working_dir="/home/agent/workspace",
+    )
+
+
+def test_docker_session_exec_simple_returns_stdout_on_success():
+    """exec_simple returns decoded stdout when command exits with code 0."""
+    mock_client = _mock_client(exit_code=0, stdout=b"hello\n")
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+    session.__enter__()
+
+    result = session.exec_simple("echo hello")
+
+    assert result == "hello\n"
+
+
+def test_docker_session_exec_simple_raises_docker_error_on_nonzero_exit():
+    """exec_simple raises DockerError when command exits with non-zero code."""
+    mock_client = _mock_client(exit_code=1, stderr=b"something went wrong")
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+    session.__enter__()
+
+    with pytest.raises(DockerError, match="something went wrong"):
+        session.exec_simple("bad command")
+
+
+def test_docker_session_exec_simple_raises_timeout_error():
+    """exec_simple raises DockerTimeoutError when command exceeds the timeout."""
+    mock_client = MagicMock()
+    unblock = threading.Event()
+
+    def blocking_exec(*args, **kwargs):
+        unblock.wait()
+
+    mock_client.containers.run.return_value.exec_run.side_effect = blocking_exec
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+    session.__enter__()
+
+    try:
+        with pytest.raises(DockerTimeoutError):
+            session.exec_simple("sleep 100", timeout=0.05)
+    finally:
+        unblock.set()
+
+
+def test_docker_session_exit_stops_and_removes_container():
+    """__exit__ stops and removes the container."""
+    mock_client = MagicMock()
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+    session.__enter__()
+    mock_container = mock_client.containers.run.return_value
+
+    session.__exit__(None, None, None)
+
+    mock_container.stop.assert_called_once()
+    mock_container.remove.assert_called_once()
+
+
+def test_docker_session_exit_closes_owned_client():
+    """__exit__ closes the Docker client when it was created internally (not injected)."""
+    with patch("pycastle.docker_session.docker") as mock_docker_mod:
+        session = DockerSession(
+            volumes={}, container_env={}, image_name="img", cfg=Config()
+        )
+        session.__enter__()
+        session.__exit__(None, None, None)
+
+    mock_docker_mod.from_env.return_value.close.assert_called_once()
+
+
+def test_docker_session_exit_does_not_close_injected_client():
+    """__exit__ does not close the Docker client when it was injected by the caller."""
+    mock_client = MagicMock()
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+    session.__enter__()
+    session.__exit__(None, None, None)
+
+    mock_client.close.assert_not_called()
+
+
+def test_docker_session_exit_deletes_auto_overlay(tmp_path):
+    """__exit__ deletes the auto_overlay file when one is set."""
+    overlay = tmp_path / "overlay.gitdir"
+    overlay.write_text("gitdir: /some/path\n")
+    mock_client = MagicMock()
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+        auto_overlay=overlay,
+    )
+    session.__enter__()
+
+    session.__exit__(None, None, None)
+
+    assert not overlay.exists()
+
+
+def test_docker_session_write_file_puts_archive_with_correct_content():
+    """write_file calls put_archive with a tar containing the file at the right path."""
+    mock_client = MagicMock()
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+    session.__enter__()
+
+    session.write_file("hello content", "/tmp/myfile.txt")
+
+    mock_container = mock_client.containers.run.return_value
+    mock_container.put_archive.assert_called_once()
+    directory, archive_buf = mock_container.put_archive.call_args[0]
+    assert directory == "/tmp"
+    archive_buf.seek(0)
+    with tarfile.open(fileobj=archive_buf) as tar:
+        member = tar.getmembers()[0]
+        assert member.name == "myfile.txt"
+        content = tar.extractfile(member).read().decode("utf-8")
+        assert content == "hello content"
