@@ -62,11 +62,21 @@ def test_usage_limit_error_is_pycastle_error():
     assert issubclass(UsageLimitError, PycastleError)
 
 
-def test_usage_limit_error_carries_matched_line():
+def test_usage_limit_error_carries_reset_time():
+    from datetime import datetime
+
     from pycastle.errors import UsageLimitError
 
-    err = UsageLimitError("You've hit your session limit")
-    assert str(err) == "You've hit your session limit"
+    reset = datetime(2026, 5, 4, 12, 50)
+    err = UsageLimitError(reset_time=reset)
+    assert err.reset_time == reset
+
+
+def test_usage_limit_error_reset_time_defaults_to_none():
+    from pycastle.errors import UsageLimitError
+
+    err = UsageLimitError()
+    assert err.reset_time is None
 
 
 # ── Raise sites ───────────────────────────────────────────────────────────────

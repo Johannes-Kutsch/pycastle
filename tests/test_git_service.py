@@ -1099,6 +1099,72 @@ def test_pull_raises_git_timeout_error_on_timeout(tmp_path):
             svc.pull(tmp_path)
 
 
+# ── commit() ──────────────────────────────────────────────────────────────────
+
+
+def test_commit_runs_add_then_commit_with_message(tmp_path):
+    svc = GitService(_cfg)
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        svc.commit(tmp_path / "wt", tmp_path, "RALPH: Implement - foo")
+
+    assert len(captured) == 2
+    assert captured[0] == ["git", "-C", str(tmp_path / "wt"), "add", "-A"]
+    assert captured[1] == [
+        "git",
+        "-C",
+        str(tmp_path / "wt"),
+        "commit",
+        "-m",
+        "RALPH: Implement - foo",
+    ]
+
+
+def test_commit_raises_git_command_error_on_add_failure(tmp_path):
+    svc = GitService(_cfg)
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        if "add" in cmd:
+            return MagicMock(returncode=1, stdout=b"", stderr=b"add error")
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        with pytest.raises(GitCommandError):
+            svc.commit(tmp_path / "wt", tmp_path, "msg")
+
+    assert all("commit" not in cmd for cmd in captured)
+
+
+def test_commit_raises_git_command_error_on_commit_failure(tmp_path):
+    svc = GitService(_cfg)
+
+    def fake_run(cmd, **kwargs):
+        if "commit" in cmd:
+            return MagicMock(returncode=1, stdout=b"", stderr=b"nothing to commit")
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        with pytest.raises(GitCommandError):
+            svc.commit(tmp_path / "wt", tmp_path, "msg")
+
+
+def test_commit_raises_git_timeout_error_on_timeout(tmp_path):
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    ):
+        with pytest.raises(GitTimeoutError):
+            svc.commit(tmp_path / "wt", tmp_path, "msg")
+
+
 # ── push() ────────────────────────────────────────────────────────────────────
 
 

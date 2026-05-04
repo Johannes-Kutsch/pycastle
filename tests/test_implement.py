@@ -5,7 +5,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.agent_output_protocol import CompletionOutput, PromiseParseError
+from pycastle.agent_output_protocol import (
+    CommitMessageOutput,
+    CompletionOutput,
+    PromiseParseError,
+)
 from pycastle.agent_result import (
     CancellationToken,
     PreflightFailure,
@@ -103,7 +107,7 @@ def test_implement_phase_signals_usage_limit_in_result(tmp_path):
     issues = [{"number": 1, "title": "Fix A"}]
 
     async def _side_effect(request: RunRequest):
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
@@ -117,7 +121,7 @@ def test_implement_phase_usage_limit_does_not_exit(tmp_path):
     issues = [{"number": 1, "title": "Fix A"}]
 
     async def _side_effect(request: RunRequest):
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
@@ -133,7 +137,7 @@ def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
 
     async def _side_effect(request: RunRequest):
         if "Implement Agent #1" in request.name:
-            raise UsageLimitError("")
+            raise UsageLimitError(reset_time=None)
         completed_agents.append(request.name)
         return CompletionOutput()
 
@@ -260,7 +264,7 @@ def test_implement_phase_reviewer_usage_limit_signals_in_result(tmp_path):
     async def _side_effect(request: RunRequest):
         if "Implement Agent" in request.name:
             return CompletionOutput()
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
@@ -635,7 +639,7 @@ def test_run_issue_preserves_worktree_on_usage_limit(tmp_path):
     async def _side_effect(request: RunRequest):
         if "Implement Agent" in request.name:
             token.cancel(preserve_worktree=True)
-            raise UsageLimitError("")
+            raise UsageLimitError(reset_time=None)
         return CompletionOutput()
 
     fake = FakeAgentRunner(side_effect=_side_effect)
@@ -731,10 +735,12 @@ def test_run_issue_review_skip_creates_no_worktree(tmp_path):
 
 
 def test_run_issue_implement_skip_invokes_only_reviewer(tmp_path):
-    """When branch has a RALPH: (non-review) commit, run_issue skips Implementer and runs only Reviewer."""
+    """When branch has a RALPH: Implement - commit, run_issue skips Implementer and runs only Reviewer."""
     fake = FakeAgentRunner([CompletionOutput()])
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Fix auth"]
+    deps.git_svc.get_branch_commit_subjects.return_value = [
+        "RALPH: Implement - fix auth"
+    ]
 
     issue = {"number": 22, "title": "Fix auth"}
     result = asyncio.run(run_issue(issue, deps))
@@ -745,10 +751,12 @@ def test_run_issue_implement_skip_invokes_only_reviewer(tmp_path):
 
 
 def test_run_issue_implement_skip_creates_no_implementer_worktree(tmp_path):
-    """When branch has a RALPH: (non-review) commit, no Implementer worktree is created."""
+    """When branch has a RALPH: Implement - commit, no Implementer worktree is created."""
     fake = FakeAgentRunner([CompletionOutput()])
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Fix auth"]
+    deps.git_svc.get_branch_commit_subjects.return_value = [
+        "RALPH: Implement - fix auth"
+    ]
     deps.git_svc.is_working_tree_clean.return_value = True
 
     issue = {"number": 23, "title": "Fix auth"}
@@ -906,12 +914,74 @@ def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
     assert fired == []
 
 
+def test_run_issue_bare_ralph_commit_does_not_skip_implementer(tmp_path):
+    """Old-format bare 'RALPH:' commit (no 'Implement -') must not trigger implement skip."""
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Fix auth"]
+
+    issue = {"number": 30, "title": "Fix auth"}
+    asyncio.run(run_issue(issue, deps))
+
+    assert any("Implement Agent" in c.name for c in fake.calls)
+
+
+# ── run_issue: commit wiring ─────────────────────────────────────────────────
+
+
+def test_run_issue_commits_implementer_with_ralph_implement_prefix(tmp_path):
+    """After Implementer returns CommitMessageOutput, git_svc.commit is called with RALPH: Implement - <msg>."""
+    fake = FakeAgentRunner(
+        [CommitMessageOutput(message="add foo"), CommitMessageOutput(message="tidy")]
+    )
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    issue = {"number": 40, "title": "Fix"}
+    asyncio.run(run_issue(issue, deps))
+
+    impl_call = deps.git_svc.commit.call_args_list[0]
+    assert impl_call[0][2] == "RALPH: Implement - add foo"
+
+
+def test_run_issue_commits_reviewer_with_ralph_review_prefix(tmp_path):
+    """After Reviewer returns CommitMessageOutput, git_svc.commit is called with RALPH: Review - <msg>."""
+    fake = FakeAgentRunner(
+        [
+            CommitMessageOutput(message="add foo"),
+            CommitMessageOutput(message="rename var"),
+        ]
+    )
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    issue = {"number": 41, "title": "Fix"}
+    asyncio.run(run_issue(issue, deps))
+
+    review_call = deps.git_svc.commit.call_args_list[1]
+    assert review_call[0][2] == "RALPH: Review - rename var"
+
+
+def test_run_issue_does_not_commit_on_preflight_failure(tmp_path):
+    """If Implementer returns PreflightFailure, no commit must be made."""
+    failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
+    fake = FakeAgentRunner([failure])
+    deps = _make_deps(tmp_path, fake)
+
+    issue = {"number": 42, "title": "Fix"}
+    asyncio.run(run_issue(issue, deps))
+
+    deps.git_svc.commit.assert_not_called()
+
+
 def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
     """run_issue calls on_started once when implement is already done but review hasn't run yet."""
     fired: list[int] = []
     fake = FakeAgentRunner([CompletionOutput()])
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Fix auth"]
+    deps.git_svc.get_branch_commit_subjects.return_value = [
+        "RALPH: Implement - fix auth"
+    ]
 
     issue = {"number": 1, "title": "Fix auth"}
     asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))

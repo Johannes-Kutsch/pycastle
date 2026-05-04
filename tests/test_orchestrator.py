@@ -1276,7 +1276,7 @@ def test_usage_limit_sleeps_instead_of_exiting(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep") as mock_sleep:
         _run(
@@ -1298,7 +1298,7 @@ def test_usage_limit_prints_sleep_message_with_wake_time(tmp_path, capsys):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep"):
         _run(
@@ -1321,7 +1321,7 @@ def test_usage_limit_loop_continues_after_sleep(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep"):
         _run(
@@ -1342,7 +1342,7 @@ def test_consecutive_usage_limits_sleep_multiple_times(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep") as mock_sleep:
         _run(
@@ -1368,7 +1368,7 @@ def test_usage_limit_wake_time_is_next_full_hour_plus_two_minutes(tmp_path, caps
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with (
         patch("time.sleep"),
@@ -1400,7 +1400,7 @@ def test_usage_limit_sleep_duration_matches_wake_time(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with (
         patch("time.sleep") as mock_sleep,
@@ -1429,7 +1429,7 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep"):
         _run(
@@ -1443,6 +1443,66 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
     assert not errors_log.exists() or errors_log.read_text() == "", (
         "UsageLimitError must not be written to errors.log"
     )
+
+
+# ── Issue-458: thread reset_time through AbortedUsageLimit ───────────────────
+
+
+def test_usage_limit_with_reset_time_uses_precise_wake_time(tmp_path, capsys):
+    """When UsageLimitError carries reset_time, orchestrator sleeps until reset + 2 min."""
+    from datetime import datetime as real_datetime
+
+    fixed_now = real_datetime(2026, 1, 1, 14, 30, 0)
+    fixed_reset = real_datetime(2026, 1, 1, 14, 50, 0)
+    expected_wake_str = "14:52"
+    expected_seconds = 22 * 60  # 14:30 → 14:52
+
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.side_effect = [True, False]
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError(reset_time=fixed_reset)
+
+    with (
+        patch("time.sleep") as mock_sleep,
+        patch("pycastle.orchestrator.datetime") as mock_dt,
+    ):
+        mock_dt.now.return_value = fixed_now
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            max_iterations=2,
+        )
+
+    out = capsys.readouterr().out
+    assert expected_wake_str in out
+    assert "(estimated)" not in out
+    mock_sleep.assert_called_once_with(float(expected_seconds))
+
+
+def test_usage_limit_without_reset_time_appends_estimated_qualifier(tmp_path, capsys):
+    """When reset_time is None, message must append '(estimated)'."""
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.side_effect = [True, False]
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError(reset_time=None)
+
+    with patch("time.sleep"):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            max_iterations=2,
+        )
+
+    out = capsys.readouterr().out
+    assert "(estimated)" in out
 
 
 # ── Issue-194: skip Planner when no ready-for-agent issues exist ──────────────

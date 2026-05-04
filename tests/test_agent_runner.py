@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.agent_output_protocol import CompletionOutput
+from pycastle.agent_output_protocol import CommitMessageOutput, CompletionOutput
 from pycastle.agent_result import CancellationToken, PreflightFailure
 from pycastle.agent_runner import AgentRunner, RunRequest
 from pycastle.config import Config
@@ -21,7 +21,7 @@ from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 
 # A minimal NDJSON stream that process_stream accepts as CompletionOutput (IMPLEMENTER role)
 _COMPLETE_STREAM = [
-    b'{"type": "result", "result": "<promise>COMPLETE</promise>", "is_error": false}\n'
+    b'{"type": "result", "result": "<commit_message>done</commit_message>", "is_error": false}\n'
 ]
 
 
@@ -294,7 +294,7 @@ def test_agent_runner_run_returns_agent_output(tmp_path):
         )
     )
 
-    assert isinstance(result, CompletionOutput)
+    assert isinstance(result, CommitMessageOutput)
 
 
 def test_agent_runner_run_returns_preflight_failure_when_check_fails(tmp_path):
@@ -361,7 +361,7 @@ def test_agent_runner_run_skips_preflight_when_skip_preflight_true(tmp_path):
         )
     )
 
-    assert isinstance(result, CompletionOutput)
+    assert isinstance(result, CommitMessageOutput)
 
 
 # ── AgentRunner: error propagation ───────────────────────────────────────────
@@ -390,7 +390,12 @@ def test_agent_runner_run_raises_usage_limit_error_when_token_pre_cancelled(tmp_
 
 
 def test_agent_runner_run_cancels_token_and_raises_on_usage_limit_in_stream(tmp_path):
-    mock_client = _make_docker_client([b"You've hit your session limit\n"])
+    mock_client = _make_docker_client(
+        [
+            b'{"type":"result","is_error":true,"api_error_status":429,'
+            b'"result":"rate limited"}\n'
+        ]
+    )
     token = CancellationToken()
     runner = AgentRunner(
         {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
@@ -482,7 +487,7 @@ def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
         )
     )
 
-    assert isinstance(result, CompletionOutput)
+    assert isinstance(result, CommitMessageOutput)
 
 
 def test_agent_runner_propagates_git_user_name_error(tmp_path):
@@ -532,7 +537,7 @@ def test_agent_runner_run_registers_and_removes_status_row_on_success(tmp_path):
         )
     )
 
-    assert ("register", "Test", "started", "Setup") in display.calls
+    assert ("register", "Test", "agent", "started", "Setup") in display.calls
     assert ("remove", "Test", "finished", "success") in display.calls
 
 
@@ -559,7 +564,7 @@ def test_agent_runner_run_removes_status_row_when_setup_fails(tmp_path):
             )
         )
 
-    assert ("register", "Test", "started", "Setup") in display.calls
+    assert ("register", "Test", "agent", "started", "Setup") in display.calls
     assert ("remove", "Test", "finished", "success") in display.calls
 
 
@@ -773,7 +778,13 @@ def test_agent_runner_run_preflight_registers_and_removes_status_row_on_success(
         )
     )
 
-    assert ("register", "preflight-checks", "started", "Setup") in display.calls
+    assert (
+        "register",
+        "preflight-checks",
+        "agent",
+        "started",
+        "Setup",
+    ) in display.calls
     assert ("remove", "preflight-checks", "finished", "success") in display.calls
 
 

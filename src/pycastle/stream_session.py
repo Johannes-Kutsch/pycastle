@@ -24,7 +24,6 @@ class WorkStream:
         self,
         role: AgentRole,
         on_turn: Callable[[str], None],
-        usage_limit_patterns: tuple[str, ...],
     ) -> AgentOutput:
         q: queue.Queue = queue.Queue()
         _sentinel = object()
@@ -63,6 +62,6 @@ class WorkStream:
                         line, line_buf = line_buf.split("\n", 1)
                         yield line
 
-            return process_stream(_lines(), on_turn, role, usage_limit_patterns)
+            return process_stream(_lines(), on_turn, role)
         finally:
             log.close()

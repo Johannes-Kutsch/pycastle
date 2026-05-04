@@ -14,6 +14,8 @@ __all__ = ["Config", "load_config"]
 
 _VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 
+_IGNORED_CONFIG_KEYS = frozenset({"usage_limit_patterns"})
+
 
 @dataclasses.dataclass(frozen=True)
 class Config:
@@ -52,9 +54,6 @@ class Config:
     )
     auto_push: bool = True
     timeout_retries: int = 1
-    usage_limit_patterns: tuple[str, ...] = dataclasses.field(
-        default_factory=lambda: ("You've hit your", "Credit balance is too low")
-    )
     plan_override: StageOverride = dataclasses.field(default_factory=StageOverride)
     implement_override: StageOverride = dataclasses.field(default_factory=StageOverride)
     review_override: StageOverride = dataclasses.field(default_factory=StageOverride)
@@ -79,6 +78,8 @@ def load_config(
                 if k.startswith("_"):
                     continue
                 if isinstance(v, (type, types.ModuleType)):
+                    continue
+                if k in _IGNORED_CONFIG_KEYS:
                     continue
                 if k not in valid_fields:
                     raise ValueError(f"Unknown config key: {k!r}")
