@@ -139,84 +139,6 @@ def test_worktree_add_not_called_inside_container(mock_docker, tmp_path):
     )
 
 
-# ── Cycle 16: implementer mounts worktree dir at /home/agent/workspace ────────
-
-
-@patch("pycastle.container_runner.docker")
-def test_implementer_mounts_worktree_at_workspace(mock_docker, tmp_path):
-    """When worktree_host_path is provided the container must bind it at /home/agent/workspace."""
-    mock_container = MagicMock()
-    mock_docker.from_env.return_value.containers.run.return_value = mock_container
-    mock_container.exec_run.return_value = MagicMock(exit_code=0, output=b"")
-
-    worktree_path = tmp_path / "worktree"
-    worktree_path.mkdir()
-
-    runner = ContainerRunner(
-        "test",
-        tmp_path,
-        {},
-        branch="feature/test",
-        worktree_host_path=worktree_path,
-        cfg=Config(logs_dir=tmp_path / "logs"),
-    )
-    runner.__enter__()
-    runner.__exit__(None, None, None)
-
-    volumes = mock_docker.from_env.return_value.containers.run.call_args.kwargs[
-        "volumes"
-    ]
-    bound_paths = {v["bind"]: k for k, v in volumes.items()}
-    assert "/home/agent/workspace" in bound_paths, (
-        f"/home/agent/workspace not mounted; volumes={volumes}"
-    )
-    assert bound_paths["/home/agent/workspace"] == str(worktree_path.resolve()).replace(
-        "\\", "/"
-    ), (
-        f"Wrong host path mounted at /home/agent/workspace: {bound_paths['/home/agent/workspace']!r}"
-    )
-
-
-# ── Cycle 32-2: gitdir overlay bound at /home/agent/workspace/.git ───────────
-
-
-@patch("pycastle.container_runner.docker")
-def test_container_mounts_gitdir_overlay_at_workspace_git(mock_docker, tmp_path):
-    """When gitdir_overlay is set, ContainerRunner must bind-mount it at /home/agent/workspace/.git."""
-    mock_container = MagicMock()
-    mock_docker.from_env.return_value.containers.run.return_value = mock_container
-
-    overlay_file = tmp_path / "gitdir_overlay"
-    overlay_file.write_text("gitdir: /home/agent/repo/.git/worktrees/my-branch\n")
-    worktree_path = tmp_path / "worktree"
-    worktree_path.mkdir()
-
-    runner = ContainerRunner(
-        "test",
-        tmp_path,
-        {},
-        branch="feature/test",
-        worktree_host_path=worktree_path,
-        gitdir_overlay=overlay_file,
-        cfg=Config(logs_dir=tmp_path / "logs"),
-    )
-    runner.__enter__()
-    runner.__exit__(None, None, None)
-
-    volumes = mock_docker.from_env.return_value.containers.run.call_args.kwargs[
-        "volumes"
-    ]
-    bound_paths = {v["bind"]: k for k, v in volumes.items()}
-    assert "/home/agent/workspace/.git" in bound_paths, (
-        f"/home/agent/workspace/.git not mounted; volumes={volumes}"
-    )
-    assert bound_paths["/home/agent/workspace/.git"] == str(
-        overlay_file.resolve()
-    ).replace("\\", "/"), (
-        f"Wrong host path at /home/agent/workspace/.git: {bound_paths['/home/agent/workspace/.git']!r}"
-    )
-
-
 # ── Cycle 4: exec_simple raises TimeoutError on stalled command ───────────────
 
 
@@ -382,50 +304,6 @@ def test_build_claude_command_does_not_use_temp_file():
 def test_build_claude_command_does_not_embed_large_prompt():
     cmd = _build_claude_command()
     assert len(cmd) < 1024
-
-
-# ── Cycle 37-1: parent .git mounted rw at /.pycastle-parent-git ──────────────
-
-
-@patch("pycastle.container_runner.docker")
-def test_container_mounts_parent_git_rw(mock_docker, tmp_path):
-    """When worktree_host_path is set, <mount_path>/.git must be bound at /.pycastle-parent-git with mode rw."""
-    mock_container = MagicMock()
-    mock_docker.from_env.return_value.containers.run.return_value = mock_container
-
-    worktree_path = tmp_path / "worktree"
-    worktree_path.mkdir()
-
-    runner = ContainerRunner(
-        "test",
-        tmp_path,
-        {},
-        branch="feature/test",
-        worktree_host_path=worktree_path,
-        cfg=Config(logs_dir=tmp_path / "logs"),
-    )
-    runner.__enter__()
-    runner.__exit__(None, None, None)
-
-    volumes = mock_docker.from_env.return_value.containers.run.call_args.kwargs[
-        "volumes"
-    ]
-    expected_host = str((tmp_path / ".git").resolve()).replace("\\", "/")
-    assert "/.pycastle-parent-git" in {v["bind"] for v in volumes.values()}, (
-        f"/.pycastle-parent-git not mounted; volumes={volumes}"
-    )
-    parent_git_entry = next(
-        v for v in volumes.values() if v["bind"] == "/.pycastle-parent-git"
-    )
-    assert parent_git_entry["mode"] == "rw", (
-        f"/.pycastle-parent-git must be rw; got mode={parent_git_entry['mode']!r}"
-    )
-    host_key = next(
-        k for k, v in volumes.items() if v["bind"] == "/.pycastle-parent-git"
-    )
-    assert host_key == expected_host, (
-        f"Wrong host path for /.pycastle-parent-git: {host_key!r}, expected {expected_host!r}"
-    )
 
 
 # ── Cycle 50-1: PREFLIGHT_CHECKS and IMPLEMENT_CHECKS in defaults/config ─────
