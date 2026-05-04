@@ -96,8 +96,8 @@ def test_init_config_contains_stage_override_import_and_defaults(tmp_path, monke
     assert (
         'implement_override = StageOverride(model="sonnet", effort="medium")' in content
     )
-    assert 'review_override = StageOverride(model="sonnet", effort="high")' in content
-    assert 'merge_override = StageOverride(model="sonnet", effort="medium")' in content
+    assert 'review_override = StageOverride(model="opus", effort="medium")' in content
+    assert 'merge_override = StageOverride(model="opus", effort="high")' in content
 
 
 # ── Cycle 6: load_config from scaffolded project returns correct StageOverride values ──
@@ -120,8 +120,8 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
     cfg = load_config(repo_root=tmp_path)
     assert cfg.plan_override == StageOverride(model="haiku", effort="low")
     assert cfg.implement_override == StageOverride(model="sonnet", effort="medium")
-    assert cfg.review_override == StageOverride(model="sonnet", effort="high")
-    assert cfg.merge_override == StageOverride(model="sonnet", effort="medium")
+    assert cfg.review_override == StageOverride(model="opus", effort="medium")
+    assert cfg.merge_override == StageOverride(model="opus", effort="high")
 
 
 # ── Cycle 4: init does not overwrite other existing files ─────────────────────

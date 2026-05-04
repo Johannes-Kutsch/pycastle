@@ -43,6 +43,6 @@ docker_image_name = "pycastle"
 # effort values:    low, medium, high, xhigh, max    (leave empty to use the Claude CLI default)
 plan_override = StageOverride(model="haiku", effort="low")
 implement_override = StageOverride(model="sonnet", effort="medium")
-review_override = StageOverride(model="sonnet", effort="high")
-merge_override = StageOverride(model="sonnet", effort="medium")
+review_override = StageOverride(model="opus", effort="medium")
+merge_override = StageOverride(model="opus", effort="high")
 preflight_issue_override = StageOverride(model="opus", effort="high")
