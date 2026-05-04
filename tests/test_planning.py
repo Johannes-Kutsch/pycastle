@@ -35,9 +35,7 @@ def _plan_output(issues: list[dict]) -> PlannerOutput:
 
 @pytest.fixture
 def git_svc():
-    svc = MagicMock(spec=GitService)
-    svc.get_head_sha.return_value = "abc123"
-    return svc
+    return MagicMock(spec=GitService)
 
 
 def _make_deps(tmp_path, agent_runner, *, git_svc):
@@ -83,6 +81,18 @@ def test_planning_phase_invokes_planner_with_skip_preflight_true(tmp_path, git_s
 
     assert len(fake.calls) == 1
     assert fake.calls[0].skip_preflight is True
+
+
+def test_planning_phase_passes_open_issues_as_json_to_planner(tmp_path, git_svc):
+    import json
+
+    issues = [{"number": 2, "title": "B"}, {"number": 1, "title": "A"}]
+    fake = FakeAgentRunner([_plan_output(issues)])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    asyncio.run(planning_phase(deps, "abc123", issues))
+
+    assert fake.calls[0].prompt_args["OPEN_ISSUES_JSON"] == json.dumps(issues)
 
 
 # ── planning_phase: worktree lifecycle ──────────────────────────────────────
