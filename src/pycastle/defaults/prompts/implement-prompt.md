@@ -79,24 +79,18 @@ After all tests pass, look for refactor candidates:
 
 **Never refactor while RED.** Get to GREEN first.
 
-### 7. Commit
+### 7. Output
 
-Before committing, run `{{FEEDBACK_COMMANDS}}` to ensure all tests pass.
+Before finishing, run `{{FEEDBACK_COMMANDS}}` to ensure all tests pass.
 
-Make a git commit. The commit message must:
+Do not stage files or run `git commit` — the orchestrator handles commits.
 
-1. Start with `RALPH:` prefix
-2. Include task completed + PRD reference
-3. Key decisions made
-4. Files changed
-5. Blockers or notes for next iteration
+Emit a `<commit_message>` tag with a plain description of the changes. Do not include a `RALPH:` prefix or any git commands. Keep it concise — task completed, key decisions made, and files changed.
 
-Keep it concise.
+Example: `<commit_message>task completed + PRD reference; key decisions; files changed</commit_message>`
 
 ### 8. Issue
 
 If the task is not complete, leave a comment on the GitHub issue with what was done.
 
 Do not close the issue — this will be done later.
-
-Once complete, output <promise>COMPLETE</promise>.

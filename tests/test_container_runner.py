@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-from pycastle.agent_output_protocol import AgentRole, CompletionOutput
+from pycastle.agent_output_protocol import AgentRole, CommitMessageOutput
 from pycastle.config import Config
 from pycastle.container_runner import ContainerRunner, _build_claude_command
 from pycastle.docker_session import DockerSession
@@ -16,9 +16,7 @@ from pycastle.iteration._deps import RecordingStatusDisplay
 
 _ROLE = AgentRole.IMPLEMENTER
 
-_COMPLETE_LINE = (
-    b'{"type":"result","result":"<promise>COMPLETE</promise>","is_error":false}\n'
-)
+_COMPLETE_LINE = b'{"type":"result","result":"<commit_message>done</commit_message>","is_error":false}\n'
 
 
 # ── Fake DockerSession ────────────────────────────────────────────────────────
@@ -254,7 +252,7 @@ def test_work_returns_agent_output(tmp_path):
     prompt_file = tmp_path / "prompt.md"
     prompt_file.write_text("hi")
     result = asyncio.run(runner.work(_ROLE, prompt_file, {}))
-    assert isinstance(result, CompletionOutput)
+    assert isinstance(result, CommitMessageOutput)
 
 
 def test_work_calls_session_exec_stream_with_claude_command(tmp_path):
