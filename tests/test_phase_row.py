@@ -48,3 +48,24 @@ def test_phase_row_close_is_idempotent(
     asyncio.run(run())
     out = capsys.readouterr().out
     assert out == "\n[MyPhase] started\n[MyPhase] done\n"
+
+
+def test_phase_row_custom_startup_message_appears_in_output(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+
+    async def run() -> None:
+        async with phase_row(
+            d,
+            "Plan",
+            startup_message="started planning for 3 issue(s) labeled ready-for-agent",
+        ) as row:
+            row.close("done")
+
+    asyncio.run(run())
+    out = capsys.readouterr().out
+    assert (
+        out
+        == "\n[Plan] started planning for 3 issue(s) labeled ready-for-agent\n[Plan] done\n"
+    )
