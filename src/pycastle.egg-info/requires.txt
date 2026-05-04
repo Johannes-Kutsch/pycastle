@@ -1,5 +1,6 @@
 click
 docker
+platformdirs
 python-dotenv
 rich
 
