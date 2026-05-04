@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import dataclasses
 from collections.abc import Callable, Sequence
+from datetime import datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Protocol
@@ -73,6 +74,7 @@ class ImplementResult:
     completed: list[dict]
     errors: list[tuple[dict, Exception | PreflightFailure]]
     usage_limit_hit: bool = False
+    usage_limit_reset_time: datetime | None = None
 
 
 async def run_issue(
@@ -210,7 +212,12 @@ async def implement_phase(
         ],
         return_exceptions=True,
     )
-    usage_limit_hit = any(isinstance(r, UsageLimitError) for r in results)
+    usage_limit_errors = [r for r in results if isinstance(r, UsageLimitError)]
+    usage_limit_hit = bool(usage_limit_errors)
+    usage_limit_reset_time = next(
+        (e.reset_time for e in usage_limit_errors if e.reset_time is not None),
+        None,
+    )
     completed: list[dict] = []
     errors: list[tuple[dict, Exception | PreflightFailure]] = []
     for issue, result in zip(issues, results):
@@ -222,5 +229,8 @@ async def implement_phase(
         elif isinstance(result, dict):
             completed.append(issue)
     return ImplementResult(
-        completed=completed, errors=errors, usage_limit_hit=usage_limit_hit
+        completed=completed,
+        errors=errors,
+        usage_limit_hit=usage_limit_hit,
+        usage_limit_reset_time=usage_limit_reset_time,
     )
