@@ -175,7 +175,6 @@ def _check_usage_limit(line: str) -> datetime | None | Literal[False]:
 
     now_utc = _now_utc()
     now_local = now_utc.astimezone().replace(tzinfo=None)
-    parsed_time = time(hour, minute)
 
     month_str = match.group("month")
     if month_str is not None:
@@ -198,7 +197,7 @@ def _check_usage_limit(line: str) -> datetime | None | Literal[False]:
             local_dt = utc_dt.astimezone().replace(tzinfo=None)
         return local_dt
 
-    utc_dt = datetime.combine(now_utc.date(), parsed_time, tzinfo=timezone.utc)
+    utc_dt = datetime.combine(now_utc.date(), time(hour, minute), tzinfo=timezone.utc)
     local_dt = utc_dt.astimezone().replace(tzinfo=None)
     if local_dt < now_local - timedelta(minutes=2):
         local_dt += timedelta(days=1)
