@@ -3,19 +3,32 @@ import contextlib
 import dataclasses
 from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager
-from typing import Any
+from pathlib import Path
+from typing import Any, Protocol
 
 from ..agent_output_protocol import AgentRole
 from ..agent_result import CancellationToken, PreflightFailure
-from ..agent_runner import RunRequest
+from ..agent_runner import AgentRunnerProtocol, RunRequest
+from ..config import Config
 from ..errors import BranchCollisionError, UsageLimitError
 from ..prompt_pipeline import load_standards
+from ..status_display import StatusDisplay
+from ..services import GitService
 from ..worktree import (
     patch_gitdir_for_container,
     worktree_name_for_branch,
     worktree_path as _worktree_path,
 )
-from ._deps import Deps
+from ._deps import Logger
+
+
+class _ImplementDeps(Protocol):
+    cfg: Config
+    status_display: StatusDisplay
+    agent_runner: AgentRunnerProtocol
+    git_svc: GitService
+    repo_root: Path
+    logger: Logger
 
 
 @asynccontextmanager
@@ -23,7 +36,7 @@ async def _agent_worktree(
     branch: str,
     sha: str | None,
     token: CancellationToken,
-    deps: Deps,
+    deps: _ImplementDeps,
 ):
     wt_name = worktree_name_for_branch(branch)
     wt_path = _worktree_path(wt_name, deps)
@@ -64,7 +77,7 @@ class ImplementResult:
 
 async def run_issue(
     issue: dict,
-    deps: Deps,
+    deps: _ImplementDeps,
     semaphore: asyncio.Semaphore | None = None,
     *,
     token: CancellationToken | None = None,
@@ -162,7 +175,7 @@ async def run_issue(
 async def implement_phase(
     issues: list[dict],
     sha: str | None,
-    deps: Deps,
+    deps: _ImplementDeps,
     *,
     token: CancellationToken | None = None,
 ) -> ImplementResult:

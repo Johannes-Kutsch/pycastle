@@ -1,4 +1,6 @@
 import asyncio
+import dataclasses
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,9 +14,7 @@ from pycastle.agent_runner import RunRequest
 from pycastle.config import Config
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.services import GitService
-from pycastle.services import GithubService
 from pycastle.iteration._deps import (
-    Deps,
     FakeAgentRunner,
     RecordingLogger,
     RecordingStatusDisplay,
@@ -31,12 +31,22 @@ from pycastle.iteration.implement import (
 _cfg = Config()
 
 
-def _make_deps(tmp_path, agent_runner, logger=None, status_display=None) -> Deps:
-    return Deps(
-        env={},
+@dataclasses.dataclass
+class _ImplementStub:
+    cfg: Config
+    status_display: PlainStatusDisplay
+    agent_runner: FakeAgentRunner
+    git_svc: GitService
+    repo_root: Path
+    logger: RecordingLogger
+
+
+def _make_deps(
+    tmp_path, agent_runner, logger=None, status_display=None
+) -> _ImplementStub:
+    return _ImplementStub(
         repo_root=tmp_path,
         git_svc=MagicMock(spec=GitService),
-        github_svc=MagicMock(spec=GithubService),
         agent_runner=agent_runner,
         cfg=Config(max_parallel=4, max_iterations=1),
         logger=logger or RecordingLogger(),
