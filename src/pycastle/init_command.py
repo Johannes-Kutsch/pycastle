@@ -1,13 +1,18 @@
+from __future__ import annotations
+
+import os
 import re
 import sys
 from importlib.resources import files
 from pathlib import Path
+from typing import Literal
 
 import click
 
-_FILES = [
+from .config.loader import resolve_global_dir
+
+_PROJECT_SHAPED_FILES = [
     ".gitignore",
-    "config.py",
     "Dockerfile",
     "prompts/plan-prompt.md",
     "prompts/implement-prompt.md",
@@ -38,43 +43,87 @@ def _write_config_value(config_file: Path, key: str, value: str) -> None:
     config_file.write_text(content)
 
 
-def main() -> None:
-    dest = Path("pycastle")
-    pkg = files("pycastle").joinpath("defaults")
-
-    for rel in _FILES:
-        target = dest / rel
-        if target.exists():
+def _read_env_values(env_file: Path) -> dict[str, str]:
+    if not env_file.exists():
+        return {}
+    out: dict[str, str] = {}
+    for line in env_file.read_text().splitlines():
+        if not line or line.lstrip().startswith("#") or "=" not in line:
             continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        src = pkg
-        for part in rel.split("/"):
-            src = src / part
-        try:
-            target.write_bytes(src.read_bytes())
-        except Exception as e:
-            click.echo(
-                click.style(f"Error: could not write {target} — {e}", fg="red"),
-                err=True,
-            )
-            sys.exit(1)
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if value:
+            out[key] = value
+    return out
 
-    config_file = dest / "config.py"
-    image_name = re.sub(r"[^a-z0-9]+", "-", Path.cwd().name.lower()).strip("-")
+
+def _copy_template(rel: str, target: Path, pkg) -> None:  # type: ignore[no-untyped-def]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    src = pkg
+    for part in rel.split("/"):
+        src = src / part
     try:
-        _write_config_value(config_file, "docker_image_name", image_name)
+        target.write_bytes(src.read_bytes())
     except Exception as e:
         click.echo(
-            click.style(
-                f"Error: could not set docker_image_name in {config_file} — {e}",
-                fg="red",
-            ),
+            click.style(f"Error: could not write {target} — {e}", fg="red"),
             err=True,
         )
         sys.exit(1)
 
-    env_file = dest / ".env"
-    if not env_file.exists():
+
+def main(scope: Literal["global", "local"] | None = None) -> None:
+    project_dir = Path("pycastle")
+    pkg = files("pycastle").joinpath("defaults")
+
+    if scope is None:
+        use_global = click.confirm(
+            "Scaffold config.py and .env to global pycastle home? (No = local)",
+            default=False,
+        )
+        scope = "global" if use_global else "local"
+
+    pycastle_home = resolve_global_dir(None, os.environ)
+    scoped_dir = pycastle_home if scope == "global" else project_dir
+
+    for rel in _PROJECT_SHAPED_FILES:
+        target = project_dir / rel
+        if target.exists():
+            continue
+        _copy_template(rel, target, pkg)
+
+    config_file = scoped_dir / "config.py"
+    if config_file.exists():
+        if scope == "global":
+            click.echo(
+                f"global config.py already exists at {config_file}; leaving it untouched"
+            )
+    else:
+        _copy_template("config.py", config_file, pkg)
+
+    if scope == "local":
+        image_name = re.sub(r"[^a-z0-9]+", "-", Path.cwd().name.lower()).strip("-")
+        try:
+            _write_config_value(config_file, "docker_image_name", image_name)
+        except Exception as e:
+            click.echo(
+                click.style(
+                    f"Error: could not set docker_image_name in {config_file} — {e}",
+                    fg="red",
+                ),
+                err=True,
+            )
+            sys.exit(1)
+
+    env_file = scoped_dir / ".env"
+    if env_file.exists():
+        if scope == "global":
+            click.echo(
+                f"global .env already exists at {env_file}; leaving it untouched"
+            )
+    else:
+        env_file.parent.mkdir(parents=True, exist_ok=True)
         try:
             env_file.write_text(_ENV_TEMPLATE)
         except Exception as e:
@@ -84,42 +133,52 @@ def main() -> None:
             )
             sys.exit(1)
 
-    gh_token = click.prompt(
-        "GitHub token (press Enter to skip)",
-        default="",
-        hide_input=True,
-        show_default=False,
+    global_env_values = (
+        _read_env_values(pycastle_home / ".env") if scope == "global" else {}
     )
-    if gh_token:
-        try:
-            _write_env_key(env_file, "GH_TOKEN", gh_token)
-        except Exception as e:
-            click.echo(
-                click.style(f"Error: could not save GH_TOKEN — {e}", fg="red"), err=True
-            )
-            sys.exit(1)
 
-    claude_token = click.prompt(
-        "Claude token (press Enter to skip)",
-        default="",
-        hide_input=True,
-        show_default=False,
-    )
-    if claude_token:
-        try:
-            _write_env_key(env_file, "CLAUDE_CODE_OAUTH_TOKEN", claude_token)
-        except Exception as e:
-            click.echo(
-                click.style(
-                    f"Error: could not save CLAUDE_CODE_OAUTH_TOKEN — {e}", fg="red"
-                ),
-                err=True,
-            )
-            sys.exit(1)
+    gh_token = global_env_values.get("GH_TOKEN", "")
+    if not gh_token:
+        gh_token = click.prompt(
+            "GitHub token (press Enter to skip)",
+            default="",
+            hide_input=True,
+            show_default=False,
+        )
+        if gh_token:
+            try:
+                _write_env_key(env_file, "GH_TOKEN", gh_token)
+            except Exception as e:
+                click.echo(
+                    click.style(f"Error: could not save GH_TOKEN — {e}", fg="red"),
+                    err=True,
+                )
+                sys.exit(1)
+
+    claude_token = global_env_values.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+    if not claude_token:
+        claude_token = click.prompt(
+            "Claude token (press Enter to skip)",
+            default="",
+            hide_input=True,
+            show_default=False,
+        )
+        if claude_token:
+            try:
+                _write_env_key(env_file, "CLAUDE_CODE_OAUTH_TOKEN", claude_token)
+            except Exception as e:
+                click.echo(
+                    click.style(
+                        f"Error: could not save CLAUDE_CODE_OAUTH_TOKEN — {e}",
+                        fg="red",
+                    ),
+                    err=True,
+                )
+                sys.exit(1)
 
     if not claude_token:
         click.echo(
-            "Set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in pycastle/.env before running pycastle."
+            f"Set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in {env_file} before running pycastle."
         )
 
     click.echo()

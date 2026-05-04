@@ -22,8 +22,14 @@ pip install pycastle
 Copies the default `pycastle/` configuration directory into your project root. This directory contains the `Dockerfile`, `config.py`, and prompt templates (`plan-prompt.md`, `implement-prompt.md`, `review-prompt.md`, `merge-prompt.md`, `CODING_STANDARDS.md`) that drive the agents. Run this once per repository, then customise the files to suit your project.
 
 ```bash
-pycastle init
+pycastle init                # asks once: scaffold config.py / .env globally or locally?
+pycastle init --local        # write everything to ./pycastle/ (legacy behaviour)
+pycastle init --global       # write config.py and .env to pycastle home; project-shaped files (Dockerfile, prompts/, .gitignore) still go local
 ```
+
+Pycastle home defaults to `~/.config/pycastle/` on Linux/macOS and `%APPDATA%\pycastle\` on Windows. Override with the `PYCASTLE_HOME` environment variable.
+
+For multi-machine sync, put your pycastle home under your own dotfiles repository (e.g. via `chezmoi` or a plain git checkout). Pycastle does not own remote sourcing.
 
 ### `pycastle build`
 

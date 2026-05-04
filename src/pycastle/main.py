@@ -57,10 +57,34 @@ def main() -> None:
 
 
 @main.command("init")
-def init_cmd() -> None:
+@click.option(
+    "--global",
+    "global_flag",
+    is_flag=True,
+    default=False,
+    help="Scaffold config.py and .env to pycastle home (~/.config/pycastle/).",
+)
+@click.option(
+    "--local",
+    "local_flag",
+    is_flag=True,
+    default=False,
+    help="Scaffold config.py and .env locally to ./pycastle/.",
+)
+def init_cmd(global_flag: bool, local_flag: bool) -> None:
     from .init_command import main as _init
 
-    _init()
+    if global_flag and local_flag:
+        click.echo("Error: --global and --local are mutually exclusive.", err=True)
+        sys.exit(1)
+    scope: str | None
+    if global_flag:
+        scope = "global"
+    elif local_flag:
+        scope = "local"
+    else:
+        scope = None
+    _init(scope=scope)  # type: ignore[arg-type]
 
 
 @main.command("labels")
