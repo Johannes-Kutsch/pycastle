@@ -91,12 +91,10 @@ Check that the implementation respects any ADRs in `docs/adr/` that touch the ar
 
 Standards were applied at each step above — no separate standards file reference needed.
 
-## 8. Output
-
 Run `{{FEEDBACK_COMMANDS}}` to ensure nothing is broken.
 
-Do not stage files or run `git commit` — the orchestrator handles commits.
+## 8. Output
 
-Emit a `<commit_message>` tag with a plain description of the refinements. Do not include a `RALPH:` prefix or any git commands. Keep it concise.
+Emit a `<commit_message>` tag with a plain description of the refinements. Keep it concise.
 
-Example: `<commit_message>describe the refinements made during review</commit_message>`
+Example: `<commit_message>Description of revinements</commit_message>`

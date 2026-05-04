@@ -85,11 +85,11 @@ Before finishing, run `{{FEEDBACK_COMMANDS}}` to ensure all tests pass.
 
 Do not stage files or run `git commit` — the orchestrator handles commits.
 
-Emit a `<commit_message>` tag with a plain description of the changes. Do not include a `RALPH:` prefix or any git commands. Keep it concise — task completed, key decisions made, and files changed.
+Emit a `<commit_message>` tag with a plain description of the changes. Keep it concise — task completed, key decisions made, and files changed.
 
-Example: `<commit_message>task completed + PRD reference; key decisions; files changed</commit_message>`
+Example: `<commit_message>task completed + PRD reference; key decisions; files changed; Blockers or notes for next iteration</commit_message>`
 
-### 8. Issue
+### 8. Issues
 
 If the task is not complete, leave a comment on the GitHub issue with what was done.
 
