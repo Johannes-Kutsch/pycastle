@@ -792,7 +792,12 @@ def test_run_iteration_registers_plan_row_with_planning_phase(
     )
     asyncio.run(run_iteration(deps))
 
-    assert ("register", "Plan", "started", "Planning") in recording.calls
+    assert (
+        "register",
+        "Plan",
+        "started planning for 2 issue(s) labeled ready-for-agent",
+        "Planning",
+    ) in recording.calls
 
 
 def test_run_iteration_registers_implement_row_with_running_phase(
