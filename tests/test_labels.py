@@ -133,18 +133,22 @@ def test_get_remote_repo_strips_dot_git_suffix():
 # ── Issue 269: labels.main() uses config.env_file ────────────────────────────
 
 
-def test_main_loads_dotenv_from_config_env_file(monkeypatch):
-    import dotenv
-
+def test_main_reads_gh_token_from_config_env_file(monkeypatch, tmp_path):
     import pycastle.labels as labels_mod
 
-    loaded_paths: list = []
-    monkeypatch.setattr(dotenv, "load_dotenv", lambda path: loaded_paths.append(path))
-    monkeypatch.setenv("GH_TOKEN", "fake-token")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / ".env").write_text("GH_TOKEN=from-env-file\n")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("PYCASTLE_HOME", raising=False)
+
+    received: list[str] = []
     monkeypatch.setattr(
-        labels_mod, "create_labels_interactive", lambda token, cfg=None: None
+        labels_mod,
+        "create_labels_interactive",
+        lambda token, cfg=None: received.append(token),
     )
 
-    labels_mod.main()
+    labels_mod.main(cfg=Config())
 
-    assert loaded_paths == [Config().env_file]
+    assert received == ["from-env-file"]
