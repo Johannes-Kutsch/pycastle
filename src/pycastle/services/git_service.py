@@ -202,17 +202,25 @@ class GitService(_SubprocessService):
             cwd=repo_path,
         )
 
-    def commit(self, worktree_path: Path, repo_root: Path, message: str) -> None:
+    def commit(self, worktree_path: Path, repo_root: Path, message: str) -> bool:
         self._run_or_raise(
             ["git", "-C", str(worktree_path), "add", "-A"],
             "git add -A failed",
             cwd=repo_root,
         )
+        diff_result = self._run(
+            ["git", "-C", str(worktree_path), "diff", "--cached", "--quiet"],
+            cwd=repo_root,
+            capture_output=True,
+        )
+        if diff_result.returncode == 0:
+            return False
         self._run_or_raise(
             ["git", "-C", str(worktree_path), "commit", "-m", message],
             "git commit failed",
             cwd=repo_root,
         )
+        return True
 
     def push(self, repo_path: Path) -> None:
         self._run_or_raise(

@@ -1108,14 +1108,16 @@ def test_commit_runs_add_then_commit_with_message(tmp_path):
 
     def fake_run(cmd, **kwargs):
         captured.append(list(cmd))
+        if "diff" in cmd:
+            return MagicMock(returncode=1, stdout=b"", stderr=b"")
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
     with patch("subprocess.run", side_effect=fake_run):
-        svc.commit(tmp_path / "wt", tmp_path, "RALPH: Implement - foo")
+        result = svc.commit(tmp_path / "wt", tmp_path, "RALPH: Implement - foo")
 
-    assert len(captured) == 2
+    assert result is True
     assert captured[0] == ["git", "-C", str(tmp_path / "wt"), "add", "-A"]
-    assert captured[1] == [
+    assert captured[-1] == [
         "git",
         "-C",
         str(tmp_path / "wt"),
@@ -1123,6 +1125,21 @@ def test_commit_runs_add_then_commit_with_message(tmp_path):
         "-m",
         "RALPH: Implement - foo",
     ]
+
+
+def test_commit_returns_false_and_skips_commit_when_nothing_staged(tmp_path):
+    svc = GitService(_cfg)
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        result = svc.commit(tmp_path / "wt", tmp_path, "RALPH: Implement - foo")
+
+    assert result is False
+    assert all("commit" not in cmd for cmd in captured)
 
 
 def test_commit_raises_git_command_error_on_add_failure(tmp_path):
@@ -1147,7 +1164,9 @@ def test_commit_raises_git_command_error_on_commit_failure(tmp_path):
 
     def fake_run(cmd, **kwargs):
         if "commit" in cmd:
-            return MagicMock(returncode=1, stdout=b"", stderr=b"nothing to commit")
+            return MagicMock(returncode=1, stdout=b"", stderr=b"commit failed")
+        if "diff" in cmd:
+            return MagicMock(returncode=1, stdout=b"", stderr=b"")
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
     with patch("subprocess.run", side_effect=fake_run):
