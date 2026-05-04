@@ -508,12 +508,10 @@ def test_agent_runner_propagates_git_user_name_error(tmp_path):
         )
 
 
-# ── Issue 310: remove_agent lifecycle ────────────────────────────────────────
+# ── AgentRunner: status row lifecycle ────────────────────────────────────────
 
 
-def test_agent_runner_remove_agent_called_on_success(tmp_path):
-    from pycastle.iteration._deps import RecordingStatusDisplay
-
+def test_agent_runner_run_registers_and_removes_status_row_on_success(tmp_path):
     mock_client = _make_docker_client(_COMPLETE_STREAM)
     runner = AgentRunner(
         {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
@@ -534,12 +532,11 @@ def test_agent_runner_remove_agent_called_on_success(tmp_path):
         )
     )
 
+    assert ("register", "Test", "started", "Setup") in display.calls
     assert ("remove", "Test", "finished", "success") in display.calls
 
 
-def test_agent_runner_remove_agent_called_on_error(tmp_path):
-    from pycastle.iteration._deps import RecordingStatusDisplay
-
+def test_agent_runner_run_removes_status_row_when_setup_fails(tmp_path):
     git_svc = _make_git_service()
     git_svc.get_user_name.side_effect = RuntimeError("git failure")
     runner = AgentRunner(
@@ -562,7 +559,46 @@ def test_agent_runner_remove_agent_called_on_error(tmp_path):
             )
         )
 
+    assert ("register", "Test", "started", "Setup") in display.calls
     assert ("remove", "Test", "finished", "success") in display.calls
+
+
+# ── AgentRunner: CLAUDE_ACCOUNT_JSON injection ───────────────────────────────
+
+
+def test_agent_runner_injects_claude_account_json_as_file_not_env(tmp_path):
+    mock_client = _make_docker_client(_COMPLETE_STREAM)
+    runner = AgentRunner(
+        {"CLAUDE_ACCOUNT_JSON": "secret-token", "OTHER": "keep"},
+        Config(logs_dir=tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test prompt")
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+            )
+        )
+    )
+
+    run_call = mock_client.containers.run.call_args
+    container_env = run_call.kwargs["environment"]
+    assert "CLAUDE_ACCOUNT_JSON" not in container_env
+    assert container_env.get("OTHER") == "keep"
+
+    mock_container = mock_client.containers.run.return_value
+    mock_container.put_archive.assert_called()
+    # First positional arg is the parent dir, second is a tar buffer.
+    archive_calls = mock_container.put_archive.call_args_list
+    parent_dirs = [c.args[0] for c in archive_calls]
+    assert "/home/agent" in parent_dirs
 
 
 # ── AgentRunner: run_preflight ────────────────────────────────────────────────
