@@ -217,6 +217,21 @@ def test_non_ancestor_branch_not_deleted(deps, git_svc):
     git_svc.delete_branch.assert_not_called()
 
 
+def test_non_ancestor_branch_skipped_while_ancestor_is_deleted(deps, git_svc):
+    def _is_ancestor(branch, repo_root):
+        return "issue-1" in branch
+
+    git_svc.is_ancestor.side_effect = _is_ancestor
+    issues = [
+        {"number": 1, "title": "Ancestor"},
+        {"number": 2, "title": "Non-ancestor"},
+    ]
+    _run(issues, deps)
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-1" in deleted
+    assert "pycastle/issue-2" not in deleted
+
+
 def test_branch_deletion_error_does_not_abort_merge(deps, git_svc):
     git_svc.delete_branch.side_effect = [
         GitCommandError("fail", returncode=1, stderr=""),
@@ -804,10 +819,7 @@ def test_merger_run_call_passes_work_body_with_conflict_count(
 ):
     git_svc.try_merge.return_value = False
     recording_runner = FakeAgentRunner([CompletionOutput()])
-    deps = dataclasses.replace(
-        _make_deps(tmp_path, git_svc, github_svc, recording_runner),
-        status_display=PlainStatusDisplay(),
-    )
+    deps = _make_deps(tmp_path, git_svc, github_svc, recording_runner)
     conflict_issues = [{"number": 1, "title": "A"}, {"number": 2, "title": "B"}]
 
     _run(conflict_issues, deps)
