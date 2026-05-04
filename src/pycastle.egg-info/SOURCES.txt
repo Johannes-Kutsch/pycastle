@@ -8,6 +8,7 @@ pyproject.toml
 .github/workflows/publish.yml
 docs/adr/0001-runtime-dependency-installation.md
 docs/adr/0002-cli-native-model-shorthand-resolution.md
+docs/adr/0003-global-user-scope-config-and-env.md
 docs/agents/domain.md
 docs/agents/issue-tracker.md
 docs/agents/triage-labels.md

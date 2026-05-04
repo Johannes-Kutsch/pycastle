@@ -9,16 +9,21 @@ from pycastle.errors import ClaudeCliNotFoundError, ConfigValidationError
 # ── Issue 203: cfg injection into _load_env ───────────────────────────────────
 
 
-def test_load_env_calls_load_dotenv_with_cfg_env_file(tmp_path):
-    """_load_env(cfg=Config(env_file=...)) must call load_dotenv with that path."""
+def test_load_env_reads_keys_from_cfg_env_file(tmp_path, monkeypatch):
+    """_load_env(cfg=Config(env_file=...)) must resolve keys from that file."""
     from pycastle.main import _load_env
 
     custom_env = tmp_path / "custom.env"
+    custom_env.write_text("GH_TOKEN=from-custom-file\n")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("PYCASTLE_HOME", raising=False)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "home")
 
-    with patch("pycastle.main.load_dotenv") as mock_dotenv:
-        _load_env(cfg=Config(env_file=custom_env))
+    env = _load_env(cfg=Config(env_file=custom_env))
 
-    mock_dotenv.assert_called_once_with(custom_env)
+    assert env["GH_TOKEN"] == "from-custom-file"
 
 
 # ── Issue 309: load_config() called at entry in CLI commands ──────────────────
