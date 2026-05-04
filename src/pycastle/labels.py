@@ -8,7 +8,7 @@ import urllib.request
 
 import click
 
-from .config import Config, load_config, load_env, resolve_pycastle_home
+from .config import Config, load_config, load_env, resolve_global_dir
 from .services import GitService
 
 _API = "https://api.github.com"
@@ -143,7 +143,7 @@ def create_labels_interactive(
 def main(cfg: Config | None = None) -> None:
     cfg = cfg or load_config()
     resolved = load_env(
-        global_dir=resolve_pycastle_home(),
+        global_dir=resolve_global_dir(None, os.environ),
         local_env_file=cfg.env_file,
         process_env=os.environ,
     )

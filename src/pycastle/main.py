@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 
-from .config import Config, load_config, load_env, resolve_pycastle_home
+from .config import Config, load_config, load_env, resolve_global_dir
 from .errors import ClaudeCliNotFoundError, ConfigValidationError
 
 _ENV_KEYS = (
@@ -20,7 +20,7 @@ def _load_env(cfg: Config | None = None) -> dict[str, str]:
     if cfg is None:
         cfg = load_config()
     resolved = load_env(
-        global_dir=resolve_pycastle_home(),
+        global_dir=resolve_global_dir(None, os.environ),
         local_env_file=cfg.env_file,
         process_env=os.environ,
     )
