@@ -148,8 +148,7 @@ class RichStatusDisplay:
         if caller == self._last_caller:
             return False
         cur_kind = self._kinds.get(caller)
-        pair = (self._last_kind, cur_kind)
-        if pair == ("phase", "agent") or pair == ("agent", "phase"):
+        if {self._last_kind, cur_kind} == {"phase", "agent"}:
             return False
         return True
 
