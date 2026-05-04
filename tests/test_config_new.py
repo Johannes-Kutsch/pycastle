@@ -480,3 +480,73 @@ def test_load_config_overrides_take_precedence_over_global(tmp_path):
         overrides={"max_parallel": 99},
     )
     assert cfg.max_parallel == 99
+
+
+# ── Issue 475: layer summary line ─────────────────────────────────────────
+
+
+def test_describe_config_layers_defaults_only_returns_defaults_label(tmp_path):
+    from pycastle.config.loader import describe_config_layers
+
+    summary = describe_config_layers(
+        repo_root=tmp_path, global_dir=tmp_path / "no_global"
+    )
+
+    assert summary == "Config: defaults"
+
+
+def test_describe_config_layers_with_local_only_appends_pycastle_path(tmp_path):
+    from pycastle.config.loader import describe_config_layers
+
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text("")
+
+    summary = describe_config_layers(
+        repo_root=tmp_path, global_dir=tmp_path / "no_global"
+    )
+
+    assert summary == "Config: defaults + pycastle/config.py"
+
+
+def test_describe_config_layers_with_global_only_appends_global_path(tmp_path):
+    from pycastle.config.loader import describe_config_layers
+
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text("")
+
+    summary = describe_config_layers(repo_root=tmp_path, global_dir=global_dir)
+
+    assert summary == f"Config: defaults + {global_dir}/config.py"
+    assert "pycastle/config.py" not in summary
+
+
+def test_describe_config_layers_with_both_layers_orders_global_then_local(tmp_path):
+    from pycastle.config.loader import describe_config_layers
+
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text("")
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text("")
+
+    summary = describe_config_layers(repo_root=tmp_path, global_dir=global_dir)
+
+    assert summary == (
+        f"Config: defaults + {global_dir}/config.py + pycastle/config.py"
+    )
+
+
+def test_describe_config_layers_shortens_home_path_to_tilde(tmp_path, monkeypatch):
+    from pycastle.config.loader import describe_config_layers
+
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    global_dir = fake_home / ".config" / "pycastle"
+    global_dir.mkdir(parents=True)
+    (global_dir / "config.py").write_text("")
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
+
+    summary = describe_config_layers(repo_root=tmp_path, global_dir=global_dir)
+
+    assert summary == "Config: defaults + ~/.config/pycastle/config.py"
