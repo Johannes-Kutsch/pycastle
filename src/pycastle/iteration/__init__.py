@@ -65,7 +65,12 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         if in_flight:
             issues = in_flight
         elif len(open_issues) >= 2:
-            async with phase_row(deps.status_display, "Plan", initial_phase="Planning") as row:
+            async with phase_row(
+                deps.status_display,
+                "Plan",
+                initial_phase="Planning",
+                startup_message=f"started planning for {len(open_issues)} issue(s) labeled {deps.cfg.issue_label}",
+            ) as row:
                 plan_result = await planning_phase(deps, sha, open_issues)
                 issue_lines = [
                     f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
