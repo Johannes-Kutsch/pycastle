@@ -1,4 +1,3 @@
-import os
 from unittest.mock import patch
 
 from click.testing import CliRunner
@@ -418,7 +417,3 @@ def test_init_cli_global_flag_skips_scope_prompt(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert (home / "config.py").exists()
     assert not (tmp_path / "pycastle" / "config.py").exists()
-
-
-# Make `os` reference used (avoid unused-import lint)
-_ = os
