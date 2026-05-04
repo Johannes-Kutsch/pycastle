@@ -104,7 +104,6 @@ def load_config(
                 "Path-typed fields are forbidden in global config.py; "
                 f"offending field(s): {forbidden}",
                 invalid_value=", ".join(forbidden),
-                valid_options=[],
             )
         kwargs.update(global_kwargs)
 
