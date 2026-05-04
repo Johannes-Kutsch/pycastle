@@ -19,7 +19,7 @@ from pycastle.iteration._deps import (
     RecordingLogger,
     RecordingStatusDisplay,
 )
-from pycastle.status_display import PlainStatusDisplay
+from pycastle.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.iteration.implement import (
     ImplementResult,
     _agent_worktree,
@@ -34,7 +34,7 @@ _cfg = Config()
 @dataclasses.dataclass
 class _ImplementStub:
     cfg: Config
-    status_display: PlainStatusDisplay
+    status_display: StatusDisplay
     agent_runner: FakeAgentRunner
     git_svc: GitService
     repo_root: Path
@@ -50,7 +50,7 @@ def _make_deps(
         agent_runner=agent_runner,
         cfg=Config(max_parallel=4, max_iterations=1),
         logger=logger or RecordingLogger(),
-        status_display=status_display or PlainStatusDisplay(),  # type: ignore[arg-type]
+        status_display=status_display or PlainStatusDisplay(),
     )
 
 
@@ -314,6 +314,30 @@ def test_run_issue_feedback_commands_include_backtick_wrapped_implement_checks(
     feedback_commands = implementer_call.prompt_args["FEEDBACK_COMMANDS"]
     for cmd in _cfg.implement_checks:
         assert f"`{cmd}`" in feedback_commands
+
+
+def test_run_issue_feedback_commands_single_check_no_joining(tmp_path):
+    """FEEDBACK_COMMANDS with one implement_check returns just the backtick-wrapped command."""
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    issue = {"number": 1, "title": "Fix thing"}
+    deps = _make_deps(tmp_path, fake)
+    deps.cfg = Config(implement_checks=("ruff check --fix",))
+    asyncio.run(run_issue(issue, deps))
+
+    implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
+    assert implementer_call.prompt_args["FEEDBACK_COMMANDS"] == "`ruff check --fix`"
+
+
+def test_run_issue_feedback_commands_empty_checks_yields_empty_string(tmp_path):
+    """FEEDBACK_COMMANDS with no implement_checks yields an empty string."""
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    issue = {"number": 1, "title": "Fix thing"}
+    deps = _make_deps(tmp_path, fake)
+    deps.cfg = Config(implement_checks=())
+    asyncio.run(run_issue(issue, deps))
+
+    implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
+    assert implementer_call.prompt_args["FEEDBACK_COMMANDS"] == ""
 
 
 def test_run_issue_implementer_invoked_with_skip_preflight_true(tmp_path):
