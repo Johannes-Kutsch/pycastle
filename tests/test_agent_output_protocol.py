@@ -313,6 +313,41 @@ def test_usage_limit_year_rollover_when_date_more_than_month_in_past(monkeypatch
     assert err.reset_time == expected
 
 
+@pytest.mark.parametrize("month_str", ["Sept", "September", "sep"])
+def test_usage_limit_accepts_month_name_variants(monkeypatch, month_str):
+    _freeze_now(monkeypatch, datetime(2026, 5, 4, 8, 0, tzinfo=timezone.utc))
+    err = _raise_usage_limit(_usage_limit_line(f"resets {month_str} 7, 11am (UTC)"))
+    expected = (
+        datetime(2026, 9, 7, 11, 0, tzinfo=timezone.utc)
+        .astimezone()
+        .replace(tzinfo=None)
+    )
+    assert err.reset_time == expected
+
+
+def test_usage_limit_invalid_month_returns_none(monkeypatch):
+    _freeze_now(monkeypatch, datetime(2026, 5, 4, 8, 0, tzinfo=timezone.utc))
+    err = _raise_usage_limit(_usage_limit_line("resets Smarch 7, 11am (UTC)"))
+    assert err.reset_time is None
+
+
+def test_usage_limit_invalid_day_returns_none(monkeypatch):
+    _freeze_now(monkeypatch, datetime(2026, 5, 4, 8, 0, tzinfo=timezone.utc))
+    err = _raise_usage_limit(_usage_limit_line("resets Feb 30, 11am (UTC)"))
+    assert err.reset_time is None
+
+
+def test_usage_limit_no_date_grace_window_keeps_today(monkeypatch):
+    _freeze_now(monkeypatch, datetime(2026, 5, 4, 11, 1, tzinfo=timezone.utc))
+    err = _raise_usage_limit(_usage_limit_line("resets 11:00am (UTC)"))
+    expected = (
+        datetime(2026, 5, 4, 11, 0, tzinfo=timezone.utc)
+        .astimezone()
+        .replace(tzinfo=None)
+    )
+    assert err.reset_time == expected
+
+
 def test_process_stream_invokes_on_turn_for_each_assistant_turn():
     turns: list[str] = []
     process_stream(
