@@ -1,11 +1,12 @@
 import asyncio
+import dataclasses
 
 import pytest
 
 from pycastle.agent_output_protocol import CompletionOutput
 from pycastle.agent_result import PreflightFailure
 from pycastle.agent_runner import RunRequest
-from pycastle.iteration._deps import FakeAgentRunner, RecordingLogger
+from pycastle.iteration._deps import Deps, FakeAgentRunner, RecordingLogger
 
 
 @pytest.fixture
@@ -64,6 +65,14 @@ def test_multiple_log_agent_output_calls_accumulate(logger: RecordingLogger) -> 
         ("planner", "plan output"),
         ("implementer", "impl output"),
     ]
+
+
+# --- Deps ---
+
+
+def test_deps_does_not_carry_env() -> None:
+    field_names = {f.name for f in dataclasses.fields(Deps)}
+    assert "env" not in field_names
 
 
 # --- FakeAgentRunner ---
