@@ -9,6 +9,13 @@ def pytest_configure():
     os.chdir(pathlib.Path(__file__).parent.parent)
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_pycastle_home(monkeypatch, tmp_path_factory):
+    monkeypatch.setenv(
+        "PYCASTLE_HOME", str(tmp_path_factory.mktemp("pycastle_home_isolated"))
+    )
+
+
 @pytest.fixture
 def git_repo(tmp_path):
     """Minimal git repo with one commit and a local bare remote, ready for worktree operations."""
