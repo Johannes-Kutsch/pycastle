@@ -52,7 +52,6 @@ class ContainerRunner:
         self._cfg.logs_dir.mkdir(parents=True, exist_ok=True)
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._session.__enter__)
-        self._status_display.register(self.name, work_body=work_body)
         await loop.run_in_executor(
             None,
             self._session.exec_simple,
