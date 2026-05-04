@@ -8,7 +8,9 @@ from typing import Literal
 import click
 
 from .config import Config, load_config, load_env, resolve_global_dir
+from .config.loader import describe_config_layers
 from .errors import ClaudeCliNotFoundError, ConfigValidationError
+from .status_display import PlainStatusDisplay
 
 _ENV_KEYS = (
     "ANTHROPIC_API_KEY",
@@ -35,6 +37,11 @@ def _load_env(cfg: Config | None = None) -> dict[str, str]:
             file=sys.stderr,
         )
     return env
+
+
+def _print_layer_summary() -> None:
+    summary = describe_config_layers()
+    PlainStatusDisplay().print("", summary)
 
 
 def _load_config_or_exit() -> Config:
@@ -75,6 +82,7 @@ def main() -> None:
 def init_cmd(global_flag: bool, local_flag: bool) -> None:
     from .init_command import main as _init
 
+    _print_layer_summary()
     if global_flag and local_flag:
         click.echo("Error: --global and --local are mutually exclusive.", err=True)
         sys.exit(1)
@@ -92,6 +100,7 @@ def init_cmd(global_flag: bool, local_flag: bool) -> None:
 def labels_cmd() -> None:
     from .labels import main as _labels
 
+    _print_layer_summary()
     cfg = _load_config_or_exit()
     _labels(cfg=cfg)
 
@@ -106,6 +115,7 @@ def labels_cmd() -> None:
 def build_cmd(no_cache: bool) -> None:
     from .build_command import main as _build
 
+    _print_layer_summary()
     cfg = _load_config_or_exit()
     _build(no_cache, cfg=cfg)
 
@@ -114,6 +124,7 @@ def build_cmd(no_cache: bool) -> None:
 def run_cmd() -> None:
     from .orchestrator import run
 
+    _print_layer_summary()
     cfg = _load_config_or_exit()
     asyncio.run(run(_load_env(cfg=cfg), Path(".").resolve()))
 

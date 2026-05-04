@@ -14,7 +14,7 @@ import platformdirs
 from pycastle._types import StageOverride
 from pycastle.errors import ConfigValidationError
 
-__all__ = ["Config", "load_config", "resolve_global_dir"]
+__all__ = ["Config", "describe_config_layers", "load_config", "resolve_global_dir"]
 
 _VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 
@@ -85,6 +85,39 @@ def resolve_global_dir(explicit: Path | None, env: Mapping[str, str]) -> Path:
     if env_val:
         return Path(env_val)
     return Path(platformdirs.user_config_dir("pycastle"))
+
+
+def _display_global_path(path: Path) -> str:
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            try:
+                rel = path.relative_to(appdata)
+                return "%APPDATA%\\" + str(rel).replace("/", "\\")
+            except ValueError:
+                pass
+    home = Path.home()
+    try:
+        rel = path.relative_to(home)
+        return "~/" + rel.as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def describe_config_layers(
+    repo_root: Path | None = None,
+    global_dir: Path | None = None,
+) -> str:
+    parts = ["defaults"]
+    resolved_global = resolve_global_dir(global_dir, os.environ)
+    global_file = resolved_global / "config.py"
+    if global_file.exists():
+        parts.append(_display_global_path(global_file))
+    root = repo_root if repo_root is not None else Path.cwd()
+    local = root / "pycastle" / "config.py"
+    if local.exists():
+        parts.append("pycastle/config.py")
+    return "Config: " + " + ".join(parts)
 
 
 def load_config(

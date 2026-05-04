@@ -242,3 +242,61 @@ def test_labels_cmd_shows_install_instruction_when_claude_cli_missing(
     ):
         result = CliRunner().invoke(cli, ["labels"])
     assert "sudo npm install -g @anthropic-ai/claude-code" in result.output
+
+
+# ── Issue 475: layer summary line ─────────────────────────────────────────
+
+
+def test_labels_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("GH_TOKEN", "test-token")
+    monkeypatch.setattr("pycastle.labels.click.prompt", lambda *a, **kw: "owner/repo")
+    monkeypatch.setattr("pycastle.labels.click.confirm", lambda *a, **kw: False)
+    monkeypatch.setattr("pycastle.labels._gh", lambda *a, **kw: (201, None))
+
+    result = CliRunner().invoke(cli, ["labels"])
+
+    assert "Config: defaults" in result.output
+
+
+def test_build_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+
+    fake_svc = MagicMock()
+    with patch("pycastle.build_command.DockerService", return_value=fake_svc):
+        result = CliRunner().invoke(cli, ["build"])
+
+    assert "Config: defaults" in result.output
+
+
+def test_build_cmd_layer_summary_includes_local_when_present(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text("max_parallel = 2\n")
+
+    fake_svc = MagicMock()
+    with patch("pycastle.build_command.DockerService", return_value=fake_svc):
+        result = CliRunner().invoke(cli, ["build"])
+
+    assert "Config: defaults + pycastle/config.py" in result.output
+
+
+def test_init_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    fake_init = MagicMock()
+    with patch("pycastle.init_command.main", fake_init):
+        result = CliRunner().invoke(cli, ["init", "--local"])
+
+    assert "Config: defaults" in result.output
