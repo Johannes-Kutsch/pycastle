@@ -2,6 +2,8 @@ import re
 import threading
 import time
 
+from typing import Literal
+
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.live import Live
 from rich.padding import Padding
@@ -88,6 +90,8 @@ class RichStatusDisplay:
         self._lock = threading.Lock()
         self._live: Live | None = None
         self._last_caller: str | None = None
+        self._last_kind: str | None = None
+        self._kinds: dict[str, str] = {}
 
     def __rich_console__(
         self, console: Console, options: ConsoleOptions
@@ -139,13 +143,23 @@ class RichStatusDisplay:
         return None
 
     def _blank_before(self, caller: str) -> bool:
-        return caller != self._last_caller or caller == ""
+        if caller == "":
+            return True
+        if caller == self._last_caller:
+            return False
+        cur_kind = self._kinds.get(caller)
+        pair = (self._last_kind, cur_kind)
+        if pair == ("phase", "agent") or pair == ("agent", "phase"):
+            return False
+        return True
 
     def register(
-        self, caller: str, startup_message: str = "started", work_body: str = "", initial_phase: str = "Setup"
+        self, caller: str, kind: Literal["phase", "agent"], startup_message: str = "started", work_body: str = "", initial_phase: str = "Setup"
     ) -> None:
         with self._lock:
             self._rows[caller] = _AgentRow(caller, initial_phase, work_body)
+            if caller != "":
+                self._kinds[caller] = kind
             live_to_start = self._acquire_live()
         if live_to_start is not None:
             live_to_start.start()
@@ -174,6 +188,8 @@ class RichStatusDisplay:
         if live_to_stop is not None:
             live_to_stop.stop()
         self.print(caller, shutdown_message, style=shutdown_style)
+        with self._lock:
+            self._kinds.pop(caller, None)
 
     def print(
         self,
@@ -185,6 +201,7 @@ class RichStatusDisplay:
         with self._lock:
             prepend_blank = self._blank_before(caller)
             self._last_caller = caller
+            self._last_kind = self._kinds.get(caller)
         if prepend_blank:
             self._console.print()
         for line in lines:
