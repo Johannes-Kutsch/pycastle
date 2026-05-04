@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from pycastle._types import StageOverride
+from pycastle.errors import ConfigValidationError
 
 __all__ = ["Config", "load_config"]
 
@@ -94,16 +95,14 @@ def load_config(
 
 
 def _validate_efforts(cfg: Config) -> Config:
-    from pycastle.errors import ConfigValidationError
-
     valid_efforts = sorted(_VALID_EFFORTS)
-    overrides = {
+    stage_overrides = {
         "plan": cfg.plan_override,
         "implement": cfg.implement_override,
         "review": cfg.review_override,
         "merge": cfg.merge_override,
     }
-    for stage, override in overrides.items():
+    for stage, override in stage_overrides.items():
         effort = override.effort
         if effort and effort not in _VALID_EFFORTS:
             close = get_close_matches(effort, valid_efforts, n=1, cutoff=0.0)

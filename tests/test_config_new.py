@@ -288,6 +288,15 @@ def test_load_config_applies_auto_push_false_from_local_file(tmp_path):
     assert cfg.auto_push is False
 
 
+def test_load_config_validates_effort_from_programmatic_overrides(tmp_path):
+    with pytest.raises(ConfigValidationError) as exc_info:
+        load_config(
+            repo_root=tmp_path,
+            overrides={"plan_override": StageOverride(effort="ultra")},
+        )
+    assert exc_info.value.invalid_value == "ultra"
+
+
 def test_load_config_validate_effort_error_names_the_stage(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(
