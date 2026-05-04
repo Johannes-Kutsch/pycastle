@@ -1127,8 +1127,10 @@ def test_commit_runs_add_then_commit_with_message(tmp_path):
 
 def test_commit_raises_git_command_error_on_add_failure(tmp_path):
     svc = GitService(_cfg)
+    captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
         if "add" in cmd:
             return MagicMock(returncode=1, stdout=b"", stderr=b"add error")
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
@@ -1136,6 +1138,8 @@ def test_commit_raises_git_command_error_on_add_failure(tmp_path):
     with patch("subprocess.run", side_effect=fake_run):
         with pytest.raises(GitCommandError):
             svc.commit(tmp_path / "wt", tmp_path, "msg")
+
+    assert all("commit" not in cmd for cmd in captured)
 
 
 def test_commit_raises_git_command_error_on_commit_failure(tmp_path):
