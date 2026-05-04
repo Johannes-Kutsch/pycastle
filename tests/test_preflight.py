@@ -10,6 +10,7 @@ from pycastle.agent_output_protocol import (
     IssueOutput,
     IssueParseError,
 )
+from pycastle.agent_result import PreflightFailure
 from pycastle.config import Config
 from pycastle.services import GitCommandError, GitService
 from pycastle.services import GithubService
@@ -245,6 +246,21 @@ def test_preflight_phase_raises_runtime_error_when_preflight_agent_returns_wrong
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
     with pytest.raises(RuntimeError, match="unexpected output type"):
+        asyncio.run(preflight_phase(deps))
+
+
+def test_preflight_phase_raises_runtime_error_when_preflight_issue_agent_returns_preflight_failure(
+    tmp_path, git_svc
+):
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+    fake = FakeAgentRunner(
+        [PreflightFailure(failures=(("ruff", "ruff check .", "still failing"),))],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    with pytest.raises(RuntimeError, match="PreflightFailure"):
         asyncio.run(preflight_phase(deps))
 
 
