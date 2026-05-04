@@ -7,6 +7,7 @@ README.md
 pyproject.toml
 .github/workflows/publish.yml
 docs/adr/0001-runtime-dependency-installation.md
+docs/adr/0002-cli-native-model-shorthand-resolution.md
 docs/agents/domain.md
 docs/agents/issue-tracker.md
 docs/agents/triage-labels.md
@@ -23,9 +24,9 @@ src/pycastle/labels.py
 src/pycastle/main.py
 src/pycastle/orchestrator.py
 src/pycastle/prompt_pipeline.py
-src/pycastle/prompt_utils.py
 src/pycastle/rich_status_display.py
 src/pycastle/status_display.py
+src/pycastle/stream_session.py
 src/pycastle/worktree.py
 src/pycastle.egg-info/PKG-INFO
 src/pycastle.egg-info/SOURCES.txt
@@ -127,6 +128,7 @@ tests/test_preflight.py
 tests/test_prompt_pipeline.py
 tests/test_prompt_utils.py
 tests/test_status_display.py
+tests/test_stream_session.py
 tests/test_subprocess_service.py
 tests/test_worktree.py
 tests/__pycache__/__init__.cpython-311.pyc

@@ -14,9 +14,8 @@ from pycastle.agent_result import (
     PreflightFailure,
 )
 from pycastle.agent_runner import RunRequest
-from pycastle.services import ClaudeService
 from pycastle.config import Config, StageOverride
-from pycastle.errors import ClaudeServiceError, ConfigValidationError, UsageLimitError
+from pycastle.errors import UsageLimitError
 from pycastle.services import GitCommandError, GitService
 from pycastle.services import GithubNotFoundError, GithubService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
@@ -97,20 +96,6 @@ def _make_github_svc_hitl():
     return mock
 
 
-_FAKE_TEST_MODELS = (
-    "claude-haiku-4-5",
-    "claude-haiku-4-5-20251001",
-    "claude-sonnet-4-6",
-    "claude-opus-4-7",
-)
-
-
-def _make_claude_svc(models: tuple[str, ...] = _FAKE_TEST_MODELS) -> ClaudeService:
-    mock = MagicMock(spec=ClaudeService)
-    mock.list_models.return_value = models
-    return mock
-
-
 def _write_config(tmp_path: Path, **kwargs) -> None:
     (tmp_path / "pycastle").mkdir(exist_ok=True)
     lines = ["from pycastle import StageOverride", "from pathlib import Path"]
@@ -128,7 +113,6 @@ def _run(
     tmp_path,
     run_agent_fn=None,
     *,
-    claude_service=None,
     git_service=None,
     github_service=None,
     agent_runner=None,
@@ -144,9 +128,6 @@ def _run(
             tmp_path,
             run_agent=run_agent_fn,
             agent_runner=agent_runner,
-            claude_service=claude_service
-            if claude_service is not None
-            else _make_claude_svc(),
             git_service=git_service if git_service is not None else _make_git_svc(),
             github_service=github_service,
             status_display=status_display,
@@ -405,78 +386,6 @@ def test_failed_agent_prints_traceback_to_stderr(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "RuntimeError" in err
     assert "stderr traceback check" in err
-
-
-# ── Issue-78: model resolution called at start of run() ─────────────────────
-
-
-def test_run_resolves_models_before_any_agent(tmp_path):
-    """load_config model resolution must complete before the first run_agent call."""
-    call_order: list[str] = []
-
-    svc = MagicMock(spec=ClaudeService)
-
-    def _tracking_list_models():
-        call_order.append("resolve")
-        return _FAKE_TEST_MODELS
-
-    svc.list_models.side_effect = _tracking_list_models
-
-    (tmp_path / "pycastle").mkdir(exist_ok=True)
-    (tmp_path / "pycastle" / "config.py").write_text(
-        "from pycastle import StageOverride\n"
-        'plan_override = StageOverride(model="haiku", effort="")\n'
-        "max_parallel = 4\nmax_iterations = 1\n"
-    )
-
-    async def _fake_run_agent(request: RunRequest):
-        call_order.append("agent")
-        return _plan_output([])
-
-    asyncio.run(
-        run(
-            {},
-            tmp_path,
-            run_agent=_fake_run_agent,
-            claude_service=svc,
-            git_service=_make_git_svc(),
-            github_service=_make_github_svc(),
-        )
-    )
-
-    assert call_order[0] == "resolve", f"resolve must be first; got {call_order}"
-
-
-def test_run_config_validation_error_propagates_no_agents_started(tmp_path):
-    """ConfigValidationError from load_config must propagate and prevent all agents."""
-    agents_started: list[str] = []
-
-    async def _fake_run_agent(request: RunRequest):
-        agents_started.append(request.name)
-        return CompletionOutput()
-
-    svc = MagicMock(spec=ClaudeService)
-    svc.list_models.side_effect = ClaudeServiceError("unavailable")
-
-    (tmp_path / "pycastle").mkdir(exist_ok=True)
-    (tmp_path / "pycastle" / "config.py").write_text(
-        "from pycastle import StageOverride\n"
-        'plan_override = StageOverride(model="haiku", effort="")\n'
-        "max_parallel = 4\nmax_iterations = 1\n"
-    )
-
-    with pytest.raises(ConfigValidationError):
-        asyncio.run(
-            run(
-                {},
-                tmp_path,
-                run_agent=_fake_run_agent,
-                claude_service=svc,
-                git_service=_make_git_svc(),
-            )
-        )
-
-    assert agents_started == [], f"No agents must start; got {agents_started}"
 
 
 # ── Issue-78: model/effort passed per stage ───────────────────────────────────
@@ -1877,28 +1786,6 @@ def test_run_passes_plan_override_model_and_effort_to_planner(tmp_path):
     assert captured_planner.get("effort") == "low"
 
 
-def test_run_model_shorthand_resolved_before_agent_calls(tmp_path):
-    """Model shorthand must be resolved to a full model ID before it reaches agent calls."""
-    captured_model: list[str] = []
-
-    async def _fake_run_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            captured_model.append(request.model)
-            return _plan_output([])
-        return CompletionOutput()
-
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        github_service=_make_github_svc(),
-        plan_override=StageOverride(model="haiku", effort=""),
-    )
-
-    assert captured_model == ["claude-haiku-4-5-20251001"], (
-        "model shorthand resolution must be propagated to the agent call"
-    )
-
-
 # ── Issue-206: worktree_sha set at iteration start; no post-merge host checks ──
 
 
@@ -2093,7 +1980,6 @@ def test_run_full_iteration_cold_path(git_repo):
             {},
             git_repo,
             run_agent=_fake_run_agent,
-            claude_service=_make_claude_svc(),
             github_service=mock_github,
         )
     )

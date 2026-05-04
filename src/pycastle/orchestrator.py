@@ -10,7 +10,7 @@ from typing import Any
 from .agent_result import PreflightFailure
 from .agent_runner import AgentRunner, AgentRunnerProtocol, RunRequest
 from .config import Config, load_config
-from .services import ClaudeService, GitCommandError, GitService
+from .services import GitCommandError, GitService
 from .services import GithubNotFoundError, GithubService
 from .iteration import (
     AbortedHITL,
@@ -95,12 +95,11 @@ async def run(
     *,
     run_agent: Any | None = None,
     agent_runner: AgentRunnerProtocol | None = None,
-    claude_service: ClaudeService | None = None,
     git_service: GitService | None = None,
     github_service: GithubService | None = None,
     status_display: StatusDisplay | None = None,
 ) -> None:
-    cfg = load_config(repo_root=repo_root, claude_service=claude_service)
+    cfg = load_config(repo_root=repo_root)
     prune_orphan_worktrees(repo_root, cfg=cfg)
     git_svc = git_service or GitService(cfg)
 

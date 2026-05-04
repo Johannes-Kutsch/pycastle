@@ -3,12 +3,15 @@ from __future__ import annotations
 import dataclasses
 import importlib.util
 import types
+from difflib import get_close_matches
 from pathlib import Path
 from typing import Any
 
 from pycastle._types import StageOverride
 
 __all__ = ["Config", "load_config"]
+
+_VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 
 
 @dataclasses.dataclass(frozen=True)
@@ -60,10 +63,7 @@ class Config:
 def load_config(
     repo_root: Path | None = None,
     overrides: dict[str, Any] | None = None,
-    *,
-    claude_service: Any | None = None,
 ) -> Config:
-    """Load defaults, apply project-local pycastle/config.py, then apply any extra overrides."""
     kwargs: dict[str, Any] = {}
     valid_fields = {f.name for f in dataclasses.fields(Config)}
 
@@ -90,10 +90,29 @@ def load_config(
             kwargs[k] = v
 
     cfg = Config(**kwargs)
+    return _validate_efforts(cfg)
 
-    from pycastle.services import ClaudeService
 
-    from .validator import validate_config
+def _validate_efforts(cfg: Config) -> Config:
+    from pycastle.errors import ConfigValidationError
 
-    cs = claude_service if claude_service is not None else ClaudeService()
-    return validate_config(cfg, cs)
+    valid_efforts = sorted(_VALID_EFFORTS)
+    overrides = {
+        "plan": cfg.plan_override,
+        "implement": cfg.implement_override,
+        "review": cfg.review_override,
+        "merge": cfg.merge_override,
+    }
+    for stage, override in overrides.items():
+        effort = override.effort
+        if effort and effort not in _VALID_EFFORTS:
+            close = get_close_matches(effort, valid_efforts, n=1, cutoff=0.0)
+            suggestion = close[0] if close else valid_efforts[0]
+            raise ConfigValidationError(
+                f"Invalid effort {effort!r} for stage {stage!r}; "
+                f"did you mean {suggestion!r}? Valid efforts: {valid_efforts}",
+                invalid_value=effort,
+                suggestion=suggestion,
+                valid_options=valid_efforts,
+            )
+    return cfg
