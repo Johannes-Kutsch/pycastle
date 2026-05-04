@@ -72,7 +72,6 @@ def _make_deps(
     preflight_responses=None,
 ) -> Deps:
     return Deps(
-        env={},
         repo_root=tmp_path,
         git_svc=git_svc,
         github_svc=github_svc,
