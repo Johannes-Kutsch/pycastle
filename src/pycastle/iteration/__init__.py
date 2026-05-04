@@ -1,4 +1,5 @@
 import dataclasses
+from datetime import datetime
 from typing import TypeAlias
 
 from ..agent_result import CancellationToken, PreflightFailure
@@ -28,7 +29,7 @@ class AbortedHITL:
 
 @dataclasses.dataclass(frozen=True)
 class AbortedUsageLimit:
-    pass
+    reset_time: datetime | None = None
 
 
 IterationOutcome: TypeAlias = Continue | Done | AbortedHITL | AbortedUsageLimit
@@ -97,7 +98,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
         if impl_result.usage_limit_hit:
             row.close("finished")
-            return AbortedUsageLimit()
+            return AbortedUsageLimit(reset_time=impl_result.usage_limit_reset_time)
 
         for issue, error in impl_result.errors:
             match error:

@@ -179,15 +179,20 @@ async def run(
                     break
                 case AbortedHITL():
                     sys.exit(1)
-                case AbortedUsageLimit():
+                case AbortedUsageLimit(reset_time=reset_time):
                     now = datetime.now()
-                    next_hour = now.replace(
-                        minute=0, second=0, microsecond=0
-                    ) + timedelta(hours=1)
-                    wake_time = next_hour + timedelta(minutes=2)
+                    if reset_time is not None:
+                        wake_time = reset_time + timedelta(minutes=2)
+                        suffix = ""
+                    else:
+                        next_hour = now.replace(
+                            minute=0, second=0, microsecond=0
+                        ) + timedelta(hours=1)
+                        wake_time = next_hour + timedelta(minutes=2)
+                        suffix = " (estimated)"
                     status_display.print(  # type: ignore[union-attr]
                         "",
-                        f"Usage limit reached. Sleeping until {wake_time.strftime('%H:%M')}."
+                        f"Usage limit reached. Sleeping until {wake_time.strftime('%H:%M')}{suffix}."
                         " Press Ctrl+C to abort.",
                     )
                     time.sleep((wake_time - now).total_seconds())
