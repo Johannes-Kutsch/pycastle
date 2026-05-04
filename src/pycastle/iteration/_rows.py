@@ -24,10 +24,28 @@ async def phase_row(
     initial_phase: str = "Setup",
     startup_message: str = "started",
 ) -> AsyncGenerator[PhaseRow, None]:
-    status_display.register(caller, "phase", startup_message=startup_message, initial_phase=initial_phase)
+    status_display.register(
+        caller, "phase", startup_message=startup_message, initial_phase=initial_phase
+    )
     row = PhaseRow(status_display, caller)
     try:
         yield row
     finally:
         if not row._closed:
             status_display.remove(caller, "failed", shutdown_style="error")
+
+
+@asynccontextmanager
+async def agent_row(
+    status_display: StatusDisplay,
+    caller: str,
+    work_body: str,
+) -> AsyncGenerator[None, None]:
+    status_display.register(caller, "agent", work_body=work_body)
+    try:
+        yield None
+    except BaseException:
+        status_display.remove(caller, "failed", shutdown_style="error")
+        raise
+    else:
+        status_display.remove(caller)

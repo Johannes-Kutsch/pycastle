@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from pycastle.iteration import phase_row
+from pycastle.iteration import agent_row, phase_row
 from pycastle.status_display import PlainStatusDisplay
 
 
@@ -84,3 +84,55 @@ def test_phase_row_custom_startup_message_appears_on_exception_path(
         asyncio.run(run())
     out = capsys.readouterr().out
     assert out == "\n[Plan] custom message\n[Plan] failed\n"
+
+
+def test_agent_row_success_path_registers_and_removes(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+
+    async def run() -> None:
+        async with agent_row(d, "Worker", work_body="implementing #1") as ctx:
+            assert ctx is None
+
+    asyncio.run(run())
+    out = capsys.readouterr().out
+    assert out == "\n[Worker] started\n[Worker] finished\n"
+
+
+def test_agent_row_exception_path_marks_failed_and_propagates(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+
+    async def run() -> None:
+        async with agent_row(d, "Worker", work_body="implementing #1"):
+            raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(run())
+    out = capsys.readouterr().out
+    assert out == "\n[Worker] started\n[Worker] failed\n"
+
+
+def test_agent_row_register_uses_agent_kind_and_work_body(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+
+    async def run() -> None:
+        async with phase_row(d, "Implement"):
+            async with agent_row(d, "Worker", work_body="implementing #42"):
+                pass
+
+    asyncio.run(run())
+    out = capsys.readouterr().out
+    # No blank line between [Implement] started and [Worker] started, because
+    # PlainStatusDisplay suppresses the blank between {phase, agent} kinds.
+    # This is observable proof that agent_row registered with kind="agent".
+    assert out == (
+        "\n[Implement] started\n"
+        "[Worker] started\n"
+        "[Worker] finished\n"
+        "[Implement] failed\n"
+    )
