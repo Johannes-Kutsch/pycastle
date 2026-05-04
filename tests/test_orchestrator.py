@@ -1505,6 +1505,35 @@ def test_usage_limit_without_reset_time_appends_estimated_qualifier(tmp_path, ca
     assert "(estimated)" in out
 
 
+# ── Preflight-phase usage-limit handling ─────────────────────────────────────
+
+
+def test_usage_limit_in_preflight_sleeps_instead_of_crashing(tmp_path):
+    """UsageLimitError raised during preflight (Pre-Flight Reporter) must be caught and
+    routed through the orchestrator's sleep-and-retry path rather than crashing."""
+    mock_github = _make_github_svc_afk()
+    mock_github.has_open_issues_with_label.side_effect = [True, False]
+
+    async def _fake_run_agent(request: RunRequest):
+        if "Pre-Flight Reporter" in request.name:
+            raise UsageLimitError(reset_time=None)
+        return CompletionOutput()
+
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            agent_runner=FakeAgentRunner(
+                side_effect=_fake_run_agent,
+                preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+            ),
+            github_service=mock_github,
+            max_iterations=2,
+        )
+
+    mock_sleep.assert_called_once()
+    assert mock_sleep.call_args[0][0] > 0
+
+
 # ── Issue-194: skip Planner when no ready-for-agent issues exist ──────────────
 
 

@@ -34,8 +34,8 @@
 | **PREFLIGHT_CHECKS** | Config entry (`list[tuple[str, str]]`) of `(name, command)` pairs run during the Pre-flight phase; detection-only commands, no auto-fix (e.g. `ruff check .`) | preflight commands, check list |
 | **IMPLEMENT_CHECKS** | Config entry (`list[str]`) of commands rendered into the FEEDBACK LOOPS section of the implement-prompt as agent instructions; may differ from PREFLIGHT_CHECKS (e.g. `ruff check --fix`) | feedback commands, implement commands |
 | **field-by-field override** | The config loader strategy: for each non-underscore name in the consuming project's config.py, `setattr` replaces the corresponding name in the config loader module; absent names fall back to the defaults module | full replacement, merge override |
-| **STAGE_OVERRIDES** | Config dict with one entry per orchestration phase (`plan`, `implement`, `review`, `merge`), each holding a model shorthand and an effort level | stage config, model config |
-| **stage override** | The per-phase `model` + `effort` entry inside STAGE_OVERRIDES for one orchestration phase | phase config, agent config |
+| **STAGE_OVERRIDES** | Config dict with one entry per agent role (`plan`, `implement`, `review`, `merge`, `preflight-issue`), each holding a model shorthand and an effort level | stage config, model config |
+| **stage override** | The per-agent-role `model` + `effort` entry inside STAGE_OVERRIDES for one agent role | phase config, agent config |
 | **model shorthand** | A short family alias (`haiku`, `sonnet`, `opus`) accepted by the Claude CLI natively; stored as-is in `Config` and passed through to `claude --model` at stage execution time; not resolved at config load time (see ADR 0002) | model alias, model name |
 | **full model ID** | The versioned Claude model identifier (e.g. `claude-sonnet-4-6`); may be stored directly in a stage override instead of a shorthand; passed through to `claude --model` unchanged | model ID, model version |
 | **effort level** | One of five Claude effort values (`low`, `medium`, `high`, `xhigh`, `max`) that controls cost and reasoning depth; validated at config load time against this fixed set | effort, effort flag |
@@ -230,7 +230,7 @@
 
 ## Relationships
 
-- **STAGE_OVERRIDES** has exactly four entries, one per orchestration phase (`plan`, `implement`, `review`, `merge`); each entry has independent `model` and `effort` fields — an empty string for either means CLI default (no flag injected).
+- **STAGE_OVERRIDES** has exactly five entries, one per agent role (`plan`, `implement`, `review`, `merge`, `preflight-issue`); each entry has independent `model` and `effort` fields — an empty string for either means CLI default (no flag injected). The `preflight-issue` entry applies to the preflight-issue agent (Pre-Flight Reporter) spawned only when a preflight check fails; it is not tied to a phase.
 - **`load_config()`** is a pure function — no subprocess calls; it validates effort strings against the fixed set and raises `ConfigValidationError` on any invalid entry; it also rejects global-forbidden path fields when set in the global layer; model strings (shorthands or full IDs) are stored as-is in `Config` and resolved by the Claude CLI at stage execution time (see ADR 0002).
 - **Layered config merge** applies at every CLI subcommand entry point (`run`, `labels`, `init`); the merge stack is `defaults → pycastle home/config.py → pycastle dir/config.py` for `Config`, and `defaults → global .env → local .env → process env` for environment values; every subcommand prints the resolved layer summary at startup (see ADR 0003).
 - The **Planner** produces one plan per iteration listing only unblocked AFK issues; blockers and HITL issues are excluded via the dependency graph.

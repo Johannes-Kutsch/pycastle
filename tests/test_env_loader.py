@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pycastle.config import DEFAULT_ENV_FILE, load_env, resolve_pycastle_home
+from pycastle.config import DEFAULT_ENV_FILE, load_env
 
 
 @pytest.fixture
@@ -93,23 +93,3 @@ def test_custom_env_file_skips_global_fallback(repo: Path, tmp_path: Path) -> No
     assert env["OTHER"] == "x"
 
 
-def test_resolve_pycastle_home_explicit_arg_wins(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "from_env"))
-    explicit = tmp_path / "explicit"
-    assert resolve_pycastle_home(explicit) == explicit
-
-
-def test_resolve_pycastle_home_falls_back_to_env_var(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "from_env"))
-    assert resolve_pycastle_home() == tmp_path / "from_env"
-
-
-def test_resolve_pycastle_home_returns_none_when_unset(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("PYCASTLE_HOME", raising=False)
-    assert resolve_pycastle_home() is None

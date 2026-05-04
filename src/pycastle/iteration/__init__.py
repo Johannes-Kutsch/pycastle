@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import TypeAlias
 
 from ..agent_result import CancellationToken, PreflightFailure
+from ..errors import UsageLimitError
 from ..worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
 from ._rows import PhaseRow, agent_row, phase_row
@@ -49,7 +50,11 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         "Preflight",
         initial_phase="Running",
     ) as preflight_row:
-        preflight_result = await preflight_phase(deps)
+        try:
+            preflight_result = await preflight_phase(deps)
+        except UsageLimitError as err:
+            preflight_row.close("finished")
+            return AbortedUsageLimit(reset_time=err.reset_time)
         preflight_row.close("finished")
 
     if isinstance(preflight_result, PreflightHITL):
