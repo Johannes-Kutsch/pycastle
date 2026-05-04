@@ -605,6 +605,45 @@ def test_agent_worktree_removes_gitdir_overlay_even_when_body_raises(
     assert not overlay.exists()
 
 
+def test_agent_worktree_removes_worktrees_dir_when_last_child_exits(
+    tmp_path, monkeypatch
+):
+    """_agent_worktree drops the empty `.worktrees` parent on a clean, non-preserved exit."""
+    overlay = _make_overlay(tmp_path)
+    monkeypatch.setattr(
+        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
+    )
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    worktrees_dir = tmp_path / deps.cfg.pycastle_dir / ".worktrees"
+    wt_path = worktrees_dir / "issue-6"
+
+    def _create(repo, path, branch, sha):
+        path.mkdir(parents=True, exist_ok=True)
+
+    def _remove(repo, path):
+        if path.exists():
+            for child in path.iterdir():
+                child.unlink()
+            path.rmdir()
+
+    deps.git_svc.create_worktree.side_effect = _create
+    deps.git_svc.remove_worktree.side_effect = _remove
+
+    token = CancellationToken()
+
+    async def _run():
+        async with _agent_worktree("pycastle/issue-6", None, token, deps):
+            assert wt_path.exists()
+            assert worktrees_dir.exists()
+
+    asyncio.run(_run())
+
+    assert not wt_path.exists()
+    assert not worktrees_dir.exists()
+
+
 # ── run_issue: worktree lifecycle ─────────────────────────────────────────────
 
 

@@ -17,6 +17,7 @@ from ..status_display import StatusDisplay
 from ..services import GitService
 from ..worktree import (
     patch_gitdir_for_container,
+    teardown_worktree,
     worktree_name_for_branch,
     worktree_path as _worktree_path,
 )
@@ -53,7 +54,7 @@ async def _agent_worktree(
             except Exception:
                 clean = False
             if clean:
-                deps.git_svc.remove_worktree(deps.repo_root, wt_path)
+                teardown_worktree(deps.git_svc, deps.repo_root, wt_path)
         if gitdir_overlay is not None:
             gitdir_overlay.unlink(missing_ok=True)
 
