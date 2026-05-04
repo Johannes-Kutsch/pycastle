@@ -6,6 +6,7 @@ from .agent_output_protocol import AgentOutput, AgentRole
 from .agent_result import CancellationToken, PreflightFailure
 from .config import Config
 from .container_runner import ContainerRunner
+from .docker_session import DockerSession, build_volume_spec
 from .errors import AgentTimeoutError, UsageLimitError
 from .services import GitService
 from .status_display import PlainStatusDisplay
@@ -55,6 +56,25 @@ class AgentRunner:
         self._git_service = git_service
         self._docker_client = docker_client
 
+    def _build_session(self, mount_path: Path) -> DockerSession:
+        volumes, auto_overlay = build_volume_spec(mount_path)
+        container_env = {
+            k: v for k, v in self._env.items() if k != "CLAUDE_ACCOUNT_JSON"
+        }
+        return DockerSession(
+            volumes=volumes,
+            container_env=container_env,
+            image_name=self._cfg.docker_image_name,
+            cfg=self._cfg,
+            docker_client=self._docker_client,
+            auto_overlay=auto_overlay,
+        )
+
+    def _inject_claude_credentials(self, session: DockerSession) -> None:
+        claude_json = self._env.get("CLAUDE_ACCOUNT_JSON")
+        if claude_json:
+            session.write_file(claude_json, "/home/agent/.claude.json")
+
     async def run(self, request: RunRequest) -> AgentOutput | PreflightFailure:
         name = request.name
         prompt_file = request.prompt_file
@@ -74,13 +94,12 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError("Agent cancelled due to usage limit")
 
+        session = self._build_session(mount_path)
         runner = ContainerRunner(
             name,
-            mount_path,
-            self._env,
+            session,
             model=model,
             effort=effort,
-            docker_client=self._docker_client,
             status_display=status_display,
             cfg=self._cfg,
         )
@@ -88,7 +107,7 @@ class AgentRunner:
             git_name = self._git_service.get_user_name()
             git_email = self._git_service.get_user_email()
             await runner.setup(git_name, git_email, work_body)
-            await runner.prepare(prompt_file, prompt_args or {})
+            self._inject_claude_credentials(session)
             if not skip_preflight:
                 failures = await runner.preflight(list(self._cfg.preflight_checks))
                 if failures:
@@ -96,8 +115,9 @@ class AgentRunner:
             retries_left = self._cfg.timeout_retries
             while True:
                 try:
-                    output = await runner.work(request.role)
-                    return output
+                    return await runner.work(
+                        request.role, prompt_file, prompt_args or {}
+                    )
                 except AgentTimeoutError:
                     if retries_left <= 0:
                         raise
@@ -114,7 +134,7 @@ class AgentRunner:
         finally:
             status_display.remove(name)
             try:
-                runner.__exit__(None, None, None)
+                session.__exit__(None, None, None)
             except Exception:
                 pass
 
@@ -132,20 +152,20 @@ class AgentRunner:
 
         git_name = self._git_service.get_user_name()
         git_email = self._git_service.get_user_email()
+        session = self._build_session(mount_path)
         runner = ContainerRunner(
             name,
-            mount_path,
-            self._env,
-            docker_client=self._docker_client,
+            session,
             status_display=status_display,
             cfg=self._cfg,
         )
         try:
             await runner.setup(git_name, git_email, work_body)
+            self._inject_claude_credentials(session)
             return await runner.preflight(list(self._cfg.preflight_checks))
         finally:
             status_display.remove(name)
             try:
-                runner.__exit__(None, None, None)
+                session.__exit__(None, None, None)
             except Exception:
                 pass

@@ -3,7 +3,9 @@ import re
 import sys
 import tarfile
 import threading
+from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 
 import docker
 from docker.models.containers import Container as DockerContainer
@@ -167,6 +169,14 @@ class DockerSession:
         if stderr and not stdout:
             print(f"  [exec stderr] {stderr.strip()}", file=sys.stderr)
         return stdout
+
+    def exec_stream(self, command: str) -> Iterator[bytes]:
+        result = self._active_container.exec_run(
+            ["bash", "-c", command],
+            stream=True,
+            workdir="/home/agent/workspace",
+        )
+        return cast(Iterator[bytes], result.output)
 
     def write_file(self, content: str, container_path: str) -> None:
         data = content.encode("utf-8")

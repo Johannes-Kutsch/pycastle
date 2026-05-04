@@ -73,9 +73,9 @@ def test_usage_limit_error_carries_matched_line():
 
 
 @pytest.fixture
-def fake_runner(tmp_path):
+def fake_session(tmp_path):
     from pycastle.config import Config
-    from pycastle.container_runner import ContainerRunner
+    from pycastle.docker_session import DockerSession
 
     def _make(exit_code=0, stdout=b"", stderr=b""):
         mock_client = MagicMock()
@@ -84,33 +84,32 @@ def fake_runner(tmp_path):
         mock_result.output = (stdout, stderr)
         mock_client.containers.run.return_value.exec_run.return_value = mock_result
 
-        cfg = Config(logs_dir=tmp_path / "logs")
-        runner = ContainerRunner(
-            name="test",
-            mount_path=tmp_path,
-            env={},
+        session = DockerSession(
+            volumes={},
+            container_env={},
+            image_name="img",
+            cfg=Config(logs_dir=tmp_path / "logs"),
             docker_client=mock_client,
-            cfg=cfg,
         )
-        runner.__enter__()
-        return runner
+        session.__enter__()
+        return session
 
     return _make
 
 
-def test_exec_simple_raises_docker_error_on_nonzero_exit(fake_runner):
-    runner = fake_runner(exit_code=1, stderr=b"command failed")
+def test_exec_simple_raises_docker_error_on_nonzero_exit(fake_session):
+    session = fake_session(exit_code=1, stderr=b"command failed")
     with pytest.raises(DockerError):
-        runner.exec_simple("exit 1")
+        session.exec_simple("exit 1")
 
 
-def test_exec_simple_raises_docker_timeout_error_on_timeout(fake_runner):
+def test_exec_simple_raises_docker_timeout_error_on_timeout(fake_session):
     blocker = threading.Event()
-    runner = fake_runner()
-    runner._container.exec_run.side_effect = lambda *a, **kw: blocker.wait() or None
+    session = fake_session()
+    session._container.exec_run.side_effect = lambda *a, **kw: blocker.wait() or None
     try:
         with pytest.raises(DockerTimeoutError):
-            runner.exec_simple("sleep inf", timeout=0.05)
+            session.exec_simple("sleep inf", timeout=0.05)
     finally:
         blocker.set()
 
