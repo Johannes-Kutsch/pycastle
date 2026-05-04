@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from pycastle.config import Config, StageOverride, load_config
-from pycastle.config.loader import resolve_global_dir
+from pycastle.config.loader import describe_config_layers, resolve_global_dir
 from pycastle.errors import (
     ConfigValidationError,
     PycastleError,
@@ -486,8 +486,6 @@ def test_load_config_overrides_take_precedence_over_global(tmp_path):
 
 
 def test_describe_config_layers_defaults_only_returns_defaults_label(tmp_path):
-    from pycastle.config.loader import describe_config_layers
-
     summary = describe_config_layers(
         repo_root=tmp_path, global_dir=tmp_path / "no_global"
     )
@@ -496,8 +494,6 @@ def test_describe_config_layers_defaults_only_returns_defaults_label(tmp_path):
 
 
 def test_describe_config_layers_with_local_only_appends_pycastle_path(tmp_path):
-    from pycastle.config.loader import describe_config_layers
-
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text("")
 
@@ -509,21 +505,18 @@ def test_describe_config_layers_with_local_only_appends_pycastle_path(tmp_path):
 
 
 def test_describe_config_layers_with_global_only_appends_global_path(tmp_path):
-    from pycastle.config.loader import describe_config_layers
-
     global_dir = tmp_path / "global"
     global_dir.mkdir()
     (global_dir / "config.py").write_text("")
 
     summary = describe_config_layers(repo_root=tmp_path, global_dir=global_dir)
 
-    assert summary == f"Config: defaults + {global_dir}/config.py"
+    expected_path = (global_dir / "config.py").as_posix()
+    assert summary == f"Config: defaults + {expected_path}"
     assert "pycastle/config.py" not in summary
 
 
 def test_describe_config_layers_with_both_layers_orders_global_then_local(tmp_path):
-    from pycastle.config.loader import describe_config_layers
-
     global_dir = tmp_path / "global"
     global_dir.mkdir()
     (global_dir / "config.py").write_text("")
@@ -532,14 +525,11 @@ def test_describe_config_layers_with_both_layers_orders_global_then_local(tmp_pa
 
     summary = describe_config_layers(repo_root=tmp_path, global_dir=global_dir)
 
-    assert summary == (
-        f"Config: defaults + {global_dir}/config.py + pycastle/config.py"
-    )
+    expected_global = (global_dir / "config.py").as_posix()
+    assert summary == (f"Config: defaults + {expected_global} + pycastle/config.py")
 
 
 def test_describe_config_layers_shortens_home_path_to_tilde(tmp_path, monkeypatch):
-    from pycastle.config.loader import describe_config_layers
-
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     global_dir = fake_home / ".config" / "pycastle"
@@ -550,3 +540,16 @@ def test_describe_config_layers_shortens_home_path_to_tilde(tmp_path, monkeypatc
     summary = describe_config_layers(repo_root=tmp_path, global_dir=global_dir)
 
     assert summary == "Config: defaults + ~/.config/pycastle/config.py"
+
+
+def test_describe_config_layers_uses_appdata_form_on_windows(tmp_path, monkeypatch):
+    appdata = tmp_path / "appdata"
+    global_dir = appdata / "pycastle"
+    global_dir.mkdir(parents=True)
+    (global_dir / "config.py").write_text("")
+    monkeypatch.setattr("pycastle.config.loader.os.name", "nt")
+    monkeypatch.setenv("APPDATA", str(appdata))
+
+    summary = describe_config_layers(repo_root=tmp_path, global_dir=global_dir)
+
+    assert summary == r"Config: defaults + %APPDATA%\pycastle\config.py"
