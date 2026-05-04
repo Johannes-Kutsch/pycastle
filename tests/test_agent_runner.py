@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.agent_output_protocol import CompletionOutput
+from pycastle.agent_output_protocol import CommitMessageOutput, CompletionOutput
 from pycastle.agent_result import CancellationToken, PreflightFailure
 from pycastle.agent_runner import AgentRunner, RunRequest
 from pycastle.config import Config
@@ -21,7 +21,7 @@ from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 
 # A minimal NDJSON stream that process_stream accepts as CompletionOutput (IMPLEMENTER role)
 _COMPLETE_STREAM = [
-    b'{"type": "result", "result": "<promise>COMPLETE</promise>", "is_error": false}\n'
+    b'{"type": "result", "result": "<commit_message>done</commit_message>", "is_error": false}\n'
 ]
 
 
@@ -294,7 +294,7 @@ def test_agent_runner_run_returns_agent_output(tmp_path):
         )
     )
 
-    assert isinstance(result, CompletionOutput)
+    assert isinstance(result, CommitMessageOutput)
 
 
 def test_agent_runner_run_returns_preflight_failure_when_check_fails(tmp_path):
@@ -361,7 +361,7 @@ def test_agent_runner_run_skips_preflight_when_skip_preflight_true(tmp_path):
         )
     )
 
-    assert isinstance(result, CompletionOutput)
+    assert isinstance(result, CommitMessageOutput)
 
 
 # ── AgentRunner: error propagation ───────────────────────────────────────────
@@ -487,7 +487,7 @@ def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
         )
     )
 
-    assert isinstance(result, CompletionOutput)
+    assert isinstance(result, CommitMessageOutput)
 
 
 def test_agent_runner_propagates_git_user_name_error(tmp_path):

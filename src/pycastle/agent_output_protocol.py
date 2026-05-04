@@ -37,7 +37,14 @@ class CompletionOutput:
     pass
 
 
-AgentOutput: TypeAlias = PlannerOutput | IssueOutput | CompletionOutput
+@dataclasses.dataclass(frozen=True)
+class CommitMessageOutput:
+    message: str
+
+
+AgentOutput: TypeAlias = (
+    PlannerOutput | IssueOutput | CompletionOutput | CommitMessageOutput
+)
 
 
 class AgentOutputProtocolError(Exception):
@@ -53,6 +60,10 @@ class IssueParseError(AgentOutputProtocolError):
 
 
 class PromiseParseError(AgentOutputProtocolError):
+    pass
+
+
+class CommitMessageParseError(AgentOutputProtocolError):
     pass
 
 
@@ -147,6 +158,9 @@ def _extract_turn(line: str) -> str | None:
     return "\n\n".join(parts) if parts else None
 
 
+_COMMIT_MESSAGE_RE = re.compile(r"<commit_message>([\s\S]*?)</commit_message>")
+
+
 def process_stream(
     lines: Iterable[str],
     on_turn: Callable[[str], None],
@@ -162,7 +176,11 @@ def process_stream(
         turn = _extract_turn(line)
         if turn is not None:
             on_turn(turn)
-            if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER, AgentRole.MERGER):
+            if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
+                match = _COMMIT_MESSAGE_RE.search(turn)
+                if match:
+                    return CommitMessageOutput(message=match.group(1).strip())
+            elif role == AgentRole.MERGER:
                 if re.search(r"<promise>COMPLETE</promise>", turn):
                     return CompletionOutput()
             elif role == AgentRole.PLANNER:
@@ -196,6 +214,13 @@ def process_stream(
             return _extract_planner_output(text)
         except PlanParseError as exc:
             raise PlanParseError(f"{exc}{tail}") from exc.__cause__
+    if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
+        match = _COMMIT_MESSAGE_RE.search(text)
+        if not match:
+            raise CommitMessageParseError(
+                f"Agent produced no <commit_message> tag.{tail}"
+            )
+        return CommitMessageOutput(message=match.group(1).strip())
     if not re.search(r"<promise>COMPLETE</promise>", text):
         raise PromiseParseError(
             f"Agent produced no <promise>COMPLETE</promise> tag.{tail}"

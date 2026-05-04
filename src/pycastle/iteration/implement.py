@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..agent_output_protocol import AgentRole
+from ..agent_output_protocol import AgentRole, CommitMessageOutput
 from ..agent_result import CancellationToken, PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
@@ -56,6 +56,10 @@ async def _agent_worktree(
                 deps.git_svc.remove_worktree(deps.repo_root, wt_path)
         if gitdir_overlay is not None:
             gitdir_overlay.unlink(missing_ok=True)
+
+
+IMPLEMENT_COMMIT_PREFIX = "RALPH: Implement - "
+REVIEW_COMMIT_PREFIX = "RALPH: Review - "
 
 
 def branch_for(issue_number: int) -> str:
@@ -121,8 +125,8 @@ async def run_issue(
 
     try:
         subjects = deps.git_svc.get_branch_commit_subjects(_branch, deps.repo_root)
-        review_done = any(s.startswith("RALPH: Review -") for s in subjects)
-        implement_done = any(s.startswith("RALPH:") for s in subjects)
+        review_done = any(s.startswith(REVIEW_COMMIT_PREFIX) for s in subjects)
+        implement_done = any(s.startswith(IMPLEMENT_COMMIT_PREFIX) for s in subjects)
 
         if review_done:
             return issue
@@ -148,9 +152,15 @@ async def run_issue(
                 )
                 if isinstance(result, PreflightFailure):
                     return result
+                if isinstance(result, CommitMessageOutput):
+                    deps.git_svc.commit(
+                        impl_mount_path,
+                        deps.repo_root,
+                        f"{IMPLEMENT_COMMIT_PREFIX}{result.message}",
+                    )
 
         async with _agent_worktree(_branch, None, _token, deps) as review_mount_path:
-            await _bounded_run_agent(
+            review_result = await _bounded_run_agent(
                 RunRequest(
                     name=f"Review Agent #{issue['number']}",
                     prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
@@ -167,6 +177,12 @@ async def run_issue(
                     token=_token,
                 )
             )
+            if isinstance(review_result, CommitMessageOutput):
+                deps.git_svc.commit(
+                    review_mount_path,
+                    deps.repo_root,
+                    f"{REVIEW_COMMIT_PREFIX}{review_result.message}",
+                )
     finally:
         if lock is not None and lock.locked():
             lock.release()
