@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,13 +11,21 @@ from pycastle.config import Config
 from pycastle.services import GitCommandError, GitService
 from pycastle.services import GithubService
 from pycastle.iteration._deps import (
-    Deps,
     FakeAgentRunner,
-    RecordingLogger,
     RecordingStatusDisplay,
 )
 from pycastle.status_display import PlainStatusDisplay
 from pycastle.iteration.merge import MergeResult, merge_phase
+
+
+@dataclasses.dataclass
+class _MergeDepsStub:
+    repo_root: Path
+    git_svc: GitService
+    github_svc: GithubService
+    agent_runner: FakeAgentRunner
+    cfg: Config
+    status_display: PlainStatusDisplay | RecordingStatusDisplay
 
 
 @pytest.fixture
@@ -49,14 +58,12 @@ def agent_runner():
 
 @pytest.fixture
 def deps(tmp_path, git_svc, github_svc, agent_runner):
-    return Deps(
-        env={},
+    return _MergeDepsStub(
         repo_root=tmp_path,
         git_svc=git_svc,
         github_svc=github_svc,
         agent_runner=agent_runner,
         cfg=Config(),
-        logger=RecordingLogger(),
         status_display=PlainStatusDisplay(),
     )
 
@@ -66,14 +73,12 @@ def _run(completed, deps):
 
 
 def _make_deps(tmp_path, git_svc, github_svc, agent_runner):
-    return Deps(
-        env={},
+    return _MergeDepsStub(
         repo_root=tmp_path,
         git_svc=git_svc,
         github_svc=github_svc,
         agent_runner=agent_runner,
         cfg=Config(),
-        logger=RecordingLogger(),
         status_display=PlainStatusDisplay(),
     )
 
@@ -520,14 +525,12 @@ def test_worktree_removal_failure_does_not_abort_branch_deletion(deps, git_svc):
 def recording_deps(tmp_path, git_svc, github_svc, agent_runner):
     recording = RecordingStatusDisplay()
     return (
-        Deps(
-            env={},
+        _MergeDepsStub(
             repo_root=tmp_path,
             git_svc=git_svc,
             github_svc=github_svc,
             agent_runner=agent_runner,
             cfg=Config(),
-            logger=RecordingLogger(),
             status_display=recording,
         ),
         recording,
@@ -742,14 +745,12 @@ def test_merge_row_still_active_while_merger_runs(tmp_path, git_svc, github_svc)
         return CompletionOutput()
 
     agent_runner = FakeAgentRunner(side_effect=side_effect)
-    deps = Deps(
-        env={},
+    deps = _MergeDepsStub(
         repo_root=tmp_path,
         git_svc=git_svc,
         github_svc=github_svc,
         agent_runner=agent_runner,
         cfg=Config(),
-        logger=RecordingLogger(),
         status_display=recording,
     )
     git_svc.try_merge.return_value = False
@@ -780,14 +781,12 @@ def test_merge_row_not_removed_with_failed_style_after_row_already_removed(
 
     recording = RecordingStatusDisplay()
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-    deps = Deps(
-        env={},
+    deps = _MergeDepsStub(
         repo_root=tmp_path,
         git_svc=git_svc,
         github_svc=github_svc,
         agent_runner=FakeAgentRunner([failure]),
         cfg=Config(),
-        logger=RecordingLogger(),
         status_display=recording,
     )
     git_svc.try_merge.return_value = False

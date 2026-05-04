@@ -1,20 +1,33 @@
 import dataclasses
 import sys
+from pathlib import Path
+from typing import Protocol
 
 from ..agent_output_protocol import AgentRole
 from ..agent_result import PreflightFailure
-from ..agent_runner import RunRequest
-from ..services import GitCommandError
+from ..agent_runner import AgentRunnerProtocol, RunRequest
+from ..config import Config
+from ..services import GitCommandError, GitService, GithubService
+from ..status_display import StatusDisplay
 from ..worktree import (
     branch_worktree,
     remove_worktrees_dir_if_empty,
     worktree_name_for_branch,
     worktree_path,
 )
-from ._deps import Deps
 from ._phase_row import phase_row
 from ._utils import _wait_for_clean_working_tree
 from .implement import branch_for
+
+
+class _MergeDeps(Protocol):
+    git_svc: GitService
+    github_svc: GithubService
+    cfg: Config
+    status_display: StatusDisplay
+    agent_runner: AgentRunnerProtocol
+    repo_root: Path
+
 
 MERGE_SANDBOX = "pycastle/merge-sandbox"
 
@@ -25,7 +38,7 @@ class MergeResult:
     conflicts: list[dict]
 
 
-def _delete_merged_branches(branches: list[str], deps: Deps) -> list[str]:
+def _delete_merged_branches(branches: list[str], deps: _MergeDeps) -> list[str]:
     deleted: list[str] = []
     registered_worktrees = deps.git_svc.list_worktrees(deps.repo_root)
     for branch in branches:
@@ -58,7 +71,7 @@ def _build_close_message(deleted: list[str]) -> str:
     return f"{header}\n{lines}"
 
 
-async def merge_phase(completed: list[dict], deps: Deps) -> MergeResult:
+async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
     async with phase_row(deps.status_display, "Merge", initial_phase="Merging") as row:
         await _wait_for_clean_working_tree(deps, "Merge")
 
