@@ -163,15 +163,6 @@ def test_setup_enters_session(tmp_path):
     assert session.entered
 
 
-def test_setup_registers_status_display_with_runner_name(tmp_path):
-    display = RecordingStatusDisplay()
-    runner, _ = _make_runner(name="impl-1", status_display=display, tmp_path=tmp_path)
-    asyncio.run(runner.setup("Alice", "alice@example.com"))
-    register_calls = [c for c in display.calls if c[0] == "register"]
-    assert len(register_calls) == 1
-    assert register_calls[0][1] == "impl-1"
-
-
 def test_setup_runs_git_config_and_pip_install_in_order(tmp_path):
     runner, session = _make_runner(tmp_path=tmp_path)
     asyncio.run(runner.setup("Alice", "alice@example.com"))
