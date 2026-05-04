@@ -1,8 +1,10 @@
 import dataclasses
 import json
+from datetime import datetime, timezone
 
 import pytest
 
+from pycastle import agent_output_protocol
 from pycastle.agent_output_protocol import (
     AgentOutput,
     AgentOutputProtocolError,
@@ -238,6 +240,77 @@ def test_process_stream_usage_limit_carries_parsed_reset_time():
     reset = exc_info.value.reset_time
     assert reset is not None
     assert (reset.hour, reset.minute) != (0, 0) or reset.minute == 50
+
+
+def _usage_limit_line(text: str) -> str:
+    return json.dumps(
+        {
+            "type": "result",
+            "is_error": True,
+            "api_error_status": 429,
+            "result": text,
+        }
+    )
+
+
+def _raise_usage_limit(line: str) -> UsageLimitError:
+    with pytest.raises(UsageLimitError) as exc_info:
+        process_stream([line], on_turn=lambda t: None, role=AgentRole.IMPLEMENTER)
+    return exc_info.value
+
+
+def _freeze_now(monkeypatch: pytest.MonkeyPatch, now_utc: datetime) -> None:
+    monkeypatch.setattr(agent_output_protocol, "_now_utc", lambda: now_utc)
+
+
+def test_usage_limit_with_date_and_minutes(monkeypatch):
+    _freeze_now(monkeypatch, datetime(2026, 5, 4, 8, 0, tzinfo=timezone.utc))
+    err = _raise_usage_limit(
+        _usage_limit_line("You're out of extra usage · resets May 7, 11:30am (UTC)")
+    )
+    expected = (
+        datetime(2026, 5, 7, 11, 30, tzinfo=timezone.utc)
+        .astimezone()
+        .replace(tzinfo=None)
+    )
+    assert err.reset_time == expected
+
+
+def test_usage_limit_with_date_hour_only(monkeypatch):
+    _freeze_now(monkeypatch, datetime(2026, 5, 4, 8, 0, tzinfo=timezone.utc))
+    err = _raise_usage_limit(
+        _usage_limit_line("You're out of extra usage · resets May 7, 11am (UTC)")
+    )
+    expected = (
+        datetime(2026, 5, 7, 11, 0, tzinfo=timezone.utc)
+        .astimezone()
+        .replace(tzinfo=None)
+    )
+    assert err.reset_time == expected
+
+
+def test_usage_limit_no_date_hour_only(monkeypatch):
+    _freeze_now(monkeypatch, datetime(2026, 5, 4, 8, 0, tzinfo=timezone.utc))
+    err = _raise_usage_limit(_usage_limit_line("resets 11am (UTC)"))
+    expected = (
+        datetime(2026, 5, 4, 11, 0, tzinfo=timezone.utc)
+        .astimezone()
+        .replace(tzinfo=None)
+    )
+    assert err.reset_time == expected
+
+
+def test_usage_limit_year_rollover_when_date_more_than_month_in_past(monkeypatch):
+    _freeze_now(monkeypatch, datetime(2026, 5, 4, 8, 0, tzinfo=timezone.utc))
+    err = _raise_usage_limit(
+        _usage_limit_line("You're out of extra usage · resets January 1, 11am (UTC)")
+    )
+    expected = (
+        datetime(2027, 1, 1, 11, 0, tzinfo=timezone.utc)
+        .astimezone()
+        .replace(tzinfo=None)
+    )
+    assert err.reset_time == expected
 
 
 def test_process_stream_invokes_on_turn_for_each_assistant_turn():

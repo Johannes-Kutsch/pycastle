@@ -3,14 +3,48 @@ import enum
 import json
 import re
 from collections.abc import Callable, Iterable
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Literal, TypeAlias
 
 from .errors import UsageLimitError
 
 _RESET_TIME_RE = re.compile(
-    r"resets\s+(\d{1,2}:\d{2}(?:am|pm))\s+\(UTC\)", re.IGNORECASE
+    r"resets\s+"
+    r"(?:(?P<month>[A-Za-z]+)\s+(?P<day>\d{1,2}),\s+)?"
+    r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?(?P<ampm>am|pm)\s+\(UTC\)",
+    re.IGNORECASE,
 )
+
+_MONTHS = {
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sept": 9,
+    "sep": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
+}
+
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class AgentRole(enum.Enum):
@@ -128,14 +162,44 @@ def _check_usage_limit(line: str) -> datetime | None | Literal[False]:
     match = _RESET_TIME_RE.search(result_text)
     if not match:
         return None
-    try:
-        parsed = datetime.strptime(match.group(1).lower(), "%I:%M%p").time()
-    except ValueError:
+
+    hour = int(match.group("hour"))
+    minute = int(match.group("minute") or 0)
+    ampm = match.group("ampm").lower()
+    if not (1 <= hour <= 12) or not (0 <= minute <= 59):
         return None
-    today_utc = datetime.now(timezone.utc).date()
-    utc_dt = datetime.combine(today_utc, parsed, tzinfo=timezone.utc)
+    if ampm == "pm" and hour != 12:
+        hour += 12
+    elif ampm == "am" and hour == 12:
+        hour = 0
+
+    now_utc = _now_utc()
+    now_local = now_utc.astimezone().replace(tzinfo=None)
+    parsed_time = time(hour, minute)
+
+    month_str = match.group("month")
+    if month_str is not None:
+        month = _MONTHS.get(month_str.lower())
+        if month is None:
+            return None
+        day = int(match.group("day"))
+        try:
+            utc_dt = datetime(
+                now_utc.year, month, day, hour, minute, tzinfo=timezone.utc
+            )
+        except ValueError:
+            return None
+        local_dt = utc_dt.astimezone().replace(tzinfo=None)
+        if local_dt < now_local - timedelta(days=31):
+            try:
+                utc_dt = utc_dt.replace(year=utc_dt.year + 1)
+            except ValueError:
+                return None
+            local_dt = utc_dt.astimezone().replace(tzinfo=None)
+        return local_dt
+
+    utc_dt = datetime.combine(now_utc.date(), parsed_time, tzinfo=timezone.utc)
     local_dt = utc_dt.astimezone().replace(tzinfo=None)
-    now_local = datetime.now()
     if local_dt < now_local - timedelta(minutes=2):
         local_dt += timedelta(days=1)
     return local_dt
