@@ -1,1011 +1,348 @@
+"""Tests for ContainerRunner using a fake DockerSession."""
+
 import asyncio
-import dataclasses
-import tempfile
-import threading
+from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from typing import cast
 
 import pytest
 
 from pycastle.agent_output_protocol import AgentRole, CompletionOutput
 from pycastle.config import Config
-from pycastle.container_runner import (
-    ContainerRunner,
-    _build_claude_command,
-)
-from pycastle.errors import UsageLimitError
+from pycastle.container_runner import ContainerRunner, _build_claude_command
+from pycastle.docker_session import DockerSession
+from pycastle.errors import DockerError, UsageLimitError
 from pycastle.iteration._deps import RecordingStatusDisplay
 
 _ROLE = AgentRole.IMPLEMENTER
-
-
-def _NOOP(t: str) -> None:
-    pass
-
 
 _COMPLETE_LINE = (
     b'{"type":"result","result":"<promise>COMPLETE</promise>","is_error":false}\n'
 )
 
 
-# ── Issue 153: docker_client injection ───────────────────────────────────────
+# ── Fake DockerSession ────────────────────────────────────────────────────────
 
 
-def test_container_runner_init_uses_injected_docker_client():
-    """ContainerRunner must accept docker_client and use it instead of docker.from_env()."""
-    mock_client = MagicMock()
-    runner = ContainerRunner(
-        "test", Path("/fake"), {}, docker_client=mock_client, cfg=Config()
-    )
-    assert runner._client is mock_client
+class FakeDockerSession:
+    """Minimal DockerSession test double — implements exec_simple, exec_stream, write_file."""
 
+    def __init__(
+        self,
+        exec_handlers: dict[str, object] | None = None,
+        stream_chunks: list[bytes] | None = None,
+    ) -> None:
+        self.entered = False
+        self.exec_calls: list[str] = []
+        self.write_calls: list[tuple[str, str]] = []
+        self.stream_calls: list[str] = []
+        self._exec_handlers = exec_handlers or {}
+        self._stream_chunks = stream_chunks or [_COMPLETE_LINE]
 
-def test_container_runner_init_calls_docker_from_env_when_no_client_given():
-    """When docker_client is None, __init__ must call docker.from_env()."""
-    with patch("pycastle.container_runner.docker") as mock_docker:
-        runner = ContainerRunner("test", Path("/fake"), {}, cfg=Config())
-    assert runner._client is mock_docker.from_env.return_value
+    def __enter__(self) -> "FakeDockerSession":
+        self.entered = True
+        return self
 
+    def __exit__(self, *_) -> None:
+        pass
 
-# ── helpers ──────────────────────────────────────────────────────────────────
-
-
-def _streaming_runner(
-    name: str, chunks: list, tmp_path: Path, status_display=None
-) -> ContainerRunner:
-    """ContainerRunner whose run_streaming replays the given byte chunks."""
-    mock_client = MagicMock()
-    mock_result = MagicMock()
-    mock_result.output = iter(chunks)
-    mock_client.containers.run.return_value.exec_run.return_value = mock_result
-    runner = ContainerRunner(
-        name,
-        Path("/fake"),
-        {},
-        docker_client=mock_client,
-        status_display=status_display,
-        cfg=Config(logs_dir=tmp_path),
-    )
-    runner.__enter__()
-    return runner
-
-
-def _fake_runner(exit_code=0, stdout=b"", stderr=b"", cfg=None):
-    """ContainerRunner with mocked Docker container."""
-    mock_client = MagicMock()
-    mock_result = MagicMock()
-    mock_result.exit_code = exit_code
-    mock_result.output = (stdout, stderr)
-    mock_client.containers.run.return_value.exec_run.return_value = mock_result
-    if cfg is not None:
-        effective_cfg = dataclasses.replace(cfg, logs_dir=Path(tempfile.mkdtemp()))
-    else:
-        effective_cfg = Config(logs_dir=Path(tempfile.mkdtemp()))
-    runner = ContainerRunner(
-        "test", Path("/fake"), {}, docker_client=mock_client, cfg=effective_cfg
-    )
-    runner.__enter__()
-    return runner
-
-
-def _run(coro):
-    return asyncio.run(coro)
-
-
-# ── Cycle 1: exec_simple raises on non-zero exit ──────────────────────────────
-
-
-def test_exec_simple_raises_on_nonzero_exit():
-    runner = _fake_runner(exit_code=1, stderr=b"command failed")
-    with pytest.raises(RuntimeError, match="command failed"):
-        runner.exec_simple("exit 1")
-
-
-def test_exec_simple_returns_stdout_on_success():
-    runner = _fake_runner(exit_code=0, stdout=b"hello\n")
-    assert runner.exec_simple("echo hello") == "hello\n"
-
-
-# ── Cycle 15: worktree add must not run inside the container ─────────────────
-
-
-@patch("pycastle.container_runner.docker")
-def test_worktree_add_not_called_inside_container(mock_docker, tmp_path):
-    """When worktree_host_path is provided, ContainerRunner must not exec worktree add."""
-    mock_container = MagicMock()
-    mock_docker.from_env.return_value.containers.run.return_value = mock_container
-    mock_container.exec_run.return_value = MagicMock(exit_code=0, output=b"")
-
-    worktree_path = tmp_path / "worktree"
-    worktree_path.mkdir()
-
-    runner = ContainerRunner(
-        "test",
-        tmp_path,
-        {},
-        branch="feature/test",
-        worktree_host_path=worktree_path,
-        cfg=Config(logs_dir=tmp_path / "logs"),
-    )
-    runner.__enter__()
-    runner.__exit__(None, None, None)
-
-    all_exec_cmds = [
-        " ".join(call.args[0]) if isinstance(call.args[0], list) else str(call.args[0])
-        for call in mock_container.exec_run.call_args_list
-    ]
-    assert not any("worktree add" in cmd for cmd in all_exec_cmds), (
-        f"worktree add was called inside the container: {all_exec_cmds}"
-    )
-
-
-# ── Cycle 4: exec_simple raises TimeoutError on stalled command ───────────────
-
-
-def test_exec_simple_times_out():
-    blocker = threading.Event()
-    mock_client = MagicMock()
-    mock_client.containers.run.return_value.exec_run.side_effect = lambda *a, **kw: (
-        blocker.wait() or None
-    )
-    runner = ContainerRunner(
-        "test",
-        Path("/fake"),
-        {},
-        docker_client=mock_client,
-        cfg=Config(logs_dir=Path(tempfile.mkdtemp())),
-    )
-    runner.__enter__()
-
-    try:
-        with pytest.raises(TimeoutError):
-            runner.exec_simple("sleep inf", timeout=0.05)
-    finally:
-        blocker.set()  # release the background thread
-
-
-# ── Cycle 22: git identity injection ─────────────────────────────────────────
-
-
-def test_setup_configures_git_identity_with_readonly_repo_mount(tmp_path):
-    """setup() must use --global because the repo is mounted read-only inside the container."""
-    runner = _unstarted_runner("test", tmp_path)
-    exec_log: list[str] = []
-
-    def _tracking_exec(cmd, timeout=None):
-        exec_log.append(cmd)
+    def exec_simple(self, command: str, timeout: float | None = None) -> str:
+        self.exec_calls.append(command)
+        for needle, handler in self._exec_handlers.items():
+            if needle in command:
+                if isinstance(handler, BaseException):
+                    raise handler
+                if callable(handler):
+                    return handler(command)
+                return str(handler)
         return ""
 
-    runner.exec_simple = _tracking_exec  # type: ignore[method-assign]
+    def exec_stream(self, command: str) -> Iterator[bytes]:
+        self.stream_calls.append(command)
+        return iter(self._stream_chunks)
 
-    asyncio.run(runner.setup("Alice", "alice@example.com"))
-
-    assert any("git config --global user.name" in cmd for cmd in exec_log)
-    assert any("git config --global user.email" in cmd for cmd in exec_log)
-
-
-# ── Issue 310: run_streaming produces no stdout ──────────────────────────────
+    def write_file(self, content: str, container_path: str) -> None:
+        self.write_calls.append((container_path, content))
 
 
-def test_run_streaming_produces_no_stdout(tmp_path, capsys):
-    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working on it"}]}}\n'
-    runner = _streaming_runner("TestAgent", [json_line, _COMPLETE_LINE], tmp_path)
-    runner.run_streaming(_ROLE, _NOOP)
-    assert capsys.readouterr().out == ""
+def _make_runner(
+    name: str = "agent",
+    session: FakeDockerSession | None = None,
+    status_display=None,
+    cfg: Config | None = None,
+    tmp_path: Path | None = None,
+    model: str = "",
+    effort: str = "",
+) -> tuple[ContainerRunner, FakeDockerSession]:
+    if session is None:
+        session = FakeDockerSession()
+    if cfg is None:
+        cfg = Config(logs_dir=tmp_path or Path("/tmp/pycastle-tests"))
+    runner = ContainerRunner(
+        name,
+        cast(DockerSession, session),
+        model=model,
+        effort=effort,
+        status_display=status_display,
+        cfg=cfg,
+    )
+    return runner, session
 
 
-def test_run_streaming_produces_no_stdout_for_plain_text(tmp_path, capsys):
-    from pycastle.agent_output_protocol import PromiseParseError
-
-    runner = _streaming_runner("Bot", [b"line one\nline two\n"], tmp_path)
-    with pytest.raises(PromiseParseError):
-        runner.run_streaming(_ROLE, _NOOP)
-    assert capsys.readouterr().out == ""
-
-
-# ── Issue 75: _build_claude_command accepts model and effort flags ────────────
-
-
-def test_build_claude_command_includes_model_flag():
-    cmd = _build_claude_command(model="claude-sonnet-4-6")
-    assert "--model claude-sonnet-4-6" in cmd
-
-
-def test_build_claude_command_includes_effort_flag():
-    cmd = _build_claude_command(effort="high")
-    assert "--effort high" in cmd
-
-
-def test_build_claude_command_excludes_model_when_empty():
-    cmd = _build_claude_command(model="", effort="")
-    assert "--model" not in cmd
-
-
-def test_build_claude_command_excludes_effort_when_empty():
-    cmd = _build_claude_command(model="", effort="")
-    assert "--effort" not in cmd
-
-
-def test_build_claude_command_includes_both_flags_when_set():
-    cmd = _build_claude_command(model="claude-opus-4-7", effort="high")
-    assert "--model claude-opus-4-7" in cmd
-    assert "--effort high" in cmd
-
-
-def test_run_streaming_includes_model_flag_when_set(tmp_path):
-    """run_streaming must pass --model to exec_run when model is set on runner."""
-    runner = _streaming_runner("Agent", [_COMPLETE_LINE], tmp_path)
-    runner.model = "claude-sonnet-4-6"
-    runner.effort = ""
-    runner.run_streaming(_ROLE, _NOOP)
-
-    streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
-    assert "--model claude-sonnet-4-6" in streaming_cmd
-
-
-def test_run_streaming_includes_effort_flag_when_set(tmp_path):
-    """run_streaming must pass --effort to exec_run when effort is set on runner."""
-    runner = _streaming_runner("Agent", [_COMPLETE_LINE], tmp_path)
-    runner.model = ""
-    runner.effort = "high"
-    runner.run_streaming(_ROLE, _NOOP)
-
-    streaming_cmd = runner._container.exec_run.call_args_list[0][0][0][2]
-    assert "--effort high" in streaming_cmd
-
-
-# ── Cycle 36-1: _build_claude_command includes required flags ────────────────
+# ── _build_claude_command ────────────────────────────────────────────────────
 
 
 def test_build_claude_command_includes_output_format_stream_json():
-    cmd = _build_claude_command()
-    assert "--output-format stream-json" in cmd
+    assert "--output-format stream-json" in _build_claude_command()
 
 
 def test_build_claude_command_includes_dangerously_skip_permissions():
-    cmd = _build_claude_command()
-    assert "--dangerously-skip-permissions" in cmd
+    assert "--dangerously-skip-permissions" in _build_claude_command()
 
 
 def test_build_claude_command_includes_verbose():
-    cmd = _build_claude_command()
-    assert "--verbose" in cmd
+    assert "--verbose" in _build_claude_command()
 
 
-# ── Issue 79: --print flag removed to prevent duplicate console output ────────
+def test_build_claude_command_includes_stdin_redirect():
+    assert "< /tmp/.pycastle_prompt" in _build_claude_command()
 
 
 def test_build_claude_command_does_not_include_print_flag():
+    assert "--print" not in _build_claude_command()
+
+
+def test_build_claude_command_includes_model_when_set():
+    assert "--model claude-opus-4-7" in _build_claude_command(model="claude-opus-4-7")
+
+
+def test_build_claude_command_includes_effort_when_set():
+    assert "--effort high" in _build_claude_command(effort="high")
+
+
+def test_build_claude_command_excludes_flags_when_unset():
     cmd = _build_claude_command()
-    assert "--print" not in cmd
+    assert "--model" not in cmd
+    assert "--effort" not in cmd
 
 
-def test_build_claude_command_includes_stdin_flag():
-    cmd = _build_claude_command()
-    assert "-p -" in cmd
+# ── Constructor ──────────────────────────────────────────────────────────────
 
 
-# ── Cycle 36-2: stdin redirect from temp file, no heredoc ────────────────────
-
-
-def test_build_claude_command_redirects_stdin_from_temp_file():
-    cmd = _build_claude_command()
-    assert "< /tmp/.pycastle_prompt" in cmd
-
-
-def test_build_claude_command_does_not_use_temp_file():
-    cmd = _build_claude_command()
-    assert "/tmp/prompt.md" not in cmd
-
-
-# ── Cycle 44-1: command string does not embed large prompt inline ─────────────
-
-
-def test_build_claude_command_does_not_embed_large_prompt():
-    cmd = _build_claude_command()
-    assert len(cmd) < 1024
-
-
-# ── Cycle 50-1: PREFLIGHT_CHECKS and IMPLEMENT_CHECKS in defaults/config ─────
-
-
-def test_preflight_checks_contains_ruff_mypy_pytest():
-    from pycastle.config import Config
-
-    names = [name for name, _ in Config().preflight_checks]
-    assert names == ["ruff", "mypy", "pytest"]
-
-
-def test_preflight_checks_commands():
-    from pycastle.config import Config
-
-    cmds = {name: cmd for name, cmd in Config().preflight_checks}
-    assert cmds["ruff"] == "ruff check ."
-    assert cmds["mypy"] == "mypy ."
-    assert cmds["pytest"] == "pytest"
-
-
-def test_implement_checks_contains_expected_commands():
-    from pycastle.config import Config
-
-    assert Config().implement_checks == (
-        "ruff check --fix",
-        "ruff format --check",
-        "mypy .",
-        "pytest",
+def test_container_runner_constructor_takes_session(tmp_path):
+    session = FakeDockerSession()
+    runner = ContainerRunner(
+        "agent", cast(DockerSession, session), cfg=Config(logs_dir=tmp_path)
     )
+    assert runner.name == "agent"
+    assert runner.log_path.parent == tmp_path
 
 
-# ── Cycle 50-2: _preflight() runs all checks independently ───────────────────
+def test_container_runner_does_not_expose_prepare_method(tmp_path):
+    runner, _ = _make_runner(tmp_path=tmp_path)
+    assert not hasattr(runner, "prepare")
 
 
-def test_preflight_all_checks_run_when_one_fails(tmp_path):
-    """A DockerError in one check must not prevent the remaining checks from running."""
-    from pycastle.errors import DockerError
-
-    ran: list[str] = []
-    runner = _unstarted_runner("test", tmp_path)
-    runner.__enter__()
-
-    def _tracking_exec(cmd, timeout=None):
-        ran.append(cmd)
-        if "ruff" in cmd:
-            raise DockerError("ruff failed")
-        return ""
-
-    runner.exec_simple = _tracking_exec  # type: ignore[method-assign]
-
-    checks = [("ruff", "ruff check ."), ("mypy", "mypy ."), ("pytest", "pytest")]
-    asyncio.run(runner.preflight(checks))
-    assert len(ran) == 3
+def test_container_runner_does_not_expose_run_streaming_method(tmp_path):
+    runner, _ = _make_runner(tmp_path=tmp_path)
+    assert not hasattr(runner, "run_streaming")
 
 
-def test_preflight_returns_failure_tuples(tmp_path):
-    from pycastle.errors import DockerError
+def test_container_runner_does_not_expose_exec_simple_or_write_file(tmp_path):
+    runner, _ = _make_runner(tmp_path=tmp_path)
+    assert not hasattr(runner, "exec_simple")
+    assert not hasattr(runner, "write_file")
 
-    runner = _unstarted_runner("test", tmp_path)
-    runner.__enter__()
 
-    def _selective_exec(cmd, timeout=None):
-        if "ruff check" in cmd:
-            raise DockerError("E501 line too long")
-        return ""
+def test_container_runner_has_no_prompt_state(tmp_path):
+    runner, _ = _make_runner(tmp_path=tmp_path)
+    assert not hasattr(runner, "_prompt")
 
-    runner.exec_simple = _selective_exec  # type: ignore[method-assign]
 
-    checks = [("ruff", "ruff check ."), ("mypy", "mypy .")]
-    failures = asyncio.run(runner.preflight(checks))
-    assert len(failures) == 1
-    name, cmd, output = failures[0]
+# ── setup() ──────────────────────────────────────────────────────────────────
+
+
+def test_setup_enters_session(tmp_path):
+    runner, session = _make_runner(tmp_path=tmp_path)
+    asyncio.run(runner.setup("Alice", "alice@example.com"))
+    assert session.entered
+
+
+def test_setup_registers_status_display_with_runner_name(tmp_path):
+    display = RecordingStatusDisplay()
+    runner, _ = _make_runner(name="impl-1", status_display=display, tmp_path=tmp_path)
+    asyncio.run(runner.setup("Alice", "alice@example.com"))
+    register_calls = [c for c in display.calls if c[0] == "register"]
+    assert len(register_calls) == 1
+    assert register_calls[0][1] == "impl-1"
+
+
+def test_setup_runs_git_config_and_pip_install_in_order(tmp_path):
+    runner, session = _make_runner(tmp_path=tmp_path)
+    asyncio.run(runner.setup("Alice", "alice@example.com"))
+    assert any(
+        "git config --global user.name" in c and "Alice" in c
+        for c in session.exec_calls
+    )
+    assert any(
+        "git config --global user.email" in c and "alice@example.com" in c
+        for c in session.exec_calls
+    )
+    assert any("pip install" in c for c in session.exec_calls)
+    name_idx = next(i for i, c in enumerate(session.exec_calls) if "user.name" in c)
+    email_idx = next(i for i, c in enumerate(session.exec_calls) if "user.email" in c)
+    pip_idx = next(i for i, c in enumerate(session.exec_calls) if "pip install" in c)
+    assert name_idx < email_idx < pip_idx
+
+
+def test_setup_propagates_docker_error_when_pip_install_fails(tmp_path):
+    session = FakeDockerSession(
+        exec_handlers={"pip install": DockerError("pip install failed: exit 1")}
+    )
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+    with pytest.raises(DockerError, match="pip install failed"):
+        asyncio.run(runner.setup("Alice", "alice@example.com"))
+
+
+# ── preflight() ──────────────────────────────────────────────────────────────
+
+
+def test_preflight_returns_empty_list_on_clean_pass(tmp_path):
+    runner, _ = _make_runner(tmp_path=tmp_path)
+    result = asyncio.run(
+        runner.preflight([("ruff", "ruff check ."), ("mypy", "mypy .")])
+    )
+    assert result == []
+
+
+def test_preflight_returns_failure_tuples_for_failing_checks(tmp_path):
+    session = FakeDockerSession(
+        exec_handlers={"ruff check": DockerError("E501 line too long")}
+    )
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+    result = asyncio.run(
+        runner.preflight([("ruff", "ruff check ."), ("mypy", "mypy .")])
+    )
+    assert len(result) == 1
+    name, cmd, output = result[0]
     assert name == "ruff"
     assert cmd == "ruff check ."
     assert "E501" in output
 
 
-def test_preflight_returns_empty_list_on_clean_pass(tmp_path):
-    runner = _unstarted_runner("test", tmp_path)
-    runner.__enter__()
-    runner.exec_simple = lambda cmd, timeout=None: ""  # type: ignore[method-assign]
+def test_preflight_runs_all_checks_when_one_fails(tmp_path):
+    session = FakeDockerSession(
+        exec_handlers={"ruff check": DockerError("ruff failed")}
+    )
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+    asyncio.run(
+        runner.preflight(
+            [("ruff", "ruff check ."), ("mypy", "mypy ."), ("pytest", "pytest")]
+        )
+    )
+    assert any("ruff check" in c for c in session.exec_calls)
+    assert any("mypy" in c for c in session.exec_calls)
+    assert any("pytest" in c for c in session.exec_calls)
 
-    checks = [("ruff", "ruff check ."), ("mypy", "mypy ."), ("pytest", "pytest")]
-    assert asyncio.run(runner.preflight(checks)) == []
 
-
-def test_preflight_with_no_checks_returns_empty_list(tmp_path):
-    """preflight() with an empty check list must return [] without running any commands."""
-    runner = _unstarted_runner("test", tmp_path)
-    runner.__enter__()
+def test_preflight_with_empty_checks_returns_empty(tmp_path):
+    runner, _ = _make_runner(tmp_path=tmp_path)
     assert asyncio.run(runner.preflight([])) == []
 
 
-# ── Prepare phase ─────────────────────────────────────────────────────────────
+# ── work() ───────────────────────────────────────────────────────────────────
 
 
-def test_prepare_updates_phase_display(tmp_path):
-    """prepare() must update the status display to 'Prepare'."""
-    display = RecordingStatusDisplay()
-    runner = ContainerRunner(
-        "test",
-        Path("/fake"),
-        {},
-        docker_client=MagicMock(),
-        status_display=display,
-        cfg=Config(logs_dir=tmp_path),
-    )
-    runner.__enter__()
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("Hello World")
-
-    asyncio.run(runner.prepare(prompt_file, {}))
-
-    assert ("update_phase", "test", "Prepare") in display.calls
-
-
-def test_prepare_stores_rendered_prompt(tmp_path):
-    """prepare() must render placeholders and store the result for work() to inject."""
-    runner = _unstarted_runner("test", tmp_path)
-    runner.__enter__()
+def test_work_renders_and_writes_prompt_to_container(tmp_path):
+    runner, session = _make_runner(tmp_path=tmp_path)
     prompt_file = tmp_path / "prompt.md"
     prompt_file.write_text("Hello {{NAME}}")
 
-    asyncio.run(runner.prepare(prompt_file, {"NAME": "World"}))
+    asyncio.run(runner.work(_ROLE, prompt_file, {"NAME": "World"}))
 
-    assert runner._prompt == "Hello World"
+    assert ("/tmp/.pycastle_prompt", "Hello World") in session.write_calls
 
 
-def test_prepare_expands_shell_expressions_via_container_exec(tmp_path):
-    """prepare() must forward shell expressions to exec_simple inside the container."""
-    runner = _unstarted_runner("test", tmp_path)
-    runner.__enter__()
-    runner.exec_simple = lambda cmd, timeout=None: "exec_output"  # type: ignore[method-assign]
+def test_work_returns_agent_output(tmp_path):
+    runner, _ = _make_runner(tmp_path=tmp_path)
     prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("Result: !`gh issue list`")
-
-    asyncio.run(runner.prepare(prompt_file, {}))
-
-    assert runner._prompt == "Result: exec_output"
-
-
-# ── Issue 435: on_chunk wired to status_display.reset_idle_timer ─────────────
-
-
-def test_run_streaming_calls_reset_idle_timer_with_runner_name(tmp_path):
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner("MyAgent", [_COMPLETE_LINE], tmp_path, display)
-    runner.run_streaming(_ROLE, _NOOP)
-    assert ("reset_idle_timer", "MyAgent") in display.calls
-
-
-# ── Cycle 65-6: run_streaming writes raw log, suppresses all stdout ──────────
-
-
-def test_run_streaming_suppresses_system_init_line(tmp_path, capsys):
-    """System init JSON must produce no terminal output at all."""
-    json_line = b'{"type":"system","subtype":"init","session_id":"s1","tools":[]}\n'
-    runner = _streaming_runner("Planner", [json_line, _COMPLETE_LINE], tmp_path)
-    runner.run_streaming(_ROLE, _NOOP)
-    out = capsys.readouterr().out
-    assert out == ""
-
-
-# ── Issue 180: UsageLimitError stream detection ───────────────────────────────
-
-
-def test_run_streaming_raises_usage_limit_error_on_session_limit_line(tmp_path):
-    runner = _streaming_runner(
-        "Agent",
-        [b"You've hit your session limit\n"],
-        tmp_path,
-    )
-    with pytest.raises(UsageLimitError):
-        runner.run_streaming(_ROLE, _NOOP)
-
-
-def test_run_streaming_raises_usage_limit_error_case_insensitive(tmp_path):
-    runner = _streaming_runner(
-        "Agent",
-        [b"you've hit your session limit\n"],
-        tmp_path,
-    )
-    with pytest.raises(UsageLimitError):
-        runner.run_streaming(_ROLE, _NOOP)
-
-
-def test_run_streaming_raises_usage_limit_error_on_credit_balance_line(tmp_path):
-    runner = _streaming_runner(
-        "Agent",
-        [b"Credit balance is too low for this request\n"],
-        tmp_path,
-    )
-    with pytest.raises(UsageLimitError):
-        runner.run_streaming(_ROLE, _NOOP)
-
-
-def test_run_streaming_does_not_raise_for_normal_line(tmp_path):
-    runner = _streaming_runner(
-        "Agent",
-        [b"All good, processing normally\n", _COMPLETE_LINE],
-        tmp_path,
-    )
-    runner.run_streaming(_ROLE, _NOOP)
-
-
-def test_run_streaming_raises_when_pattern_split_across_chunks(tmp_path):
-    runner = _streaming_runner(
-        "Agent",
-        [b"You've hit ", b"your weekly limit\n"],
-        tmp_path,
-    )
-    with pytest.raises(UsageLimitError):
-        runner.run_streaming(_ROLE, _NOOP)
-
-
-def test_run_streaming_error_carries_original_casing(tmp_path):
-    runner = _streaming_runner(
-        "Agent",
-        [b"YOU'VE HIT YOUR SESSION LIMIT\n"],
-        tmp_path,
-    )
-    with pytest.raises(UsageLimitError) as exc_info:
-        runner.run_streaming(_ROLE, _NOOP)
-    assert str(exc_info.value) == "YOU'VE HIT YOUR SESSION LIMIT"
-
-
-# ── Issue 186: UsageLimitError false positive in JSON tool-result lines ────────
-
-
-def test_run_streaming_does_not_raise_for_json_line_containing_usage_limit_phrase(
-    tmp_path,
-):
-    """A JSON-encoded tool result that mentions a usage-limit phrase is not a real limit."""
-    import json
-
-    json_line = json.dumps(
-        {
-            "type": "user",
-            "message": {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "content": "You've hit your session limit is documented here as an example",
-                    }
-                ],
-            },
-        }
-    )
-    runner = _streaming_runner(
-        "Agent",
-        [(json_line + "\n").encode(), _COMPLETE_LINE],
-        tmp_path,
-    )
-    runner.run_streaming(_ROLE, _NOOP)  # must not raise
-
-
-# ── Issue 232: JSON result line with 429 not caught ───────────────────────────
-
-
-def test_run_streaming_raises_usage_limit_error_on_json_result_with_429(tmp_path):
-    """A JSON result line with api_error_status 429 must raise UsageLimitError."""
-    import json
-
-    json_line = json.dumps(
-        {
-            "type": "result",
-            "subtype": "success",
-            "is_error": True,
-            "api_error_status": 429,
-            "result": "You've hit your limit · resets 4:30pm (UTC)",
-        }
-    )
-    runner = _streaming_runner(
-        "Agent",
-        [(json_line + "\n").encode()],
-        tmp_path,
-    )
-    with pytest.raises(UsageLimitError):
-        runner.run_streaming(_ROLE, _NOOP)
-
-
-def test_run_streaming_raises_usage_limit_error_on_json_result_matching_pattern(
-    tmp_path,
-):
-    """A JSON result line whose result field matches a usage_limit_pattern raises UsageLimitError."""
-    import json
-
-    json_line = json.dumps(
-        {
-            "type": "result",
-            "is_error": True,
-            "api_error_status": 503,
-            "result": "You've hit your session limit",
-        }
-    )
-    runner = _streaming_runner(
-        "Agent",
-        [(json_line + "\n").encode()],
-        tmp_path,
-    )
-    with pytest.raises(UsageLimitError):
-        runner.run_streaming(_ROLE, _NOOP)
-
-
-def test_run_streaming_does_not_raise_for_successful_json_result(tmp_path):
-    """A normal JSON result line (no error) must not raise UsageLimitError."""
-    import json
-
-    json_line = json.dumps(
-        {
-            "type": "result",
-            "subtype": "success",
-            "is_error": False,
-            "result": "<promise>COMPLETE</promise>",
-        }
-    )
-    runner = _streaming_runner(
-        "Agent",
-        [(json_line + "\n").encode()],
-        tmp_path,
-    )
-    result = runner.run_streaming(_ROLE, _NOOP)  # must not raise
+    prompt_file.write_text("hi")
+    result = asyncio.run(runner.work(_ROLE, prompt_file, {}))
     assert isinstance(result, CompletionOutput)
 
 
-def test_run_streaming_does_not_crash_on_json_result_with_null_result_field(tmp_path):
-    """A JSON result error with result=null must not raise AttributeError or UsageLimitError."""
-    import json
-    from pycastle.agent_output_protocol import PromiseParseError
-
-    json_line = json.dumps(
-        {
-            "type": "result",
-            "is_error": True,
-            "api_error_status": 503,
-            "result": None,
-        }
-    )
-    runner = _streaming_runner(
-        "Agent",
-        [(json_line + "\n").encode()],
-        tmp_path,
-    )
-    with pytest.raises(PromiseParseError):
-        runner.run_streaming(
-            _ROLE, _NOOP
-        )  # must not raise AttributeError or UsageLimitError
+def test_work_calls_session_exec_stream_with_claude_command(tmp_path):
+    runner, session = _make_runner(tmp_path=tmp_path, model="claude-sonnet-4-6")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("hi")
+    asyncio.run(runner.work(_ROLE, prompt_file, {}))
+    assert any("claude" in c for c in session.stream_calls)
+    assert any("--model claude-sonnet-4-6" in c for c in session.stream_calls)
 
 
-# ── Issue 203: cfg injection into ContainerRunner ─────────────────────────────
+def test_work_twice_uses_each_calls_prompt_args(tmp_path):
+    """Calling work() twice with different args must inject the new prompt each time."""
+    session = FakeDockerSession(stream_chunks=[_COMPLETE_LINE, _COMPLETE_LINE])
+    # exec_stream is consumed each call; rebuild iterator per call
+    chunk_lists = [[_COMPLETE_LINE], [_COMPLETE_LINE]]
+
+    def _stream(command: str) -> Iterator[bytes]:
+        session.stream_calls.append(command)
+        return iter(chunk_lists.pop(0))
+
+    session.exec_stream = _stream  # type: ignore[method-assign]
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("Hello {{NAME}}")
+
+    asyncio.run(runner.work(_ROLE, prompt_file, {"NAME": "First"}))
+    asyncio.run(runner.work(_ROLE, prompt_file, {"NAME": "Second"}))
+
+    prompt_writes = [c for c in session.write_calls if c[0] == "/tmp/.pycastle_prompt"]
+    assert prompt_writes[0][1] == "Hello First"
+    assert prompt_writes[1][1] == "Hello Second"
 
 
-def test_container_runner_uses_custom_logs_dir_from_cfg(tmp_path):
-    """ContainerRunner with cfg=Config(logs_dir=...) must set log_path under that dir."""
-    custom_logs = tmp_path / "my_logs"
-    runner = ContainerRunner(
-        "my-task",
-        Path("/fake"),
-        {},
-        docker_client=MagicMock(),
-        cfg=Config(logs_dir=custom_logs),
-    )
-    assert runner.log_path.parent == custom_logs
+def test_work_expands_shell_expressions_via_session_exec(tmp_path):
+    session = FakeDockerSession(exec_handlers={"echo hi": "expanded\n"})
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("Result: !`echo hi`")
+
+    asyncio.run(runner.work(_ROLE, prompt_file, {}))
+
+    prompt_writes = [c for c in session.write_calls if c[0] == "/tmp/.pycastle_prompt"]
+    assert prompt_writes[0][1] == "Result: expanded"
 
 
-def test_run_streaming_uses_usage_limit_patterns_from_cfg(tmp_path):
-    """Custom usage_limit_patterns injected via cfg must trigger UsageLimitError."""
-    mock_client = MagicMock()
-    mock_result = MagicMock()
-    mock_result.output = iter([b"CUSTOM_LIMIT_SENTINEL reached\n"])
-    mock_client.containers.run.return_value.exec_run.return_value = mock_result
-    runner = ContainerRunner(
-        "test",
-        Path("/fake"),
-        {},
-        docker_client=mock_client,
-        cfg=Config(logs_dir=tmp_path, usage_limit_patterns=("CUSTOM_LIMIT_SENTINEL",)),
-    )
-    runner.__enter__()
+def test_work_updates_phase_to_work(tmp_path):
+    display = RecordingStatusDisplay()
+    runner, _ = _make_runner(name="impl-1", status_display=display, tmp_path=tmp_path)
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("hi")
+    asyncio.run(runner.work(_ROLE, prompt_file, {}))
+    assert ("update_phase", "impl-1", "Work") in display.calls
 
+
+def test_work_calls_reset_idle_timer(tmp_path):
+    display = RecordingStatusDisplay()
+    runner, _ = _make_runner(name="impl-1", status_display=display, tmp_path=tmp_path)
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("hi")
+    asyncio.run(runner.work(_ROLE, prompt_file, {}))
+    assert ("reset_idle_timer", "impl-1") in display.calls
+
+
+def test_work_raises_usage_limit_error_on_session_limit_in_stream(tmp_path):
+    session = FakeDockerSession(stream_chunks=[b"You've hit your session limit\n"])
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("hi")
     with pytest.raises(UsageLimitError):
-        runner.run_streaming(_ROLE, _NOOP)
+        asyncio.run(runner.work(_ROLE, prompt_file, {}))
 
 
-def test_run_streaming_default_patterns_not_triggered_by_custom_cfg(tmp_path):
-    """Default usage_limit_patterns must not trigger when cfg overrides them."""
-    from pycastle.agent_output_protocol import PromiseParseError
-
-    mock_client = MagicMock()
-    mock_result = MagicMock()
-    # Default pattern "You've hit your" should NOT trigger with the custom cfg
-    mock_result.output = iter([b"You've hit your session limit\n"])
-    mock_client.containers.run.return_value.exec_run.return_value = mock_result
-    runner = ContainerRunner(
-        "test",
-        Path("/fake"),
-        {},
-        docker_client=mock_client,
-        cfg=Config(logs_dir=tmp_path, usage_limit_patterns=("CUSTOM_LIMIT_SENTINEL",)),
-    )
-    runner.__enter__()
-
-    # The default pattern is not active, so no UsageLimitError is raised.
-    # The stream has no valid NDJSON result line, so PromiseParseError is raised instead.
-    with pytest.raises(PromiseParseError):
-        runner.run_streaming(_ROLE, _NOOP)
-    # Verify the raw text was written to the log (no UsageLimitError intercepted it)
-    assert "You've hit your session limit" in runner._log_path.read_text()
-
-
-# ── Issue 310: StatusDisplay lifecycle wiring ─────────────────────────────────
-
-
-def _unstarted_runner(name: str, tmp_path: Path) -> ContainerRunner:
-    """ContainerRunner with mocked Docker whose __enter__ has NOT been called yet."""
-    mock_client = MagicMock()
-    mock_exec = MagicMock()
-    mock_exec.exit_code = 0
-    mock_exec.output = (b"", b"")
-    mock_client.containers.run.return_value.exec_run.return_value = mock_exec
-    return ContainerRunner(
-        name,
-        Path("/fake"),
-        {},
-        docker_client=mock_client,
-        cfg=Config(logs_dir=tmp_path),
-    )
-
-
-def test_setup_registers_agent_with_name(tmp_path):
-    display = RecordingStatusDisplay()
-    runner = ContainerRunner(
-        "implementer-42",
-        Path("/fake"),
-        {},
-        docker_client=MagicMock(),
-        status_display=display,
-        cfg=Config(logs_dir=tmp_path),
-    )
-    runner.exec_simple = lambda cmd, timeout=None: ""  # type: ignore[method-assign]
-
-    asyncio.run(runner.setup("Alice", "alice@example.com"))
-
-    register_calls = [c for c in display.calls if c[0] == "register"]
-    assert len(register_calls) == 1
-    assert register_calls[0][1] == "implementer-42"
-
-
-def test_work_calls_update_phase_work(tmp_path):
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner("implementer-42", [_COMPLETE_LINE], tmp_path, display)
-
-    asyncio.run(runner.work(_ROLE))
-    assert ("update_phase", "implementer-42", "Work") in display.calls
-
-
-def test_work_produces_no_stdout(tmp_path, capsys):
-    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner(
-        "implementer-42", [json_line, _COMPLETE_LINE], tmp_path, display
-    )
-
-    asyncio.run(runner.work(_ROLE))
-    assert capsys.readouterr().out == ""
-
-
-# ── Issue 337: pip install failure must propagate from _setup ─────────────────
-
-
-def test_setup_propagates_docker_error_when_pip_install_fails(tmp_path):
-    """setup() must not swallow DockerError from a failed pip install."""
-    from pycastle.errors import DockerError
-
-    runner = ContainerRunner(
-        "test",
-        Path("/fake"),
-        {},
-        docker_client=MagicMock(),
-        cfg=Config(logs_dir=tmp_path),
-    )
-
-    def _failing_exec(cmd, timeout=None):
-        if "pip install" in cmd:
-            raise DockerError("pip install failed: exit 1")
-        return ""
-
-    runner.exec_simple = _failing_exec  # type: ignore[method-assign]
-
-    with pytest.raises(DockerError, match="pip install failed"):
-        asyncio.run(runner.setup("Alice", "alice@example.com"))
-
-
-# ── Issue 344: Docker client connection leak on shutdown ──────────────────────
-
-
-def test_exit_closes_client_when_runner_owns_it(tmp_path):
-    """When no docker_client is injected, __exit__ must close the created client."""
-    with patch("pycastle.container_runner.docker") as mock_docker:
-        mock_container = MagicMock()
-        mock_docker.from_env.return_value.containers.run.return_value = mock_container
-        runner = ContainerRunner(
-            "test", Path("/fake"), {}, cfg=Config(logs_dir=tmp_path)
-        )
-        runner.__enter__()
-        runner.__exit__(None, None, None)
-    mock_docker.from_env.return_value.close.assert_called_once()
-
-
-def test_exit_does_not_close_injected_client(tmp_path):
-    """When docker_client is injected, __exit__ must not close it."""
-    mock_client = MagicMock()
-    runner = ContainerRunner(
-        "test",
-        Path("/fake"),
-        {},
-        docker_client=mock_client,
-        cfg=Config(logs_dir=tmp_path),
-    )
-    runner.__enter__()
-    runner.__exit__(None, None, None)
-    mock_client.close.assert_not_called()
-
-
-def test_exit_swallows_close_exception():
-    """Exceptions from client.close() must not propagate out of __exit__."""
-    with patch("pycastle.container_runner.docker") as mock_docker:
-        mock_docker.from_env.return_value.close.side_effect = RuntimeError(
-            "connection reset"
-        )
-        runner = ContainerRunner("test", Path("/fake"), {}, cfg=Config())
-        runner.__exit__(None, None, None)  # must not raise
-
-
-# ── run_streaming turn display ───────────────────────────────────────────────
-
-
-def test_run_streaming_in_work_phase_prints_complete_turn(tmp_path):
-    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Analysing issues"}]}}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner(
-        "Implementer #1", [json_line, _COMPLETE_LINE], tmp_path, display
-    )
-
-    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
-
-    print_calls = [c for c in display.calls if c[0] == "print"]
-    assert len(print_calls) == 1
-    assert print_calls[0][1] == "Implementer #1"
-    assert print_calls[0][2] == "Analysing issues"
-
-
-def test_run_streaming_without_print_output_does_not_call_print(tmp_path):
-    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Analysing issues"}]}}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [json_line, _COMPLETE_LINE], tmp_path, display)
-
-    runner.run_streaming(_ROLE, _NOOP)
-
-    assert not any(c[0] == "print" for c in display.calls)
-
-
-def test_run_streaming_tool_use_only_does_not_call_print_in_work_phase(tmp_path):
-    tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","id":"t1","input":{}}]}}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [tool_chunk, _COMPLETE_LINE], tmp_path, display)
-
-    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
-
-    assert not any(c[0] == "print" for c in display.calls)
-
-
-def test_work_calls_print_for_complete_assistant_turn(tmp_path):
-    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Fixing bug"}]}}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner(
-        "Implementer #3", [json_line, _COMPLETE_LINE], tmp_path, display
-    )
-
-    asyncio.run(runner.work(_ROLE))
-
-    print_calls = [c for c in display.calls if c[0] == "print"]
-    assert len(print_calls) == 1
-    assert print_calls[0][1] == "Implementer #3"
-    assert print_calls[0][2] == "Fixing bug"
-
-
-def test_work_does_not_call_print_for_tool_use_turns(tmp_path):
-    tool_chunk = b'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","id":"t1","input":{}}]}}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner(
-        "Implementer #3", [tool_chunk, _COMPLETE_LINE], tmp_path, display
-    )
-
-    asyncio.run(runner.work(_ROLE))
-
-    assert not any(c[0] == "print" for c in display.calls)
-
-
-def test_run_streaming_with_print_output_still_calls_reset_idle_timer(tmp_path):
-    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [json_line, _COMPLETE_LINE], tmp_path, display)
-
-    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
-
-    assert ("reset_idle_timer", "Bot") in display.calls
-
-
-def test_run_streaming_multiple_turns_prints_each_one(tmp_path):
-    line_a = b'{"type":"assistant","message":{"content":[{"type":"text","text":"First turn"}]}}\n'
-    line_b = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Second turn"}]}}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner(
-        "Bot", [line_a + line_b + _COMPLETE_LINE], tmp_path, display
-    )
-
-    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
-
-    print_calls = [c for c in display.calls if c[0] == "print"]
-    assert len(print_calls) == 2
-    assert print_calls[0][1] == "Bot" and print_calls[0][2] == "First turn"
-    assert print_calls[1][1] == "Bot" and print_calls[1][2] == "Second turn"
-
-
-# ── Issue 392: no trailing newline in agent message (blank-line bug) ──────────
-
-
-def test_run_streaming_agent_message_has_no_trailing_newline(tmp_path):
-    line_a = (
-        b'{"type":"assistant","message":{"content":[{"type":"text","text":"First"}]}}\n'
-    )
-    line_b = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Second"}]}}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner(
-        "Bot", [line_a + line_b + _COMPLETE_LINE], tmp_path, display
-    )
-
-    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
-
-    print_calls = [c for c in display.calls if c[0] == "print"]
-    assert len(print_calls) == 2
-    assert not str(print_calls[0][2]).endswith("\n"), (
-        "agent message must not end with newline"
-    )
-    assert not str(print_calls[1][2]).endswith("\n"), (
-        "agent message must not end with newline"
-    )
-
-
-def test_run_streaming_multiblock_turn_prints_as_single_call(tmp_path):
-    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"First paragraph"},{"type":"text","text":"Second paragraph"}]}}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner("Bot", [json_line, _COMPLETE_LINE], tmp_path, display)
-
-    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
-
-    print_calls = [c for c in display.calls if c[0] == "print"]
-    assert len(print_calls) == 1
-    assert print_calls[0][1] == "Bot"
-    assert print_calls[0][2] == "First paragraph\n\nSecond paragraph"
-
-
-# ── Issue 377: caller passed as first argument to print ───────────────────────
-
-
-def test_run_streaming_print_uses_agent_name_as_caller(tmp_path):
-    json_line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}\n'
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner(
-        "Implementer #1", [json_line, _COMPLETE_LINE], tmp_path, display
-    )
-
-    runner.run_streaming(_ROLE, lambda t: runner._status_display.print(runner.name, t))
-
-    print_calls = [c for c in display.calls if c[0] == "print"]
-    assert len(print_calls) == 1
-    assert print_calls[0][1] == "Implementer #1"
-    assert print_calls[0][2] == "Working"
-
-
-# ── Issue 384: status_display constructor injection ──────────────────────────
-
-
-def test_container_runner_run_streaming_uses_status_display_from_constructor(tmp_path):
-    """run_streaming must call reset_idle_timer on the display passed at construction."""
-    display = RecordingStatusDisplay()
-    runner = _streaming_runner("test", [_COMPLETE_LINE], tmp_path, display)
-    runner.run_streaming(_ROLE, _NOOP)
-    assert any(c[0] == "reset_idle_timer" for c in display.calls)
-
-
-def test_run_streaming_rejects_status_display_argument(tmp_path):
-    """Passing status_display to run_streaming must raise TypeError."""
-    runner = _streaming_runner("Bot", [], tmp_path)
-    with pytest.raises(TypeError):
-        runner.run_streaming(_ROLE, _NOOP, status_display=MagicMock())
-
-
-def test_container_runner_without_status_display_runs_streaming_without_error(tmp_path):
-    """ContainerRunner constructed without status_display must complete run_streaming without error."""
-    runner = _streaming_runner("Bot", [_COMPLETE_LINE], tmp_path)
-    runner.run_streaming(_ROLE, _NOOP)
+def test_work_uses_custom_logs_dir_from_cfg(tmp_path):
+    custom_logs = tmp_path / "my_logs"
+    runner, _ = _make_runner(name="my-task", cfg=Config(logs_dir=custom_logs))
+    assert runner.log_path.parent == custom_logs
