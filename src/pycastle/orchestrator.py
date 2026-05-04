@@ -160,7 +160,6 @@ async def run(
                 _agent_runner = AgentRunner(env=env, cfg=cfg, git_service=git_svc)
 
             deps = IterationDeps(
-                env=env,
                 repo_root=repo_root,
                 git_svc=git_svc,
                 github_svc=_get_github_svc(),

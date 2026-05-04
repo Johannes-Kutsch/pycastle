@@ -109,7 +109,6 @@ class FakeAgentRunner:
 
 @dataclasses.dataclass
 class Deps:
-    env: dict[str, str]
     repo_root: Path
     git_svc: GitService
     github_svc: GithubService
