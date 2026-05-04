@@ -92,7 +92,7 @@ class AgentRunner:
 
         _token = token if token is not None else CancellationToken()
         if _token.is_cancelled:
-            raise UsageLimitError("Agent cancelled due to usage limit")
+            raise UsageLimitError(reset_time=None)
 
         session = self._build_session(mount_path)
         runner = ContainerRunner(

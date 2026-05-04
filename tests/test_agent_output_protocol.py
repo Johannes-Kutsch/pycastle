@@ -133,9 +133,7 @@ def test_process_stream_planner_returns_planner_output():
     lines = [
         _result_line('<plan>{"issues": [{"number": 1, "title": "Fix bug"}]}</plan>')
     ]
-    result = process_stream(
-        lines, on_turn=lambda t: None, role=AgentRole.PLANNER, usage_limit_patterns=()
-    )
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
     assert isinstance(result, PlannerOutput)
     assert result.issues == [{"number": 1, "title": "Fix bug"}]
 
@@ -150,7 +148,6 @@ def test_process_stream_preflight_issue_returns_issue_output():
         lines,
         on_turn=lambda t: None,
         role=AgentRole.PREFLIGHT_ISSUE,
-        usage_limit_patterns=(),
     )
     assert isinstance(result, IssueOutput)
     assert result.number == 42
@@ -163,36 +160,20 @@ def test_process_stream_implementer_returns_completion_output():
         lines,
         on_turn=lambda t: None,
         role=AgentRole.IMPLEMENTER,
-        usage_limit_patterns=(),
     )
     assert isinstance(result, CompletionOutput)
 
 
 def test_process_stream_reviewer_returns_completion_output():
     lines = [_result_line("<promise>COMPLETE</promise>")]
-    result = process_stream(
-        lines, on_turn=lambda t: None, role=AgentRole.REVIEWER, usage_limit_patterns=()
-    )
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.REVIEWER)
     assert isinstance(result, CompletionOutput)
 
 
 def test_process_stream_merger_returns_completion_output():
     lines = [_result_line("<promise>COMPLETE</promise>")]
-    result = process_stream(
-        lines, on_turn=lambda t: None, role=AgentRole.MERGER, usage_limit_patterns=()
-    )
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.MERGER)
     assert isinstance(result, CompletionOutput)
-
-
-def test_process_stream_raises_usage_limit_error_on_plain_text_match():
-    lines = ["Claude reached its usage limit for this billing period."]
-    with pytest.raises(UsageLimitError):
-        process_stream(
-            lines,
-            on_turn=lambda t: None,
-            role=AgentRole.IMPLEMENTER,
-            usage_limit_patterns=("usage limit",),
-        )
 
 
 def test_process_stream_raises_usage_limit_error_on_429_json():
@@ -204,13 +185,33 @@ def test_process_stream_raises_usage_limit_error_on_429_json():
             "result": "rate limited",
         }
     )
-    with pytest.raises(UsageLimitError):
+    with pytest.raises(UsageLimitError) as exc_info:
         process_stream(
             [error_line],
             on_turn=lambda t: None,
             role=AgentRole.IMPLEMENTER,
-            usage_limit_patterns=(),
         )
+    assert exc_info.value.reset_time is None
+
+
+def test_process_stream_usage_limit_carries_parsed_reset_time():
+    error_line = json.dumps(
+        {
+            "type": "result",
+            "is_error": True,
+            "api_error_status": 429,
+            "result": "You're out of extra usage · resets 12:50pm (UTC)",
+        }
+    )
+    with pytest.raises(UsageLimitError) as exc_info:
+        process_stream(
+            [error_line],
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+        )
+    reset = exc_info.value.reset_time
+    assert reset is not None
+    assert (reset.hour, reset.minute) != (0, 0) or reset.minute == 50
 
 
 def test_process_stream_invokes_on_turn_for_each_assistant_turn():
@@ -222,7 +223,6 @@ def test_process_stream_invokes_on_turn_for_each_assistant_turn():
         ],
         on_turn=turns.append,
         role=AgentRole.IMPLEMENTER,
-        usage_limit_patterns=(),
     )
     assert turns == ["Hello, I will fix this."]
 
@@ -237,7 +237,6 @@ def test_process_stream_invokes_on_turn_once_per_turn():
         ],
         on_turn=turns.append,
         role=AgentRole.IMPLEMENTER,
-        usage_limit_patterns=(),
     )
     assert turns == ["First turn.", "Second turn."]
 
@@ -249,7 +248,6 @@ def test_process_stream_raises_plan_parse_error_when_plan_tag_absent():
             lines,
             on_turn=lambda t: None,
             role=AgentRole.PLANNER,
-            usage_limit_patterns=(),
         )
 
 
@@ -260,7 +258,6 @@ def test_process_stream_raises_issue_parse_error_when_issue_tag_absent():
             lines,
             on_turn=lambda t: None,
             role=AgentRole.PREFLIGHT_ISSUE,
-            usage_limit_patterns=(),
         )
 
 
@@ -271,7 +268,6 @@ def test_process_stream_raises_promise_parse_error_when_completion_tag_absent():
             lines,
             on_turn=lambda t: None,
             role=AgentRole.IMPLEMENTER,
-            usage_limit_patterns=(),
         )
 
 
@@ -280,22 +276,26 @@ def test_process_stream_extracts_result_from_envelope():
         _assistant_line("thinking"),
         _result_line('<plan>{"issues": [{"number": 7, "title": "T"}]}</plan>'),
     ]
-    result = process_stream(
-        lines, on_turn=lambda t: None, role=AgentRole.PLANNER, usage_limit_patterns=()
-    )
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
     assert isinstance(result, PlannerOutput)
     assert result.issues == [{"number": 7, "title": "T"}]
 
 
 def test_process_stream_raises_usage_limit_immediately_before_end():
-    usage_line = "You have reached your usage limit"
+    usage_line = json.dumps(
+        {
+            "type": "result",
+            "is_error": True,
+            "api_error_status": 429,
+            "result": "rate limited",
+        }
+    )
     result_line = _result_line("<promise>COMPLETE</promise>")
     with pytest.raises(UsageLimitError):
         process_stream(
             [usage_line, result_line],
             on_turn=lambda t: None,
             role=AgentRole.IMPLEMENTER,
-            usage_limit_patterns=("usage limit",),
         )
 
 
@@ -305,15 +305,12 @@ def test_process_stream_empty_stream_raises_promise_parse_error():
             [],
             on_turn=lambda t: None,
             role=AgentRole.IMPLEMENTER,
-            usage_limit_patterns=(),
         )
 
 
 def test_process_stream_empty_stream_raises_plan_parse_error():
     with pytest.raises(PlanParseError):
-        process_stream(
-            [], on_turn=lambda t: None, role=AgentRole.PLANNER, usage_limit_patterns=()
-        )
+        process_stream([], on_turn=lambda t: None, role=AgentRole.PLANNER)
 
 
 def test_process_stream_empty_stream_raises_issue_parse_error():
@@ -322,7 +319,6 @@ def test_process_stream_empty_stream_raises_issue_parse_error():
             [],
             on_turn=lambda t: None,
             role=AgentRole.PREFLIGHT_ISSUE,
-            usage_limit_patterns=(),
         )
 
 
@@ -332,7 +328,6 @@ def test_process_stream_no_result_envelope_falls_back_to_collected_lines():
         lines,
         on_turn=lambda t: None,
         role=AgentRole.IMPLEMENTER,
-        usage_limit_patterns=(),
     )
     assert isinstance(result, CompletionOutput)
 
@@ -344,7 +339,6 @@ def test_process_stream_error_message_includes_output_tail():
             [_result_line(long_content)],
             on_turn=lambda t: None,
             role=AgentRole.IMPLEMENTER,
-            usage_limit_patterns=(),
         )
     assert "distinctive-tail" in str(exc_info.value)
 
@@ -366,22 +360,20 @@ def test_process_stream_multiple_text_blocks_assembled_with_double_newline():
         [line, _result_line("<promise>COMPLETE</promise>")],
         on_turn=turns.append,
         role=AgentRole.IMPLEMENTER,
-        usage_limit_patterns=(),
     )
     assert turns == ["First block\n\nSecond block"]
 
 
-def test_process_stream_usage_limit_pattern_matching_is_case_insensitive():
-    with pytest.raises(UsageLimitError):
+def test_process_stream_does_not_raise_usage_limit_on_plain_text_match():
+    with pytest.raises(PromiseParseError):
         process_stream(
             ["CLAUDE REACHED ITS USAGE LIMIT"],
             on_turn=lambda t: None,
             role=AgentRole.IMPLEMENTER,
-            usage_limit_patterns=("usage limit",),
         )
 
 
-def test_process_stream_raises_usage_limit_on_non_429_error_result_with_pattern():
+def test_process_stream_does_not_raise_on_non_429_error_result():
     error_line = json.dumps(
         {
             "type": "result",
@@ -390,12 +382,11 @@ def test_process_stream_raises_usage_limit_on_non_429_error_result_with_pattern(
             "result": "overloaded: usage limit exceeded",
         }
     )
-    with pytest.raises(UsageLimitError):
+    with pytest.raises(PromiseParseError):
         process_stream(
             [error_line],
             on_turn=lambda t: None,
             role=AgentRole.IMPLEMENTER,
-            usage_limit_patterns=("usage limit",),
         )
 
 
@@ -408,7 +399,6 @@ def test_process_stream_null_result_in_envelope_falls_back_to_collected_lines():
         lines,
         on_turn=lambda t: None,
         role=AgentRole.IMPLEMENTER,
-        usage_limit_patterns=(),
     )
     assert isinstance(result, CompletionOutput)
 
@@ -418,9 +408,7 @@ def test_process_stream_first_result_envelope_wins_when_multiple_present():
         _result_line('<plan>{"issues": [{"number": 1, "title": "First"}]}</plan>'),
         _result_line('<plan>{"issues": [{"number": 2, "title": "Last"}]}</plan>'),
     ]
-    result = process_stream(
-        lines, on_turn=lambda t: None, role=AgentRole.PLANNER, usage_limit_patterns=()
-    )
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
     assert isinstance(result, PlannerOutput)
     assert result.issues == [{"number": 1, "title": "First"}]
 
@@ -441,7 +429,6 @@ def test_process_stream_implementer_stops_consuming_after_turn_with_promise():
         tracking_iter(),
         on_turn=lambda t: None,
         role=AgentRole.IMPLEMENTER,
-        usage_limit_patterns=(),
     )
     assert isinstance(result, CompletionOutput)
     assert len(consumed) == 1
@@ -463,7 +450,6 @@ def test_process_stream_planner_stops_consuming_after_turn_with_plan():
         tracking_iter(),
         on_turn=lambda t: None,
         role=AgentRole.PLANNER,
-        usage_limit_patterns=(),
     )
     assert isinstance(result, PlannerOutput)
     assert result.issues == [{"number": 1, "title": "T"}]
@@ -486,7 +472,6 @@ def test_process_stream_preflight_issue_stops_consuming_after_turn_with_issue():
         tracking_iter(),
         on_turn=lambda t: None,
         role=AgentRole.PREFLIGHT_ISSUE,
-        usage_limit_patterns=(),
     )
     assert isinstance(result, IssueOutput)
     assert result.number == 7
@@ -508,7 +493,6 @@ def test_process_stream_stops_consuming_after_result_line():
         tracking_iter(),
         on_turn=lambda t: None,
         role=AgentRole.IMPLEMENTER,
-        usage_limit_patterns=(),
     )
     assert isinstance(result, CompletionOutput)
     assert len(consumed) == 1
@@ -520,9 +504,7 @@ def test_process_stream_planner_skips_malformed_turn_and_exits_on_later_valid_tu
         _assistant_line('<plan>{"issues": [{"number": 3, "title": "Real"}]}</plan>'),
         _assistant_line("This line must not be consumed"),
     ]
-    result = process_stream(
-        lines, on_turn=lambda t: None, role=AgentRole.PLANNER, usage_limit_patterns=()
-    )
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
     assert isinstance(result, PlannerOutput)
     assert result.issues == [{"number": 3, "title": "Real"}]
 
@@ -537,7 +519,6 @@ def test_process_stream_preflight_issue_skips_malformed_turn_and_exits_on_later_
         lines,
         on_turn=lambda t: None,
         role=AgentRole.PREFLIGHT_ISSUE,
-        usage_limit_patterns=(),
     )
     assert isinstance(result, IssueOutput)
     assert result.number == 5
@@ -549,7 +530,6 @@ def test_process_stream_on_turn_receives_signal_turn_before_early_exit():
         [_assistant_line("<promise>COMPLETE</promise>")],
         on_turn=received.append,
         role=AgentRole.IMPLEMENTER,
-        usage_limit_patterns=(),
     )
     assert received == ["<promise>COMPLETE</promise>"]
 
@@ -566,6 +546,5 @@ def test_process_stream_non_error_result_with_pattern_text_does_not_raise():
         [success_result],
         on_turn=lambda t: None,
         role=AgentRole.IMPLEMENTER,
-        usage_limit_patterns=("usage limit",),
     )
     assert isinstance(result, CompletionOutput)

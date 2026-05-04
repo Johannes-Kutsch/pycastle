@@ -1276,7 +1276,7 @@ def test_usage_limit_sleeps_instead_of_exiting(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep") as mock_sleep:
         _run(
@@ -1298,7 +1298,7 @@ def test_usage_limit_prints_sleep_message_with_wake_time(tmp_path, capsys):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep"):
         _run(
@@ -1321,7 +1321,7 @@ def test_usage_limit_loop_continues_after_sleep(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep"):
         _run(
@@ -1342,7 +1342,7 @@ def test_consecutive_usage_limits_sleep_multiple_times(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep") as mock_sleep:
         _run(
@@ -1368,7 +1368,7 @@ def test_usage_limit_wake_time_is_next_full_hour_plus_two_minutes(tmp_path, caps
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with (
         patch("time.sleep"),
@@ -1400,7 +1400,7 @@ def test_usage_limit_sleep_duration_matches_wake_time(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with (
         patch("time.sleep") as mock_sleep,
@@ -1429,7 +1429,7 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 1, "title": "Fix"}])
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep"):
         _run(

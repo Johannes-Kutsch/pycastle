@@ -103,7 +103,7 @@ def test_implement_phase_signals_usage_limit_in_result(tmp_path):
     issues = [{"number": 1, "title": "Fix A"}]
 
     async def _side_effect(request: RunRequest):
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
@@ -117,7 +117,7 @@ def test_implement_phase_usage_limit_does_not_exit(tmp_path):
     issues = [{"number": 1, "title": "Fix A"}]
 
     async def _side_effect(request: RunRequest):
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
@@ -133,7 +133,7 @@ def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
 
     async def _side_effect(request: RunRequest):
         if "Implement Agent #1" in request.name:
-            raise UsageLimitError("")
+            raise UsageLimitError(reset_time=None)
         completed_agents.append(request.name)
         return CompletionOutput()
 
@@ -260,7 +260,7 @@ def test_implement_phase_reviewer_usage_limit_signals_in_result(tmp_path):
     async def _side_effect(request: RunRequest):
         if "Implement Agent" in request.name:
             return CompletionOutput()
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
@@ -635,7 +635,7 @@ def test_run_issue_preserves_worktree_on_usage_limit(tmp_path):
     async def _side_effect(request: RunRequest):
         if "Implement Agent" in request.name:
             token.cancel(preserve_worktree=True)
-            raise UsageLimitError("")
+            raise UsageLimitError(reset_time=None)
         return CompletionOutput()
 
     fake = FakeAgentRunner(side_effect=_side_effect)

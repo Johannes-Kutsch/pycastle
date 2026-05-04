@@ -320,7 +320,11 @@ def test_work_calls_reset_idle_timer(tmp_path):
 
 
 def test_work_raises_usage_limit_error_on_session_limit_in_stream(tmp_path):
-    session = FakeDockerSession(stream_chunks=[b"You've hit your session limit\n"])
+    line = (
+        b'{"type":"result","is_error":true,"api_error_status":429,'
+        b'"result":"rate limited"}\n'
+    )
+    session = FakeDockerSession(stream_chunks=[line])
     runner, _ = _make_runner(session=session, tmp_path=tmp_path)
     prompt_file = tmp_path / "prompt.md"
     prompt_file.write_text("hi")
