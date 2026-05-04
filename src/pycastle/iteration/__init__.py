@@ -5,7 +5,7 @@ from typing import TypeAlias
 from ..agent_result import CancellationToken, PreflightFailure
 from ..worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
-from ._phase_row import PhaseRow, phase_row
+from ._rows import PhaseRow, agent_row, phase_row
 from .implement import branch_for, implement_phase
 from .merge import merge_phase
 from .preflight import PreflightAFK, PreflightHITL, PreflightReady, preflight_phase
