@@ -1,3 +1,6 @@
+from datetime import datetime
+
+
 class PycastleError(RuntimeError):
     pass
 
@@ -66,4 +69,8 @@ class DockerBuildError(DockerServiceError):
 
 
 class UsageLimitError(PycastleError):
-    pass
+    def __init__(self, reset_time: datetime | None = None) -> None:
+        self.reset_time = reset_time
+        super().__init__(
+            f"Usage limit reached (reset_time={reset_time.isoformat() if reset_time else None})"
+        )

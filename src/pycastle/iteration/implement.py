@@ -2,11 +2,12 @@ import asyncio
 import contextlib
 import dataclasses
 from collections.abc import Callable, Sequence
+from datetime import datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..agent_output_protocol import AgentRole
+from ..agent_output_protocol import AgentRole, CommitMessageOutput
 from ..agent_result import CancellationToken, PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
@@ -57,6 +58,10 @@ async def _agent_worktree(
             gitdir_overlay.unlink(missing_ok=True)
 
 
+IMPLEMENT_COMMIT_PREFIX = "RALPH: Implement - "
+REVIEW_COMMIT_PREFIX = "RALPH: Review - "
+
+
 def branch_for(issue_number: int) -> str:
     return f"pycastle/issue-{issue_number}"
 
@@ -73,6 +78,7 @@ class ImplementResult:
     completed: list[dict]
     errors: list[tuple[dict, Exception | PreflightFailure]]
     usage_limit_hit: bool = False
+    usage_limit_reset_time: datetime | None = None
 
 
 async def run_issue(
@@ -119,8 +125,8 @@ async def run_issue(
 
     try:
         subjects = deps.git_svc.get_branch_commit_subjects(_branch, deps.repo_root)
-        review_done = any(s.startswith("RALPH: Review -") for s in subjects)
-        implement_done = any(s.startswith("RALPH:") for s in subjects)
+        review_done = any(s.startswith(REVIEW_COMMIT_PREFIX) for s in subjects)
+        implement_done = any(s.startswith(IMPLEMENT_COMMIT_PREFIX) for s in subjects)
 
         if review_done:
             return issue
@@ -146,9 +152,15 @@ async def run_issue(
                 )
                 if isinstance(result, PreflightFailure):
                     return result
+                if isinstance(result, CommitMessageOutput):
+                    deps.git_svc.commit(
+                        impl_mount_path,
+                        deps.repo_root,
+                        f"{IMPLEMENT_COMMIT_PREFIX}{result.message}",
+                    )
 
         async with _agent_worktree(_branch, None, _token, deps) as review_mount_path:
-            await _bounded_run_agent(
+            review_result = await _bounded_run_agent(
                 RunRequest(
                     name=f"Review Agent #{issue['number']}",
                     prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
@@ -165,6 +177,12 @@ async def run_issue(
                     token=_token,
                 )
             )
+            if isinstance(review_result, CommitMessageOutput):
+                deps.git_svc.commit(
+                    review_mount_path,
+                    deps.repo_root,
+                    f"{REVIEW_COMMIT_PREFIX}{review_result.message}",
+                )
     finally:
         if lock is not None and lock.locked():
             lock.release()
@@ -210,7 +228,12 @@ async def implement_phase(
         ],
         return_exceptions=True,
     )
-    usage_limit_hit = any(isinstance(r, UsageLimitError) for r in results)
+    usage_limit_errors = [r for r in results if isinstance(r, UsageLimitError)]
+    usage_limit_hit = bool(usage_limit_errors)
+    usage_limit_reset_time = next(
+        (e.reset_time for e in usage_limit_errors if e.reset_time is not None),
+        None,
+    )
     completed: list[dict] = []
     errors: list[tuple[dict, Exception | PreflightFailure]] = []
     for issue, result in zip(issues, results):
@@ -222,5 +245,8 @@ async def implement_phase(
         elif isinstance(result, dict):
             completed.append(issue)
     return ImplementResult(
-        completed=completed, errors=errors, usage_limit_hit=usage_limit_hit
+        completed=completed,
+        errors=errors,
+        usage_limit_hit=usage_limit_hit,
+        usage_limit_reset_time=usage_limit_reset_time,
     )

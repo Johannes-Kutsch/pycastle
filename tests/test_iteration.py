@@ -188,7 +188,7 @@ def test_run_iteration_raises_when_planner_hits_usage_limit(tmp_path, git_svc, l
     ]
 
     async def _fake_agent(request: RunRequest):
-        raise UsageLimitError("token ceiling reached")
+        raise UsageLimitError(reset_time=None)
 
     deps = _make_deps(
         tmp_path,
@@ -208,7 +208,7 @@ def test_run_iteration_returns_aborted_usage_limit_when_implementer_hits_limit(
     """run_iteration returns AbortedUsageLimit when an implementer hits the usage limit."""
 
     async def _fake_agent(request: RunRequest):
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -224,7 +224,7 @@ def test_run_iteration_aborted_usage_limit_does_not_raise_system_exit(
     """run_iteration must return AbortedUsageLimit instead of calling sys.exit on usage limit."""
 
     async def _fake_agent(request: RunRequest):
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -652,7 +652,7 @@ def test_run_iteration_preflight_row_removed_even_if_preflight_raises(tmp_path, 
     with pytest.raises(GitCommandError):
         asyncio.run(run_iteration(deps))
 
-    assert ("remove", "Preflight", "finished", "success") in recording.calls
+    assert ("remove", "Preflight", "failed", "error") in recording.calls
 
 
 def test_run_iteration_plan_row_removed_even_if_planning_raises(
@@ -692,7 +692,7 @@ def test_run_iteration_implement_row_removed_on_usage_limit(
     recording = RecordingStatusDisplay()
 
     async def _usage_limit(request: RunRequest):
-        raise UsageLimitError("")
+        raise UsageLimitError(reset_time=None)
 
     deps = _make_deps(
         tmp_path,
@@ -763,7 +763,7 @@ def test_run_iteration_registers_preflight_row_with_running_phase(
     )
     asyncio.run(run_iteration(deps))
 
-    assert ("register", "Preflight", "started", "Running") in recording.calls
+    assert ("register", "Preflight", "phase", "started", "Running") in recording.calls
 
 
 def test_run_iteration_registers_plan_row_with_planning_phase(
@@ -795,6 +795,7 @@ def test_run_iteration_registers_plan_row_with_planning_phase(
     assert (
         "register",
         "Plan",
+        "phase",
         "started planning for 2 issue(s) labeled ready-for-agent",
         "Planning",
     ) in recording.calls
@@ -830,6 +831,7 @@ def test_run_iteration_plan_row_startup_message_uses_configured_issue_label(
     assert (
         "register",
         "Plan",
+        "phase",
         "started planning for 2 issue(s) labeled my-custom-label",
         "Planning",
     ) in recording.calls
@@ -854,7 +856,7 @@ def test_run_iteration_registers_implement_row_with_running_phase(
     )
     asyncio.run(run_iteration(deps))
 
-    assert ("register", "Implement", "started", "Running") in recording.calls
+    assert ("register", "Implement", "phase", "started", "Running") in recording.calls
 
 
 # ── Planning skip when in-flight branches or worktrees exist ─────────────────

@@ -120,7 +120,7 @@ class ContainerRunner:
                 self._cfg.idle_timeout,
                 lambda: self._status_display.reset_idle_timer(self.name),
             )
-            return ws.run(role, on_turn, self._cfg.usage_limit_patterns)
+            return ws.run(role, on_turn)
         finally:
             try:
                 self._session.exec_simple("rm -f /tmp/.pycastle_prompt")
