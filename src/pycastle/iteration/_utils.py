@@ -1,9 +1,18 @@
 import asyncio
+from pathlib import Path
+from typing import Protocol
 
-from ._deps import Deps
+from ..services import GitService
+from ..status_display import StatusDisplay
 
 
-async def _wait_for_clean_working_tree(deps: Deps, caller: str) -> None:
+class _UtilDeps(Protocol):
+    git_svc: GitService
+    repo_root: Path
+    status_display: StatusDisplay
+
+
+async def _wait_for_clean_working_tree(deps: _UtilDeps, caller: str) -> None:
     if deps.git_svc.is_working_tree_clean(deps.repo_root):
         return
     deps.status_display.print(
