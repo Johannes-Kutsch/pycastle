@@ -8,7 +8,7 @@ import urllib.request
 
 import click
 
-from .config import Config, load_config
+from .config import Config, load_config, load_env, resolve_pycastle_home
 from .services import GitService
 
 _API = "https://api.github.com"
@@ -141,12 +141,14 @@ def create_labels_interactive(
 
 
 def main(cfg: Config | None = None) -> None:
-    from dotenv import load_dotenv
-
     cfg = cfg or load_config()
-    load_dotenv(cfg.env_file)
+    resolved = load_env(
+        global_dir=resolve_pycastle_home(),
+        local_env_file=cfg.env_file,
+        process_env=os.environ,
+    )
 
-    token = os.getenv("GH_TOKEN", "").strip()
+    token = resolved.get("GH_TOKEN", "").strip()
     if not token:
         token = click.prompt("GitHub token", hide_input=True)
     if not token:

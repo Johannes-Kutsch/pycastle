@@ -5,9 +5,8 @@ import sys
 from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
-from .config import Config, load_config
+from .config import Config, load_config, load_env, resolve_pycastle_home
 from .errors import ClaudeCliNotFoundError, ConfigValidationError
 
 _ENV_KEYS = (
@@ -20,8 +19,12 @@ _ENV_KEYS = (
 def _load_env(cfg: Config | None = None) -> dict[str, str]:
     if cfg is None:
         cfg = load_config()
-    load_dotenv(cfg.env_file)
-    env = {k: v for k in _ENV_KEYS if (v := os.getenv(k))}
+    resolved = load_env(
+        global_dir=resolve_pycastle_home(),
+        local_env_file=cfg.env_file,
+        process_env=os.environ,
+    )
+    env = {k: v for k in _ENV_KEYS if (v := resolved.get(k))}
     claude_json = Path.home() / ".claude.json"
     if claude_json.exists():
         env["CLAUDE_ACCOUNT_JSON"] = claude_json.read_text(encoding="utf-8")
