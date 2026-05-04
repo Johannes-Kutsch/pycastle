@@ -46,13 +46,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install build
-        run: pip install build
+        run: pip install build setuptools-scm
+
+      - name: Show computed version
+        run: python -m setuptools_scm
 
       - name: Build
         run: python -m build
@@ -74,13 +78,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install build
-        run: pip install build
+        run: pip install build setuptools-scm
+
+      - name: Verify tag matches HEAD and version is final
+        run: |
+          git describe --tags --exact-match HEAD
+          VERSION=$(python -m setuptools_scm)
+          echo "Computed version: $VERSION"
+          if [[ "$VERSION" == *".dev"* ]]; then
+            echo "ERROR: dev version on tag build — tag not visible to setuptools-scm" >&2
+            exit 1
+          fi
 
       - name: Build
         run: python -m build
