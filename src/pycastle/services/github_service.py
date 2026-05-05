@@ -47,6 +47,9 @@ def _user_agent() -> str:
         return "pycastle/0.0.0"
 
 
+_USER_AGENT = _user_agent()
+
+
 class GithubService:
     def __init__(self, repo: str, token: str, cfg: Config) -> None:
         self.repo = repo
@@ -58,7 +61,7 @@ class GithubService:
             "Authorization": f"Bearer {self._token}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": _user_agent(),
+            "User-Agent": _USER_AGENT,
         }
 
     def _request(
@@ -76,7 +79,7 @@ class GithubService:
         try:
             with urlopen(req, timeout=self._timeout) as resp:
                 raw = resp.read()
-                resp_headers = {k: v for k, v in resp.headers.items()}
+                resp_headers = dict(resp.headers.items())
         except HTTPError as exc:
             err_body = ""
             try:
