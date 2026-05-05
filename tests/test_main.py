@@ -134,17 +134,15 @@ def test_labels_cmd_creates_labels_with_config_issue_label(tmp_path, monkeypatch
     cfg = Config(issue_label="custom-ready")
     posted: list = []
 
-    def fake_gh(method, path, token, data=None):
-        if method == "POST":
-            posted.append(data)
-        return (201, None)
-
     monkeypatch.setenv("GH_TOKEN", "test-token")
     monkeypatch.setattr("pycastle.labels.click.prompt", lambda *a, **kw: "owner/repo")
     monkeypatch.setattr("pycastle.labels.click.confirm", lambda *a, **kw: False)
 
+    fake_github = MagicMock()
+    fake_github.create_label.side_effect = lambda body: posted.append(body)
+
     with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.labels._gh", fake_gh):
+        with patch("pycastle.labels.GithubService", return_value=fake_github):
             CliRunner().invoke(cli, ["labels"])
 
     label_names = {entry["name"] for entry in posted}
@@ -255,7 +253,8 @@ def test_labels_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
     monkeypatch.setenv("GH_TOKEN", "test-token")
     monkeypatch.setattr("pycastle.labels.click.prompt", lambda *a, **kw: "owner/repo")
     monkeypatch.setattr("pycastle.labels.click.confirm", lambda *a, **kw: False)
-    monkeypatch.setattr("pycastle.labels._gh", lambda *a, **kw: (201, None))
+    fake_github = MagicMock()
+    monkeypatch.setattr("pycastle.labels.GithubService", lambda *a, **kw: fake_github)
 
     result = CliRunner().invoke(cli, ["labels"])
 

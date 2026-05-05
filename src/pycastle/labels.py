@@ -1,58 +1,22 @@
-import json
 import os
-import re
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
 
 import click
 
 from .config import Config, load_config, load_env, resolve_global_dir
-from .services import GitService
-
-_API = "https://api.github.com"
-
-
-def _get_remote_repo(
-    git_service: GitService | None = None, cfg: Config | None = None
-) -> tuple[str, str] | None:
-    svc = git_service or GitService(cfg or load_config())
-    try:
-        url = svc.get_remote_url("origin")
-        if "github.com" not in url:
-            return None
-        path = (
-            url.split("github.com/")[-1] if "github.com/" in url else url.split(":")[-1]
-        )
-        path = re.sub(r"\.git$", "", path)
-        owner, repo = path.split("/", 1)
-        return owner, repo
-    except Exception:
-        return None
-
-
-def _gh(
-    method: str, path: str, token: str, data: dict | None = None
-) -> tuple[int, object]:
-    req = urllib.request.Request(f"{_API}{path}", method=method)
-    req.add_header("Authorization", f"Bearer {token}")
-    req.add_header("Accept", "application/vnd.github+json")
-    req.add_header("X-GitHub-Api-Version", "2022-11-28")
-    if data is not None:
-        req.add_header("Content-Type", "application/json")
-        req.data = json.dumps(data).encode()
-    try:
-        with urllib.request.urlopen(req) as resp:
-            return resp.status, json.loads(resp.read() or b"null")
-    except urllib.error.HTTPError as e:
-        return e.code, None
+from .services import (
+    GithubAPIError,
+    GithubAuthError,
+    GithubService,
+    GitService,
+)
 
 
 def _resolve_repo(
-    token: str, git_service: GitService | None = None, cfg: Config | None = None
+    git_service: GitService | None = None, cfg: Config | None = None
 ) -> tuple[str, str] | None:
-    remote = _get_remote_repo(git_service, cfg)
+    svc = git_service or GitService(cfg or load_config())
+    remote = svc.get_github_remote_repo()
     if remote:
         owner, repo = remote
         if click.confirm(f"Target repo {owner}/{repo}?", default=True):
@@ -69,7 +33,10 @@ def _resolve_repo(
 
 
 def create_labels_interactive(
-    token: str, git_service: GitService | None = None, cfg: Config | None = None
+    token: str,
+    git_service: GitService | None = None,
+    cfg: Config | None = None,
+    github_service: GithubService | None = None,
 ) -> None:
     _cfg = cfg or load_config()
     labels = [
@@ -90,36 +57,43 @@ def create_labels_interactive(
         },
     ]
 
-    resolved = _resolve_repo(token, git_service, _cfg)
+    resolved = _resolve_repo(git_service, _cfg)
     if not resolved:
         return
     owner, repo = resolved
 
+    service = github_service or GithubService(f"{owner}/{repo}", token, _cfg)
+    try:
+        service.check_auth()
+    except GithubAuthError as exc:
+        click.echo(click.style(f"Error: {exc.body}", fg="red"), err=True)
+        sys.exit(1)
+
     reset = click.confirm("Delete all existing labels first?", default=False)
 
     if reset:
-        status, existing = _gh(
-            "GET", f"/repos/{owner}/{repo}/labels?per_page=100", token
-        )
-        if status == 200 and isinstance(existing, list):
-            for label in existing:
-                _gh(
-                    "DELETE",
-                    f"/repos/{owner}/{repo}/labels/{urllib.parse.quote(label['name'])}",
-                    token,
-                )
+        try:
+            existing = service.list_labels()
+        except GithubAPIError:
+            existing = []
+        for label in existing:
+            try:
+                service.delete_label(label["name"])
+            except GithubAPIError:
+                pass
 
     counts = {"created": 0, "skipped": 0, "failed": 0}
     failures: list[str] = []
     for label in labels:
-        status, _ = _gh("POST", f"/repos/{owner}/{repo}/labels", token, label)
-        if status == 201:
+        try:
+            service.create_label(label)
             counts["created"] += 1
-        elif status == 422:
-            counts["skipped"] += 1
-        else:
-            counts["failed"] += 1
-            failures.append(f"{label['name']}: HTTP {status}")
+        except GithubAPIError as exc:
+            if exc.status == 422:
+                counts["skipped"] += 1
+            else:
+                counts["failed"] += 1
+                failures.append(f"{label['name']}: HTTP {exc.status}")
 
     for name in failures:
         click.echo(
