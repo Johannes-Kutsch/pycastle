@@ -417,3 +417,142 @@ def test_init_cli_global_flag_skips_scope_prompt(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert (home / "config.py").exists()
     assert not (tmp_path / "pycastle" / "config.py").exists()
+
+
+# ── Issue #483: --refresh flag for non-interactive scaffold updates ──────────
+
+
+def test_init_refresh_overwrites_stale_prompt_file(tmp_path, monkeypatch):
+    """`pycastle init --refresh` rewrites the bundled project-shaped files."""
+    from pycastle.init_command import main, refresh
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    plan_prompt = tmp_path / "pycastle" / "prompts" / "plan-prompt.md"
+    bundled_bytes = plan_prompt.read_bytes()
+    plan_prompt.write_text("STALE LOCAL EDIT\n")
+
+    refresh()
+
+    assert plan_prompt.read_bytes() == bundled_bytes
+
+
+def test_init_refresh_leaves_local_config_unchanged(tmp_path, monkeypatch):
+    """`pycastle init --refresh` does not touch local config.py."""
+    from pycastle.init_command import main, refresh
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    config_file = tmp_path / "pycastle" / "config.py"
+    original_bytes = config_file.read_bytes()
+
+    refresh()
+
+    assert config_file.read_bytes() == original_bytes
+
+
+def test_init_refresh_leaves_local_env_unchanged(tmp_path, monkeypatch):
+    """`pycastle init --refresh` does not touch local .env."""
+    from pycastle.init_command import main, refresh
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    env_file = tmp_path / "pycastle" / ".env"
+    env_file.write_text("GH_TOKEN=secret-value\n")
+
+    refresh()
+
+    assert env_file.read_text() == "GH_TOKEN=secret-value\n"
+
+
+def test_init_refresh_errors_when_no_pycastle_dir(tmp_path, monkeypatch):
+    """`pycastle init --refresh` exits non-zero when no local pycastle/ dir exists."""
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["init", "--refresh"])
+    assert result.exit_code != 0
+    assert "pycastle" in result.output.lower()
+    assert not (tmp_path / "pycastle").exists()
+
+
+def test_init_refresh_and_global_mutually_exclusive(tmp_path, monkeypatch):
+    """`pycastle init --refresh --global` fails with a usage error."""
+    from pycastle.main import main as cli
+
+    (tmp_path / "pycastle").mkdir()
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["init", "--refresh", "--global"])
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.output.lower()
+
+
+def test_init_refresh_and_local_mutually_exclusive(tmp_path, monkeypatch):
+    """`pycastle init --refresh --local` fails with a usage error."""
+    from pycastle.main import main as cli
+
+    (tmp_path / "pycastle").mkdir()
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["init", "--refresh", "--local"])
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.output.lower()
+
+
+def test_init_refresh_does_not_invoke_credential_or_labels_prompts(
+    tmp_path, monkeypatch
+):
+    """`pycastle init --refresh` skips the credential wizard and labels prompt."""
+    from pycastle.init_command import main, refresh
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    with (
+        patch("click.prompt") as pm,
+        patch("click.confirm") as cm,
+    ):
+        refresh()
+
+    assert pm.call_count == 0
+    assert cm.call_count == 0
+
+
+def test_init_refresh_cli_prints_layer_summary(tmp_path, monkeypatch):
+    """`pycastle init --refresh` prints the layer summary line at startup."""
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        from pycastle.init_command import main
+
+        main(scope="local")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["init", "--refresh"])
+    assert result.exit_code == 0, result.output
+    assert "config:" in result.output.lower() or "layer" in result.output.lower()
