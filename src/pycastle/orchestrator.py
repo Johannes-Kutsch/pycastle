@@ -72,7 +72,12 @@ def _get_repo(repo_root: Path) -> str:
     except FileNotFoundError as exc:
         raise GithubNotFoundError("gh executable not found") from exc
     if result.returncode != 0:
-        raise RuntimeError("Could not determine GitHub repo name via gh")
+        stderr = result.stderr.decode("utf-8", errors="replace").strip()
+        detail = stderr if stderr else "(gh produced no error output)"
+        raise RuntimeError(
+            f"Could not determine GitHub repo name via gh "
+            f"(exit code {result.returncode}): {detail}"
+        )
     return result.stdout.decode("utf-8").strip()
 
 

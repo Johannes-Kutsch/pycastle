@@ -1,4 +1,5 @@
 import asyncio
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -1748,6 +1749,46 @@ def test_run_raises_github_not_found_error_when_gh_invocation_fails(tmp_path):
     ):
         with pytest.raises(GithubNotFoundError):
             _run(tmp_path)
+
+
+def test_run_includes_gh_stderr_when_repo_lookup_fails(tmp_path):
+    """When `gh repo view` exits non-zero, the raised RuntimeError must include
+    gh's stderr and exit code so users can self-diagnose (e.g. auth errors)."""
+    failing_result = subprocess.CompletedProcess(
+        args=["gh", "repo", "view"],
+        returncode=4,
+        stdout=b"",
+        stderr=b"HTTP 401: Require authentication\n",
+    )
+    with (
+        patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
+        patch("subprocess.run", return_value=failing_result),
+    ):
+        with pytest.raises(RuntimeError) as exc_info:
+            _run(tmp_path)
+    msg = str(exc_info.value)
+    assert "HTTP 401: Require authentication" in msg
+    assert "4" in msg
+
+
+def test_run_includes_exit_code_when_gh_stderr_empty(tmp_path):
+    """When gh exits non-zero with empty stderr, the message still includes the
+    exit code and a placeholder note rather than silently dropping context."""
+    failing_result = subprocess.CompletedProcess(
+        args=["gh", "repo", "view"],
+        returncode=2,
+        stdout=b"",
+        stderr=b"",
+    )
+    with (
+        patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
+        patch("subprocess.run", return_value=failing_result),
+    ):
+        with pytest.raises(RuntimeError) as exc_info:
+            _run(tmp_path)
+    msg = str(exc_info.value)
+    assert "2" in msg
+    assert "no error output" in msg
 
 
 def test_run_skips_gh_check_when_github_service_injected(tmp_path):
