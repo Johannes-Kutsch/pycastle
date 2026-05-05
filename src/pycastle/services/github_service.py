@@ -1,209 +1,167 @@
+from __future__ import annotations
+
 import json
+from importlib.metadata import PackageNotFoundError, version
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from ..config import Config
-from ._base import _SubprocessService
 
 
 class GithubServiceError(RuntimeError):
     pass
 
 
-class GithubCommandError(GithubServiceError):
-    def __init__(self, message: str, returncode: int = -1, stderr: str = "") -> None:
-        self.returncode = returncode
-        self.stderr = stderr
+class GithubAuthError(GithubServiceError):
+    def __init__(self, message: str, status: int, body: str) -> None:
+        self.status = status
+        self.body = body
         super().__init__(message)
 
 
-class GithubTimeoutError(GithubServiceError, TimeoutError):
-    pass
+class GithubAPIError(GithubServiceError):
+    def __init__(
+        self, message: str, status: int, body: str, method: str, path: str
+    ) -> None:
+        self.status = status
+        self.body = body
+        self.method = method
+        self.path = path
+        super().__init__(message)
 
 
-class GithubNotFoundError(GithubServiceError):
-    pass
+class GithubNetworkError(GithubServiceError):
+    def __init__(self, message: str, cause: BaseException) -> None:
+        self.cause = cause
+        super().__init__(message)
 
 
-class GithubService(_SubprocessService):
-    _timeout_error_class = GithubTimeoutError
-    _not_found_error_class = GithubNotFoundError
-    _command_error_class = GithubCommandError
+_API_BASE = "https://api.github.com"
 
-    def __init__(self, repo: str, cfg: Config) -> None:
+
+def _user_agent() -> str:
+    try:
+        return f"pycastle/{version('pycastle')}"
+    except PackageNotFoundError:
+        return "pycastle/0.0.0"
+
+
+class GithubService:
+    def __init__(self, repo: str, token: str, cfg: Config) -> None:
         self.repo = repo
-        super().__init__(cfg.worktree_timeout)
+        self._token = token
+        self._timeout = cfg.worktree_timeout
 
-    def close_issue(self, number: int) -> None:
-        self._run_or_raise(
-            ["gh", "issue", "close", str(number)],
-            f"gh issue close {number} failed",
-        )
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self._token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": _user_agent(),
+        }
 
-    def get_parent(self, number: int) -> int | None:
-        result = self._run_or_raise(
-            [
-                "gh",
-                "api",
-                f"repos/{self.repo}/issues/{number}",
-                "--jq",
-                ".parent.number",
-            ],
-            f"gh api repos/{self.repo}/issues/{number} failed",
-        )
-        output = self._decode(result.stdout)
-        if not output or output == "null":
-            return None
+    def _request(
+        self,
+        method: str,
+        path: str,
+        data: dict[str, Any] | None = None,
+    ) -> tuple[Any, dict[str, str]]:
+        url = path if path.startswith("http") else f"{_API_BASE}{path}"
+        body = json.dumps(data).encode("utf-8") if data is not None else None
+        headers = self._headers()
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        req = Request(url, data=body, headers=headers, method=method)
         try:
-            return int(output)
-        except ValueError:
-            raise GithubCommandError(
-                f"gh api repos/{self.repo}/issues/{number} returned unexpected output: {output!r}",
-            ) from None
-
-    def get_open_sub_issues(self, number: int) -> list[int]:
-        data = self._get_all_sub_issues(number)
-        return [
-            int(str(item["number"])) for item in data if item.get("state") == "open"
-        ]
-
-    def has_open_issues_with_label(self, label: str) -> bool:
-        result = self._run_or_raise(
-            [
-                "gh",
-                "issue",
-                "list",
-                "--repo",
-                self.repo,
-                "--state",
-                "open",
-                "--label",
-                label,
-                "--json",
-                "number",
-                "--jq",
-                "length",
-            ],
-            f"gh issue list --label {label} failed",
-        )
-        output = self._decode(result.stdout)
+            with urlopen(req, timeout=self._timeout) as resp:
+                raw = resp.read()
+                resp_headers = {k: v for k, v in resp.headers.items()}
+        except HTTPError as exc:
+            err_body = ""
+            try:
+                err_body = exc.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            status = exc.code
+            if status == 401:
+                raise GithubAuthError(
+                    f"GitHub API {method} {path} returned 401: {err_body}",
+                    status=status,
+                    body=err_body,
+                ) from exc
+            raise GithubAPIError(
+                f"GitHub API {method} {path} returned {status}: {err_body}",
+                status=status,
+                body=err_body,
+                method=method,
+                path=path,
+            ) from exc
+        except URLError as exc:
+            raise GithubNetworkError(
+                f"GitHub API {method} {path} transport error: {exc.reason}",
+                cause=exc,
+            ) from exc
+        except TimeoutError as exc:
+            raise GithubNetworkError(
+                f"GitHub API {method} {path} timed out after {self._timeout}s",
+                cause=exc,
+            ) from exc
+        if not raw:
+            return None, resp_headers
         try:
-            return int(output) > 0
-        except ValueError:
-            raise GithubCommandError(
-                f"gh issue list --label {label} returned unexpected output: {output!r}",
-            ) from None
-
-    def get_issue_title(self, issue_number: int) -> str:
-        result = self._run_or_raise(
-            [
-                "gh",
-                "api",
-                f"repos/{self.repo}/issues/{issue_number}",
-                "--jq",
-                ".title",
-            ],
-            f"gh api repos/{self.repo}/issues/{issue_number} failed",
-        )
-        return self._decode(result.stdout)
-
-    def get_labels(self, issue_number: int) -> list[str]:
-        result = self._run_or_raise(
-            [
-                "gh",
-                "api",
-                f"repos/{self.repo}/issues/{issue_number}",
-                "--jq",
-                ".labels[].name",
-            ],
-            f"gh api repos/{self.repo}/issues/{issue_number} failed",
-        )
-        output = self._decode(result.stdout)
-        if not output:
-            return []
-        return output.splitlines()
-
-    def close_issue_with_parents(self, number: int) -> None:
-        self.close_issue(number)
-        parent = self.get_parent(number)
-        if parent is None:
-            return
-        open_siblings = self.get_open_sub_issues(parent)
-        if open_siblings:
-            return
-        self.close_issue_with_parents(parent)
-
-    def get_open_issue_numbers(self) -> list[int]:
-        result = self._run_or_raise(
-            [
-                "gh",
-                "issue",
-                "list",
-                "--repo",
-                self.repo,
-                "--state",
-                "open",
-                "--limit",
-                "1000",
-                "--json",
-                "number",
-                "--jq",
-                ".[].number",
-            ],
-            "gh issue list failed",
-        )
-        output = self._decode(result.stdout)
-        if not output:
-            return []
-        try:
-            return [int(line) for line in output.splitlines()]
-        except ValueError:
-            raise GithubCommandError(
-                f"gh issue list returned unexpected output: {output!r}",
-            ) from None
-
-    def _get_all_sub_issues(self, number: int) -> list[dict[str, object]]:
-        result = self._run_or_raise(
-            ["gh", "api", f"repos/{self.repo}/issues/{number}/sub_issues"],
-            f"gh api repos/{self.repo}/issues/{number}/sub_issues failed",
-        )
-        try:
-            return json.loads(self._decode(result.stdout))
+            return json.loads(raw.decode("utf-8")), resp_headers
         except json.JSONDecodeError as exc:
-            raise GithubCommandError(
-                f"gh api repos/{self.repo}/issues/{number}/sub_issues returned invalid JSON",
+            raise GithubAPIError(
+                f"GitHub API {method} {path} returned invalid JSON",
+                status=200,
+                body=raw.decode("utf-8", errors="replace"),
+                method=method,
+                path=path,
             ) from exc
 
-    def get_open_issues(self, label: str) -> list[dict[str, object]]:
-        result = self._run_or_raise(
-            [
-                "gh",
-                "issue",
-                "list",
-                "--repo",
-                self.repo,
-                "--state",
-                "open",
-                "--label",
-                label,
-                "--json",
-                "number,title,body,labels,comments",
-                "--jq",
-                "[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]",
-            ],
-            f"gh issue list --label {label} failed",
-        )
-        try:
-            return json.loads(self._decode(result.stdout))
-        except json.JSONDecodeError as exc:
-            raise GithubCommandError(
-                f"gh issue list --label {label} returned invalid JSON",
-            ) from exc
+    def _paginate(self, path: str) -> list[Any]:
+        results: list[Any] = []
+        next_url: str | None = path
+        while next_url is not None:
+            payload, headers = self._request("GET", next_url)
+            if not isinstance(payload, list):
+                raise GithubAPIError(
+                    f"GitHub API GET {next_url} expected list, got {type(payload).__name__}",
+                    status=200,
+                    body=str(payload),
+                    method="GET",
+                    path=next_url,
+                )
+            results.extend(payload)
+            next_url = _next_link(headers.get("Link"))
+        return results
 
-    def close_completed_parent_issues(self) -> None:
-        changed = True
-        while changed:
-            changed = False
-            for issue_num in self.get_open_issue_numbers():
-                all_subs = self._get_all_sub_issues(issue_num)
-                if all_subs and all(s.get("state") == "closed" for s in all_subs):
-                    self.close_issue(issue_num)
-                    changed = True
+    def check_auth(self) -> str:
+        payload, _ = self._request("GET", "/user")
+        if not isinstance(payload, dict) or "login" not in payload:
+            raise GithubAPIError(
+                "GitHub API GET /user returned no login",
+                status=200,
+                body=str(payload),
+                method="GET",
+                path="/user",
+            )
+        return str(payload["login"])
+
+
+def _next_link(link_header: str | None) -> str | None:
+    if not link_header:
+        return None
+    for part in link_header.split(","):
+        segment = part.strip()
+        if not segment.startswith("<"):
+            continue
+        end = segment.find(">")
+        if end == -1:
+            continue
+        url = segment[1:end]
+        params = segment[end + 1 :]
+        if 'rel="next"' in params:
+            return url
+    return None
