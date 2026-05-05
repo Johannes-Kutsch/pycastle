@@ -361,6 +361,72 @@ def test_get_remote_url_uses_custom_remote():
     assert "upstream" in cmd
 
 
+# ── get_github_remote_repo() ──────────────────────────────────────────────────
+
+
+def _stub_remote(url: str):
+    return patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=url.encode() + b"\n", stderr=b""),
+    )
+
+
+def test_get_github_remote_repo_parses_https_with_dot_git():
+    svc = GitService(_cfg)
+    with _stub_remote("https://github.com/owner/repo.git"):
+        assert svc.get_github_remote_repo() == ("owner", "repo")
+
+
+def test_get_github_remote_repo_parses_https_without_dot_git():
+    svc = GitService(_cfg)
+    with _stub_remote("https://github.com/owner/repo"):
+        assert svc.get_github_remote_repo() == ("owner", "repo")
+
+
+def test_get_github_remote_repo_parses_ssh_with_dot_git():
+    svc = GitService(_cfg)
+    with _stub_remote("git@github.com:owner/repo.git"):
+        assert svc.get_github_remote_repo() == ("owner", "repo")
+
+
+def test_get_github_remote_repo_parses_ssh_without_dot_git():
+    svc = GitService(_cfg)
+    with _stub_remote("git@github.com:owner/repo"):
+        assert svc.get_github_remote_repo() == ("owner", "repo")
+
+
+def test_get_github_remote_repo_returns_none_for_gitlab():
+    svc = GitService(_cfg)
+    with _stub_remote("https://gitlab.com/owner/repo.git"):
+        assert svc.get_github_remote_repo() is None
+
+
+def test_get_github_remote_repo_returns_none_for_bitbucket():
+    svc = GitService(_cfg)
+    with _stub_remote("git@bitbucket.org:owner/repo.git"):
+        assert svc.get_github_remote_repo() is None
+
+
+def test_get_github_remote_repo_returns_none_when_remote_missing():
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(
+            returncode=2, stdout=b"", stderr=b"error: No such remote 'origin'"
+        ),
+    ):
+        assert svc.get_github_remote_repo() is None
+
+
+def test_get_github_remote_repo_returns_none_on_timeout():
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    ):
+        assert svc.get_github_remote_repo() is None
+
+
 # ── create_worktree() ─────────────────────────────────────────────────────────
 
 
