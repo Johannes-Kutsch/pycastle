@@ -136,8 +136,6 @@ async def run(
         )
         sys.exit(1)
 
-    github_svc: GithubService = github_service
-
     try:
         for iteration in range(1, cfg.max_iterations + 1):
             status_display.print(  # type: ignore[union-attr]
@@ -145,7 +143,7 @@ async def run(
                 f"=== Iteration {iteration}/{cfg.max_iterations} (Authenticated as @{login}) ===",
             )
 
-            if not github_svc.has_open_issues_with_label(cfg.issue_label):
+            if not github_service.has_open_issues_with_label(cfg.issue_label):
                 status_display.print(  # type: ignore[union-attr]
                     "",
                     f"No issues with label '{cfg.issue_label}' found. Skipping.",
@@ -162,7 +160,7 @@ async def run(
             deps = IterationDeps(
                 repo_root=repo_root,
                 git_svc=git_svc,
-                github_svc=github_svc,
+                github_svc=github_service,
                 agent_runner=_agent_runner,
                 cfg=cfg,
                 logger=FileLogger(cfg.logs_dir),
