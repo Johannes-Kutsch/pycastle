@@ -93,7 +93,7 @@ class DockerSession:
         self._owns_client = docker_client is None
         self._client = docker_client if docker_client is not None else docker.from_env()
         self._container: DockerContainer | None = None
-        self._streams: list = []
+        self._streams: list[Iterator[bytes]] = []
 
     @property
     def _active_container(self) -> DockerContainer:
@@ -114,11 +114,8 @@ class DockerSession:
     def __exit__(self, *_) -> None:
         try:
             for stream in self._streams:
-                close = getattr(stream, "close", None)
-                if close is None:
-                    continue
                 try:
-                    close()
+                    stream.close()  # type: ignore[attr-defined]
                 except Exception:
                     pass
             self._streams.clear()
