@@ -125,13 +125,27 @@ async def run(
         )
         sys.exit(1)
 
-    if github_service is None and shutil.which("gh") is None:
-        print(
-            "GitHub CLI not found. Install it with: sudo apt install gh,"
-            " then run: gh auth login",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    if github_service is None:
+        if shutil.which("gh") is None:
+            print(
+                "GitHub CLI not found. Install it with: sudo apt install gh,"
+                " then run: gh auth login",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        try:
+            auth_check = subprocess.run(
+                ["gh", "auth", "status"],
+                capture_output=True,
+            )
+        except FileNotFoundError as exc:
+            raise GithubNotFoundError("gh executable not found") from exc
+        if auth_check.returncode != 0:
+            print(
+                "GitHub CLI is not authenticated. Run: gh auth login",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     _lazy_github_svc: GithubService | None = None
 

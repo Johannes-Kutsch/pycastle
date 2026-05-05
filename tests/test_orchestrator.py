@@ -1754,6 +1754,9 @@ def test_run_raises_github_not_found_error_when_gh_invocation_fails(tmp_path):
 def test_run_includes_gh_stderr_when_repo_lookup_fails(tmp_path):
     """When `gh repo view` exits non-zero, the raised RuntimeError must include
     gh's stderr and exit code so users can self-diagnose (e.g. auth errors)."""
+    auth_ok = subprocess.CompletedProcess(
+        args=["gh", "auth", "status"], returncode=0, stdout=b"", stderr=b""
+    )
     failing_result = subprocess.CompletedProcess(
         args=["gh", "repo", "view"],
         returncode=4,
@@ -1762,7 +1765,7 @@ def test_run_includes_gh_stderr_when_repo_lookup_fails(tmp_path):
     )
     with (
         patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
-        patch("subprocess.run", return_value=failing_result),
+        patch("subprocess.run", side_effect=[auth_ok, failing_result]),
     ):
         with pytest.raises(RuntimeError) as exc_info:
             _run(tmp_path)
@@ -1774,6 +1777,9 @@ def test_run_includes_gh_stderr_when_repo_lookup_fails(tmp_path):
 def test_run_includes_exit_code_when_gh_stderr_empty(tmp_path):
     """When gh exits non-zero with empty stderr, the message still includes the
     exit code and a placeholder note rather than silently dropping context."""
+    auth_ok = subprocess.CompletedProcess(
+        args=["gh", "auth", "status"], returncode=0, stdout=b"", stderr=b""
+    )
     failing_result = subprocess.CompletedProcess(
         args=["gh", "repo", "view"],
         returncode=2,
@@ -1782,13 +1788,69 @@ def test_run_includes_exit_code_when_gh_stderr_empty(tmp_path):
     )
     with (
         patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
-        patch("subprocess.run", return_value=failing_result),
+        patch("subprocess.run", side_effect=[auth_ok, failing_result]),
     ):
         with pytest.raises(RuntimeError) as exc_info:
             _run(tmp_path)
     msg = str(exc_info.value)
     assert "2" in msg
     assert "no error output" in msg
+
+
+# ── Issue-486: gh auth preflight ─────────────────────────────────────────────
+
+
+def test_run_exits_with_code_1_when_gh_not_authenticated(tmp_path):
+    """run() without an injected github_service must exit 1 if `gh auth status` fails."""
+    auth_failed = subprocess.CompletedProcess(
+        args=["gh", "auth", "status"],
+        returncode=1,
+        stdout=b"",
+        stderr=b"You are not logged into any GitHub hosts.\n",
+    )
+    with (
+        patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
+        patch("subprocess.run", return_value=auth_failed),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            _run(tmp_path)
+    assert exc_info.value.code == 1
+
+
+def test_run_prints_gh_auth_login_when_unauthenticated(tmp_path, capsys):
+    """run() must point users to `gh auth login` when auth status fails."""
+    auth_failed = subprocess.CompletedProcess(
+        args=["gh", "auth", "status"], returncode=1, stdout=b"", stderr=b""
+    )
+    with (
+        patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
+        patch("subprocess.run", return_value=auth_failed),
+    ):
+        with pytest.raises(SystemExit):
+            _run(tmp_path)
+    err = capsys.readouterr().err
+    assert "gh auth login" in err
+
+
+def test_run_no_agents_start_when_gh_not_authenticated(tmp_path):
+    """run() must not spawn any agents when gh is unauthenticated."""
+    agents_started: list[str] = []
+
+    async def _fake_run_agent(request: RunRequest):
+        agents_started.append(request.name)
+        return CompletionOutput()
+
+    auth_failed = subprocess.CompletedProcess(
+        args=["gh", "auth", "status"], returncode=1, stdout=b"", stderr=b""
+    )
+    with (
+        patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
+        patch("subprocess.run", return_value=auth_failed),
+    ):
+        with pytest.raises(SystemExit):
+            _run(tmp_path, _fake_run_agent)
+
+    assert agents_started == [], f"No agents must start; got {agents_started}"
 
 
 def test_run_skips_gh_check_when_github_service_injected(tmp_path):
