@@ -31,8 +31,8 @@ def test_init_creates_all_scaffold_files(tmp_path, monkeypatch):
 # ── Cycle 2: docker_image_name is set to the inferred project name ────────────
 
 
-def test_init_sets_docker_image_name_from_cwd(tmp_path, monkeypatch):
-    """init must write docker_image_name derived from the CWD into pycastle/config.py."""
+def test_init_writes_commented_docker_image_name_hint_from_cwd(tmp_path, monkeypatch):
+    """init must write a commented-out docker_image_name hint pre-filled from CWD."""
     from pycastle.init_command import main
 
     project_dir = tmp_path / "My Cool Project"
@@ -45,37 +45,13 @@ def test_init_sets_docker_image_name_from_cwd(tmp_path, monkeypatch):
         main()
 
     content = (project_dir / "pycastle" / "config.py").read_text()
-    assert 'docker_image_name = "my-cool-project"' in content
-
-
-# ── Cycle 3: re-running init always updates docker_image_name ─────────────────
-
-
-def test_init_updates_docker_image_name_on_rerun(tmp_path, monkeypatch):
-    """A second init must update docker_image_name even when config.py already exists."""
-    from pycastle.init_command import main
-
-    monkeypatch.chdir(tmp_path)
-    with (
-        patch("click.prompt", return_value=""),
-        patch("click.confirm", return_value=False),
-    ):
-        main()
-
-    config_file = tmp_path / "pycastle" / "config.py"
-    content = config_file.read_text()
-    # The auto-derived name from tmp_path should be set
-    assert 'docker_image_name = "' in content
-
-    # Re-run: docker_image_name in the file should still reflect the CWD name
-    with (
-        patch("click.prompt", return_value=""),
-        patch("click.confirm", return_value=False),
-    ):
-        main()
-
-    updated_content = config_file.read_text()
-    assert 'docker_image_name = "' in updated_content
+    assert '# docker_image_name = "my-cool-project"' in content
+    # No active assignment line
+    for line in content.splitlines():
+        stripped = line.lstrip()
+        assert not stripped.startswith("docker_image_name"), (
+            f"unexpected active assignment: {line!r}"
+        )
 
 
 # ── Cycle 5: scaffolded config.py contains StageOverride import and overrides ──

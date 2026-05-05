@@ -482,6 +482,38 @@ def test_load_config_overrides_take_precedence_over_global(tmp_path):
     assert cfg.max_parallel == 99
 
 
+# ── Issue 484: docker_image_name is per-project ──────────────────────────────
+
+
+def test_load_config_global_docker_image_name_raises(tmp_path):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text('docker_image_name = "shared"\n')
+    with pytest.raises(ConfigValidationError) as exc_info:
+        load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert "docker_image_name" in str(exc_info.value)
+
+
+def test_load_config_unset_docker_image_name_derives_from_cwd(tmp_path, monkeypatch):
+    project_dir = tmp_path / "My Project"
+    project_dir.mkdir()
+    monkeypatch.chdir(project_dir)
+    cfg = load_config(repo_root=project_dir, global_dir=tmp_path / "no_global")
+    assert cfg.docker_image_name == "my-project"
+
+
+def test_load_config_local_docker_image_name_overrides_derived(tmp_path, monkeypatch):
+    project_dir = tmp_path / "Some Project"
+    project_dir.mkdir()
+    (project_dir / "pycastle").mkdir()
+    (project_dir / "pycastle" / "config.py").write_text(
+        'docker_image_name = "explicit-name"\n'
+    )
+    monkeypatch.chdir(project_dir)
+    cfg = load_config(repo_root=project_dir, global_dir=tmp_path / "no_global")
+    assert cfg.docker_image_name == "explicit-name"
+
+
 # ── Issue 475: layer summary line ─────────────────────────────────────────
 
 

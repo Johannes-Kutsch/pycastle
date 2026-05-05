@@ -10,7 +10,7 @@ from typing import Literal
 
 import click
 
-from .config.loader import resolve_global_dir
+from .config.loader import derive_docker_image_name, resolve_global_dir
 
 _PROJECT_SHAPED_FILES = [
     ".gitignore",
@@ -36,10 +36,13 @@ def _write_env_key(env_file: Path, key: str, value: str) -> None:
     env_file.write_text(content)
 
 
-def _write_config_value(config_file: Path, key: str, value: str) -> None:
+def _fill_commented_hint(config_file: Path, key: str, value: str) -> None:
     content = config_file.read_text()
     content = re.sub(
-        rf'^{key}\s*=\s*"[^"]*"', f'{key} = "{value}"', content, flags=re.MULTILINE
+        rf'^#\s*{key}\s*=\s*"[^"]*"',
+        f'# {key} = "{value}"',
+        content,
+        flags=re.MULTILINE,
     )
     config_file.write_text(content)
 
@@ -136,9 +139,9 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         _copy_template("config.py", config_file, pkg)
 
     if scope == "local":
-        image_name = re.sub(r"[^a-z0-9]+", "-", Path.cwd().name.lower()).strip("-")
+        image_name = derive_docker_image_name(Path.cwd().name)
         try:
-            _write_config_value(config_file, "docker_image_name", image_name)
+            _fill_commented_hint(config_file, "docker_image_name", image_name)
         except Exception as e:
             click.echo(
                 click.style(

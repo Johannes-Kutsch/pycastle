@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import importlib.util
 import os
+import re
 import types
 from collections.abc import Mapping
 from difflib import get_close_matches
@@ -28,8 +29,13 @@ _GLOBAL_FORBIDDEN_FIELDS = frozenset(
         "worktrees_dir",
         "env_file",
         "dockerfile",
+        "docker_image_name",
     }
 )
+
+
+def derive_docker_image_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -137,7 +143,7 @@ def load_config(
         forbidden = sorted(_GLOBAL_FORBIDDEN_FIELDS & global_kwargs.keys())
         if forbidden:
             raise ConfigValidationError(
-                "Path-typed fields are forbidden in global config.py; "
+                "Global-forbidden fields are not allowed in global config.py; "
                 f"offending field(s): {forbidden}",
                 invalid_value=", ".join(forbidden),
             )
@@ -155,6 +161,10 @@ def load_config(
             kwargs[k] = v
 
     cfg = Config(**kwargs)
+    if cfg.docker_image_name == "":
+        cfg = dataclasses.replace(
+            cfg, docker_image_name=derive_docker_image_name(Path.cwd().name)
+        )
     return _validate_efforts(cfg)
 
 

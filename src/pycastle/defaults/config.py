@@ -9,7 +9,8 @@ from pycastle import StageOverride
 
 # --- Docker ---
 # Name for the Docker image built by `pycastle build`.
-docker_image_name = "pycastle"
+# Defaults to a sanitised CWD name; uncomment to override.
+# docker_image_name = ""
 
 # --- Labels ---
 # issue_label = "ready-for-agent"
