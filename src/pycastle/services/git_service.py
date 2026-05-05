@@ -92,21 +92,18 @@ class GitService(_SubprocessService):
             url = self.get_remote_url("origin", cwd=cwd)
         except GitServiceError:
             return None
-        if "github.com" not in url:
-            return None
-        if "github.com/" in url:
-            path = url.split("github.com/", 1)[1]
-        elif "github.com:" in url:
-            path = url.split("github.com:", 1)[1]
+        for separator in ("github.com/", "github.com:"):
+            if separator in url:
+                path = url.split(separator, 1)[1]
+                break
         else:
             return None
-        if path.endswith(".git"):
-            path = path[: -len(".git")]
-        path = path.strip("/")
+        path = path.removesuffix(".git").strip("/")
         parts = path.split("/")
-        if len(parts) != 2 or not parts[0] or not parts[1]:
+        if len(parts) != 2 or not all(parts):
             return None
-        return parts[0], parts[1]
+        owner, repo = parts
+        return owner, repo
 
     def create_worktree(
         self, repo_path: Path, worktree_path: Path, branch: str, sha: str | None = None
