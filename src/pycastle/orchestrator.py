@@ -136,11 +136,13 @@ async def run(
         )
         sys.exit(1)
 
+    status_display.print("", f"Authenticated as @{login}")  # type: ignore[union-attr]
+
     try:
         for iteration in range(1, cfg.max_iterations + 1):
             status_display.print(  # type: ignore[union-attr]
                 "",
-                f"=== Iteration {iteration}/{cfg.max_iterations} (Authenticated as @{login}) ===",
+                f"=== Iteration {iteration}/{cfg.max_iterations} ===",
             )
 
             if not github_service.has_open_issues_with_label(cfg.issue_label):
