@@ -1728,6 +1728,24 @@ def test_run_calls_check_auth_before_iteration(tmp_path):
     assert "has_open_issues_with_label" in call_order
 
 
+def test_run_prints_authenticated_login_at_startup(tmp_path):
+    """run() must print 'Authenticated as @<login>' once at startup after check_auth succeeds."""
+    recording = RecordingStatusDisplay()
+    mock_github = _make_github_svc()
+    mock_github.check_auth.return_value = "octocat"
+    mock_github.has_open_issues_with_label.return_value = False
+
+    _run(tmp_path, github_service=mock_github, status_display=recording)
+
+    auth_prints = [
+        c
+        for c in recording.calls
+        if c[0] == "print" and isinstance(c[2], str) and "Authenticated as @" in c[2]
+    ]
+    assert len(auth_prints) == 1, f"Expected one auth-summary print; got {auth_prints}"
+    assert auth_prints[0][2] == "Authenticated as @octocat"
+
+
 def test_run_exits_when_github_auth_error(tmp_path, capsys):
     """run() must exit 1 and print the auth error body when check_auth fails."""
     mock_github = _make_github_svc()
