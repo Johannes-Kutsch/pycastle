@@ -432,6 +432,71 @@ def test_docker_session_exit_closes_owned_client():
     mock_docker_mod.from_env.return_value.close.assert_called_once()
 
 
+def test_docker_session_exit_closes_outstanding_exec_streams():
+    """__exit__ closes iterators returned by exec_stream so urllib3 sockets are released.
+
+    Regression for #487: lingering HTTPResponse objects produced
+    'Exception ignored in: <urllib3.response.HTTPResponse>' noise at interpreter shutdown.
+    """
+    mock_client = MagicMock()
+    mock_stream = MagicMock()
+    mock_stream.__iter__ = lambda self: iter([b"chunk"])
+    mock_client.containers.run.return_value.exec_run.return_value.output = mock_stream
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+    session.__enter__()
+    session.exec_stream("some command")
+
+    session.__exit__(None, None, None)
+
+    mock_stream.close.assert_called_once()
+
+
+def test_docker_session_exit_closes_owned_client_even_if_container_stop_fails():
+    """__exit__ closes the owned client in a finally block so sockets are always released."""
+    with patch("pycastle.docker_session.docker") as mock_docker_mod:
+        mock_client = mock_docker_mod.from_env.return_value
+        mock_client.containers.run.return_value.stop.side_effect = RuntimeError("boom")
+        session = DockerSession(
+            volumes={}, container_env={}, image_name="img", cfg=Config()
+        )
+        session.__enter__()
+        session.__exit__(None, None, None)
+
+    mock_client.close.assert_called_once()
+
+
+def test_docker_session_exit_closes_streams_before_stopping_container():
+    """Streams are closed before container.stop so in-flight responses are released first."""
+    mock_client = MagicMock()
+    mock_stream = MagicMock()
+    mock_stream.__iter__ = lambda self: iter([b""])
+    mock_client.containers.run.return_value.exec_run.return_value.output = mock_stream
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+    session.__enter__()
+    session.exec_stream("cmd")
+    mock_container = mock_client.containers.run.return_value
+
+    call_order: list[str] = []
+    mock_stream.close.side_effect = lambda: call_order.append("stream.close")
+    mock_container.stop.side_effect = lambda **_: call_order.append("container.stop")
+
+    session.__exit__(None, None, None)
+
+    assert call_order == ["stream.close", "container.stop"]
+
+
 def test_docker_session_exit_does_not_close_injected_client():
     """__exit__ does not close the Docker client when it was injected by the caller."""
     mock_client = MagicMock()

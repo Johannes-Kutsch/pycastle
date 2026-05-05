@@ -93,6 +93,7 @@ class DockerSession:
         self._owns_client = docker_client is None
         self._client = docker_client if docker_client is not None else docker.from_env()
         self._container: DockerContainer | None = None
+        self._streams: list = []
 
     @property
     def _active_container(self) -> DockerContainer:
@@ -111,27 +112,38 @@ class DockerSession:
         return self
 
     def __exit__(self, *_) -> None:
-        if self._auto_overlay is not None:
-            try:
-                self._auto_overlay.unlink(missing_ok=True)
-            except Exception:
-                pass
-            self._auto_overlay = None
-        if self._container is not None:
-            try:
-                self._container.stop(timeout=5)
-            except Exception:
-                pass
-            try:
-                self._container.remove(force=True)
-            except Exception:
-                pass
-            self._container = None
-        if self._owns_client:
-            try:
-                self._client.close()
-            except Exception:
-                pass
+        try:
+            for stream in self._streams:
+                close = getattr(stream, "close", None)
+                if close is None:
+                    continue
+                try:
+                    close()
+                except Exception:
+                    pass
+            self._streams.clear()
+            if self._auto_overlay is not None:
+                try:
+                    self._auto_overlay.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                self._auto_overlay = None
+            if self._container is not None:
+                try:
+                    self._container.stop(timeout=5)
+                except Exception:
+                    pass
+                try:
+                    self._container.remove(force=True)
+                except Exception:
+                    pass
+                self._container = None
+        finally:
+            if self._owns_client:
+                try:
+                    self._client.close()
+                except Exception:
+                    pass
 
     def exec_simple(self, command: str, timeout: float | None = None) -> str:
         container = self._active_container
@@ -176,7 +188,9 @@ class DockerSession:
             stream=True,
             workdir="/home/agent/workspace",
         )
-        return cast(Iterator[bytes], result.output)
+        output = cast(Iterator[bytes], result.output)
+        self._streams.append(output)
+        return output
 
     def write_file(self, content: str, container_path: str) -> None:
         data = content.encode("utf-8")
