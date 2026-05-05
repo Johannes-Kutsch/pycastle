@@ -79,10 +79,28 @@ def main() -> None:
     default=False,
     help="Scaffold config.py and .env locally to ./pycastle/.",
 )
-def init_cmd(global_flag: bool, local_flag: bool) -> None:
+@click.option(
+    "--refresh",
+    "refresh_flag",
+    is_flag=True,
+    default=False,
+    help="Re-pull bundled project-shaped files (Dockerfile, .gitignore, prompts/**) "
+    "into ./pycastle/ without prompts. Leaves config.py and .env untouched.",
+)
+def init_cmd(global_flag: bool, local_flag: bool, refresh_flag: bool) -> None:
     from .init_command import main as _init
+    from .init_command import refresh as _refresh
 
     _print_layer_summary()
+    if refresh_flag and (global_flag or local_flag):
+        click.echo(
+            "Error: --refresh is mutually exclusive with --global and --local.",
+            err=True,
+        )
+        sys.exit(1)
+    if refresh_flag:
+        _refresh()
+        return
     if global_flag and local_flag:
         click.echo("Error: --global and --local are mutually exclusive.", err=True)
         sys.exit(1)

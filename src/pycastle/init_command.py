@@ -89,6 +89,23 @@ def _prompt_and_save_credential(env_file: Path, key: str, prompt_text: str) -> s
     return value
 
 
+def refresh() -> None:
+    project_dir = Path("pycastle")
+    if not project_dir.is_dir():
+        click.echo(
+            click.style(
+                f"Error: no `pycastle/` directory found in {Path.cwd()}; "
+                "run `pycastle init` first.",
+                fg="red",
+            ),
+            err=True,
+        )
+        sys.exit(1)
+    pkg = files("pycastle").joinpath("defaults")
+    for rel in _PROJECT_SHAPED_FILES:
+        _copy_template(rel, project_dir / rel, pkg)
+
+
 def main(scope: Literal["global", "local"] | None = None) -> None:
     project_dir = Path("pycastle")
     pkg = files("pycastle").joinpath("defaults")
