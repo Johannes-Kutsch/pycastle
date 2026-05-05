@@ -353,6 +353,320 @@ def test_paginate_follows_next_url_returned_by_github():
     assert captured[1] == next_url
 
 
+# ── close_issue ──────────────────────────────────────────────────────────────
+
+
+def test_close_issue_sends_patch_with_state_closed():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(b'{"state":"closed"}'),
+    ) as m:
+        svc.close_issue(42)
+    req = m.call_args[0][0]
+    assert req.get_method() == "PATCH"
+    assert req.full_url == "https://api.github.com/repos/owner/repo/issues/42"
+    assert json.loads(req.data.decode()) == {"state": "closed"}
+
+
+def test_close_issue_raises_github_api_error_on_failure():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_http_error(404, b'{"message":"Not Found"}'),
+    ):
+        with pytest.raises(GithubAPIError):
+            svc.close_issue(42)
+
+
+# ── get_issue_title / get_labels ─────────────────────────────────────────────
+
+
+def test_get_issue_title_returns_title():
+    svc = _make_service()
+    body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+    ):
+        assert svc.get_issue_title(7) == "Fix bug"
+
+
+def test_get_labels_returns_label_names():
+    svc = _make_service()
+    body = json.dumps(
+        {"labels": [{"name": "bug"}, {"name": "ready-for-agent"}]}
+    ).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+    ):
+        assert svc.get_labels(7) == ["bug", "ready-for-agent"]
+
+
+def test_get_labels_returns_empty_list_when_no_labels():
+    svc = _make_service()
+    body = json.dumps({"labels": []}).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+    ):
+        assert svc.get_labels(7) == []
+
+
+# ── get_parent ───────────────────────────────────────────────────────────────
+
+
+def test_get_parent_returns_parent_number():
+    svc = _make_service()
+    body = json.dumps({"parent": {"number": 100}}).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+    ):
+        assert svc.get_parent(5) == 100
+
+
+def test_get_parent_returns_none_when_no_parent():
+    svc = _make_service()
+    body = json.dumps({"number": 5}).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+    ):
+        assert svc.get_parent(5) is None
+
+
+# ── get_open_sub_issues ──────────────────────────────────────────────────────
+
+
+def test_get_open_sub_issues_filters_to_open_only():
+    svc = _make_service()
+    body = json.dumps(
+        [
+            {"number": 1, "state": "open"},
+            {"number": 2, "state": "closed"},
+            {"number": 3, "state": "open"},
+        ]
+    ).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body, headers={}),
+    ):
+        assert svc.get_open_sub_issues(10) == [1, 3]
+
+
+# ── close_issue_with_parents ─────────────────────────────────────────────────
+
+
+def test_close_issue_with_parents_closes_parent_when_no_open_siblings():
+    svc = _make_service()
+    closed: list[int] = []
+
+    def fake_request(method, path, data=None):
+        if method == "PATCH":
+            closed.append(int(path.rsplit("/", 1)[-1]))
+            return None, {}
+        if path.endswith("/issues/5"):
+            return {"parent": {"number": 50}}, {}
+        if path.endswith("/issues/50"):
+            return {"parent": None}, {}
+        if "/sub_issues" in path:
+            # parent #50's children all closed
+            return [{"number": 5, "state": "closed"}], {"Link": ""}
+        raise AssertionError(path)
+
+    with patch.object(svc, "_request", side_effect=fake_request):
+        svc.close_issue_with_parents(5)
+    assert closed == [5, 50]
+
+
+def test_close_issue_with_parents_stops_when_open_siblings_remain():
+    svc = _make_service()
+    closed: list[int] = []
+
+    def fake_request(method, path, data=None):
+        if method == "PATCH":
+            closed.append(int(path.rsplit("/", 1)[-1]))
+            return None, {}
+        if path.endswith("/issues/5"):
+            return {"parent": {"number": 50}}, {}
+        if "/sub_issues" in path:
+            return [
+                {"number": 5, "state": "closed"},
+                {"number": 6, "state": "open"},
+            ], {"Link": ""}
+        raise AssertionError(path)
+
+    with patch.object(svc, "_request", side_effect=fake_request):
+        svc.close_issue_with_parents(5)
+    assert closed == [5]
+
+
+# ── get_open_issue_numbers ───────────────────────────────────────────────────
+
+
+def test_get_open_issue_numbers_excludes_pull_requests():
+    svc = _make_service()
+    body = json.dumps(
+        [
+            {"number": 1},
+            {"number": 2, "pull_request": {"url": "x"}},
+            {"number": 3},
+        ]
+    ).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body, headers={}),
+    ):
+        assert svc.get_open_issue_numbers() == [1, 3]
+
+
+# ── has_open_issues_with_label ───────────────────────────────────────────────
+
+
+def test_has_open_issues_with_label_true_when_any_match():
+    svc = _make_service()
+    body = json.dumps([{"number": 1}]).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body),
+    ) as m:
+        result = svc.has_open_issues_with_label("ready-for-agent")
+    assert result is True
+    req = m.call_args[0][0]
+    assert "labels=ready-for-agent" in req.full_url
+    assert "state=open" in req.full_url
+
+
+def test_has_open_issues_with_label_false_when_empty():
+    svc = _make_service()
+    body = json.dumps([]).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body),
+    ):
+        assert svc.has_open_issues_with_label("ready-for-agent") is False
+
+
+def test_has_open_issues_with_label_excludes_pull_requests():
+    svc = _make_service()
+    body = json.dumps([{"number": 1, "pull_request": {"url": "x"}}]).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body),
+    ):
+        assert svc.has_open_issues_with_label("x") is False
+
+
+# ── get_open_issues ──────────────────────────────────────────────────────────
+
+
+def test_get_open_issues_returns_number_title_body_labels():
+    svc = _make_service()
+    body = json.dumps(
+        [
+            {
+                "number": 1,
+                "title": "Fix",
+                "body": "do it",
+                "labels": [{"name": "bug"}],
+            }
+        ]
+    ).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body, headers={}),
+    ):
+        result = svc.get_open_issues("bug")
+    assert result == [{"number": 1, "title": "Fix", "body": "do it", "labels": ["bug"]}]
+
+
+def test_get_open_issues_filters_pull_requests():
+    svc = _make_service()
+    body = json.dumps(
+        [
+            {"number": 1, "title": "Issue", "body": "", "labels": []},
+            {
+                "number": 2,
+                "title": "PR",
+                "body": "",
+                "labels": [],
+                "pull_request": {"url": "x"},
+            },
+        ]
+    ).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body, headers={}),
+    ):
+        result = svc.get_open_issues("bug")
+    assert [r["number"] for r in result] == [1]
+
+
+# ── close_completed_parent_issues ────────────────────────────────────────────
+
+
+def test_close_completed_parent_issues_closes_parents_with_all_closed_subs():
+    svc = _make_service()
+    closed: list[int] = []
+    open_numbers = [10, 11]
+
+    def fake_request(method, path, data=None):
+        if method == "PATCH":
+            num = int(path.rsplit("/", 1)[-1])
+            closed.append(num)
+            open_numbers.remove(num)
+            return None, {}
+        if "/issues?state=open" in path:
+            return [{"number": n} for n in open_numbers], {"Link": ""}
+        if path.endswith("/issues/10/sub_issues"):
+            return [{"number": 1, "state": "closed"}], {"Link": ""}
+        if path.endswith("/issues/11/sub_issues"):
+            return [{"number": 2, "state": "open"}], {"Link": ""}
+        raise AssertionError(path)
+
+    with patch.object(svc, "_request", side_effect=fake_request):
+        svc.close_completed_parent_issues()
+    assert closed == [10]
+
+
+# ── list_labels / create_label / delete_label ────────────────────────────────
+
+
+def test_list_labels_paginates_and_returns_results():
+    svc = _make_service()
+    body = json.dumps([{"name": "bug"}, {"name": "feat"}]).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body, headers={}),
+    ):
+        result = svc.list_labels()
+    assert [label["name"] for label in result] == ["bug", "feat"]
+
+
+def test_create_label_posts_body_to_labels_endpoint():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(b'{"name":"bug"}'),
+    ) as m:
+        svc.create_label({"name": "bug", "color": "ff0000"})
+    req = m.call_args[0][0]
+    assert req.get_method() == "POST"
+    assert req.full_url == "https://api.github.com/repos/owner/repo/labels"
+    assert json.loads(req.data.decode()) == {"name": "bug", "color": "ff0000"}
+
+
+def test_delete_label_sends_delete_with_url_encoded_name():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(b""),
+    ) as m:
+        svc.delete_label("needs triage")
+    req = m.call_args[0][0]
+    assert req.get_method() == "DELETE"
+    assert req.full_url == (
+        "https://api.github.com/repos/owner/repo/labels/needs%20triage"
+    )
+
+
 # ── No real network ──────────────────────────────────────────────────────────
 
 

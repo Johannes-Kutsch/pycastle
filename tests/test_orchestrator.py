@@ -1,5 +1,4 @@
 import asyncio
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -17,8 +16,12 @@ from pycastle.agent_result import (
 from pycastle.agent_runner import RunRequest
 from pycastle.config import Config, StageOverride
 from pycastle.errors import UsageLimitError
-from pycastle.services import GitCommandError, GitService
-from pycastle.services import GithubNotFoundError, GithubService
+from pycastle.services import (
+    GitCommandError,
+    GithubAuthError,
+    GithubService,
+    GitService,
+)
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 from pycastle.orchestrator import (
     prune_orphan_worktrees,
@@ -1705,164 +1708,53 @@ def test_run_limits_concurrency_to_max_parallel_from_cfg(tmp_path):
     assert max_active <= 2, f"Expected at most 2 concurrent; max was {max_active}"
 
 
-# ── Issue-331: gh CLI not found detected at startup ──────────────────────────
+# ── GithubService eager construction + check_auth preflight ─────────────────
 
 
-def test_run_exits_with_code_1_when_gh_not_found(tmp_path):
-    """run() without an injected github_service must exit 1 if gh is absent."""
-    with patch("pycastle.orchestrator.shutil.which", return_value=None):
-        with pytest.raises(SystemExit) as exc_info:
-            _run(tmp_path)
+def test_run_calls_check_auth_before_iteration(tmp_path):
+    """run() must call check_auth on the GithubService before doing iteration work."""
+    call_order: list[str] = []
+    mock_github = _make_github_svc()
+    mock_github.check_auth.side_effect = lambda: (
+        call_order.append("check_auth") or "octocat"
+    )
+    mock_github.has_open_issues_with_label.side_effect = lambda label: (
+        call_order.append("has_open_issues_with_label") or False
+    )
+
+    _run(tmp_path, github_service=mock_github)
+
+    assert call_order[0] == "check_auth"
+    assert "has_open_issues_with_label" in call_order
+
+
+def test_run_exits_when_github_auth_error(tmp_path, capsys):
+    """run() must exit 1 and print the auth error body when check_auth fails."""
+    mock_github = _make_github_svc()
+    mock_github.check_auth.side_effect = GithubAuthError(
+        "auth failed", status=401, body="Bad credentials"
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run(tmp_path, github_service=mock_github)
     assert exc_info.value.code == 1
-
-
-def test_run_prints_gh_install_and_auth_when_gh_not_found(tmp_path, capsys):
-    """run() must print both install command and auth step to stderr when gh is absent."""
-    with patch("pycastle.orchestrator.shutil.which", return_value=None):
-        with pytest.raises(SystemExit):
-            _run(tmp_path)
     err = capsys.readouterr().err
-    assert "sudo apt install gh" in err
-    assert "gh auth login" in err
+    assert "Bad credentials" in err
 
 
-def test_run_no_agents_start_when_gh_not_found(tmp_path):
-    """run() must not spawn any agents when gh is absent."""
-    agents_started: list[str] = []
-
-    async def _fake_run_agent(request: RunRequest):
-        agents_started.append(request.name)
-        return CompletionOutput()
-
-    with patch("pycastle.orchestrator.shutil.which", return_value=None):
-        with pytest.raises(SystemExit):
-            _run(tmp_path, _fake_run_agent)
-
-    assert agents_started == [], f"No agents must start; got {agents_started}"
-
-
-def test_run_raises_github_not_found_error_when_gh_invocation_fails(tmp_path):
-    """run() must propagate GithubNotFoundError when gh is in PATH but invoking it raises FileNotFoundError."""
-    with (
-        patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
-        patch("subprocess.run", side_effect=FileNotFoundError),
-    ):
-        with pytest.raises(GithubNotFoundError):
-            _run(tmp_path)
-
-
-def test_run_includes_gh_stderr_when_repo_lookup_fails(tmp_path):
-    """When `gh repo view` exits non-zero, the raised RuntimeError must include
-    gh's stderr and exit code so users can self-diagnose (e.g. auth errors)."""
-    auth_ok = subprocess.CompletedProcess(
-        args=["gh", "auth", "status"], returncode=0, stdout=b"", stderr=b""
-    )
-    failing_result = subprocess.CompletedProcess(
-        args=["gh", "repo", "view"],
-        returncode=4,
-        stdout=b"",
-        stderr=b"HTTP 401: Require authentication\n",
-    )
-    with (
-        patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
-        patch("subprocess.run", side_effect=[auth_ok, failing_result]),
-    ):
-        with pytest.raises(RuntimeError) as exc_info:
-            _run(tmp_path)
-    msg = str(exc_info.value)
-    assert "HTTP 401: Require authentication" in msg
-    assert "4" in msg
-
-
-def test_run_includes_exit_code_when_gh_stderr_empty(tmp_path):
-    """When gh exits non-zero with empty stderr, the message still includes the
-    exit code and a placeholder note rather than silently dropping context."""
-    auth_ok = subprocess.CompletedProcess(
-        args=["gh", "auth", "status"], returncode=0, stdout=b"", stderr=b""
-    )
-    failing_result = subprocess.CompletedProcess(
-        args=["gh", "repo", "view"],
-        returncode=2,
-        stdout=b"",
-        stderr=b"",
-    )
-    with (
-        patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
-        patch("subprocess.run", side_effect=[auth_ok, failing_result]),
-    ):
-        with pytest.raises(RuntimeError) as exc_info:
-            _run(tmp_path)
-    msg = str(exc_info.value)
-    assert "2" in msg
-    assert "no error output" in msg
-
-
-# ── Issue-486: gh auth preflight ─────────────────────────────────────────────
-
-
-def test_run_exits_with_code_1_when_gh_not_authenticated(tmp_path):
-    """run() without an injected github_service must exit 1 if `gh auth status` fails."""
-    auth_failed = subprocess.CompletedProcess(
-        args=["gh", "auth", "status"],
-        returncode=1,
-        stdout=b"",
-        stderr=b"You are not logged into any GitHub hosts.\n",
-    )
-    with (
-        patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
-        patch("subprocess.run", return_value=auth_failed),
-    ):
-        with pytest.raises(SystemExit) as exc_info:
-            _run(tmp_path)
+def test_run_exits_when_gh_token_missing(tmp_path, capsys):
+    """run() without an injected github_service must exit 1 when GH_TOKEN is missing."""
+    with pytest.raises(SystemExit) as exc_info:
+        asyncio.run(
+            run(
+                {},
+                tmp_path,
+                git_service=_make_git_svc(),
+            )
+        )
     assert exc_info.value.code == 1
-
-
-def test_run_prints_gh_auth_login_when_unauthenticated(tmp_path, capsys):
-    """run() must point users to `gh auth login` when auth status fails."""
-    auth_failed = subprocess.CompletedProcess(
-        args=["gh", "auth", "status"], returncode=1, stdout=b"", stderr=b""
-    )
-    with (
-        patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
-        patch("subprocess.run", return_value=auth_failed),
-    ):
-        with pytest.raises(SystemExit):
-            _run(tmp_path)
     err = capsys.readouterr().err
-    assert "gh auth login" in err
-
-
-def test_run_no_agents_start_when_gh_not_authenticated(tmp_path):
-    """run() must not spawn any agents when gh is unauthenticated."""
-    agents_started: list[str] = []
-
-    async def _fake_run_agent(request: RunRequest):
-        agents_started.append(request.name)
-        return CompletionOutput()
-
-    auth_failed = subprocess.CompletedProcess(
-        args=["gh", "auth", "status"], returncode=1, stdout=b"", stderr=b""
-    )
-    with (
-        patch("pycastle.orchestrator.shutil.which", return_value="/usr/bin/gh"),
-        patch("subprocess.run", return_value=auth_failed),
-    ):
-        with pytest.raises(SystemExit):
-            _run(tmp_path, _fake_run_agent)
-
-    assert agents_started == [], f"No agents must start; got {agents_started}"
-
-
-def test_run_skips_gh_check_when_github_service_injected(tmp_path):
-    """run() must not check for gh CLI when a github_service is already injected."""
-
-    async def _fake_run_agent(request: RunRequest):
-        return _plan_output([])
-
-    with patch("pycastle.orchestrator.shutil.which", return_value=None):
-        _run(
-            tmp_path, _fake_run_agent, github_service=_make_github_svc()
-        )  # must not raise SystemExit
+    assert "GH_TOKEN" in err
 
 
 def test_run_with_empty_repo_root_completes(tmp_path):
@@ -2285,12 +2177,18 @@ def test_startup_does_not_use_pycastle_caller_on_git_identity_failure(tmp_path):
 
 
 def test_startup_does_not_use_pycastle_caller_on_credentials_failure(tmp_path):
-    """run() must not emit any 'pycastle' register or remove calls when gh CLI is absent."""
+    """run() must not emit any 'pycastle' register or remove calls when GH_TOKEN is missing."""
     recording = RecordingStatusDisplay()
 
-    with patch("pycastle.orchestrator.shutil.which", return_value=None):
-        with pytest.raises(SystemExit):
-            _run(tmp_path, status_display=recording)
+    with pytest.raises(SystemExit):
+        asyncio.run(
+            run(
+                {},
+                tmp_path,
+                git_service=_make_git_svc(),
+                status_display=recording,
+            )
+        )
 
     pycastle_calls = [c for c in recording.calls if c[1] == "pycastle"]
     assert pycastle_calls == [], (

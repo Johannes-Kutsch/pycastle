@@ -4,6 +4,7 @@ import json
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from ..config import Config
@@ -151,6 +152,129 @@ class GithubService:
                 path="/user",
             )
         return str(payload["login"])
+
+    def close_issue(self, number: int) -> None:
+        self._request(
+            "PATCH",
+            f"/repos/{self.repo}/issues/{number}",
+            data={"state": "closed"},
+        )
+
+    def get_issue_title(self, issue_number: int) -> str:
+        payload, _ = self._request("GET", f"/repos/{self.repo}/issues/{issue_number}")
+        if not isinstance(payload, dict) or "title" not in payload:
+            raise GithubAPIError(
+                f"GitHub API GET /repos/{self.repo}/issues/{issue_number} returned no title",
+                status=200,
+                body=str(payload),
+                method="GET",
+                path=f"/repos/{self.repo}/issues/{issue_number}",
+            )
+        return str(payload["title"])
+
+    def get_labels(self, issue_number: int) -> list[str]:
+        payload, _ = self._request("GET", f"/repos/{self.repo}/issues/{issue_number}")
+        if not isinstance(payload, dict):
+            return []
+        labels = payload.get("labels") or []
+        return [str(label["name"]) for label in labels if "name" in label]
+
+    def get_parent(self, number: int) -> int | None:
+        payload, _ = self._request("GET", f"/repos/{self.repo}/issues/{number}")
+        if not isinstance(payload, dict):
+            return None
+        parent = payload.get("parent")
+        if not isinstance(parent, dict):
+            return None
+        parent_number = parent.get("number")
+        if parent_number is None:
+            return None
+        return int(parent_number)
+
+    def _get_all_sub_issues(self, number: int) -> list[dict[str, Any]]:
+        results = self._paginate(f"/repos/{self.repo}/issues/{number}/sub_issues")
+        return [item for item in results if isinstance(item, dict)]
+
+    def get_open_sub_issues(self, number: int) -> list[int]:
+        return [
+            int(item["number"])
+            for item in self._get_all_sub_issues(number)
+            if item.get("state") == "open" and "number" in item
+        ]
+
+    def close_issue_with_parents(self, number: int) -> None:
+        self.close_issue(number)
+        parent = self.get_parent(number)
+        if parent is None:
+            return
+        if self.get_open_sub_issues(parent):
+            return
+        self.close_issue_with_parents(parent)
+
+    def get_open_issue_numbers(self) -> list[int]:
+        results = self._paginate(f"/repos/{self.repo}/issues?state=open&per_page=100")
+        return [
+            int(item["number"])
+            for item in results
+            if isinstance(item, dict)
+            and "number" in item
+            and "pull_request" not in item
+        ]
+
+    def has_open_issues_with_label(self, label: str) -> bool:
+        path = (
+            f"/repos/{self.repo}/issues?state=open"
+            f"&labels={quote(label, safe='')}&per_page=1"
+        )
+        payload, _ = self._request("GET", path)
+        if not isinstance(payload, list):
+            return False
+        return any(
+            isinstance(item, dict) and "pull_request" not in item for item in payload
+        )
+
+    def get_open_issues(self, label: str) -> list[dict[str, Any]]:
+        results = self._paginate(
+            f"/repos/{self.repo}/issues?state=open"
+            f"&labels={quote(label, safe='')}&per_page=100"
+        )
+        issues: list[dict[str, Any]] = []
+        for item in results:
+            if not isinstance(item, dict) or "pull_request" in item:
+                continue
+            issues.append(
+                {
+                    "number": int(item["number"]),
+                    "title": str(item.get("title") or ""),
+                    "body": item.get("body") or "",
+                    "labels": [
+                        str(label_obj["name"])
+                        for label_obj in (item.get("labels") or [])
+                        if "name" in label_obj
+                    ],
+                }
+            )
+        return issues
+
+    def close_completed_parent_issues(self) -> None:
+        changed = True
+        while changed:
+            changed = False
+            for issue_num in self.get_open_issue_numbers():
+                all_subs = self._get_all_sub_issues(issue_num)
+                if all_subs and all(s.get("state") == "closed" for s in all_subs):
+                    self.close_issue(issue_num)
+                    changed = True
+
+    def list_labels(self) -> list[dict[str, Any]]:
+        results = self._paginate(f"/repos/{self.repo}/labels?per_page=100")
+        return [item for item in results if isinstance(item, dict)]
+
+    def create_label(self, body: dict[str, Any]) -> None:
+        self._request("POST", f"/repos/{self.repo}/labels", data=body)
+
+    def delete_label(self, name: str) -> None:
+        self._request("DELETE", f"/repos/{self.repo}/labels/{quote(name, safe='')}")
 
 
 def _next_link(link_header: str | None) -> str | None:

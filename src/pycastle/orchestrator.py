@@ -1,5 +1,4 @@
 import shutil
-import subprocess
 import sys
 import time
 import traceback
@@ -10,8 +9,6 @@ from typing import Any
 from .agent_result import PreflightFailure
 from .agent_runner import AgentRunner, AgentRunnerProtocol, RunRequest
 from .config import Config, load_config
-from .services import GitCommandError, GitService
-from .services import GithubNotFoundError, GithubService
 from .iteration import (
     AbortedHITL,
     AbortedUsageLimit,
@@ -21,6 +18,12 @@ from .iteration import (
 )
 from .iteration._deps import Deps as IterationDeps
 from .rich_status_display import RichStatusDisplay
+from .services import (
+    GitCommandError,
+    GithubAuthError,
+    GithubService,
+    GitService,
+)
 from .status_display import StatusDisplay
 from .worktree import remove_worktrees_dir_if_empty
 
@@ -60,25 +63,6 @@ def prune_orphan_worktrees(
         if str(child.resolve()) not in active and child.is_dir():
             shutil.rmtree(child)
     remove_worktrees_dir_if_empty(worktrees_dir)
-
-
-def _get_repo(repo_root: Path) -> str:
-    try:
-        result = subprocess.run(
-            ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
-            capture_output=True,
-            cwd=repo_root,
-        )
-    except FileNotFoundError as exc:
-        raise GithubNotFoundError("gh executable not found") from exc
-    if result.returncode != 0:
-        stderr = result.stderr.decode("utf-8", errors="replace").strip()
-        detail = stderr if stderr else "(gh produced no error output)"
-        raise RuntimeError(
-            f"Could not determine GitHub repo name via gh "
-            f"(exit code {result.returncode}): {detail}"
-        )
-    return result.stdout.decode("utf-8").strip()
 
 
 class _CallableAgentRunner:
@@ -126,45 +110,42 @@ async def run(
         sys.exit(1)
 
     if github_service is None:
-        if shutil.which("gh") is None:
+        token = env.get("GH_TOKEN", "").strip()
+        if not token:
             print(
-                "GitHub CLI not found. Install it with: sudo apt install gh,"
-                " then run: gh auth login",
+                "GH_TOKEN is not set. Add it to pycastle/.env or your environment.",
                 file=sys.stderr,
             )
             sys.exit(1)
-        try:
-            auth_check = subprocess.run(
-                ["gh", "auth", "status"],
-                capture_output=True,
-            )
-        except FileNotFoundError as exc:
-            raise GithubNotFoundError("gh executable not found") from exc
-        if auth_check.returncode != 0:
+        remote = git_svc.get_github_remote_repo(cwd=repo_root)
+        if remote is None:
             print(
-                "GitHub CLI is not authenticated. Run: gh auth login",
+                "Could not determine GitHub repo from origin remote.",
                 file=sys.stderr,
             )
             sys.exit(1)
+        owner, repo = remote
+        github_service = GithubService(f"{owner}/{repo}", token, cfg)
 
-    _lazy_github_svc: GithubService | None = None
+    try:
+        login = github_service.check_auth()
+    except GithubAuthError as exc:
+        print(
+            f"GitHub authentication failed: {exc.body}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
-    def _get_github_svc() -> GithubService:
-        nonlocal _lazy_github_svc
-        if _lazy_github_svc is None:
-            _lazy_github_svc = github_service or GithubService(
-                repo=_get_repo(repo_root), cfg=cfg
-            )
-        return _lazy_github_svc
+    github_svc: GithubService = github_service
 
     try:
         for iteration in range(1, cfg.max_iterations + 1):
             status_display.print(  # type: ignore[union-attr]
                 "",
-                f"=== Iteration {iteration}/{cfg.max_iterations} ===",
+                f"=== Iteration {iteration}/{cfg.max_iterations} (Authenticated as @{login}) ===",
             )
 
-            if not _get_github_svc().has_open_issues_with_label(cfg.issue_label):
+            if not github_svc.has_open_issues_with_label(cfg.issue_label):
                 status_display.print(  # type: ignore[union-attr]
                     "",
                     f"No issues with label '{cfg.issue_label}' found. Skipping.",
@@ -181,7 +162,7 @@ async def run(
             deps = IterationDeps(
                 repo_root=repo_root,
                 git_svc=git_svc,
-                github_svc=_get_github_svc(),
+                github_svc=github_svc,
                 agent_runner=_agent_runner,
                 cfg=cfg,
                 logger=FileLogger(cfg.logs_dir),
