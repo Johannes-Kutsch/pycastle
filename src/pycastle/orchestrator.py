@@ -50,6 +50,21 @@ class FileLogger:
         pass
 
 
+_SESSION_EXCLUDES = (".pycastle-session/", ".claude/")
+
+
+def ensure_session_excludes(repo_root: Path) -> None:
+    exclude_file = repo_root / ".git" / "info" / "exclude"
+    if not exclude_file.parent.exists():
+        return
+    existing = exclude_file.read_text(encoding="utf-8") if exclude_file.exists() else ""
+    additions = [e for e in _SESSION_EXCLUDES if e not in existing]
+    if additions:
+        with open(exclude_file, "a", encoding="utf-8") as f:
+            for entry in additions:
+                f.write(f"{entry}\n")
+
+
 def prune_orphan_worktrees(
     repo_root: Path,
     git_service: GitService | None = None,
@@ -92,6 +107,7 @@ async def run(
 ) -> None:
     cfg = load_config(repo_root=repo_root)
     prune_orphan_worktrees(repo_root, cfg=cfg)
+    ensure_session_excludes(repo_root)
     git_svc = git_service or GitService(cfg)
 
     _owned_display: RichStatusDisplay | None = None

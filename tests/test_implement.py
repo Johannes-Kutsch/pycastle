@@ -1068,6 +1068,130 @@ def test_run_issue_bare_ralph_commit_does_not_skip_implementer(tmp_path):
     assert any("Implement Agent" in c.name for c in fake.calls)
 
 
+# ── _agent_worktree: broadened preservation rule (has_resumable_session) ──────
+
+
+def test_agent_worktree_preserves_worktree_when_session_dir_has_files(
+    tmp_path, monkeypatch
+):
+    """_agent_worktree must preserve the worktree if the role session dir is non-empty."""
+    overlay = _make_overlay(tmp_path)
+    monkeypatch.setattr(
+        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
+    )
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    deps.git_svc.is_working_tree_clean.return_value = True
+    token = CancellationToken()
+
+    # Place a file in the implementer session dir inside the expected worktree path
+    wt_name = "issue-99"
+    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
+    role_session_dir = wt_path / ".pycastle-session" / "implementer"
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    (role_session_dir / "session.json").write_text("{}")
+
+    deps.git_svc.create_worktree.side_effect = lambda repo, path, branch, sha: None
+
+    async def _run():
+        async with _agent_worktree("pycastle/issue-99", None, token, deps):
+            pass
+
+    asyncio.run(_run())
+
+    deps.git_svc.remove_worktree.assert_not_called()
+
+
+def test_agent_worktree_does_not_preserve_worktree_when_session_dir_is_empty(
+    tmp_path, monkeypatch
+):
+    """_agent_worktree must not preserve on empty session dir (clean, no usage_limit)."""
+    overlay = _make_overlay(tmp_path)
+    monkeypatch.setattr(
+        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
+    )
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    deps.git_svc.is_working_tree_clean.return_value = True
+    token = CancellationToken()
+
+    wt_name = "issue-100"
+    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
+    role_session_dir = wt_path / ".pycastle-session" / "implementer"
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+
+    deps.git_svc.create_worktree.side_effect = lambda repo, path, branch, sha: None
+
+    async def _run():
+        async with _agent_worktree("pycastle/issue-100", None, token, deps):
+            pass
+
+    asyncio.run(_run())
+
+    deps.git_svc.remove_worktree.assert_called_once()
+
+
+# ── _agent_worktree: worktree reuse on enter ──────────────────────────────────
+
+
+def test_agent_worktree_reuses_existing_worktree_when_branch_matches_and_session_present(
+    tmp_path, monkeypatch
+):
+    """When worktree path exists, branch matches, and session is present, skip create_worktree."""
+    overlay = _make_overlay(tmp_path)
+    monkeypatch.setattr(
+        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
+    )
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    deps.git_svc.is_working_tree_clean.return_value = True
+    token = CancellationToken()
+
+    wt_name = "issue-101"
+    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
+    wt_path.mkdir(parents=True, exist_ok=True)
+
+    # Populate a resumable session
+    role_session_dir = wt_path / ".pycastle-session" / "implementer"
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    (role_session_dir / "session.json").write_text("{}")
+
+    # The branch matches what git_svc reports
+    deps.git_svc.get_current_branch = MagicMock(return_value="pycastle/issue-101")
+
+    async def _run():
+        async with _agent_worktree("pycastle/issue-101", "abc123", token, deps):
+            pass
+
+    asyncio.run(_run())
+
+    deps.git_svc.create_worktree.assert_not_called()
+
+
+def test_agent_worktree_creates_fresh_when_no_session_despite_existing_path(
+    tmp_path, monkeypatch
+):
+    """When worktree path exists but session is absent, create_worktree is still called."""
+    overlay = _make_overlay(tmp_path)
+    monkeypatch.setattr(
+        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
+    )
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    deps.git_svc.is_working_tree_clean.return_value = True
+    token = CancellationToken()
+
+    wt_name = "issue-102"
+    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
+    wt_path.mkdir(parents=True, exist_ok=True)
+
+    deps.git_svc.get_current_branch = MagicMock(return_value="pycastle/issue-102")
+
+    async def _run():
+        async with _agent_worktree("pycastle/issue-102", "abc123", token, deps):
+            pass
+
+    asyncio.run(_run())
+
+    deps.git_svc.create_worktree.assert_called_once()
+
+
 # ── run_issue: commit wiring ─────────────────────────────────────────────────
 
 
@@ -1129,3 +1253,56 @@ def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
     asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))
 
     assert fired == [1]
+
+
+# ── run_issue: role session cleanup after commit ──────────────────────────────
+
+
+def test_run_issue_removes_implementer_session_dir_after_successful_commit(tmp_path):
+    """After Implementer succeeds, run_issue removes the role session dir."""
+    fake = FakeAgentRunner(
+        [CommitMessageOutput(message="fix it"), CommitMessageOutput(message="tidy")]
+    )
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    wt_name = "issue-50"
+    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
+    impl_session_dir = wt_path / ".pycastle-session" / "implementer"
+    impl_session_dir.mkdir(parents=True, exist_ok=True)
+    (impl_session_dir / "session.json").write_text("{}")
+
+    def _create(repo, path, branch, sha):
+        pass
+
+    deps.git_svc.create_worktree.side_effect = _create
+
+    issue = {"number": 50, "title": "Fix"}
+    asyncio.run(run_issue(issue, deps))
+
+    assert not impl_session_dir.exists()
+
+
+def test_run_issue_removes_reviewer_session_dir_after_successful_commit(tmp_path):
+    """After Reviewer succeeds, run_issue removes the reviewer role session dir."""
+    fake = FakeAgentRunner(
+        [CommitMessageOutput(message="fix it"), CommitMessageOutput(message="tidy")]
+    )
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    wt_name = "issue-51"
+    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
+    rev_session_dir = wt_path / ".pycastle-session" / "reviewer"
+    rev_session_dir.mkdir(parents=True, exist_ok=True)
+    (rev_session_dir / "session.json").write_text("{}")
+
+    def _create(repo, path, branch, sha):
+        pass
+
+    deps.git_svc.create_worktree.side_effect = _create
+
+    issue = {"number": 51, "title": "Fix"}
+    asyncio.run(run_issue(issue, deps))
+
+    assert not rev_session_dir.exists()

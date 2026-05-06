@@ -1,16 +1,26 @@
 import dataclasses
+import shutil
+import traceback
 from pathlib import Path
 from typing import Any, Protocol
 
 from .account_pool import AccountPool
-from .agent_output_protocol import AgentOutput, AgentRole
+from .agent_output_protocol import AgentOutput, AgentRole, CommitMessageParseError
 from .agent_result import CancellationToken, PreflightFailure
 from .config import Config
 from .container_runner import ContainerRunner
 from .docker_session import DockerSession, build_volume_spec
 from .errors import AgentTimeoutError, UsageLimitError
+from .session_resume import (
+    RunKind,
+    decide_agent_run_kind,
+    derived_session_uuid,
+    has_resumable_session,
+)
 from .services import GitService
 from .status_display import PlainStatusDisplay
+
+_CONTAINER_WORKSPACE = "/home/agent/workspace"
 
 
 @dataclasses.dataclass
@@ -59,13 +69,19 @@ class AgentRunner:
         self._docker_client = docker_client
         self._account_pool = account_pool
 
-    def _build_session(self, mount_path: Path) -> tuple[DockerSession, str | None]:
+    def _build_session(
+        self, mount_path: Path, role: AgentRole | None = None
+    ) -> tuple[DockerSession, str | None]:
         volumes, auto_overlay = build_volume_spec(mount_path)
         container_env = dict(self._env)
         picked_token: str | None = None
         if self._account_pool is not None:
             _, picked_token = self._account_pool.pick()
             container_env["CLAUDE_CODE_OAUTH_TOKEN"] = picked_token
+        if role is not None:
+            container_env["CLAUDE_CONFIG_DIR"] = (
+                f"{_CONTAINER_WORKSPACE}/.pycastle-session/{role.value}/"
+            )
         return (
             DockerSession(
                 volumes=volumes,
@@ -84,6 +100,7 @@ class AgentRunner:
         name = request.name
         prompt_file = request.prompt_file
         mount_path = request.mount_path
+        role = request.role
         prompt_args = request.prompt_args
         skip_preflight = request.skip_preflight
         model = request.model
@@ -99,8 +116,15 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError(reset_time=None)
 
+        role_session_dir = mount_path / ".pycastle-session" / role.value
+        session_dir_present = has_resumable_session(role_session_dir)
+        run_kind = decide_agent_run_kind(role, session_dir_present=session_dir_present)
+        session_uuid = derived_session_uuid(role, mount_path)
+
+        is_failsoft_recovery = False
+
         async with agent_row(status_display, name, work_body):
-            session, picked_token = self._build_session(mount_path)
+            session, picked_token = self._build_session(mount_path, role)
             runner = ContainerRunner(
                 name,
                 session,
@@ -117,12 +141,23 @@ class AgentRunner:
                     failures = await runner.preflight(list(self._cfg.preflight_checks))
                     if failures:
                         return PreflightFailure(failures=tuple(failures))
+
+                if run_kind == RunKind.FRESH:
+                    shutil.rmtree(role_session_dir, ignore_errors=True)
+                    role_session_dir.mkdir(parents=True, exist_ok=True)
+
                 retries_left = self._cfg.timeout_retries
                 while True:
                     try:
-                        return await runner.work(
-                            request.role, prompt_file, prompt_args or {}
+                        result = await runner.work(
+                            role,
+                            prompt_file,
+                            prompt_args or {},
+                            run_kind=run_kind,
+                            session_uuid=session_uuid,
+                            is_failsoft_recovery=is_failsoft_recovery,
                         )
+                        return result
                     except AgentTimeoutError:
                         if retries_left <= 0:
                             raise
@@ -140,11 +175,31 @@ class AgentRunner:
                             )
                         _token.cancel(preserve_worktree=True)
                         raise
+                    except CommitMessageParseError:
+                        raise
+                    except Exception:
+                        if run_kind == RunKind.RESUME and not is_failsoft_recovery:
+                            tb = traceback.format_exc()
+                            self._log_failsoft(name, tb)
+                            shutil.rmtree(role_session_dir, ignore_errors=True)
+                            role_session_dir.mkdir(parents=True, exist_ok=True)
+                            run_kind = RunKind.FRESH
+                            is_failsoft_recovery = True
+                        else:
+                            raise
             finally:
                 try:
                     session.__exit__(None, None, None)
                 except Exception:
                     pass
+
+    def _log_failsoft(self, name: str, tb: str) -> None:
+        try:
+            self._cfg.logs_dir.mkdir(parents=True, exist_ok=True)
+            with open(self._cfg.logs_dir / "errors.log", "a", encoding="utf-8") as f:
+                f.write(f"[ResumeFailSoft] {name}\n{tb}\n")
+        except Exception:
+            pass
 
     async def run_preflight(
         self,

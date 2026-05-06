@@ -9,16 +9,30 @@ from .config import Config
 from .docker_session import DockerSession
 from .errors import DockerError
 from .prompt_pipeline import prepare_prompt
+from .session_resume import RunKind
 from .status_display import PlainStatusDisplay
 from .stream_session import WorkStream
 
+_DEFAULTS_PROMPTS = Path(__file__).parent / "defaults" / "prompts"
+_RESUME_PROMPT_FILE = _DEFAULTS_PROMPTS / "_resume-prompt.md"
 
-def _build_claude_command(model: str = "", effort: str = "") -> str:
+
+def _build_claude_command(
+    model: str = "",
+    effort: str = "",
+    run_kind: RunKind = RunKind.FRESH,
+    session_uuid: str | None = None,
+) -> str:
     flags = "--verbose --dangerously-skip-permissions --output-format stream-json -p -"
     if model:
         flags += f" --model {model}"
     if effort:
         flags += f" --effort {effort}"
+    if session_uuid:
+        if run_kind == RunKind.RESUME:
+            flags += f" --resume {session_uuid}"
+        else:
+            flags += f" --session-id {session_uuid}"
     return f"claude {flags} < /tmp/.pycastle_prompt"
 
 
@@ -86,6 +100,10 @@ class ContainerRunner:
         role: AgentRole,
         prompt_file: Path,
         prompt_args: dict[str, str],
+        *,
+        run_kind: RunKind = RunKind.FRESH,
+        session_uuid: str | None = None,
+        is_failsoft_recovery: bool = False,
     ) -> AgentOutput:
         self._status_display.update_phase(self.name, "Prepare")
         loop = asyncio.get_running_loop()
@@ -93,7 +111,15 @@ class ContainerRunner:
         async def container_exec(cmd: str) -> str:
             return await loop.run_in_executor(None, self._session.exec_simple, cmd)
 
-        prompt = await prepare_prompt(prompt_file, prompt_args, container_exec)
+        if run_kind == RunKind.RESUME:
+            prompt = _RESUME_PROMPT_FILE.read_text(encoding="utf-8")
+        else:
+            role_prompt = await prepare_prompt(prompt_file, prompt_args, container_exec)
+            if is_failsoft_recovery:
+                resume_text = _RESUME_PROMPT_FILE.read_text(encoding="utf-8")
+                prompt = resume_text + "\n\n" + role_prompt
+            else:
+                prompt = role_prompt
 
         self._status_display.update_phase(self.name, "Work")
 
@@ -101,7 +127,8 @@ class ContainerRunner:
             self._status_display.print(self.name, turn)
 
         return await loop.run_in_executor(
-            None, lambda: self._run_streaming(role, prompt, on_turn)
+            None,
+            lambda: self._run_streaming(role, prompt, on_turn, run_kind, session_uuid),
         )
 
     def _run_streaming(
@@ -109,10 +136,17 @@ class ContainerRunner:
         role: AgentRole,
         prompt: str,
         on_turn: Callable[[str], None],
+        run_kind: RunKind = RunKind.FRESH,
+        session_uuid: str | None = None,
     ) -> AgentOutput:
         self._session.write_file(prompt, "/tmp/.pycastle_prompt")
         chunks = self._session.exec_stream(
-            _build_claude_command(model=self.model, effort=self.effort)
+            _build_claude_command(
+                model=self.model,
+                effort=self.effort,
+                run_kind=run_kind,
+                session_uuid=session_uuid,
+            )
         )
         try:
             ws = WorkStream(

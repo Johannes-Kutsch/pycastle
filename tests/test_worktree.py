@@ -755,3 +755,41 @@ def test_detached_worktree_removes_worktrees_dir_when_last_worktree_exits(
         assert not worktrees_dir.exists()
 
     asyncio.run(_run())
+
+
+# ── branch_worktree: broadened preservation rule ─────────────────────────────
+
+
+def test_branch_worktree_preserves_worktree_and_branch_when_session_dir_has_files(
+    branch_deps,
+):
+    """branch_worktree must not teardown when a role session dir is non-empty."""
+
+    async def _run():
+        async with branch_worktree(
+            "merge-sandbox", "pycastle/merge-sandbox", None, branch_deps
+        ) as wt_path:
+            session_dir = wt_path / ".pycastle-session" / "merger"
+            session_dir.mkdir(parents=True, exist_ok=True)
+            (session_dir / "session.json").write_text("{}")
+
+    asyncio.run(_run())
+
+    branch_deps.git_svc.remove_worktree.assert_not_called()
+    branch_deps.git_svc.delete_branch.assert_not_called()
+
+
+def test_branch_worktree_tears_down_when_session_dir_is_empty(branch_deps):
+    """branch_worktree must still tear down when session dir exists but is empty."""
+
+    async def _run():
+        async with branch_worktree(
+            "merge-sandbox", "pycastle/merge-sandbox", None, branch_deps
+        ) as wt_path:
+            session_dir = wt_path / ".pycastle-session" / "merger"
+            session_dir.mkdir(parents=True, exist_ok=True)
+
+    asyncio.run(_run())
+
+    branch_deps.git_svc.remove_worktree.assert_called_once()
+    branch_deps.git_svc.delete_branch.assert_called_once()

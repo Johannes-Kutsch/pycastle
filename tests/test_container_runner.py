@@ -13,6 +13,7 @@ from pycastle.container_runner import ContainerRunner, _build_claude_command
 from pycastle.docker_session import DockerSession
 from pycastle.errors import DockerError, UsageLimitError
 from pycastle.iteration._deps import RecordingStatusDisplay
+from pycastle.session_resume import RunKind
 
 _ROLE = AgentRole.IMPLEMENTER
 
@@ -122,6 +123,24 @@ def test_build_claude_command_excludes_flags_when_unset():
     cmd = _build_claude_command()
     assert "--model" not in cmd
     assert "--effort" not in cmd
+
+
+def test_build_claude_command_includes_session_id_when_fresh_with_uuid():
+    cmd = _build_claude_command(run_kind=RunKind.FRESH, session_uuid="abc-123")
+    assert "--session-id abc-123" in cmd
+    assert "--resume" not in cmd
+
+
+def test_build_claude_command_includes_resume_when_resume_with_uuid():
+    cmd = _build_claude_command(run_kind=RunKind.RESUME, session_uuid="abc-123")
+    assert "--resume abc-123" in cmd
+    assert "--session-id" not in cmd
+
+
+def test_build_claude_command_excludes_session_flags_when_uuid_absent():
+    cmd = _build_claude_command()
+    assert "--session-id" not in cmd
+    assert "--resume" not in cmd
 
 
 # ── Constructor ──────────────────────────────────────────────────────────────
