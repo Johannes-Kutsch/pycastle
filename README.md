@@ -12,7 +12,7 @@ pip install pycastle
 
 - Python 3.11.3 or later
 - Docker (daemon must be running)
-- A valid `ANTHROPIC_API_KEY` environment variable (or a `.env` file in your project root)
+- A valid `CLAUDE_CODE_OAUTH_TOKEN` environment variable (or a `.env` file in your project root). Run `claude setup-token` to generate one.
 - A GitHub repository with a `GH_TOKEN` environment variable that has issue read/write access. `GH_TOKEN` is the sole GitHub credential pycastle uses — there is no `gh` CLI dependency.
 
   If your repository belongs to an SSO-protected organisation, the PAT must be authorised for that org via the GitHub web UI (PAT settings → "Configure SSO" → Authorize) before pycastle can use it.

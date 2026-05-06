@@ -58,22 +58,14 @@ class AgentRunner:
 
     def _build_session(self, mount_path: Path) -> DockerSession:
         volumes, auto_overlay = build_volume_spec(mount_path)
-        container_env = {
-            k: v for k, v in self._env.items() if k != "CLAUDE_ACCOUNT_JSON"
-        }
         return DockerSession(
             volumes=volumes,
-            container_env=container_env,
+            container_env=dict(self._env),
             image_name=self._cfg.docker_image_name,
             cfg=self._cfg,
             docker_client=self._docker_client,
             auto_overlay=auto_overlay,
         )
-
-    def _inject_claude_credentials(self, session: DockerSession) -> None:
-        claude_json = self._env.get("CLAUDE_ACCOUNT_JSON")
-        if claude_json:
-            session.write_file(claude_json, "/home/agent/.claude.json")
 
     async def run(self, request: RunRequest) -> AgentOutput | PreflightFailure:
         from .iteration._rows import agent_row
@@ -110,7 +102,6 @@ class AgentRunner:
                 git_name = self._git_service.get_user_name()
                 git_email = self._git_service.get_user_email()
                 await runner.setup(git_name, git_email, work_body)
-                self._inject_claude_credentials(session)
                 if not skip_preflight:
                     failures = await runner.preflight(list(self._cfg.preflight_checks))
                     if failures:
@@ -166,7 +157,6 @@ class AgentRunner:
             )
             try:
                 await runner.setup(git_name, git_email, work_body)
-                self._inject_claude_credentials(session)
                 return await runner.preflight(list(self._cfg.preflight_checks))
             finally:
                 try:
