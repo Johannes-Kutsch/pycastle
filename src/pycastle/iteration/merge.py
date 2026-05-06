@@ -1,4 +1,5 @@
 import dataclasses
+import shutil
 import sys
 from pathlib import Path
 from typing import Protocol
@@ -131,6 +132,10 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                     return MergeResult(clean=clean_issues, conflicts=conflict_issues)
                 deps.git_svc.fast_forward_branch(
                     deps.repo_root, target_branch, MERGE_SANDBOX
+                )
+                shutil.rmtree(
+                    sandbox_path / ".pycastle-session" / "merger",
+                    ignore_errors=True,
                 )
             conflict_deleted = _delete_merged_branches(
                 [branch_for(i["number"]) for i in conflict_issues], deps
