@@ -172,6 +172,25 @@ class GithubService:
             )
         return str(payload["title"])
 
+    def get_issue_comments(self, issue_number: int) -> list[dict[str, str]]:
+        results = self._paginate(
+            f"/repos/{self.repo}/issues/{issue_number}/comments?per_page=100"
+        )
+        comments: list[dict[str, str]] = []
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            user = item.get("user") or {}
+            author = str(user.get("login") or "") if isinstance(user, dict) else ""
+            comments.append(
+                {
+                    "author": author,
+                    "created_at": str(item.get("created_at") or ""),
+                    "body": str(item.get("body") or ""),
+                }
+            )
+        return comments
+
     def get_labels(self, issue_number: int) -> list[str]:
         payload, _ = self._request("GET", f"/repos/{self.repo}/issues/{issue_number}")
         if not isinstance(payload, dict):
@@ -242,9 +261,10 @@ class GithubService:
         for item in results:
             if not isinstance(item, dict) or "pull_request" in item:
                 continue
+            number = int(item["number"])
             issues.append(
                 {
-                    "number": int(item["number"]),
+                    "number": number,
                     "title": str(item.get("title") or ""),
                     "body": item.get("body") or "",
                     "labels": [
@@ -252,6 +272,9 @@ class GithubService:
                         for label_obj in (item.get("labels") or [])
                         if "name" in label_obj
                     ],
+                    "comments": self.get_issue_comments(number)
+                    if item.get("comments")
+                    else [],
                 }
             )
         return issues
