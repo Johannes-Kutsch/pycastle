@@ -299,6 +299,24 @@ class GithubService:
     def delete_label(self, name: str) -> None:
         self._request("DELETE", f"/repos/{self.repo}/labels/{quote(name, safe='')}")
 
+    def create_issue_in(
+        self, owner_repo: str, title: str, body: str, labels: list[str]
+    ) -> int:
+        payload, _ = self._request(
+            "POST",
+            f"/repos/{owner_repo}/issues",
+            data={"title": title, "body": body, "labels": labels},
+        )
+        if not isinstance(payload, dict) or "number" not in payload:
+            raise GithubAPIError(
+                f"GitHub API POST /repos/{owner_repo}/issues returned no number",
+                status=200,
+                body=str(payload),
+                method="POST",
+                path=f"/repos/{owner_repo}/issues",
+            )
+        return int(payload["number"])
+
 
 def _next_link(link_header: str | None) -> str | None:
     if not link_header:

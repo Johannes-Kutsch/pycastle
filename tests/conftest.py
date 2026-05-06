@@ -16,6 +16,15 @@ def _hermetic_pycastle_home(monkeypatch, tmp_path_factory):
     )
 
 
+@pytest.fixture(autouse=True)
+def _no_gh_token(monkeypatch):
+    """Guard against tests accidentally hitting the real GitHub API.
+
+    Tests that need a token must set it explicitly via monkeypatch.
+    """
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+
+
 @pytest.fixture
 def git_repo(tmp_path):
     """Minimal git repo with one commit and a local bare remote, ready for worktree operations."""

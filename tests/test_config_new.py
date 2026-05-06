@@ -22,6 +22,33 @@ def test_config_has_bug_label_default():
     assert cfg.bug_label == "bug"
 
 
+def test_config_has_auto_file_bugs_default_true():
+    assert Config().auto_file_bugs is True
+
+
+def test_config_has_bug_report_repo_default():
+    assert Config().bug_report_repo == "Johannes-Kutsch/pycastle"
+
+
+@pytest.mark.parametrize("bad", ["justonename", "a/b/c", "", "/x", "x/"])
+def test_load_config_rejects_malformed_bug_report_repo(tmp_path, bad):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(f"bug_report_repo = {bad!r}\n")
+    with pytest.raises(ConfigValidationError) as ei:
+        load_config(repo_root=tmp_path)
+    assert ei.value.suggestion == "Johannes-Kutsch/pycastle"
+    assert ei.value.invalid_value == bad
+
+
+def test_load_config_accepts_valid_bug_report_repo(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        'bug_report_repo = "owner/other-repo"\n'
+    )
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.bug_report_repo == "owner/other-repo"
+
+
 def test_load_config_applies_bug_label_from_local_file(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text('bug_label = "my-bug"\n')

@@ -194,3 +194,120 @@ def test_repo_target_is_module_level_constant():
     from pycastle import bug_reporter
 
     assert bug_reporter.BUG_REPORT_REPO == "Johannes-Kutsch/pycastle"
+
+
+# ── API path: GH_TOKEN + auto_file_bugs gating ────────────────────────────────
+
+
+def test_auto_file_bugs_false_with_token_uses_url_path(monkeypatch):
+    from pycastle import bug_reporter
+    from pycastle.config import Config
+    from pycastle.main import main as cli
+
+    monkeypatch.setenv("GH_TOKEN", "tkn")
+    monkeypatch.setattr(
+        "pycastle.bug_reporter._safe_load_config",
+        lambda: Config(auto_file_bugs=False),
+    )
+
+    def _should_not_be_called(*a, **kw):
+        raise AssertionError("API path should not run when auto_file_bugs=False")
+
+    monkeypatch.setattr(bug_reporter, "_try_api_path", _should_not_be_called)
+
+    _install_crashing_subcommand(monkeypatch, RuntimeError("boom"))
+    result = CliRunner().invoke(cli, ["build"])
+    _find_url_in_output(result.stdout)  # asserts URL present
+    assert result.exit_code == 1
+
+
+def test_auto_file_bugs_true_no_token_uses_url_path(monkeypatch):
+    from pycastle import bug_reporter
+    from pycastle.main import main as cli
+
+    # GH_TOKEN already cleared by autouse fixture
+    def _should_not_be_called(*a, **kw):
+        raise AssertionError("API path should not run without a token")
+
+    monkeypatch.setattr(bug_reporter, "_try_api_path", _should_not_be_called)
+
+    _install_crashing_subcommand(monkeypatch, RuntimeError("boom"))
+    result = CliRunner().invoke(cli, ["build"])
+    _find_url_in_output(result.stdout)
+    assert result.exit_code == 1
+
+
+def test_auto_file_bugs_true_with_token_and_200_uses_api_path(monkeypatch):
+    from pycastle import bug_reporter
+    from pycastle.main import main as cli
+
+    monkeypatch.setenv("GH_TOKEN", "tkn")
+    monkeypatch.setattr(
+        bug_reporter,
+        "_try_api_path",
+        lambda title, body, repo, token, cfg: (
+            42,
+            "https://github.com/Johannes-Kutsch/pycastle/issues/42",
+        ),
+    )
+
+    _install_crashing_subcommand(monkeypatch, RuntimeError("boom"))
+    result = CliRunner().invoke(cli, ["build"])
+
+    assert "Filed issue #42:" in result.stdout
+    assert "https://github.com/Johannes-Kutsch/pycastle/issues/42" in result.stdout
+    assert "issues/new" not in result.stdout
+    assert result.exit_code == 1
+
+
+def test_api_path_503_falls_through_to_url(monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.setenv("GH_TOKEN", "tkn")
+
+    from pycastle.services import GithubAPIError
+
+    def _boom_api(self, owner_repo, title, body, labels):
+        raise GithubAPIError("500", status=503, body="down", method="POST", path="/x")
+
+    monkeypatch.setattr("pycastle.services.GithubService.create_issue_in", _boom_api)
+
+    _install_crashing_subcommand(monkeypatch, RuntimeError("boom"))
+    result = CliRunner().invoke(cli, ["build"])
+
+    _find_url_in_output(result.stdout)  # URL fallback printed
+    assert result.exit_code == 1
+
+
+def test_api_path_network_error_falls_through_to_url(monkeypatch):
+    from pycastle.main import main as cli
+    from pycastle.services import GithubNetworkError
+
+    monkeypatch.setenv("GH_TOKEN", "tkn")
+
+    def _boom_net(self, owner_repo, title, body, labels):
+        raise GithubNetworkError("dns fail", cause=OSError("dns"))
+
+    monkeypatch.setattr("pycastle.services.GithubService.create_issue_in", _boom_net)
+
+    _install_crashing_subcommand(monkeypatch, RuntimeError("boom"))
+    result = CliRunner().invoke(cli, ["build"])
+
+    _find_url_in_output(result.stdout)
+    assert result.exit_code == 1
+
+
+def test_url_uses_cfg_bug_report_repo(monkeypatch):
+    from pycastle import bug_reporter
+    from pycastle.config import Config
+    from pycastle.main import main as cli
+
+    monkeypatch.setattr(
+        bug_reporter,
+        "_safe_load_config",
+        lambda: Config(bug_report_repo="other-owner/other-repo"),
+    )
+    _install_crashing_subcommand(monkeypatch, RuntimeError("boom"))
+    result = CliRunner().invoke(cli, ["build"])
+
+    assert "https://github.com/other-owner/other-repo/issues/new" in result.stdout
