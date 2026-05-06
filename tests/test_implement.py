@@ -28,6 +28,7 @@ from pycastle.iteration.implement import (
     ImplementResult,
     _agent_worktree,
     branch_for,
+    format_issue_comments,
     implement_phase,
     run_issue,
 )
@@ -462,6 +463,108 @@ def test_implement_phase_reviewer_timeout_does_not_complete_issue(tmp_path):
     assert result.completed == []
     assert len(result.errors) == 1
     assert isinstance(result.errors[0][1], AgentTimeoutError)
+
+
+# ── Issue 497: issue body/comments and diff threading ───────────────────────
+
+
+def test_run_issue_threads_issue_body_to_implementer_prompt(tmp_path):
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    issue = {"number": 1, "title": "T", "body": "BODY-X", "comments": []}
+
+    asyncio.run(run_issue(issue, deps))
+
+    impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
+    assert impl_call.prompt_args["ISSUE_BODY"] == "BODY-X"
+
+
+def test_run_issue_threads_issue_body_to_reviewer_prompt(tmp_path):
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    issue = {"number": 1, "title": "T", "body": "BODY-X", "comments": []}
+
+    asyncio.run(run_issue(issue, deps))
+
+    rev_call = next(c for c in fake.calls if "Review Agent" in c.name)
+    assert rev_call.prompt_args["ISSUE_BODY"] == "BODY-X"
+
+
+def test_run_issue_threads_issue_comments_formatted_to_implementer(tmp_path):
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    issue = {
+        "number": 1,
+        "title": "T",
+        "body": "",
+        "comments": [
+            {"author": "alice", "created_at": "2026-01-01T10:00:00Z", "body": "hi"},
+            {"author": "bob", "created_at": "2026-01-02T11:00:00Z", "body": "yo"},
+        ],
+    }
+
+    asyncio.run(run_issue(issue, deps))
+
+    impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
+    rendered = impl_call.prompt_args["ISSUE_COMMENTS"]
+    assert "alice" in rendered
+    assert "2026-01-01T10:00:00Z" in rendered
+    assert "hi" in rendered
+    assert "bob" in rendered
+    assert rendered.index("alice") < rendered.index("bob")
+
+
+def test_run_issue_renders_empty_string_when_no_comments(tmp_path):
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    issue = {"number": 1, "title": "T", "body": "x", "comments": []}
+
+    asyncio.run(run_issue(issue, deps))
+
+    impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
+    assert impl_call.prompt_args["ISSUE_COMMENTS"] == ""
+
+
+def test_run_issue_threads_diff_to_reviewer_only(tmp_path):
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.get_diff_to_main.return_value = "DIFF-X"
+    issue = {"number": 1, "title": "T", "body": "", "comments": []}
+
+    asyncio.run(run_issue(issue, deps))
+
+    impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
+    rev_call = next(c for c in fake.calls if "Review Agent" in c.name)
+    assert "DIFF" not in impl_call.prompt_args
+    assert rev_call.prompt_args["DIFF"] == "DIFF-X"
+
+
+def test_run_issue_handles_issue_without_body_or_comments(tmp_path):
+    """AFK-path issues lack body/comments — prompt args must still be populated."""
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    issue = {"number": 1, "title": "T"}
+
+    asyncio.run(run_issue(issue, deps))
+
+    impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
+    assert impl_call.prompt_args["ISSUE_BODY"] == ""
+    assert impl_call.prompt_args["ISSUE_COMMENTS"] == ""
+
+
+def test_format_issue_comments_includes_author_and_timestamp():
+    rendered = format_issue_comments(
+        [
+            {"author": "alice", "created_at": "2026-01-01T10:00:00Z", "body": "hi"},
+        ]
+    )
+    assert "alice" in rendered
+    assert "2026-01-01T10:00:00Z" in rendered
+    assert "hi" in rendered
+
+
+def test_format_issue_comments_returns_empty_string_for_no_comments():
+    assert format_issue_comments([]) == ""
 
 
 # ── Issue 349: issue_title threading ─────────────────────────────────────────

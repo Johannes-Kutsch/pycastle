@@ -451,6 +451,64 @@ def test_get_open_sub_issues_filters_to_open_only():
         assert svc.get_open_sub_issues(10) == [1, 3]
 
 
+# ── get_issue_comments ───────────────────────────────────────────────────────
+
+
+def test_get_issue_comments_returns_author_created_at_and_body():
+    svc = _make_service()
+    body = json.dumps(
+        [
+            {
+                "user": {"login": "alice"},
+                "created_at": "2026-01-01T10:00:00Z",
+                "body": "first comment",
+            },
+            {
+                "user": {"login": "bob"},
+                "created_at": "2026-01-02T10:00:00Z",
+                "body": "second comment",
+            },
+        ]
+    ).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body, headers={}),
+    ):
+        result = svc.get_issue_comments(7)
+    assert result == [
+        {
+            "author": "alice",
+            "created_at": "2026-01-01T10:00:00Z",
+            "body": "first comment",
+        },
+        {
+            "author": "bob",
+            "created_at": "2026-01-02T10:00:00Z",
+            "body": "second comment",
+        },
+    ]
+
+
+def test_get_issue_comments_returns_empty_list_when_no_comments():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(b"[]", headers={}),
+    ):
+        assert svc.get_issue_comments(7) == []
+
+
+def test_get_issue_comments_hits_comments_endpoint():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(b"[]", headers={}),
+    ) as m:
+        svc.get_issue_comments(42)
+    req = m.call_args[0][0]
+    assert "/repos/owner/repo/issues/42/comments" in req.full_url
+
+
 # ── close_issue_with_parents ─────────────────────────────────────────────────
 
 
@@ -574,7 +632,15 @@ def test_get_open_issues_returns_number_title_body_labels():
         return_value=_make_response(body, headers={}),
     ):
         result = svc.get_open_issues("bug")
-    assert result == [{"number": 1, "title": "Fix", "body": "do it", "labels": ["bug"]}]
+    assert result == [
+        {
+            "number": 1,
+            "title": "Fix",
+            "body": "do it",
+            "labels": ["bug"],
+            "comments": [],
+        }
+    ]
 
 
 def test_get_open_issues_filters_pull_requests():

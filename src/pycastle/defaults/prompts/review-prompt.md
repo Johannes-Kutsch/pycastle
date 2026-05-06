@@ -10,13 +10,19 @@ You are an expert code reviewer focused on enhancing code clarity, consistency, 
 
 <issue>
 
-!`gh issue view {{ISSUE_NUMBER}}`
+{{ISSUE_BODY}}
 
 </issue>
 
+<comments>
+
+{{ISSUE_COMMENTS}}
+
+</comments>
+
 <diff-to-main>
 
-!`git diff main..HEAD`
+{{DIFF}}
 
 </diff-to-main>
 

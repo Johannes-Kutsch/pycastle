@@ -74,6 +74,16 @@ def _format_feedback_commands(checks: Sequence[str]) -> str:
     return ", ".join(wrapped[:-1]) + " and " + wrapped[-1]
 
 
+def format_issue_comments(comments: Sequence[dict]) -> str:
+    parts: list[str] = []
+    for c in comments:
+        author = c.get("author") or "unknown"
+        when = c.get("created_at") or "unknown time"
+        body = c.get("body") or ""
+        parts.append(f"## Comment by @{author} at {when}\n\n{body}")
+    return "\n\n".join(parts)
+
+
 @dataclasses.dataclass
 class ImplementResult:
     completed: list[dict]
@@ -98,6 +108,8 @@ async def run_issue(
     prompt_args = {
         "ISSUE_NUMBER": str(issue["number"]),
         "ISSUE_TITLE": issue["title"],
+        "ISSUE_BODY": str(issue.get("body") or ""),
+        "ISSUE_COMMENTS": format_issue_comments(issue.get("comments") or []),
         "BRANCH": _branch,
         "FEEDBACK_COMMANDS": _format_feedback_commands(deps.cfg.implement_checks),
         **_standards,
@@ -161,13 +173,17 @@ async def run_issue(
                     )
 
         async with _agent_worktree(_branch, None, _token, deps) as review_mount_path:
+            review_prompt_args = {
+                **prompt_args,
+                "DIFF": deps.git_svc.get_diff_to_main(review_mount_path),
+            }
             review_result = await _bounded_run_agent(
                 RunRequest(
                     name=f"Review Agent #{issue['number']}",
                     prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
                     mount_path=review_mount_path,
                     role=AgentRole.REVIEWER,
-                    prompt_args=prompt_args,
+                    prompt_args=review_prompt_args,
                     model=deps.cfg.review_override.model,
                     effort=deps.cfg.review_override.effort,
                     stage="pre-review",
