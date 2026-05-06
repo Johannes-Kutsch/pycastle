@@ -1165,6 +1165,52 @@ def test_pull_raises_git_timeout_error_on_timeout(tmp_path):
             svc.pull(tmp_path)
 
 
+# ── get_diff_to_main() ────────────────────────────────────────────────────────
+
+
+def test_get_diff_to_main_returns_diff_output(tmp_path):
+    svc = GitService(_cfg)
+    diff_text = "diff --git a/foo b/foo\n--- a/foo\n+++ b/foo\n@@\n+new\n"
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=diff_text.encode(), stderr=b""),
+    ):
+        assert svc.get_diff_to_main(tmp_path) == diff_text
+
+
+def test_get_diff_to_main_runs_git_diff_main_head(tmp_path):
+    svc = GitService(_cfg)
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        svc.get_diff_to_main(tmp_path)
+
+    assert captured[0] == ["git", "diff", "main..HEAD"]
+
+
+def test_get_diff_to_main_returns_empty_string_when_no_diff(tmp_path):
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
+    ):
+        assert svc.get_diff_to_main(tmp_path) == ""
+
+
+def test_get_diff_to_main_raises_git_command_error_on_failure(tmp_path):
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=128, stdout=b"", stderr=b"fatal"),
+    ):
+        with pytest.raises(GitCommandError):
+            svc.get_diff_to_main(tmp_path)
+
+
 # ── commit() ──────────────────────────────────────────────────────────────────
 
 

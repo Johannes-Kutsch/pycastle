@@ -95,33 +95,116 @@ def test_plan_prompt_has_no_branch_field_in_output():
 # ── Implementer template ──────────────────────────────────────────────────────
 
 
+_IMPLEMENT_ARGS = {
+    "ISSUE_NUMBER": "42",
+    "ISSUE_TITLE": "Fix the thing",
+    "ISSUE_BODY": "do the thing",
+    "ISSUE_COMMENTS": "",
+    "BRANCH": "pycastle/issue-42",
+    "FEEDBACK_COMMANDS": "`pytest`",
+}
+
+
 def test_implementer_default_template_renders_without_error():
     _render(
         _DEFAULTS / "implement-prompt.md",
+        {**_IMPLEMENT_ARGS, **_standards()},
+    )
+
+
+def test_implementer_default_template_has_no_shell_expression():
+    content = (_DEFAULTS / "implement-prompt.md").read_text(encoding="utf-8")
+    assert "!`" not in content
+
+
+def test_implementer_default_template_does_not_invoke_gh():
+    content = (_DEFAULTS / "implement-prompt.md").read_text(encoding="utf-8")
+    assert "gh issue view" not in content
+    assert "gh issue comment" not in content
+
+
+def test_implementer_default_template_top_level_sections():
+    content = (_DEFAULTS / "implement-prompt.md").read_text(encoding="utf-8")
+    top_level = [line for line in content.splitlines() if line.startswith("# ")]
+    assert top_level == ["# TASK", "# CONTEXT", "# WORKFLOW"]
+
+
+def test_implementer_default_template_workflow_steps_use_double_hash_numbered():
+    content = (_DEFAULTS / "implement-prompt.md").read_text(encoding="utf-8")
+    # No legacy ### N. headings remain
+    import re
+
+    assert not re.search(r"^### \d+\.", content, re.MULTILINE)
+    # Workflow starts at "## 1. Explore"
+    assert "## 1. Explore" in content
+
+
+def test_implementer_default_template_renders_issue_body_and_comments():
+    rendered = _render(
+        _DEFAULTS / "implement-prompt.md",
         {
-            "ISSUE_NUMBER": "42",
-            "ISSUE_TITLE": "Fix the thing",
-            "BRANCH": "pycastle/issue-42",
-            "FEEDBACK_COMMANDS": "`pytest`",
+            **_IMPLEMENT_ARGS,
+            "ISSUE_BODY": "BODY-CONTENT",
+            "ISSUE_COMMENTS": "COMMENTS-CONTENT",
             **_standards(),
         },
     )
+    assert "BODY-CONTENT" in rendered
+    assert "COMMENTS-CONTENT" in rendered
 
 
 # ── Reviewer template ─────────────────────────────────────────────────────────
 
 
+_REVIEW_ARGS = {
+    "ISSUE_NUMBER": "42",
+    "ISSUE_TITLE": "Fix the thing",
+    "ISSUE_BODY": "do the thing",
+    "ISSUE_COMMENTS": "",
+    "DIFF": "",
+    "BRANCH": "pycastle/issue-42",
+    "FEEDBACK_COMMANDS": "`pytest`",
+}
+
+
 def test_reviewer_default_template_renders_without_error():
     _render(
         _DEFAULTS / "review-prompt.md",
+        {**_REVIEW_ARGS, **_standards()},
+    )
+
+
+def test_reviewer_default_template_has_no_shell_expression():
+    content = (_DEFAULTS / "review-prompt.md").read_text(encoding="utf-8")
+    assert "!`" not in content
+
+
+def test_reviewer_default_template_does_not_invoke_gh():
+    content = (_DEFAULTS / "review-prompt.md").read_text(encoding="utf-8")
+    assert "gh issue view" not in content
+    assert "gh issue comment" not in content
+
+
+def test_reviewer_default_template_renders_diff_placeholder():
+    rendered = _render(
+        _DEFAULTS / "review-prompt.md",
+        {**_REVIEW_ARGS, "DIFF": "DIFF-CONTENT", **_standards()},
+    )
+    assert "DIFF-CONTENT" in rendered
+
+
+def test_reviewer_default_template_renders_issue_body_and_comments():
+    rendered = _render(
+        _DEFAULTS / "review-prompt.md",
         {
-            "ISSUE_NUMBER": "42",
-            "ISSUE_TITLE": "Fix the thing",
-            "BRANCH": "pycastle/issue-42",
-            "FEEDBACK_COMMANDS": "`pytest`",
+            **_REVIEW_ARGS,
+            "ISSUE_BODY": "BODY-CONTENT",
+            "ISSUE_COMMENTS": "COMMENTS-CONTENT",
             **_standards(),
         },
     )
+    assert "BODY-CONTENT" in rendered
+    assert "COMMENTS-CONTENT" in rendered
 
 
 # ── Preflight-issue template ──────────────────────────────────────────────────
