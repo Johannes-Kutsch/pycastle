@@ -24,14 +24,15 @@ def test_load_env_reads_keys_from_cfg_env_file(tmp_path, monkeypatch):
     assert env["GH_TOKEN"] == "from-custom-file"
 
 
-def test_load_env_returns_only_oauth_token_and_gh_token(tmp_path, monkeypatch):
-    """_load_env returns exactly CLAUDE_CODE_OAUTH_TOKEN + GH_TOKEN; never reads host fs."""
+def test_load_env_returns_only_known_keys(tmp_path, monkeypatch):
+    """_load_env returns only known credential keys; never reads host fs."""
     from pycastle.main import _load_env
 
     custom_env = tmp_path / "custom.env"
     custom_env.write_text("CLAUDE_CODE_OAUTH_TOKEN=oauth-tok\nGH_TOKEN=gh-tok\n")
     monkeypatch.delenv("GH_TOKEN", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
     monkeypatch.delenv("PYCASTLE_HOME", raising=False)
 
     def _no_home() -> None:
@@ -42,6 +43,26 @@ def test_load_env_returns_only_oauth_token_and_gh_token(tmp_path, monkeypatch):
     env = _load_env(cfg=Config(env_file=custom_env))
 
     assert env == {"CLAUDE_CODE_OAUTH_TOKEN": "oauth-tok", "GH_TOKEN": "gh-tok"}
+
+
+def test_load_env_includes_secondary_oauth_token_when_present(tmp_path, monkeypatch):
+    from pycastle.main import _load_env
+
+    custom_env = tmp_path / "custom.env"
+    custom_env.write_text(
+        "CLAUDE_CODE_OAUTH_TOKEN=primary-tok\n"
+        "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY=secondary-tok\n"
+        "GH_TOKEN=gh-tok\n"
+    )
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+    monkeypatch.delenv("PYCASTLE_HOME", raising=False)
+
+    env = _load_env(cfg=Config(env_file=custom_env))
+
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "primary-tok"
+    assert env["CLAUDE_CODE_OAUTH_TOKEN_SECONDARY"] == "secondary-tok"
 
 
 def test_run_cmd_fails_fast_when_oauth_token_missing(tmp_path, monkeypatch):
@@ -331,3 +352,73 @@ def test_init_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
         result = CliRunner().invoke(cli, ["init", "--local"])
 
     assert "Config: defaults" in result.output
+
+
+# ── Issue 504: AccountPool seeding from env ───────────────────────────────────
+
+
+def test_run_cmd_seeds_pool_with_primary_only_when_secondary_absent(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "primary-tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    captured: dict = {}
+
+    async def _fake_run(env, repo_root, **kwargs):
+        captured["env"] = env
+        captured["pool"] = kwargs.get("account_pool")
+
+    with patch("pycastle.orchestrator.run", _fake_run):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    pool = captured["pool"]
+    assert pool is not None
+    assert pool.names() == ["primary"]
+    assert pool.pick() == ("primary", "primary-tok")
+
+
+def test_run_cmd_seeds_pool_with_secondary_first_when_present(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "primary-tok")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", "secondary-tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+
+    captured: dict = {}
+
+    async def _fake_run(env, repo_root, **kwargs):
+        captured["env"] = env
+        captured["pool"] = kwargs.get("account_pool")
+
+    with patch("pycastle.orchestrator.run", _fake_run):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    pool = captured["pool"]
+    assert pool.names() == ["secondary", "primary"]
+    assert pool.pick() == ("secondary", "secondary-tok")
+
+
+def test_run_cmd_fails_fast_when_primary_token_missing_even_with_secondary(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", "secondary-tok")
+
+    result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in result.output

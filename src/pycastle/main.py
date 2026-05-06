@@ -14,6 +14,7 @@ from .status_display import PlainStatusDisplay
 
 _ENV_KEYS = (
     "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY",
     "GH_TOKEN",
 )
 
@@ -149,19 +150,31 @@ def build_cmd(no_cache: bool) -> None:
 
 @main.command("run")
 def run_cmd() -> None:
+    from .account_pool import AccountPool
     from .orchestrator import run
 
     _print_layer_summary()
     cfg = _load_config_or_exit()
     env = _load_env(cfg=cfg)
-    if not env.get("CLAUDE_CODE_OAUTH_TOKEN"):
+    primary = env.get("CLAUDE_CODE_OAUTH_TOKEN")
+    if not primary:
         click.echo(
             "Error: CLAUDE_CODE_OAUTH_TOKEN is not set. "
             "Run `claude setup-token` to generate a token, then add it to your .env file.",
             err=True,
         )
         sys.exit(1)
-    asyncio.run(run(env, Path(".").resolve()))
+    accounts: list[tuple[str, str]] = []
+    secondary = env.get("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY")
+    if secondary:
+        accounts.append(("secondary", secondary))
+    accounts.append(("primary", primary))
+    pool = AccountPool(accounts)
+    # Container env carries the picked token at session-build time.
+    container_env = {
+        k: v for k, v in env.items() if k != "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY"
+    }
+    asyncio.run(run(container_env, Path(".").resolve(), account_pool=pool))
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import dataclasses
 from pathlib import Path
 from typing import Any, Protocol
 
+from .account_pool import AccountPool
 from .agent_output_protocol import AgentOutput, AgentRole
 from .agent_result import CancellationToken, PreflightFailure
 from .config import Config
@@ -50,21 +51,31 @@ class AgentRunner:
         cfg: Config,
         git_service: GitService,
         docker_client=None,
+        account_pool: AccountPool | None = None,
     ) -> None:
         self._env = env
         self._cfg = cfg
         self._git_service = git_service
         self._docker_client = docker_client
+        self._account_pool = account_pool
 
-    def _build_session(self, mount_path: Path) -> DockerSession:
+    def _build_session(self, mount_path: Path) -> tuple[DockerSession, str | None]:
         volumes, auto_overlay = build_volume_spec(mount_path)
-        return DockerSession(
-            volumes=volumes,
-            container_env=dict(self._env),
-            image_name=self._cfg.docker_image_name,
-            cfg=self._cfg,
-            docker_client=self._docker_client,
-            auto_overlay=auto_overlay,
+        container_env = dict(self._env)
+        picked_token: str | None = None
+        if self._account_pool is not None:
+            _, picked_token = self._account_pool.pick()
+            container_env["CLAUDE_CODE_OAUTH_TOKEN"] = picked_token
+        return (
+            DockerSession(
+                volumes=volumes,
+                container_env=container_env,
+                image_name=self._cfg.docker_image_name,
+                cfg=self._cfg,
+                docker_client=self._docker_client,
+                auto_overlay=auto_overlay,
+            ),
+            picked_token,
         )
 
     async def run(self, request: RunRequest) -> AgentOutput | PreflightFailure:
@@ -89,7 +100,7 @@ class AgentRunner:
             raise UsageLimitError(reset_time=None)
 
         async with agent_row(status_display, name, work_body):
-            session = self._build_session(mount_path)
+            session, picked_token = self._build_session(mount_path)
             runner = ContainerRunner(
                 name,
                 session,
@@ -122,7 +133,11 @@ class AgentRunner:
                             f" (attempt {restart_num}/{self._cfg.timeout_retries})",
                         )
                         retries_left -= 1
-                    except UsageLimitError:
+                    except UsageLimitError as err:
+                        if self._account_pool is not None and picked_token is not None:
+                            self._account_pool.mark_exhausted(
+                                picked_token, err.reset_time
+                            )
                         _token.cancel(preserve_worktree=True)
                         raise
             finally:
@@ -148,7 +163,7 @@ class AgentRunner:
         git_name = self._git_service.get_user_name()
         git_email = self._git_service.get_user_email()
         async with agent_row(status_display, name, work_body):
-            session = self._build_session(mount_path)
+            session, _picked_token = self._build_session(mount_path)
             runner = ContainerRunner(
                 name,
                 session,

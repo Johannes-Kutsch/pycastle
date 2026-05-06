@@ -121,6 +121,7 @@ def _run(
     github_service=None,
     agent_runner=None,
     status_display=None,
+    account_pool=None,
     **config_kwargs,
 ):
     config_kwargs.setdefault("max_parallel", 4)
@@ -135,6 +136,7 @@ def _run(
             git_service=git_service if git_service is not None else _make_git_svc(),
             github_service=github_service,
             status_display=status_display,
+            account_pool=account_pool,
         )
     )
 
@@ -2234,3 +2236,128 @@ def test_iteration_header_uses_anonymous_caller(tmp_path):
     assert header_calls, "Iteration boundary header must be printed"
     for call in header_calls:
         assert call[1] == "", f"Iteration header must use '' as caller; got {call[1]!r}"
+
+
+# ── Issue-504: AccountPool failover ─────────────────────────────────────────
+
+
+def test_usage_limit_with_pool_available_does_not_sleep(tmp_path):
+    """When AccountPool.has_available() is True, orchestrator must not sleep on AbortedUsageLimit."""
+    from datetime import datetime as real_datetime
+    from pycastle.account_pool import AccountPool
+
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.side_effect = [True, False]
+
+    pool = AccountPool([("secondary", "tok-s"), ("primary", "tok-p")])
+    # Mark only the secondary as exhausted so primary is still available.
+    pool.mark_exhausted(
+        "tok-s",
+        real_datetime(2026, 1, 1, 15, 0, 0),
+        now=real_datetime(2026, 1, 1, 14, 0, 0),
+    )
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError(reset_time=None)
+
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            account_pool=pool,
+            max_iterations=2,
+        )
+
+    mock_sleep.assert_not_called()
+
+
+def test_usage_limit_with_pool_all_exhausted_sleeps_until_earliest_wake(tmp_path):
+    """When all accounts in pool are exhausted, orchestrator sleeps until earliest wake."""
+    from datetime import datetime as real_datetime
+    from pycastle.account_pool import AccountPool
+
+    fixed_now = real_datetime(2026, 1, 1, 14, 30, 0)
+    early = real_datetime(2026, 1, 1, 14, 40, 0)
+    late = real_datetime(2026, 1, 1, 15, 30, 0)
+
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.side_effect = [True, False]
+
+    pool = AccountPool([("secondary", "tok-s"), ("primary", "tok-p")])
+    pool.mark_exhausted("tok-s", late, now=fixed_now)
+    pool.mark_exhausted("tok-p", early, now=fixed_now)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix"}])
+        raise UsageLimitError(reset_time=None)
+
+    with (
+        patch("time.sleep") as mock_sleep,
+        patch("pycastle.orchestrator.datetime") as mock_dt,
+    ):
+        mock_dt.now.return_value = fixed_now
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            account_pool=pool,
+            max_iterations=2,
+        )
+
+    expected_wake = early + __import__("datetime").timedelta(minutes=2)
+    expected_seconds = (expected_wake - fixed_now).total_seconds()
+    mock_sleep.assert_called_once_with(expected_seconds)
+
+
+def test_pool_summary_printed_at_startup_with_both_accounts(tmp_path):
+    from pycastle.account_pool import AccountPool
+
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.return_value = False
+
+    pool = AccountPool([("secondary", "tok-s"), ("primary", "tok-p")])
+    recording = RecordingStatusDisplay()
+
+    async def _fake_run_agent(request: RunRequest):
+        return CompletionOutput()
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        github_service=mock_github,
+        account_pool=pool,
+        status_display=recording,
+    )
+
+    msgs = [c[2] for c in recording.calls if c[0] == "print"]
+    assert any(
+        "Claude accounts: secondary (active), primary (standby)" in str(m) for m in msgs
+    )
+
+
+def test_pool_summary_printed_at_startup_with_primary_only(tmp_path):
+    from pycastle.account_pool import AccountPool
+
+    mock_github = _make_github_svc()
+    mock_github.has_open_issues_with_label.return_value = False
+
+    pool = AccountPool([("primary", "tok-p")])
+    recording = RecordingStatusDisplay()
+
+    async def _fake_run_agent(request: RunRequest):
+        return CompletionOutput()
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        github_service=mock_github,
+        account_pool=pool,
+        status_display=recording,
+    )
+
+    msgs = [c[2] for c in recording.calls if c[0] == "print"]
+    assert any("Claude accounts: primary (active)" in str(m) for m in msgs)

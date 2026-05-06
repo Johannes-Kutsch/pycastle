@@ -91,5 +91,3 @@ def test_custom_env_file_skips_global_fallback(repo: Path, tmp_path: Path) -> No
     )
     assert "GH_TOKEN" not in env
     assert env["OTHER"] == "x"
-
-

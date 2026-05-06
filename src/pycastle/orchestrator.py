@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from .account_pool import AccountPool
 from .agent_result import PreflightFailure
 from .agent_runner import AgentRunner, AgentRunnerProtocol, RunRequest
 from .config import Config, load_config
@@ -87,6 +88,7 @@ async def run(
     git_service: GitService | None = None,
     github_service: GithubService | None = None,
     status_display: StatusDisplay | None = None,
+    account_pool: AccountPool | None = None,
 ) -> None:
     cfg = load_config(repo_root=repo_root)
     prune_orphan_worktrees(repo_root, cfg=cfg)
@@ -138,6 +140,15 @@ async def run(
 
     status_display.print("", f"Authenticated as @{login}")  # type: ignore[union-attr]
 
+    if account_pool is not None:
+        names = account_pool.names()
+        if len(names) == 1:
+            summary = f"Claude accounts: {names[0]} (active)"
+        else:
+            parts = [f"{names[0]} (active)"] + [f"{n} (standby)" for n in names[1:]]
+            summary = "Claude accounts: " + ", ".join(parts)
+        status_display.print("", summary)  # type: ignore[union-attr]
+
     try:
         for iteration in range(1, cfg.max_iterations + 1):
             status_display.print(  # type: ignore[union-attr]
@@ -157,7 +168,12 @@ async def run(
             elif run_agent is not None:
                 _agent_runner = _CallableAgentRunner(run_agent)
             else:
-                _agent_runner = AgentRunner(env=env, cfg=cfg, git_service=git_svc)
+                _agent_runner = AgentRunner(
+                    env=env,
+                    cfg=cfg,
+                    git_service=git_svc,
+                    account_pool=account_pool,
+                )
 
             deps = IterationDeps(
                 repo_root=repo_root,
@@ -181,7 +197,19 @@ async def run(
                     sys.exit(1)
                 case AbortedUsageLimit(reset_time=reset_time):
                     now = datetime.now()
-                    if reset_time is not None:
+                    if account_pool is not None and account_pool.has_available(now=now):
+                        next_name, _ = account_pool.pick(now=now)
+                        wake = account_pool.earliest_wake_time()
+                        status_display.print(  # type: ignore[union-attr]
+                            "",
+                            f"Account exhausted until {wake.strftime('%H:%M')}, "
+                            f"switching to '{next_name}'.",
+                        )
+                        continue
+                    if account_pool is not None:
+                        wake_time = account_pool.earliest_wake_time()
+                        suffix = ""
+                    elif reset_time is not None:
                         wake_time = reset_time + timedelta(minutes=2)
                         suffix = ""
                     else:

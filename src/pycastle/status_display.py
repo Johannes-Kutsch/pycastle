@@ -6,10 +6,22 @@ Kind = Literal["phase", "agent"]
 
 @runtime_checkable
 class StatusDisplay(Protocol):
-    def register(self, caller: str, kind: Kind, startup_message: str = "started", work_body: str = "", initial_phase: str = "Setup") -> None: ...
+    def register(
+        self,
+        caller: str,
+        kind: Kind,
+        startup_message: str = "started",
+        work_body: str = "",
+        initial_phase: str = "Setup",
+    ) -> None: ...
     def update_phase(self, name: str, phase: str) -> None: ...
     def reset_idle_timer(self, name: str) -> None: ...
-    def remove(self, caller: str, shutdown_message: str = "finished", shutdown_style: str = "success") -> None: ...
+    def remove(
+        self,
+        caller: str,
+        shutdown_message: str = "finished",
+        shutdown_style: str = "success",
+    ) -> None: ...
     def print(self, caller: str, message: object, style: str | None = None) -> None: ...
 
 
@@ -29,7 +41,14 @@ class PlainStatusDisplay:
             return False
         return True
 
-    def register(self, caller: str, kind: Kind, startup_message: str = "started", work_body: str = "", initial_phase: str = "Setup") -> None:
+    def register(
+        self,
+        caller: str,
+        kind: Kind,
+        startup_message: str = "started",
+        work_body: str = "",
+        initial_phase: str = "Setup",
+    ) -> None:
         if caller != "":
             self._kinds[caller] = kind
         self.print(caller, startup_message)
@@ -40,7 +59,12 @@ class PlainStatusDisplay:
     def reset_idle_timer(self, name: str) -> None:
         pass
 
-    def remove(self, caller: str, shutdown_message: str = "finished", shutdown_style: str = "success") -> None:
+    def remove(
+        self,
+        caller: str,
+        shutdown_message: str = "finished",
+        shutdown_style: str = "success",
+    ) -> None:
         self.print(caller, shutdown_message)
         self._kinds.pop(caller, None)
 
