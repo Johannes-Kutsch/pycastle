@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import dataclasses
+import shutil
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -13,6 +14,7 @@ from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import BranchCollisionError, UsageLimitError
 from ..prompt_pipeline import load_standards
+from ..session_resume import has_resumable_session
 from ..status_display import StatusDisplay
 from ..services import GitService
 from ..worktree import (
@@ -33,6 +35,23 @@ class _ImplementDeps(Protocol):
     logger: Logger
 
 
+def _any_role_has_session(wt_path: Path) -> bool:
+    session_base = wt_path / ".pycastle-session"
+    if not session_base.is_dir():
+        return False
+    return any(has_resumable_session(d) for d in session_base.iterdir() if d.is_dir())
+
+
+def _worktree_reusable(wt_path: Path, branch: str, git_svc: GitService) -> bool:
+    if not wt_path.exists():
+        return False
+    try:
+        current = git_svc.get_current_branch(wt_path)
+    except Exception:
+        return False
+    return current == branch and _any_role_has_session(wt_path)
+
+
 @asynccontextmanager
 async def _agent_worktree(
     branch: str,
@@ -42,7 +61,8 @@ async def _agent_worktree(
 ):
     wt_name = worktree_name_for_branch(branch)
     wt_path = _worktree_path(wt_name, deps)
-    deps.git_svc.create_worktree(deps.repo_root, wt_path, branch, sha)
+    if not _worktree_reusable(wt_path, branch, deps.git_svc):
+        deps.git_svc.create_worktree(deps.repo_root, wt_path, branch, sha)
     gitdir_overlay = None
     try:
         gitdir_overlay = patch_gitdir_for_container(wt_path)
@@ -53,7 +73,7 @@ async def _agent_worktree(
                 clean = deps.git_svc.is_working_tree_clean(wt_path)
             except Exception:
                 clean = False
-            if clean:
+            if clean and not _any_role_has_session(wt_path):
                 teardown_worktree(deps.git_svc, deps.repo_root, wt_path)
         if gitdir_overlay is not None:
             gitdir_overlay.unlink(missing_ok=True)
@@ -171,6 +191,10 @@ async def run_issue(
                         deps.repo_root,
                         f"{IMPLEMENT_COMMIT_PREFIX}{result.message}",
                     )
+                    shutil.rmtree(
+                        impl_mount_path / ".pycastle-session" / "implementer",
+                        ignore_errors=True,
+                    )
 
         async with _agent_worktree(_branch, None, _token, deps) as review_mount_path:
             review_prompt_args = {
@@ -199,6 +223,10 @@ async def run_issue(
                     review_mount_path,
                     deps.repo_root,
                     f"{REVIEW_COMMIT_PREFIX}{review_result.message}",
+                )
+                shutil.rmtree(
+                    review_mount_path / ".pycastle-session" / "reviewer",
+                    ignore_errors=True,
                 )
     finally:
         if lock is not None and lock.locked():

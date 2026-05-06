@@ -953,3 +953,101 @@ def test_fake_agent_runner_accepts_run_request_and_records_it():
     result = asyncio.run(fake.run(req))
     assert result is completion
     assert fake.calls[0] is req
+
+
+# ── AgentRunner: CLAUDE_CONFIG_DIR injection ──────────────────────────────────
+
+
+def test_agent_runner_injects_claude_config_dir_for_implementer(tmp_path):
+    """AgentRunner.run() must set CLAUDE_CONFIG_DIR to the role session dir inside the worktree."""
+    from pycastle.agent_output_protocol import AgentRole
+
+    captured_env: dict = {}
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def _run(*args, **kwargs):
+        captured_env.update(kwargs.get("environment") or {})
+        return mock_container
+
+    mock_client.containers.run.side_effect = _run
+
+    def exec_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            r = MagicMock()
+            r.output = iter(_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    runner = AgentRunner(
+        {},
+        Config(logs_dir=tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test")
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                role=AgentRole.IMPLEMENTER,
+                skip_preflight=True,
+            )
+        )
+    )
+
+    assert "CLAUDE_CONFIG_DIR" in captured_env
+    assert captured_env["CLAUDE_CONFIG_DIR"].endswith("/.pycastle-session/implementer/")
+
+
+# ── AgentRunner: session-id in claude command ─────────────────────────────────
+
+
+def test_agent_runner_passes_session_id_flag_to_claude_on_fresh_run(tmp_path):
+    """On a Fresh run AgentRunner must invoke claude with --session-id <uuid>."""
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            r = MagicMock()
+            r.output = iter(_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    runner = AgentRunner(
+        {},
+        Config(logs_dir=tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Impl",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+            )
+        )
+    )
+
+    assert captured_cmds, "No streaming exec recorded"
+    assert any("--session-id" in c for c in captured_cmds)
+    assert all("--resume" not in c for c in captured_cmds)

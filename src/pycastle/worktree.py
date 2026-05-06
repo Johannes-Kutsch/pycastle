@@ -9,6 +9,16 @@ from .config import Config
 from .errors import WorktreeError, WorktreeTimeoutError
 from .services import GitCommandError, GitService, GitTimeoutError
 
+
+def _any_role_has_session(wt_path: Path) -> bool:
+    session_base = wt_path / ".pycastle-session"
+    if not session_base.is_dir():
+        return False
+    return any(
+        f.is_file() for d in session_base.iterdir() if d.is_dir() for f in d.rglob("*")
+    )
+
+
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
 
 
@@ -131,11 +141,12 @@ async def branch_worktree(
     try:
         yield path
     finally:
-        try:
-            teardown_worktree(deps.git_svc, deps.repo_root, path)
-        finally:
-            if delete_branch:
-                deps.git_svc.delete_branch(branch, deps.repo_root)
+        if not _any_role_has_session(path):
+            try:
+                teardown_worktree(deps.git_svc, deps.repo_root, path)
+            finally:
+                if delete_branch:
+                    deps.git_svc.delete_branch(branch, deps.repo_root)
 
 
 @asynccontextmanager

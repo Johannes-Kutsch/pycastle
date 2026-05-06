@@ -24,6 +24,7 @@ from pycastle.services import (
 )
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 from pycastle.orchestrator import (
+    ensure_session_excludes,
     prune_orphan_worktrees,
     run,
 )
@@ -2361,3 +2362,50 @@ def test_pool_summary_printed_at_startup_with_primary_only(tmp_path):
 
     msgs = [c[2] for c in recording.calls if c[0] == "print"]
     assert any("Claude accounts: primary (active)" in str(m) for m in msgs)
+
+
+# ── ensure_session_excludes ───────────────────────────────────────────────────
+
+
+def test_ensure_session_excludes_creates_exclude_file_with_entries(tmp_path):
+    """ensure_session_excludes appends .pycastle-session/ and .claude/ to .git/info/exclude."""
+    git_info = tmp_path / ".git" / "info"
+    git_info.mkdir(parents=True)
+
+    ensure_session_excludes(tmp_path)
+
+    content = (git_info / "exclude").read_text()
+    assert ".pycastle-session/" in content
+    assert ".claude/" in content
+
+
+def test_ensure_session_excludes_is_idempotent(tmp_path):
+    """Calling ensure_session_excludes twice must not duplicate entries."""
+    git_info = tmp_path / ".git" / "info"
+    git_info.mkdir(parents=True)
+
+    ensure_session_excludes(tmp_path)
+    ensure_session_excludes(tmp_path)
+
+    content = (git_info / "exclude").read_text()
+    assert content.count(".pycastle-session/") == 1
+    assert content.count(".claude/") == 1
+
+
+def test_ensure_session_excludes_preserves_existing_content(tmp_path):
+    """ensure_session_excludes must not overwrite pre-existing exclude rules."""
+    git_info = tmp_path / ".git" / "info"
+    git_info.mkdir(parents=True)
+    exclude_file = git_info / "exclude"
+    exclude_file.write_text("# Existing rule\n*.log\n")
+
+    ensure_session_excludes(tmp_path)
+
+    content = exclude_file.read_text()
+    assert "*.log" in content
+    assert ".pycastle-session/" in content
+
+
+def test_ensure_session_excludes_noop_when_git_dir_absent(tmp_path):
+    """ensure_session_excludes must not raise when .git/info/ does not exist."""
+    ensure_session_excludes(tmp_path)  # should not raise
