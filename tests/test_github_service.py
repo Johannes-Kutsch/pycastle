@@ -733,6 +733,47 @@ def test_delete_label_sends_delete_with_url_encoded_name():
     )
 
 
+# ── create_issue_in ──────────────────────────────────────────────────────────
+
+
+def test_create_issue_in_posts_to_target_repo_with_payload():
+    svc = _make_service()
+    body = json.dumps({"number": 42, "html_url": "https://x"}).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body),
+    ) as m:
+        result = svc.create_issue_in(
+            "Johannes-Kutsch/pycastle",
+            "title",
+            "body",
+            ["bug", "needs-triage"],
+        )
+    req = m.call_args[0][0]
+    assert req.get_method() == "POST"
+    assert req.full_url == (
+        "https://api.github.com/repos/Johannes-Kutsch/pycastle/issues"
+    )
+    assert json.loads(req.data.decode()) == {
+        "title": "title",
+        "body": "body",
+        "labels": ["bug", "needs-triage"],
+    }
+    assert result == 42
+
+
+def test_create_issue_in_uses_owner_repo_arg_not_self_repo():
+    svc = _make_service(repo="some/other-repo")
+    body = json.dumps({"number": 1}).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body),
+    ) as m:
+        svc.create_issue_in("target-owner/target-repo", "t", "b", [])
+    req = m.call_args[0][0]
+    assert "/repos/target-owner/target-repo/issues" in req.full_url
+
+
 # ── No real network ──────────────────────────────────────────────────────────
 
 

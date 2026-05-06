@@ -7,6 +7,11 @@ from pycastle import StageOverride
 # idle_timeout = 300
 # auto_push = True
 
+# --- Bug reporter ---
+# auto_file_bugs = True       # if True and GH_TOKEN is reachable, auto-file
+#                             # crash reports via the API; otherwise prefilled URL.
+# bug_report_repo = "Johannes-Kutsch/pycastle"
+
 # --- Docker ---
 # Name for the Docker image built by `pycastle build`.
 # Defaults to a sanitised CWD name; uncomment to override.

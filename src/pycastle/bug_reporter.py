@@ -1,22 +1,28 @@
-"""Auto bug reporter — prefilled-URL fallback path.
+"""Auto bug reporter — GH_TOKEN API path with prefilled-URL fallback.
 
 When an unhandled exception escapes a `pycastle` subcommand we print the full
-traceback to stderr, then print a `https://github.com/{repo}/issues/new?...`
-URL with the title, body, and labels filled in so the user can click through
-to file a bug. Slice 1 of the auto bug reporter (issue #501) — no API call,
-no token plumbing yet.
+traceback to stderr, then either file a GitHub issue via the API (when
+`auto_file_bugs=True` and a `GH_TOKEN` is reachable) or fall through to a
+prefilled `https://github.com/{repo}/issues/new?...` URL the user can click.
+
+The reporter must never raise from inside itself — a bug reporter that
+crashes on the bug report is the worst outcome.
 """
 
 from __future__ import annotations
 
+import os
 import platform
 import sys
 import traceback
 from importlib.metadata import PackageNotFoundError, version
 from urllib.parse import quote
 
+from .config import Config
+
 BUG_REPORT_REPO = "Johannes-Kutsch/pycastle"
 BUG_REPORT_LABELS = "bug,needs-triage"
+BUG_REPORT_LABEL_LIST = ["bug", "needs-triage"]
 
 _MAX_URL_LENGTH = 8000  # comfortably under GitHub's ~8192 URL limit
 _MAX_TITLE_LENGTH = 200  # GitHub caps issue titles at 256 chars
@@ -83,9 +89,80 @@ def build_bug_report_url(
     return url
 
 
-def report_and_exit(exc: BaseException) -> None:
-    """Print stderr traceback + stdout bug-report URL, then exit 1."""
+def _safe_load_config() -> Config | None:
+    try:
+        from .config import load_config
+
+        return load_config()
+    except Exception:
+        return None
+
+
+def _safe_resolve_token(cfg: Config | None) -> str | None:
+    token = os.environ.get("GH_TOKEN")
+    if token:
+        return token
+    if cfg is None:
+        return None
+    try:
+        from .config import load_env, resolve_global_dir
+
+        env = load_env(
+            global_dir=resolve_global_dir(None, os.environ),
+            local_env_file=cfg.env_file,
+            process_env=os.environ,
+        )
+        return env.get("GH_TOKEN")
+    except Exception:
+        return None
+
+
+def _try_api_path(
+    title: str, body: str, repo: str, token: str, cfg: Config
+) -> tuple[int, str] | None:
+    """Attempt to file an issue via the API. Returns (number, html_url) on
+    success, None on any failure."""
+    try:
+        from .services import GithubService
+
+        svc = GithubService(repo, token, cfg)
+        number = svc.create_issue_in(repo, title, body, BUG_REPORT_LABEL_LIST)
+        html_url = f"https://github.com/{repo}/issues/{number}"
+        return number, html_url
+    except Exception:
+        return None
+
+
+def report_and_exit(
+    exc: BaseException,
+    *,
+    cfg: Config | None = None,
+    token: str | None = None,
+) -> None:
+    """Print stderr traceback, file/print a bug report, then exit 1.
+
+    If `cfg.auto_file_bugs` is True and a `GH_TOKEN` is reachable, try the API
+    path; on any failure fall through silently to the prefilled URL path.
+    """
     tb_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
     print(tb_text, file=sys.stderr, end="")
-    print(build_bug_report_url(exc, tb_text))
+
+    if cfg is None:
+        cfg = _safe_load_config()
+    if token is None:
+        token = _safe_resolve_token(cfg)
+
+    repo = cfg.bug_report_repo if cfg is not None else BUG_REPORT_REPO
+    auto = cfg.auto_file_bugs if cfg is not None else True
+
+    if auto and token and cfg is not None:
+        title = _format_title(exc)
+        body = _format_body(tb_text)
+        result = _try_api_path(title, body, repo, token, cfg)
+        if result is not None:
+            number, html_url = result
+            print(f"Filed issue #{number}: {html_url}")
+            sys.exit(1)
+
+    print(build_bug_report_url(exc, tb_text, repo))
     sys.exit(1)

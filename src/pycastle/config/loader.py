@@ -19,6 +19,8 @@ __all__ = ["Config", "describe_config_layers", "load_config", "resolve_global_di
 
 _VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 
+_BUG_REPORT_REPO_RE = re.compile(r"^[^/]+/[^/]+$")
+
 _IGNORED_CONFIG_KEYS = frozenset({"usage_limit_patterns"})
 
 _GLOBAL_FORBIDDEN_FIELDS = frozenset(
@@ -74,6 +76,8 @@ class Config:
         )
     )
     auto_push: bool = True
+    auto_file_bugs: bool = True
+    bug_report_repo: str = "Johannes-Kutsch/pycastle"
     timeout_retries: int = 1
     plan_override: StageOverride = dataclasses.field(default_factory=StageOverride)
     implement_override: StageOverride = dataclasses.field(default_factory=StageOverride)
@@ -165,7 +169,18 @@ def load_config(
         cfg = dataclasses.replace(
             cfg, docker_image_name=derive_docker_image_name(Path.cwd().name)
         )
+    _validate_bug_report_repo(cfg)
     return _validate_efforts(cfg)
+
+
+def _validate_bug_report_repo(cfg: Config) -> None:
+    if not _BUG_REPORT_REPO_RE.match(cfg.bug_report_repo):
+        raise ConfigValidationError(
+            f"Invalid bug_report_repo {cfg.bug_report_repo!r}; "
+            "expected 'owner/repo' format (e.g. 'Johannes-Kutsch/pycastle')",
+            invalid_value=cfg.bug_report_repo,
+            suggestion="Johannes-Kutsch/pycastle",
+        )
 
 
 def _read_config_file(
