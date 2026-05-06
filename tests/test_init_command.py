@@ -260,7 +260,7 @@ def test_init_global_skips_credential_prompts_when_present_in_global_env(
     home = tmp_path / "home"
     home.mkdir()
     (home / ".env").write_text(
-        "ANTHROPIC_API_KEY=\nCLAUDE_CODE_OAUTH_TOKEN=already-set\nGH_TOKEN=already-set\n"
+        "CLAUDE_CODE_OAUTH_TOKEN=already-set\nGH_TOKEN=already-set\n"
     )
     monkeypatch.setenv("PYCASTLE_HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -273,7 +273,7 @@ def test_init_global_skips_credential_prompts_when_present_in_global_env(
     # No prompt should have been issued for either credential
     prompt_calls = [c.args[0] for c in pm.call_args_list]
     assert not any("GitHub token" in m for m in prompt_calls)
-    assert not any("Claude token" in m for m in prompt_calls)
+    assert not any("Claude OAuth token" in m for m in prompt_calls)
 
 
 def test_init_global_prompts_when_credential_missing_in_global_env(
@@ -318,7 +318,7 @@ def test_init_local_always_prompts_for_credentials(tmp_path, monkeypatch):
 
     prompt_calls = [c.args[0] for c in pm.call_args_list]
     assert any("GitHub token" in m for m in prompt_calls)
-    assert any("Claude token" in m for m in prompt_calls)
+    assert any("Claude OAuth token" in m for m in prompt_calls)
     local_env = (tmp_path / "pycastle" / ".env").read_text()
     assert "GH_TOKEN=local-value" in local_env
     assert "CLAUDE_CODE_OAUTH_TOKEN=local-value" in local_env
