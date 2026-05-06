@@ -18,13 +18,11 @@ def restore_unraisablehook():
 
 def _make_traceback(filenames: list[str]):
     """Build a chain of frame.tb_next stand-ins each reporting one filename."""
-    nodes: list[SimpleNamespace] = []
     nxt = None
     for fname in reversed(filenames):
         code = SimpleNamespace(co_filename=fname)
         frame = SimpleNamespace(f_code=code)
         nxt = SimpleNamespace(tb_frame=frame, tb_next=nxt)
-        nodes.append(nxt)
     return nxt
 
 
