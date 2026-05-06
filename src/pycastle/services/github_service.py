@@ -273,7 +273,7 @@ class GithubService:
                         if "name" in label_obj
                     ],
                     "comments": self.get_issue_comments(number)
-                    if (item.get("comments") or 0)
+                    if item.get("comments")
                     else [],
                 }
             )
