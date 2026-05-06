@@ -3,7 +3,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import click
 
@@ -66,7 +66,7 @@ class _BugReportingGroup(click.Group):
     error handling and signal semantics are preserved.
     """
 
-    def invoke(self, ctx: click.Context):  # type: ignore[no-untyped-def]
+    def invoke(self, ctx: click.Context) -> Any:
         try:
             return super().invoke(ctx)
         except (click.ClickException, click.exceptions.Exit, click.Abort):
