@@ -137,10 +137,22 @@ class DockerSession:
                 self._container = None
         finally:
             if self._owns_client:
+                api = getattr(self._client, "api", None)
+                if api is not None:
+                    for scheme in ("http://", "https://"):
+                        try:
+                            api.get_adapter(scheme).close()
+                        except Exception:
+                            pass
+                    try:
+                        api.close()
+                    except Exception:
+                        pass
                 try:
                     self._client.close()
                 except Exception:
                     pass
+                self._client = None
 
     def exec_simple(self, command: str, timeout: float | None = None) -> str:
         container = self._active_container
