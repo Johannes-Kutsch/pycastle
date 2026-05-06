@@ -13,7 +13,6 @@ from .errors import ClaudeCliNotFoundError, ConfigValidationError
 from .status_display import PlainStatusDisplay
 
 _ENV_KEYS = (
-    "ANTHROPIC_API_KEY",
     "CLAUDE_CODE_OAUTH_TOKEN",
     "GH_TOKEN",
 )
@@ -27,16 +26,7 @@ def _load_env(cfg: Config | None = None) -> dict[str, str]:
         local_env_file=cfg.env_file,
         process_env=os.environ,
     )
-    env = {k: v for k in _ENV_KEYS if (v := resolved.get(k))}
-    claude_json = Path.home() / ".claude.json"
-    if claude_json.exists():
-        env["CLAUDE_ACCOUNT_JSON"] = claude_json.read_text(encoding="utf-8")
-    else:
-        print(
-            "Warning: ~/.claude.json not found — container will run without account credentials.",
-            file=sys.stderr,
-        )
-    return env
+    return {k: v for k in _ENV_KEYS if (v := resolved.get(k))}
 
 
 def _print_layer_summary() -> None:
@@ -163,7 +153,15 @@ def run_cmd() -> None:
 
     _print_layer_summary()
     cfg = _load_config_or_exit()
-    asyncio.run(run(_load_env(cfg=cfg), Path(".").resolve()))
+    env = _load_env(cfg=cfg)
+    if not env.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        click.echo(
+            "Error: CLAUDE_CODE_OAUTH_TOKEN is not set. "
+            "Run `claude setup-token` to generate a token, then add it to your .env file.",
+            err=True,
+        )
+        sys.exit(1)
+    asyncio.run(run(env, Path(".").resolve()))
 
 
 if __name__ == "__main__":

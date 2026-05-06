@@ -27,7 +27,7 @@ _PROJECT_SHAPED_FILES = [
     "prompts/coding-standards/refactoring.md",
 ]
 
-_ENV_TEMPLATE = "ANTHROPIC_API_KEY=\nCLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
+_ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
 
 
 def _write_env_key(env_file: Path, key: str, value: str) -> None:
@@ -182,12 +182,15 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     claude_token = global_env_values.get("CLAUDE_CODE_OAUTH_TOKEN", "")
     if not claude_token:
         claude_token = _prompt_and_save_credential(
-            env_file, "CLAUDE_CODE_OAUTH_TOKEN", "Claude token (press Enter to skip)"
+            env_file,
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            "Claude OAuth token (run `claude setup-token` to generate one; press Enter to skip)",
         )
 
     if not claude_token:
         click.echo(
-            f"Set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in {env_file} before running pycastle."
+            f"Set CLAUDE_CODE_OAUTH_TOKEN in {env_file} before running pycastle. "
+            "Run `claude setup-token` to generate a token."
         )
 
     click.echo()
