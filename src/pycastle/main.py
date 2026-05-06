@@ -170,7 +170,8 @@ def run_cmd() -> None:
         accounts.append(("secondary", secondary))
     accounts.append(("primary", primary))
     pool = AccountPool(accounts)
-    # Container env carries the picked token at session-build time.
+    # Strip the secondary token from container env; AgentRunner injects the
+    # pool-picked token into CLAUDE_CODE_OAUTH_TOKEN per session.
     container_env = {
         k: v for k, v in env.items() if k != "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY"
     }
