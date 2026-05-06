@@ -1,5 +1,7 @@
+import gc
 import tarfile
 import threading
+import warnings
 from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock, patch
 
@@ -495,6 +497,86 @@ def test_docker_session_exit_closes_streams_before_stopping_container():
     session.__exit__(None, None, None)
 
     assert call_order == ["stream.close", "container.stop"]
+
+
+def test_docker_session_exit_closes_owned_api_adapters_for_http_and_https():
+    """__exit__ closes the docker APIClient's http/https adapters synchronously.
+
+    Regression for #496: lingering HTTPResponse objects held by urllib3's pooled
+    connections were GC'd at interpreter shutdown, producing
+    'I/O operation on closed file' noise on Python 3.13. The fix releases the
+    pool synchronously by closing each adapter before dropping the client.
+    """
+    with patch("pycastle.docker_session.docker") as mock_docker_mod:
+        mock_client = mock_docker_mod.from_env.return_value
+        http_adapter = MagicMock()
+        https_adapter = MagicMock()
+        mock_client.api.get_adapter.side_effect = lambda url: (
+            http_adapter if url.startswith("http://") else https_adapter
+        )
+        session = DockerSession(
+            volumes={}, container_env={}, image_name="img", cfg=Config()
+        )
+        session.__enter__()
+        session.__exit__(None, None, None)
+
+    http_adapter.close.assert_called_once()
+    https_adapter.close.assert_called_once()
+
+
+def test_docker_session_exit_drops_owned_client_reference():
+    """__exit__ drops the client reference so any HTTPResponse held only by the
+    pool becomes collectible immediately while http.client internals are valid.
+    """
+    with patch("pycastle.docker_session.docker"):
+        session = DockerSession(
+            volumes={}, container_env={}, image_name="img", cfg=Config()
+        )
+        session.__enter__()
+        session.__exit__(None, None, None)
+
+        assert session._client is None
+
+
+def test_docker_session_exit_does_not_emit_urllib3_shutdown_noise(capsys):
+    """A full enter/exec/exit cycle followed by gc.collect() emits no
+    ResourceWarning and no urllib3 'I/O operation on closed file' noise.
+
+    Regression for #496.
+    """
+    mock_client = _mock_client(exit_code=0, stdout=b"ok\n")
+    stream_iter = iter([b"streamed\n"])
+    mock_stream = MagicMock()
+    mock_stream.__iter__ = lambda self: stream_iter
+    stream_result = MagicMock()
+    stream_result.output = mock_stream
+    simple_result = MagicMock()
+    simple_result.exit_code = 0
+    simple_result.output = (b"ok\n", b"")
+    mock_client.containers.run.return_value.exec_run.side_effect = [
+        simple_result,
+        stream_result,
+    ]
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with session:
+            session.exec_simple("echo ok")
+            for _ in session.exec_stream("echo streamed"):
+                pass
+        gc.collect()
+
+    captured = capsys.readouterr()
+    assert "urllib3" not in captured.err
+    assert "I/O operation on closed file" not in captured.err
+    assert not [w for w in caught if issubclass(w.category, ResourceWarning)]
 
 
 def test_docker_session_exit_does_not_close_injected_client():
