@@ -539,12 +539,12 @@ def test_docker_session_exit_drops_owned_client_reference():
 
 
 def test_docker_session_exit_does_not_emit_urllib3_shutdown_noise(capsys):
-    """A full enter/exec/exit cycle followed by gc.collect() emits no
-    ResourceWarning and no urllib3 'I/O operation on closed file' noise.
+    """A full enter/exec/exit cycle of an owned client followed by gc.collect()
+    emits no ResourceWarning and no urllib3 'I/O operation on closed file' noise.
 
-    Regression for #496.
+    Regression for #496. Uses the owned-client path so the adapter close branch
+    in __exit__ is exercised.
     """
-    mock_client = _mock_client(exit_code=0, stdout=b"ok\n")
     stream_iter = iter([b"streamed\n"])
     mock_stream = MagicMock()
     mock_stream.__iter__ = lambda self: stream_iter
@@ -553,25 +553,24 @@ def test_docker_session_exit_does_not_emit_urllib3_shutdown_noise(capsys):
     simple_result = MagicMock()
     simple_result.exit_code = 0
     simple_result.output = (b"ok\n", b"")
-    mock_client.containers.run.return_value.exec_run.side_effect = [
-        simple_result,
-        stream_result,
-    ]
-    session = DockerSession(
-        volumes={},
-        container_env={},
-        image_name="img",
-        cfg=Config(),
-        docker_client=mock_client,
-    )
 
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        with session:
-            session.exec_simple("echo ok")
-            for _ in session.exec_stream("echo streamed"):
-                pass
-        gc.collect()
+    with patch("pycastle.docker_session.docker") as mock_docker_mod:
+        mock_client = mock_docker_mod.from_env.return_value
+        mock_client.containers.run.return_value.exec_run.side_effect = [
+            simple_result,
+            stream_result,
+        ]
+        session = DockerSession(
+            volumes={}, container_env={}, image_name="img", cfg=Config()
+        )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with session:
+                session.exec_simple("echo ok")
+                for _ in session.exec_stream("echo streamed"):
+                    pass
+            gc.collect()
 
     captured = capsys.readouterr()
     assert "urllib3" not in captured.err
