@@ -14,7 +14,7 @@ from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import BranchCollisionError, UsageLimitError
 from ..prompt_pipeline import load_standards
-from ..session_resume import has_resumable_session
+from ..session_resume import any_role_has_session
 from ..status_display import StatusDisplay
 from ..services import GitService
 from ..worktree import (
@@ -35,13 +35,6 @@ class _ImplementDeps(Protocol):
     logger: Logger
 
 
-def _any_role_has_session(wt_path: Path) -> bool:
-    session_base = wt_path / ".pycastle-session"
-    if not session_base.is_dir():
-        return False
-    return any(has_resumable_session(d) for d in session_base.iterdir() if d.is_dir())
-
-
 def _worktree_reusable(wt_path: Path, branch: str, git_svc: GitService) -> bool:
     if not wt_path.exists():
         return False
@@ -49,7 +42,7 @@ def _worktree_reusable(wt_path: Path, branch: str, git_svc: GitService) -> bool:
         current = git_svc.get_current_branch(wt_path)
     except Exception:
         return False
-    return current == branch and _any_role_has_session(wt_path)
+    return current == branch and any_role_has_session(wt_path)
 
 
 @asynccontextmanager
@@ -73,7 +66,7 @@ async def _agent_worktree(
                 clean = deps.git_svc.is_working_tree_clean(wt_path)
             except Exception:
                 clean = False
-            if clean and not _any_role_has_session(wt_path):
+            if clean and not any_role_has_session(wt_path):
                 teardown_worktree(deps.git_svc, deps.repo_root, wt_path)
         if gitdir_overlay is not None:
             gitdir_overlay.unlink(missing_ok=True)
