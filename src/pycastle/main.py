@@ -58,7 +58,26 @@ def _load_config_or_exit() -> Config:
         sys.exit(1)
 
 
-@click.group()
+class _BugReportingGroup(click.Group):
+    """Click group that funnels unhandled exceptions through the bug reporter.
+
+    Click's own flow-control exceptions (`ClickException`, `Abort`, `Exit`) and
+    `SystemExit` / `KeyboardInterrupt` pass through unchanged so click's normal
+    error handling and signal semantics are preserved.
+    """
+
+    def invoke(self, ctx: click.Context):  # type: ignore[no-untyped-def]
+        try:
+            return super().invoke(ctx)
+        except (click.ClickException, click.exceptions.Exit, click.Abort):
+            raise
+        except Exception as exc:
+            from .bug_reporter import report_and_exit
+
+            report_and_exit(exc)
+
+
+@click.group(cls=_BugReportingGroup)
 @click.version_option(package_name="pycastle", prog_name="pycastle")
 def main() -> None:
     pass
