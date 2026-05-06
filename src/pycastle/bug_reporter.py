@@ -21,8 +21,8 @@ from urllib.parse import quote
 from .config import Config
 
 BUG_REPORT_REPO = "Johannes-Kutsch/pycastle"
-BUG_REPORT_LABELS = "bug,needs-triage"
 BUG_REPORT_LABEL_LIST = ["bug", "needs-triage"]
+BUG_REPORT_LABELS = ",".join(BUG_REPORT_LABEL_LIST)
 
 _MAX_URL_LENGTH = 8000  # comfortably under GitHub's ~8192 URL limit
 _MAX_TITLE_LENGTH = 200  # GitHub caps issue titles at 256 chars
@@ -153,9 +153,8 @@ def report_and_exit(
         token = _safe_resolve_token(cfg)
 
     repo = cfg.bug_report_repo if cfg is not None else BUG_REPORT_REPO
-    auto = cfg.auto_file_bugs if cfg is not None else True
 
-    if auto and token and cfg is not None:
+    if cfg is not None and cfg.auto_file_bugs and token:
         title = _format_title(exc)
         body = _format_body(tb_text)
         result = _try_api_path(title, body, repo, token, cfg)
