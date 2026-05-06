@@ -912,3 +912,58 @@ def test_push_git_command_error_propagates(deps, git_svc):
     issues = [{"number": 1, "title": "Fix A"}]
     with pytest.raises(GitCommandError):
         _run(issues, deps)
+
+
+# ── Merger session cleanup after successful conflict resolution ───────────────
+
+
+def test_merge_phase_removes_merger_session_dir_after_successful_conflict_resolution(
+    tmp_path, git_svc, github_svc
+):
+    """merge_phase removes the merger session dir after fast_forward_branch so the worktree is torn down."""
+    git_svc.try_merge.return_value = False
+
+    sandbox_path = tmp_path / Config().pycastle_dir / ".worktrees" / "merge-sandbox"
+    orig_create = git_svc.create_worktree.side_effect
+
+    def _create_with_session(repo, wt, branch, sha=None):
+        orig_create(repo, wt, branch, sha)
+        if wt == sandbox_path:
+            session_dir = wt / ".pycastle-session" / "merger"
+            session_dir.mkdir(parents=True, exist_ok=True)
+            (session_dir / "session.json").write_text("{}")
+
+    git_svc.create_worktree.side_effect = _create_with_session
+
+    fake = FakeAgentRunner([CompletionOutput()])
+    deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+
+    assert not (sandbox_path / ".pycastle-session" / "merger").exists()
+
+
+def test_merge_phase_tears_down_sandbox_after_merger_session_cleanup(
+    tmp_path, git_svc, github_svc
+):
+    """After merger session cleanup, branch_worktree must tear down the sandbox normally."""
+    git_svc.try_merge.return_value = False
+
+    sandbox_path = tmp_path / Config().pycastle_dir / ".worktrees" / "merge-sandbox"
+    orig_create = git_svc.create_worktree.side_effect
+
+    def _create_with_session(repo, wt, branch, sha=None):
+        orig_create(repo, wt, branch, sha)
+        if wt == sandbox_path:
+            session_dir = wt / ".pycastle-session" / "merger"
+            session_dir.mkdir(parents=True, exist_ok=True)
+            (session_dir / "session.json").write_text("{}")
+
+    git_svc.create_worktree.side_effect = _create_with_session
+
+    fake = FakeAgentRunner([CompletionOutput()])
+    deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+
+    git_svc.remove_worktree.assert_called_once_with(deps.repo_root, sandbox_path)
