@@ -96,6 +96,7 @@ class ContainerRunner:
         prompt = await prepare_prompt(prompt_file, prompt_args, container_exec)
 
         self._status_display.update_phase(self.name, "Work")
+
         def on_turn(turn: str) -> None:
             self._status_display.print(self.name, turn)
 

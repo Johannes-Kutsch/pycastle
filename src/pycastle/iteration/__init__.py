@@ -89,7 +89,10 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 ]
                 row.close(
                     "\n".join(
-                        [f"Planning complete, implementing {len(plan_result.issues)} issue(s):"] + issue_lines
+                        [
+                            f"Planning complete, implementing {len(plan_result.issues)} issue(s):"
+                        ]
+                        + issue_lines
                     )
                 )
                 sha = plan_result.worktree_sha
@@ -103,7 +106,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
     issues = issues[: deps.cfg.max_parallel]
 
     token = CancellationToken()
-    async with phase_row(deps.status_display, "Implement", initial_phase="Running") as row:
+    async with phase_row(
+        deps.status_display, "Implement", initial_phase="Running"
+    ) as row:
         impl_result = await implement_phase(issues, sha, deps, token=token)
 
         if impl_result.usage_limit_hit:
@@ -131,13 +136,16 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         completed = impl_result.completed
 
         if not completed:
-            row.close("No commits produced. Nothing to merge.", shutdown_style="warning")
+            row.close(
+                "No commits produced. Nothing to merge.", shutdown_style="warning"
+            )
             return Continue()
 
         branch_lines = [f"  {branch_for(i['number'])}" for i in completed]
         row.close(
             "\n".join(
-                [f"Execution complete, {len(completed)} branch(es) with commits:"] + branch_lines
+                [f"Execution complete, {len(completed)} branch(es) with commits:"]
+                + branch_lines
             )
         )
 

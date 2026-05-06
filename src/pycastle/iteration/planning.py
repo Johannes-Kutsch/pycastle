@@ -26,7 +26,9 @@ class PlanReady:
     issues: list[dict]
 
 
-async def planning_phase(deps: _PlanningDeps, sha: str, open_issues: list[dict]) -> PlanReady:
+async def planning_phase(
+    deps: _PlanningDeps, sha: str, open_issues: list[dict]
+) -> PlanReady:
     async with detached_worktree("plan-sandbox", sha, deps) as wt:
         try:
             output = await deps.agent_runner.run(

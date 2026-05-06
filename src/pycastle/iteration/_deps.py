@@ -34,7 +34,14 @@ class RecordingStatusDisplay:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
 
-    def register(self, caller: str, kind: str, startup_message: str = "started", work_body: str = "", initial_phase: str = "Setup") -> None:
+    def register(
+        self,
+        caller: str,
+        kind: str,
+        startup_message: str = "started",
+        work_body: str = "",
+        initial_phase: str = "Setup",
+    ) -> None:
         self.calls.append(("register", caller, kind, startup_message, initial_phase))
 
     def update_phase(self, name: str, phase: str) -> None:
@@ -43,7 +50,12 @@ class RecordingStatusDisplay:
     def reset_idle_timer(self, name: str) -> None:
         self.calls.append(("reset_idle_timer", name))
 
-    def remove(self, caller: str, shutdown_message: str = "finished", shutdown_style: str = "success") -> None:
+    def remove(
+        self,
+        caller: str,
+        shutdown_message: str = "finished",
+        shutdown_style: str = "success",
+    ) -> None:
         self.calls.append(("remove", caller, shutdown_message, shutdown_style))
 
     def print(self, caller: str, message: object, style: str | None = None) -> None:
@@ -58,14 +70,15 @@ class FakeAgentRunner:
         responses: list[AgentOutput | PreflightFailure | BaseException] | None = None,
         *,
         side_effect: Callable[..., Any] | None = None,
-        preflight_responses: list[list[tuple[str, str, str]] | BaseException] | None = None,
+        preflight_responses: list[list[tuple[str, str, str]] | BaseException]
+        | None = None,
     ) -> None:
         self._responses: list[AgentOutput | PreflightFailure | BaseException] = list(
             responses or []
         )
         self._side_effect = side_effect
-        self._preflight_responses: list[list[tuple[str, str, str]] | BaseException] = list(
-            preflight_responses or []
+        self._preflight_responses: list[list[tuple[str, str, str]] | BaseException] = (
+            list(preflight_responses or [])
         )
         self.calls: list[RunRequest] = []
         self.preflight_calls: list[dict] = []
@@ -95,7 +108,13 @@ class FakeAgentRunner:
         status_display: "StatusDisplay | None" = None,
         work_body: str = "",
     ) -> list[tuple[str, str, str]]:
-        call = {"name": name, "mount_path": mount_path, "stage": stage, "status_display": status_display, "work_body": work_body}
+        call = {
+            "name": name,
+            "mount_path": mount_path,
+            "stage": stage,
+            "status_display": status_display,
+            "work_body": work_body,
+        }
         self.preflight_calls.append(call)
         if not self._preflight_responses:
             raise AssertionError(

@@ -130,7 +130,9 @@ class RichStatusDisplay:
     def _acquire_live(self) -> "Live | None":
         """Create and record a new Live if none is running. Must be called with self._lock held."""
         if self._live is None:
-            live = Live(self, console=self._console, refresh_per_second=4, transient=True)
+            live = Live(
+                self, console=self._console, refresh_per_second=4, transient=True
+            )
             self._live = live
             return live
         return None
@@ -153,7 +155,12 @@ class RichStatusDisplay:
         return True
 
     def register(
-        self, caller: str, kind: Literal["phase", "agent"], startup_message: str = "started", work_body: str = "", initial_phase: str = "Setup"
+        self,
+        caller: str,
+        kind: Literal["phase", "agent"],
+        startup_message: str = "started",
+        work_body: str = "",
+        initial_phase: str = "Setup",
     ) -> None:
         with self._lock:
             self._rows[caller] = _AgentRow(caller, initial_phase, work_body)

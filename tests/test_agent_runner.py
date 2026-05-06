@@ -849,6 +849,99 @@ def test_run_request_stores_required_fields():
     assert req.work_body == ""
 
 
+# ── AgentRunner: AccountPool integration ─────────────────────────────────────
+
+
+def test_agent_runner_injects_picked_token_into_container_env(tmp_path):
+    from pycastle.account_pool import AccountPool
+
+    captured_env: dict = {}
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def _run(*args, **kwargs):
+        captured_env.update(kwargs.get("environment") or {})
+        return mock_container
+
+    mock_client.containers.run.side_effect = _run
+
+    def exec_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            r = MagicMock()
+            r.output = iter(_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    pool = AccountPool([("secondary", "tok-secondary"), ("primary", "tok-primary")])
+    runner = AgentRunner(
+        {"GH_TOKEN": "gh"},
+        Config(logs_dir=tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        account_pool=pool,
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test prompt")
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Test",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+            )
+        )
+    )
+
+    assert captured_env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok-secondary"
+
+
+def test_agent_runner_marks_picked_token_exhausted_on_usage_limit(tmp_path):
+    from datetime import datetime
+
+    from pycastle.account_pool import AccountPool
+
+    mock_client = _make_docker_client(
+        [
+            b'{"type":"result","is_error":true,"api_error_status":429,'
+            b'"result":"rate limited"}\n'
+        ]
+    )
+
+    pool = AccountPool([("secondary", "tok-secondary"), ("primary", "tok-primary")])
+    runner = AgentRunner(
+        {},
+        Config(logs_dir=tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        account_pool=pool,
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("Test prompt")
+
+    fixed_now = datetime(2026, 1, 1, 14, 0, 0)
+    with pytest.raises(UsageLimitError):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Test",
+                    prompt_file=prompt,
+                    mount_path=tmp_path,
+                    skip_preflight=True,
+                )
+            )
+        )
+
+    # secondary was picked (highest priority); now exhausted, so primary should be next
+    name, tok = pool.pick(now=fixed_now)
+    assert name == "primary"
+    assert tok == "tok-primary"
+
+
 def test_fake_agent_runner_accepts_run_request_and_records_it():
     completion = CompletionOutput()
     fake = FakeAgentRunner([completion])
