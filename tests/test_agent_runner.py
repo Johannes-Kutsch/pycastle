@@ -1053,14 +1053,18 @@ def test_agent_runner_passes_session_id_flag_to_claude_on_fresh_run(tmp_path):
     assert all("--resume" not in c for c in captured_cmds)
 
 
+def _seed_implementer_session(tmp_path: Path) -> None:
+    """Seed an implementer session dir so has_resumable_session returns True."""
+    role_dir = tmp_path / ".pycastle-session" / "implementer"
+    role_dir.mkdir(parents=True)
+    (role_dir / "session.json").write_text("{}")
+
+
 def test_agent_runner_passes_resume_flag_to_claude_when_session_exists(tmp_path):
     """On a Resume run AgentRunner must invoke claude with --resume <uuid>."""
     from pycastle.agent_output_protocol import AgentRole
 
-    # Seed the session dir so has_resumable_session returns True → Resume run.
-    role_dir = tmp_path / ".pycastle-session" / "implementer"
-    role_dir.mkdir(parents=True)
-    (role_dir / "session.json").write_text("{}")
+    _seed_implementer_session(tmp_path)
 
     captured_cmds: list[str] = []
     mock_client = MagicMock()
@@ -1114,17 +1118,11 @@ def _make_docker_client_with_controlled_streams(
     mock_client = MagicMock()
     mock_container = MagicMock()
     mock_client.containers.run.return_value = mock_container
-    call_count: dict = {"n": 0}
+    responses = iter(stream_responses)
 
     def exec_side_effect(*args, **kwargs):
         if kwargs.get("stream"):
-            idx = call_count["n"]
-            call_count["n"] += 1
-            response = (
-                stream_responses[idx]
-                if idx < len(stream_responses)
-                else RuntimeError("unexpected call")
-            )
+            response = next(responses, RuntimeError("unexpected call"))
             if isinstance(response, BaseException):
                 raise response
             r = MagicMock()
@@ -1138,9 +1136,7 @@ def _make_docker_client_with_controlled_streams(
 
 def test_agent_runner_failsoft_retries_as_fresh_when_resume_run_fails(tmp_path):
     """When a Resume run raises a non-typed exception, fail-soft fires and retries as Fresh."""
-    role_dir = tmp_path / ".pycastle-session" / "implementer"
-    role_dir.mkdir(parents=True)
-    (role_dir / "session.json").write_text("{}")
+    _seed_implementer_session(tmp_path)
 
     mock_client = _make_docker_client_with_controlled_streams(
         [RuntimeError("session corrupt"), _COMPLETE_STREAM]
@@ -1170,9 +1166,7 @@ def test_agent_runner_failsoft_retries_as_fresh_when_resume_run_fails(tmp_path):
 
 def test_agent_runner_failsoft_logs_resume_failsoft_to_errors_log(tmp_path):
     """Fail-soft writes [ResumeFailSoft] entry to errors.log."""
-    role_dir = tmp_path / ".pycastle-session" / "implementer"
-    role_dir.mkdir(parents=True)
-    (role_dir / "session.json").write_text("{}")
+    _seed_implementer_session(tmp_path)
 
     mock_client = _make_docker_client_with_controlled_streams(
         [RuntimeError("session corrupt"), _COMPLETE_STREAM]
@@ -1204,9 +1198,7 @@ def test_agent_runner_failsoft_logs_resume_failsoft_to_errors_log(tmp_path):
 
 def test_agent_runner_failsoft_is_single_shot_second_exception_propagates(tmp_path):
     """Fail-soft fires only once; a second non-typed exception on the Fresh retry propagates."""
-    role_dir = tmp_path / ".pycastle-session" / "implementer"
-    role_dir.mkdir(parents=True)
-    (role_dir / "session.json").write_text("{}")
+    _seed_implementer_session(tmp_path)
 
     mock_client = _make_docker_client_with_controlled_streams(
         [RuntimeError("session corrupt"), RuntimeError("still broken")]
