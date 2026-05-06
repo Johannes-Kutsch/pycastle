@@ -191,6 +191,7 @@
 | **WorktreeError** | Error raised when a git worktree operation fails for a non-timeout reason | git error |
 | **WorktreeTimeoutError** | Error raised when a git worktree operation exceeds the worktree timeout | — |
 | **AgentTimeoutError** | Error raised when an agent produces no output for longer than the idle timeout | hung agent error |
+| **urllib3 shutdown hook** | A `sys.unraisablehook` installed once at the top of the `main()` click group from `_shutdown_hook.py`; suppresses the harmless `ValueError: I/O operation on closed file` raised by `urllib3.response.HTTPResponse.__del__` during interpreter shutdown when docker-py exec responses are GC'd after their underlying socket has already been released; matches strictly on the unraisable `object` being a `urllib3.response.HTTPResponse` instance plus the traceback walking through `urllib3/response.py` and `http/client.py`; non-matching unraisable events delegate to whatever hook was installed when ours was set; `DockerSession.__exit__` does no urllib3-specific cleanup of its own — closing adapters or tracking exec streams there was tried in #487 and #496 and proven insufficient | shutdown noise hook, urllib3 silencer |
 
 ## Service Abstraction & Dependency Injection
 
