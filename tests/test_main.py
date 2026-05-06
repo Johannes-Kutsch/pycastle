@@ -16,14 +16,46 @@ def test_load_env_reads_keys_from_cfg_env_file(tmp_path, monkeypatch):
     custom_env = tmp_path / "custom.env"
     custom_env.write_text("GH_TOKEN=from-custom-file\n")
     monkeypatch.delenv("GH_TOKEN", raising=False)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.delenv("PYCASTLE_HOME", raising=False)
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "home")
 
     env = _load_env(cfg=Config(env_file=custom_env))
 
     assert env["GH_TOKEN"] == "from-custom-file"
+
+
+def test_load_env_returns_only_oauth_token_and_gh_token(tmp_path, monkeypatch):
+    """_load_env returns exactly CLAUDE_CODE_OAUTH_TOKEN + GH_TOKEN; never reads host fs."""
+    from pycastle.main import _load_env
+
+    custom_env = tmp_path / "custom.env"
+    custom_env.write_text("CLAUDE_CODE_OAUTH_TOKEN=oauth-tok\nGH_TOKEN=gh-tok\n")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("PYCASTLE_HOME", raising=False)
+
+    def _no_home() -> None:
+        raise AssertionError("_load_env must not read from the host filesystem")
+
+    monkeypatch.setattr("pycastle.main.Path.home", _no_home)
+
+    env = _load_env(cfg=Config(env_file=custom_env))
+
+    assert env == {"CLAUDE_CODE_OAUTH_TOKEN": "oauth-tok", "GH_TOKEN": "gh-tok"}
+
+
+def test_run_cmd_fails_fast_when_oauth_token_missing(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+    result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in result.output
+    assert "claude setup-token" in result.output
 
 
 # ── Issue 309: load_config() called at entry in CLI commands ──────────────────
