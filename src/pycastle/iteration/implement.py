@@ -74,7 +74,7 @@ def _format_feedback_commands(checks: Sequence[str]) -> str:
     return ", ".join(wrapped[:-1]) + " and " + wrapped[-1]
 
 
-def format_issue_comments(comments: Sequence[dict]) -> str:
+def format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
     parts: list[str] = []
     for c in comments:
         author = c.get("author") or "unknown"
