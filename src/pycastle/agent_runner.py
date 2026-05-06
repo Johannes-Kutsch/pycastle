@@ -149,7 +149,7 @@ class AgentRunner:
                 retries_left = self._cfg.timeout_retries
                 while True:
                     try:
-                        result = await runner.work(
+                        return await runner.work(
                             role,
                             prompt_file,
                             prompt_args or {},
@@ -157,7 +157,6 @@ class AgentRunner:
                             session_uuid=session_uuid,
                             is_failsoft_recovery=is_failsoft_recovery,
                         )
-                        return result
                     except AgentTimeoutError:
                         if retries_left <= 0:
                             raise

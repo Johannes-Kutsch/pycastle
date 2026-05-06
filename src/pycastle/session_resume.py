@@ -13,7 +13,14 @@ class RunKind(Enum):
 
 
 def has_resumable_session(role_dir: Path) -> bool:
-    return role_dir.is_dir() and any(f for f in role_dir.rglob("*") if f.is_file())
+    return role_dir.is_dir() and any(f.is_file() for f in role_dir.rglob("*"))
+
+
+def any_role_has_session(worktree_path: Path) -> bool:
+    session_base = worktree_path / ".pycastle-session"
+    if not session_base.is_dir():
+        return False
+    return any(has_resumable_session(d) for d in session_base.iterdir() if d.is_dir())
 
 
 def decide_agent_run_kind(role: AgentRole, *, session_dir_present: bool) -> RunKind:
