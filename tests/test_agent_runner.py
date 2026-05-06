@@ -1051,3 +1051,212 @@ def test_agent_runner_passes_session_id_flag_to_claude_on_fresh_run(tmp_path):
     assert captured_cmds, "No streaming exec recorded"
     assert any("--session-id" in c for c in captured_cmds)
     assert all("--resume" not in c for c in captured_cmds)
+
+
+def test_agent_runner_passes_resume_flag_to_claude_when_session_exists(tmp_path):
+    """On a Resume run AgentRunner must invoke claude with --resume <uuid>."""
+    from pycastle.agent_output_protocol import AgentRole
+
+    # Seed the session dir so has_resumable_session returns True → Resume run.
+    role_dir = tmp_path / ".pycastle-session" / "implementer"
+    role_dir.mkdir(parents=True)
+    (role_dir / "session.json").write_text("{}")
+
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            r = MagicMock()
+            r.output = iter(_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    runner = AgentRunner(
+        {},
+        Config(logs_dir=tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Impl",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                role=AgentRole.IMPLEMENTER,
+                skip_preflight=True,
+            )
+        )
+    )
+
+    assert captured_cmds, "No streaming exec recorded"
+    assert any("--resume" in c for c in captured_cmds)
+    assert all("--session-id" not in c for c in captured_cmds)
+
+
+# ── AgentRunner: fail-soft fresh fallback ─────────────────────────────────────
+
+
+def _make_docker_client_with_controlled_streams(
+    stream_responses: list,
+) -> MagicMock:
+    """Mock docker client whose nth streaming exec_run returns or raises stream_responses[n]."""
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+    call_count: dict = {"n": 0}
+
+    def exec_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            idx = call_count["n"]
+            call_count["n"] += 1
+            response = (
+                stream_responses[idx]
+                if idx < len(stream_responses)
+                else RuntimeError("unexpected call")
+            )
+            if isinstance(response, BaseException):
+                raise response
+            r = MagicMock()
+            r.output = iter(response)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    return mock_client
+
+
+def test_agent_runner_failsoft_retries_as_fresh_when_resume_run_fails(tmp_path):
+    """When a Resume run raises a non-typed exception, fail-soft fires and retries as Fresh."""
+    role_dir = tmp_path / ".pycastle-session" / "implementer"
+    role_dir.mkdir(parents=True)
+    (role_dir / "session.json").write_text("{}")
+
+    mock_client = _make_docker_client_with_controlled_streams(
+        [RuntimeError("session corrupt"), _COMPLETE_STREAM]
+    )
+    runner = AgentRunner(
+        {},
+        Config(logs_dir=tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Impl",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+
+
+def test_agent_runner_failsoft_logs_resume_failsoft_to_errors_log(tmp_path):
+    """Fail-soft writes [ResumeFailSoft] entry to errors.log."""
+    role_dir = tmp_path / ".pycastle-session" / "implementer"
+    role_dir.mkdir(parents=True)
+    (role_dir / "session.json").write_text("{}")
+
+    mock_client = _make_docker_client_with_controlled_streams(
+        [RuntimeError("session corrupt"), _COMPLETE_STREAM]
+    )
+    runner = AgentRunner(
+        {},
+        Config(logs_dir=tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Impl",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                skip_preflight=True,
+            )
+        )
+    )
+
+    errors_log = tmp_path / "errors.log"
+    assert errors_log.exists()
+    assert "[ResumeFailSoft]" in errors_log.read_text()
+
+
+def test_agent_runner_failsoft_is_single_shot_second_exception_propagates(tmp_path):
+    """Fail-soft fires only once; a second non-typed exception on the Fresh retry propagates."""
+    role_dir = tmp_path / ".pycastle-session" / "implementer"
+    role_dir.mkdir(parents=True)
+    (role_dir / "session.json").write_text("{}")
+
+    mock_client = _make_docker_client_with_controlled_streams(
+        [RuntimeError("session corrupt"), RuntimeError("still broken")]
+    )
+    runner = AgentRunner(
+        {},
+        Config(logs_dir=tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    with pytest.raises(RuntimeError, match="still broken"):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Impl",
+                    prompt_file=prompt,
+                    mount_path=tmp_path,
+                    skip_preflight=True,
+                )
+            )
+        )
+
+
+def test_agent_runner_non_typed_exception_on_fresh_run_propagates_without_failsoft(
+    tmp_path,
+):
+    """A non-typed exception on a Fresh run (no existing session) propagates immediately."""
+    mock_client = _make_docker_client_with_controlled_streams(
+        [RuntimeError("docker failure")]
+    )
+    runner = AgentRunner(
+        {},
+        Config(logs_dir=tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    with pytest.raises(RuntimeError, match="docker failure"):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Impl",
+                    prompt_file=prompt,
+                    mount_path=tmp_path,
+                    skip_preflight=True,
+                )
+            )
+        )
