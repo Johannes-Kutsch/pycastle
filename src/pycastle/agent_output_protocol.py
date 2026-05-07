@@ -73,7 +73,7 @@ class CompletionOutput:
 
 @dataclasses.dataclass(frozen=True)
 class CommitMessageOutput:
-    message: str
+    message: str | None
 
 
 AgentOutput: TypeAlias = (
@@ -94,10 +94,6 @@ class IssueParseError(AgentOutputProtocolError):
 
 
 class PromiseParseError(AgentOutputProtocolError):
-    pass
-
-
-class CommitMessageParseError(AgentOutputProtocolError):
     pass
 
 
@@ -280,9 +276,7 @@ def process_stream(
     if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
         match = _COMMIT_MESSAGE_RE.search(text)
         if not match:
-            raise CommitMessageParseError(
-                f"Agent produced no <commit_message> tag.{tail}"
-            )
+            return CommitMessageOutput(message=None)
         return CommitMessageOutput(message=match.group(1).strip())
     if not re.search(r"<promise>COMPLETE</promise>", text):
         raise PromiseParseError(

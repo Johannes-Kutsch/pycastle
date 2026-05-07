@@ -13,12 +13,14 @@ from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import BranchCollisionError, UsageLimitError
 from ..prompt_pipeline import load_standards
+from ..session_resume import has_resumable_session
 from ..status_display import StatusDisplay
 from ..services import GitService
 from ..worktree import (
     managed_worktree,
     patch_gitdir_for_container,
     worktree_name_for_branch,
+    worktree_path,
 )
 from ._deps import Logger
 
@@ -30,10 +32,6 @@ class _ImplementDeps(Protocol):
     git_svc: GitService
     repo_root: Path
     logger: Logger
-
-
-IMPLEMENT_COMMIT_PREFIX = "RALPH: Implement - "
-REVIEW_COMMIT_PREFIX = "RALPH: Review - "
 
 
 def branch_for(issue_number: int) -> str:
@@ -55,6 +53,20 @@ def format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
         body = c.get("body") or ""
         parts.append(f"## Comment by @{author} at {when}\n\n{body}")
     return "\n\n".join(parts)
+
+
+def _clear_session_dir(session_dir: Path) -> None:
+    """Clear contents of role session dir, leaving the dir as the stage-done signal."""
+    if not session_dir.is_dir():
+        return
+    for child in list(session_dir.iterdir()):
+        try:
+            if child.is_file():
+                child.unlink(missing_ok=True)
+            elif child.is_dir():
+                shutil.rmtree(child, ignore_errors=True)
+        except Exception:
+            pass
 
 
 @dataclasses.dataclass
@@ -110,14 +122,21 @@ async def run_issue(
         await lock.acquire()
 
     try:
-        subjects = deps.git_svc.get_branch_commit_subjects(_branch, deps.repo_root)
-        review_done = any(s.startswith(REVIEW_COMMIT_PREFIX) for s in subjects)
-        implement_done = any(s.startswith(IMPLEMENT_COMMIT_PREFIX) for s in subjects)
+        _wt_name = worktree_name_for_branch(_branch)
+        _wt_path = worktree_path(_wt_name, deps)
+
+        _impl_session_dir = _wt_path / ".pycastle-session" / "implementer"
+        _review_session_dir = _wt_path / ".pycastle-session" / "reviewer"
+
+        implement_done = _impl_session_dir.is_dir() and not has_resumable_session(
+            _impl_session_dir
+        )
+        review_done = _review_session_dir.is_dir() and not has_resumable_session(
+            _review_session_dir
+        )
 
         if review_done:
             return issue
-
-        _wt_name = worktree_name_for_branch(_branch)
 
         if not implement_done:
             async with managed_worktree(
@@ -149,14 +168,14 @@ async def run_issue(
                     if isinstance(result, PreflightFailure):
                         return result
                     if isinstance(result, CommitMessageOutput):
+                        _msg = result.message or issue["title"]
                         deps.git_svc.commit(
                             impl_mount_path,
                             deps.repo_root,
-                            f"{IMPLEMENT_COMMIT_PREFIX}{result.message}",
+                            f"Implement #{issue['number']} - {_msg}",
                         )
-                        shutil.rmtree(
-                            impl_mount_path / ".pycastle-session" / "implementer",
-                            ignore_errors=True,
+                        _clear_session_dir(
+                            impl_mount_path / ".pycastle-session" / "implementer"
                         )
                 finally:
                     if _impl_overlay is not None:
@@ -193,14 +212,14 @@ async def run_issue(
                     )
                 )
                 if isinstance(review_result, CommitMessageOutput):
+                    _rev_msg = review_result.message or issue["title"]
                     deps.git_svc.commit(
                         review_mount_path,
                         deps.repo_root,
-                        f"{REVIEW_COMMIT_PREFIX}{review_result.message}",
+                        f"Review #{issue['number']} - {_rev_msg}",
                     )
-                    shutil.rmtree(
-                        review_mount_path / ".pycastle-session" / "reviewer",
-                        ignore_errors=True,
+                    _clear_session_dir(
+                        review_mount_path / ".pycastle-session" / "reviewer"
                     )
             finally:
                 if _review_overlay is not None:

@@ -10,7 +10,6 @@ from pycastle.agent_output_protocol import (
     AgentOutputProtocolError,
     AgentRole,
     CommitMessageOutput,
-    CommitMessageParseError,
     CompletionOutput,
     IssueOutput,
     IssueParseError,
@@ -176,26 +175,29 @@ def test_process_stream_reviewer_returns_commit_message_output():
     assert result.message == "cleaned up"
 
 
-def test_process_stream_implementer_raises_commit_message_parse_error_when_absent():
+def test_process_stream_implementer_returns_none_message_when_tag_absent():
     lines = [_result_line("no commit_message tag here")]
-    with pytest.raises(CommitMessageParseError):
-        process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPLEMENTER)
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPLEMENTER)
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message is None
 
 
-def test_process_stream_reviewer_raises_commit_message_parse_error_when_absent():
+def test_process_stream_reviewer_returns_none_message_when_tag_absent():
     lines = [_result_line("no commit_message tag")]
-    with pytest.raises(CommitMessageParseError):
-        process_stream(lines, on_turn=lambda t: None, role=AgentRole.REVIEWER)
-
-
-def test_commit_message_parse_error_is_subclass_of_base():
-    assert issubclass(CommitMessageParseError, AgentOutputProtocolError)
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.REVIEWER)
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message is None
 
 
 def test_commit_message_output_is_frozen():
     out = CommitMessageOutput(message="m")
     with pytest.raises(dataclasses.FrozenInstanceError):
         out.message = "x"  # type: ignore[misc]
+
+
+def test_commit_message_output_accepts_none_message():
+    out = CommitMessageOutput(message=None)
+    assert out.message is None
 
 
 def test_process_stream_merger_returns_completion_output():
@@ -442,13 +444,10 @@ def test_process_stream_empty_stream_raises_promise_parse_error():
         )
 
 
-def test_process_stream_empty_stream_raises_commit_message_parse_error():
-    with pytest.raises(CommitMessageParseError):
-        process_stream(
-            [],
-            on_turn=lambda t: None,
-            role=AgentRole.IMPLEMENTER,
-        )
+def test_process_stream_empty_stream_returns_none_message_for_implementer():
+    result = process_stream([], on_turn=lambda t: None, role=AgentRole.IMPLEMENTER)
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message is None
 
 
 def test_process_stream_empty_stream_raises_plan_parse_error():
@@ -475,15 +474,15 @@ def test_process_stream_no_result_envelope_falls_back_to_collected_lines():
     assert isinstance(result, CommitMessageOutput)
 
 
-def test_process_stream_error_message_includes_output_tail():
+def test_process_stream_no_tag_returns_none_message_regardless_of_content():
     long_content = "x" * 300 + " distinctive-tail"
-    with pytest.raises(CommitMessageParseError) as exc_info:
-        process_stream(
-            [_result_line(long_content)],
-            on_turn=lambda t: None,
-            role=AgentRole.IMPLEMENTER,
-        )
-    assert "distinctive-tail" in str(exc_info.value)
+    result = process_stream(
+        [_result_line(long_content)],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message is None
 
 
 def test_process_stream_multiple_text_blocks_assembled_with_double_newline():
@@ -508,12 +507,13 @@ def test_process_stream_multiple_text_blocks_assembled_with_double_newline():
 
 
 def test_process_stream_does_not_raise_usage_limit_on_plain_text_match():
-    with pytest.raises(CommitMessageParseError):
-        process_stream(
-            ["CLAUDE REACHED ITS USAGE LIMIT"],
-            on_turn=lambda t: None,
-            role=AgentRole.IMPLEMENTER,
-        )
+    result = process_stream(
+        ["CLAUDE REACHED ITS USAGE LIMIT"],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message is None
 
 
 def test_process_stream_does_not_raise_on_non_429_error_result():
@@ -525,12 +525,13 @@ def test_process_stream_does_not_raise_on_non_429_error_result():
             "result": "overloaded: usage limit exceeded",
         }
     )
-    with pytest.raises(CommitMessageParseError):
-        process_stream(
-            [error_line],
-            on_turn=lambda t: None,
-            role=AgentRole.IMPLEMENTER,
-        )
+    result = process_stream(
+        [error_line],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message is None
 
 
 def test_process_stream_null_result_in_envelope_falls_back_to_collected_lines():

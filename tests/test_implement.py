@@ -707,14 +707,28 @@ def test_run_issue_does_not_create_reviewer_worktree_on_preflight_failure(tmp_pa
     assert deps.git_svc.create_worktree.call_count == 1
 
 
-# ── run_issue: RALPH commit prefix skip logic ────────────────────────────────
+# ── run_issue: role-dir stage-done skip logic ─────────────────────────────────
+
+
+def _seed_review_stage_done(tmp_path: Path, issue_number: int) -> None:
+    """Create empty reviewer session dir to signal review stage done."""
+    wt_path = tmp_path / "pycastle" / ".worktrees" / f"issue-{issue_number}"
+    rev_dir = wt_path / ".pycastle-session" / "reviewer"
+    rev_dir.mkdir(parents=True)
+
+
+def _seed_implement_stage_done(tmp_path: Path, issue_number: int) -> None:
+    """Create empty implementer session dir to signal implement stage done."""
+    wt_path = tmp_path / "pycastle" / ".worktrees" / f"issue-{issue_number}"
+    impl_dir = wt_path / ".pycastle-session" / "implementer"
+    impl_dir.mkdir(parents=True)
 
 
 def test_run_issue_review_skip_returns_issue_without_invoking_any_agent(tmp_path):
-    """When branch has a RALPH: Review - commit, run_issue returns the issue without spawning agents."""
+    """When reviewer stage-done signal is set, run_issue returns the issue without spawning agents."""
     fake = FakeAgentRunner([])
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Review - fix auth"]
+    _seed_review_stage_done(tmp_path, 20)
 
     issue = {"number": 20, "title": "Fix auth"}
     result = asyncio.run(run_issue(issue, deps))
@@ -724,10 +738,10 @@ def test_run_issue_review_skip_returns_issue_without_invoking_any_agent(tmp_path
 
 
 def test_run_issue_review_skip_creates_no_worktree(tmp_path):
-    """When branch has a RALPH: Review - commit, no worktree is created."""
+    """When reviewer stage-done signal is set, no worktree is created."""
     fake = FakeAgentRunner([])
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Review - fix auth"]
+    _seed_review_stage_done(tmp_path, 21)
 
     issue = {"number": 21, "title": "Fix auth"}
     asyncio.run(run_issue(issue, deps))
@@ -736,12 +750,10 @@ def test_run_issue_review_skip_creates_no_worktree(tmp_path):
 
 
 def test_run_issue_implement_skip_invokes_only_reviewer(tmp_path):
-    """When branch has a RALPH: Implement - commit, run_issue skips Implementer and runs only Reviewer."""
+    """When implementer stage-done signal is set, run_issue skips Implementer and runs only Reviewer."""
     fake = FakeAgentRunner([CompletionOutput()])
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.get_branch_commit_subjects.return_value = [
-        "RALPH: Implement - fix auth"
-    ]
+    _seed_implement_stage_done(tmp_path, 22)
 
     issue = {"number": 22, "title": "Fix auth"}
     result = asyncio.run(run_issue(issue, deps))
@@ -752,12 +764,10 @@ def test_run_issue_implement_skip_invokes_only_reviewer(tmp_path):
 
 
 def test_run_issue_implement_skip_creates_no_implementer_worktree(tmp_path):
-    """When branch has a RALPH: Implement - commit, no Implementer worktree is created."""
+    """When implementer stage-done signal is set, no Implementer worktree is created."""
     fake = FakeAgentRunner([CompletionOutput()])
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.get_branch_commit_subjects.return_value = [
-        "RALPH: Implement - fix auth"
-    ]
+    _seed_implement_stage_done(tmp_path, 23)
     deps.git_svc.is_working_tree_clean.return_value = True
 
     issue = {"number": 23, "title": "Fix auth"}
@@ -768,11 +778,10 @@ def test_run_issue_implement_skip_creates_no_implementer_worktree(tmp_path):
     assert branch_arg == "pycastle/issue-23"
 
 
-def test_run_issue_no_ralph_commit_runs_both_agents(tmp_path):
-    """When branch has no RALPH: commit, run_issue runs both Implementer and Reviewer normally."""
+def test_run_issue_no_stage_done_signal_runs_both_agents(tmp_path):
+    """When no stage-done signal exists, run_issue runs both Implementer and Reviewer normally."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.get_branch_commit_subjects.return_value = []
 
     issue = {"number": 24, "title": "Fix auth"}
     result = asyncio.run(run_issue(issue, deps))
@@ -783,18 +792,19 @@ def test_run_issue_no_ralph_commit_runs_both_agents(tmp_path):
     assert "Review Agent" in fake.calls[1].name
 
 
-def test_run_issue_releases_lock_when_get_branch_commit_subjects_raises(tmp_path):
-    """If get_branch_commit_subjects raises, run_issue must still release the branch lock."""
-    from pycastle.services import GitTimeoutError
+def test_run_issue_releases_lock_on_unexpected_exception(tmp_path):
+    """If an exception is raised inside run_issue, the branch lock must be released."""
 
-    fake = FakeAgentRunner([])
+    async def _failing(_request):
+        raise RuntimeError("boom")
+
+    fake = FakeAgentRunner(side_effect=_failing)
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.get_branch_commit_subjects.side_effect = GitTimeoutError("timed out")
 
     branch_locks: dict[str, asyncio.Lock] = {}
     issue = {"number": 25, "title": "Fix auth"}
 
-    with pytest.raises(GitTimeoutError):
+    with pytest.raises(RuntimeError):
         asyncio.run(run_issue(issue, deps, branch_locks=branch_locks))
 
     assert not branch_locks["pycastle/issue-25"].locked()
@@ -903,11 +913,11 @@ def test_run_issue_calls_on_started_once_per_issue(tmp_path):
 
 
 def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
-    """run_issue does not call on_started when review skip path is taken (no semaphore acquired)."""
+    """run_issue does not call on_started when reviewer stage-done signal is set."""
     fired: list[int] = []
     fake = FakeAgentRunner([])
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Review - fix auth"]
+    _seed_review_stage_done(tmp_path, 1)
 
     issue = {"number": 1, "title": "Fix thing"}
     asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))
@@ -915,23 +925,11 @@ def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
     assert fired == []
 
 
-def test_run_issue_bare_ralph_commit_does_not_skip_implementer(tmp_path):
-    """Old-format bare 'RALPH:' commit (no 'Implement -') must not trigger implement skip."""
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    deps.git_svc.get_branch_commit_subjects.return_value = ["RALPH: Fix auth"]
-
-    issue = {"number": 30, "title": "Fix auth"}
-    asyncio.run(run_issue(issue, deps))
-
-    assert any("Implement Agent" in c.name for c in fake.calls)
-
-
 # ── run_issue: commit wiring ─────────────────────────────────────────────────
 
 
-def test_run_issue_commits_implementer_with_ralph_implement_prefix(tmp_path):
-    """After Implementer returns CommitMessageOutput, git_svc.commit is called with RALPH: Implement - <msg>."""
+def test_run_issue_commits_implementer_with_issue_number_and_message(tmp_path):
+    """After Implementer returns CommitMessageOutput with message, commit uses 'Implement #N - <msg>'."""
     fake = FakeAgentRunner(
         [CommitMessageOutput(message="add foo"), CommitMessageOutput(message="tidy")]
     )
@@ -942,11 +940,26 @@ def test_run_issue_commits_implementer_with_ralph_implement_prefix(tmp_path):
     asyncio.run(run_issue(issue, deps))
 
     impl_call = deps.git_svc.commit.call_args_list[0]
-    assert impl_call[0][2] == "RALPH: Implement - add foo"
+    assert impl_call[0][2] == "Implement #40 - add foo"
 
 
-def test_run_issue_commits_reviewer_with_ralph_review_prefix(tmp_path):
-    """After Reviewer returns CommitMessageOutput, git_svc.commit is called with RALPH: Review - <msg>."""
+def test_run_issue_commits_implementer_with_title_when_no_commit_message_tag(tmp_path):
+    """After Implementer returns CommitMessageOutput(message=None), commit uses issue title as fallback."""
+    fake = FakeAgentRunner(
+        [CommitMessageOutput(message=None), CommitMessageOutput(message=None)]
+    )
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    issue = {"number": 43, "title": "Fix the login bug"}
+    asyncio.run(run_issue(issue, deps))
+
+    impl_call = deps.git_svc.commit.call_args_list[0]
+    assert impl_call[0][2] == "Implement #43 - Fix the login bug"
+
+
+def test_run_issue_commits_reviewer_with_issue_number_and_message(tmp_path):
+    """After Reviewer returns CommitMessageOutput with message, commit uses 'Review #N - <msg>'."""
     fake = FakeAgentRunner(
         [
             CommitMessageOutput(message="add foo"),
@@ -960,7 +973,22 @@ def test_run_issue_commits_reviewer_with_ralph_review_prefix(tmp_path):
     asyncio.run(run_issue(issue, deps))
 
     review_call = deps.git_svc.commit.call_args_list[1]
-    assert review_call[0][2] == "RALPH: Review - rename var"
+    assert review_call[0][2] == "Review #41 - rename var"
+
+
+def test_run_issue_commits_reviewer_with_title_when_no_commit_message_tag(tmp_path):
+    """After Reviewer returns CommitMessageOutput(message=None), commit uses issue title as fallback."""
+    fake = FakeAgentRunner(
+        [CommitMessageOutput(message=None), CommitMessageOutput(message=None)]
+    )
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    issue = {"number": 44, "title": "Add dark mode"}
+    asyncio.run(run_issue(issue, deps))
+
+    review_call = deps.git_svc.commit.call_args_list[1]
+    assert review_call[0][2] == "Review #44 - Add dark mode"
 
 
 def test_run_issue_does_not_commit_on_preflight_failure(tmp_path):
@@ -976,13 +1004,11 @@ def test_run_issue_does_not_commit_on_preflight_failure(tmp_path):
 
 
 def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
-    """run_issue calls on_started once when implement is already done but review hasn't run yet."""
+    """run_issue calls on_started once when implement stage-done signal is set."""
     fired: list[int] = []
     fake = FakeAgentRunner([CompletionOutput()])
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.get_branch_commit_subjects.return_value = [
-        "RALPH: Implement - fix auth"
-    ]
+    _seed_implement_stage_done(tmp_path, 1)
 
     issue = {"number": 1, "title": "Fix auth"}
     asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))
@@ -993,61 +1019,66 @@ def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
 # ── run_issue: role session cleanup after commit ──────────────────────────────
 
 
-def test_run_issue_removes_implementer_session_dir_after_successful_commit(tmp_path):
-    """After Implementer succeeds, run_issue removes the role session dir."""
+def test_run_issue_clears_implementer_session_dir_contents_after_commit(tmp_path):
+    """After Implementer commits, session dir is cleared (not deleted), leaving the stage-done signal.
+
+    The worktree is made dirty so it is preserved, making the session dir observable.
+    """
     fake = FakeAgentRunner(
         [CommitMessageOutput(message="fix it"), CommitMessageOutput(message="tidy")]
     )
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.is_working_tree_clean.return_value = True
+    deps.git_svc.is_working_tree_clean.return_value = False  # preserve worktree
 
     wt_name = "issue-50"
     wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
     impl_session_dir = wt_path / ".pycastle-session" / "implementer"
 
-    _call_count = [0]
+    original_create = deps.git_svc.create_worktree.side_effect
 
-    def _create(repo, path, branch, sha):
-        _call_count[0] += 1
-        path.mkdir(parents=True, exist_ok=True)
-        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
-        if _call_count[0] == 1:
+    def _seeding_create(repo, path, branch, sha=None):
+        original_create(repo, path, branch, sha)
+        if not impl_session_dir.is_dir():
             impl_session_dir.mkdir(parents=True, exist_ok=True)
             (impl_session_dir / "session.json").write_text("{}")
 
-    deps.git_svc.create_worktree.side_effect = _create
+    deps.git_svc.create_worktree.side_effect = _seeding_create
 
     issue = {"number": 50, "title": "Fix"}
     asyncio.run(run_issue(issue, deps))
 
-    assert not impl_session_dir.exists()
+    # Dir exists (not removed) but is empty (contents cleared = stage-done signal).
+    assert impl_session_dir.is_dir()
+    assert not any(impl_session_dir.iterdir())
 
 
-def test_run_issue_removes_reviewer_session_dir_after_successful_commit(tmp_path):
-    """After Reviewer succeeds, run_issue removes the reviewer role session dir."""
+def test_run_issue_clears_reviewer_session_dir_contents_after_commit(tmp_path):
+    """After Reviewer commits, session dir is cleared (not deleted), leaving the stage-done signal.
+
+    The worktree is made dirty so it is preserved, making the session dir observable.
+    """
     fake = FakeAgentRunner(
         [CommitMessageOutput(message="fix it"), CommitMessageOutput(message="tidy")]
     )
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.is_working_tree_clean.return_value = True
+    deps.git_svc.is_working_tree_clean.return_value = False  # preserve worktree
 
     wt_name = "issue-51"
     wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
     rev_session_dir = wt_path / ".pycastle-session" / "reviewer"
 
-    _call_count = [0]
+    original_create = deps.git_svc.create_worktree.side_effect
 
-    def _create(repo, path, branch, sha):
-        _call_count[0] += 1
-        path.mkdir(parents=True, exist_ok=True)
-        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
-        if _call_count[0] == 2:
+    def _seeding_create(repo, path, branch, sha=None):
+        original_create(repo, path, branch, sha)
+        if not rev_session_dir.is_dir():
             rev_session_dir.mkdir(parents=True, exist_ok=True)
             (rev_session_dir / "session.json").write_text("{}")
 
-    deps.git_svc.create_worktree.side_effect = _create
+    deps.git_svc.create_worktree.side_effect = _seeding_create
 
     issue = {"number": 51, "title": "Fix"}
     asyncio.run(run_issue(issue, deps))
 
-    assert not rev_session_dir.exists()
+    assert rev_session_dir.is_dir()
+    assert not any(rev_session_dir.iterdir())
