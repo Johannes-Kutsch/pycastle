@@ -9,7 +9,7 @@ from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..services import GitService
 from ..status_display import StatusDisplay
-from ..worktree import detached_worktree
+from ..worktree import transient_worktree
 
 
 class _PlanningDeps(Protocol):
@@ -29,7 +29,7 @@ class PlanReady:
 async def planning_phase(
     deps: _PlanningDeps, sha: str, open_issues: list[dict]
 ) -> PlanReady:
-    async with detached_worktree("plan-sandbox", sha, deps) as wt:
+    async with transient_worktree("plan-sandbox", sha=sha, deps=deps) as wt:
         try:
             output = await deps.agent_runner.run(
                 RunRequest(

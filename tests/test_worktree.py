@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import shutil
 import subprocess
 from types import SimpleNamespace
@@ -11,7 +12,7 @@ from pycastle.errors import WorktreeError, WorktreeTimeoutError
 from pycastle.services import GitCommandError, GitService, GitTimeoutError
 from pycastle.errors import UsageLimitError
 from pycastle.worktree import (
-    detached_worktree,
+    transient_worktree,
     managed_worktree,
     patch_gitdir_for_container,
     worktree_name_for_branch,
@@ -592,7 +593,7 @@ def test_worktree_path_respects_configured_pycastle_dir(tmp_path):
     assert result == tmp_path / "custom-dir" / ".worktrees" / "issue-99"
 
 
-# ── detached_worktree ─────────────────────────────────────────────────────────
+# ── transient_worktree ────────────────────────────────────────────────────────
 
 
 @pytest.fixture
@@ -602,11 +603,11 @@ def detached_deps(tmp_path):
     return SimpleNamespace(repo_root=tmp_path, cfg=cfg, git_svc=mock_svc)
 
 
-def test_detached_worktree_creates_worktree_on_enter(detached_deps):
+def test_transient_worktree_creates_worktree_on_enter(detached_deps):
     expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
 
     async def _run():
-        async with detached_worktree("sandbox", "abc123", detached_deps):
+        async with transient_worktree("sandbox", sha="abc123", deps=detached_deps):
             detached_deps.git_svc.checkout_detached.assert_called_once_with(
                 detached_deps.repo_root, expected_path, "abc123"
             )
@@ -614,21 +615,23 @@ def test_detached_worktree_creates_worktree_on_enter(detached_deps):
     asyncio.run(_run())
 
 
-def test_detached_worktree_yields_correct_path(detached_deps):
+def test_transient_worktree_yields_correct_path(detached_deps):
     expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
 
     async def _run():
-        async with detached_worktree("sandbox", "abc123", detached_deps) as path:
+        async with transient_worktree(
+            "sandbox", sha="abc123", deps=detached_deps
+        ) as path:
             assert path == expected_path
 
     asyncio.run(_run())
 
 
-def test_detached_worktree_removes_worktree_on_clean_exit(detached_deps):
+def test_transient_worktree_removes_worktree_on_clean_exit(detached_deps):
     expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
 
     async def _run():
-        async with detached_worktree("sandbox", "abc123", detached_deps):
+        async with transient_worktree("sandbox", sha="abc123", deps=detached_deps):
             pass
 
     asyncio.run(_run())
@@ -637,12 +640,12 @@ def test_detached_worktree_removes_worktree_on_clean_exit(detached_deps):
     )
 
 
-def test_detached_worktree_removes_worktree_when_body_raises(detached_deps):
+def test_transient_worktree_removes_worktree_when_body_raises(detached_deps):
     expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
 
     async def _run():
         with pytest.raises(RuntimeError, match="body error"):
-            async with detached_worktree("sandbox", "abc123", detached_deps):
+            async with transient_worktree("sandbox", sha="abc123", deps=detached_deps):
                 raise RuntimeError("body error")
 
     asyncio.run(_run())
@@ -651,27 +654,42 @@ def test_detached_worktree_removes_worktree_when_body_raises(detached_deps):
     )
 
 
-def test_detached_worktree_does_not_remove_worktree_when_checkout_fails(detached_deps):
+def test_transient_worktree_removes_worktree_on_usage_limit_error(detached_deps):
+    """transient_worktree must always tear down — even on UsageLimitError."""
+    expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
+
+    async def _run():
+        with pytest.raises(UsageLimitError):
+            async with transient_worktree("sandbox", sha="abc123", deps=detached_deps):
+                raise UsageLimitError(reset_time=None)
+
+    asyncio.run(_run())
+    detached_deps.git_svc.remove_worktree.assert_called_once_with(
+        detached_deps.repo_root, expected_path
+    )
+
+
+def test_transient_worktree_does_not_remove_worktree_when_checkout_fails(detached_deps):
     detached_deps.git_svc.checkout_detached.side_effect = RuntimeError(
         "checkout failed"
     )
 
     async def _run():
         with pytest.raises(RuntimeError, match="checkout failed"):
-            async with detached_worktree("sandbox", "abc123", detached_deps):
+            async with transient_worktree("sandbox", sha="abc123", deps=detached_deps):
                 pass
 
     asyncio.run(_run())
     detached_deps.git_svc.remove_worktree.assert_not_called()
 
 
-def test_detached_worktree_propagates_cleanup_error(detached_deps):
+def test_transient_worktree_propagates_cleanup_error(detached_deps):
     """An error from remove_worktree in the finally block must propagate."""
     detached_deps.git_svc.remove_worktree.side_effect = RuntimeError("disk full")
 
     async def _run():
         with pytest.raises(RuntimeError, match="disk full"):
-            async with detached_worktree("sandbox", "abc123", detached_deps):
+            async with transient_worktree("sandbox", sha="abc123", deps=detached_deps):
                 pass
 
     asyncio.run(_run())
@@ -849,14 +867,14 @@ def test_managed_worktree_removes_worktrees_dir_when_last_worktree_exits(
     asyncio.run(_run())
 
 
-def test_detached_worktree_removes_worktrees_dir_when_last_worktree_exits(
+def test_transient_worktree_removes_worktrees_dir_when_last_worktree_exits(
     real_branch_deps,
 ):
     worktrees_dir = real_branch_deps.repo_root / ".pycastle" / ".worktrees"
     sha = real_branch_deps.git_svc.get_head_sha(real_branch_deps.repo_root)
 
     async def _run():
-        async with detached_worktree("sandbox", sha, real_branch_deps):
+        async with transient_worktree("sandbox", sha=sha, deps=real_branch_deps):
             assert worktrees_dir.exists()
         assert not worktrees_dir.exists()
 
@@ -927,3 +945,49 @@ def test_managed_worktree_preserves_worktree_on_usage_limit_error(branch_deps):
 
     branch_deps.git_svc.remove_worktree.assert_not_called()
     branch_deps.git_svc.delete_branch.assert_not_called()
+
+
+# ── managed_worktree: parametrised preservation predicate ────────────────────
+
+
+@pytest.mark.parametrize(
+    "dirty, usage_limit_exc, has_resumable_session, expected_teardown",
+    [
+        (False, False, False, True),
+        (True, False, False, False),
+        (False, True, False, False),
+        (False, False, True, False),
+        (True, True, False, False),
+        (True, False, True, False),
+        (False, True, True, False),
+        (True, True, True, False),
+    ],
+)
+def test_managed_worktree_preservation_predicate(
+    branch_deps, dirty, usage_limit_exc, has_resumable_session, expected_teardown
+):
+    """preserve iff dirty OR usage_limit_exc OR has_resumable_session."""
+    branch_deps.git_svc.is_working_tree_clean.return_value = not dirty
+
+    async def _run():
+        with contextlib.suppress(UsageLimitError):
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha=None,
+                delete_branch_on_teardown=True,
+                deps=branch_deps,
+            ) as wt_path:
+                if has_resumable_session:
+                    session_dir = wt_path / ".pycastle-session" / "implementer"
+                    session_dir.mkdir(parents=True, exist_ok=True)
+                    (session_dir / "session.json").write_text("{}")
+                if usage_limit_exc:
+                    raise UsageLimitError(reset_time=None)
+
+    asyncio.run(_run())
+
+    if expected_teardown:
+        branch_deps.git_svc.remove_worktree.assert_called_once()
+    else:
+        branch_deps.git_svc.remove_worktree.assert_not_called()
