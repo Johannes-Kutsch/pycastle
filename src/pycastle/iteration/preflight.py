@@ -13,7 +13,7 @@ from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..services import GitCommandError, GitService, GithubService
 from ..status_display import StatusDisplay
-from ..worktree import detached_worktree
+from ..worktree import transient_worktree
 from ._utils import _wait_for_clean_working_tree
 
 
@@ -123,7 +123,7 @@ async def preflight_phase(deps: _PreflightDeps) -> PreflightResult:
     if not open_issues:
         return PreflightReady(sha=sha, issues=[])
 
-    async with detached_worktree("pre-flight-sandbox", sha, deps) as wt:
+    async with transient_worktree("pre-flight-sandbox", sha=sha, deps=deps) as wt:
         failures = await deps.agent_runner.run_preflight(
             name="Preflight Agent",
             mount_path=wt,

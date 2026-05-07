@@ -158,7 +158,7 @@ async def managed_worktree(
 
 
 @asynccontextmanager
-async def detached_worktree(name: str, sha: str, deps: _WorktreeDeps):
+async def transient_worktree(name: str, *, sha: str, deps: _WorktreeDeps):
     path = worktree_path(name, deps)
     deps.git_svc.checkout_detached(deps.repo_root, path, sha)
     try:
