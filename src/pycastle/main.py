@@ -171,8 +171,6 @@ def run_cmd(improve_mode: str | None) -> None:
     from .iteration.dispatcher import ImproveMode
     from .orchestrator import run
 
-    _improve_mode = cast(ImproveMode, improve_mode)
-
     _print_layer_summary()
     cfg = _load_config_or_exit()
     env = _load_env(cfg=cfg)
@@ -200,7 +198,7 @@ def run_cmd(improve_mode: str | None) -> None:
             container_env,
             Path(".").resolve(),
             account_pool=pool,
-            improve_mode=_improve_mode,
+            improve_mode=cast(ImproveMode, improve_mode),
         )
     )
 
