@@ -18,6 +18,7 @@ from .iteration import (
     run_iteration,
 )
 from .iteration._deps import Deps as IterationDeps
+from .iteration.dispatcher import ImproveMode
 from .rich_status_display import RichStatusDisplay
 from .services import (
     GitCommandError,
@@ -104,6 +105,7 @@ async def run(
     github_service: GithubService | None = None,
     status_display: StatusDisplay | None = None,
     account_pool: AccountPool | None = None,
+    improve_mode: ImproveMode = None,
 ) -> None:
     cfg = load_config(repo_root=repo_root)
     prune_orphan_worktrees(repo_root, cfg=cfg)
@@ -165,6 +167,8 @@ async def run(
             summary = "Claude accounts: " + ", ".join(parts)
         status_display.print("", summary)  # type: ignore[union-attr]
 
+    slept_once = False
+
     try:
         for iteration in range(1, cfg.max_iterations + 1):
             status_display.print(  # type: ignore[union-attr]
@@ -173,11 +177,12 @@ async def run(
             )
 
             if not github_service.has_open_issues_with_label(cfg.issue_label):
-                status_display.print(  # type: ignore[union-attr]
-                    "",
-                    f"No issues with label '{cfg.issue_label}' found. Skipping.",
-                )
-                break
+                if improve_mode is None:
+                    status_display.print(  # type: ignore[union-attr]
+                        "",
+                        f"No issues with label '{cfg.issue_label}' found. Skipping.",
+                    )
+                    break
 
             if agent_runner is not None:
                 _agent_runner: AgentRunnerProtocol = agent_runner
@@ -199,6 +204,8 @@ async def run(
                 cfg=cfg,
                 logger=FileLogger(cfg.logs_dir),
                 status_display=status_display,  # type: ignore[arg-type]
+                improve_mode=improve_mode,
+                slept_once=slept_once,
             )
             outcome = await run_iteration(deps)
 
@@ -240,6 +247,7 @@ async def run(
                         " Press Ctrl+C to abort.",
                     )
                     time.sleep((wake_time - now).total_seconds())
+                    slept_once = True
                     continue
                 case Continue():
                     pass

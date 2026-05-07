@@ -151,9 +151,25 @@ def build_cmd(no_cache: bool) -> None:
 
 
 @main.command("run")
-def run_cmd() -> None:
+@click.option(
+    "--improve",
+    "improve_mode",
+    default=None,
+    is_flag=False,
+    flag_value="until_sleep",
+    type=click.Choice(["until_sleep", "endless"]),
+    help=(
+        "Dispatch the improve agent when no issues are ready. "
+        "Bare --improve defaults to 'until_sleep' (exits after first sleep clears backlog). "
+        "'endless' keeps generating until Ctrl-C."
+    ),
+)
+def run_cmd(improve_mode: str | None) -> None:
     from .account_pool import AccountPool
+    from .iteration.dispatcher import ImproveMode
     from .orchestrator import run
+
+    _improve_mode: ImproveMode = improve_mode  # type: ignore[assignment]
 
     _print_layer_summary()
     cfg = _load_config_or_exit()
@@ -177,7 +193,14 @@ def run_cmd() -> None:
     container_env = {
         k: v for k, v in env.items() if k != "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY"
     }
-    asyncio.run(run(container_env, Path(".").resolve(), account_pool=pool))
+    asyncio.run(
+        run(
+            container_env,
+            Path(".").resolve(),
+            account_pool=pool,
+            improve_mode=_improve_mode,
+        )
+    )
 
 
 if __name__ == "__main__":
