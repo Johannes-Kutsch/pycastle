@@ -13,7 +13,7 @@ from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import BranchCollisionError, UsageLimitError
 from ..prompt_pipeline import load_standards
-from ..session_resume import has_resumable_session
+from ..session_resume import is_stage_done
 from ..status_display import StatusDisplay
 from ..services import GitService
 from ..worktree import (
@@ -128,12 +128,8 @@ async def run_issue(
         _impl_session_dir = _wt_path / ".pycastle-session" / "implementer"
         _review_session_dir = _wt_path / ".pycastle-session" / "reviewer"
 
-        implement_done = _impl_session_dir.is_dir() and not has_resumable_session(
-            _impl_session_dir
-        )
-        review_done = _review_session_dir.is_dir() and not has_resumable_session(
-            _review_session_dir
-        )
+        implement_done = is_stage_done(_impl_session_dir)
+        review_done = is_stage_done(_review_session_dir)
 
         if review_done:
             return issue

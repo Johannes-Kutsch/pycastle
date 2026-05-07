@@ -16,6 +16,10 @@ def has_resumable_session(role_dir: Path) -> bool:
     return role_dir.is_dir() and any(f.is_file() for f in role_dir.rglob("*"))
 
 
+def is_stage_done(role_dir: Path) -> bool:
+    return role_dir.is_dir() and not has_resumable_session(role_dir)
+
+
 def any_role_has_session(worktree_path: Path) -> bool:
     session_base = worktree_path / ".pycastle-session"
     if not session_base.is_dir():

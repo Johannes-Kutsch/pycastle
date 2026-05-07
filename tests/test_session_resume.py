@@ -9,6 +9,7 @@ from pycastle.session_resume import (
     decide_agent_run_kind,
     derived_session_uuid,
     has_resumable_session,
+    is_stage_done,
 )
 
 
@@ -43,6 +44,26 @@ def test_has_resumable_session_returns_false_when_dir_has_only_empty_subdir(tmp_
     role_dir = tmp_path / "merger"
     (role_dir / "empty_sub").mkdir(parents=True)
     assert has_resumable_session(role_dir) is False
+
+
+# ── is_stage_done ─────────────────────────────────────────────────────────────
+
+
+def test_is_stage_done_returns_false_when_dir_absent(tmp_path):
+    assert is_stage_done(tmp_path / "implementer") is False
+
+
+def test_is_stage_done_returns_false_when_dir_has_session_content(tmp_path):
+    role_dir = tmp_path / "implementer"
+    role_dir.mkdir()
+    (role_dir / "session.jsonl").write_text("{}\n")
+    assert is_stage_done(role_dir) is False
+
+
+def test_is_stage_done_returns_true_when_dir_present_and_empty(tmp_path):
+    role_dir = tmp_path / "implementer"
+    role_dir.mkdir()
+    assert is_stage_done(role_dir) is True
 
 
 # ── decide_agent_run_kind ─────────────────────────────────────────────────────
