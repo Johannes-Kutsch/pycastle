@@ -563,7 +563,12 @@ def test_describe_config_layers_with_local_only_appends_pycastle_path(tmp_path):
     assert summary == "Config: defaults + pycastle/config.py"
 
 
-def test_describe_config_layers_with_global_only_appends_global_path(tmp_path):
+def test_describe_config_layers_with_global_only_appends_global_path(
+    tmp_path, monkeypatch
+):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
     global_dir = tmp_path / "global"
     global_dir.mkdir()
     (global_dir / "config.py").write_text("")
@@ -575,7 +580,12 @@ def test_describe_config_layers_with_global_only_appends_global_path(tmp_path):
     assert "pycastle/config.py" not in summary
 
 
-def test_describe_config_layers_with_both_layers_orders_global_then_local(tmp_path):
+def test_describe_config_layers_with_both_layers_orders_global_then_local(
+    tmp_path, monkeypatch
+):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
     global_dir = tmp_path / "global"
     global_dir.mkdir()
     (global_dir / "config.py").write_text("")
