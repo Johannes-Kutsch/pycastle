@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .config import Config
-from .errors import WorktreeError, WorktreeTimeoutError
+from .errors import UsageLimitError, WorktreeError, WorktreeTimeoutError
 from .services import GitCommandError, GitService, GitTimeoutError
 from .session_resume import any_role_has_session
 
@@ -118,6 +118,16 @@ def _create_worktree(
             raise error
 
 
+def _worktree_reusable(path: Path, branch: str, git_svc: GitService) -> bool:
+    if not path.exists():
+        return False
+    try:
+        current = git_svc.get_current_branch(path)
+    except Exception:
+        return False
+    return current == branch and any_role_has_session(path)
+
+
 @asynccontextmanager
 async def branch_worktree(
     name: str,
@@ -128,16 +138,25 @@ async def branch_worktree(
     delete_branch: bool = True,
 ):
     path = worktree_path(name, deps)
-    _create_worktree(deps.git_svc, deps.repo_root, path, branch, sha)
+    if not _worktree_reusable(path, branch, deps.git_svc):
+        _create_worktree(deps.git_svc, deps.repo_root, path, branch, sha)
+    _exc: BaseException | None = None
     try:
         yield path
+    except BaseException as exc:
+        _exc = exc
+        raise
     finally:
-        if not any_role_has_session(path):
-            try:
-                teardown_worktree(deps.git_svc, deps.repo_root, path)
-            finally:
-                if delete_branch:
-                    deps.git_svc.delete_branch(branch, deps.repo_root)
+        try:
+            dirty = not deps.git_svc.is_working_tree_clean(path)
+        except Exception:
+            dirty = True
+        if not (
+            isinstance(_exc, UsageLimitError) or dirty or any_role_has_session(path)
+        ):
+            teardown_worktree(deps.git_svc, deps.repo_root, path)
+            if delete_branch:
+                deps.git_svc.delete_branch(branch, deps.repo_root)
 
 
 @asynccontextmanager

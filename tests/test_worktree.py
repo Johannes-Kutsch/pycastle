@@ -677,7 +677,10 @@ def test_branch_worktree_cleans_up_on_exception(branch_deps):
     )
 
 
-def test_branch_worktree_deletes_branch_even_when_remove_worktree_raises(branch_deps):
+def test_branch_worktree_does_not_delete_branch_when_remove_worktree_raises(
+    branch_deps,
+):
+    """teardown_worktree and delete_branch are gated together — if teardown fails, delete does not fire."""
     branch_deps.git_svc.remove_worktree.side_effect = RuntimeError("disk full")
 
     async def _run():
@@ -688,9 +691,7 @@ def test_branch_worktree_deletes_branch_even_when_remove_worktree_raises(branch_
                 pass
 
     asyncio.run(_run())
-    branch_deps.git_svc.delete_branch.assert_called_once_with(
-        "pycastle/issue-42", branch_deps.repo_root
-    )
+    branch_deps.git_svc.delete_branch.assert_not_called()
 
 
 def test_branch_worktree_does_not_run_cleanup_when_create_fails(branch_deps):
