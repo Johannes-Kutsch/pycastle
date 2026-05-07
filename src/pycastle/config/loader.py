@@ -87,6 +87,7 @@ class Config:
         default_factory=StageOverride
     )
     improve_override: StageOverride = dataclasses.field(default_factory=StageOverride)
+    improve_no_candidate_report: bool = True
 
 
 def resolve_global_dir(explicit: Path | None, env: Mapping[str, str]) -> Path:
