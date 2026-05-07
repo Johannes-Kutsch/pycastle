@@ -917,14 +917,21 @@ def test_push_git_command_error_propagates(deps, git_svc):
 # ── Merger session cleanup after successful conflict resolution ───────────────
 
 
-def test_merge_phase_removes_merger_session_dir_after_successful_conflict_resolution(
+def test_merge_phase_clears_merger_session_dir_after_successful_conflict_resolution(
     tmp_path, git_svc, github_svc
 ):
-    """merge_phase removes the merger session dir after fast_forward_branch so the worktree is torn down."""
+    """merge_phase clears the merger session dir contents (keeps dir as stage-done signal).
+
+    Intercepts remove_worktree — called by managed_worktree after clear_session_dir empties
+    the session dir — to assert the dir exists but has no files before the worktree is removed.
+    """
     git_svc.try_merge.return_value = False
 
     sandbox_path = tmp_path / Config().pycastle_dir / ".worktrees" / "merge-sandbox"
     orig_create = git_svc.create_worktree.side_effect
+    orig_remove = git_svc.remove_worktree.side_effect
+
+    captured: dict = {}
 
     def _create_with_session(repo, wt, branch, sha=None):
         orig_create(repo, wt, branch, sha)
@@ -933,14 +940,26 @@ def test_merge_phase_removes_merger_session_dir_after_successful_conflict_resolu
             session_dir.mkdir(parents=True, exist_ok=True)
             (session_dir / "session.json").write_text("{}")
 
+    def _capture_on_remove(repo, wt):
+        if wt == sandbox_path:
+            merger_dir = sandbox_path / ".pycastle-session" / "merger"
+            captured["exists"] = merger_dir.is_dir()
+            captured["empty"] = (
+                not any(merger_dir.iterdir()) if merger_dir.is_dir() else None
+            )
+        if orig_remove:
+            orig_remove(repo, wt)
+
     git_svc.create_worktree.side_effect = _create_with_session
+    git_svc.remove_worktree.side_effect = _capture_on_remove
 
     fake = FakeAgentRunner([CompletionOutput()])
     deps = _make_deps(tmp_path, git_svc, github_svc, fake)
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
 
-    assert not (sandbox_path / ".pycastle-session" / "merger").exists()
+    assert captured.get("exists") is True, "merger session dir should be kept"
+    assert captured.get("empty") is True, "merger session dir should be empty"
 
 
 def test_merge_phase_tears_down_sandbox_after_merger_session_cleanup(
