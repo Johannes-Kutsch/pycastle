@@ -82,7 +82,11 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 initial_phase="Planning",
                 startup_message=f"started planning for {len(open_issues)} issue(s) labeled {deps.cfg.issue_label}",
             ) as row:
-                plan_result = await planning_phase(deps, sha, open_issues)
+                try:
+                    plan_result = await planning_phase(deps, sha, open_issues)
+                except UsageLimitError as err:
+                    row.close("finished")
+                    return AbortedUsageLimit(reset_time=err.reset_time)
                 issue_lines = [
                     f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
                     for i in plan_result.issues
