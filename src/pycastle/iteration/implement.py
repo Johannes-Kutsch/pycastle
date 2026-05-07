@@ -18,6 +18,7 @@ from ..session_resume import any_role_has_session
 from ..status_display import StatusDisplay
 from ..services import GitService
 from ..worktree import (
+    is_worktree_reusable,
     patch_gitdir_for_container,
     teardown_worktree,
     worktree_name_for_branch,
@@ -35,16 +36,6 @@ class _ImplementDeps(Protocol):
     logger: Logger
 
 
-def _worktree_reusable(wt_path: Path, branch: str, git_svc: GitService) -> bool:
-    if not wt_path.exists():
-        return False
-    try:
-        current = git_svc.get_current_branch(wt_path)
-    except Exception:
-        return False
-    return current == branch and any_role_has_session(wt_path)
-
-
 @asynccontextmanager
 async def _agent_worktree(
     branch: str,
@@ -54,7 +45,7 @@ async def _agent_worktree(
 ):
     wt_name = worktree_name_for_branch(branch)
     wt_path = _worktree_path(wt_name, deps)
-    if not _worktree_reusable(wt_path, branch, deps.git_svc):
+    if not is_worktree_reusable(wt_path, branch, deps.git_svc):
         deps.git_svc.create_worktree(deps.repo_root, wt_path, branch, sha)
     gitdir_overlay = None
     try:
