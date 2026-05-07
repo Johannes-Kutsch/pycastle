@@ -9,7 +9,7 @@ import pytest
 
 from pycastle.agent_output_protocol import AgentRole, CompletionOutput
 from pycastle.config import Config
-from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
+from pycastle.iteration._deps import FakeAgentRunner
 from pycastle.iteration.improve import IMPROVE_SANDBOX, improve_phase
 from pycastle.services import GitService
 from pycastle.status_display import PlainStatusDisplay
@@ -21,7 +21,7 @@ class _ImproveDepsStub:
     git_svc: GitService
     agent_runner: FakeAgentRunner
     cfg: Config
-    status_display: PlainStatusDisplay | RecordingStatusDisplay
+    status_display: PlainStatusDisplay
 
 
 @pytest.fixture
