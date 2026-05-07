@@ -71,6 +71,27 @@ def _make_deps(
     status_display=None,
     preflight_responses=None,
 ) -> Deps:
+    import shutil as _shutil
+
+    _cfg = cfg or Config(max_parallel=4, max_iterations=1)
+    _registered: list = []
+
+    def _fake_list_worktrees(repo):
+        return list(_registered)
+
+    def _fake_create_worktree(repo, path, branch, sha=None):
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+        _registered.append(path)
+
+    def _fake_remove_worktree(repo, path):
+        _shutil.rmtree(path, ignore_errors=True)
+        _registered[:] = [p for p in _registered if p != path]
+
+    git_svc.list_worktrees.side_effect = _fake_list_worktrees
+    git_svc.create_worktree.side_effect = _fake_create_worktree
+    git_svc.remove_worktree.side_effect = _fake_remove_worktree
+
     return Deps(
         repo_root=tmp_path,
         git_svc=git_svc,
@@ -81,7 +102,7 @@ def _make_deps(
             if preflight_responses is None
             else preflight_responses,
         ),
-        cfg=cfg or Config(max_parallel=4, max_iterations=1),
+        cfg=_cfg,
         logger=logger,
         status_display=status_display or PlainStatusDisplay(),  # type: ignore[arg-type]
     )

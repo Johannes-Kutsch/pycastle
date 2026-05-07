@@ -11,7 +11,7 @@ from ..config import Config
 from ..services import GitCommandError, GitService, GithubService
 from ..status_display import StatusDisplay
 from ..worktree import (
-    branch_worktree,
+    managed_worktree,
     teardown_worktree,
     worktree_name_for_branch,
     worktree_path,
@@ -96,8 +96,12 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         else:
             target_branch = deps.git_svc.get_current_branch(deps.repo_root)
             sha = deps.git_svc.get_head_sha(deps.repo_root)
-            async with branch_worktree(
-                "merge-sandbox", MERGE_SANDBOX, sha, deps
+            async with managed_worktree(
+                "merge-sandbox",
+                branch=MERGE_SANDBOX,
+                sha=sha,
+                delete_branch_on_teardown=True,
+                deps=deps,
             ) as sandbox_path:
                 merger_result = await deps.agent_runner.run(
                     RunRequest(

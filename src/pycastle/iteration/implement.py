@@ -4,7 +4,6 @@ import dataclasses
 import shutil
 from collections.abc import Callable, Sequence
 from datetime import datetime
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -14,15 +13,12 @@ from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import BranchCollisionError, UsageLimitError
 from ..prompt_pipeline import load_standards
-from ..session_resume import any_role_has_session
 from ..status_display import StatusDisplay
 from ..services import GitService
 from ..worktree import (
-    is_worktree_reusable,
+    managed_worktree,
     patch_gitdir_for_container,
-    teardown_worktree,
     worktree_name_for_branch,
-    worktree_path as _worktree_path,
 )
 from ._deps import Logger
 
@@ -34,33 +30,6 @@ class _ImplementDeps(Protocol):
     git_svc: GitService
     repo_root: Path
     logger: Logger
-
-
-@asynccontextmanager
-async def _agent_worktree(
-    branch: str,
-    sha: str | None,
-    token: CancellationToken,
-    deps: _ImplementDeps,
-):
-    wt_name = worktree_name_for_branch(branch)
-    wt_path = _worktree_path(wt_name, deps)
-    if not is_worktree_reusable(wt_path, branch, deps.git_svc):
-        deps.git_svc.create_worktree(deps.repo_root, wt_path, branch, sha)
-    gitdir_overlay = None
-    try:
-        gitdir_overlay = patch_gitdir_for_container(wt_path)
-        yield wt_path
-    finally:
-        if not token.wants_worktree_preserved:
-            try:
-                clean = deps.git_svc.is_working_tree_clean(wt_path)
-            except Exception:
-                clean = False
-            if clean and not any_role_has_session(wt_path):
-                teardown_worktree(deps.git_svc, deps.repo_root, wt_path)
-        if gitdir_overlay is not None:
-            gitdir_overlay.unlink(missing_ok=True)
 
 
 IMPLEMENT_COMMIT_PREFIX = "RALPH: Implement - "
@@ -148,70 +117,94 @@ async def run_issue(
         if review_done:
             return issue
 
+        _wt_name = worktree_name_for_branch(_branch)
+
         if not implement_done:
-            async with _agent_worktree(_branch, sha, _token, deps) as impl_mount_path:
-                result = await _bounded_run_agent(
+            async with managed_worktree(
+                _wt_name,
+                branch=_branch,
+                sha=sha,
+                delete_branch_on_teardown=False,
+                deps=deps,
+            ) as impl_mount_path:
+                _impl_overlay = patch_gitdir_for_container(impl_mount_path)
+                try:
+                    result = await _bounded_run_agent(
+                        RunRequest(
+                            name=f"Implement Agent #{issue['number']}",
+                            prompt_file=deps.cfg.prompts_dir / "implement-prompt.md",
+                            mount_path=impl_mount_path,
+                            role=AgentRole.IMPLEMENTER,
+                            prompt_args=prompt_args,
+                            model=deps.cfg.implement_override.model,
+                            effort=deps.cfg.implement_override.effort,
+                            stage="pre-implementation",
+                            skip_preflight=True,
+                            status_display=deps.status_display,
+                            issue_title=issue["title"],
+                            work_body=f'implementing "{issue["title"]}"',
+                            token=_token,
+                        )
+                    )
+                    if isinstance(result, PreflightFailure):
+                        return result
+                    if isinstance(result, CommitMessageOutput):
+                        deps.git_svc.commit(
+                            impl_mount_path,
+                            deps.repo_root,
+                            f"{IMPLEMENT_COMMIT_PREFIX}{result.message}",
+                        )
+                        shutil.rmtree(
+                            impl_mount_path / ".pycastle-session" / "implementer",
+                            ignore_errors=True,
+                        )
+                finally:
+                    if _impl_overlay is not None:
+                        _impl_overlay.unlink(missing_ok=True)
+
+        async with managed_worktree(
+            _wt_name,
+            branch=_branch,
+            sha=None,
+            delete_branch_on_teardown=False,
+            deps=deps,
+        ) as review_mount_path:
+            _review_overlay = patch_gitdir_for_container(review_mount_path)
+            try:
+                review_prompt_args = {
+                    **prompt_args,
+                    "DIFF": deps.git_svc.get_diff_to_main(review_mount_path),
+                }
+                review_result = await _bounded_run_agent(
                     RunRequest(
-                        name=f"Implement Agent #{issue['number']}",
-                        prompt_file=deps.cfg.prompts_dir / "implement-prompt.md",
-                        mount_path=impl_mount_path,
-                        role=AgentRole.IMPLEMENTER,
-                        prompt_args=prompt_args,
-                        model=deps.cfg.implement_override.model,
-                        effort=deps.cfg.implement_override.effort,
-                        stage="pre-implementation",
+                        name=f"Review Agent #{issue['number']}",
+                        prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
+                        mount_path=review_mount_path,
+                        role=AgentRole.REVIEWER,
+                        prompt_args=review_prompt_args,
+                        model=deps.cfg.review_override.model,
+                        effort=deps.cfg.review_override.effort,
+                        stage="pre-review",
                         skip_preflight=True,
                         status_display=deps.status_display,
                         issue_title=issue["title"],
-                        work_body=f'implementing "{issue["title"]}"',
+                        work_body=f'reviewing "{issue["title"]}"',
                         token=_token,
                     )
                 )
-                if isinstance(result, PreflightFailure):
-                    return result
-                if isinstance(result, CommitMessageOutput):
+                if isinstance(review_result, CommitMessageOutput):
                     deps.git_svc.commit(
-                        impl_mount_path,
+                        review_mount_path,
                         deps.repo_root,
-                        f"{IMPLEMENT_COMMIT_PREFIX}{result.message}",
+                        f"{REVIEW_COMMIT_PREFIX}{review_result.message}",
                     )
                     shutil.rmtree(
-                        impl_mount_path / ".pycastle-session" / "implementer",
+                        review_mount_path / ".pycastle-session" / "reviewer",
                         ignore_errors=True,
                     )
-
-        async with _agent_worktree(_branch, None, _token, deps) as review_mount_path:
-            review_prompt_args = {
-                **prompt_args,
-                "DIFF": deps.git_svc.get_diff_to_main(review_mount_path),
-            }
-            review_result = await _bounded_run_agent(
-                RunRequest(
-                    name=f"Review Agent #{issue['number']}",
-                    prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
-                    mount_path=review_mount_path,
-                    role=AgentRole.REVIEWER,
-                    prompt_args=review_prompt_args,
-                    model=deps.cfg.review_override.model,
-                    effort=deps.cfg.review_override.effort,
-                    stage="pre-review",
-                    skip_preflight=True,
-                    status_display=deps.status_display,
-                    issue_title=issue["title"],
-                    work_body=f'reviewing "{issue["title"]}"',
-                    token=_token,
-                )
-            )
-            if isinstance(review_result, CommitMessageOutput):
-                deps.git_svc.commit(
-                    review_mount_path,
-                    deps.repo_root,
-                    f"{REVIEW_COMMIT_PREFIX}{review_result.message}",
-                )
-                shutil.rmtree(
-                    review_mount_path / ".pycastle-session" / "reviewer",
-                    ignore_errors=True,
-                )
+            finally:
+                if _review_overlay is not None:
+                    _review_overlay.unlink(missing_ok=True)
     finally:
         if lock is not None and lock.locked():
             lock.release()

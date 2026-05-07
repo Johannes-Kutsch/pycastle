@@ -131,7 +131,7 @@ def test_branch_worktree_raises_worktree_error_on_git_failure(tmp_path):
 
     from pycastle.config import Config
     from pycastle.services import GitService
-    from pycastle.worktree import branch_worktree
+    from pycastle.worktree import managed_worktree
 
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
     subprocess.run(
@@ -158,11 +158,21 @@ def test_branch_worktree_raises_worktree_error_on_git_failure(tmp_path):
     deps = SimpleNamespace(repo_root=tmp_path, cfg=cfg, git_svc=GitService(cfg))
 
     async def _run():
-        async with branch_worktree(
-            "name1", "feature/same", None, deps, delete_branch=False
+        async with managed_worktree(
+            "name1",
+            branch="feature/same",
+            sha=None,
+            delete_branch_on_teardown=False,
+            deps=deps,
         ):
             with pytest.raises(WorktreeError):
-                async with branch_worktree("name2", "feature/same", None, deps):
+                async with managed_worktree(
+                    "name2",
+                    branch="feature/same",
+                    sha=None,
+                    delete_branch_on_teardown=True,
+                    deps=deps,
+                ):
                     pass
 
     asyncio.run(_run())

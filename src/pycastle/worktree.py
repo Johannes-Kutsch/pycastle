@@ -129,33 +129,31 @@ def is_worktree_reusable(path: Path, branch: str, git_svc: GitService) -> bool:
 
 
 @asynccontextmanager
-async def branch_worktree(
+async def managed_worktree(
     name: str,
+    *,
     branch: str,
     sha: str | None,
+    delete_branch_on_teardown: bool,
     deps: _WorktreeDeps,
-    *,
-    delete_branch: bool = True,
 ):
     path = worktree_path(name, deps)
     if not is_worktree_reusable(path, branch, deps.git_svc):
         _create_worktree(deps.git_svc, deps.repo_root, path, branch, sha)
-    _exc: BaseException | None = None
+    _usage_limit_exc = False
     try:
         yield path
-    except BaseException as exc:
-        _exc = exc
+    except UsageLimitError:
+        _usage_limit_exc = True
         raise
     finally:
         try:
             dirty = not deps.git_svc.is_working_tree_clean(path)
         except Exception:
             dirty = True
-        if not (
-            isinstance(_exc, UsageLimitError) or dirty or any_role_has_session(path)
-        ):
+        if not (_usage_limit_exc or dirty or any_role_has_session(path)):
             teardown_worktree(deps.git_svc, deps.repo_root, path)
-            if delete_branch:
+            if delete_branch_on_teardown:
                 deps.git_svc.delete_branch(branch, deps.repo_root)
 
 
