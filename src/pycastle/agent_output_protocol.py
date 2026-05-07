@@ -73,12 +73,21 @@ class CompletionOutput:
 
 
 @dataclasses.dataclass(frozen=True)
+class NoCandidateOutput:
+    pass
+
+
+@dataclasses.dataclass(frozen=True)
 class CommitMessageOutput:
     message: str | None
 
 
 AgentOutput: TypeAlias = (
-    PlannerOutput | IssueOutput | CompletionOutput | CommitMessageOutput
+    PlannerOutput
+    | IssueOutput
+    | CompletionOutput
+    | NoCandidateOutput
+    | CommitMessageOutput
 )
 
 
@@ -240,6 +249,11 @@ def process_stream(
                 match = _COMMIT_MESSAGE_RE.search(turn)
                 if match:
                     return CommitMessageOutput(message=match.group(1).strip())
+            elif role == AgentRole.IMPROVE:
+                if re.search(r"<promise>NO-CANDIDATE</promise>", turn):
+                    return NoCandidateOutput()
+                if re.search(r"<promise>COMPLETE</promise>", turn):
+                    return CompletionOutput()
             elif role == AgentRole.MERGER:
                 if re.search(r"<promise>COMPLETE</promise>", turn):
                     return CompletionOutput()
@@ -279,6 +293,15 @@ def process_stream(
         if not match:
             return CommitMessageOutput(message=None)
         return CommitMessageOutput(message=match.group(1).strip())
+    if role == AgentRole.IMPROVE:
+        if re.search(r"<promise>NO-CANDIDATE</promise>", text):
+            return NoCandidateOutput()
+        if not re.search(r"<promise>COMPLETE</promise>", text):
+            raise PromiseParseError(
+                f"Agent produced no <promise>COMPLETE</promise> or"
+                f" <promise>NO-CANDIDATE</promise> tag.{tail}"
+            )
+        return CompletionOutput()
     if not re.search(r"<promise>COMPLETE</promise>", text):
         raise PromiseParseError(
             f"Agent produced no <promise>COMPLETE</promise> tag.{tail}"
