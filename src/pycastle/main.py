@@ -165,11 +165,13 @@ def build_cmd(no_cache: bool) -> None:
     ),
 )
 def run_cmd(improve_mode: str | None) -> None:
+    from typing import cast
+
     from .account_pool import AccountPool
     from .iteration.dispatcher import ImproveMode
     from .orchestrator import run
 
-    _improve_mode: ImproveMode = improve_mode  # type: ignore[assignment]
+    _improve_mode = cast(ImproveMode, improve_mode)
 
     _print_layer_summary()
     cfg = _load_config_or_exit()
