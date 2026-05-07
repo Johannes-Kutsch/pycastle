@@ -78,41 +78,42 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             slept_once=deps.slept_once,
             improve_dispatched_this_iteration=deps.improve_dispatched_this_iteration,
         )
-        if isinstance(action, Done):
-            return Done()
-        if isinstance(action, DispatchImprove):
-            await improve_phase(deps)
-            return Continue()
-        sha = preflight_result.sha
-        if isinstance(action, RunImplementDirect):
-            issues = in_flight if in_flight else open_issues
-        else:
-            # RunPlan
-            async with phase_row(
-                deps.status_display,
-                "Plan",
-                initial_phase="Planning",
-                startup_message=f"started planning for {len(open_issues)} issue(s) labeled {deps.cfg.issue_label}",
-            ) as row:
-                try:
-                    plan_result = await planning_phase(deps, sha, open_issues)
-                except UsageLimitError as err:
-                    row.close("finished")
-                    return AbortedUsageLimit(reset_time=err.reset_time)
-                issue_lines = [
-                    f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
-                    for i in plan_result.issues
-                ]
-                row.close(
-                    "\n".join(
-                        [
-                            f"Planning complete, implementing {len(plan_result.issues)} issue(s):"
-                        ]
-                        + issue_lines
+        match action:
+            case Done():
+                return Done()
+            case DispatchImprove():
+                await improve_phase(deps)
+                return Continue()
+            case RunImplementDirect():
+                sha = preflight_result.sha
+                issues = in_flight if in_flight else open_issues
+            case RunPlan():
+                sha = preflight_result.sha
+                async with phase_row(
+                    deps.status_display,
+                    "Plan",
+                    initial_phase="Planning",
+                    startup_message=f"started planning for {len(open_issues)} issue(s) labeled {deps.cfg.issue_label}",
+                ) as row:
+                    try:
+                        plan_result = await planning_phase(deps, sha, open_issues)
+                    except UsageLimitError as err:
+                        row.close("finished")
+                        return AbortedUsageLimit(reset_time=err.reset_time)
+                    issue_lines = [
+                        f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
+                        for i in plan_result.issues
+                    ]
+                    row.close(
+                        "\n".join(
+                            [
+                                f"Planning complete, implementing {len(plan_result.issues)} issue(s):"
+                            ]
+                            + issue_lines
+                        )
                     )
-                )
-                sha = plan_result.worktree_sha
-                issues = plan_result.issues
+                    sha = plan_result.worktree_sha
+                    issues = plan_result.issues
     elif isinstance(preflight_result, PreflightAFK):
         sha = preflight_result.worktree_sha
         issues = preflight_result.issues
