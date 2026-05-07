@@ -922,7 +922,7 @@ def test_merge_phase_clears_merger_session_dir_after_successful_conflict_resolut
 ):
     """merge_phase clears the merger session dir contents (keeps dir as stage-done signal).
 
-    Intercepts remove_worktree — called by managed_worktree after _clear_session_dir empties
+    Intercepts remove_worktree — called by managed_worktree after clear_session_dir empties
     the session dir — to assert the dir exists but has no files before the worktree is removed.
     """
     git_svc.try_merge.return_value = False
