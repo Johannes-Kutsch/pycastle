@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .account_pool import AccountPool
-from .agent_output_protocol import AgentOutput, AgentRole, CommitMessageParseError
+from .agent_output_protocol import AgentOutput, AgentRole
 from .agent_result import CancellationToken, PreflightFailure
 from .config import Config
 from .container_runner import ContainerRunner
@@ -173,8 +173,6 @@ class AgentRunner:
                                 picked_token, err.reset_time
                             )
                         _token.cancel()
-                        raise
-                    except CommitMessageParseError:
                         raise
                     except Exception:
                         if run_kind == RunKind.RESUME and not is_failsoft_recovery:
