@@ -10,19 +10,10 @@ class PreflightFailure:
 @dataclass
 class CancellationToken:
     _event: asyncio.Event = field(default_factory=asyncio.Event, init=False)
-    _preserve: bool = field(default=False, init=False)
 
     @property
     def is_cancelled(self) -> bool:
         return self._event.is_set()
 
-    @property
-    def wants_worktree_preserved(self) -> bool:
-        return self._preserve
-
-    def cancel(self, *, preserve_worktree: bool = False) -> None:
-        if self._event.is_set():
-            return
-        if preserve_worktree:
-            self._preserve = True
+    def cancel(self) -> None:
         self._event.set()

@@ -9,9 +9,10 @@ import pytest
 from pycastle.config import Config
 from pycastle.errors import WorktreeError, WorktreeTimeoutError
 from pycastle.services import GitCommandError, GitService, GitTimeoutError
+from pycastle.errors import UsageLimitError
 from pycastle.worktree import (
-    branch_worktree,
     detached_worktree,
+    managed_worktree,
     patch_gitdir_for_container,
     worktree_name_for_branch,
     worktree_path,
@@ -83,36 +84,44 @@ def branch_deps(tmp_path):
     return SimpleNamespace(repo_root=tmp_path, cfg=cfg, git_svc=mock_svc)
 
 
-# ── branch_worktree: timeout and git errors ───────────────────────────────────
+# ── managed_worktree: timeout and git errors ──────────────────────────────────
 
 
-def test_branch_worktree_raises_worktree_timeout_error_when_git_times_out(branch_deps):
+def test_managed_worktree_raises_worktree_timeout_error_when_git_times_out(branch_deps):
     branch_deps.git_svc.verify_ref_exists.side_effect = GitTimeoutError("timed out")
 
     async def _run():
         with pytest.raises(WorktreeTimeoutError):
-            async with branch_worktree(
-                "issue-42", "pycastle/issue-42", "abc123", branch_deps
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha="abc123",
+                delete_branch_on_teardown=True,
+                deps=branch_deps,
             ):
                 pass
 
     asyncio.run(_run())
 
 
-def test_branch_worktree_raises_worktree_error_on_git_command_failure(branch_deps):
+def test_managed_worktree_raises_worktree_error_on_git_command_failure(branch_deps):
     branch_deps.git_svc.create_worktree.side_effect = GitCommandError("git died")
 
     async def _run():
         with pytest.raises(WorktreeError, match="git died"):
-            async with branch_worktree(
-                "issue-42", "pycastle/issue-42", "abc123", branch_deps
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha="abc123",
+                delete_branch_on_teardown=True,
+                deps=branch_deps,
             ):
                 pass
 
     asyncio.run(_run())
 
 
-def test_branch_worktree_raises_when_registered_worktree_has_no_project_files(
+def test_managed_worktree_raises_when_registered_worktree_has_no_project_files(
     branch_deps,
 ):
     """A registered worktree with no project files must raise WorktreeError."""
@@ -123,21 +132,29 @@ def test_branch_worktree_raises_when_registered_worktree_has_no_project_files(
 
     async def _run():
         with pytest.raises(WorktreeError, match="(?i)commit"):
-            async with branch_worktree(
-                "issue-42", "pycastle/issue-42", "abc123", branch_deps
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha="abc123",
+                delete_branch_on_teardown=True,
+                deps=branch_deps,
             ):
                 pass
 
     asyncio.run(_run())
 
 
-# ── branch_worktree: integration tests against a real git repo ────────────────
+# ── managed_worktree: integration tests against a real git repo ───────────────
 
 
-def test_branch_worktree_yields_valid_path_in_real_repo(real_branch_deps):
+def test_managed_worktree_yields_valid_path_in_real_repo(real_branch_deps):
     async def _run():
-        async with branch_worktree(
-            "issue-42", "pycastle/issue-42", None, real_branch_deps
+        async with managed_worktree(
+            "issue-42",
+            branch="pycastle/issue-42",
+            sha=None,
+            delete_branch_on_teardown=True,
+            deps=real_branch_deps,
         ) as path:
             assert path.exists()
             assert (path / "pyproject.toml").exists()
@@ -145,10 +162,14 @@ def test_branch_worktree_yields_valid_path_in_real_repo(real_branch_deps):
     asyncio.run(_run())
 
 
-def test_branch_worktree_creates_new_branch_in_repo(real_branch_deps):
+def test_managed_worktree_creates_new_branch_in_repo(real_branch_deps):
     async def _run():
-        async with branch_worktree(
-            "issue-42", "pycastle/issue-42", None, real_branch_deps
+        async with managed_worktree(
+            "issue-42",
+            branch="pycastle/issue-42",
+            sha=None,
+            delete_branch_on_teardown=True,
+            deps=real_branch_deps,
         ):
             branches = subprocess.run(
                 [
@@ -167,8 +188,8 @@ def test_branch_worktree_creates_new_branch_in_repo(real_branch_deps):
     asyncio.run(_run())
 
 
-def test_branch_worktree_with_existing_branch(real_branch_deps):
-    """Entering branch_worktree for a branch that already exists must succeed."""
+def test_managed_worktree_with_existing_branch(real_branch_deps):
+    """Entering managed_worktree for a branch that already exists must succeed."""
     subprocess.run(
         ["git", "-C", str(real_branch_deps.repo_root), "branch", "existing-branch"],
         check=True,
@@ -176,22 +197,30 @@ def test_branch_worktree_with_existing_branch(real_branch_deps):
     )
 
     async def _run():
-        async with branch_worktree(
-            "existing", "existing-branch", None, real_branch_deps, delete_branch=False
+        async with managed_worktree(
+            "existing",
+            branch="existing-branch",
+            sha=None,
+            delete_branch_on_teardown=False,
+            deps=real_branch_deps,
         ) as path:
             assert (path / "pyproject.toml").exists()
 
     asyncio.run(_run())
 
 
-def test_branch_worktree_succeeds_after_stale_git_registration(real_branch_deps):
+def test_managed_worktree_succeeds_after_stale_git_registration(real_branch_deps):
     """A stale worktree entry (dir removed without git) must not block a fresh create."""
     repo = real_branch_deps.repo_root
     stale = repo / ".pycastle" / ".worktrees" / "stale"
 
     async def _create_stale():
-        async with branch_worktree(
-            "stale", "pycastle/stale", None, real_branch_deps, delete_branch=False
+        async with managed_worktree(
+            "stale",
+            branch="pycastle/stale",
+            sha=None,
+            delete_branch_on_teardown=False,
+            deps=real_branch_deps,
         ):
             pass
 
@@ -206,50 +235,70 @@ def test_branch_worktree_succeeds_after_stale_git_registration(real_branch_deps)
     shutil.rmtree(str(stale))
 
     async def _run():
-        async with branch_worktree(
-            "fresh", "pycastle/fresh", None, real_branch_deps
+        async with managed_worktree(
+            "fresh",
+            branch="pycastle/fresh",
+            sha=None,
+            delete_branch_on_teardown=True,
+            deps=real_branch_deps,
         ) as path:
             assert (path / "pyproject.toml").exists()
 
     asyncio.run(_run())
 
 
-def test_branch_worktree_raises_on_same_branch_conflict(real_branch_deps):
+def test_managed_worktree_raises_on_same_branch_conflict(real_branch_deps):
     """git won't check out the same branch in two worktrees — must raise WorktreeError."""
 
     async def _run():
-        async with branch_worktree(
-            "name1", "feature/same", None, real_branch_deps, delete_branch=False
+        async with managed_worktree(
+            "name1",
+            branch="feature/same",
+            sha=None,
+            delete_branch_on_teardown=False,
+            deps=real_branch_deps,
         ):
             with pytest.raises(WorktreeError, match="(?i)worktree add failed"):
-                async with branch_worktree(
-                    "name2", "feature/same", None, real_branch_deps
+                async with managed_worktree(
+                    "name2",
+                    branch="feature/same",
+                    sha=None,
+                    delete_branch_on_teardown=True,
+                    deps=real_branch_deps,
                 ):
                     pass
 
     asyncio.run(_run())
 
 
-def test_branch_worktree_raises_when_project_files_missing(bare_branch_deps):
-    """A repo with no pyproject.toml must cause branch_worktree to raise."""
+def test_managed_worktree_raises_when_project_files_missing(bare_branch_deps):
+    """A repo with no pyproject.toml must cause managed_worktree to raise."""
 
     async def _run():
         with pytest.raises(WorktreeError, match="(?i)commit"):
-            async with branch_worktree(
-                "issue-42", "pycastle/issue-42", None, bare_branch_deps
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha=None,
+                delete_branch_on_teardown=True,
+                deps=bare_branch_deps,
             ):
                 pass
 
     asyncio.run(_run())
 
 
-def test_branch_worktree_error_includes_path_and_listing(bare_branch_deps):
+def test_managed_worktree_error_includes_path_and_listing(bare_branch_deps):
     """The missing-files error must name the worktree path and list directory contents."""
 
     async def _run():
         with pytest.raises(WorktreeError) as exc_info:
-            async with branch_worktree(
-                "issue-42", "pycastle/issue-42", None, bare_branch_deps
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha=None,
+                delete_branch_on_teardown=True,
+                deps=bare_branch_deps,
             ):
                 pass
 
@@ -261,7 +310,7 @@ def test_branch_worktree_error_includes_path_and_listing(bare_branch_deps):
     asyncio.run(_run())
 
 
-def test_branch_worktree_does_not_recreate_valid_ancestor_branch(git_repo):
+def test_managed_worktree_does_not_recreate_valid_ancestor_branch(git_repo):
     """An ancestor branch that already has project files must not be recreated from HEAD."""
     (git_repo / "pyproject.toml").write_text("[project]\nname = 'test'\n")
     subprocess.run(
@@ -302,8 +351,12 @@ def test_branch_worktree_does_not_recreate_valid_ancestor_branch(git_repo):
     deps = SimpleNamespace(repo_root=git_repo, cfg=cfg, git_svc=GitService(cfg))
 
     async def _run():
-        async with branch_worktree(
-            "issue-3", "issue/3-valid-ancestor", None, deps, delete_branch=False
+        async with managed_worktree(
+            "issue-3",
+            branch="issue/3-valid-ancestor",
+            sha=None,
+            delete_branch_on_teardown=False,
+            deps=deps,
         ) as path:
             assert (path / "pyproject.toml").exists()
 
@@ -320,7 +373,9 @@ def test_branch_worktree_does_not_recreate_valid_ancestor_branch(git_repo):
     )
 
 
-def test_branch_worktree_raises_when_non_ancestor_branch_has_no_project_files(git_repo):
+def test_managed_worktree_raises_when_non_ancestor_branch_has_no_project_files(
+    git_repo,
+):
     """A branch with real commits but no project files must raise, not silently discard work."""
     subprocess.run(
         ["git", "-C", str(git_repo), "branch", "issue/2-real-work"],
@@ -375,13 +430,19 @@ def test_branch_worktree_raises_when_non_ancestor_branch_has_no_project_files(gi
 
     async def _run():
         with pytest.raises(WorktreeError, match="(?i)commit"):
-            async with branch_worktree("issue-2", "issue/2-real-work", None, deps):
+            async with managed_worktree(
+                "issue-2",
+                branch="issue/2-real-work",
+                sha=None,
+                delete_branch_on_teardown=True,
+                deps=deps,
+            ):
                 pass
 
     asyncio.run(_run())
 
 
-def test_branch_worktree_recreates_stale_ancestor_branch(git_repo):
+def test_managed_worktree_recreates_stale_ancestor_branch(git_repo):
     """A branch created before pyproject.toml is auto-recreated from HEAD when stale."""
     subprocess.run(
         ["git", "-C", str(git_repo), "branch", "issue/1-stale"],
@@ -404,7 +465,13 @@ def test_branch_worktree_recreates_stale_ancestor_branch(git_repo):
     deps = SimpleNamespace(repo_root=git_repo, cfg=cfg, git_svc=GitService(cfg))
 
     async def _run():
-        async with branch_worktree("issue-1", "issue/1-stale", None, deps) as path:
+        async with managed_worktree(
+            "issue-1",
+            branch="issue/1-stale",
+            sha=None,
+            delete_branch_on_teardown=True,
+            deps=deps,
+        ) as path:
             assert (path / "pyproject.toml").exists()
 
     asyncio.run(_run())
@@ -610,15 +677,21 @@ def test_detached_worktree_propagates_cleanup_error(detached_deps):
     asyncio.run(_run())
 
 
-# ── branch_worktree ───────────────────────────────────────────────────────────
+# ── managed_worktree ──────────────────────────────────────────────────────────
 
 
-def test_branch_worktree_creates_worktree_on_enter_and_yields_correct_path(branch_deps):
+def test_managed_worktree_creates_worktree_on_enter_and_yields_correct_path(
+    branch_deps,
+):
     expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
 
     async def _run():
-        async with branch_worktree(
-            "issue-42", "pycastle/issue-42", "abc123", branch_deps
+        async with managed_worktree(
+            "issue-42",
+            branch="pycastle/issue-42",
+            sha="abc123",
+            delete_branch_on_teardown=True,
+            deps=branch_deps,
         ) as path:
             assert path == expected_path
             assert expected_path.exists()
@@ -626,12 +699,16 @@ def test_branch_worktree_creates_worktree_on_enter_and_yields_correct_path(branc
     asyncio.run(_run())
 
 
-def test_branch_worktree_removes_worktree_and_branch_on_clean_exit(branch_deps):
+def test_managed_worktree_removes_worktree_and_branch_on_clean_exit(branch_deps):
     expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
 
     async def _run():
-        async with branch_worktree(
-            "issue-42", "pycastle/issue-42", "abc123", branch_deps
+        async with managed_worktree(
+            "issue-42",
+            branch="pycastle/issue-42",
+            sha="abc123",
+            delete_branch_on_teardown=True,
+            deps=branch_deps,
         ):
             pass
 
@@ -644,12 +721,16 @@ def test_branch_worktree_removes_worktree_and_branch_on_clean_exit(branch_deps):
     )
 
 
-def test_branch_worktree_removes_worktree_but_not_branch_when_delete_branch_false(
+def test_managed_worktree_removes_worktree_but_not_branch_when_delete_branch_on_teardown_false(
     branch_deps,
 ):
     async def _run():
-        async with branch_worktree(
-            "issue-42", "pycastle/issue-42", "abc123", branch_deps, delete_branch=False
+        async with managed_worktree(
+            "issue-42",
+            branch="pycastle/issue-42",
+            sha="abc123",
+            delete_branch_on_teardown=False,
+            deps=branch_deps,
         ):
             pass
 
@@ -658,13 +739,17 @@ def test_branch_worktree_removes_worktree_but_not_branch_when_delete_branch_fals
     branch_deps.git_svc.delete_branch.assert_not_called()
 
 
-def test_branch_worktree_cleans_up_on_exception(branch_deps):
+def test_managed_worktree_cleans_up_on_exception(branch_deps):
     expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
 
     async def _run():
         with pytest.raises(RuntimeError, match="body error"):
-            async with branch_worktree(
-                "issue-42", "pycastle/issue-42", "abc123", branch_deps
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha="abc123",
+                delete_branch_on_teardown=True,
+                deps=branch_deps,
             ):
                 raise RuntimeError("body error")
 
@@ -677,7 +762,7 @@ def test_branch_worktree_cleans_up_on_exception(branch_deps):
     )
 
 
-def test_branch_worktree_does_not_delete_branch_when_remove_worktree_raises(
+def test_managed_worktree_does_not_delete_branch_when_remove_worktree_raises(
     branch_deps,
 ):
     """teardown_worktree and delete_branch are gated together — if teardown fails, delete does not fire."""
@@ -685,8 +770,12 @@ def test_branch_worktree_does_not_delete_branch_when_remove_worktree_raises(
 
     async def _run():
         with pytest.raises(RuntimeError, match="disk full"):
-            async with branch_worktree(
-                "issue-42", "pycastle/issue-42", "abc123", branch_deps
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha="abc123",
+                delete_branch_on_teardown=True,
+                deps=branch_deps,
             ):
                 pass
 
@@ -694,15 +783,19 @@ def test_branch_worktree_does_not_delete_branch_when_remove_worktree_raises(
     branch_deps.git_svc.delete_branch.assert_not_called()
 
 
-def test_branch_worktree_does_not_run_cleanup_when_create_fails(branch_deps):
+def test_managed_worktree_does_not_run_cleanup_when_create_fails(branch_deps):
     from pycastle.errors import WorktreeError
 
     branch_deps.git_svc.create_worktree.side_effect = WorktreeError("create failed")
 
     async def _run():
         with pytest.raises(WorktreeError, match="create failed"):
-            async with branch_worktree(
-                "issue-42", "pycastle/issue-42", "abc123", branch_deps
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha="abc123",
+                delete_branch_on_teardown=True,
+                deps=branch_deps,
             ):
                 pass
 
@@ -711,17 +804,25 @@ def test_branch_worktree_does_not_run_cleanup_when_create_fails(branch_deps):
     branch_deps.git_svc.delete_branch.assert_not_called()
 
 
-def test_branch_worktree_keeps_worktrees_dir_when_sibling_worktree_remains(
+def test_managed_worktree_keeps_worktrees_dir_when_sibling_worktree_remains(
     real_branch_deps,
 ):
     worktrees_dir = real_branch_deps.repo_root / ".pycastle" / ".worktrees"
 
     async def _run():
-        async with branch_worktree(
-            "issue-10", "pycastle/issue-10", None, real_branch_deps, delete_branch=False
+        async with managed_worktree(
+            "issue-10",
+            branch="pycastle/issue-10",
+            sha=None,
+            delete_branch_on_teardown=False,
+            deps=real_branch_deps,
         ):
-            async with branch_worktree(
-                "issue-11", "pycastle/issue-11", None, real_branch_deps
+            async with managed_worktree(
+                "issue-11",
+                branch="pycastle/issue-11",
+                sha=None,
+                delete_branch_on_teardown=True,
+                deps=real_branch_deps,
             ):
                 pass
             assert worktrees_dir.exists()
@@ -729,14 +830,18 @@ def test_branch_worktree_keeps_worktrees_dir_when_sibling_worktree_remains(
     asyncio.run(_run())
 
 
-def test_branch_worktree_removes_worktrees_dir_when_last_worktree_exits(
+def test_managed_worktree_removes_worktrees_dir_when_last_worktree_exits(
     real_branch_deps,
 ):
     worktrees_dir = real_branch_deps.repo_root / ".pycastle" / ".worktrees"
 
     async def _run():
-        async with branch_worktree(
-            "issue-42", "pycastle/issue-42", None, real_branch_deps
+        async with managed_worktree(
+            "issue-42",
+            branch="pycastle/issue-42",
+            sha=None,
+            delete_branch_on_teardown=True,
+            deps=real_branch_deps,
         ):
             assert worktrees_dir.exists()
         assert not worktrees_dir.exists()
@@ -758,17 +863,21 @@ def test_detached_worktree_removes_worktrees_dir_when_last_worktree_exits(
     asyncio.run(_run())
 
 
-# ── branch_worktree: broadened preservation rule ─────────────────────────────
+# ── managed_worktree: broadened preservation rule ────────────────────────────
 
 
-def test_branch_worktree_preserves_worktree_and_branch_when_session_dir_has_files(
+def test_managed_worktree_preserves_worktree_and_branch_when_session_dir_has_files(
     branch_deps,
 ):
-    """branch_worktree must not teardown when a role session dir is non-empty."""
+    """managed_worktree must not teardown when a role session dir is non-empty."""
 
     async def _run():
-        async with branch_worktree(
-            "merge-sandbox", "pycastle/merge-sandbox", None, branch_deps
+        async with managed_worktree(
+            "merge-sandbox",
+            branch="pycastle/merge-sandbox",
+            sha=None,
+            delete_branch_on_teardown=True,
+            deps=branch_deps,
         ) as wt_path:
             session_dir = wt_path / ".pycastle-session" / "merger"
             session_dir.mkdir(parents=True, exist_ok=True)
@@ -780,12 +889,16 @@ def test_branch_worktree_preserves_worktree_and_branch_when_session_dir_has_file
     branch_deps.git_svc.delete_branch.assert_not_called()
 
 
-def test_branch_worktree_tears_down_when_session_dir_is_empty(branch_deps):
-    """branch_worktree must still tear down when session dir exists but is empty."""
+def test_managed_worktree_tears_down_when_session_dir_is_empty(branch_deps):
+    """managed_worktree must still tear down when session dir exists but is empty."""
 
     async def _run():
-        async with branch_worktree(
-            "merge-sandbox", "pycastle/merge-sandbox", None, branch_deps
+        async with managed_worktree(
+            "merge-sandbox",
+            branch="pycastle/merge-sandbox",
+            sha=None,
+            delete_branch_on_teardown=True,
+            deps=branch_deps,
         ) as wt_path:
             session_dir = wt_path / ".pycastle-session" / "merger"
             session_dir.mkdir(parents=True, exist_ok=True)
@@ -794,3 +907,23 @@ def test_branch_worktree_tears_down_when_session_dir_is_empty(branch_deps):
 
     branch_deps.git_svc.remove_worktree.assert_called_once()
     branch_deps.git_svc.delete_branch.assert_called_once()
+
+
+def test_managed_worktree_preserves_worktree_on_usage_limit_error(branch_deps):
+    """managed_worktree must not teardown when UsageLimitError propagates from the body."""
+
+    async def _run():
+        with pytest.raises(UsageLimitError):
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha=None,
+                delete_branch_on_teardown=True,
+                deps=branch_deps,
+            ):
+                raise UsageLimitError(reset_time=None)
+
+    asyncio.run(_run())
+
+    branch_deps.git_svc.remove_worktree.assert_not_called()
+    branch_deps.git_svc.delete_branch.assert_not_called()

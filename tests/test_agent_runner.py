@@ -422,7 +422,6 @@ def test_agent_runner_run_cancels_token_and_raises_on_usage_limit_in_stream(tmp_
         )
 
     assert token.is_cancelled
-    assert token.wants_worktree_preserved
 
 
 def test_agent_runner_run_raises_agent_timeout_error_when_retries_exhausted(tmp_path):

@@ -172,7 +172,7 @@ class AgentRunner:
                             self._account_pool.mark_exhausted(
                                 picked_token, err.reset_time
                             )
-                        _token.cancel(preserve_worktree=True)
+                        _token.cancel()
                         raise
                     except CommitMessageParseError:
                         raise

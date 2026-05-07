@@ -10,10 +10,7 @@ from pycastle.agent_output_protocol import (
     CompletionOutput,
     PromiseParseError,
 )
-from pycastle.agent_result import (
-    CancellationToken,
-    PreflightFailure,
-)
+from pycastle.agent_result import PreflightFailure
 from pycastle.agent_runner import RunRequest
 from pycastle.config import Config
 from pycastle.errors import AgentTimeoutError, UsageLimitError
@@ -26,7 +23,6 @@ from pycastle.iteration._deps import (
 from pycastle.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.iteration.implement import (
     ImplementResult,
-    _agent_worktree,
     branch_for,
     format_issue_comments,
     implement_phase,
@@ -49,9 +45,31 @@ class _ImplementStub:
 def _make_deps(
     tmp_path, agent_runner, logger=None, status_display=None
 ) -> _ImplementStub:
+    import shutil as _shutil
+
+    git_svc = MagicMock(spec=GitService)
+    git_svc.verify_ref_exists.return_value = False
+
+    _registered: list[Path] = []
+
+    def _fake_list_worktrees(repo):
+        return list(_registered)
+
+    def _fake_create_worktree(repo, path, branch, sha=None):
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+        _registered.append(path)
+
+    def _fake_remove_worktree(repo, path):
+        _shutil.rmtree(path, ignore_errors=True)
+        _registered[:] = [p for p in _registered if p != path]
+
+    git_svc.list_worktrees.side_effect = _fake_list_worktrees
+    git_svc.create_worktree.side_effect = _fake_create_worktree
+    git_svc.remove_worktree.side_effect = _fake_remove_worktree
     return _ImplementStub(
         repo_root=tmp_path,
-        git_svc=MagicMock(spec=GitService),
+        git_svc=git_svc,
         agent_runner=agent_runner,
         cfg=Config(max_parallel=4, max_iterations=1),
         logger=logger or RecordingLogger(),
@@ -590,163 +608,6 @@ def test_run_issue_passes_issue_title_to_reviewer(tmp_path):
     assert fake.calls[1].issue_title == "Fix auth timeout"
 
 
-# ── _agent_worktree ────────────────────────────────────────────────────────────
-
-
-def _make_overlay(tmp_path):
-    p = tmp_path / "gitdir_overlay"
-    p.write_text("gitdir: /.pycastle-parent-git/worktrees/issue-1\n")
-    return p
-
-
-def test_agent_worktree_creates_worktree_on_entry_and_removes_on_clean_exit(
-    tmp_path, monkeypatch
-):
-    """_agent_worktree calls create_worktree on entry and remove_worktree on clean exit."""
-    overlay = _make_overlay(tmp_path)
-    monkeypatch.setattr(
-        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
-    )
-    deps = _make_deps(tmp_path, FakeAgentRunner([]))
-    deps.git_svc.is_working_tree_clean.return_value = True
-    token = CancellationToken()
-
-    async def _run():
-        async with _agent_worktree("pycastle/issue-1", "abc123", token, deps):
-            pass
-
-    asyncio.run(_run())
-
-    deps.git_svc.create_worktree.assert_called_once()
-    args = deps.git_svc.create_worktree.call_args[0]
-    assert args[2] == "pycastle/issue-1"
-    assert args[3] == "abc123"
-    deps.git_svc.remove_worktree.assert_called_once()
-    assert not overlay.exists()
-
-
-def test_agent_worktree_preserves_worktree_when_token_wants_preserved(
-    tmp_path, monkeypatch
-):
-    """_agent_worktree skips remove_worktree when token.wants_worktree_preserved is True."""
-    overlay = _make_overlay(tmp_path)
-    monkeypatch.setattr(
-        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
-    )
-    deps = _make_deps(tmp_path, FakeAgentRunner([]))
-    token = CancellationToken()
-    token.cancel(preserve_worktree=True)
-
-    async def _run():
-        async with _agent_worktree("pycastle/issue-2", None, token, deps):
-            pass
-
-    asyncio.run(_run())
-
-    deps.git_svc.remove_worktree.assert_not_called()
-    assert not overlay.exists()
-
-
-def test_agent_worktree_preserves_worktree_when_dirty(tmp_path, monkeypatch):
-    """_agent_worktree skips remove_worktree when the working tree is dirty."""
-    overlay = _make_overlay(tmp_path)
-    monkeypatch.setattr(
-        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
-    )
-    deps = _make_deps(tmp_path, FakeAgentRunner([]))
-    deps.git_svc.is_working_tree_clean.return_value = False
-    token = CancellationToken()
-
-    async def _run():
-        async with _agent_worktree("pycastle/issue-3", None, token, deps):
-            pass
-
-    asyncio.run(_run())
-
-    deps.git_svc.remove_worktree.assert_not_called()
-    assert not overlay.exists()
-
-
-def test_agent_worktree_always_removes_gitdir_overlay(tmp_path, monkeypatch):
-    """_agent_worktree removes the gitdir overlay on exit even when the worktree is preserved."""
-    overlay = _make_overlay(tmp_path)
-    monkeypatch.setattr(
-        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
-    )
-    deps = _make_deps(tmp_path, FakeAgentRunner([]))
-    token = CancellationToken()
-    token.cancel(preserve_worktree=True)
-
-    async def _run():
-        async with _agent_worktree("pycastle/issue-4", None, token, deps):
-            pass
-
-    asyncio.run(_run())
-
-    assert not overlay.exists()
-
-
-def test_agent_worktree_removes_gitdir_overlay_even_when_body_raises(
-    tmp_path, monkeypatch
-):
-    """_agent_worktree removes the gitdir overlay even when the body raises."""
-    overlay = _make_overlay(tmp_path)
-    monkeypatch.setattr(
-        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
-    )
-    deps = _make_deps(tmp_path, FakeAgentRunner([]))
-    deps.git_svc.is_working_tree_clean.return_value = True
-    token = CancellationToken()
-
-    async def _run():
-        async with _agent_worktree("pycastle/issue-5", None, token, deps):
-            raise RuntimeError("body failure")
-
-    with pytest.raises(RuntimeError, match="body failure"):
-        asyncio.run(_run())
-
-    assert not overlay.exists()
-
-
-def test_agent_worktree_removes_worktrees_dir_when_last_child_exits(
-    tmp_path, monkeypatch
-):
-    """_agent_worktree drops the empty `.worktrees` parent on a clean, non-preserved exit."""
-    overlay = _make_overlay(tmp_path)
-    monkeypatch.setattr(
-        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
-    )
-    deps = _make_deps(tmp_path, FakeAgentRunner([]))
-    deps.git_svc.is_working_tree_clean.return_value = True
-
-    worktrees_dir = tmp_path / deps.cfg.pycastle_dir / ".worktrees"
-    wt_path = worktrees_dir / "issue-6"
-
-    def _create(repo, path, branch, sha):
-        path.mkdir(parents=True, exist_ok=True)
-
-    def _remove(repo, path):
-        if path.exists():
-            for child in path.iterdir():
-                child.unlink()
-            path.rmdir()
-
-    deps.git_svc.create_worktree.side_effect = _create
-    deps.git_svc.remove_worktree.side_effect = _remove
-
-    token = CancellationToken()
-
-    async def _run():
-        async with _agent_worktree("pycastle/issue-6", None, token, deps):
-            assert wt_path.exists()
-            assert worktrees_dir.exists()
-
-    asyncio.run(_run())
-
-    assert not wt_path.exists()
-    assert not worktrees_dir.exists()
-
-
 # ── run_issue: worktree lifecycle ─────────────────────────────────────────────
 
 
@@ -776,11 +637,9 @@ def test_run_issue_removes_worktrees_after_successful_run(tmp_path):
 
 def test_run_issue_preserves_worktree_on_usage_limit(tmp_path):
     """run_issue must not remove the Implementer worktree when usage limit is hit."""
-    token = CancellationToken()
 
     async def _side_effect(request: RunRequest):
         if "Implement Agent" in request.name:
-            token.cancel(preserve_worktree=True)
             raise UsageLimitError(reset_time=None)
         return CompletionOutput()
 
@@ -790,7 +649,7 @@ def test_run_issue_preserves_worktree_on_usage_limit(tmp_path):
 
     issue = {"number": 12, "title": "Fix thing"}
     with pytest.raises(UsageLimitError):
-        asyncio.run(run_issue(issue, deps, token=token))
+        asyncio.run(run_issue(issue, deps))
 
     deps.git_svc.remove_worktree.assert_not_called()
 
@@ -1068,130 +927,6 @@ def test_run_issue_bare_ralph_commit_does_not_skip_implementer(tmp_path):
     assert any("Implement Agent" in c.name for c in fake.calls)
 
 
-# ── _agent_worktree: broadened preservation rule (has_resumable_session) ──────
-
-
-def test_agent_worktree_preserves_worktree_when_session_dir_has_files(
-    tmp_path, monkeypatch
-):
-    """_agent_worktree must preserve the worktree if the role session dir is non-empty."""
-    overlay = _make_overlay(tmp_path)
-    monkeypatch.setattr(
-        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
-    )
-    deps = _make_deps(tmp_path, FakeAgentRunner([]))
-    deps.git_svc.is_working_tree_clean.return_value = True
-    token = CancellationToken()
-
-    # Place a file in the implementer session dir inside the expected worktree path
-    wt_name = "issue-99"
-    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
-    role_session_dir = wt_path / ".pycastle-session" / "implementer"
-    role_session_dir.mkdir(parents=True, exist_ok=True)
-    (role_session_dir / "session.json").write_text("{}")
-
-    deps.git_svc.create_worktree.side_effect = lambda repo, path, branch, sha: None
-
-    async def _run():
-        async with _agent_worktree("pycastle/issue-99", None, token, deps):
-            pass
-
-    asyncio.run(_run())
-
-    deps.git_svc.remove_worktree.assert_not_called()
-
-
-def test_agent_worktree_does_not_preserve_worktree_when_session_dir_is_empty(
-    tmp_path, monkeypatch
-):
-    """_agent_worktree must not preserve on empty session dir (clean, no usage_limit)."""
-    overlay = _make_overlay(tmp_path)
-    monkeypatch.setattr(
-        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
-    )
-    deps = _make_deps(tmp_path, FakeAgentRunner([]))
-    deps.git_svc.is_working_tree_clean.return_value = True
-    token = CancellationToken()
-
-    wt_name = "issue-100"
-    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
-    role_session_dir = wt_path / ".pycastle-session" / "implementer"
-    role_session_dir.mkdir(parents=True, exist_ok=True)
-
-    deps.git_svc.create_worktree.side_effect = lambda repo, path, branch, sha: None
-
-    async def _run():
-        async with _agent_worktree("pycastle/issue-100", None, token, deps):
-            pass
-
-    asyncio.run(_run())
-
-    deps.git_svc.remove_worktree.assert_called_once()
-
-
-# ── _agent_worktree: worktree reuse on enter ──────────────────────────────────
-
-
-def test_agent_worktree_reuses_existing_worktree_when_branch_matches_and_session_present(
-    tmp_path, monkeypatch
-):
-    """When worktree path exists, branch matches, and session is present, skip create_worktree."""
-    overlay = _make_overlay(tmp_path)
-    monkeypatch.setattr(
-        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
-    )
-    deps = _make_deps(tmp_path, FakeAgentRunner([]))
-    deps.git_svc.is_working_tree_clean.return_value = True
-    token = CancellationToken()
-
-    wt_name = "issue-101"
-    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
-    wt_path.mkdir(parents=True, exist_ok=True)
-
-    # Populate a resumable session
-    role_session_dir = wt_path / ".pycastle-session" / "implementer"
-    role_session_dir.mkdir(parents=True, exist_ok=True)
-    (role_session_dir / "session.json").write_text("{}")
-
-    # The branch matches what git_svc reports
-    deps.git_svc.get_current_branch = MagicMock(return_value="pycastle/issue-101")
-
-    async def _run():
-        async with _agent_worktree("pycastle/issue-101", "abc123", token, deps):
-            pass
-
-    asyncio.run(_run())
-
-    deps.git_svc.create_worktree.assert_not_called()
-
-
-def test_agent_worktree_creates_fresh_when_no_session_despite_existing_path(
-    tmp_path, monkeypatch
-):
-    """When worktree path exists but session is absent, create_worktree is still called."""
-    overlay = _make_overlay(tmp_path)
-    monkeypatch.setattr(
-        "pycastle.iteration.implement.patch_gitdir_for_container", lambda p: overlay
-    )
-    deps = _make_deps(tmp_path, FakeAgentRunner([]))
-    deps.git_svc.is_working_tree_clean.return_value = True
-    token = CancellationToken()
-
-    wt_name = "issue-102"
-    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
-    wt_path.mkdir(parents=True, exist_ok=True)
-
-    deps.git_svc.get_current_branch = MagicMock(return_value="pycastle/issue-102")
-
-    async def _run():
-        async with _agent_worktree("pycastle/issue-102", "abc123", token, deps):
-            pass
-
-    asyncio.run(_run())
-
-    deps.git_svc.create_worktree.assert_called_once()
-
-
 # ── run_issue: commit wiring ─────────────────────────────────────────────────
 
 
@@ -1269,11 +1004,16 @@ def test_run_issue_removes_implementer_session_dir_after_successful_commit(tmp_p
     wt_name = "issue-50"
     wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
     impl_session_dir = wt_path / ".pycastle-session" / "implementer"
-    impl_session_dir.mkdir(parents=True, exist_ok=True)
-    (impl_session_dir / "session.json").write_text("{}")
+
+    _call_count = [0]
 
     def _create(repo, path, branch, sha):
-        pass
+        _call_count[0] += 1
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+        if _call_count[0] == 1:
+            impl_session_dir.mkdir(parents=True, exist_ok=True)
+            (impl_session_dir / "session.json").write_text("{}")
 
     deps.git_svc.create_worktree.side_effect = _create
 
@@ -1294,11 +1034,16 @@ def test_run_issue_removes_reviewer_session_dir_after_successful_commit(tmp_path
     wt_name = "issue-51"
     wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
     rev_session_dir = wt_path / ".pycastle-session" / "reviewer"
-    rev_session_dir.mkdir(parents=True, exist_ok=True)
-    (rev_session_dir / "session.json").write_text("{}")
+
+    _call_count = [0]
 
     def _create(repo, path, branch, sha):
-        pass
+        _call_count[0] += 1
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+        if _call_count[0] == 2:
+            rev_session_dir.mkdir(parents=True, exist_ok=True)
+            (rev_session_dir / "session.json").write_text("{}")
 
     deps.git_svc.create_worktree.side_effect = _create
 

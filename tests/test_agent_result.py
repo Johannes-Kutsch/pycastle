@@ -35,7 +35,6 @@ def test_preflight_failure_failures_are_immutable():
 def test_cancellation_token_starts_uncancelled():
     token = CancellationToken()
     assert not token.is_cancelled
-    assert not token.wants_worktree_preserved
 
 
 def test_cancellation_token_cancel_sets_is_cancelled():
@@ -44,36 +43,13 @@ def test_cancellation_token_cancel_sets_is_cancelled():
     assert token.is_cancelled
 
 
-def test_cancellation_token_cancel_without_preserve_does_not_set_preserve():
-    token = CancellationToken()
-    token.cancel()
-    assert not token.wants_worktree_preserved
-
-
-def test_cancellation_token_cancel_with_preserve_sets_wants_worktree_preserved():
-    token = CancellationToken()
-    token.cancel(preserve_worktree=True)
-    assert token.is_cancelled
-    assert token.wants_worktree_preserved
-
-
 def test_cancellation_token_second_cancel_is_idempotent():
     token = CancellationToken()
-    token.cancel(preserve_worktree=True)
-    token.cancel()  # second call without preserve should not clear it
-    assert token.is_cancelled
-    assert token.wants_worktree_preserved
-
-
-def test_cancellation_token_cancel_with_preserve_after_plain_cancel_is_idempotent():
-    token = CancellationToken()
     token.cancel()
-    token.cancel(preserve_worktree=True)  # second call should not set preserve
+    token.cancel()
     assert token.is_cancelled
-    assert not token.wants_worktree_preserved
 
 
 def test_cancellation_token_constructor_takes_no_arguments():
     token = CancellationToken()
     assert not token.is_cancelled
-    assert not token.wants_worktree_preserved

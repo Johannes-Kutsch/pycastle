@@ -2051,6 +2051,9 @@ def test_run_full_iteration_cold_path(git_repo):
         capture_output=True,
     )
     (git_repo / "feature.txt").write_text("feature")
+    (git_repo / "pyproject.toml").write_text(
+        "[project]\nname = 't'\nversion = '0.0.1'\n"
+    )
     subprocess.run(
         ["git", "-C", str(git_repo), "add", "."], check=True, capture_output=True
     )
