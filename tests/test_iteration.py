@@ -200,16 +200,22 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
 # ── AbortedUsageLimit: usage limit hit ───────────────────────────────────────
 
 
-def test_run_iteration_raises_when_planner_hits_usage_limit(tmp_path, git_svc, logger):
-    """run_iteration propagates UsageLimitError when the Planner raises it."""
+def test_run_iteration_returns_aborted_usage_limit_when_planner_hits_limit(
+    tmp_path, git_svc, logger
+):
+    """run_iteration returns AbortedUsageLimit when the Planner hits the usage limit,
+    so the orchestrator can fail over to a standby account instead of crashing."""
+    from datetime import datetime
+
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
         {"number": 1, "title": "Fix A"},
         {"number": 2, "title": "Fix B"},
     ]
+    reset_time = datetime(2026, 5, 7, 13, 10)
 
     async def _fake_agent(request: RunRequest):
-        raise UsageLimitError(reset_time=None)
+        raise UsageLimitError(reset_time=reset_time)
 
     deps = _make_deps(
         tmp_path,
@@ -219,8 +225,10 @@ def test_run_iteration_raises_when_planner_hits_usage_limit(tmp_path, git_svc, l
         logger=logger,
         preflight_responses=[[]],
     )
-    with pytest.raises(UsageLimitError):
-        asyncio.run(run_iteration(deps))
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedUsageLimit)
+    assert result.reset_time == reset_time
 
 
 def test_run_iteration_returns_aborted_usage_limit_when_implementer_hits_limit(
