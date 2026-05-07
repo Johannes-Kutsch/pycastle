@@ -1,7 +1,6 @@
 import asyncio
 import contextlib
 import dataclasses
-import shutil
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +12,7 @@ from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import BranchCollisionError, UsageLimitError
 from ..prompt_pipeline import load_standards
-from ..session_resume import has_resumable_session
+from ..session_resume import clear_session_dir, is_stage_done
 from ..status_display import StatusDisplay
 from ..services import GitService
 from ..worktree import (
@@ -53,20 +52,6 @@ def format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
         body = c.get("body") or ""
         parts.append(f"## Comment by @{author} at {when}\n\n{body}")
     return "\n\n".join(parts)
-
-
-def _clear_session_dir(session_dir: Path) -> None:
-    """Clear contents of role session dir, leaving the dir as the stage-done signal."""
-    if not session_dir.is_dir():
-        return
-    for child in list(session_dir.iterdir()):
-        try:
-            if child.is_file():
-                child.unlink(missing_ok=True)
-            elif child.is_dir():
-                shutil.rmtree(child, ignore_errors=True)
-        except Exception:
-            pass
 
 
 @dataclasses.dataclass
@@ -128,12 +113,8 @@ async def run_issue(
         _impl_session_dir = _wt_path / ".pycastle-session" / "implementer"
         _review_session_dir = _wt_path / ".pycastle-session" / "reviewer"
 
-        implement_done = _impl_session_dir.is_dir() and not has_resumable_session(
-            _impl_session_dir
-        )
-        review_done = _review_session_dir.is_dir() and not has_resumable_session(
-            _review_session_dir
-        )
+        implement_done = is_stage_done(_impl_session_dir)
+        review_done = is_stage_done(_review_session_dir)
 
         if review_done:
             return issue
@@ -174,7 +155,7 @@ async def run_issue(
                             deps.repo_root,
                             f"Implement #{issue['number']} - {_msg}",
                         )
-                        _clear_session_dir(
+                        clear_session_dir(
                             impl_mount_path / ".pycastle-session" / "implementer"
                         )
                 finally:
@@ -218,7 +199,7 @@ async def run_issue(
                         deps.repo_root,
                         f"Review #{issue['number']} - {_rev_msg}",
                     )
-                    _clear_session_dir(
+                    clear_session_dir(
                         review_mount_path / ".pycastle-session" / "reviewer"
                     )
             finally:
