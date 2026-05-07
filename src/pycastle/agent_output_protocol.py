@@ -53,6 +53,7 @@ class AgentRole(enum.Enum):
     IMPLEMENTER = "implementer"
     REVIEWER = "reviewer"
     MERGER = "merger"
+    IMPROVE = "improve"
 
 
 @dataclasses.dataclass(frozen=True)

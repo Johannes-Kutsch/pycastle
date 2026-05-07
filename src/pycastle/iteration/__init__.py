@@ -9,7 +9,13 @@ from ._deps import Deps
 from ._rows import PhaseRow as PhaseRow
 from ._rows import agent_row as agent_row
 from ._rows import phase_row
+from .dispatcher import DispatchImprove as DispatchImprove
+from .dispatcher import Done as Done
+from .dispatcher import RunImplementDirect as RunImplementDirect
+from .dispatcher import RunPlan as RunPlan
+from .dispatcher import decide_iteration_action
 from .implement import branch_for, implement_phase
+from .improve import improve_phase
 from .merge import merge_phase
 from .planning import PlanReady as PlanReady
 from .planning import planning_phase
@@ -18,11 +24,6 @@ from .preflight import PreflightAFK, PreflightHITL, PreflightReady, preflight_ph
 
 @dataclasses.dataclass(frozen=True)
 class Continue:
-    pass
-
-
-@dataclasses.dataclass(frozen=True)
-class Done:
     pass
 
 
@@ -68,14 +69,25 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         return AbortedHITL(issue_number=preflight_result.issue_number)
 
     if isinstance(preflight_result, PreflightReady):
-        if not preflight_result.issues:
-            return Done()
-        sha = preflight_result.sha
         open_issues = preflight_result.issues
         in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
-        if in_flight:
-            issues = in_flight
-        elif len(open_issues) >= 2:
+        action = decide_iteration_action(
+            open_afk_count=len(open_issues),
+            in_flight_count=len(in_flight),
+            improve_mode=deps.improve_mode,
+            slept_once=deps.slept_once,
+            improve_dispatched_this_iteration=deps.improve_dispatched_this_iteration,
+        )
+        if isinstance(action, Done):
+            return Done()
+        if isinstance(action, DispatchImprove):
+            await improve_phase(deps)
+            return Continue()
+        sha = preflight_result.sha
+        if isinstance(action, RunImplementDirect):
+            issues = in_flight if in_flight else open_issues
+        else:
+            # RunPlan
             async with phase_row(
                 deps.status_display,
                 "Plan",
@@ -101,8 +113,6 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 )
                 sha = plan_result.worktree_sha
                 issues = plan_result.issues
-        else:
-            issues = open_issues
     elif isinstance(preflight_result, PreflightAFK):
         sha = preflight_result.worktree_sha
         issues = preflight_result.issues

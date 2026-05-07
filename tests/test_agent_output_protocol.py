@@ -54,7 +54,7 @@ def test_promise_parse_error_is_subclass_of_base():
 # ── AgentRole ─────────────────────────────────────────────────────────────────
 
 
-def test_agent_role_has_all_five_members():
+def test_agent_role_has_all_members():
     members = {r.name for r in AgentRole}
     assert members == {
         "PLANNER",
@@ -62,6 +62,7 @@ def test_agent_role_has_all_five_members():
         "IMPLEMENTER",
         "REVIEWER",
         "MERGER",
+        "IMPROVE",
     }
 
 

@@ -11,6 +11,7 @@ from ..config import Config
 from ..services import GitService
 from ..services import GithubService
 from ..status_display import StatusDisplay
+from .dispatcher import ImproveMode
 
 
 class Logger(Protocol):
@@ -135,3 +136,6 @@ class Deps:
     cfg: Config
     logger: Logger
     status_display: StatusDisplay
+    improve_mode: ImproveMode = None
+    slept_once: bool = False
+    improve_dispatched_this_iteration: bool = False

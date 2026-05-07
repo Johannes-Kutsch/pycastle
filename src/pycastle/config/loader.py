@@ -86,6 +86,7 @@ class Config:
     preflight_issue_override: StageOverride = dataclasses.field(
         default_factory=StageOverride
     )
+    improve_override: StageOverride = dataclasses.field(default_factory=StageOverride)
 
 
 def resolve_global_dir(explicit: Path | None, env: Mapping[str, str]) -> Path:
@@ -213,6 +214,7 @@ def _validate_efforts(cfg: Config) -> Config:
         "review": cfg.review_override,
         "merge": cfg.merge_override,
         "preflight_issue": cfg.preflight_issue_override,
+        "improve": cfg.improve_override,
     }
     for stage, override in stage_overrides.items():
         effort = override.effort
