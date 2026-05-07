@@ -8,6 +8,7 @@ from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..services import GitCommandError, GitService, GithubService
+from ..session_resume import clear_session_dir
 from ..status_display import StatusDisplay
 from ..worktree import (
     managed_worktree,
@@ -17,7 +18,7 @@ from ..worktree import (
 )
 from ._rows import phase_row
 from ._utils import _wait_for_clean_working_tree
-from .implement import _clear_session_dir, branch_for
+from .implement import branch_for
 
 
 class _MergeDeps(Protocol):
@@ -136,7 +137,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 deps.git_svc.fast_forward_branch(
                     deps.repo_root, target_branch, MERGE_SANDBOX
                 )
-                _clear_session_dir(sandbox_path / ".pycastle-session" / "merger")
+                clear_session_dir(sandbox_path / ".pycastle-session" / "merger")
             conflict_deleted = _delete_merged_branches(
                 [branch_for(i["number"]) for i in conflict_issues], deps
             )
