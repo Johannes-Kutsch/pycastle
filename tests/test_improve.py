@@ -218,13 +218,8 @@ def test_improve_phase_uses_scan_prompt_first(deps, agent_runner):
     assert agent_runner.calls[0].prompt_file.name == "01-scan.md"
 
 
-def test_improve_phase_two_invocations_on_picked_path(deps, agent_runner):
-    """Picked path (scan → prd) triggers two agent calls."""
-    agent_runner._responses = [
-        CompletionOutput(),
-        CompletionOutput(),
-        CompletionOutput(),
-    ]
+def test_improve_phase_picked_path_runs_scan_then_prd(deps, agent_runner):
+    """Picked path runs 01-scan then 02-prd in order."""
     _run(deps)
     names = [c.prompt_file.name for c in agent_runner.calls]
     assert names[:2] == ["01-scan.md", "02-prd.md"]
