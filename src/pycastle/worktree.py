@@ -118,7 +118,7 @@ def _create_worktree(
             raise error
 
 
-def _worktree_reusable(path: Path, branch: str, git_svc: GitService) -> bool:
+def is_worktree_reusable(path: Path, branch: str, git_svc: GitService) -> bool:
     if not path.exists():
         return False
     try:
@@ -138,7 +138,7 @@ async def branch_worktree(
     delete_branch: bool = True,
 ):
     path = worktree_path(name, deps)
-    if not _worktree_reusable(path, branch, deps.git_svc):
+    if not is_worktree_reusable(path, branch, deps.git_svc):
         _create_worktree(deps.git_svc, deps.repo_root, path, branch, sha)
     _exc: BaseException | None = None
     try:
