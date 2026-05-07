@@ -967,3 +967,79 @@ def test_merge_phase_tears_down_sandbox_after_merger_session_cleanup(
     _run(issues, deps)
 
     git_svc.remove_worktree.assert_called_once_with(deps.repo_root, sandbox_path)
+
+
+# ── Merger session resume parity ──────────────────────────────────────────────
+
+
+def test_merge_phase_preserves_sandbox_and_session_on_usage_limit_error(
+    tmp_path, git_svc, github_svc
+):
+    """UsageLimitError during merger leaves sandbox worktree and session dir on disk."""
+    from pycastle.errors import UsageLimitError
+
+    git_svc.try_merge.return_value = False
+    sandbox_path = tmp_path / Config().pycastle_dir / ".worktrees" / "merge-sandbox"
+
+    def _raise_after_seed(request):
+        session_dir = sandbox_path / ".pycastle-session" / "merger"
+        session_dir.mkdir(parents=True, exist_ok=True)
+        (session_dir / "session.json").write_text("{}")
+        raise UsageLimitError()
+
+    fake = FakeAgentRunner(side_effect=_raise_after_seed)
+    deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    issues = [{"number": 1, "title": "Conflict"}]
+
+    with pytest.raises(UsageLimitError):
+        _run(issues, deps)
+
+    assert sandbox_path.exists(), "sandbox worktree must be preserved"
+    session_dir = sandbox_path / ".pycastle-session" / "merger"
+    assert session_dir.exists() and any(session_dir.rglob("*"))
+
+
+def test_merge_phase_tears_down_and_deletes_branch_when_clean_sandbox_and_no_session(
+    tmp_path, git_svc, github_svc
+):
+    """With clean sandbox and no session, both teardown_worktree and delete_branch fire."""
+    git_svc.try_merge.return_value = False
+    sandbox_path = tmp_path / Config().pycastle_dir / ".worktrees" / "merge-sandbox"
+
+    fake = FakeAgentRunner([CompletionOutput()])
+    deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+
+    git_svc.remove_worktree.assert_called_with(deps.repo_root, sandbox_path)
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/merge-sandbox" in deleted
+
+
+def test_merge_phase_reuses_existing_sandbox_when_merger_session_is_resumable(
+    tmp_path, git_svc, github_svc
+):
+    """When sandbox exists with a resumable session, branch_worktree must not re-create it."""
+    git_svc.try_merge.return_value = False
+    sandbox_path = tmp_path / Config().pycastle_dir / ".worktrees" / "merge-sandbox"
+
+    sandbox_path.mkdir(parents=True)
+    (sandbox_path / "pyproject.toml").write_text("[project]\nname='t'\n")
+    session_dir = sandbox_path / ".pycastle-session" / "merger"
+    session_dir.mkdir(parents=True)
+    (session_dir / "session.json").write_text("{}")
+    git_svc.get_current_branch.return_value = "pycastle/merge-sandbox"
+
+    fake = FakeAgentRunner([CompletionOutput()])
+    deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+
+    create_calls = [
+        call
+        for call in git_svc.create_worktree.call_args_list
+        if call.args[1] == sandbox_path
+    ]
+    assert not create_calls, (
+        "create_worktree must not be called for an existing resumable sandbox"
+    )

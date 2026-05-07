@@ -19,9 +19,14 @@ from pycastle.errors import (
 from pycastle.services import GitCommandError, GitService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 
-# A minimal NDJSON stream that process_stream accepts as CompletionOutput (IMPLEMENTER role)
+# A minimal NDJSON stream that process_stream accepts as CommitMessageOutput (IMPLEMENTER/REVIEWER role)
 _COMPLETE_STREAM = [
     b'{"type": "result", "result": "<commit_message>done</commit_message>", "is_error": false}\n'
+]
+
+# A minimal NDJSON stream that process_stream accepts as CompletionOutput (MERGER role)
+_MERGER_COMPLETE_STREAM = [
+    b'{"type": "result", "result": "<promise>COMPLETE</promise>", "is_error": false}\n'
 ]
 
 
@@ -1465,3 +1470,94 @@ def test_agent_runner_failsoft_is_single_shot_for_reviewer_second_exception_prop
                 )
             )
         )
+
+
+# ── AgentRunner: Merger resume parity ─────────────────────────────────────────
+
+
+def _seed_merger_session(tmp_path: Path) -> None:
+    """Seed a merger session dir so has_resumable_session returns True."""
+    role_dir = tmp_path / ".pycastle-session" / "merger"
+    role_dir.mkdir(parents=True)
+    (role_dir / "session.json").write_text("{}")
+
+
+def test_agent_runner_passes_resume_flag_to_claude_when_merger_session_exists(tmp_path):
+    """On a Merger Resume run AgentRunner must invoke claude with --resume <uuid>."""
+    from pycastle.agent_output_protocol import AgentRole
+
+    _seed_merger_session(tmp_path)
+
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            r = MagicMock()
+            r.output = iter(_MERGER_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    runner = AgentRunner(
+        {},
+        Config(logs_dir=tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Merge",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                role=AgentRole.MERGER,
+                skip_preflight=True,
+            )
+        )
+    )
+
+    assert captured_cmds, "No streaming exec recorded"
+    assert any("--resume" in c for c in captured_cmds)
+    assert all("--session-id" not in c for c in captured_cmds)
+
+
+def test_agent_runner_failsoft_retries_as_fresh_when_merger_resume_run_fails(tmp_path):
+    """When a Merger Resume run raises a non-typed exception, fail-soft fires and retries as Fresh."""
+    from pycastle.agent_output_protocol import AgentRole
+
+    _seed_merger_session(tmp_path)
+
+    mock_client = _make_docker_client_with_controlled_streams(
+        [RuntimeError("session corrupt"), _MERGER_COMPLETE_STREAM]
+    )
+    runner = AgentRunner(
+        {},
+        Config(logs_dir=tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hi")
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Merge",
+                prompt_file=prompt,
+                mount_path=tmp_path,
+                role=AgentRole.MERGER,
+                skip_preflight=True,
+            )
+        )
+    )
+
+    assert isinstance(result, CompletionOutput)
