@@ -1,6 +1,7 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+from ..errors import UsageLimitError
 from ..status_display import StatusDisplay
 
 
@@ -30,9 +31,15 @@ async def phase_row(
     row = PhaseRow(status_display, caller)
     try:
         yield row
-    finally:
+    except UsageLimitError:
+        row.close("usage limit reached", shutdown_style="interrupted")
+        raise
+    except BaseException:
+        row.close("failed", shutdown_style="error")
+        raise
+    else:
         if not row._closed:
-            status_display.remove(caller, "failed", shutdown_style="error")
+            row.close("failed", shutdown_style="error")
 
 
 @asynccontextmanager
