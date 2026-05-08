@@ -981,6 +981,123 @@ def test_transient_worktree_removes_worktrees_dir_when_last_worktree_exits(
     asyncio.run(_run())
 
 
+# ── post-creation clean-status invariant ─────────────────────────────────────
+
+
+def test_managed_worktree_has_clean_status_after_creation(real_branch_deps):
+    """After managed_worktree creates a worktree, git status must report a clean working tree."""
+
+    async def _run():
+        async with managed_worktree(
+            "issue-eol",
+            branch="pycastle/issue-eol",
+            sha=None,
+            delete_branch_on_teardown=True,
+            deps=real_branch_deps,
+        ) as path:
+            result = subprocess.run(
+                ["git", "-C", str(path), "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            assert result.stdout.strip() == "", (
+                f"dirty worktree after creation: {result.stdout!r}"
+            )
+
+    asyncio.run(_run())
+
+
+def test_transient_worktree_has_clean_status_after_creation(real_branch_deps):
+    """After transient_worktree creates a worktree, git status must report a clean working tree."""
+    sha = real_branch_deps.git_svc.get_head_sha(real_branch_deps.repo_root)
+
+    async def _run():
+        async with transient_worktree(
+            "sandbox-eol", sha=sha, deps=real_branch_deps
+        ) as path:
+            result = subprocess.run(
+                ["git", "-C", str(path), "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            assert result.stdout.strip() == "", (
+                f"dirty worktree after creation: {result.stdout!r}"
+            )
+
+    asyncio.run(_run())
+
+
+def test_managed_worktree_has_clean_status_when_autocrlf_true(real_branch_deps):
+    """Even with core.autocrlf=true in the repo config, the worktree must start clean."""
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(real_branch_deps.repo_root),
+            "config",
+            "core.autocrlf",
+            "true",
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    async def _run():
+        async with managed_worktree(
+            "issue-eol-autocrlf",
+            branch="pycastle/issue-eol-autocrlf",
+            sha=None,
+            delete_branch_on_teardown=True,
+            deps=real_branch_deps,
+        ) as path:
+            result = subprocess.run(
+                ["git", "-C", str(path), "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            assert result.stdout.strip() == "", (
+                f"dirty worktree after creation with autocrlf=true: {result.stdout!r}"
+            )
+
+    asyncio.run(_run())
+
+
+def test_transient_worktree_has_clean_status_when_autocrlf_true(real_branch_deps):
+    """Even with core.autocrlf=true in the repo config, the transient worktree must start clean."""
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(real_branch_deps.repo_root),
+            "config",
+            "core.autocrlf",
+            "true",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    sha = real_branch_deps.git_svc.get_head_sha(real_branch_deps.repo_root)
+
+    async def _run():
+        async with transient_worktree(
+            "sandbox-eol-autocrlf", sha=sha, deps=real_branch_deps
+        ) as path:
+            result = subprocess.run(
+                ["git", "-C", str(path), "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            assert result.stdout.strip() == "", (
+                f"dirty worktree after creation with autocrlf=true: {result.stdout!r}"
+            )
+
+    asyncio.run(_run())
+
+
 # ── managed_worktree: broadened preservation rule ────────────────────────────
 
 
