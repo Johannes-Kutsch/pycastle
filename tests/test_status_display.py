@@ -551,8 +551,8 @@ def test_rich_token_current_and_peak_colored_independently() -> None:
     ansi = _truecolor_output(d)
     d.stop()
 
-    assert "120.0k" in re.sub(r"\x1b\[[^m]*m", "", ansi)
-    assert "120.0k" not in re.sub(r"\x1b\[[^m]*m", "", ansi).replace("120.0k", "")
+    plain = re.sub(r"\x1b\[[^m]*m", "", ansi)
+    assert plain.count("120.0k") == 1
     assert "217;119;87" in ansi
     assert "212;168;67" not in ansi
 
