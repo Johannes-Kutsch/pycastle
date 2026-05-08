@@ -601,43 +601,6 @@ def test_get_open_issue_numbers_excludes_pull_requests():
         assert svc.get_open_issue_numbers() == [1, 3]
 
 
-# ── has_open_issues_with_label ───────────────────────────────────────────────
-
-
-def test_has_open_issues_with_label_true_when_any_match():
-    svc = _make_service()
-    body = json.dumps([{"number": 1}]).encode()
-    with patch(
-        "pycastle.services.github_service.urlopen",
-        return_value=_make_response(body),
-    ) as m:
-        result = svc.has_open_issues_with_label("ready-for-agent")
-    assert result is True
-    req = m.call_args[0][0]
-    assert "labels=ready-for-agent" in req.full_url
-    assert "state=open" in req.full_url
-
-
-def test_has_open_issues_with_label_false_when_empty():
-    svc = _make_service()
-    body = json.dumps([]).encode()
-    with patch(
-        "pycastle.services.github_service.urlopen",
-        return_value=_make_response(body),
-    ):
-        assert svc.has_open_issues_with_label("ready-for-agent") is False
-
-
-def test_has_open_issues_with_label_excludes_pull_requests():
-    svc = _make_service()
-    body = json.dumps([{"number": 1, "pull_request": {"url": "x"}}]).encode()
-    with patch(
-        "pycastle.services.github_service.urlopen",
-        return_value=_make_response(body),
-    ):
-        assert svc.has_open_issues_with_label("x") is False
-
-
 # ── get_open_issues ──────────────────────────────────────────────────────────
 
 

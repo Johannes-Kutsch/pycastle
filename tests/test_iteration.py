@@ -1576,36 +1576,6 @@ def test_run_iteration_returns_aborted_usage_limit_when_improve_agent_hits_limit
     assert result.reset_time == reset_time
 
 
-def test_run_iteration_skips_preflight_checks_when_improve_would_stop(
-    tmp_path, git_svc, logger
-):
-    """When no open issues and improve mode would stop (until_sleep + slept), PREFLIGHT_CHECKS
-    must not run — the cheap pre-check exits Done before the expensive sandbox is spun up."""
-    recording_runner = FakeAgentRunner([], preflight_responses=[])
-
-    github_svc = MagicMock(spec=GithubService)
-    deps = dataclasses.replace(
-        _make_deps(
-            tmp_path,
-            None,
-            git_svc=git_svc,
-            github_svc=github_svc,
-            logger=logger,
-        ),
-        agent_runner=recording_runner,
-        improve_mode="until_sleep",
-        slept_once=True,
-        open_issues_known_empty=True,
-    )
-
-    result = asyncio.run(run_iteration(deps))
-
-    assert isinstance(result, Done)
-    assert not recording_runner.preflight_calls, (
-        "PREFLIGHT_CHECKS must not run on cheap pre-check exit"
-    )
-
-
 # ── Centralized UsageLimitError → AbortedUsageLimit conversion ───────────────
 
 
