@@ -5,6 +5,7 @@ from ..agent_output_protocol import AgentOutput, AgentRole, NoCandidateOutput
 from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..prompt_pipeline import load_standards
 from ..services import GitService
 from ..session_resume import derived_session_uuid
 from ..status_display import StatusDisplay
@@ -14,6 +15,7 @@ from ._rows import phase_row
 IMPROVE_SANDBOX = "pycastle/improve-sandbox"
 _PHASE_PROGRESS_FILE = "_phase_progress"
 _SID_PHASES = frozenset({"02-prd.md", "03-issues.md", "04-no-candidate-report.md"})
+_STANDARDS_PHASES = frozenset({"01-scan.md"})
 
 
 def next_prompt(
@@ -87,13 +89,15 @@ async def improve_phase(deps: _ImproveDeps) -> None:
                 last_id,
                 no_candidate_report=deps.cfg.improve_no_candidate_report,
             )
+            standards = load_standards(deps.cfg.prompts_dir)
 
             while prompt_name is not None:
-                prompt_args = (
-                    {"IMPROVE_SHORT_SID": short_sid}
-                    if prompt_name in _SID_PHASES
-                    else None
-                )
+                if prompt_name in _STANDARDS_PHASES:
+                    prompt_args = standards
+                elif prompt_name in _SID_PHASES:
+                    prompt_args = {"IMPROVE_SHORT_SID": short_sid}
+                else:
+                    prompt_args = None
                 output = await deps.agent_runner.run(
                     RunRequest(
                         name="Improve Agent",

@@ -383,3 +383,40 @@ def test_improve_phase_short_sid_is_consistent_across_phases(deps, agent_runner)
     ]
     assert len(sid_values) == 2  # phases 02 and 03 on the picked path
     assert len(set(sid_values)) == 1  # all the same value
+
+
+# ── Coding standards threading to phase 1 ───────────────────────────────────
+
+_STANDARDS_KEYS = {
+    "TESTING_STANDARDS",
+    "MOCKING_STANDARDS",
+    "INTERFACES_STANDARDS",
+    "DEEP_MODULES_STANDARDS",
+    "REFACTORING_STANDARDS",
+}
+
+
+def test_improve_phase_threads_coding_standards_to_scan_phase(deps, agent_runner):
+    """Phase 1 (scan) RunRequest contains all coding-standards keys."""
+    _run(deps)
+    scan_call = agent_runner.calls[0]
+    assert scan_call.prompt_args is not None
+    assert _STANDARDS_KEYS <= scan_call.prompt_args.keys()
+
+
+def test_improve_phase_does_not_thread_coding_standards_to_prd_phase(
+    deps, agent_runner
+):
+    """Phase 2 (PRD) RunRequest does not contain coding-standards keys."""
+    _run(deps)
+    prd_call = next(c for c in agent_runner.calls if c.prompt_file.name == "02-prd.md")
+    assert not _STANDARDS_KEYS & (prd_call.prompt_args or {}).keys()
+
+
+def test_improve_phase_scan_standards_and_sid_are_separate(deps, agent_runner):
+    """Phase 1 receives coding standards, phases 2/3 receive IMPROVE_SHORT_SID — never mixed."""
+    _run(deps)
+    scan_call = agent_runner.calls[0]
+    assert "IMPROVE_SHORT_SID" not in (scan_call.prompt_args or {})
+    for call in agent_runner.calls[1:]:
+        assert not _STANDARDS_KEYS & (call.prompt_args or {}).keys()

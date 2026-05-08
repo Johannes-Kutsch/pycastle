@@ -8,6 +8,32 @@ Explore the repository. Identify candidate improvements using the AFK-safety fil
 
 **Forbidden:** CLI surface changes, breaking config changes, scope/architecture choices with multiple defensible answers, ADR contradictions, product/UX calls, issue-tracker contract changes.
 
+## Coding Standards
+
+Use the standards below to recognise violations worth improving.
+
+### Testing
+
+{{TESTING_STANDARDS}}
+
+### Mocking
+
+{{MOCKING_STANDARDS}}
+
+### Interface Design
+
+{{INTERFACES_STANDARDS}}
+
+### Deep Modules
+
+{{DEEP_MODULES_STANDARDS}}
+
+### Refactoring Candidates
+
+{{REFACTORING_STANDARDS}}
+
+## Pick
+
 After shortlisting candidates, answer the following four questions explicitly:
 
 1. Why this pick over each rejected candidate?
