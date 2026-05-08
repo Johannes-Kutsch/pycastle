@@ -458,28 +458,23 @@ def test_rich_name_column_position_stable_when_tokens_appear() -> None:
     assert _name_start(False) == _name_start(True)
 
 
-def test_rich_name_column_position_stable_as_elapsed_grows() -> None:
+def test_rich_name_column_position_stable_as_elapsed_grows(monkeypatch) -> None:
     # Elapsed column has a pinned minimum width so the name column doesn't
     # jump when elapsed goes from seconds ("0s") to minutes ("59m 59s").
     import pycastle.rich_status_display as mod
 
     def _name_start(elapsed_seconds: float) -> int:
         times = iter([0.0, elapsed_seconds, elapsed_seconds])
-        monkeypatch_time = lambda: next(times)  # noqa: E731
-        original = mod.time.monotonic
-        mod.time.monotonic = monkeypatch_time  # type: ignore[method-assign]
-        try:
-            d = RichStatusDisplay()
-            d.register("Plan Agent", "agent")
-            console = Console(record=True, width=200)
-            console.print(d)
-            line = next(
-                ln for ln in console.export_text().splitlines() if "Plan Agent" in ln
-            )
-            d.stop()
-            return line.index("Plan Agent")
-        finally:
-            mod.time.monotonic = original  # type: ignore[method-assign]
+        monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
+        d = RichStatusDisplay()
+        d.register("Plan Agent", "agent")
+        console = Console(record=True, width=200)
+        console.print(d)
+        line = next(
+            ln for ln in console.export_text().splitlines() if "Plan Agent" in ln
+        )
+        d.stop()
+        return line.index("Plan Agent")
 
     assert _name_start(5.0) == _name_start(3599.0)  # "5s" vs "59m 59s"
 
