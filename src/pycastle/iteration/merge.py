@@ -1,6 +1,8 @@
+import asyncio
 import dataclasses
 import shutil
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
@@ -71,20 +73,46 @@ def _build_close_message(deleted: list[str]) -> str:
     return f"{header}\n{lines}"
 
 
+async def _close_issues_parallel(
+    issues: list[dict],
+    github_svc: GithubService,
+    on_progress: Callable[[int, int], None] | None = None,
+) -> None:
+    n = len(issues)
+    done = 0
+
+    async def _close_one(issue: dict) -> None:
+        nonlocal done
+        await asyncio.to_thread(github_svc.close_issue, issue["number"])
+        done += 1
+        if on_progress is not None:
+            on_progress(done, n)
+
+    results = await asyncio.gather(
+        *[_close_one(i) for i in issues], return_exceptions=True
+    )
+    for r in results:
+        if isinstance(r, BaseException):
+            raise r
+
+
 async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
     async with phase_row(deps.status_display, "Merge", initial_phase="Merging") as row:
         await _wait_for_clean_working_tree(deps, "Merge")
 
+        clean_issues: list[dict] = []
         conflict_issues: list[dict] = []
         for issue in completed:
             if deps.git_svc.try_merge(deps.repo_root, branch_for(issue["number"])):
-                deps.github_svc.close_issue(issue["number"])
+                clean_issues.append(issue)
             else:
                 conflict_issues.append(issue)
 
-        clean_issues = [i for i in completed if i not in conflict_issues]
+        def _on_progress(done: int, total: int) -> None:
+            deps.status_display.update_phase("Merge", f"Closing {done}/{total} issues")
 
         if clean_issues:
+            await _close_issues_parallel(clean_issues, deps.github_svc, _on_progress)
             deps.github_svc.close_completed_parent_issues()
 
         clean_deleted = _delete_merged_branches(
@@ -141,8 +169,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             conflict_deleted = _delete_merged_branches(
                 [branch_for(i["number"]) for i in conflict_issues], deps
             )
-            for issue in conflict_issues:
-                deps.github_svc.close_issue(issue["number"])
+            await _close_issues_parallel(conflict_issues, deps.github_svc, _on_progress)
             deps.github_svc.close_completed_parent_issues()
             row.close(_build_close_message(clean_deleted + conflict_deleted))
 

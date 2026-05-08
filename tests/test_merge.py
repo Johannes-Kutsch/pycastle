@@ -1047,3 +1047,71 @@ def test_merge_phase_reuses_existing_sandbox_when_merger_session_is_resumable(
     assert not create_calls, (
         "create_worktree must not be called for an existing resumable sandbox"
     )
+
+
+# ── Parallel close_issue helper ───────────────────────────────────────────────
+
+
+def test_close_issue_failure_propagates_and_aborts_merge_phase(deps, github_svc):
+    error = RuntimeError("API error")
+    github_svc.close_issue.side_effect = error
+    issues = [{"number": 1, "title": "Fix A"}]
+    with pytest.raises(RuntimeError, match="API error"):
+        _run(issues, deps)
+
+
+def test_close_issue_failure_in_conflict_path_propagates(deps, git_svc, github_svc):
+    git_svc.try_merge.return_value = False
+    error = RuntimeError("conflict close failed")
+    github_svc.close_issue.side_effect = error
+    issues = [{"number": 1, "title": "Conflict"}]
+    with pytest.raises(RuntimeError, match="conflict close failed"):
+        _run(issues, deps)
+
+
+def test_close_issue_first_exception_raised_in_input_order(deps, github_svc):
+    errors = {1: RuntimeError("first"), 2: RuntimeError("second")}
+
+    def _side_effect(number):
+        raise errors[number]
+
+    github_svc.close_issue.side_effect = _side_effect
+    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    with pytest.raises(RuntimeError, match="first"):
+        _run(issues, deps)
+
+
+def test_merge_phase_shows_closing_progress_during_clean_merge(recording_deps):
+    deps, recording = recording_deps
+    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    _run(issues, deps)
+    update_calls = [
+        c for c in recording.calls if c[0] == "update_phase" and c[1] == "Merge"
+    ]
+    closing_calls = [c for c in update_calls if "Closing" in c[2]]
+    assert closing_calls, "update_phase must be called with 'Closing X/N issues' text"
+
+
+def test_merge_phase_shows_closing_progress_during_conflict_path(
+    recording_deps, git_svc
+):
+    deps, recording = recording_deps
+    git_svc.try_merge.return_value = False
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+    update_calls = [
+        c for c in recording.calls if c[0] == "update_phase" and c[1] == "Merge"
+    ]
+    closing_calls = [c for c in update_calls if "Closing" in c[2]]
+    assert closing_calls, "update_phase must be called with 'Closing X/N issues' text"
+
+
+def test_merge_phase_progress_counter_reaches_total(recording_deps):
+    deps, recording = recording_deps
+    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    _run(issues, deps)
+    update_calls = [
+        c for c in recording.calls if c[0] == "update_phase" and c[1] == "Merge"
+    ]
+    closing_texts = [c[2] for c in update_calls if "Closing" in c[2]]
+    assert "Closing 2/2 issues" in closing_texts
