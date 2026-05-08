@@ -161,14 +161,15 @@ class GithubService:
         )
 
     def get_issue(self, issue_number: int) -> dict[str, str]:
-        payload, _ = self._request("GET", f"/repos/{self.repo}/issues/{issue_number}")
+        path = f"/repos/{self.repo}/issues/{issue_number}"
+        payload, _ = self._request("GET", path)
         if not isinstance(payload, dict) or "title" not in payload:
             raise GithubAPIError(
-                f"GitHub API GET /repos/{self.repo}/issues/{issue_number} returned no title",
+                f"GitHub API GET {path} returned no title",
                 status=200,
                 body=str(payload),
                 method="GET",
-                path=f"/repos/{self.repo}/issues/{issue_number}",
+                path=path,
             )
         return {
             "title": str(payload.get("title") or ""),
