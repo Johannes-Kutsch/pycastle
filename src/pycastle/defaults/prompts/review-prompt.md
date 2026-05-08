@@ -20,12 +20,6 @@ You are an expert code reviewer focused on enhancing code clarity, consistency, 
 
 </comments>
 
-<diff-to-main>
-
-{{DIFF}}
-
-</diff-to-main>
-
 # WORKFLOW
 
 ## 1. Confirm baseline
@@ -38,7 +32,7 @@ Attempt to reproduce the original bug with new test cases. If you can reproduce 
 
 ## 3. Read the diff
 
-Read the diff carefully. For anything that looks suspicious — fragile logic, unchecked assumptions, tricky conditions, implicit type coercions, missing guards — write a test that exercises it. Try to actually break it. If you can break it, fix it.
+Run `git diff main...` (and narrower variants scoped to specific paths) to inspect what changed on this branch. For anything that looks suspicious — fragile logic, unchecked assumptions, tricky conditions, implicit type coercions, missing guards — write a test that exercises it. Try to actually break it. If you can break it, fix it.
 
 ## 4. Enforce test standards
 

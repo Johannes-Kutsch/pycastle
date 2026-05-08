@@ -543,10 +543,9 @@ def test_run_issue_renders_empty_string_when_no_comments(tmp_path):
     assert impl_call.prompt_args["ISSUE_COMMENTS"] == ""
 
 
-def test_run_issue_threads_diff_to_reviewer_only(tmp_path):
+def test_run_issue_does_not_pass_diff_to_either_agent(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
-    deps.git_svc.get_diff_to_main.return_value = "DIFF-X"
     issue = {"number": 1, "title": "T", "body": "", "comments": []}
 
     asyncio.run(run_issue(issue, deps))
@@ -554,7 +553,7 @@ def test_run_issue_threads_diff_to_reviewer_only(tmp_path):
     impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
     rev_call = next(c for c in fake.calls if "Review Agent" in c.name)
     assert "DIFF" not in impl_call.prompt_args
-    assert rev_call.prompt_args["DIFF"] == "DIFF-X"
+    assert "DIFF" not in rev_call.prompt_args
 
 
 def test_run_issue_handles_issue_without_body_or_comments(tmp_path):

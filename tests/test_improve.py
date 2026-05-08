@@ -21,7 +21,6 @@ from pycastle.iteration.improve import (
     improve_phase,
     next_prompt,
 )
-from pycastle.session_resume import is_stage_done
 from pycastle.services import GitService
 
 
@@ -262,8 +261,12 @@ def test_improve_phase_one_invocation_when_no_candidate_report_disabled(
 # ── Phase progress file writes ───────────────────────────────────────────────
 
 
-def test_improve_phase_clears_session_on_terminal_success(tmp_path, git_svc):
-    """Role session dir is cleared (stage-done signal) after successful improve run."""
+def test_improve_phase_removes_session_on_terminal_success(tmp_path, git_svc):
+    """Role session dir is removed (no stage-done sentinel) after successful improve run.
+
+    Improve-sandbox has no downstream stage that needs the sentinel, so the dir is
+    removed outright to let managed_worktree's teardown predicate fire.
+    """
     runner = FakeAgentRunner(
         [CompletionOutput(), CompletionOutput(), CompletionOutput()]
     )
@@ -271,7 +274,7 @@ def test_improve_phase_clears_session_on_terminal_success(tmp_path, git_svc):
     _run(deps)
     worktree_path = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     role_session_dir = worktree_path / ".pycastle-session" / "improve"
-    assert is_stage_done(role_session_dir)
+    assert not role_session_dir.exists()
 
 
 def test_improve_phase_progress_file_written_after_scan_no_candidate(tmp_path, git_svc):

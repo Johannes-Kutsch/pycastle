@@ -162,7 +162,6 @@ _REVIEW_ARGS = {
     "ISSUE_TITLE": "Fix the thing",
     "ISSUE_BODY": "do the thing",
     "ISSUE_COMMENTS": "",
-    "DIFF": "",
     "BRANCH": "pycastle/issue-42",
     "FEEDBACK_COMMANDS": "`pytest`",
 }
@@ -186,12 +185,11 @@ def test_reviewer_default_template_does_not_invoke_gh():
     assert "gh issue comment" not in content
 
 
-def test_reviewer_default_template_renders_diff_placeholder():
-    rendered = _render(
-        _DEFAULTS / "review-prompt.md",
-        {**_REVIEW_ARGS, "DIFF": "DIFF-CONTENT", **_standards()},
+def test_reviewer_default_template_has_no_diff_placeholder():
+    content = (_DEFAULTS / "review-prompt.md").read_text(encoding="utf-8")
+    assert "{{DIFF}}" not in content, (
+        "review-prompt.md must not interpolate {{DIFF}} — reviewer runs git diff itself"
     )
-    assert "DIFF-CONTENT" in rendered
 
 
 def test_reviewer_default_template_renders_issue_body_and_comments():

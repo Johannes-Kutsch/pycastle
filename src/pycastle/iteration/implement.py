@@ -171,17 +171,13 @@ async def run_issue(
         ) as review_mount_path:
             _review_overlay = patch_gitdir_for_container(review_mount_path)
             try:
-                review_prompt_args = {
-                    **prompt_args,
-                    "DIFF": deps.git_svc.get_diff_to_main(review_mount_path),
-                }
                 review_result = await _bounded_run_agent(
                     RunRequest(
                         name=f"Review Agent #{issue['number']}",
                         prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
                         mount_path=review_mount_path,
                         role=AgentRole.REVIEWER,
-                        prompt_args=review_prompt_args,
+                        prompt_args=prompt_args,
                         model=deps.cfg.review_override.model,
                         effort=deps.cfg.review_override.effort,
                         stage="pre-review",

@@ -1,4 +1,5 @@
 import dataclasses
+import shutil
 import sys
 from pathlib import Path
 from typing import Protocol
@@ -8,7 +9,6 @@ from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..services import GitCommandError, GitService, GithubService
-from ..session_resume import clear_session_dir
 from ..status_display import StatusDisplay
 from ..worktree import (
     managed_worktree,
@@ -137,7 +137,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 deps.git_svc.fast_forward_branch(
                     deps.repo_root, target_branch, MERGE_SANDBOX
                 )
-                clear_session_dir(sandbox_path / ".pycastle-session" / "merger")
+                shutil.rmtree(sandbox_path / ".pycastle-session" / "merger", ignore_errors=True)
             conflict_deleted = _delete_merged_branches(
                 [branch_for(i["number"]) for i in conflict_issues], deps
             )

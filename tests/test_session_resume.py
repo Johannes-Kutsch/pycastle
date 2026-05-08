@@ -6,6 +6,7 @@ import uuid
 from pycastle.agent_output_protocol import AgentRole
 from pycastle.session_resume import (
     RunKind,
+    any_role_dir_present,
     decide_agent_run_kind,
     derived_session_uuid,
     has_resumable_session,
@@ -64,6 +65,39 @@ def test_is_stage_done_returns_true_when_dir_present_and_empty(tmp_path):
     role_dir = tmp_path / "implementer"
     role_dir.mkdir()
     assert is_stage_done(role_dir) is True
+
+
+# ── any_role_dir_present ──────────────────────────────────────────────────────
+
+
+def test_any_role_dir_present_returns_false_when_session_base_absent(tmp_path):
+    assert any_role_dir_present(tmp_path) is False
+
+
+def test_any_role_dir_present_returns_true_for_stage_done_only(tmp_path):
+    (tmp_path / ".pycastle-session" / "implementer").mkdir(parents=True)
+    assert any_role_dir_present(tmp_path) is True
+
+
+def test_any_role_dir_present_returns_true_for_resumable_only(tmp_path):
+    role_dir = tmp_path / ".pycastle-session" / "reviewer"
+    role_dir.mkdir(parents=True)
+    (role_dir / "session.jsonl").write_text("{}\n")
+    assert any_role_dir_present(tmp_path) is True
+
+
+def test_any_role_dir_present_returns_true_for_mixed(tmp_path):
+    base = tmp_path / ".pycastle-session"
+    (base / "implementer").mkdir(parents=True)
+    rev = base / "reviewer"
+    rev.mkdir()
+    (rev / "session.jsonl").write_text("{}\n")
+    assert any_role_dir_present(tmp_path) is True
+
+
+def test_any_role_dir_present_returns_false_when_session_base_empty(tmp_path):
+    (tmp_path / ".pycastle-session").mkdir()
+    assert any_role_dir_present(tmp_path) is False
 
 
 # ── decide_agent_run_kind ─────────────────────────────────────────────────────
