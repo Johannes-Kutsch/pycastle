@@ -24,6 +24,7 @@ class WorkStream:
         self,
         role: AgentRole,
         on_turn: Callable[[str], None],
+        on_tokens: Callable[[int], None] | None = None,
     ) -> AgentOutput:
         q: queue.Queue = queue.Queue()
         _sentinel = object()
@@ -62,6 +63,6 @@ class WorkStream:
                         line, line_buf = line_buf.split("\n", 1)
                         yield line
 
-            return process_stream(_lines(), on_turn, role)
+            return process_stream(_lines(), on_turn, role, on_tokens)
         finally:
             log.close()

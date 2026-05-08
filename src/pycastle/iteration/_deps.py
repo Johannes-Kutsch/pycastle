@@ -51,6 +51,9 @@ class RecordingStatusDisplay:
     def reset_idle_timer(self, name: str) -> None:
         self.calls.append(("reset_idle_timer", name))
 
+    def update_tokens(self, name: str, current_tokens: int) -> None:
+        self.calls.append(("update_tokens", name, current_tokens))
+
     def remove(
         self,
         caller: str,

@@ -36,6 +36,27 @@ def _assistant_line(text: str) -> str:
     )
 
 
+def _assistant_line_with_usage(
+    text: str,
+    input_tokens: int,
+    cache_creation: int = 0,
+    cache_read: int = 0,
+) -> str:
+    return json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": text}],
+                "usage": {
+                    "input_tokens": input_tokens,
+                    "cache_creation_input_tokens": cache_creation,
+                    "cache_read_input_tokens": cache_read,
+                },
+            },
+        }
+    )
+
+
 # ── Exception hierarchy ───────────────────────────────────────────────────────
 
 
@@ -690,6 +711,83 @@ def test_process_stream_non_error_result_with_pattern_text_does_not_raise():
     )
     result = process_stream(
         [success_result],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+    )
+    assert isinstance(result, CommitMessageOutput)
+
+
+# ── Token extraction via on_tokens callback ───────────────────────────────────
+
+
+def test_process_stream_calls_on_tokens_with_input_tokens():
+    token_counts: list[int] = []
+    process_stream(
+        [
+            _assistant_line_with_usage("thinking", input_tokens=50_000),
+            _result_line("<commit_message>done</commit_message>"),
+        ],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        on_tokens=token_counts.append,
+    )
+    assert token_counts == [50_000]
+
+
+def test_process_stream_on_tokens_sums_all_token_types():
+    token_counts: list[int] = []
+    process_stream(
+        [
+            _assistant_line_with_usage(
+                "thinking",
+                input_tokens=10_000,
+                cache_creation=20_000,
+                cache_read=30_000,
+            ),
+            _result_line("<commit_message>done</commit_message>"),
+        ],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        on_tokens=token_counts.append,
+    )
+    assert token_counts == [60_000]
+
+
+def test_process_stream_on_tokens_not_called_when_no_usage_block():
+    token_counts: list[int] = []
+    process_stream(
+        [
+            _assistant_line("no usage data"),
+            _result_line("<commit_message>done</commit_message>"),
+        ],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        on_tokens=token_counts.append,
+    )
+    assert token_counts == []
+
+
+def test_process_stream_on_tokens_called_once_per_assistant_turn_with_usage():
+    token_counts: list[int] = []
+    process_stream(
+        [
+            _assistant_line_with_usage("first turn", input_tokens=10_000),
+            _assistant_line_with_usage("second turn", input_tokens=20_000),
+            _result_line("<commit_message>done</commit_message>"),
+        ],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        on_tokens=token_counts.append,
+    )
+    assert token_counts == [10_000, 20_000]
+
+
+def test_process_stream_on_tokens_is_optional():
+    result = process_stream(
+        [
+            _assistant_line_with_usage("thinking", input_tokens=50_000),
+            _result_line("<commit_message>done</commit_message>"),
+        ],
         on_turn=lambda t: None,
         role=AgentRole.IMPLEMENTER,
     )

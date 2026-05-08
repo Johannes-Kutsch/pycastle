@@ -188,3 +188,47 @@ def test_chunk_containing_multiple_newlines_yields_all_lines(tmp_path):
     result = ws.run(AgentRole.IMPLEMENTER, turns.append)
     assert isinstance(result, CommitMessageOutput)
     assert turns == ["hello"]
+
+
+# ── on_tokens callback ────────────────────────────────────────────────────────
+
+
+def _assistant_with_usage_line(text: str, input_tokens: int) -> bytes:
+    return (
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [{"type": "text", "text": text}],
+                    "usage": {
+                        "input_tokens": input_tokens,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                    },
+                },
+            }
+        ).encode()
+        + b"\n"
+    )
+
+
+def test_on_tokens_fires_when_usage_present(tmp_path):
+    chunks = [
+        _assistant_with_usage_line("thinking", 50_000),
+        _result_line("<commit_message>done</commit_message>"),
+    ]
+    token_counts: list[int] = []
+    ws = _make_workstream(chunks, tmp_path)
+    ws.run(AgentRole.IMPLEMENTER, _noop, on_tokens=token_counts.append)
+    assert token_counts == [50_000]
+
+
+def test_on_tokens_not_called_when_no_usage(tmp_path):
+    chunks = [
+        _assistant_line("no usage"),
+        _result_line("<commit_message>done</commit_message>"),
+    ]
+    token_counts: list[int] = []
+    ws = _make_workstream(chunks, tmp_path)
+    ws.run(AgentRole.IMPLEMENTER, _noop, on_tokens=token_counts.append)
+    assert token_counts == []
