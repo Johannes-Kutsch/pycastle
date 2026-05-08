@@ -22,6 +22,12 @@ _PHASE_TEMPLATE: dict[str, PromptTemplate] = {
     "03-issues.md": PromptTemplate.IMPROVE_ISSUES,
     "04-no-candidate-report.md": PromptTemplate.IMPROVE_NO_CANDIDATE,
 }
+_PHASE_NAMESPACE: dict[str, str] = {
+    "01-scan.md": "main",
+    "02-prd.md": "main",
+    "03-issues.md": "issues",
+    "04-no-candidate-report.md": "main",
+}
 _VALID_PHASE_IDS = frozenset(
     {"01-scan:picked", "01-scan:no-candidate", "02-prd", "03-issues", "04-report"}
 )
@@ -114,6 +120,7 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> None:
             )
             while prompt_name is not None:
                 template = _PHASE_TEMPLATE[prompt_name]
+                namespace = _PHASE_NAMESPACE[prompt_name]
                 scope_args: dict[str, str] = (
                     {"IMPROVE_SHORT_SID": short_sid}
                     if template.scope is Scope.IMPROVE_SESSION
@@ -139,6 +146,7 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> None:
                         work_body=display_body,
                         send_role_prompt_on_resume=last_id is not None
                         and not is_mid_phase_retry,
+                        session_namespace=namespace,
                     )
                 )
 

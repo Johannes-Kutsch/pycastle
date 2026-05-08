@@ -7,7 +7,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.agent_output_protocol import CommitMessageOutput, CompletionOutput
+from pycastle.agent_output_protocol import (
+    AgentRole,
+    CommitMessageOutput,
+    CompletionOutput,
+)
 from pycastle.agent_result import CancellationToken, PreflightFailure
 from pycastle.agent_runner import AgentRunner, RunRequest
 from pycastle.config import Config
@@ -40,10 +44,11 @@ _COMPLETE_STREAM = [
     b'{"type": "result", "result": "<commit_message>done</commit_message>", "is_error": false}\n'
 ]
 
-# A minimal NDJSON stream that process_stream accepts as CompletionOutput (MERGER role)
+# A minimal NDJSON stream that process_stream accepts as CompletionOutput (MERGER/IMPROVE role)
 _MERGER_COMPLETE_STREAM = [
     b'{"type": "result", "result": "<promise>COMPLETE</promise>", "is_error": false}\n'
 ]
+_IMPROVE_COMPLETE_STREAM = _MERGER_COMPLETE_STREAM
 
 
 # ── FakeAgentRunner: queue behaviour ─────────────────────────────────────────
@@ -858,6 +863,17 @@ def test_run_request_stores_required_fields():
     assert req.status_display is None
     assert req.issue_title == ""
     assert req.work_body == ""
+    assert req.session_namespace == ""
+
+
+def test_run_request_session_namespace_can_be_set():
+    req = RunRequest(
+        name="Agent",
+        template=PromptTemplate.PLAN,
+        mount_path=Path("/workspace"),
+        session_namespace="main",
+    )
+    assert req.session_namespace == "main"
 
 
 # ── AgentRunner: AccountPool integration ─────────────────────────────────────
@@ -1013,6 +1029,161 @@ def test_agent_runner_injects_claude_config_dir_for_implementer(tmp_path):
 
     assert "CLAUDE_CONFIG_DIR" in captured_env
     assert captured_env["CLAUDE_CONFIG_DIR"].endswith("/.pycastle-session/implementer/")
+
+
+# ── AgentRunner: namespaced session dir ───────────────────────────────────────
+
+
+def test_agent_runner_injects_namespaced_claude_config_dir_when_session_namespace_set(
+    tmp_path,
+):
+    """When session_namespace is set, CLAUDE_CONFIG_DIR must include the namespace subdir."""
+    captured_env: dict = {}
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def _run(*args, **kwargs):
+        captured_env.update(kwargs.get("environment") or {})
+        return mock_container
+
+    mock_client.containers.run.side_effect = _run
+
+    def exec_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            r = MagicMock()
+            r.output = iter(_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Test",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.IMPLEMENTER,
+                skip_preflight=True,
+                session_namespace="main",
+            )
+        )
+    )
+
+    assert "CLAUDE_CONFIG_DIR" in captured_env
+    assert captured_env["CLAUDE_CONFIG_DIR"].endswith(
+        "/.pycastle-session/implementer/main/"
+    )
+
+
+def test_agent_runner_uses_namespace_subdir_for_resume_check(tmp_path):
+    """When session_namespace is set, Fresh/Resume decision uses the namespaced subdir."""
+    # Seed the namespaced session dir (not the role-level dir)
+    namespace_dir = tmp_path / ".pycastle-session" / "implementer" / "main"
+    namespace_dir.mkdir(parents=True)
+    (namespace_dir / "session.jsonl").write_text("{}")
+
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            r = MagicMock()
+            r.output = iter(_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Impl",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.IMPLEMENTER,
+                skip_preflight=True,
+                session_namespace="main",
+            )
+        )
+    )
+
+    # Namespaced dir was non-empty → should Resume
+    assert captured_cmds, "No streaming exec recorded"
+    assert any("--resume" in c for c in captured_cmds)
+
+
+def test_agent_runner_uses_fresh_for_different_namespace_when_other_namespace_has_session(
+    tmp_path,
+):
+    """When the 'issues' namespace has a session, a 'main' namespace run must still be Fresh."""
+    # Seed the 'issues' namespace dir only
+    issues_dir = tmp_path / ".pycastle-session" / "implementer" / "issues"
+    issues_dir.mkdir(parents=True)
+    (issues_dir / "session.jsonl").write_text("{}")
+
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            r = MagicMock()
+            r.output = iter(_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Impl",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.IMPLEMENTER,
+                skip_preflight=True,
+                session_namespace="main",
+            )
+        )
+    )
+
+    # 'main' namespace dir was empty → should be Fresh
+    assert captured_cmds, "No streaming exec recorded"
+    assert any("--session-id" in c for c in captured_cmds)
+    assert all("--resume" not in c for c in captured_cmds)
 
 
 # ── AgentRunner: session-id in claude command ─────────────────────────────────
