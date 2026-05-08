@@ -685,6 +685,103 @@ def test_get_open_issues_filters_pull_requests():
     assert [r["number"] for r in result] == [1]
 
 
+def test_get_open_issues_filters_recently_closed_issue():
+    svc = _make_service()
+    issue_payload = [{"number": 42, "title": "T", "body": "", "labels": []}]
+
+    def fake_request(method, path, data=None):
+        if method == "PATCH":
+            return None, {}
+        return issue_payload, {"Link": ""}
+
+    with patch.object(svc, "_request", side_effect=fake_request):
+        svc.close_issue(42)
+        result = svc.get_open_issues("ready-for-agent")
+
+    assert [r["number"] for r in result] == []
+
+
+def test_get_open_issues_self_heals_when_issue_drops_from_response():
+    svc = _make_service()
+    issue_payload = [{"number": 42, "title": "T", "body": "", "labels": []}]
+    call_count = 0
+
+    def fake_request(method, path, data=None):
+        nonlocal call_count
+        if method == "PATCH":
+            return None, {}
+        call_count += 1
+        if call_count <= 2:
+            return issue_payload, {"Link": ""}
+        return [], {"Link": ""}
+
+    with patch.object(svc, "_request", side_effect=fake_request):
+        svc.close_issue(42)
+        svc.get_open_issues("ready-for-agent")
+        svc.get_open_issues("ready-for-agent")
+        result = svc.get_open_issues("ready-for-agent")
+
+    assert result == []
+    assert 42 not in svc._recently_closed
+
+
+def test_get_open_issues_does_not_filter_after_self_heal_reopen():
+    svc = _make_service()
+    issue_payload = [{"number": 42, "title": "T", "body": "", "labels": []}]
+    call_count = 0
+
+    def fake_request(method, path, data=None):
+        nonlocal call_count
+        if method == "PATCH":
+            return None, {}
+        call_count += 1
+        if call_count == 1:
+            return issue_payload, {"Link": ""}
+        if call_count == 2:
+            return [], {"Link": ""}
+        return issue_payload, {"Link": ""}
+
+    with patch.object(svc, "_request", side_effect=fake_request):
+        svc.close_issue(42)
+        svc.get_open_issues("ready-for-agent")
+        svc.get_open_issues("ready-for-agent")
+        result = svc.get_open_issues("ready-for-agent")
+
+    assert [r["number"] for r in result] == [42]
+
+
+def test_close_issue_api_error_does_not_add_to_recently_closed():
+    svc = _make_service()
+
+    def fake_request(method, path, data=None):
+        raise GithubAPIError("fail", status=500, body="err", method=method, path=path)
+
+    with patch.object(svc, "_request", side_effect=fake_request):
+        with pytest.raises(GithubAPIError):
+            svc.close_issue(42)
+
+    assert 42 not in svc._recently_closed
+
+
+def test_get_open_issues_does_not_filter_issue_when_close_failed():
+    svc = _make_service()
+    issue_payload = [{"number": 42, "title": "T", "body": "", "labels": []}]
+
+    def fake_request(method, path, data=None):
+        if method == "PATCH":
+            raise GithubAPIError(
+                "fail", status=500, body="err", method=method, path=path
+            )
+        return issue_payload, {"Link": ""}
+
+    with patch.object(svc, "_request", side_effect=fake_request):
+        with pytest.raises(GithubAPIError):
+            svc.close_issue(42)
+        result = svc.get_open_issues("ready-for-agent")
+
+    assert [r["number"] for r in result] == [42]
+
+
 # ── close_completed_parent_issues ────────────────────────────────────────────
 
 
