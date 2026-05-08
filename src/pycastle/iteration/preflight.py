@@ -120,9 +120,6 @@ async def preflight_phase(deps: _PreflightDeps) -> PreflightResult:
     open_issues = strip_stale_blocker_refs(
         deps.github_svc.get_open_issues(deps.cfg.issue_label)
     )
-    if not open_issues:
-        return PreflightReady(sha=sha, issues=[])
-
     async with transient_worktree("pre-flight-sandbox", sha=sha, deps=deps) as wt:
         failures = await deps.agent_runner.run_preflight(
             name="Preflight Agent",
