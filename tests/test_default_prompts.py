@@ -260,3 +260,38 @@ def test_preflight_issue_template_expands_label_placeholders():
     assert "custom-bug" in result
     assert "custom-agent" in result
     assert "custom-human" in result
+
+
+# ── Phase 2 PRD template ──────────────────────────────────────────────────────
+
+_PRD_ARGS = {"IMPROVE_SHORT_SID": "abcd1234"}
+
+
+def test_prd_prompt_renders_without_error():
+    _render(_DEFAULTS / "02-prd.md", _PRD_ARGS)
+
+
+def test_prd_prompt_fails_without_short_sid_arg():
+    with pytest.raises(PromptRenderError, match="IMPROVE_SHORT_SID"):
+        _render(_DEFAULTS / "02-prd.md", {})
+
+
+def test_prd_prompt_expands_short_sid_in_dedup_search():
+    result = _render(_DEFAULTS / "02-prd.md", _PRD_ARGS)
+    assert "{{IMPROVE_SHORT_SID}}" not in result
+    assert "abcd1234" in result
+
+
+def test_prd_prompt_instructs_dedup_check():
+    content = (_DEFAULTS / "02-prd.md").read_text(encoding="utf-8")
+    assert "gh issue list" in content
+
+
+def test_prd_prompt_instructs_afk_safety_confirmation():
+    content = (_DEFAULTS / "02-prd.md").read_text(encoding="utf-8")
+    assert "afk" in content.lower() or "autonomous" in content.lower()
+
+
+def test_prd_prompt_instructs_session_footer():
+    content = (_DEFAULTS / "02-prd.md").read_text(encoding="utf-8")
+    assert "footer" in content.lower() or "session footer" in content.lower()
