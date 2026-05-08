@@ -115,11 +115,7 @@ class GitService(_SubprocessService):
         )
 
         if worktree_path.exists():
-            self._run_or_raise(
-                ["git", "worktree", "remove", "--force", str(worktree_path)],
-                f"git worktree remove --force {str(worktree_path)!r} failed",
-                cwd=repo_path,
-            )
+            self.remove_worktree(repo_path, worktree_path)
 
         if self.verify_ref_exists(branch, repo_path):
             cmd = ["git", "worktree", "add", str(worktree_path), branch]
@@ -201,11 +197,7 @@ class GitService(_SubprocessService):
         )
 
         if worktree_path.exists():
-            self._run_or_raise(
-                ["git", "worktree", "remove", "--force", str(worktree_path)],
-                f"git worktree remove --force {str(worktree_path)!r} failed",
-                cwd=repo_path,
-            )
+            self.remove_worktree(repo_path, worktree_path)
 
         self._run_or_raise(
             ["git", "worktree", "add", "--detach", str(worktree_path), sha],

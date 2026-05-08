@@ -498,19 +498,26 @@ def test_create_worktree_raises_git_timeout_error_on_timeout(tmp_path):
             svc.create_worktree(tmp_path, tmp_path / "wt", "feature/new")
 
 
-def test_create_worktree_raises_git_command_error_when_remove_fails(tmp_path):
+def test_create_worktree_succeeds_when_orphan_dir_exists_at_path(tmp_path):
     svc = GitService(_cfg)
     worktree = tmp_path / "wt"
     worktree.mkdir()
+    (worktree / "leftover.txt").write_text("from a prior crashed run")
+    captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
         if "remove" in cmd and "worktree" in cmd:
-            return MagicMock(returncode=1, stdout=b"", stderr=b"not a worktree")
+            return MagicMock(returncode=1, stdout=b"", stderr=b"not a working tree")
+        if "rev-parse" in cmd:
+            return MagicMock(returncode=1, stdout=b"", stderr=b"")
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
     with patch("subprocess.run", side_effect=fake_run):
-        with pytest.raises(GitCommandError):
-            svc.create_worktree(tmp_path, worktree, "feature/new")
+        svc.create_worktree(tmp_path, worktree, "feature/new")
+
+    assert not worktree.exists()
+    assert any("add" in c and "worktree" in c for c in captured)
 
 
 def test_create_worktree_removes_existing_dir_before_add(tmp_path):
@@ -1044,19 +1051,24 @@ def test_fast_forward_branch_raises_git_timeout_error_on_timeout(tmp_path):
 # ── checkout_detached() additional edge cases ─────────────────────────────────
 
 
-def test_checkout_detached_raises_git_command_error_when_remove_fails(tmp_path):
+def test_checkout_detached_succeeds_when_orphan_dir_exists_at_path(tmp_path):
     svc = GitService(_cfg)
     worktree = tmp_path / "wt"
     worktree.mkdir()
+    (worktree / "leftover.txt").write_text("from a prior crashed run")
+    captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
         if "remove" in cmd and "worktree" in cmd:
-            return MagicMock(returncode=1, stdout=b"", stderr=b"not a worktree")
+            return MagicMock(returncode=1, stdout=b"", stderr=b"not a working tree")
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
     with patch("subprocess.run", side_effect=fake_run):
-        with pytest.raises(GitCommandError):
-            svc.checkout_detached(tmp_path, worktree, "deadbeef")
+        svc.checkout_detached(tmp_path, worktree, "deadbeef")
+
+    assert not worktree.exists()
+    assert any("--detach" in c for c in captured)
 
 
 # ── remove_worktree() additional edge cases ───────────────────────────────────
