@@ -142,6 +142,7 @@ class Deps:
     improve_mode: ImproveMode = None
     slept_once: bool = False
     improve_dispatched_this_iteration: bool = False
+    open_issues_known_empty: bool = False
 
 
 def _make_deps(

@@ -49,6 +49,20 @@ def _is_in_flight(issue: dict, deps: Deps) -> bool:
 
 
 async def run_iteration(deps: Deps) -> IterationOutcome:
+    # Cheap pre-check: skip PREFLIGHT_CHECKS when idle and improve mode would stop anyway.
+    # open_issues_known_empty is set by the orchestrator after confirming no open issues,
+    # which also implies no in-flight issues, so (0, 0) counts are safe here.
+    if deps.open_issues_known_empty:
+        early_action = decide_iteration_action(
+            open_afk_count=0,
+            in_flight_count=0,
+            improve_mode=deps.improve_mode,
+            slept_once=deps.slept_once,
+            improve_dispatched_this_iteration=deps.improve_dispatched_this_iteration,
+        )
+        if isinstance(early_action, Done):
+            return Done()
+
     async with phase_row(
         deps.status_display,
         "Preflight",
@@ -82,7 +96,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             case Done():
                 return Done()
             case DispatchImprove():
-                await improve_phase(deps)
+                await improve_phase(deps, sha=preflight_result.sha)
                 return Continue()
             case RunImplementDirect():
                 sha = preflight_result.sha

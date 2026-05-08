@@ -77,8 +77,7 @@ class _ImproveDeps(Protocol):
     git_svc: GitService
 
 
-async def improve_phase(deps: _ImproveDeps) -> None:
-    sha = deps.git_svc.get_head_sha(deps.repo_root)
+async def improve_phase(deps: _ImproveDeps, *, sha: str) -> None:
     async with phase_row(
         deps.status_display, "Improve", initial_phase="Running"
     ) as row:
