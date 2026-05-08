@@ -1501,6 +1501,26 @@ def test_run_iteration_endless_returns_continue_after_no_candidate_improve(
     assert isinstance(result, Continue)
 
 
+def test_run_iteration_improve_dispatch_runs_preflight_checks_with_no_open_issues(
+    tmp_path, git_svc, logger
+):
+    """When improve is dispatched with no open issues, PREFLIGHT_CHECKS must run
+    before improve-sandbox is created — the improve agent must run against a verified safe SHA."""
+    deps = _make_improve_deps(
+        tmp_path,
+        git_svc,
+        logger,
+        improve_mode="endless",
+        slept_once=False,
+        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+    )
+    asyncio.run(run_iteration(deps))
+
+    assert len(deps.agent_runner.preflight_calls) >= 1, (
+        "PREFLIGHT_CHECKS must run before improve agent is dispatched"
+    )
+
+
 def test_run_iteration_improve_uses_sha_from_preflight(tmp_path, git_svc, logger):
     """improve_phase must receive the SHA pinned by preflight, not re-fetch HEAD."""
     git_svc.get_head_sha.return_value = "safe-sha-from-preflight"
