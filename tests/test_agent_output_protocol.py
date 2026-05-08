@@ -846,6 +846,12 @@ def test_process_stream_improve_returns_issue_output_for_json_issue_tag():
     assert result.labels == ["enhancement"]
 
 
+def test_process_stream_improve_json_issue_without_promise_raises():
+    lines = [_result_line('<issue>{"number": 99, "labels": []}</issue>')]
+    with pytest.raises(PromiseParseError):
+        process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
+
+
 def test_process_stream_improve_json_issue_in_streaming_turn_returns_issue_output():
     consumed: list[str] = []
 
