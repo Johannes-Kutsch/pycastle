@@ -825,3 +825,9 @@ def test_process_stream_on_tokens_is_optional():
         role=AgentRole.IMPLEMENTER,
     )
     assert isinstance(result, CommitMessageOutput)
+
+
+def test_process_stream_improve_raises_when_no_promise_tag():
+    lines = [_result_line("no promise tag here")]
+    with pytest.raises(PromiseParseError):
+        process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
