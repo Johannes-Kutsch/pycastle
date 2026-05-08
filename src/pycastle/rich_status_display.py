@@ -16,6 +16,7 @@ _PHASE_RANK: dict[str, int] = {
     "implement": 1,
     "review": 2,
     "merge": 3,
+    "improve": 4,
 }
 
 
@@ -42,6 +43,8 @@ def _stage_from_name(name: str) -> str:
         return "merge"
     if name == "Pre-Flight Reporter":
         return "plan"
+    if name in {"Scan Agent", "PRD Agent", "Slice Agent", "Rejection Report Agent"}:
+        return "improve"
     return ""
 
 

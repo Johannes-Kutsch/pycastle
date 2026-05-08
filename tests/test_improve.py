@@ -226,6 +226,41 @@ def test_improve_phase_picked_path_runs_scan_then_prd(deps, agent_runner):
     assert names[:2] == ["01-scan.md", "02-prd.md"]
 
 
+@pytest.mark.parametrize(
+    "prompt_name,expected_name,expected_body",
+    [
+        ("01-scan.md", "Scan Agent", "picking an improvement"),
+        ("02-prd.md", "PRD Agent", "writing PRD"),
+        ("03-issues.md", "Slice Agent", "filing sub-issues"),
+        (
+            "04-no-candidate-report.md",
+            "Rejection Report Agent",
+            "filing no-candidate report",
+        ),
+    ],
+)
+def test_improve_phase_dispatches_per_phase_display(
+    tmp_path, git_svc, prompt_name, expected_name, expected_body
+):
+    """Each phase dispatches with its own RunRequest name and work_body."""
+    if prompt_name == "04-no-candidate-report.md":
+        outputs = [NoCandidateOutput(), CompletionOutput()]
+    else:
+        outputs = [CompletionOutput(), CompletionOutput(), CompletionOutput()]
+    runner = FakeAgentRunner(outputs)
+    deps = _ImproveDepsStub(
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        agent_runner=runner,
+        cfg=Config(),
+        status_display=PlainStatusDisplay(),
+    )
+    _run(deps)
+    call = next(c for c in runner.calls if c.prompt_file.name == prompt_name)
+    assert call.name == expected_name
+    assert call.work_body == expected_body
+
+
 def test_improve_phase_two_invocations_on_no_candidate_path(tmp_path, git_svc):
     """NO-CANDIDATE path (scan → report) triggers exactly two agent calls."""
     runner = FakeAgentRunner([NoCandidateOutput(), CompletionOutput()])
