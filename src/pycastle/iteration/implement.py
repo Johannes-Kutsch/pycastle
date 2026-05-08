@@ -47,6 +47,16 @@ def format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
     return "\n\n".join(parts)
 
 
+def build_issue_scope_args(issue: dict, branch: str) -> dict[str, str]:
+    return {
+        "ISSUE_NUMBER": str(issue["number"]),
+        "ISSUE_TITLE": issue["title"],
+        "ISSUE_BODY": str(issue.get("body") or ""),
+        "ISSUE_COMMENTS": format_issue_comments(issue.get("comments") or []),
+        "BRANCH": branch,
+    }
+
+
 @dataclasses.dataclass
 class ImplementResult:
     completed: list[dict]
@@ -67,13 +77,7 @@ async def run_issue(
 ) -> dict | PreflightFailure:
     _branch = branch_for(issue["number"])
     _token = token if token is not None else CancellationToken()
-    scope_args = {
-        "ISSUE_NUMBER": str(issue["number"]),
-        "ISSUE_TITLE": issue["title"],
-        "ISSUE_BODY": str(issue.get("body") or ""),
-        "ISSUE_COMMENTS": format_issue_comments(issue.get("comments") or []),
-        "BRANCH": _branch,
-    }
+    scope_args = build_issue_scope_args(issue, _branch)
 
     _started_fired = False
 
