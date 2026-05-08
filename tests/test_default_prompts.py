@@ -281,7 +281,6 @@ def test_prd_prompt_expands_short_sid_in_dedup_search():
     assert "abcd1234" in result
 
 
-
 def test_prd_prompt_instructs_afk_safety_confirmation():
     content = (_IMPROVE / "02-prd.md").read_text(encoding="utf-8")
     assert "afk" in content.lower() or "autonomous" in content.lower()
