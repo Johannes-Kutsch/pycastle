@@ -325,3 +325,61 @@ def test_improve_phase_progress_file_written_after_scan_no_candidate(tmp_path, g
     )
     _run(deps)
     assert "01-scan:no-candidate" in progress_values
+
+
+# ── IMPROVE_SHORT_SID prompt arg threading ───────────────────────────────────
+
+
+def test_improve_phase_threads_short_sid_to_prd_phase(deps, agent_runner):
+    """Phase 2 (PRD) RunRequest carries IMPROVE_SHORT_SID in prompt_args."""
+    _run(deps)
+    prd_call = next(c for c in agent_runner.calls if c.prompt_file.name == "02-prd.md")
+    assert prd_call.prompt_args is not None
+    assert len(prd_call.prompt_args.get("IMPROVE_SHORT_SID", "")) == 8
+
+
+def test_improve_phase_threads_short_sid_to_issues_phase(deps, agent_runner):
+    """Phase 3 (sub-issues) RunRequest carries IMPROVE_SHORT_SID in prompt_args."""
+    _run(deps)
+    issues_call = next(
+        c for c in agent_runner.calls if c.prompt_file.name == "03-issues.md"
+    )
+    assert issues_call.prompt_args is not None
+    assert len(issues_call.prompt_args.get("IMPROVE_SHORT_SID", "")) == 8
+
+
+def test_improve_phase_threads_short_sid_to_no_candidate_report_phase(
+    tmp_path, git_svc
+):
+    """Phase 4 (no-candidate report) RunRequest carries IMPROVE_SHORT_SID."""
+    runner = FakeAgentRunner([NoCandidateOutput(), CompletionOutput()])
+    deps = _ImproveDepsStub(
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        agent_runner=runner,
+        cfg=Config(),
+        status_display=PlainStatusDisplay(),
+    )
+    _run(deps)
+    report_call = runner.calls[1]
+    assert report_call.prompt_args is not None
+    assert len(report_call.prompt_args.get("IMPROVE_SHORT_SID", "")) == 8
+
+
+def test_improve_phase_does_not_thread_short_sid_to_scan_phase(deps, agent_runner):
+    """Phase 1 (scan) RunRequest does not receive IMPROVE_SHORT_SID."""
+    _run(deps)
+    scan_call = agent_runner.calls[0]
+    assert (scan_call.prompt_args or {}).get("IMPROVE_SHORT_SID") is None
+
+
+def test_improve_phase_short_sid_is_consistent_across_phases(deps, agent_runner):
+    """All phases that receive IMPROVE_SHORT_SID use the same 8-hex value."""
+    _run(deps)
+    sid_values = [
+        c.prompt_args["IMPROVE_SHORT_SID"]
+        for c in agent_runner.calls
+        if c.prompt_args and "IMPROVE_SHORT_SID" in c.prompt_args
+    ]
+    assert len(sid_values) == 2  # phases 02 and 03 on the picked path
+    assert len(set(sid_values)) == 1  # all the same value
