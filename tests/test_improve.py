@@ -10,6 +10,7 @@ import pytest
 from pycastle.agent_output_protocol import (
     AgentRole,
     CompletionOutput,
+    IssueOutput,
     NoCandidateOutput,
 )
 from pycastle.config import Config
@@ -341,6 +342,29 @@ def test_improve_phase_issues_scope_args_include_all_improve_issues_keys(
         "ISSUE_COMMENTS",
     }
     assert required == set(issues_call.scope_args.keys())
+
+
+def test_improve_phase_threads_prd_number_from_issue_output_to_issues_phase(
+    tmp_path, git_svc
+):
+    """Phase 02 IssueOutput.number is plumbed into phase 03's ISSUE_NUMBER scope arg."""
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {"title": "PRD", "body": "body"}
+    github_svc.get_issue_comments.return_value = []
+    runner = FakeAgentRunner(
+        [
+            CompletionOutput(),  # 01-scan
+            IssueOutput(number=4242, labels=[]),  # 02-prd
+            CompletionOutput(),  # 03-issues
+        ]
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+    _run(deps)
+    issues_call = next(
+        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
+    )
+    assert issues_call.scope_args["ISSUE_NUMBER"] == "4242"
+    github_svc.get_issue.assert_called_with(4242)
 
 
 def test_improve_phase_threads_short_sid_to_no_candidate_report_phase(
