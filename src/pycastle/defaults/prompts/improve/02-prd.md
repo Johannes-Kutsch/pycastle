@@ -8,12 +8,6 @@ Take the candidate picked in phase 1 and turn it into a PRD. Publish it as a Git
 
 You must NOT modify any files in the worktree. Your only outputs are the GitHub issue you file via `gh` and the `<promise>` tag.
 
-## Dedup check
-
-Before filing, run:
-`gh issue list --search "[improve-{{IMPROVE_SHORT_SID}}] in:title" --state all --json number,title,labels`
-If a PRD issue already exists for this session, skip filing and emit `<promise>COMPLETE</promise>` immediately.
-
 ## Process
 
 1. Reuse the codebase exploration and design-tree grilling already done in phase 1 — don't re-scan. Use `CONTEXT.md` vocabulary throughout the PRD, and respect any ADRs in the area you're touching.
