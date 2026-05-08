@@ -94,6 +94,16 @@ def test_decide_agent_run_kind_resume_for_merger_with_session():
     assert kind == RunKind.RESUME
 
 
+def test_decide_agent_run_kind_fresh_for_improve_without_session():
+    kind = decide_agent_run_kind(AgentRole.IMPROVE, session_dir_present=False)
+    assert kind == RunKind.FRESH
+
+
+def test_decide_agent_run_kind_resume_for_improve_with_session():
+    kind = decide_agent_run_kind(AgentRole.IMPROVE, session_dir_present=True)
+    assert kind == RunKind.RESUME
+
+
 def test_decide_agent_run_kind_returns_run_kind_enum():
     kind = decide_agent_run_kind(AgentRole.IMPLEMENTER, session_dir_present=False)
     assert isinstance(kind, RunKind)

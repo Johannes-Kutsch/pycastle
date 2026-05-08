@@ -21,6 +21,7 @@ from pycastle.iteration.improve import (
     improve_phase,
     next_prompt,
 )
+from pycastle.session_resume import is_stage_done
 from pycastle.services import GitService
 from pycastle.status_display import PlainStatusDisplay
 
@@ -171,6 +172,12 @@ def test_read_progress_returns_none_for_empty_file(tmp_path):
     assert _read_progress(f) is None
 
 
+def test_read_progress_returns_none_for_malformed_content(tmp_path):
+    f = tmp_path / "_phase_progress"
+    f.write_text("garbage-phase", encoding="utf-8")
+    assert _read_progress(f) is None
+
+
 # ── improve_phase: integration behavior ──────────────────────────────────────
 
 
@@ -261,8 +268,8 @@ def test_improve_phase_one_invocation_when_no_candidate_report_disabled(
 # ── Phase progress file writes ───────────────────────────────────────────────
 
 
-def test_improve_phase_writes_progress_file_after_run(tmp_path, git_svc):
-    """Phase progress file exists after a completed improve run."""
+def test_improve_phase_clears_session_on_terminal_success(tmp_path, git_svc):
+    """Role session dir is cleared (stage-done signal) after successful improve run."""
     runner = FakeAgentRunner(
         [CompletionOutput(), CompletionOutput(), CompletionOutput()]
     )
@@ -275,26 +282,8 @@ def test_improve_phase_writes_progress_file_after_run(tmp_path, git_svc):
     )
     _run(deps)
     worktree_path = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    progress_file = worktree_path / ".pycastle-session" / "improve" / "_phase_progress"
-    assert progress_file.exists()
-
-
-def test_improve_phase_progress_file_has_correct_terminal_id_on_no_candidate(
-    tmp_path, git_svc
-):
-    """Phase progress file ends with '04-report' after NO-CANDIDATE path."""
-    runner = FakeAgentRunner([NoCandidateOutput(), CompletionOutput()])
-    deps = _ImproveDepsStub(
-        repo_root=tmp_path,
-        git_svc=git_svc,
-        agent_runner=runner,
-        cfg=Config(),
-        status_display=PlainStatusDisplay(),
-    )
-    _run(deps)
-    worktree_path = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    progress_file = worktree_path / ".pycastle-session" / "improve" / "_phase_progress"
-    assert progress_file.read_text(encoding="utf-8").strip() == "04-report"
+    role_session_dir = worktree_path / ".pycastle-session" / "improve"
+    assert is_stage_done(role_session_dir)
 
 
 def test_improve_phase_progress_file_written_after_scan_no_candidate(tmp_path, git_svc):
@@ -420,3 +409,118 @@ def test_improve_phase_scan_standards_and_sid_are_separate(deps, agent_runner):
     assert "IMPROVE_SHORT_SID" not in (scan_call.prompt_args or {})
     for call in agent_runner.calls[1:]:
         assert not _STANDARDS_KEYS & (call.prompt_args or {}).keys()
+
+
+# ── Cross-teardown resume ─────────────────────────────────────────────────────
+
+
+def _seed_progress(worktree_path: Path, phase_id: str) -> None:
+    """Pre-seed the phase progress file to simulate a prior partial run."""
+    role_session_dir = worktree_path / ".pycastle-session" / "improve"
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    (role_session_dir / "_phase_progress").write_text(phase_id, encoding="utf-8")
+
+
+def test_improve_resumes_at_prd_after_scan_picked(tmp_path, git_svc):
+    """Resume from '01-scan:picked' starts at phase 2 (PRD)."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_progress(wt, "01-scan:picked")
+    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
+    deps = _ImproveDepsStub(
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        agent_runner=runner,
+        cfg=Config(),
+        status_display=PlainStatusDisplay(),
+    )
+    _run(deps)
+    assert runner.calls[0].prompt_file.name == "02-prd.md"
+    assert len(runner.calls) == 2
+
+
+def test_improve_resumes_at_report_after_scan_no_candidate(tmp_path, git_svc):
+    """Resume from '01-scan:no-candidate' starts at phase 4 (report)."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_progress(wt, "01-scan:no-candidate")
+    runner = FakeAgentRunner([CompletionOutput()])
+    deps = _ImproveDepsStub(
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        agent_runner=runner,
+        cfg=Config(),
+        status_display=PlainStatusDisplay(),
+    )
+    _run(deps)
+    assert runner.calls[0].prompt_file.name == "04-no-candidate-report.md"
+    assert len(runner.calls) == 1
+
+
+def test_improve_resumes_at_issues_after_prd(tmp_path, git_svc):
+    """Resume from '02-prd' starts at phase 3 (sub-issues)."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_progress(wt, "02-prd")
+    runner = FakeAgentRunner([CompletionOutput()])
+    deps = _ImproveDepsStub(
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        agent_runner=runner,
+        cfg=Config(),
+        status_display=PlainStatusDisplay(),
+    )
+    _run(deps)
+    assert runner.calls[0].prompt_file.name == "03-issues.md"
+    assert len(runner.calls) == 1
+
+
+def test_improve_is_terminal_after_issues(tmp_path, git_svc):
+    """Resume from '03-issues' is immediately terminal — no agent calls."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_progress(wt, "03-issues")
+    runner = FakeAgentRunner([])
+    deps = _ImproveDepsStub(
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        agent_runner=runner,
+        cfg=Config(),
+        status_display=PlainStatusDisplay(),
+    )
+    _run(deps)
+    assert len(runner.calls) == 0
+
+
+def test_improve_is_terminal_after_report(tmp_path, git_svc):
+    """Resume from '04-report' is immediately terminal — no agent calls."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_progress(wt, "04-report")
+    runner = FakeAgentRunner([])
+    deps = _ImproveDepsStub(
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        agent_runner=runner,
+        cfg=Config(),
+        status_display=PlainStatusDisplay(),
+    )
+    _run(deps)
+    assert len(runner.calls) == 0
+
+
+def test_improve_fresh_run_on_malformed_progress(tmp_path, git_svc):
+    """Malformed progress file falls back to a fresh run starting at phase 1 (scan)."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    role_session_dir = wt / ".pycastle-session" / "improve"
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    (role_session_dir / "_phase_progress").write_text(
+        "corrupted-data", encoding="utf-8"
+    )
+    runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()]
+    )
+    deps = _ImproveDepsStub(
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        agent_runner=runner,
+        cfg=Config(),
+        status_display=PlainStatusDisplay(),
+    )
+    _run(deps)
+    assert runner.calls[0].prompt_file.name == "01-scan.md"
