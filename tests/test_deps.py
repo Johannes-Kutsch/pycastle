@@ -6,7 +6,7 @@ import pytest
 from pycastle.agent_output_protocol import CompletionOutput
 from pycastle.agent_result import PreflightFailure
 from pycastle.agent_runner import RunRequest
-from pycastle.iteration._deps import Deps, FakeAgentRunner, RecordingLogger
+from pycastle.iteration._deps import Deps, FakeAgentRunner, RecordingLogger, _make_deps
 
 
 @pytest.fixture
@@ -73,6 +73,16 @@ def test_multiple_log_agent_output_calls_accumulate(logger: RecordingLogger) -> 
 def test_deps_does_not_carry_env() -> None:
     field_names = {f.name for f in dataclasses.fields(Deps)}
     assert "env" not in field_names
+
+
+# --- _make_deps ---
+
+
+def test_make_deps_returns_deps_instance(tmp_path) -> None:
+    """_make_deps creates a fully-populated Deps with sensible defaults."""
+    runner = FakeAgentRunner(responses=[])
+    deps = _make_deps(tmp_path, runner)
+    assert isinstance(deps, Deps)
 
 
 # --- FakeAgentRunner ---
