@@ -13,11 +13,29 @@ from pycastle.container_runner import ContainerRunner, _build_claude_command
 from pycastle.docker_session import DockerSession
 from pycastle.errors import DockerError, UsageLimitError
 from pycastle.iteration._deps import RecordingStatusDisplay
+from pycastle.prompt_pipeline import PromptRenderer, PromptTemplate
 from pycastle.session_resume import RunKind
 
 _ROLE = AgentRole.IMPLEMENTER
 
 _COMPLETE_LINE = b'{"type":"result","result":"<commit_message>done</commit_message>","is_error":false}\n'
+
+# RESUME scope has empty placeholders — simplest for tests that don't care about content.
+_TEMPLATE = PromptTemplate.RESUME
+_SCOPE_ARGS: dict[str, str] = {}
+
+
+def _make_prompts_dir(tmp_path: Path, resume_content: str = "hi") -> Path:
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir(exist_ok=True)
+    (prompts_dir / "_resume-prompt.md").write_text(resume_content, encoding="utf-8")
+    return prompts_dir
+
+
+def _make_renderer(tmp_path: Path, resume_content: str = "hi") -> PromptRenderer:
+    prompts_dir = _make_prompts_dir(tmp_path, resume_content)
+    cfg = Config(logs_dir=tmp_path, prompts_dir=prompts_dir)
+    return PromptRenderer(cfg)
 
 
 # ── Fake DockerSession ────────────────────────────────────────────────────────
@@ -257,36 +275,32 @@ def test_preflight_with_empty_checks_returns_empty(tmp_path):
 
 
 def test_work_renders_and_writes_prompt_to_container(tmp_path):
+    renderer = _make_renderer(tmp_path, resume_content="Hello")
     runner, session = _make_runner(tmp_path=tmp_path)
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("Hello {{NAME}}")
 
-    asyncio.run(runner.work(_ROLE, prompt_file, {"NAME": "World"}))
+    asyncio.run(runner.work(_ROLE, _TEMPLATE, _SCOPE_ARGS, renderer))
 
-    assert ("/tmp/.pycastle_prompt", "Hello World") in session.write_calls
+    assert ("/tmp/.pycastle_prompt", "Hello") in session.write_calls
 
 
 def test_work_returns_agent_output(tmp_path):
+    renderer = _make_renderer(tmp_path)
     runner, _ = _make_runner(tmp_path=tmp_path)
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("hi")
-    result = asyncio.run(runner.work(_ROLE, prompt_file, {}))
+    result = asyncio.run(runner.work(_ROLE, _TEMPLATE, _SCOPE_ARGS, renderer))
     assert isinstance(result, CommitMessageOutput)
 
 
 def test_work_calls_session_exec_stream_with_claude_command(tmp_path):
+    renderer = _make_renderer(tmp_path)
     runner, session = _make_runner(tmp_path=tmp_path, model="claude-sonnet-4-6")
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("hi")
-    asyncio.run(runner.work(_ROLE, prompt_file, {}))
+    asyncio.run(runner.work(_ROLE, _TEMPLATE, _SCOPE_ARGS, renderer))
     assert any("claude" in c for c in session.stream_calls)
     assert any("--model claude-sonnet-4-6" in c for c in session.stream_calls)
 
 
-def test_work_called_twice_renders_each_calls_prompt_args(tmp_path):
-    """Calling work() twice with different args must inject the new prompt each time."""
+def test_work_called_twice_renders_each_calls_scope_args(tmp_path):
+    """Calling work() twice with different scope_args must inject a new prompt each time."""
     session = FakeDockerSession(stream_chunks=[_COMPLETE_LINE, _COMPLETE_LINE])
-    # exec_stream is consumed each call; rebuild iterator per call
     chunk_lists = [[_COMPLETE_LINE], [_COMPLETE_LINE]]
 
     def _stream(command: str) -> Iterator[bytes]:
@@ -295,11 +309,23 @@ def test_work_called_twice_renders_each_calls_prompt_args(tmp_path):
 
     session.exec_stream = _stream  # type: ignore[method-assign]
     runner, _ = _make_runner(session=session, tmp_path=tmp_path)
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("Hello {{NAME}}")
 
-    asyncio.run(runner.work(_ROLE, prompt_file, {"NAME": "First"}))
-    asyncio.run(runner.work(_ROLE, prompt_file, {"NAME": "Second"}))
+    # Use PLAN template so we can vary the OPEN_ISSUES_JSON scope arg.
+    prompts_dir = _make_prompts_dir(tmp_path)
+    (prompts_dir / "plan-prompt.md").write_text(
+        "Hello {{OPEN_ISSUES_JSON}}", encoding="utf-8"
+    )
+    cfg = Config(logs_dir=tmp_path, prompts_dir=prompts_dir)
+    renderer = PromptRenderer(cfg)
+
+    asyncio.run(
+        runner.work(_ROLE, PromptTemplate.PLAN, {"OPEN_ISSUES_JSON": "First"}, renderer)
+    )
+    asyncio.run(
+        runner.work(
+            _ROLE, PromptTemplate.PLAN, {"OPEN_ISSUES_JSON": "Second"}, renderer
+        )
+    )
 
     prompt_writes = [c for c in session.write_calls if c[0] == "/tmp/.pycastle_prompt"]
     assert prompt_writes[0][1] == "Hello First"
@@ -309,30 +335,27 @@ def test_work_called_twice_renders_each_calls_prompt_args(tmp_path):
 def test_work_expands_shell_expressions_via_session_exec(tmp_path):
     session = FakeDockerSession(exec_handlers={"echo hi": "expanded\n"})
     runner, _ = _make_runner(session=session, tmp_path=tmp_path)
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("Result: !`echo hi`")
+    renderer = _make_renderer(tmp_path, resume_content="Result: !`echo hi`")
 
-    asyncio.run(runner.work(_ROLE, prompt_file, {}))
+    asyncio.run(runner.work(_ROLE, _TEMPLATE, _SCOPE_ARGS, renderer))
 
     prompt_writes = [c for c in session.write_calls if c[0] == "/tmp/.pycastle_prompt"]
     assert prompt_writes[0][1] == "Result: expanded"
 
 
 def test_work_updates_phase_to_work(tmp_path):
+    renderer = _make_renderer(tmp_path)
     display = RecordingStatusDisplay()
     runner, _ = _make_runner(name="impl-1", status_display=display, tmp_path=tmp_path)
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("hi")
-    asyncio.run(runner.work(_ROLE, prompt_file, {}))
+    asyncio.run(runner.work(_ROLE, _TEMPLATE, _SCOPE_ARGS, renderer))
     assert ("update_phase", "impl-1", "Work") in display.calls
 
 
 def test_work_calls_reset_idle_timer(tmp_path):
+    renderer = _make_renderer(tmp_path)
     display = RecordingStatusDisplay()
     runner, _ = _make_runner(name="impl-1", status_display=display, tmp_path=tmp_path)
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("hi")
-    asyncio.run(runner.work(_ROLE, prompt_file, {}))
+    asyncio.run(runner.work(_ROLE, _TEMPLATE, _SCOPE_ARGS, renderer))
     assert ("reset_idle_timer", "impl-1") in display.calls
 
 
@@ -343,10 +366,9 @@ def test_work_raises_usage_limit_error_on_session_limit_in_stream(tmp_path):
     )
     session = FakeDockerSession(stream_chunks=[line])
     runner, _ = _make_runner(session=session, tmp_path=tmp_path)
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("hi")
+    renderer = _make_renderer(tmp_path)
     with pytest.raises(UsageLimitError):
-        asyncio.run(runner.work(_ROLE, prompt_file, {}))
+        asyncio.run(runner.work(_ROLE, _TEMPLATE, _SCOPE_ARGS, renderer))
 
 
 def test_work_resume_with_role_prompt_writes_role_prompt_not_continuation(tmp_path):
@@ -355,14 +377,20 @@ def test_work_resume_with_role_prompt_writes_role_prompt_not_continuation(tmp_pa
     claude conversation receives the new phase's instructions."""
     session = FakeDockerSession()
     runner, _ = _make_runner(session=session, tmp_path=tmp_path)
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("PHASE_2_ROLE_PROMPT_CONTENT")
+    # Use PLAN template so we have a distinguishable scope arg value.
+    prompts_dir = _make_prompts_dir(tmp_path, resume_content="continuation")
+    (prompts_dir / "plan-prompt.md").write_text(
+        "{{OPEN_ISSUES_JSON}}", encoding="utf-8"
+    )
+    cfg = Config(logs_dir=tmp_path, prompts_dir=prompts_dir)
+    renderer = PromptRenderer(cfg)
 
     asyncio.run(
         runner.work(
             _ROLE,
-            prompt_file,
-            {},
+            PromptTemplate.PLAN,
+            {"OPEN_ISSUES_JSON": "PHASE_2_ROLE_PROMPT_CONTENT"},
+            renderer,
             run_kind=RunKind.RESUME,
             session_uuid="uuid",
             send_role_prompt_on_resume=True,

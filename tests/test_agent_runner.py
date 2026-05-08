@@ -16,8 +16,24 @@ from pycastle.errors import (
     DockerError,
     UsageLimitError,
 )
+from pycastle.prompt_pipeline import PromptTemplate
 from pycastle.services import GitCommandError, GitService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
+
+
+def _make_cfg(tmp_path: Path, **kwargs) -> Config:
+    """Create a Config with a minimal prompts_dir for AgentRunner tests."""
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir(exist_ok=True)
+    (prompts_dir / "plan-prompt.md").write_text(
+        "{{OPEN_ISSUES_JSON}}", encoding="utf-8"
+    )
+    (prompts_dir / "_resume-prompt.md").write_text("resume", encoding="utf-8")
+    return Config(logs_dir=tmp_path, prompts_dir=prompts_dir, **kwargs)
+
+
+_PLAN_TEMPLATE = PromptTemplate.PLAN
+_PLAN_SCOPE_ARGS = {"OPEN_ISSUES_JSON": "[]"}
 
 # A minimal NDJSON stream that process_stream accepts as CommitMessageOutput (IMPLEMENTER/REVIEWER role)
 _COMPLETE_STREAM = [
@@ -39,7 +55,7 @@ def test_fake_agent_runner_returns_queued_completion_output():
         fake.run(
             RunRequest(
                 name="Tester",
-                prompt_file=Path("/prompt.md"),
+                template=_PLAN_TEMPLATE,
                 mount_path=Path("/workspace"),
             )
         )
@@ -54,7 +70,7 @@ def test_fake_agent_runner_returns_queued_preflight_failure():
         fake.run(
             RunRequest(
                 name="Tester",
-                prompt_file=Path("/prompt.md"),
+                template=_PLAN_TEMPLATE,
                 mount_path=Path("/workspace"),
             )
         )
@@ -69,7 +85,7 @@ def test_fake_agent_runner_raises_queued_exception():
             fake.run(
                 RunRequest(
                     name="Tester",
-                    prompt_file=Path("/prompt.md"),
+                    template=_PLAN_TEMPLATE,
                     mount_path=Path("/workspace"),
                 )
             )
@@ -83,7 +99,7 @@ def test_fake_agent_runner_raises_assertion_error_when_queue_exhausted():
             fake.run(
                 RunRequest(
                     name="Unexpected",
-                    prompt_file=Path("/prompt.md"),
+                    template=_PLAN_TEMPLATE,
                     mount_path=Path("/workspace"),
                 )
             )
@@ -97,7 +113,7 @@ def test_fake_agent_runner_exhaustion_error_includes_agent_name():
             fake.run(
                 RunRequest(
                     name="MyAgent",
-                    prompt_file=Path("/prompt.md"),
+                    template=_PLAN_TEMPLATE,
                     mount_path=Path("/workspace"),
                 )
             )
@@ -110,11 +126,11 @@ def test_fake_agent_runner_pops_responses_in_order():
     run = fake.run
 
     async def _collect():
-        p, m = Path("/p.md"), Path("/w")
+        m = Path("/w")
         return [
-            await run(RunRequest(name="A", prompt_file=p, mount_path=m)),
-            await run(RunRequest(name="B", prompt_file=p, mount_path=m)),
-            await run(RunRequest(name="C", prompt_file=p, mount_path=m)),
+            await run(RunRequest(name="A", template=_PLAN_TEMPLATE, mount_path=m)),
+            await run(RunRequest(name="B", template=_PLAN_TEMPLATE, mount_path=m)),
+            await run(RunRequest(name="C", template=_PLAN_TEMPLATE, mount_path=m)),
         ]
 
     results = asyncio.run(_collect())
@@ -123,11 +139,14 @@ def test_fake_agent_runner_pops_responses_in_order():
 
 def test_fake_agent_runner_records_all_calls():
     fake = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
-    prompt = Path("/prompt.md")
     mount = Path("/workspace")
 
-    asyncio.run(fake.run(RunRequest(name="X", prompt_file=prompt, mount_path=mount)))
-    asyncio.run(fake.run(RunRequest(name="Y", prompt_file=prompt, mount_path=mount)))
+    asyncio.run(
+        fake.run(RunRequest(name="X", template=_PLAN_TEMPLATE, mount_path=mount))
+    )
+    asyncio.run(
+        fake.run(RunRequest(name="Y", template=_PLAN_TEMPLATE, mount_path=mount))
+    )
 
     assert len(fake.calls) == 2
     assert fake.calls[0].name == "X"
@@ -136,16 +155,15 @@ def test_fake_agent_runner_records_all_calls():
 
 def test_fake_agent_runner_records_call_kwargs():
     fake = FakeAgentRunner([CompletionOutput()])
-    prompt = Path("/prompt.md")
     mount = Path("/workspace")
 
     asyncio.run(
         fake.run(
             RunRequest(
                 name="Planner",
-                prompt_file=prompt,
+                template=PromptTemplate.PLAN,
                 mount_path=mount,
-                prompt_args={"KEY": "val"},
+                scope_args={"OPEN_ISSUES_JSON": "[]"},
                 skip_preflight=True,
                 model="claude-3",
                 effort="high",
@@ -156,9 +174,9 @@ def test_fake_agent_runner_records_call_kwargs():
 
     call = fake.calls[0]
     assert call.name == "Planner"
-    assert call.prompt_file == prompt
+    assert call.template == PromptTemplate.PLAN
     assert call.mount_path == mount
-    assert call.prompt_args == {"KEY": "val"}
+    assert call.scope_args == {"OPEN_ISSUES_JSON": "[]"}
     assert call.skip_preflight is True
     assert call.model == "claude-3"
     assert call.effort == "high"
@@ -185,7 +203,7 @@ def test_fake_agent_runner_side_effect_is_called_with_run_request():
     result = asyncio.run(
         fake.run(
             RunRequest(
-                name="SideEffectAgent", prompt_file=Path("/p.md"), mount_path=Path("/w")
+                name="SideEffectAgent", template=_PLAN_TEMPLATE, mount_path=Path("/w")
             )
         )
     )
@@ -202,9 +220,7 @@ def test_fake_agent_runner_side_effect_can_raise():
     with pytest.raises(ValueError, match="side effect error"):
         asyncio.run(
             fake.run(
-                RunRequest(
-                    name="Agent", prompt_file=Path("/p.md"), mount_path=Path("/w")
-                )
+                RunRequest(name="Agent", template=_PLAN_TEMPLATE, mount_path=Path("/w"))
             )
         )
 
@@ -216,9 +232,7 @@ def test_fake_agent_runner_side_effect_still_records_calls():
     fake = FakeAgentRunner(side_effect=_effect)
     asyncio.run(
         fake.run(
-            RunRequest(
-                name="Recorded", prompt_file=Path("/p.md"), mount_path=Path("/w")
-            )
+            RunRequest(name="Recorded", template=_PLAN_TEMPLATE, mount_path=Path("/w"))
         )
     )
 
@@ -235,7 +249,7 @@ def test_fake_agent_runner_side_effect_can_be_synchronous():
     fake = FakeAgentRunner(side_effect=_sync_effect)
     result = asyncio.run(
         fake.run(
-            RunRequest(name="Agent", prompt_file=Path("/p.md"), mount_path=Path("/w"))
+            RunRequest(name="Agent", template=_PLAN_TEMPLATE, mount_path=Path("/w"))
         )
     )
 
@@ -283,16 +297,15 @@ def _never_yields():
 def test_agent_runner_run_returns_agent_output(tmp_path):
     mock_client = _make_docker_client(_COMPLETE_STREAM)
     runner = AgentRunner(
-        {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
+        {}, _make_cfg(tmp_path), _make_git_service(), docker_client=mock_client
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("Test prompt")
 
     result = asyncio.run(
         runner.run(
             RunRequest(
                 name="Test",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 skip_preflight=True,
             )
@@ -318,13 +331,18 @@ def test_agent_runner_run_returns_preflight_failure_when_check_fails(tmp_path):
         return MagicMock(exit_code=0, output=(b"", b""))
 
     mock_container.exec_run.side_effect = exec_side_effect
-    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
-    prompt = tmp_path / "p.md"
-    prompt.write_text("Test prompt")
 
     result = asyncio.run(
-        runner.run(RunRequest(name="Test", prompt_file=prompt, mount_path=tmp_path))
+        runner.run(
+            RunRequest(
+                name="Test",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+            )
+        )
     )
 
     assert isinstance(result, PreflightFailure)
@@ -350,16 +368,15 @@ def test_agent_runner_run_skips_preflight_when_skip_preflight_true(tmp_path):
         return MagicMock(exit_code=0, output=(b"", b""))
 
     mock_container.exec_run.side_effect = exec_side_effect
-    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
-    prompt = tmp_path / "p.md"
-    prompt.write_text("Test prompt")
 
     result = asyncio.run(
         runner.run(
             RunRequest(
                 name="Test",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 skip_preflight=True,
             )
@@ -377,16 +394,18 @@ def test_agent_runner_run_raises_usage_limit_error_when_token_pre_cancelled(tmp_
     token.cancel()
     mock_client = _make_docker_client([b"output\n"])
     runner = AgentRunner(
-        {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
+        {}, _make_cfg(tmp_path), _make_git_service(), docker_client=mock_client
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("Test prompt")
 
     with pytest.raises(UsageLimitError):
         asyncio.run(
             runner.run(
                 RunRequest(
-                    name="Test", prompt_file=prompt, mount_path=tmp_path, token=token
+                    name="Test",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    token=token,
                 )
             )
         )
@@ -403,17 +422,16 @@ def test_agent_runner_run_cancels_token_and_raises_on_usage_limit_in_stream(tmp_
     )
     token = CancellationToken()
     runner = AgentRunner(
-        {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
+        {}, _make_cfg(tmp_path), _make_git_service(), docker_client=mock_client
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("Test prompt")
 
     with pytest.raises(UsageLimitError):
         asyncio.run(
             runner.run(
                 RunRequest(
                     name="Test",
-                    prompt_file=prompt,
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
                     skip_preflight=True,
                     token=token,
@@ -437,17 +455,16 @@ def test_agent_runner_run_raises_agent_timeout_error_when_retries_exhausted(tmp_
         return MagicMock(exit_code=0, output=(b"", b""))
 
     mock_container.exec_run.side_effect = exec_side_effect
-    cfg = Config(logs_dir=tmp_path, idle_timeout=0.01, timeout_retries=0)
+    cfg = _make_cfg(tmp_path, idle_timeout=0.01, timeout_retries=0)
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
-    prompt = tmp_path / "p.md"
-    prompt.write_text("Test prompt")
 
     with pytest.raises(AgentTimeoutError):
         asyncio.run(
             runner.run(
                 RunRequest(
                     name="Test",
-                    prompt_file=prompt,
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
                     skip_preflight=True,
                 )
@@ -475,16 +492,15 @@ def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
         return MagicMock(exit_code=0, output=(b"", b""))
 
     mock_container.exec_run.side_effect = exec_side_effect
-    cfg = Config(logs_dir=tmp_path, idle_timeout=0.01, timeout_retries=1)
+    cfg = _make_cfg(tmp_path, idle_timeout=0.01, timeout_retries=1)
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
-    prompt = tmp_path / "p.md"
-    prompt.write_text("Test prompt")
 
     result = asyncio.run(
         runner.run(
             RunRequest(
                 name="Test",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 skip_preflight=True,
             )
@@ -498,18 +514,15 @@ def test_agent_runner_propagates_git_user_name_error(tmp_path):
     mock_git = _make_git_service()
     mock_git.get_user_name.side_effect = GitCommandError("git config user.name failed")
     mock_client = _make_docker_client(_COMPLETE_STREAM)
-    runner = AgentRunner(
-        {}, Config(logs_dir=tmp_path), mock_git, docker_client=mock_client
-    )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("test")
+    runner = AgentRunner({}, _make_cfg(tmp_path), mock_git, docker_client=mock_client)
 
     with pytest.raises(GitCommandError):
         asyncio.run(
             runner.run(
                 RunRequest(
                     name="Test",
-                    prompt_file=prompt,
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
                     skip_preflight=True,
                 )
@@ -523,17 +536,16 @@ def test_agent_runner_propagates_git_user_name_error(tmp_path):
 def test_agent_runner_run_registers_and_removes_status_row_on_success(tmp_path):
     mock_client = _make_docker_client(_COMPLETE_STREAM)
     runner = AgentRunner(
-        {}, Config(logs_dir=tmp_path), _make_git_service(), docker_client=mock_client
+        {}, _make_cfg(tmp_path), _make_git_service(), docker_client=mock_client
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("Test prompt")
     display = RecordingStatusDisplay()
 
     asyncio.run(
         runner.run(
             RunRequest(
                 name="Test",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 skip_preflight=True,
                 status_display=display,
@@ -548,11 +560,7 @@ def test_agent_runner_run_registers_and_removes_status_row_on_success(tmp_path):
 def test_agent_runner_run_removes_status_row_when_setup_fails(tmp_path):
     git_svc = _make_git_service()
     git_svc.get_user_name.side_effect = RuntimeError("git failure")
-    runner = AgentRunner(
-        {}, Config(logs_dir=tmp_path), git_svc, docker_client=MagicMock()
-    )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("Test prompt")
+    runner = AgentRunner({}, _make_cfg(tmp_path), git_svc, docker_client=MagicMock())
     display = RecordingStatusDisplay()
 
     with pytest.raises(RuntimeError, match="git failure"):
@@ -560,7 +568,8 @@ def test_agent_runner_run_removes_status_row_when_setup_fails(tmp_path):
             runner.run(
                 RunRequest(
                     name="Test",
-                    prompt_file=prompt,
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
                     skip_preflight=True,
                     status_display=display,
@@ -594,7 +603,7 @@ def test_agent_runner_run_preflight_returns_empty_list_when_no_checks_configured
     tmp_path,
 ):
     mock_client = _make_preflight_docker_client()
-    cfg = Config(logs_dir=tmp_path, preflight_checks=())
+    cfg = _make_cfg(tmp_path, preflight_checks=())
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
@@ -604,7 +613,7 @@ def test_agent_runner_run_preflight_returns_empty_list_when_no_checks_configured
 
 def test_agent_runner_run_preflight_returns_empty_list_when_all_checks_pass(tmp_path):
     mock_client = _make_preflight_docker_client(exit_code=0)
-    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
@@ -616,7 +625,7 @@ def test_agent_runner_run_preflight_returns_failure_tuple_when_check_fails(tmp_p
     mock_client = _make_preflight_docker_client(
         exit_code=1, stdout=b"E501 line too long"
     )
-    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
@@ -647,7 +656,7 @@ def test_agent_runner_run_preflight_collects_all_failures_when_multiple_checks_f
 
 def test_agent_runner_run_preflight_stops_container_after_checks_pass(tmp_path):
     mock_client = _make_preflight_docker_client()
-    cfg = Config(logs_dir=tmp_path)
+    cfg = _make_cfg(tmp_path)
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
     asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
@@ -657,7 +666,7 @@ def test_agent_runner_run_preflight_stops_container_after_checks_pass(tmp_path):
 
 def test_agent_runner_run_preflight_stops_container_when_check_fails(tmp_path):
     mock_client = _make_preflight_docker_client(exit_code=1, stdout=b"check failed")
-    cfg = Config(logs_dir=tmp_path, preflight_checks=(("lint", "lint ."),))
+    cfg = _make_cfg(tmp_path, preflight_checks=(("lint", "lint ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
     asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
@@ -685,7 +694,7 @@ def test_agent_runner_run_preflight_propagates_docker_error_when_pip_install_fai
         return MagicMock(exit_code=0, output=(b"", b""))
 
     mock_container.exec_run.side_effect = _exec_run
-    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
     with pytest.raises(DockerError):
@@ -719,7 +728,7 @@ def test_agent_runner_run_preflight_passes_checks_that_require_installed_tools(
         return MagicMock(exit_code=0, output=(b"", b""))
 
     mock_container.exec_run.side_effect = _exec_run
-    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
@@ -734,7 +743,7 @@ def test_agent_runner_run_preflight_registers_and_removes_status_row_on_success(
     tmp_path,
 ):
     mock_client = _make_preflight_docker_client()
-    cfg = Config(logs_dir=tmp_path, preflight_checks=())
+    cfg = _make_cfg(tmp_path, preflight_checks=())
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
     display = RecordingStatusDisplay()
 
@@ -757,7 +766,7 @@ def test_agent_runner_run_preflight_registers_and_removes_status_row_on_success(
 def test_agent_runner_run_preflight_updates_phase_for_each_check(tmp_path):
     mock_client = _make_preflight_docker_client()
     checks = (("ruff", "ruff check ."), ("mypy", "mypy ."), ("pytest", "pytest"))
-    cfg = Config(logs_dir=tmp_path, preflight_checks=checks)
+    cfg = _make_cfg(tmp_path, preflight_checks=checks)
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
     display = RecordingStatusDisplay()
 
@@ -775,7 +784,7 @@ def test_agent_runner_run_preflight_updates_phase_for_each_check(tmp_path):
 
 def test_agent_runner_run_preflight_removes_status_row_when_checks_fail(tmp_path):
     mock_client = _make_preflight_docker_client(exit_code=1, stdout=b"E501")
-    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
     display = RecordingStatusDisplay()
 
@@ -802,7 +811,7 @@ def test_agent_runner_run_preflight_removes_status_row_when_exception_propagates
         raise RuntimeError("unexpected container error")
 
     mock_container.exec_run.side_effect = _exec_run
-    cfg = Config(logs_dir=tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
     display = RecordingStatusDisplay()
 
@@ -819,9 +828,7 @@ def test_agent_runner_run_preflight_removes_status_row_when_exception_propagates
 def test_agent_runner_run_preflight_propagates_git_user_name_error(tmp_path):
     mock_git = _make_git_service()
     mock_git.get_user_name.side_effect = GitCommandError("git config user.name failed")
-    runner = AgentRunner(
-        {}, Config(logs_dir=tmp_path), mock_git, docker_client=MagicMock()
-    )
+    runner = AgentRunner({}, _make_cfg(tmp_path), mock_git, docker_client=MagicMock())
 
     with pytest.raises(GitCommandError):
         asyncio.run(runner.run_preflight(name="preflight-checks", mount_path=tmp_path))
@@ -835,14 +842,14 @@ def test_run_request_stores_required_fields():
 
     req = RunRequest(
         name="Agent",
-        prompt_file=Path("/prompt.md"),
+        template=PromptTemplate.PLAN,
         mount_path=Path("/workspace"),
     )
     assert req.name == "Agent"
-    assert req.prompt_file == Path("/prompt.md")
+    assert req.template == PromptTemplate.PLAN
     assert req.mount_path == Path("/workspace")
     assert req.role == AgentRole.IMPLEMENTER
-    assert req.prompt_args is None
+    assert req.scope_args is None
     assert req.skip_preflight is False
     assert req.model == ""
     assert req.effort == ""
@@ -882,19 +889,18 @@ def test_agent_runner_injects_picked_token_into_container_env(tmp_path):
     pool = AccountPool([("secondary", "tok-secondary"), ("primary", "tok-primary")])
     runner = AgentRunner(
         {"GH_TOKEN": "gh"},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
         account_pool=pool,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("Test prompt")
 
     asyncio.run(
         runner.run(
             RunRequest(
                 name="Test",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 skip_preflight=True,
             )
@@ -919,13 +925,11 @@ def test_agent_runner_marks_picked_token_exhausted_on_usage_limit(tmp_path):
     pool = AccountPool([("secondary", "tok-secondary"), ("primary", "tok-primary")])
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
         account_pool=pool,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("Test prompt")
 
     fixed_now = datetime(2026, 1, 1, 14, 0, 0)
     with pytest.raises(UsageLimitError):
@@ -933,7 +937,8 @@ def test_agent_runner_marks_picked_token_exhausted_on_usage_limit(tmp_path):
             runner.run(
                 RunRequest(
                     name="Test",
-                    prompt_file=prompt,
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
                     skip_preflight=True,
                 )
@@ -951,7 +956,7 @@ def test_fake_agent_runner_accepts_run_request_and_records_it():
     fake = FakeAgentRunner([completion])
     req = RunRequest(
         name="Planner",
-        prompt_file=Path("/p.md"),
+        template=_PLAN_TEMPLATE,
         mount_path=Path("/w"),
     )
     result = asyncio.run(fake.run(req))
@@ -988,18 +993,17 @@ def test_agent_runner_injects_claude_config_dir_for_implementer(tmp_path):
 
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("Test")
 
     asyncio.run(
         runner.run(
             RunRequest(
                 name="Test",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.IMPLEMENTER,
                 skip_preflight=True,
@@ -1034,18 +1038,17 @@ def test_agent_runner_passes_session_id_flag_to_claude_on_fresh_run(tmp_path):
 
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("hi")
 
     asyncio.run(
         runner.run(
             RunRequest(
                 name="Impl",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 skip_preflight=True,
             )
@@ -1088,18 +1091,17 @@ def test_agent_runner_passes_resume_flag_to_claude_when_session_exists(tmp_path)
 
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("hi")
 
     asyncio.run(
         runner.run(
             RunRequest(
                 name="Impl",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.IMPLEMENTER,
                 skip_preflight=True,
@@ -1147,18 +1149,17 @@ def test_agent_runner_failsoft_retries_as_fresh_when_resume_run_fails(tmp_path):
     )
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("hi")
 
     result = asyncio.run(
         runner.run(
             RunRequest(
                 name="Impl",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 skip_preflight=True,
             )
@@ -1177,18 +1178,17 @@ def test_agent_runner_failsoft_logs_resume_failsoft_to_errors_log(tmp_path):
     )
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("hi")
 
     asyncio.run(
         runner.run(
             RunRequest(
                 name="Impl",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 skip_preflight=True,
             )
@@ -1209,19 +1209,18 @@ def test_agent_runner_failsoft_is_single_shot_second_exception_propagates(tmp_pa
     )
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("hi")
 
     with pytest.raises(RuntimeError, match="still broken"):
         asyncio.run(
             runner.run(
                 RunRequest(
                     name="Impl",
-                    prompt_file=prompt,
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
                     skip_preflight=True,
                 )
@@ -1238,19 +1237,18 @@ def test_agent_runner_non_typed_exception_on_fresh_run_propagates_without_failso
     )
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("hi")
 
     with pytest.raises(RuntimeError, match="docker failure"):
         asyncio.run(
             runner.run(
                 RunRequest(
                     name="Impl",
-                    prompt_file=prompt,
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
                     skip_preflight=True,
                 )
@@ -1294,18 +1292,17 @@ def test_agent_runner_injects_claude_config_dir_for_reviewer(tmp_path):
 
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("Test")
 
     asyncio.run(
         runner.run(
             RunRequest(
                 name="Review",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.REVIEWER,
                 skip_preflight=True,
@@ -1343,18 +1340,17 @@ def test_agent_runner_passes_resume_flag_to_claude_when_reviewer_session_exists(
 
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("hi")
 
     asyncio.run(
         runner.run(
             RunRequest(
                 name="Review",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.REVIEWER,
                 skip_preflight=True,
@@ -1380,18 +1376,17 @@ def test_agent_runner_failsoft_retries_as_fresh_when_reviewer_resume_run_fails(
     )
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("hi")
 
     result = asyncio.run(
         runner.run(
             RunRequest(
                 name="Review",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.REVIEWER,
                 skip_preflight=True,
@@ -1413,18 +1408,17 @@ def test_agent_runner_failsoft_logs_reviewer_resume_failsoft_to_errors_log(tmp_p
     )
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("hi")
 
     asyncio.run(
         runner.run(
             RunRequest(
                 name="Review",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.REVIEWER,
                 skip_preflight=True,
@@ -1450,19 +1444,18 @@ def test_agent_runner_failsoft_is_single_shot_for_reviewer_second_exception_prop
     )
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("hi")
 
     with pytest.raises(RuntimeError, match="still broken"):
         asyncio.run(
             runner.run(
                 RunRequest(
                     name="Review",
-                    prompt_file=prompt,
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
                     role=AgentRole.REVIEWER,
                     skip_preflight=True,
@@ -1505,18 +1498,17 @@ def test_agent_runner_passes_resume_flag_to_claude_when_merger_session_exists(tm
 
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("hi")
 
     asyncio.run(
         runner.run(
             RunRequest(
                 name="Merge",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.MERGER,
                 skip_preflight=True,
@@ -1540,18 +1532,17 @@ def test_agent_runner_failsoft_retries_as_fresh_when_merger_resume_run_fails(tmp
     )
     runner = AgentRunner(
         {},
-        Config(logs_dir=tmp_path),
+        _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
     )
-    prompt = tmp_path / "p.md"
-    prompt.write_text("hi")
 
     result = asyncio.run(
         runner.run(
             RunRequest(
                 name="Merge",
-                prompt_file=prompt,
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.MERGER,
                 skip_preflight=True,
