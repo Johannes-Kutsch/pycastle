@@ -367,6 +367,56 @@ def test_improve_phase_threads_prd_number_from_issue_output_to_issues_phase(
     github_svc.get_issue.assert_called_with(4242)
 
 
+def test_improve_phase_assembles_prd_title_and_body_into_issues_scope(
+    tmp_path, git_svc
+):
+    """Phase 03 scope_args carry the PRD title and body fetched from gh_svc."""
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {
+        "title": "My PRD Title",
+        "body": "PRD body text",
+    }
+    github_svc.get_issue_comments.return_value = []
+    runner = FakeAgentRunner(
+        [
+            CompletionOutput(),  # 01-scan
+            IssueOutput(number=99, labels=[]),  # 02-prd
+            CompletionOutput(),  # 03-issues
+        ]
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+    _run(deps)
+    issues_call = next(
+        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
+    )
+    assert issues_call.scope_args["ISSUE_TITLE"] == "My PRD Title"
+    assert issues_call.scope_args["ISSUE_BODY"] == "PRD body text"
+
+
+def test_improve_phase_fetches_prd_comments_for_issues_scope(tmp_path, git_svc):
+    """improve_phase calls gh_svc.get_issue_comments with the PRD number for phase 03."""
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {"title": "PRD", "body": ""}
+    github_svc.get_issue_comments.return_value = [
+        {"author": "alice", "created_at": "2026-01-01T00:00:00Z", "body": "looks good"}
+    ]
+    runner = FakeAgentRunner(
+        [
+            CompletionOutput(),  # 01-scan
+            IssueOutput(number=77, labels=[]),  # 02-prd
+            CompletionOutput(),  # 03-issues
+        ]
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+    _run(deps)
+    github_svc.get_issue_comments.assert_called_with(77)
+    issues_call = next(
+        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
+    )
+    assert "alice" in issues_call.scope_args["ISSUE_COMMENTS"]
+    assert "looks good" in issues_call.scope_args["ISSUE_COMMENTS"]
+
+
 def test_improve_phase_threads_short_sid_to_no_candidate_report_phase(
     tmp_path, git_svc
 ):

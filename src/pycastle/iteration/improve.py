@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from collections.abc import Sequence
+
 from ..agent_output_protocol import (
     AgentOutput,
     AgentRole,
@@ -12,7 +14,6 @@ from ..agent_output_protocol import (
 from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..iteration.implement import format_issue_comments
 from ..prompt_pipeline import PromptTemplate, Scope
 from ..services import GitService
 from ..services.github_service import GithubService
@@ -20,6 +21,17 @@ from ..session_resume import derived_session_uuid
 from ..status_display import StatusDisplay
 from ..worktree import managed_worktree
 from ._rows import phase_row
+
+
+def format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
+    parts: list[str] = []
+    for c in comments:
+        author = c.get("author") or "unknown"
+        when = c.get("created_at") or "unknown time"
+        body = c.get("body") or ""
+        parts.append(f"## Comment by @{author} at {when}\n\n{body}")
+    return "\n\n".join(parts)
+
 
 IMPROVE_SANDBOX = "pycastle/improve-sandbox"
 _PHASE_PROGRESS_FILE = "_phase_progress"
