@@ -139,6 +139,16 @@ def _extract_planner_output(text: str) -> PlannerOutput:
         ) from exc
 
 
+def _extract_improve_output(text: str) -> IssueOutput | CompletionOutput:
+    # IMPROVE phase 02 emits a JSON-form <issue> (number + labels); phase 03 emits a
+    # bare integer or no <issue> at all. Treat anything that doesn't parse as JSON-form
+    # as plain completion.
+    try:
+        return _extract_issue_output(text)
+    except IssueParseError:
+        return CompletionOutput()
+
+
 def _extract_issue_output(text: str) -> IssueOutput:
     match = re.search(r"<issue>([\s\S]*?)</issue>", text)
     if not match:
@@ -270,11 +280,7 @@ def process_stream(
                 if re.search(r"<promise>NO-CANDIDATE</promise>", turn):
                     return NoCandidateOutput()
                 if re.search(r"<promise>COMPLETE</promise>", turn):
-                    # JSON-form <issue> (phase 02) → IssueOutput; bare-integer (phase 03) or absent → CompletionOutput
-                    try:
-                        return _extract_issue_output(turn)
-                    except IssueParseError:
-                        return CompletionOutput()
+                    return _extract_improve_output(turn)
             elif role == AgentRole.MERGER:
                 if re.search(r"<promise>COMPLETE</promise>", turn):
                     return CompletionOutput()
@@ -322,11 +328,7 @@ def process_stream(
                 f"Agent produced no <promise>COMPLETE</promise> or"
                 f" <promise>NO-CANDIDATE</promise> tag.{tail}"
             )
-        # JSON-form <issue> (phase 02) → IssueOutput; bare-integer (phase 03) or absent → CompletionOutput
-        try:
-            return _extract_issue_output(text)
-        except IssueParseError:
-            return CompletionOutput()
+        return _extract_improve_output(text)
     if not re.search(r"<promise>COMPLETE</promise>", text):
         raise PromiseParseError(
             f"Agent produced no <promise>COMPLETE</promise> tag.{tail}"
