@@ -294,4 +294,4 @@ def test_prd_prompt_instructs_afk_safety_confirmation():
 
 def test_prd_prompt_instructs_session_footer():
     content = (_DEFAULTS / "02-prd.md").read_text(encoding="utf-8")
-    assert "footer" in content.lower() or "session footer" in content.lower()
+    assert "footer" in content.lower()
