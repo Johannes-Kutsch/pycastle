@@ -36,10 +36,8 @@ def decide_iteration_action(
 ) -> IterationAction:
     if in_flight_count > 0:
         return RunImplementDirect()
-    if open_afk_count >= 2:
+    if open_afk_count >= 1:
         return RunPlan()
-    if open_afk_count == 1:
-        return RunImplementDirect()
     # open_afk_count == 0 and in_flight_count == 0
     if improve_mode is None:
         return Done()
