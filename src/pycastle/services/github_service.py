@@ -221,6 +221,13 @@ class GithubService:
             if item.get("state") == "open" and "number" in item
         ]
 
+    def add_sub_issue(self, parent_number: int, child_number: int) -> None:
+        self._request(
+            "POST",
+            f"/repos/{self.repo}/issues/{parent_number}/sub_issues",
+            data={"sub_issue_id": child_number},
+        )
+
     def close_issue_with_parents(self, number: int) -> None:
         self.close_issue(number)
         parent = self.get_parent(number)

@@ -451,6 +451,32 @@ def test_get_open_sub_issues_filters_to_open_only():
         assert svc.get_open_sub_issues(10) == [1, 3]
 
 
+# ── add_sub_issue ────────────────────────────────────────────────────────────
+
+
+def test_add_sub_issue_posts_to_correct_endpoint():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(b""),
+    ) as m:
+        svc.add_sub_issue(parent_number=10, child_number=20)
+    req = m.call_args[0][0]
+    assert "/repos/owner/repo/issues/10/sub_issues" in req.full_url
+
+
+def test_add_sub_issue_sends_child_as_sub_issue_id():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(b""),
+    ) as m:
+        svc.add_sub_issue(parent_number=10, child_number=20)
+    req = m.call_args[0][0]
+    body = json.loads(req.data.decode("utf-8"))
+    assert body == {"sub_issue_id": 20}
+
+
 # ── get_issue_comments ───────────────────────────────────────────────────────
 
 
