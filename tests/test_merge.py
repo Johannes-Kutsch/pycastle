@@ -944,7 +944,9 @@ def test_merge_phase_removes_merger_session_dir_after_successful_conflict_resolu
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
 
-    assert captured.get("exists") is False, "merger session dir should be removed before teardown"
+    assert captured.get("exists") is False, (
+        "merger session dir should be removed before teardown"
+    )
 
 
 def test_merge_phase_tears_down_sandbox_after_merger_session_cleanup(

@@ -165,7 +165,9 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 deps.git_svc.fast_forward_branch(
                     deps.repo_root, target_branch, MERGE_SANDBOX
                 )
-                shutil.rmtree(sandbox_path / ".pycastle-session" / "merger", ignore_errors=True)
+                shutil.rmtree(
+                    sandbox_path / ".pycastle-session" / "merger", ignore_errors=True
+                )
             conflict_deleted = _delete_merged_branches(
                 [branch_for(i["number"]) for i in conflict_issues], deps
             )
