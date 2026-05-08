@@ -6,7 +6,7 @@ from typing import Protocol
 from ..agent_output_protocol import (
     AgentOutput,
     AgentRole,
-    CompletionOutput,
+    IssueOutput,
     NoCandidateOutput,
 )
 from ..agent_result import PreflightFailure
@@ -213,12 +213,8 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> None:
                 )
 
                 assert not isinstance(output, PreflightFailure)
-                if (
-                    prompt_name == "02-prd.md"
-                    and isinstance(output, CompletionOutput)
-                    and output.issue_numbers
-                ):
-                    prd_number = output.issue_numbers[0]
+                if prompt_name == "02-prd.md" and isinstance(output, IssueOutput):
+                    prd_number = output.number
                 completed_id = _phase_id(prompt_name, output)
                 role_session_dir.mkdir(parents=True, exist_ok=True)
                 progress_file.write_text(completed_id, encoding="utf-8")

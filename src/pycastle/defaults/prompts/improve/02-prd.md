@@ -81,6 +81,6 @@ _Filed by improve session [improve-{{IMPROVE_SHORT_SID}}]._
 
 ## Output
 
-Output the filed issue number as `<issue>N</issue>`.
+Output the filed issue as `<issue>{"number": N, "labels": []}</issue>` (JSON-form, with an empty labels array — PRDs carry no triage label).
 
 Then emit `<promise>COMPLETE</promise>`.

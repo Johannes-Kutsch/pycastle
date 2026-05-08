@@ -70,8 +70,9 @@ class IssueOutput:
 @dataclasses.dataclass(frozen=True)
 class CompletionOutput:
     # Bare-integer <issue>N</issue> tags captured from the COMPLETE turn.
-    # Phase 02 (PRD) emits exactly one; phase 03 emits one per sub-issue (ignored
-    # by improve_phase — only phase 02's first number is used as prd_number).
+    # Phase 03 (improve sub-issues) emits one per filed sub-issue; improve_phase
+    # ignores them. Phase 02 emits a JSON-form <issue> tag instead and surfaces
+    # as IssueOutput.
     issue_numbers: tuple[int, ...] = ()
 
 
