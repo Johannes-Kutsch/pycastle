@@ -306,61 +306,9 @@ def test_run_issue_derives_branch_from_issue_number(tmp_path):
     asyncio.run(run_issue(issue, deps))
 
     implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert implementer_call.prompt_args["BRANCH"] == "pycastle/issue-7"
+    assert implementer_call.scope_args["BRANCH"] == "pycastle/issue-7"
     branch_arg = deps.git_svc.create_worktree.call_args_list[0][0][2]
     assert branch_arg == "pycastle/issue-7"
-
-
-def test_run_issue_passes_feedback_commands_to_implementer(tmp_path):
-    """run_issue must include FEEDBACK_COMMANDS in prompt_args for the implementer."""
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-
-    issue = {"number": 1, "title": "Fix thing"}
-    deps = _make_deps(tmp_path, fake)
-    asyncio.run(run_issue(issue, deps))
-
-    implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert "FEEDBACK_COMMANDS" in implementer_call.prompt_args
-
-
-def test_run_issue_feedback_commands_include_backtick_wrapped_implement_checks(
-    tmp_path,
-):
-    """FEEDBACK_COMMANDS must be formatted from IMPLEMENT_CHECKS with backtick wrapping."""
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-
-    issue = {"number": 1, "title": "Fix thing"}
-    deps = _make_deps(tmp_path, fake)
-    asyncio.run(run_issue(issue, deps))
-
-    implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    feedback_commands = implementer_call.prompt_args["FEEDBACK_COMMANDS"]
-    for cmd in _cfg.implement_checks:
-        assert f"`{cmd}`" in feedback_commands
-
-
-def test_run_issue_feedback_commands_single_check_no_joining(tmp_path):
-    """FEEDBACK_COMMANDS with one implement_check returns just the backtick-wrapped command."""
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    issue = {"number": 1, "title": "Fix thing"}
-    deps = _make_deps(tmp_path, fake)
-    deps.cfg = Config(implement_checks=("ruff check --fix",))
-    asyncio.run(run_issue(issue, deps))
-
-    implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert implementer_call.prompt_args["FEEDBACK_COMMANDS"] == "`ruff check --fix`"
-
-
-def test_run_issue_feedback_commands_empty_checks_yields_empty_string(tmp_path):
-    """FEEDBACK_COMMANDS with no implement_checks yields an empty string."""
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    issue = {"number": 1, "title": "Fix thing"}
-    deps = _make_deps(tmp_path, fake)
-    deps.cfg = Config(implement_checks=())
-    asyncio.run(run_issue(issue, deps))
-
-    implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert implementer_call.prompt_args["FEEDBACK_COMMANDS"] == ""
 
 
 def test_run_issue_implementer_invoked_with_skip_preflight_true(tmp_path):
@@ -494,7 +442,7 @@ def test_run_issue_threads_issue_body_to_implementer_prompt(tmp_path):
     asyncio.run(run_issue(issue, deps))
 
     impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert impl_call.prompt_args["ISSUE_BODY"] == "BODY-X"
+    assert impl_call.scope_args["ISSUE_BODY"] == "BODY-X"
 
 
 def test_run_issue_threads_issue_body_to_reviewer_prompt(tmp_path):
@@ -505,7 +453,7 @@ def test_run_issue_threads_issue_body_to_reviewer_prompt(tmp_path):
     asyncio.run(run_issue(issue, deps))
 
     rev_call = next(c for c in fake.calls if "Review Agent" in c.name)
-    assert rev_call.prompt_args["ISSUE_BODY"] == "BODY-X"
+    assert rev_call.scope_args["ISSUE_BODY"] == "BODY-X"
 
 
 def test_run_issue_threads_issue_comments_formatted_to_implementer(tmp_path):
@@ -524,7 +472,7 @@ def test_run_issue_threads_issue_comments_formatted_to_implementer(tmp_path):
     asyncio.run(run_issue(issue, deps))
 
     impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    rendered = impl_call.prompt_args["ISSUE_COMMENTS"]
+    rendered = impl_call.scope_args["ISSUE_COMMENTS"]
     assert "alice" in rendered
     assert "2026-01-01T10:00:00Z" in rendered
     assert "hi" in rendered
@@ -540,7 +488,7 @@ def test_run_issue_renders_empty_string_when_no_comments(tmp_path):
     asyncio.run(run_issue(issue, deps))
 
     impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert impl_call.prompt_args["ISSUE_COMMENTS"] == ""
+    assert impl_call.scope_args["ISSUE_COMMENTS"] == ""
 
 
 def test_run_issue_does_not_pass_diff_to_either_agent(tmp_path):
@@ -552,8 +500,8 @@ def test_run_issue_does_not_pass_diff_to_either_agent(tmp_path):
 
     impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
     rev_call = next(c for c in fake.calls if "Review Agent" in c.name)
-    assert "DIFF" not in impl_call.prompt_args
-    assert "DIFF" not in rev_call.prompt_args
+    assert "DIFF" not in impl_call.scope_args
+    assert "DIFF" not in rev_call.scope_args
 
 
 def test_run_issue_handles_issue_without_body_or_comments(tmp_path):
@@ -565,8 +513,8 @@ def test_run_issue_handles_issue_without_body_or_comments(tmp_path):
     asyncio.run(run_issue(issue, deps))
 
     impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert impl_call.prompt_args["ISSUE_BODY"] == ""
-    assert impl_call.prompt_args["ISSUE_COMMENTS"] == ""
+    assert impl_call.scope_args["ISSUE_BODY"] == ""
+    assert impl_call.scope_args["ISSUE_COMMENTS"] == ""
 
 
 def test_format_issue_comments_includes_author_and_timestamp():

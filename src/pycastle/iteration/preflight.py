@@ -11,6 +11,7 @@ from ..agent_output_protocol import (
 from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..status_display import StatusDisplay
 from ..worktree import transient_worktree
@@ -73,16 +74,13 @@ async def handle_preflight_failure(
     agent_result = await deps.agent_runner.run(
         RunRequest(
             name="Pre-Flight Reporter",
-            prompt_file=deps.cfg.prompts_dir / "preflight-issue.md",
+            template=PromptTemplate.PREFLIGHT_ISSUE,
             mount_path=mount_path,
             role=AgentRole.PREFLIGHT_ISSUE,
-            prompt_args={
+            scope_args={
                 "CHECK_NAME": check_name,
                 "COMMAND": command,
                 "OUTPUT": output,
-                "BUG_LABEL": deps.cfg.bug_label,
-                "ISSUE_LABEL": deps.cfg.issue_label,
-                "HITL_LABEL": deps.cfg.hitl_label,
             },
             skip_preflight=True,
             model=deps.cfg.preflight_issue_override.model,

@@ -9,6 +9,7 @@ from ..agent_output_protocol import AgentRole
 from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..status_display import StatusDisplay
 from ..worktree import (
@@ -143,15 +144,12 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 merger_result = await deps.agent_runner.run(
                     RunRequest(
                         name="Merge Agent",
-                        prompt_file=deps.cfg.prompts_dir / "merge-prompt.md",
+                        template=PromptTemplate.MERGE,
                         mount_path=sandbox_path,
                         role=AgentRole.MERGER,
-                        prompt_args={
+                        scope_args={
                             "BRANCHES": "\n".join(
                                 f"- {branch_for(i['number'])}" for i in conflict_issues
-                            ),
-                            "CHECKS": " && ".join(
-                                cmd for _, cmd in deps.cfg.preflight_checks
                             ),
                         },
                         model=deps.cfg.merge_override.model,

@@ -7,6 +7,7 @@ from ..agent_output_protocol import AgentOutputProtocolError, AgentRole, Planner
 from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..prompt_pipeline import PromptTemplate
 from ..services import GitService
 from ..status_display import StatusDisplay
 from ..worktree import transient_worktree
@@ -34,10 +35,10 @@ async def planning_phase(
             output = await deps.agent_runner.run(
                 RunRequest(
                     name="Plan Agent",
-                    prompt_file=deps.cfg.prompts_dir / "plan-prompt.md",
+                    template=PromptTemplate.PLAN,
                     mount_path=wt,
                     role=AgentRole.PLANNER,
-                    prompt_args={"OPEN_ISSUES_JSON": json.dumps(open_issues)},
+                    scope_args={"OPEN_ISSUES_JSON": json.dumps(open_issues)},
                     model=deps.cfg.plan_override.model,
                     effort=deps.cfg.plan_override.effort,
                     stage="plan-sandbox",

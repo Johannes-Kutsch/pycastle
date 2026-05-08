@@ -36,22 +36,6 @@ class PromptRenderError(Exception):
     pass
 
 
-async def prepare_prompt(
-    path: Path,
-    args: dict[str, str],
-    exec_fn,
-) -> str:
-    """Read template, expand !`shell` expressions, then substitute {{placeholders}}.
-
-    Substituted values are inert — never re-scanned for shell expressions, so
-    diffs, issue bodies, or other user-influenced content cannot trigger
-    container-side command execution.
-    """
-    content = path.read_text(encoding="utf-8")
-    preprocessed = await _preprocess(content, exec_fn)
-    return _render(preprocessed, args)
-
-
 def _render(template: str, args: dict[str, str]) -> str:
     found = set(PLACEHOLDER.findall(template))
     missing = found - args.keys()

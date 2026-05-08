@@ -11,7 +11,7 @@ from ..agent_result import CancellationToken, PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import BranchCollisionError, UsageLimitError
-from ..prompt_pipeline import load_standards
+from ..prompt_pipeline import PromptTemplate
 from ..session_resume import clear_session_dir, is_stage_done
 from ..status_display import StatusDisplay
 from ..services import GitService
@@ -35,13 +35,6 @@ class _ImplementDeps(Protocol):
 
 def branch_for(issue_number: int) -> str:
     return f"pycastle/issue-{issue_number}"
-
-
-def _format_feedback_commands(checks: Sequence[str]) -> str:
-    wrapped = [f"`{cmd}`" for cmd in checks]
-    if len(wrapped) <= 1:
-        return "".join(wrapped)
-    return ", ".join(wrapped[:-1]) + " and " + wrapped[-1]
 
 
 def format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
@@ -74,15 +67,12 @@ async def run_issue(
 ) -> dict | PreflightFailure:
     _branch = branch_for(issue["number"])
     _token = token if token is not None else CancellationToken()
-    _standards = load_standards(deps.cfg.prompts_dir)
-    prompt_args = {
+    scope_args = {
         "ISSUE_NUMBER": str(issue["number"]),
         "ISSUE_TITLE": issue["title"],
         "ISSUE_BODY": str(issue.get("body") or ""),
         "ISSUE_COMMENTS": format_issue_comments(issue.get("comments") or []),
         "BRANCH": _branch,
-        "FEEDBACK_COMMANDS": _format_feedback_commands(deps.cfg.implement_checks),
-        **_standards,
     }
 
     _started_fired = False
@@ -132,10 +122,10 @@ async def run_issue(
                     result = await _bounded_run_agent(
                         RunRequest(
                             name=f"Implement Agent #{issue['number']}",
-                            prompt_file=deps.cfg.prompts_dir / "implement-prompt.md",
+                            template=PromptTemplate.IMPLEMENT,
                             mount_path=impl_mount_path,
                             role=AgentRole.IMPLEMENTER,
-                            prompt_args=prompt_args,
+                            scope_args=scope_args,
                             model=deps.cfg.implement_override.model,
                             effort=deps.cfg.implement_override.effort,
                             stage="pre-implementation",
@@ -174,10 +164,10 @@ async def run_issue(
                 review_result = await _bounded_run_agent(
                     RunRequest(
                         name=f"Review Agent #{issue['number']}",
-                        prompt_file=deps.cfg.prompts_dir / "review-prompt.md",
+                        template=PromptTemplate.REVIEW,
                         mount_path=review_mount_path,
                         role=AgentRole.REVIEWER,
-                        prompt_args=prompt_args,
+                        scope_args=scope_args,
                         model=deps.cfg.review_override.model,
                         effort=deps.cfg.review_override.effort,
                         stage="pre-review",
