@@ -69,7 +69,10 @@ class IssueOutput:
 
 @dataclasses.dataclass(frozen=True)
 class CompletionOutput:
-    pass
+    # Bare-integer <issue>N</issue> tags captured from the COMPLETE turn.
+    # Phase 02 (PRD) emits exactly one; phase 03 emits one per sub-issue (ignored
+    # by improve_phase — only phase 02's first number is used as prd_number).
+    issue_numbers: tuple[int, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -270,7 +273,11 @@ def process_stream(
                 if re.search(r"<promise>NO-CANDIDATE</promise>", turn):
                     return NoCandidateOutput()
                 if re.search(r"<promise>COMPLETE</promise>", turn):
-                    return CompletionOutput()
+                    issue_numbers = tuple(
+                        int(m.group(1))
+                        for m in re.finditer(r"<issue>(\d+)</issue>", turn)
+                    )
+                    return CompletionOutput(issue_numbers=issue_numbers)
             elif role == AgentRole.MERGER:
                 if re.search(r"<promise>COMPLETE</promise>", turn):
                     return CompletionOutput()
@@ -318,7 +325,10 @@ def process_stream(
                 f"Agent produced no <promise>COMPLETE</promise> or"
                 f" <promise>NO-CANDIDATE</promise> tag.{tail}"
             )
-        return CompletionOutput()
+        issue_numbers = tuple(
+            int(m.group(1)) for m in re.finditer(r"<issue>(\d+)</issue>", text)
+        )
+        return CompletionOutput(issue_numbers=issue_numbers)
     if not re.search(r"<promise>COMPLETE</promise>", text):
         raise PromiseParseError(
             f"Agent produced no <promise>COMPLETE</promise> tag.{tail}"

@@ -271,7 +271,13 @@ def test_prd_prompt_instructs_session_footer():
 
 # ── Phase 3 sub-issues template ───────────────────────────────────────────────
 
-_ISSUES_SCOPE = {"IMPROVE_SHORT_SID": "abcd1234"}
+_ISSUES_SCOPE = {
+    "IMPROVE_SHORT_SID": "abcd1234",
+    "ISSUE_NUMBER": "99",
+    "ISSUE_TITLE": "Parent PRD title",
+    "ISSUE_BODY": "Parent PRD body",
+    "ISSUE_COMMENTS": "",
+}
 
 
 def test_issues_prompt_renders_without_error():
@@ -279,14 +285,42 @@ def test_issues_prompt_renders_without_error():
 
 
 def test_issues_prompt_fails_without_short_sid_arg():
-    with pytest.raises(PromptRenderError, match="IMPROVE_SHORT_SID"):
-        _render(PromptTemplate.IMPROVE_ISSUES, {})
+    incomplete = {k: v for k, v in _ISSUES_SCOPE.items() if k != "IMPROVE_SHORT_SID"}
+    with pytest.raises(PromptRenderError):
+        _render(PromptTemplate.IMPROVE_ISSUES, incomplete)
 
 
 def test_issues_prompt_expands_short_sid_in_dedup_search():
     result = _render(PromptTemplate.IMPROVE_ISSUES, _ISSUES_SCOPE)
     assert "{{IMPROVE_SHORT_SID}}" not in result
     assert "abcd1234" in result
+
+
+def test_issues_prompt_expands_issue_number_in_task_line():
+    result = _render(PromptTemplate.IMPROVE_ISSUES, _ISSUES_SCOPE)
+    assert "{{ISSUE_NUMBER}}" not in result
+    assert "99" in result
+
+
+def test_issues_prompt_expands_issue_title_and_body():
+    result = _render(
+        PromptTemplate.IMPROVE_ISSUES,
+        {**_ISSUES_SCOPE, "ISSUE_TITLE": "PRD-TITLE", "ISSUE_BODY": "PRD-BODY"},
+    )
+    assert "PRD-TITLE" in result
+    assert "PRD-BODY" in result
+
+
+def test_issues_prompt_top_level_sections():
+    content = (_IMPROVE / "03-issues.md").read_text(encoding="utf-8")
+    top_level = [line for line in content.splitlines() if line.startswith("# ")]
+    assert "# TASK" in top_level
+    assert "# CONTEXT" in top_level
+
+
+def test_issues_prompt_has_explore_step():
+    content = (_IMPROVE / "03-issues.md").read_text(encoding="utf-8")
+    assert "## 1. Explore" in content
 
 
 def test_issues_prompt_instructs_dedup_check():

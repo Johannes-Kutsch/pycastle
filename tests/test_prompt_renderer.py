@@ -91,11 +91,23 @@ def test_scope_resume_is_empty():
     assert Scope.RESUME.placeholders == frozenset()
 
 
+def test_scope_improve_issues_placeholders():
+    assert Scope.IMPROVE_ISSUES.placeholders == frozenset(
+        {
+            "IMPROVE_SHORT_SID",
+            "ISSUE_NUMBER",
+            "ISSUE_TITLE",
+            "ISSUE_BODY",
+            "ISSUE_COMMENTS",
+        }
+    )
+
+
 def test_scopes_are_distinct_members():
     # Regression: empty-frozenset values were aliased by Enum, collapsing
     # IMPROVE_SCAN and RESUME into a single member.
     assert Scope.IMPROVE_SCAN is not Scope.RESUME
-    assert len(list(Scope)) == 7
+    assert len(list(Scope)) == 8
 
 
 # ── PromptTemplate enum has correct filename and scope ────────────────────────
@@ -131,6 +143,11 @@ def test_template_improve_scan_has_correct_scope():
     assert PromptTemplate.IMPROVE_SCAN.scope == Scope.IMPROVE_SCAN
 
 
+def test_template_improve_issues_has_correct_scope():
+    assert PromptTemplate.IMPROVE_ISSUES.filename == "improve/03-issues.md"
+    assert PromptTemplate.IMPROVE_ISSUES.scope == Scope.IMPROVE_ISSUES
+
+
 def test_template_resume_has_correct_scope():
     assert PromptTemplate.RESUME.filename == "_resume-prompt.md"
     assert PromptTemplate.RESUME.scope == Scope.RESUME
@@ -149,6 +166,24 @@ def test_renderer_ctor_rejects_unknown_token(cfg, prompts_dir):
     )
     with pytest.raises(PromptRenderError, match="XYZZY"):
         PromptRenderer(cfg)
+
+
+def test_renderer_ctor_rejects_typo_in_improve_issues_template(cfg, prompts_dir):
+    # IMPROVE_ISSUES scope must reject any unknown placeholder at startup.
+    (prompts_dir / "improve" / "03-issues.md").write_text(
+        "SID: {{IMPROVE_SHORT_SID}}\nNum: {{ISSUE_NUMBR}}"  # typo: NUMBR
+    )
+    with pytest.raises(PromptRenderError, match="ISSUE_NUMBR"):
+        PromptRenderer(cfg)
+
+
+def test_renderer_ctor_accepts_improve_issues_template(cfg, prompts_dir):
+    (prompts_dir / "improve" / "03-issues.md").write_text(
+        "Task: #{{ISSUE_NUMBER}} {{ISSUE_TITLE}}\n"
+        "Body: {{ISSUE_BODY}}\nComments: {{ISSUE_COMMENTS}}\n"
+        "SID: {{IMPROVE_SHORT_SID}}"
+    )
+    PromptRenderer(cfg)  # must not raise
 
 
 # ── Ctor validates: out-of-scope token raises ────────────────────────────────

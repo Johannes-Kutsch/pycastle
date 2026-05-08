@@ -2,7 +2,23 @@
 
 You are the Improve Agent — Phase 3: Sub-issues.
 
-Break the PRD filed in phase 2 into independently-grabbable issues using vertical slices (tracer bullets).
+Break the PRD filed in phase 2 (#{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}) into independently-grabbable issues using vertical slices (tracer bullets).
+
+# CONTEXT
+
+<issue>
+
+{{ISSUE_BODY}}
+
+</issue>
+
+<comments>
+
+{{ISSUE_COMMENTS}}
+
+</comments>
+
+# PROCESS
 
 ## Safety net
 
@@ -14,11 +30,15 @@ Before filing, run:
 `gh issue list --search "[improve-{{IMPROVE_SHORT_SID}}] in:title" --state all --json number,title,labels`
 Skip any sub-issues that are already filed for this session.
 
-Retrieve the parent PRD issue number from your conversation history (the `<issue>N</issue>` tag emitted in phase 2).
+## 1. Explore
 
-## Process
+Re-explore the area before filing. Starting from the PRD above:
 
-### 1. Detect CONTEXT.md updates
+- Read `CONTEXT.md` (and `CONTEXT-MAP.md` if present) to ground yourself in the domain vocabulary.
+- Skim ADRs in `docs/adr/` that touch the area described in the PRD.
+- Read the modules the PRD names — understand their current interfaces before proposing slices.
+
+## 2. Detect CONTEXT.md updates
 
 Check whether the picked candidate introduces a new domain term, sharpens a fuzzy term, or otherwise implies an update to `CONTEXT.md` (or the per-context glossary referenced from `CONTEXT-MAP.md`).
 
@@ -30,7 +50,7 @@ If yes, file a single dedicated CONTEXT.md issue **first** before any vertical s
 
 If no CONTEXT.md update is implied, skip this step.
 
-### 2. Draft vertical slices
+## 3. Draft vertical slices
 
 Each slice is a thin vertical slice that cuts through ALL integration layers end-to-end, NOT a horizontal slice of one layer.
 
@@ -42,7 +62,7 @@ Vertical-slice rules:
 - A completed slice is demoable or verifiable on its own
 - Prefer many thin slices over few thick ones
 
-### 3. Self-quiz
+## 4. Self-quiz
 
 Before filing, answer the following questions explicitly in the conversation:
 
@@ -53,11 +73,11 @@ Before filing, answer the following questions explicitly in the conversation:
 
 Iterate the breakdown in your reasoning until the answers are clean.
 
-### 4. File the issues
+## 5. File the issues
 
 For each approved slice, publish a new issue. **Always write the body to a temp file and use `gh issue create --body-file`.** Each title must start with `[improve-{{IMPROVE_SHORT_SID}}]`. Apply the `ready-for-agent` label so an agent can start work on the issue.
 
-Publish issues in dependency order (blockers first) so you can reference real issue identifiers in the `Blocked by` field. The CONTEXT.md issue from step 1, if any, is filed first; every other slice references it.
+Publish issues in dependency order (blockers first) so you can reference real issue identifiers in the `Blocked by` field. The CONTEXT.md issue from step 2, if any, is filed first; every other slice references it.
 
 ## Sub-issue body template
 
