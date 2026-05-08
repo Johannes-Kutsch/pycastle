@@ -8,6 +8,7 @@ import pytest
 from pycastle.prompt_pipeline import PromptRenderError, load_standards, prepare_prompt
 
 _DEFAULTS = Path(__file__).parent.parent / "src" / "pycastle" / "defaults" / "prompts"
+_IMPROVE = _DEFAULTS / "improve"
 
 
 async def _noop_exec(cmd: str) -> str:
@@ -268,33 +269,33 @@ _PRD_ARGS = {"IMPROVE_SHORT_SID": "abcd1234"}
 
 
 def test_prd_prompt_renders_without_error():
-    _render(_DEFAULTS / "02-prd.md", _PRD_ARGS)
+    _render(_IMPROVE / "02-prd.md", _PRD_ARGS)
 
 
 def test_prd_prompt_fails_without_short_sid_arg():
     with pytest.raises(PromptRenderError, match="IMPROVE_SHORT_SID"):
-        _render(_DEFAULTS / "02-prd.md", {})
+        _render(_IMPROVE / "02-prd.md", {})
 
 
 def test_prd_prompt_expands_short_sid_in_dedup_search():
-    result = _render(_DEFAULTS / "02-prd.md", _PRD_ARGS)
+    result = _render(_IMPROVE / "02-prd.md", _PRD_ARGS)
     assert "{{IMPROVE_SHORT_SID}}" not in result
     assert "abcd1234" in result
 
 
 def test_prd_prompt_instructs_dedup_check():
-    content = (_DEFAULTS / "02-prd.md").read_text(encoding="utf-8")
+    content = (_IMPROVE / "02-prd.md").read_text(encoding="utf-8")
     assert "gh issue list" in content
 
 
 def test_prd_prompt_instructs_afk_safety_confirmation():
-    content = (_DEFAULTS / "02-prd.md").read_text(encoding="utf-8")
+    content = (_IMPROVE / "02-prd.md").read_text(encoding="utf-8")
     assert "afk" in content.lower() or "autonomous" in content.lower()
 
 
 def test_prd_prompt_instructs_session_footer():
-    content = (_DEFAULTS / "02-prd.md").read_text(encoding="utf-8")
-    assert "footer" in content.lower()
+    content = (_IMPROVE / "02-prd.md").read_text(encoding="utf-8")
+    assert "_Filed by improve session" in content
 
 
 # ── Phase 3 sub-issues template ───────────────────────────────────────────────
@@ -303,37 +304,37 @@ _ISSUES_ARGS = {"IMPROVE_SHORT_SID": "abcd1234"}
 
 
 def test_issues_prompt_renders_without_error():
-    _render(_DEFAULTS / "03-issues.md", _ISSUES_ARGS)
+    _render(_IMPROVE / "03-issues.md", _ISSUES_ARGS)
 
 
 def test_issues_prompt_fails_without_short_sid_arg():
     with pytest.raises(PromptRenderError, match="IMPROVE_SHORT_SID"):
-        _render(_DEFAULTS / "03-issues.md", {})
+        _render(_IMPROVE / "03-issues.md", {})
 
 
 def test_issues_prompt_expands_short_sid_in_dedup_search():
-    result = _render(_DEFAULTS / "03-issues.md", _ISSUES_ARGS)
+    result = _render(_IMPROVE / "03-issues.md", _ISSUES_ARGS)
     assert "{{IMPROVE_SHORT_SID}}" not in result
     assert "abcd1234" in result
 
 
 def test_issues_prompt_instructs_dedup_check():
-    content = (_DEFAULTS / "03-issues.md").read_text(encoding="utf-8")
+    content = (_IMPROVE / "03-issues.md").read_text(encoding="utf-8")
     assert "gh issue list" in content
 
 
 def test_issues_prompt_instructs_afk_safety_confirmation():
-    content = (_DEFAULTS / "03-issues.md").read_text(encoding="utf-8")
+    content = (_IMPROVE / "03-issues.md").read_text(encoding="utf-8")
     assert "afk" in content.lower() or "autonomous" in content.lower()
 
 
 def test_issues_prompt_instructs_session_footer():
-    content = (_DEFAULTS / "03-issues.md").read_text(encoding="utf-8")
-    assert "footer" in content.lower()
+    content = (_IMPROVE / "03-issues.md").read_text(encoding="utf-8")
+    assert "_Filed by improve session" in content
 
 
 def test_issues_prompt_instructs_sub_issue_registration():
-    content = (_DEFAULTS / "03-issues.md").read_text(encoding="utf-8")
+    content = (_IMPROVE / "03-issues.md").read_text(encoding="utf-8")
     assert "sub_issues" in content or "sub-issue" in content.lower()
 
 
@@ -343,30 +344,30 @@ _NO_CANDIDATE_ARGS = {"IMPROVE_SHORT_SID": "abcd1234"}
 
 
 def test_no_candidate_prompt_renders_without_error():
-    _render(_DEFAULTS / "04-no-candidate-report.md", _NO_CANDIDATE_ARGS)
+    _render(_IMPROVE / "04-no-candidate-report.md", _NO_CANDIDATE_ARGS)
 
 
 def test_no_candidate_prompt_fails_without_short_sid_arg():
     with pytest.raises(PromptRenderError, match="IMPROVE_SHORT_SID"):
-        _render(_DEFAULTS / "04-no-candidate-report.md", {})
+        _render(_IMPROVE / "04-no-candidate-report.md", {})
 
 
 def test_no_candidate_prompt_expands_short_sid():
-    result = _render(_DEFAULTS / "04-no-candidate-report.md", _NO_CANDIDATE_ARGS)
+    result = _render(_IMPROVE / "04-no-candidate-report.md", _NO_CANDIDATE_ARGS)
     assert "{{IMPROVE_SHORT_SID}}" not in result
     assert "abcd1234" in result
 
 
 def test_no_candidate_prompt_instructs_dedup_check():
-    content = (_DEFAULTS / "04-no-candidate-report.md").read_text(encoding="utf-8")
+    content = (_IMPROVE / "04-no-candidate-report.md").read_text(encoding="utf-8")
     assert "gh issue list" in content
 
 
 def test_no_candidate_prompt_instructs_afk_safety_constraints():
-    content = (_DEFAULTS / "04-no-candidate-report.md").read_text(encoding="utf-8")
+    content = (_IMPROVE / "04-no-candidate-report.md").read_text(encoding="utf-8")
     assert "afk" in content.lower() or "autonomous" in content.lower()
 
 
 def test_no_candidate_prompt_instructs_session_footer():
-    content = (_DEFAULTS / "04-no-candidate-report.md").read_text(encoding="utf-8")
-    assert "footer" in content.lower()
+    content = (_IMPROVE / "04-no-candidate-report.md").read_text(encoding="utf-8")
+    assert "_Filed by improve session" in content

@@ -102,7 +102,7 @@ async def improve_phase(deps: _ImproveDeps) -> None:
                 output = await deps.agent_runner.run(
                     RunRequest(
                         name="Improve Agent",
-                        prompt_file=deps.cfg.prompts_dir / prompt_name,
+                        prompt_file=deps.cfg.prompts_dir / "improve" / prompt_name,
                         mount_path=sandbox_path,
                         role=AgentRole.IMPROVE,
                         skip_preflight=True,
