@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,19 +12,9 @@ from pycastle.services import GithubService
 from pycastle.iteration._deps import (
     FakeAgentRunner,
     RecordingStatusDisplay,
+    _make_deps,
 )
-from pycastle.status_display import PlainStatusDisplay
 from pycastle.iteration.merge import MergeResult, merge_phase
-
-
-@dataclasses.dataclass
-class _MergeDepsStub:
-    repo_root: Path
-    git_svc: GitService
-    github_svc: GithubService
-    agent_runner: FakeAgentRunner
-    cfg: Config
-    status_display: PlainStatusDisplay | RecordingStatusDisplay
 
 
 @pytest.fixture
@@ -58,29 +47,11 @@ def agent_runner():
 
 @pytest.fixture
 def deps(tmp_path, git_svc, github_svc, agent_runner):
-    return _MergeDepsStub(
-        repo_root=tmp_path,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        agent_runner=agent_runner,
-        cfg=Config(),
-        status_display=PlainStatusDisplay(),
-    )
+    return _make_deps(tmp_path, agent_runner, git_svc=git_svc, github_svc=github_svc)
 
 
 def _run(completed, deps):
     return asyncio.run(merge_phase(completed, deps))
-
-
-def _make_deps(tmp_path, git_svc, github_svc, agent_runner):
-    return _MergeDepsStub(
-        repo_root=tmp_path,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        agent_runner=agent_runner,
-        cfg=Config(),
-        status_display=PlainStatusDisplay(),
-    )
 
 
 # ── Clean merge path ──────────────────────────────────────────────────────────
@@ -260,7 +231,7 @@ def test_incomplete_merger_raises_and_does_not_fast_forward(
 ):
     git_svc.try_merge.return_value = False
     fake = FakeAgentRunner([PromiseParseError("no <promise>COMPLETE</promise> tag")])
-    local_deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    local_deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     issues = [{"number": 1, "title": "Conflict"}]
     with pytest.raises(PromiseParseError):
         _run(issues, local_deps)
@@ -275,7 +246,9 @@ def _preflight_failure_deps(tmp_path, git_svc, github_svc):
 
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     git_svc.try_merge.return_value = False
-    return _make_deps(tmp_path, git_svc, github_svc, FakeAgentRunner([failure]))
+    return _make_deps(
+        tmp_path, FakeAgentRunner([failure]), git_svc=git_svc, github_svc=github_svc
+    )
 
 
 def test_preflight_failure_returns_merge_result_without_raising(
@@ -294,7 +267,9 @@ def test_preflight_failure_result_separates_clean_and_conflict_issues(
 
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     git_svc.try_merge.side_effect = _conflict_on([2])
-    local_deps = _make_deps(tmp_path, git_svc, github_svc, FakeAgentRunner([failure]))
+    local_deps = _make_deps(
+        tmp_path, FakeAgentRunner([failure]), git_svc=git_svc, github_svc=github_svc
+    )
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
     result = _run(issues, local_deps)
     assert result.clean == [{"number": 1, "title": "Clean"}]
@@ -364,7 +339,9 @@ def test_preflight_failure_closes_parent_issues_for_clean_issues(
 
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     git_svc.try_merge.side_effect = _conflict_on([2])
-    local_deps = _make_deps(tmp_path, git_svc, github_svc, FakeAgentRunner([failure]))
+    local_deps = _make_deps(
+        tmp_path, FakeAgentRunner([failure]), git_svc=git_svc, github_svc=github_svc
+    )
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
     _run(issues, local_deps)
     local_deps.github_svc.close_completed_parent_issues.assert_called_once()
@@ -395,7 +372,9 @@ def test_preflight_failure_close_message_lists_clean_deleted_branches(
     git_svc.try_merge.side_effect = _conflict_on([2])
     recording = RecordingStatusDisplay()
     local_deps = dataclasses.replace(
-        _make_deps(tmp_path, git_svc, github_svc, FakeAgentRunner([failure])),
+        _make_deps(
+            tmp_path, FakeAgentRunner([failure]), git_svc=git_svc, github_svc=github_svc
+        ),
         status_display=recording,
     )
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
@@ -415,7 +394,7 @@ def test_preflight_failure_close_message_lists_clean_deleted_branches(
 def test_sandbox_branch_deleted_when_run_agent_raises(tmp_path, git_svc, github_svc):
     git_svc.try_merge.return_value = False
     fake = FakeAgentRunner([RuntimeError("agent crashed")])
-    local_deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    local_deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     issues = [{"number": 1, "title": "Conflict"}]
     with pytest.raises(RuntimeError, match="agent crashed"):
         _run(issues, local_deps)
@@ -466,7 +445,7 @@ def test_worktree_removed_after_merger(deps, git_svc):
 def test_worktree_removed_when_run_agent_raises(tmp_path, git_svc, github_svc):
     git_svc.try_merge.return_value = False
     fake = FakeAgentRunner([RuntimeError("agent crashed")])
-    local_deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    local_deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     issues = [{"number": 1, "title": "Conflict"}]
     with pytest.raises(RuntimeError, match="agent crashed"):
         _run(issues, local_deps)
@@ -540,12 +519,11 @@ def test_worktree_removal_failure_does_not_abort_branch_deletion(deps, git_svc):
 def recording_deps(tmp_path, git_svc, github_svc, agent_runner):
     recording = RecordingStatusDisplay()
     return (
-        _MergeDepsStub(
-            repo_root=tmp_path,
+        _make_deps(
+            tmp_path,
+            agent_runner,
             git_svc=git_svc,
             github_svc=github_svc,
-            agent_runner=agent_runner,
-            cfg=Config(),
             status_display=recording,
         ),
         recording,
@@ -760,12 +738,11 @@ def test_merge_row_still_active_while_merger_runs(tmp_path, git_svc, github_svc)
         return CompletionOutput()
 
     agent_runner = FakeAgentRunner(side_effect=side_effect)
-    deps = _MergeDepsStub(
-        repo_root=tmp_path,
+    deps = _make_deps(
+        tmp_path,
+        agent_runner,
         git_svc=git_svc,
         github_svc=github_svc,
-        agent_runner=agent_runner,
-        cfg=Config(),
         status_display=recording,
     )
     git_svc.try_merge.return_value = False
@@ -796,12 +773,11 @@ def test_merge_row_not_removed_with_failed_style_after_row_already_removed(
 
     recording = RecordingStatusDisplay()
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-    deps = _MergeDepsStub(
-        repo_root=tmp_path,
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner([failure]),
         git_svc=git_svc,
         github_svc=github_svc,
-        agent_runner=FakeAgentRunner([failure]),
-        cfg=Config(),
         status_display=recording,
     )
     git_svc.try_merge.return_value = False
@@ -819,7 +795,9 @@ def test_merger_run_call_passes_work_body_with_conflict_count(
 ):
     git_svc.try_merge.return_value = False
     recording_runner = FakeAgentRunner([CompletionOutput()])
-    deps = _make_deps(tmp_path, git_svc, github_svc, recording_runner)
+    deps = _make_deps(
+        tmp_path, recording_runner, git_svc=git_svc, github_svc=github_svc
+    )
     conflict_issues = [{"number": 1, "title": "A"}, {"number": 2, "title": "B"}]
 
     _run(conflict_issues, deps)
@@ -852,7 +830,9 @@ def test_auto_push_calls_push_in_preflight_skip_when_clean_issues_exist(
 
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     git_svc.try_merge.side_effect = _conflict_on([2])
-    local_deps = _make_deps(tmp_path, git_svc, github_svc, FakeAgentRunner([failure]))
+    local_deps = _make_deps(
+        tmp_path, FakeAgentRunner([failure]), git_svc=git_svc, github_svc=github_svc
+    )
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
     _run(issues, local_deps)
     local_deps.git_svc.push.assert_called_once_with(local_deps.repo_root)
@@ -865,7 +845,9 @@ def test_auto_push_does_not_call_push_in_preflight_skip_when_no_clean_issues(
 
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     git_svc.try_merge.return_value = False
-    local_deps = _make_deps(tmp_path, git_svc, github_svc, FakeAgentRunner([failure]))
+    local_deps = _make_deps(
+        tmp_path, FakeAgentRunner([failure]), git_svc=git_svc, github_svc=github_svc
+    )
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, local_deps)
     local_deps.git_svc.push.assert_not_called()
@@ -894,7 +876,9 @@ def test_auto_push_false_does_not_call_push_in_preflight_skip(
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     git_svc.try_merge.side_effect = _conflict_on([2])
     local_deps = dataclasses.replace(
-        _make_deps(tmp_path, git_svc, github_svc, FakeAgentRunner([failure])),
+        _make_deps(
+            tmp_path, FakeAgentRunner([failure]), git_svc=git_svc, github_svc=github_svc
+        ),
         cfg=Config(auto_push=False),
     )
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
@@ -954,7 +938,7 @@ def test_merge_phase_clears_merger_session_dir_after_successful_conflict_resolut
     git_svc.remove_worktree.side_effect = _capture_on_remove
 
     fake = FakeAgentRunner([CompletionOutput()])
-    deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
 
@@ -981,7 +965,7 @@ def test_merge_phase_tears_down_sandbox_after_merger_session_cleanup(
     git_svc.create_worktree.side_effect = _create_with_session
 
     fake = FakeAgentRunner([CompletionOutput()])
-    deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
 
@@ -1007,7 +991,7 @@ def test_merge_phase_preserves_sandbox_and_session_on_usage_limit_error(
         raise UsageLimitError()
 
     fake = FakeAgentRunner(side_effect=_raise_after_seed)
-    deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     issues = [{"number": 1, "title": "Conflict"}]
 
     with pytest.raises(UsageLimitError):
@@ -1026,7 +1010,7 @@ def test_merge_phase_tears_down_and_deletes_branch_when_clean_sandbox_and_no_ses
     sandbox_path = tmp_path / Config().pycastle_dir / ".worktrees" / "merge-sandbox"
 
     fake = FakeAgentRunner([CompletionOutput()])
-    deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
 
@@ -1050,7 +1034,7 @@ def test_merge_phase_reuses_existing_sandbox_when_merger_session_is_resumable(
     git_svc.get_current_branch.return_value = "pycastle/merge-sandbox"
 
     fake = FakeAgentRunner([CompletionOutput()])
-    deps = _make_deps(tmp_path, git_svc, github_svc, fake)
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
 

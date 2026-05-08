@@ -1,6 +1,4 @@
 import asyncio
-import dataclasses
-from pathlib import Path
 
 import pytest
 from unittest.mock import MagicMock
@@ -11,20 +9,9 @@ from pycastle.agent_output_protocol import (
     PlannerOutput,
 )
 from pycastle.agent_result import PreflightFailure
-from pycastle.config import Config
 from pycastle.services import GitService
-from pycastle.iteration._deps import FakeAgentRunner
-from pycastle.status_display import PlainStatusDisplay
+from pycastle.iteration._deps import FakeAgentRunner, _make_deps
 from pycastle.iteration.planning import PlanReady, planning_phase
-
-
-@dataclasses.dataclass
-class _PlanningStub:
-    cfg: Config
-    status_display: PlainStatusDisplay
-    agent_runner: FakeAgentRunner
-    repo_root: Path
-    git_svc: GitService
 
 
 def _plan_output(issues: list[dict]) -> PlannerOutput:
@@ -36,16 +23,6 @@ def _plan_output(issues: list[dict]) -> PlannerOutput:
 @pytest.fixture
 def git_svc():
     return MagicMock(spec=GitService)
-
-
-def _make_deps(tmp_path, agent_runner, *, git_svc):
-    return _PlanningStub(
-        repo_root=tmp_path,
-        git_svc=git_svc,
-        agent_runner=agent_runner,
-        cfg=Config(max_parallel=4, max_iterations=1),
-        status_display=PlainStatusDisplay(),
-    )
 
 
 # ── planning_phase: returns PlanReady with sorted issues ────────────────────
