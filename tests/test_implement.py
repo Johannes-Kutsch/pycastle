@@ -24,6 +24,7 @@ from pycastle.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.iteration.implement import (
     ImplementResult,
     branch_for,
+    build_issue_scope_args,
     format_issue_comments,
     implement_phase,
     run_issue,
@@ -530,6 +531,54 @@ def test_format_issue_comments_includes_author_and_timestamp():
 
 def test_format_issue_comments_returns_empty_string_for_no_comments():
     assert format_issue_comments([]) == ""
+
+
+# ── build_issue_scope_args ────────────────────────────────────────────────────
+
+
+def test_build_issue_scope_args_returns_all_required_keys():
+    issue = {"number": 1, "title": "Fix bug", "body": "details", "comments": []}
+    result = build_issue_scope_args(issue, "pycastle/issue-1")
+    assert set(result.keys()) == {
+        "ISSUE_NUMBER",
+        "ISSUE_TITLE",
+        "ISSUE_BODY",
+        "ISSUE_COMMENTS",
+        "BRANCH",
+    }
+
+
+def test_build_issue_scope_args_formats_number_as_string():
+    issue = {"number": 42, "title": "T", "body": "", "comments": []}
+    result = build_issue_scope_args(issue, "pycastle/issue-42")
+    assert result["ISSUE_NUMBER"] == "42"
+
+
+def test_build_issue_scope_args_uses_branch_arg():
+    issue = {"number": 7, "title": "T", "body": "", "comments": []}
+    result = build_issue_scope_args(issue, "pycastle/issue-7")
+    assert result["BRANCH"] == "pycastle/issue-7"
+
+
+def test_build_issue_scope_args_handles_missing_body_and_comments():
+    issue = {"number": 1, "title": "T"}
+    result = build_issue_scope_args(issue, "pycastle/issue-1")
+    assert result["ISSUE_BODY"] == ""
+    assert result["ISSUE_COMMENTS"] == ""
+
+
+def test_build_issue_scope_args_formats_comments():
+    issue = {
+        "number": 1,
+        "title": "T",
+        "body": "",
+        "comments": [
+            {"author": "alice", "created_at": "2026-01-01T10:00:00Z", "body": "hi"}
+        ],
+    }
+    result = build_issue_scope_args(issue, "pycastle/issue-1")
+    assert "alice" in result["ISSUE_COMMENTS"]
+    assert "hi" in result["ISSUE_COMMENTS"]
 
 
 # ── Issue 349: issue_title threading ─────────────────────────────────────────
