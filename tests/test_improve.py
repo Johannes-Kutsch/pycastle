@@ -53,8 +53,8 @@ def deps(tmp_path, git_svc, agent_runner):
     return _make_deps(tmp_path, agent_runner, git_svc=git_svc)
 
 
-def _run(deps):
-    asyncio.run(improve_phase(deps))
+def _run(deps, sha="abc123"):
+    asyncio.run(improve_phase(deps, sha=sha))
 
 
 # ── next_prompt: pure transition function ────────────────────────────────────
@@ -186,10 +186,9 @@ def test_improve_phase_creates_worktree_on_improve_sandbox_branch(deps, git_svc)
     assert branch == IMPROVE_SANDBOX
 
 
-def test_improve_phase_pins_worktree_to_head_sha(deps, git_svc):
-    """Worktree is created from the HEAD SHA, not a hardcoded value."""
-    git_svc.get_head_sha.return_value = "deadbeef"
-    _run(deps)
+def test_improve_phase_pins_worktree_to_provided_sha(deps, git_svc):
+    """Worktree is pinned to the SHA passed to improve_phase, not a re-fetched HEAD."""
+    _run(deps, sha="deadbeef")
     _repo, _wt, _branch, sha = git_svc.create_worktree.call_args[0]
     assert sha == "deadbeef"
 

@@ -1469,3 +1469,54 @@ def test_run_iteration_endless_returns_continue_after_no_candidate_improve(
     )
     result = asyncio.run(run_iteration(deps))
     assert isinstance(result, Continue)
+
+
+def test_run_iteration_improve_uses_sha_from_preflight(tmp_path, git_svc, logger):
+    """improve_phase must receive the SHA pinned by preflight, not re-fetch HEAD."""
+    git_svc.get_head_sha.return_value = "safe-sha-from-preflight"
+    deps = _make_improve_deps(
+        tmp_path,
+        git_svc,
+        logger,
+        improve_mode="endless",
+        slept_once=False,
+        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+    )
+    asyncio.run(run_iteration(deps))
+
+    worktree_shas = {
+        c.args[3]
+        for c in git_svc.create_worktree.call_args_list
+        if len(c.args) > 3 and c.args[3] is not None
+    }
+    assert "safe-sha-from-preflight" in worktree_shas, (
+        "improve-sandbox must be created from the preflight SHA"
+    )
+
+
+def test_run_iteration_skips_preflight_checks_when_improve_would_stop(
+    tmp_path, git_svc, logger
+):
+    """When no open issues and improve mode would stop (until_sleep + slept), PREFLIGHT_CHECKS
+    must not run — the cheap pre-check exits Done before the expensive sandbox is spun up."""
+    recording_runner = FakeAgentRunner([], preflight_responses=[])
+
+    github_svc = MagicMock(spec=GithubService)
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            None,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+        ),
+        agent_runner=recording_runner,
+        improve_mode="until_sleep",
+        slept_once=True,
+        open_issues_known_empty=True,
+    )
+
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Done)
+    assert not recording_runner.preflight_calls, "PREFLIGHT_CHECKS must not run on cheap pre-check exit"

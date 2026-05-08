@@ -176,7 +176,8 @@ async def run(
                 f"=== Iteration {iteration}/{cfg.max_iterations} ===",
             )
 
-            if not github_service.has_open_issues_with_label(cfg.issue_label):
+            has_open_issues = github_service.has_open_issues_with_label(cfg.issue_label)
+            if not has_open_issues:
                 if improve_mode is None:
                     status_display.print(  # type: ignore[union-attr]
                         "",
@@ -206,6 +207,7 @@ async def run(
                 status_display=status_display,  # type: ignore[arg-type]
                 improve_mode=improve_mode,
                 slept_once=slept_once,
+                open_issues_known_empty=not has_open_issues,
             )
             outcome = await run_iteration(deps)
 
