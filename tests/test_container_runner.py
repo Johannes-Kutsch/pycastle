@@ -349,6 +349,30 @@ def test_work_raises_usage_limit_error_on_session_limit_in_stream(tmp_path):
         asyncio.run(runner.work(_ROLE, prompt_file, {}))
 
 
+def test_work_resume_with_role_prompt_writes_role_prompt_not_continuation(tmp_path):
+    """RESUME + send_role_prompt_on_resume=True writes the role prompt to
+    /tmp/.pycastle_prompt, not the continuation prompt — so the resumed
+    claude conversation receives the new phase's instructions."""
+    session = FakeDockerSession()
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("PHASE_2_ROLE_PROMPT_CONTENT")
+
+    asyncio.run(
+        runner.work(
+            _ROLE,
+            prompt_file,
+            {},
+            run_kind=RunKind.RESUME,
+            session_uuid="uuid",
+            send_role_prompt_on_resume=True,
+        )
+    )
+
+    prompt_writes = [c for c in session.write_calls if c[0] == "/tmp/.pycastle_prompt"]
+    assert prompt_writes[0][1] == "PHASE_2_ROLE_PROMPT_CONTENT"
+
+
 def test_work_uses_custom_logs_dir_from_cfg(tmp_path):
     custom_logs = tmp_path / "my_logs"
     runner, _ = _make_runner(name="my-task", cfg=Config(logs_dir=custom_logs))

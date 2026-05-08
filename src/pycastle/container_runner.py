@@ -104,6 +104,7 @@ class ContainerRunner:
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
         is_failsoft_recovery: bool = False,
+        send_role_prompt_on_resume: bool = False,
     ) -> AgentOutput:
         self._status_display.update_phase(self.name, "Prepare")
         loop = asyncio.get_running_loop()
@@ -111,8 +112,10 @@ class ContainerRunner:
         async def container_exec(cmd: str) -> str:
             return await loop.run_in_executor(None, self._session.exec_simple, cmd)
 
-        if run_kind == RunKind.RESUME:
+        if run_kind == RunKind.RESUME and not send_role_prompt_on_resume:
             prompt = _RESUME_PROMPT_FILE.read_text(encoding="utf-8")
+        elif run_kind == RunKind.RESUME and send_role_prompt_on_resume:
+            prompt = await prepare_prompt(prompt_file, prompt_args, container_exec)
         else:
             role_prompt = await prepare_prompt(prompt_file, prompt_args, container_exec)
             if is_failsoft_recovery:

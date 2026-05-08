@@ -38,6 +38,7 @@ class RunRequest:
     status_display: Any = None
     issue_title: str = ""
     work_body: str = ""
+    send_role_prompt_on_resume: bool = False
 
 
 class AgentRunnerProtocol(Protocol):
@@ -156,6 +157,7 @@ class AgentRunner:
                             run_kind=run_kind,
                             session_uuid=session_uuid,
                             is_failsoft_recovery=is_failsoft_recovery,
+                            send_role_prompt_on_resume=request.send_role_prompt_on_resume,
                         )
                     except AgentTimeoutError:
                         if retries_left <= 0:
