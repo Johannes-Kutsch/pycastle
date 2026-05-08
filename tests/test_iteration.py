@@ -1524,6 +1524,38 @@ def test_run_iteration_improve_uses_sha_from_preflight(tmp_path, git_svc, logger
     )
 
 
+def test_run_iteration_returns_aborted_usage_limit_when_improve_agent_hits_limit(
+    tmp_path, git_svc, logger
+):
+    """run_iteration returns AbortedUsageLimit when the improve agent hits the usage limit
+    instead of propagating UsageLimitError to the auto bug reporter."""
+    from datetime import datetime
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+    reset_time = datetime(2026, 5, 8, 16, 0)
+
+    async def _fake_agent(request: RunRequest):
+        raise UsageLimitError(reset_time=reset_time)
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(),
+        ),
+        improve_mode="endless",
+        slept_once=False,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedUsageLimit)
+    assert result.reset_time == reset_time
+
+
 def test_run_iteration_skips_preflight_checks_when_improve_would_stop(
     tmp_path, git_svc, logger
 ):
