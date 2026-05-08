@@ -176,14 +176,6 @@ async def run(
                 f"=== Iteration {iteration}/{cfg.max_iterations} ===",
             )
 
-            has_open_issues = github_service.has_open_issues_with_label(cfg.issue_label)
-            if not has_open_issues and improve_mode is None:
-                status_display.print(  # type: ignore[union-attr]
-                    "",
-                    f"No issues with label '{cfg.issue_label}' found. Skipping.",
-                )
-                break
-
             if agent_runner is not None:
                 _agent_runner: AgentRunnerProtocol = agent_runner
             elif run_agent is not None:
@@ -206,7 +198,6 @@ async def run(
                 status_display=status_display,  # type: ignore[arg-type]
                 improve_mode=improve_mode,
                 slept_once=slept_once,
-                open_issues_known_empty=not has_open_issues,
             )
             outcome = await run_iteration(deps)
 

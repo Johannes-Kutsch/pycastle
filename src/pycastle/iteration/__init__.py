@@ -49,20 +49,6 @@ def _is_in_flight(issue: dict, deps: Deps) -> bool:
 
 
 async def run_iteration(deps: Deps) -> IterationOutcome:
-    # Cheap pre-check: skip PREFLIGHT_CHECKS when the orchestrator has already
-    # confirmed no open issues — that also rules out in-flight ones, so (0, 0)
-    # counts are sound and let the dispatcher tell us whether to bail early.
-    if deps.open_issues_known_empty:
-        early_action = decide_iteration_action(
-            open_afk_count=0,
-            in_flight_count=0,
-            improve_mode=deps.improve_mode,
-            slept_once=deps.slept_once,
-            improve_dispatched_this_iteration=deps.improve_dispatched_this_iteration,
-        )
-        if isinstance(early_action, Done):
-            return Done()
-
     try:
         async with phase_row(
             deps.status_display,
