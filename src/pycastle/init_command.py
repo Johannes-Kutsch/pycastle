@@ -12,20 +12,25 @@ import click
 
 from .config.loader import derive_docker_image_name, resolve_global_dir
 
-_PROJECT_SHAPED_FILES = [
-    ".gitignore",
-    "Dockerfile",
-    "prompts/plan-prompt.md",
-    "prompts/implement-prompt.md",
-    "prompts/review-prompt.md",
-    "prompts/merge-prompt.md",
-    "prompts/preflight-issue.md",
-    "prompts/coding-standards/tests.md",
-    "prompts/coding-standards/mocking.md",
-    "prompts/coding-standards/interfaces.md",
-    "prompts/coding-standards/deep-modules.md",
-    "prompts/coding-standards/refactoring.md",
-]
+_SCOPED_FILES = {"config.py", ".env"}
+
+
+def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
+    """Walk the bundled defaults/ tree and return every file path relative to it,
+    minus the scope-aware ones (config.py, .env) which init handles separately.
+    """
+
+    def _walk(node: Traversable, prefix: str) -> list[str]:
+        out: list[str] = []
+        for child in node.iterdir():
+            rel = f"{prefix}{child.name}"
+            if child.is_dir():
+                out.extend(_walk(child, f"{rel}/"))
+            else:
+                out.append(rel)
+        return out
+
+    return sorted(p for p in _walk(pkg, "") if p not in _SCOPED_FILES)
 
 _ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
 
@@ -105,7 +110,7 @@ def refresh() -> None:
         )
         sys.exit(1)
     pkg = files("pycastle").joinpath("defaults")
-    for rel in _PROJECT_SHAPED_FILES:
+    for rel in _discover_project_shaped_files(pkg):
         _copy_template(rel, project_dir / rel, pkg)
 
 
@@ -123,7 +128,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     pycastle_home = resolve_global_dir(None, os.environ)
     scoped_dir = pycastle_home if scope == "global" else project_dir
 
-    for rel in _PROJECT_SHAPED_FILES:
+    for rel in _discover_project_shaped_files(pkg):
         target = project_dir / rel
         if target.exists():
             continue
