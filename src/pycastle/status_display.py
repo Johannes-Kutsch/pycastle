@@ -16,6 +16,7 @@ class StatusDisplay(Protocol):
     ) -> None: ...
     def update_phase(self, name: str, phase: str) -> None: ...
     def reset_idle_timer(self, name: str) -> None: ...
+    def update_tokens(self, name: str, current_tokens: int) -> None: ...
     def remove(
         self,
         caller: str,
@@ -57,6 +58,9 @@ class PlainStatusDisplay:
         pass
 
     def reset_idle_timer(self, name: str) -> None:
+        pass
+
+    def update_tokens(self, name: str, current_tokens: int) -> None:
         pass
 
     def remove(

@@ -423,6 +423,140 @@ def test_rich_pre_flight_agent_sorts_before_implementers() -> None:
     assert output.find("Preflight Agent") < output.find("Implement Agent")
 
 
+# ── Token column tests ────────────────────────────────────────────────────────
+
+
+def _truecolor_output(display: RichStatusDisplay) -> str:
+    buf = io.StringIO()
+    console = Console(
+        file=buf, width=200, force_terminal=True, color_system="truecolor"
+    )
+    console.print(display)
+    return buf.getvalue()
+
+
+def test_rich_token_column_blank_when_no_tokens_set() -> None:
+    d = RichStatusDisplay()
+    d.register("Plan Agent", "agent")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert not re.search(r"\d+\.\d+k", output)
+
+
+def test_rich_token_column_shows_current_after_update() -> None:
+    d = RichStatusDisplay()
+    d.register("Plan Agent", "agent")
+    d.update_tokens("Plan Agent", 78_300)
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "78.3k" in output
+
+
+def test_rich_token_column_shows_peak_with_arrow() -> None:
+    d = RichStatusDisplay()
+    d.register("Plan Agent", "agent")
+    d.update_tokens("Plan Agent", 92_100)
+    d.update_tokens("Plan Agent", 78_000)
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "78.0k" in output
+    assert "92.1k" in output
+    assert "↑" in output
+
+
+def test_rich_token_peak_is_monotonic() -> None:
+    d = RichStatusDisplay()
+    d.register("Plan Agent", "agent")
+    d.update_tokens("Plan Agent", 100_000)
+    d.update_tokens("Plan Agent", 50_000)
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "50.0k" in output
+    assert "100.0k" in output
+
+
+def test_rich_update_tokens_for_unknown_agent_is_safe() -> None:
+    d = RichStatusDisplay()
+    d.update_tokens("never-added", 50_000)
+
+
+def test_rich_token_above_80k_renders_gold_color() -> None:
+    d = RichStatusDisplay()
+    d.register("Plan Agent", "agent")
+    d.update_tokens("Plan Agent", 85_000)
+
+    ansi = _truecolor_output(d)
+    d.stop()
+
+    assert "212;168;67" in ansi
+
+
+def test_rich_token_above_100k_renders_coral_color() -> None:
+    d = RichStatusDisplay()
+    d.register("Plan Agent", "agent")
+    d.update_tokens("Plan Agent", 110_000)
+
+    ansi = _truecolor_output(d)
+    d.stop()
+
+    assert "217;119;87" in ansi
+
+
+def test_rich_token_at_exactly_80k_has_no_special_color() -> None:
+    d = RichStatusDisplay()
+    d.register("Plan Agent", "agent")
+    d.update_tokens("Plan Agent", 80_000)
+
+    ansi = _truecolor_output(d)
+    d.stop()
+
+    assert "212;168;67" not in ansi
+    assert "217;119;87" not in ansi
+
+
+def test_rich_token_at_exactly_100k_renders_gold_not_coral() -> None:
+    d = RichStatusDisplay()
+    d.register("Plan Agent", "agent")
+    d.update_tokens("Plan Agent", 100_000)
+
+    ansi = _truecolor_output(d)
+    d.stop()
+
+    assert "212;168;67" in ansi
+    assert "217;119;87" not in ansi
+
+
+def test_rich_token_current_and_peak_colored_independently() -> None:
+    d = RichStatusDisplay()
+    d.register("Plan Agent", "agent")
+    d.update_tokens("Plan Agent", 120_000)
+    d.update_tokens("Plan Agent", 50_000)
+
+    ansi = _truecolor_output(d)
+    d.stop()
+
+    plain = re.sub(r"\x1b\[[^m]*m", "", ansi)
+    assert plain.count("120.0k") == 1
+    assert "217;119;87" in ansi
+    assert "212;168;67" not in ansi
+
+
 # ── Color scheme tests ────────────────────────────────────────────────────────
 
 
@@ -971,6 +1105,12 @@ def test_plain_reset_idle_timer_produces_no_output(capsys) -> None:
     assert capsys.readouterr().out == ""
 
 
+def test_plain_update_tokens_produces_no_output(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.update_tokens("implementer-1", 50_000)
+    assert capsys.readouterr().out == ""
+
+
 def test_plain_print_with_caller_outputs_bracketed_prefix(capsys) -> None:
     d = PlainStatusDisplay()
     d.print("Plan", "Planning complete. 3 issue(s)")
@@ -1203,6 +1343,12 @@ def test_recording_captures_reset_idle_timer() -> None:
     d = RecordingStatusDisplay()
     d.reset_idle_timer("implementer-1")
     assert d.calls == [("reset_idle_timer", "implementer-1")]
+
+
+def test_recording_captures_update_tokens() -> None:
+    d = RecordingStatusDisplay()
+    d.update_tokens("Plan Agent", 78_300)
+    assert d.calls == [("update_tokens", "Plan Agent", 78_300)]
 
 
 def test_recording_accumulates_reset_idle_timer_calls() -> None:

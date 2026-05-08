@@ -129,9 +129,14 @@ class ContainerRunner:
         def on_turn(turn: str) -> None:
             self._status_display.print(self.name, turn)
 
+        def on_tokens(tokens: int) -> None:
+            self._status_display.update_tokens(self.name, tokens)
+
         return await loop.run_in_executor(
             None,
-            lambda: self._run_streaming(role, prompt, on_turn, run_kind, session_uuid),
+            lambda: self._run_streaming(
+                role, prompt, on_turn, on_tokens, run_kind, session_uuid
+            ),
         )
 
     def _run_streaming(
@@ -139,6 +144,7 @@ class ContainerRunner:
         role: AgentRole,
         prompt: str,
         on_turn: Callable[[str], None],
+        on_tokens: Callable[[int], None] | None = None,
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
     ) -> AgentOutput:
@@ -158,7 +164,7 @@ class ContainerRunner:
                 self._cfg.idle_timeout,
                 lambda: self._status_display.reset_idle_timer(self.name),
             )
-            return ws.run(role, on_turn)
+            return ws.run(role, on_turn, on_tokens)
         finally:
             try:
                 self._session.exec_simple("rm -f /tmp/.pycastle_prompt")

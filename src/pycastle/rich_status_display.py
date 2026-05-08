@@ -60,6 +60,29 @@ def _format_duration(seconds: int) -> str:
     return f"{seconds // 60}m {seconds % 60}s"
 
 
+def _format_k(tokens: int) -> str:
+    return f"{tokens / 1000:.1f}k"
+
+
+def _token_style(tokens: int) -> str:
+    if tokens > 100_000:
+        return "bold rgb(217,119,87)"
+    if tokens > 80_000:
+        return "bold rgb(212,168,67)"
+    return ""
+
+
+def _token_text(current: int, peak: int) -> Text:
+    if current == 0:
+        return Text("")
+    text = Text()
+    text.append(_format_k(current), style=_token_style(current))
+    text.append(" (↑")
+    text.append(_format_k(peak), style=_token_style(peak))
+    text.append(")")
+    return text
+
+
 class _AgentRow:
     __slots__ = (
         "name",
@@ -67,6 +90,8 @@ class _AgentRow:
         "work_body",
         "started_at",
         "last_update",
+        "current_tokens",
+        "peak_tokens",
     )
 
     def __init__(self, name: str, phase: str, work_body: str = "") -> None:
@@ -76,6 +101,8 @@ class _AgentRow:
         now = time.monotonic()
         self.started_at = now
         self.last_update = now
+        self.current_tokens = 0
+        self.peak_tokens = 0
 
     def elapsed_seconds(self) -> int:
         return int(time.monotonic() - self.started_at)
@@ -109,6 +136,7 @@ class RichStatusDisplay:
         table.add_column()  # name
         table.add_column()  # idle
         table.add_column()  # body
+        table.add_column()  # tokens
 
         for row in rows:
             name_text = Text()
@@ -126,6 +154,7 @@ class RichStatusDisplay:
                 name_text,
                 Text(_format_duration(row.idle_seconds()), style="dim"),
                 Text(body),
+                _token_text(row.current_tokens, row.peak_tokens),
             )
 
         yield Padding(table, (1, 0, 0, 0))
@@ -184,6 +213,13 @@ class RichStatusDisplay:
         with self._lock:
             if name in self._rows:
                 self._rows[name].last_update = time.monotonic()
+
+    def update_tokens(self, name: str, current_tokens: int) -> None:
+        with self._lock:
+            if name in self._rows:
+                row = self._rows[name]
+                row.current_tokens = current_tokens
+                row.peak_tokens = max(row.peak_tokens, current_tokens)
 
     def remove(
         self,
