@@ -33,10 +33,15 @@ async def prepare_prompt(
     args: dict[str, str],
     exec_fn,
 ) -> str:
-    """Read, render {{placeholders}}, and expand !`shell` expressions."""
+    """Read template, expand !`shell` expressions, then substitute {{placeholders}}.
+
+    Substituted values are inert — never re-scanned for shell expressions, so
+    diffs, issue bodies, or other user-influenced content cannot trigger
+    container-side command execution.
+    """
     content = path.read_text(encoding="utf-8")
-    rendered = _render(content, args)
-    return await _preprocess(rendered, exec_fn)
+    preprocessed = await _preprocess(content, exec_fn)
+    return _render(preprocessed, args)
 
 
 def _render(template: str, args: dict[str, str]) -> str:

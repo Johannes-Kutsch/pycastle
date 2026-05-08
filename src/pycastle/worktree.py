@@ -8,7 +8,7 @@ from typing import Protocol
 from .config import Config
 from .errors import UsageLimitError, WorktreeError, WorktreeTimeoutError
 from .services import GitCommandError, GitService, GitTimeoutError
-from .session_resume import any_role_has_session
+from .session_resume import any_role_dir_present
 
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
 
@@ -125,7 +125,7 @@ def is_worktree_reusable(path: Path, branch: str, git_svc: GitService) -> bool:
         current = git_svc.get_current_branch(path)
     except Exception:
         return False
-    return current == branch and any_role_has_session(path)
+    return current == branch and any_role_dir_present(path)
 
 
 @asynccontextmanager
@@ -151,7 +151,7 @@ async def managed_worktree(
             dirty = not deps.git_svc.is_working_tree_clean(path)
         except Exception:
             dirty = True
-        if not (_usage_limit_exc or dirty or any_role_has_session(path)):
+        if not (_usage_limit_exc or dirty or any_role_dir_present(path)):
             teardown_worktree(deps.git_svc, deps.repo_root, path)
             if delete_branch_on_teardown:
                 deps.git_svc.delete_branch(branch, deps.repo_root)

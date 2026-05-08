@@ -901,13 +901,15 @@ def test_push_git_command_error_propagates(deps, git_svc):
 # ── Merger session cleanup after successful conflict resolution ───────────────
 
 
-def test_merge_phase_clears_merger_session_dir_after_successful_conflict_resolution(
+def test_merge_phase_removes_merger_session_dir_after_successful_conflict_resolution(
     tmp_path, git_svc, github_svc
 ):
-    """merge_phase clears the merger session dir contents (keeps dir as stage-done signal).
+    """merge_phase removes the merger session dir entirely on success.
 
-    Intercepts remove_worktree — called by managed_worktree after clear_session_dir empties
-    the session dir — to assert the dir exists but has no files before the worktree is removed.
+    Merge-sandbox has no downstream stage that needs a stage-done sentinel, so the
+    dir must be gone before managed_worktree's teardown predicate runs — otherwise
+    `any_role_dir_present` would preserve the sandbox and it would leak.
+    Intercepts remove_worktree to assert the dir is absent at that point.
     """
     git_svc.try_merge.return_value = False
 
@@ -942,8 +944,7 @@ def test_merge_phase_clears_merger_session_dir_after_successful_conflict_resolut
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
 
-    assert captured.get("exists") is True, "merger session dir should be kept"
-    assert captured.get("empty") is True, "merger session dir should be empty"
+    assert captured.get("exists") is False, "merger session dir should be removed before teardown"
 
 
 def test_merge_phase_tears_down_sandbox_after_merger_session_cleanup(

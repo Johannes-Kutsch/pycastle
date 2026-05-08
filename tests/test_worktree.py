@@ -189,6 +189,85 @@ def test_managed_worktree_creates_new_branch_in_repo(real_branch_deps):
     asyncio.run(_run())
 
 
+def test_managed_worktree_preserves_when_stage_done_sentinel_present(real_branch_deps):
+    """Empty role dir (stage-done sentinel) must keep worktree and branch alive across teardown."""
+    captured: dict = {}
+
+    async def _run():
+        async with managed_worktree(
+            "issue-stage-done",
+            branch="pycastle/issue-stage-done",
+            sha=None,
+            delete_branch_on_teardown=True,
+            deps=real_branch_deps,
+        ) as path:
+            (path / ".pycastle-session" / "implementer").mkdir(parents=True)
+            captured["path"] = path
+
+    asyncio.run(_run())
+
+    assert captured["path"].exists()
+    branches = subprocess.run(
+        ["git", "-C", str(real_branch_deps.repo_root), "branch", "--list", "pycastle/issue-stage-done"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "pycastle/issue-stage-done" in branches
+
+
+def test_managed_worktree_tears_down_when_no_role_dirs_and_clean_tree(real_branch_deps):
+    """Clean tree with no `.pycastle-session/` must tear down both worktree and branch."""
+    captured: dict = {}
+
+    async def _run():
+        async with managed_worktree(
+            "issue-clean",
+            branch="pycastle/issue-clean",
+            sha=None,
+            delete_branch_on_teardown=True,
+            deps=real_branch_deps,
+        ) as path:
+            captured["path"] = path
+
+    asyncio.run(_run())
+
+    assert not captured["path"].exists()
+    branches = subprocess.run(
+        ["git", "-C", str(real_branch_deps.repo_root), "branch", "--list", "pycastle/issue-clean"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "pycastle/issue-clean" not in branches
+
+
+def test_managed_worktree_preserves_when_resumable_session_present(real_branch_deps):
+    """Non-empty role dir (resumable session) must keep worktree and branch alive across teardown."""
+    captured: dict = {}
+
+    async def _run():
+        async with managed_worktree(
+            "issue-resumable",
+            branch="pycastle/issue-resumable",
+            sha=None,
+            delete_branch_on_teardown=True,
+            deps=real_branch_deps,
+        ) as path:
+            role_dir = path / ".pycastle-session" / "reviewer"
+            role_dir.mkdir(parents=True)
+            (role_dir / "session.jsonl").write_text("{}\n")
+            captured["path"] = path
+
+    asyncio.run(_run())
+
+    assert captured["path"].exists()
+    branches = subprocess.run(
+        ["git", "-C", str(real_branch_deps.repo_root), "branch", "--list", "pycastle/issue-resumable"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "pycastle/issue-resumable" in branches
+
+
 def test_managed_worktree_with_existing_branch(real_branch_deps):
     """Entering managed_worktree for a branch that already exists must succeed."""
     subprocess.run(
@@ -905,26 +984,6 @@ def test_managed_worktree_preserves_worktree_and_branch_when_session_dir_has_fil
 
     branch_deps.git_svc.remove_worktree.assert_not_called()
     branch_deps.git_svc.delete_branch.assert_not_called()
-
-
-def test_managed_worktree_tears_down_when_session_dir_is_empty(branch_deps):
-    """managed_worktree must still tear down when session dir exists but is empty."""
-
-    async def _run():
-        async with managed_worktree(
-            "merge-sandbox",
-            branch="pycastle/merge-sandbox",
-            sha=None,
-            delete_branch_on_teardown=True,
-            deps=branch_deps,
-        ) as wt_path:
-            session_dir = wt_path / ".pycastle-session" / "merger"
-            session_dir.mkdir(parents=True, exist_ok=True)
-
-    asyncio.run(_run())
-
-    branch_deps.git_svc.remove_worktree.assert_called_once()
-    branch_deps.git_svc.delete_branch.assert_called_once()
 
 
 def test_managed_worktree_preserves_worktree_on_usage_limit_error(branch_deps):

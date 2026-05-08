@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from typing import Protocol
 
@@ -7,7 +8,7 @@ from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompt_pipeline import load_standards
 from ..services import GitService
-from ..session_resume import clear_session_dir, derived_session_uuid
+from ..session_resume import derived_session_uuid
 from ..status_display import StatusDisplay
 from ..worktree import managed_worktree
 from ._rows import phase_row
@@ -150,6 +151,6 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> None:
                     no_candidate_report=deps.cfg.improve_no_candidate_report,
                 )
 
-            clear_session_dir(role_session_dir)
+            shutil.rmtree(role_session_dir, ignore_errors=True)
 
         row.close("finished")

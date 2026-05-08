@@ -25,13 +25,20 @@ def test_expands_shell_expression(tmp_path):
     assert run(prepare_prompt(f, {}, _noop_exec)) == "Issues: output-of:gh issue list"
 
 
-def test_renders_before_preprocess(tmp_path):
-    """Placeholder substitution happens before shell expansion."""
+def test_preprocesses_before_renders(tmp_path):
+    """Shell expansion runs against the raw template; placeholders substitute afterwards."""
+    calls = []
+
+    async def recording_exec(cmd: str) -> str:
+        calls.append(cmd)
+        return "EXPANDED"
+
     f = tmp_path / "p.md"
-    f.write_text("!`echo {{MSG}}`")
-    assert (
-        run(prepare_prompt(f, {"MSG": "hello"}, _noop_exec)) == "output-of:echo hello"
-    )
+    f.write_text("!`real-cmd` {{MSG}}")
+    result = run(prepare_prompt(f, {"MSG": "!`payload`"}, recording_exec))
+
+    assert calls == ["real-cmd"]
+    assert result == "EXPANDED !`payload`"
 
 
 def test_raises_on_missing_arg(tmp_path):

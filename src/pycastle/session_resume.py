@@ -32,11 +32,11 @@ def clear_session_dir(role_dir: Path) -> None:
             shutil.rmtree(child, ignore_errors=True)
 
 
-def any_role_has_session(worktree_path: Path) -> bool:
+def any_role_dir_present(worktree_path: Path) -> bool:
     session_base = worktree_path / ".pycastle-session"
     if not session_base.is_dir():
         return False
-    return any(has_resumable_session(d) for d in session_base.iterdir() if d.is_dir())
+    return any(d.is_dir() for d in session_base.iterdir())
 
 
 def decide_agent_run_kind(role: AgentRole, *, session_dir_present: bool) -> RunKind:

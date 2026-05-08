@@ -247,14 +247,6 @@ class GitService(_SubprocessService):
             cwd=repo_path,
         )
 
-    def get_diff_to_main(self, repo_path: Path) -> str:
-        result = self._run_or_raise(
-            ["git", "diff", "main..HEAD"],
-            "git diff main..HEAD failed",
-            cwd=repo_path,
-        )
-        return result.stdout.decode("utf-8", errors="replace")
-
     def get_branch_commit_subjects(self, branch: str, repo_path: Path) -> list[str]:
         result = self._run(
             ["git", "log", f"main..{branch}", "--format=%s"],
