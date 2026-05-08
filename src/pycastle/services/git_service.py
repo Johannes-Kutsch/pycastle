@@ -105,6 +105,21 @@ class GitService(_SubprocessService):
         owner, repo = parts
         return owner, repo
 
+    def _normalize_line_endings(self, worktree_path: Path) -> None:
+        self._run_or_raise(
+            [
+                "git",
+                "-C",
+                str(worktree_path),
+                "-c",
+                "core.autocrlf=false",
+                "checkout-index",
+                "--force",
+                "--all",
+            ],
+            "git checkout-index failed",
+        )
+
     def create_worktree(
         self, repo_path: Path, worktree_path: Path, branch: str, sha: str | None = None
     ) -> None:
@@ -118,11 +133,21 @@ class GitService(_SubprocessService):
             self.remove_worktree(repo_path, worktree_path)
 
         if self.verify_ref_exists(branch, repo_path):
-            cmd = ["git", "worktree", "add", str(worktree_path), branch]
+            cmd = [
+                "git",
+                "-c",
+                "core.autocrlf=false",
+                "worktree",
+                "add",
+                str(worktree_path),
+                branch,
+            ]
         else:
             start_point = sha if sha is not None else "HEAD"
             cmd = [
                 "git",
+                "-c",
+                "core.autocrlf=false",
                 "worktree",
                 "add",
                 "-b",
@@ -132,6 +157,7 @@ class GitService(_SubprocessService):
             ]
 
         self._run_or_raise(cmd, "git worktree add failed", cwd=repo_path)
+        self._normalize_line_endings(worktree_path)
 
     def try_merge(self, repo_path: Path, branch: str) -> bool:
         result = self._run(
@@ -200,10 +226,20 @@ class GitService(_SubprocessService):
             self.remove_worktree(repo_path, worktree_path)
 
         self._run_or_raise(
-            ["git", "worktree", "add", "--detach", str(worktree_path), sha],
+            [
+                "git",
+                "-c",
+                "core.autocrlf=false",
+                "worktree",
+                "add",
+                "--detach",
+                str(worktree_path),
+                sha,
+            ],
             "git worktree add --detach failed",
             cwd=repo_path,
         )
+        self._normalize_line_endings(worktree_path)
 
     def pull(self, repo_path: Path) -> None:
         self._run_or_raise(
