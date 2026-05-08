@@ -1,4 +1,5 @@
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -23,30 +24,45 @@ from ._rows import phase_row
 IMPROVE_SANDBOX = "pycastle/improve-sandbox"
 _PHASE_PROGRESS_FILE = "_phase_progress"
 _PHASE_IN_FLIGHT_FILE = "_phase_in_flight"
-_PHASE_TEMPLATE: dict[str, PromptTemplate] = {
-    "01-scan.md": PromptTemplate.IMPROVE_SCAN,
-    "02-prd.md": PromptTemplate.IMPROVE_PRD,
-    "03-issues.md": PromptTemplate.IMPROVE_ISSUES,
-    "04-no-candidate-report.md": PromptTemplate.IMPROVE_NO_CANDIDATE,
-}
-_PHASE_NAMESPACE: dict[str, str] = {
-    "01-scan.md": "main",
-    "02-prd.md": "main",
-    "03-issues.md": "issues",
-    "04-no-candidate-report.md": "main",
+
+
+@dataclass(frozen=True)
+class _PhaseConfig:
+    template: PromptTemplate
+    namespace: str
+    display_name: str
+    display_body: str
+
+
+_PHASES: dict[str, _PhaseConfig] = {
+    "01-scan.md": _PhaseConfig(
+        template=PromptTemplate.IMPROVE_SCAN,
+        namespace="main",
+        display_name="Scan Agent",
+        display_body="picking an improvement",
+    ),
+    "02-prd.md": _PhaseConfig(
+        template=PromptTemplate.IMPROVE_PRD,
+        namespace="main",
+        display_name="PRD Agent",
+        display_body="writing PRD",
+    ),
+    "03-issues.md": _PhaseConfig(
+        template=PromptTemplate.IMPROVE_ISSUES,
+        namespace="issues",
+        display_name="Slice Agent",
+        display_body="filing sub-issues",
+    ),
+    "04-no-candidate-report.md": _PhaseConfig(
+        template=PromptTemplate.IMPROVE_NO_CANDIDATE,
+        namespace="main",
+        display_name="Rejection Report Agent",
+        display_body="filing no-candidate report",
+    ),
 }
 _VALID_PHASE_IDS = frozenset(
     {"01-scan:picked", "01-scan:no-candidate", "02-prd", "03-issues", "04-report"}
 )
-_PHASE_DISPLAY: dict[str, tuple[str, str]] = {
-    "01-scan.md": ("Scan Agent", "picking an improvement"),
-    "02-prd.md": ("PRD Agent", "writing PRD"),
-    "03-issues.md": ("Slice Agent", "filing sub-issues"),
-    "04-no-candidate-report.md": (
-        "Rejection Report Agent",
-        "filing no-candidate report",
-    ),
-}
 
 
 def next_prompt(
@@ -163,8 +179,8 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> None:
                 no_candidate_report=deps.cfg.improve_no_candidate_report,
             )
             while prompt_name is not None:
-                template = _PHASE_TEMPLATE[prompt_name]
-                namespace = _PHASE_NAMESPACE[prompt_name]
+                phase = _PHASES[prompt_name]
+                template = phase.template
                 if template.scope is Scope.IMPROVE_SESSION:
                     scope_args: dict[str, str] = {"IMPROVE_SHORT_SID": short_sid}
                 elif template.scope is Scope.IMPROVE_ISSUES:
@@ -173,14 +189,13 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> None:
                     )
                 else:
                     scope_args = {}
-                display_name, display_body = _PHASE_DISPLAY[prompt_name]
                 phase_key = prompt_name.removesuffix(".md")
                 is_mid_phase_retry = in_flight_id == phase_key
                 role_session_dir.mkdir(parents=True, exist_ok=True)
                 in_flight_file.write_text(phase_key, encoding="utf-8")
                 output = await deps.agent_runner.run(
                     RunRequest(
-                        name=display_name,
+                        name=phase.display_name,
                         template=template,
                         mount_path=sandbox_path,
                         role=AgentRole.IMPROVE,
@@ -190,10 +205,10 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> None:
                         effort=deps.cfg.improve_override.effort,
                         stage="improve-sandbox",
                         status_display=deps.status_display,
-                        work_body=display_body,
+                        work_body=phase.display_body,
                         send_role_prompt_on_resume=last_id is not None
                         and not is_mid_phase_retry,
-                        session_namespace=namespace,
+                        session_namespace=phase.namespace,
                     )
                 )
 
