@@ -132,11 +132,11 @@ class RichStatusDisplay:
             rows = sorted(self._rows.values(), key=lambda r: _sort_key(r.name))
 
         table = Table(show_header=False, expand=False, box=None)
-        table.add_column(justify="right")  # elapsed
+        table.add_column(justify="right", min_width=7)  # elapsed
+        table.add_column(min_width=18)  # tokens
         table.add_column()  # name
         table.add_column()  # idle
         table.add_column()  # body
-        table.add_column()  # tokens
 
         for row in rows:
             name_text = Text()
@@ -151,10 +151,10 @@ class RichStatusDisplay:
 
             table.add_row(
                 Text(_format_duration(row.elapsed_seconds()), style="dim"),
+                _token_text(row.current_tokens, row.peak_tokens),
                 name_text,
                 Text(_format_duration(row.idle_seconds()), style="dim"),
                 Text(body),
-                _token_text(row.current_tokens, row.peak_tokens),
             )
 
         yield Padding(table, (1, 0, 0, 0))
