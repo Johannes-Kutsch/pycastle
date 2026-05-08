@@ -162,7 +162,7 @@ class GithubService:
         )
         self._recently_closed.add(number)
 
-    def get_issue(self, issue_number: int) -> dict[str, str]:
+    def get_issue(self, issue_number: int) -> dict[str, str | int]:
         path = f"/repos/{self.repo}/issues/{issue_number}"
         payload, _ = self._request("GET", path)
         if not isinstance(payload, dict) or "title" not in payload:
@@ -174,12 +174,13 @@ class GithubService:
                 path=path,
             )
         return {
+            "number": issue_number,
             "title": str(payload.get("title") or ""),
             "body": str(payload.get("body") or ""),
         }
 
     def get_issue_title(self, issue_number: int) -> str:
-        return self.get_issue(issue_number)["title"]
+        return str(self.get_issue(issue_number)["title"])
 
     def get_issue_comments(self, issue_number: int) -> list[dict[str, str]]:
         results = self._paginate(
