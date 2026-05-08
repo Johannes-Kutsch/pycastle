@@ -270,7 +270,11 @@ def process_stream(
                 if re.search(r"<promise>NO-CANDIDATE</promise>", turn):
                     return NoCandidateOutput()
                 if re.search(r"<promise>COMPLETE</promise>", turn):
-                    return CompletionOutput()
+                    # JSON-form <issue> (phase 02) → IssueOutput; bare-integer (phase 03) or absent → CompletionOutput
+                    try:
+                        return _extract_issue_output(turn)
+                    except IssueParseError:
+                        return CompletionOutput()
             elif role == AgentRole.MERGER:
                 if re.search(r"<promise>COMPLETE</promise>", turn):
                     return CompletionOutput()
@@ -318,7 +322,11 @@ def process_stream(
                 f"Agent produced no <promise>COMPLETE</promise> or"
                 f" <promise>NO-CANDIDATE</promise> tag.{tail}"
             )
-        return CompletionOutput()
+        # JSON-form <issue> (phase 02) → IssueOutput; bare-integer (phase 03) or absent → CompletionOutput
+        try:
+            return _extract_issue_output(text)
+        except IssueParseError:
+            return CompletionOutput()
     if not re.search(r"<promise>COMPLETE</promise>", text):
         raise PromiseParseError(
             f"Agent produced no <promise>COMPLETE</promise> tag.{tail}"

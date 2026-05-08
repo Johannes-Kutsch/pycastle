@@ -13,6 +13,7 @@ from pycastle.agent_output_protocol import (
     CompletionOutput,
     IssueOutput,
     IssueParseError,
+    NoCandidateOutput,
     PlanParseError,
     PlannerOutput,
     PromiseParseError,
@@ -792,3 +793,66 @@ def test_process_stream_on_tokens_is_optional():
         role=AgentRole.IMPLEMENTER,
     )
     assert isinstance(result, CommitMessageOutput)
+
+
+# ── IMPROVE role ──────────────────────────────────────────────────────────────
+
+
+def test_process_stream_improve_returns_completion_when_complete_promise():
+    lines = [_result_line("<promise>COMPLETE</promise>")]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
+    assert isinstance(result, CompletionOutput)
+
+
+def test_process_stream_improve_returns_no_candidate_when_no_candidate_promise():
+    lines = [_result_line("<promise>NO-CANDIDATE</promise>")]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
+    assert isinstance(result, NoCandidateOutput)
+
+
+def test_process_stream_improve_raises_when_no_promise_tag():
+    lines = [_result_line("no promise tag here")]
+    with pytest.raises(PromiseParseError):
+        process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
+
+
+def test_process_stream_improve_returns_issue_output_for_json_issue_with_complete_promise():
+    lines = [
+        _result_line(
+            '<issue>{"number": 42, "labels": []}</issue><promise>COMPLETE</promise>'
+        )
+    ]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
+    assert isinstance(result, IssueOutput)
+    assert result.number == 42
+    assert result.labels == []
+
+
+def test_process_stream_improve_returns_completion_for_bare_integer_issue_with_complete_promise():
+    lines = [_result_line("<issue>42</issue><promise>COMPLETE</promise>")]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
+    assert isinstance(result, CompletionOutput)
+
+
+def test_process_stream_improve_stops_early_on_json_issue_with_complete_promise():
+    consumed: list[str] = []
+
+    def tracking_iter():
+        for line in [
+            _assistant_line(
+                '<issue>{"number": 7, "labels": []}</issue><promise>COMPLETE</promise>'
+            ),
+            _assistant_line("This line must not be consumed"),
+            _result_line("<promise>COMPLETE</promise>"),
+        ]:
+            consumed.append(line)
+            yield line
+
+    result = process_stream(
+        tracking_iter(),
+        on_turn=lambda t: None,
+        role=AgentRole.IMPROVE,
+    )
+    assert isinstance(result, IssueOutput)
+    assert result.number == 7
+    assert len(consumed) == 1
