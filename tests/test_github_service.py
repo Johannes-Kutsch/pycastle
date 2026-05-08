@@ -388,7 +388,7 @@ def test_get_issue_returns_title_and_body():
     with patch(
         "pycastle.services.github_service.urlopen", return_value=_make_response(body)
     ):
-        assert svc.get_issue(7) == {"title": "Fix bug", "body": "do it"}
+        assert svc.get_issue(7) == {"number": 7, "title": "Fix bug", "body": "do it"}
 
 
 def test_get_issue_returns_empty_string_for_null_body():
@@ -397,7 +397,7 @@ def test_get_issue_returns_empty_string_for_null_body():
     with patch(
         "pycastle.services.github_service.urlopen", return_value=_make_response(body)
     ):
-        assert svc.get_issue(7) == {"title": "Fix bug", "body": ""}
+        assert svc.get_issue(7) == {"number": 7, "title": "Fix bug", "body": ""}
 
 
 def test_get_issue_raises_when_title_missing():
