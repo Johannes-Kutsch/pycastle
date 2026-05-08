@@ -56,6 +56,7 @@ class GithubService:
         self.repo = repo
         self._token = token
         self._timeout = cfg.worktree_timeout
+        self._recently_closed: set[int] = set()
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -159,6 +160,7 @@ class GithubService:
             f"/repos/{self.repo}/issues/{number}",
             data={"state": "closed"},
         )
+        self._recently_closed.add(number)
 
     def get_issue(self, issue_number: int) -> dict[str, str]:
         path = f"/repos/{self.repo}/issues/{issue_number}"
@@ -259,11 +261,21 @@ class GithubService:
             f"/repos/{self.repo}/issues?state=open"
             f"&labels={quote(label, safe='')}&per_page=100"
         )
+        response_numbers = {
+            int(item["number"])
+            for item in results
+            if isinstance(item, dict) and "number" in item
+        }
+        self._recently_closed = {
+            n for n in self._recently_closed if n in response_numbers
+        }
         issues: list[dict[str, Any]] = []
         for item in results:
             if not isinstance(item, dict) or "pull_request" in item:
                 continue
             number = int(item["number"])
+            if number in self._recently_closed:
+                continue
             issues.append(
                 {
                     "number": number,
