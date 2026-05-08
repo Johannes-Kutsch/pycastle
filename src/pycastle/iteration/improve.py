@@ -122,7 +122,6 @@ def _build_issues_scope_args(
     else:
         issue = {
             **github_svc.get_issue(prd_number),
-            "number": prd_number,
             "comments": github_svc.get_issue_comments(prd_number),
         }
     return build_issue_scope_args(

@@ -349,7 +349,7 @@ def test_improve_phase_threads_prd_number_from_issue_output_to_issues_phase(
 ):
     """Phase 02 IssueOutput.number is plumbed into phase 03's ISSUE_NUMBER scope arg."""
     github_svc = MagicMock()
-    github_svc.get_issue.return_value = {"title": "PRD", "body": "body"}
+    github_svc.get_issue.return_value = {"number": 4242, "title": "PRD", "body": "body"}
     github_svc.get_issue_comments.return_value = []
     runner = FakeAgentRunner(
         [
@@ -373,6 +373,7 @@ def test_improve_phase_assembles_prd_title_and_body_into_issues_scope(
     """Phase 03 scope_args carry the PRD title and body fetched from gh_svc."""
     github_svc = MagicMock()
     github_svc.get_issue.return_value = {
+        "number": 99,
         "title": "My PRD Title",
         "body": "PRD body text",
     }
@@ -396,7 +397,7 @@ def test_improve_phase_assembles_prd_title_and_body_into_issues_scope(
 def test_improve_phase_fetches_prd_comments_for_issues_scope(tmp_path, git_svc):
     """improve_phase calls gh_svc.get_issue_comments with the PRD number for phase 03."""
     github_svc = MagicMock()
-    github_svc.get_issue.return_value = {"title": "PRD", "body": ""}
+    github_svc.get_issue.return_value = {"number": 77, "title": "PRD", "body": ""}
     github_svc.get_issue_comments.return_value = [
         {"author": "alice", "created_at": "2026-01-01T00:00:00Z", "body": "looks good"}
     ]
