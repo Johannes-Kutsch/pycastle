@@ -1,9 +1,8 @@
 import shutil
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
-
-from collections.abc import Sequence
 
 from ..agent_output_protocol import (
     AgentOutput,
