@@ -132,8 +132,8 @@ class RichStatusDisplay:
             rows = sorted(self._rows.values(), key=lambda r: _sort_key(r.name))
 
         table = Table(show_header=False, expand=False, box=None)
-        table.add_column(justify="right", min_width=7)  # elapsed
-        table.add_column(min_width=18)  # tokens
+        table.add_column(justify="right")  # elapsed
+        table.add_column()  # tokens
         table.add_column()  # name
         table.add_column()  # idle
         table.add_column()  # body
