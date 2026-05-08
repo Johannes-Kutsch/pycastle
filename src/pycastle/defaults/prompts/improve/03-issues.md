@@ -24,12 +24,6 @@ Break the PRD filed in phase 2 (#{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}) into indepen
 
 You must NOT modify any files in the worktree. Your only outputs are the GitHub issues you file via `gh` and the `<promise>` tag. CONTEXT.md additions/edits are filed as a dedicated issue (see step 1 below) — never edited in place from this phase.
 
-## Dedup check
-
-Before filing, run:
-`gh issue list --search "[improve-{{IMPROVE_SHORT_SID}}] in:title" --state all --json number,title,labels`
-Skip any sub-issues that are already filed for this session.
-
 ## 1. Explore
 
 Re-explore the area before filing. Starting from the PRD above:
