@@ -423,6 +423,67 @@ def test_rich_pre_flight_agent_sorts_before_implementers() -> None:
     assert output.find("Preflight Agent") < output.find("Implement Agent")
 
 
+# ── Column order and pinned-width tests ──────────────────────────────────────
+
+
+def test_rich_tokens_column_appears_before_name() -> None:
+    d = RichStatusDisplay()
+    d.register("Plan Agent", "agent")
+    d.update_tokens("Plan Agent", 78_300)
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert output.index("78.3k") < output.index("Plan Agent")
+
+
+def test_rich_name_column_position_stable_when_tokens_appear() -> None:
+    # Token column has a pinned minimum width so the name column doesn't jump
+    # when tokens go from blank to populated.
+    def _name_start(has_tokens: bool) -> int:
+        d = RichStatusDisplay()
+        d.register("Plan Agent", "agent")
+        if has_tokens:
+            d.update_tokens("Plan Agent", 78_300)
+        console = Console(record=True, width=200)
+        console.print(d)
+        line = next(
+            ln for ln in console.export_text().splitlines() if "Plan Agent" in ln
+        )
+        d.stop()
+        return line.index("Plan Agent")
+
+    assert _name_start(False) == _name_start(True)
+
+
+def test_rich_name_column_position_stable_as_elapsed_grows() -> None:
+    # Elapsed column has a pinned minimum width so the name column doesn't
+    # jump when elapsed goes from seconds ("0s") to minutes ("59m 59s").
+    import pycastle.rich_status_display as mod
+
+    def _name_start(elapsed_seconds: float) -> int:
+        times = iter([0.0, elapsed_seconds, elapsed_seconds])
+        monkeypatch_time = lambda: next(times)  # noqa: E731
+        original = mod.time.monotonic
+        mod.time.monotonic = monkeypatch_time  # type: ignore[method-assign]
+        try:
+            d = RichStatusDisplay()
+            d.register("Plan Agent", "agent")
+            console = Console(record=True, width=200)
+            console.print(d)
+            line = next(
+                ln for ln in console.export_text().splitlines() if "Plan Agent" in ln
+            )
+            d.stop()
+            return line.index("Plan Agent")
+        finally:
+            mod.time.monotonic = original  # type: ignore[method-assign]
+
+    assert _name_start(5.0) == _name_start(3599.0)  # "5s" vs "59m 59s"
+
+
 # ── Token column tests ────────────────────────────────────────────────────────
 
 
