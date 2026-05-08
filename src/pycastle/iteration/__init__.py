@@ -83,54 +83,54 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         return AbortedHITL(issue_number=preflight_result.issue_number)
 
     if isinstance(preflight_result, PreflightReady):
-        open_issues = preflight_result.issues
-        in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
-        action = decide_iteration_action(
-            open_afk_count=len(open_issues),
-            in_flight_count=len(in_flight),
-            improve_mode=deps.improve_mode,
-            slept_once=deps.slept_once,
-            improve_dispatched_this_iteration=deps.improve_dispatched_this_iteration,
-        )
-        match action:
-            case Done():
-                return Done()
-            case DispatchImprove():
-                await improve_phase(deps, sha=preflight_result.sha)
-                return Continue()
-            case RunImplementDirect():
-                sha = preflight_result.sha
-                issues = in_flight if in_flight else open_issues
-            case RunPlan():
-                sha = preflight_result.sha
-                async with phase_row(
-                    deps.status_display,
-                    "Plan",
-                    initial_phase="Planning",
-                    startup_message=f"started planning for {len(open_issues)} issue(s) labeled {deps.cfg.issue_label}",
-                ) as row:
-                    try:
-                        plan_result = await planning_phase(deps, sha, open_issues)
-                    except UsageLimitError as err:
-                        row.close("finished")
-                        return AbortedUsageLimit(reset_time=err.reset_time)
-                    issue_lines = [
-                        f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
-                        for i in plan_result.issues
-                    ]
-                    row.close(
-                        "\n".join(
-                            [
-                                f"Planning complete, implementing {len(plan_result.issues)} issue(s):"
-                            ]
-                            + issue_lines
-                        )
-                    )
-                    sha = plan_result.worktree_sha
-                    issues = plan_result.issues
+        preflight_sha = preflight_result.sha
     elif isinstance(preflight_result, PreflightAFK):
-        sha = preflight_result.worktree_sha
-        issues = preflight_result.issues
+        preflight_sha = preflight_result.worktree_sha
+    open_issues = preflight_result.issues
+    in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
+    action = decide_iteration_action(
+        open_afk_count=len(open_issues),
+        in_flight_count=len(in_flight),
+        improve_mode=deps.improve_mode,
+        slept_once=deps.slept_once,
+        improve_dispatched_this_iteration=deps.improve_dispatched_this_iteration,
+    )
+    match action:
+        case Done():
+            return Done()
+        case DispatchImprove():
+            await improve_phase(deps, sha=preflight_sha)
+            return Continue()
+        case RunImplementDirect():
+            sha = preflight_sha
+            issues = in_flight if in_flight else open_issues
+        case RunPlan():
+            sha = preflight_sha
+            async with phase_row(
+                deps.status_display,
+                "Plan",
+                initial_phase="Planning",
+                startup_message=f"started planning for {len(open_issues)} issue(s) labeled {deps.cfg.issue_label}",
+            ) as row:
+                try:
+                    plan_result = await planning_phase(deps, sha, open_issues)
+                except UsageLimitError as err:
+                    row.close("finished")
+                    return AbortedUsageLimit(reset_time=err.reset_time)
+                issue_lines = [
+                    f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
+                    for i in plan_result.issues
+                ]
+                row.close(
+                    "\n".join(
+                        [
+                            f"Planning complete, implementing {len(plan_result.issues)} issue(s):"
+                        ]
+                        + issue_lines
+                    )
+                )
+                sha = plan_result.worktree_sha
+                issues = plan_result.issues
 
     issues = issues[: deps.cfg.max_parallel]
 
