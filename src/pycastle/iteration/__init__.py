@@ -19,7 +19,7 @@ from .improve import improve_phase
 from .merge import merge_phase
 from .planning import PlanReady as PlanReady
 from .planning import planning_phase
-from .preflight import PreflightAFK, PreflightHITL, PreflightReady, preflight_phase
+from .preflight import PreflightHITL, PreflightReady, preflight_phase
 
 
 @dataclasses.dataclass(frozen=True)
@@ -82,10 +82,11 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
         return AbortedHITL(issue_number=preflight_result.issue_number)
 
-    if isinstance(preflight_result, PreflightReady):
-        preflight_sha = preflight_result.sha
-    elif isinstance(preflight_result, PreflightAFK):
-        preflight_sha = preflight_result.worktree_sha
+    preflight_sha = (
+        preflight_result.sha
+        if isinstance(preflight_result, PreflightReady)
+        else preflight_result.worktree_sha
+    )
     open_issues = preflight_result.issues
     in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
     action = decide_iteration_action(
@@ -103,7 +104,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             return Continue()
         case RunImplementDirect():
             sha = preflight_sha
-            issues = in_flight if in_flight else open_issues
+            issues = in_flight
         case RunPlan():
             sha = preflight_sha
             async with phase_row(
