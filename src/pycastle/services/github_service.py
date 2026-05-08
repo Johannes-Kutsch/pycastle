@@ -247,18 +247,6 @@ class GithubService:
             and "pull_request" not in item
         ]
 
-    def has_open_issues_with_label(self, label: str) -> bool:
-        path = (
-            f"/repos/{self.repo}/issues?state=open"
-            f"&labels={quote(label, safe='')}&per_page=1"
-        )
-        payload, _ = self._request("GET", path)
-        if not isinstance(payload, list):
-            return False
-        return any(
-            isinstance(item, dict) and "pull_request" not in item for item in payload
-        )
-
     def get_open_issues(self, label: str) -> list[dict[str, Any]]:
         results = self._paginate(
             f"/repos/{self.repo}/issues?state=open"
