@@ -9,12 +9,25 @@ If a PRD issue already exists for this session, skip filing and emit `<promise>C
 Otherwise write a concise PRD for the chosen improvement and file it as a GitHub issue labeled `ready-for-agent`.
 The issue title must start with `[improve-{{IMPROVE_SHORT_SID}}]`.
 
-Include in the issue body:
-- A clear problem statement
-- The proposed solution
-- Acceptance criteria
-- Files likely to change
+## Issue Body
 
-Output the issue number as `<issue>{"number": N, "labels": ["ready-for-agent"]}</issue>`.
+Structure the body with these sections:
+
+**Problem** — describe the current architectural weakness or code smell being addressed.
+
+**Proposed Solution** — concrete implementation steps. Specific enough for an Implementer to start without additional context.
+
+**Acceptance Criteria** — verifiable checklist of conditions that define done.
+
+**Files Likely to Change** — list source files expected to be modified or created.
+
+**AFK-Safety Confirmation** — explicitly state that this change is autonomous-safe: no CLI surface changes, no breaking config changes, no ADR contradictions, no product/UX decisions.
+
+**Session Footer** — end the body with the line:
+`_Filed by improve session [improve-{{IMPROVE_SHORT_SID}}]._`
+
+## Output
+
+Output the filed issue number as `<issue>N</issue>`.
 
 Then emit `<promise>COMPLETE</promise>`.
