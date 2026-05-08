@@ -245,6 +245,11 @@ def _extract_turn(line: str) -> tuple[str | None, int | None]:
 
 
 _COMMIT_MESSAGE_RE = re.compile(r"<commit_message>([\s\S]*?)</commit_message>")
+_ISSUE_NUMBER_RE = re.compile(r"<issue>(\d+)</issue>")
+
+
+def _extract_issue_numbers(text: str) -> tuple[int, ...]:
+    return tuple(int(m.group(1)) for m in _ISSUE_NUMBER_RE.finditer(text))
 
 
 def process_stream(
@@ -273,11 +278,7 @@ def process_stream(
                 if re.search(r"<promise>NO-CANDIDATE</promise>", turn):
                     return NoCandidateOutput()
                 if re.search(r"<promise>COMPLETE</promise>", turn):
-                    issue_numbers = tuple(
-                        int(m.group(1))
-                        for m in re.finditer(r"<issue>(\d+)</issue>", turn)
-                    )
-                    return CompletionOutput(issue_numbers=issue_numbers)
+                    return CompletionOutput(issue_numbers=_extract_issue_numbers(turn))
             elif role == AgentRole.MERGER:
                 if re.search(r"<promise>COMPLETE</promise>", turn):
                     return CompletionOutput()
@@ -325,10 +326,7 @@ def process_stream(
                 f"Agent produced no <promise>COMPLETE</promise> or"
                 f" <promise>NO-CANDIDATE</promise> tag.{tail}"
             )
-        issue_numbers = tuple(
-            int(m.group(1)) for m in re.finditer(r"<issue>(\d+)</issue>", text)
-        )
-        return CompletionOutput(issue_numbers=issue_numbers)
+        return CompletionOutput(issue_numbers=_extract_issue_numbers(text))
     if not re.search(r"<promise>COMPLETE</promise>", text):
         raise PromiseParseError(
             f"Agent produced no <promise>COMPLETE</promise> tag.{tail}"
