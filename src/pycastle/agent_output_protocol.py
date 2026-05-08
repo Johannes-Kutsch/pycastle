@@ -252,6 +252,14 @@ def _extract_issue_numbers(text: str) -> tuple[int, ...]:
     return tuple(int(m.group(1)) for m in _ISSUE_NUMBER_RE.finditer(text))
 
 
+def _extract_improve_output(text: str) -> IssueOutput | CompletionOutput:
+    # Phase 02 (PRD) emits a JSON-form <issue>; phase 03 emits bare integers.
+    try:
+        return _extract_issue_output(text)
+    except IssueParseError:
+        return CompletionOutput(issue_numbers=_extract_issue_numbers(text))
+
+
 def process_stream(
     lines: Iterable[str],
     on_turn: Callable[[str], None],
@@ -278,7 +286,7 @@ def process_stream(
                 if re.search(r"<promise>NO-CANDIDATE</promise>", turn):
                     return NoCandidateOutput()
                 if re.search(r"<promise>COMPLETE</promise>", turn):
-                    return CompletionOutput(issue_numbers=_extract_issue_numbers(turn))
+                    return _extract_improve_output(turn)
             elif role == AgentRole.MERGER:
                 if re.search(r"<promise>COMPLETE</promise>", turn):
                     return CompletionOutput()
@@ -326,7 +334,7 @@ def process_stream(
                 f"Agent produced no <promise>COMPLETE</promise> or"
                 f" <promise>NO-CANDIDATE</promise> tag.{tail}"
             )
-        return CompletionOutput(issue_numbers=_extract_issue_numbers(text))
+        return _extract_improve_output(text)
     if not re.search(r"<promise>COMPLETE</promise>", text):
         raise PromiseParseError(
             f"Agent produced no <promise>COMPLETE</promise> tag.{tail}"
