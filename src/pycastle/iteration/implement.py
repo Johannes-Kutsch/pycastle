@@ -1,7 +1,7 @@
 import asyncio
 import contextlib
 import dataclasses
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -11,7 +11,7 @@ from ..agent_result import CancellationToken, PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import BranchCollisionError, UsageLimitError
-from ..prompt_pipeline import PromptTemplate
+from ..prompt_pipeline import PromptTemplate, build_issue_scope_args
 from ..session_resume import clear_session_dir, is_stage_done
 from ..status_display import StatusDisplay
 from ..services import GitService
@@ -37,26 +37,6 @@ def branch_for(issue_number: int) -> str:
     return f"pycastle/issue-{issue_number}"
 
 
-def format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
-    parts: list[str] = []
-    for c in comments:
-        author = c.get("author") or "unknown"
-        when = c.get("created_at") or "unknown time"
-        body = c.get("body") or ""
-        parts.append(f"## Comment by @{author} at {when}\n\n{body}")
-    return "\n\n".join(parts)
-
-
-def build_issue_scope_args(issue: dict, branch: str) -> dict[str, str]:
-    return {
-        "ISSUE_NUMBER": str(issue["number"]),
-        "ISSUE_TITLE": issue["title"],
-        "ISSUE_BODY": str(issue.get("body") or ""),
-        "ISSUE_COMMENTS": format_issue_comments(issue.get("comments") or []),
-        "BRANCH": branch,
-    }
-
-
 @dataclasses.dataclass
 class ImplementResult:
     completed: list[dict]
@@ -77,7 +57,7 @@ async def run_issue(
 ) -> dict | PreflightFailure:
     _branch = branch_for(issue["number"])
     _token = token if token is not None else CancellationToken()
-    scope_args = build_issue_scope_args(issue, _branch)
+    scope_args = build_issue_scope_args(issue, extra_scope_args={"BRANCH": _branch})
 
     _started_fired = False
 

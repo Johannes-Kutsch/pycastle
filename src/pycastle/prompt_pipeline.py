@@ -114,6 +114,38 @@ class PromptTemplate(enum.Enum):
         return self.value[1]  # type: ignore[index]
 
 
+_ISSUE_PLACEHOLDER_KEYS = frozenset(
+    {"ISSUE_NUMBER", "ISSUE_TITLE", "ISSUE_BODY", "ISSUE_COMMENTS"}
+)
+
+
+def _format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
+    parts: list[str] = []
+    for c in comments:
+        author = c.get("author") or "unknown"
+        when = c.get("created_at") or "unknown time"
+        body = c.get("body") or ""
+        parts.append(f"## Comment by @{author} at {when}\n\n{body}")
+    return "\n\n".join(parts)
+
+
+def build_issue_scope_args(
+    issue: dict, *, extra_scope_args: dict[str, str]
+) -> dict[str, str]:
+    collisions = _ISSUE_PLACEHOLDER_KEYS & extra_scope_args.keys()
+    if collisions:
+        raise PromptRenderError(
+            f"extra_scope_args collides with reserved ISSUE_* keys: {collisions}"
+        )
+    return {
+        "ISSUE_NUMBER": str(issue["number"]),
+        "ISSUE_TITLE": issue["title"],
+        "ISSUE_BODY": str(issue.get("body") or ""),
+        "ISSUE_COMMENTS": _format_issue_comments(issue.get("comments") or []),
+        **extra_scope_args,
+    }
+
+
 def _format_feedback_commands(checks: Sequence[str]) -> str:
     wrapped = [f"`{cmd}`" for cmd in checks]
     if len(wrapped) <= 1:

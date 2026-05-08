@@ -24,11 +24,10 @@ from pycastle.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.iteration.implement import (
     ImplementResult,
     branch_for,
-    build_issue_scope_args,
-    format_issue_comments,
     implement_phase,
     run_issue,
 )
+from pycastle.prompt_pipeline import PromptRenderError, build_issue_scope_args
 
 _cfg = Config()
 
@@ -518,27 +517,14 @@ def test_run_issue_handles_issue_without_body_or_comments(tmp_path):
     assert impl_call.scope_args["ISSUE_COMMENTS"] == ""
 
 
-def test_format_issue_comments_includes_author_and_timestamp():
-    rendered = format_issue_comments(
-        [
-            {"author": "alice", "created_at": "2026-01-01T10:00:00Z", "body": "hi"},
-        ]
-    )
-    assert "alice" in rendered
-    assert "2026-01-01T10:00:00Z" in rendered
-    assert "hi" in rendered
-
-
-def test_format_issue_comments_returns_empty_string_for_no_comments():
-    assert format_issue_comments([]) == ""
-
-
 # ── build_issue_scope_args ────────────────────────────────────────────────────
 
 
-def test_build_issue_scope_args_returns_all_required_keys():
+def test_build_issue_scope_args_merges_extra_into_required_keys():
     issue = {"number": 1, "title": "Fix bug", "body": "details", "comments": []}
-    result = build_issue_scope_args(issue, "pycastle/issue-1")
+    result = build_issue_scope_args(
+        issue, extra_scope_args={"BRANCH": "pycastle/issue-1"}
+    )
     assert set(result.keys()) == {
         "ISSUE_NUMBER",
         "ISSUE_TITLE",
@@ -546,25 +532,22 @@ def test_build_issue_scope_args_returns_all_required_keys():
         "ISSUE_COMMENTS",
         "BRANCH",
     }
+    assert result["BRANCH"] == "pycastle/issue-1"
 
 
 def test_build_issue_scope_args_formats_number_as_string():
     issue = {"number": 42, "title": "T", "body": "", "comments": []}
-    result = build_issue_scope_args(issue, "pycastle/issue-42")
+    result = build_issue_scope_args(issue, extra_scope_args={})
     assert result["ISSUE_NUMBER"] == "42"
 
 
-def test_build_issue_scope_args_uses_branch_arg():
-    issue = {"number": 7, "title": "T", "body": "", "comments": []}
-    result = build_issue_scope_args(issue, "pycastle/issue-7")
-    assert result["BRANCH"] == "pycastle/issue-7"
-
-
-def test_build_issue_scope_args_handles_missing_body_and_comments():
-    issue = {"number": 1, "title": "T"}
-    result = build_issue_scope_args(issue, "pycastle/issue-1")
-    assert result["ISSUE_BODY"] == ""
-    assert result["ISSUE_COMMENTS"] == ""
+def test_build_issue_scope_args_normalises_missing_or_none_body_to_empty():
+    missing = build_issue_scope_args({"number": 1, "title": "T"}, extra_scope_args={})
+    none_body = build_issue_scope_args(
+        {"number": 1, "title": "T", "body": None}, extra_scope_args={}
+    )
+    assert missing["ISSUE_BODY"] == ""
+    assert none_body["ISSUE_BODY"] == ""
 
 
 def test_build_issue_scope_args_formats_comments():
@@ -576,9 +559,27 @@ def test_build_issue_scope_args_formats_comments():
             {"author": "alice", "created_at": "2026-01-01T10:00:00Z", "body": "hi"}
         ],
     }
-    result = build_issue_scope_args(issue, "pycastle/issue-1")
+    result = build_issue_scope_args(issue, extra_scope_args={})
     assert "alice" in result["ISSUE_COMMENTS"]
+    assert "2026-01-01T10:00:00Z" in result["ISSUE_COMMENTS"]
     assert "hi" in result["ISSUE_COMMENTS"]
+
+
+@pytest.mark.parametrize(
+    "colliding_key",
+    ["ISSUE_NUMBER", "ISSUE_TITLE", "ISSUE_BODY", "ISSUE_COMMENTS"],
+)
+def test_build_issue_scope_args_rejects_collision_with_reserved_keys(colliding_key):
+    issue = {"number": 1, "title": "T", "body": "", "comments": []}
+    with pytest.raises(PromptRenderError):
+        build_issue_scope_args(issue, extra_scope_args={colliding_key: "x"})
+
+
+def test_build_issue_scope_args_raises_on_missing_required_keys():
+    with pytest.raises(KeyError):
+        build_issue_scope_args({"title": "T"}, extra_scope_args={})
+    with pytest.raises(KeyError):
+        build_issue_scope_args({"number": 1}, extra_scope_args={})
 
 
 # ── Issue 349: issue_title threading ─────────────────────────────────────────
