@@ -210,21 +210,35 @@ def _check_usage_limit(line: str) -> datetime | None | Literal[False]:
     return local_dt
 
 
-def _extract_turn(line: str) -> str | None:
+def _extract_turn(line: str) -> tuple[str | None, int | None]:
     try:
         obj = json.loads(line)
     except json.JSONDecodeError:
-        return None
+        return None, None
     if not isinstance(obj, dict) or obj.get("type") != "assistant":
-        return None
-    content = (obj.get("message") or {}).get("content") or []
+        return None, None
+    msg = obj.get("message") or {}
+    content = msg.get("content") or []
     parts: list[str] = []
     for block in content:
         if isinstance(block, dict) and block.get("type") == "text":
             text = (block.get("text") or "").strip()
             if text:
                 parts.append(text)
-    return "\n\n".join(parts) if parts else None
+    turn_text = "\n\n".join(parts) if parts else None
+
+    usage = msg.get("usage") or {}
+    tokens: int | None = None
+    if usage:
+        total = (
+            (usage.get("input_tokens") or 0)
+            + (usage.get("cache_creation_input_tokens") or 0)
+            + (usage.get("cache_read_input_tokens") or 0)
+        )
+        if total > 0:
+            tokens = total
+
+    return turn_text, tokens
 
 
 _COMMIT_MESSAGE_RE = re.compile(r"<commit_message>([\s\S]*?)</commit_message>")
@@ -234,6 +248,7 @@ def process_stream(
     lines: Iterable[str],
     on_turn: Callable[[str], None],
     role: AgentRole,
+    on_tokens: Callable[[int], None] | None = None,
 ) -> AgentOutput:
     collected: list[str] = []
     result_text: str | None = None
@@ -242,7 +257,9 @@ def process_stream(
         usage_limit = _check_usage_limit(line)
         if usage_limit is not False:
             raise UsageLimitError(reset_time=usage_limit)
-        turn = _extract_turn(line)
+        turn, tokens = _extract_turn(line)
+        if tokens is not None and on_tokens is not None:
+            on_tokens(tokens)
         if turn is not None:
             on_turn(turn)
             if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
