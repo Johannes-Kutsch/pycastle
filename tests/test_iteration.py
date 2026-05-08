@@ -26,6 +26,7 @@ from pycastle.status_display import PlainStatusDisplay
 from pycastle.agent_output_protocol import (
     CompletionOutput,
     IssueOutput,
+    NoCandidateOutput,
     PlannerOutput,
     PromiseParseError,
 )
@@ -1353,3 +1354,118 @@ def test_run_iteration_success_close_excludes_failed_branches(
     assert "1 branch(es) with commits:" in msg
     assert "pycastle/issue-4" in msg
     assert "pycastle/issue-3" not in msg
+
+
+# ── Improve mode: stop semantics matrix ──────────────────────────────────────
+#
+# The matrix tests verify that run_iteration applies the correct stop logic for
+# every combination of improve_mode × slept_once × improve-phase outcome.
+
+
+def _make_improve_deps(
+    tmp_path,
+    git_svc,
+    logger,
+    *,
+    improve_mode,
+    slept_once=False,
+    agent_responses,
+):
+    """Return Deps wired for an improve-mode test (0 open AFK issues)."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+
+    response_queue = list(agent_responses)
+
+    async def _agent(request: RunRequest):
+        return response_queue.pop(0)
+
+    return dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(),
+        ),
+        improve_mode=improve_mode,
+        slept_once=slept_once,
+    )
+
+
+def test_run_iteration_endless_dispatches_improve_when_idle(tmp_path, git_svc, logger):
+    """endless + 0 AFK + not slept → improve dispatched, iteration returns Continue."""
+    deps = _make_improve_deps(
+        tmp_path,
+        git_svc,
+        logger,
+        improve_mode="endless",
+        slept_once=False,
+        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+    )
+    result = asyncio.run(run_iteration(deps))
+    assert isinstance(result, Continue)
+
+
+def test_run_iteration_until_sleep_exits_when_slept_and_idle(tmp_path, git_svc, logger):
+    """until_sleep + slept_once=True + 0 AFK → Done without dispatching improve."""
+    deps = _make_improve_deps(
+        tmp_path,
+        git_svc,
+        logger,
+        improve_mode="until_sleep",
+        slept_once=True,
+        agent_responses=[],  # no agent calls expected
+    )
+    result = asyncio.run(run_iteration(deps))
+    assert isinstance(result, Done)
+
+
+def test_run_iteration_until_sleep_dispatches_improve_before_first_sleep(
+    tmp_path, git_svc, logger
+):
+    """until_sleep + slept_once=False + 0 AFK → improve dispatched, returns Continue."""
+    deps = _make_improve_deps(
+        tmp_path,
+        git_svc,
+        logger,
+        improve_mode="until_sleep",
+        slept_once=False,
+        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+    )
+    result = asyncio.run(run_iteration(deps))
+    assert isinstance(result, Continue)
+
+
+def test_run_iteration_endless_dispatches_improve_even_after_sleep(
+    tmp_path, git_svc, logger
+):
+    """endless + slept_once=True + 0 AFK → improve dispatched, returns Continue (slept ignored)."""
+    deps = _make_improve_deps(
+        tmp_path,
+        git_svc,
+        logger,
+        improve_mode="endless",
+        slept_once=True,
+        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+    )
+    result = asyncio.run(run_iteration(deps))
+    assert isinstance(result, Continue)
+
+
+def test_run_iteration_endless_returns_continue_after_no_candidate_improve(
+    tmp_path, git_svc, logger
+):
+    """endless + NO-CANDIDATE improve outcome → Continue (outer loop re-dispatches improve)."""
+    deps = _make_improve_deps(
+        tmp_path,
+        git_svc,
+        logger,
+        improve_mode="endless",
+        slept_once=False,
+        # scan → NO-CANDIDATE, then report phase → COMPLETE
+        agent_responses=[NoCandidateOutput(), CompletionOutput()],
+    )
+    result = asyncio.run(run_iteration(deps))
+    assert isinstance(result, Continue)

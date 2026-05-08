@@ -205,3 +205,69 @@ def test_improve_mode_ignored_when_in_flight_issues_present():
         improve_dispatched_this_iteration=False,
     )
     assert isinstance(action, RunImplementDirect)
+
+
+# ── Stop semantics: work takes priority over slept_once ───────────────────────
+
+
+def test_until_sleep_work_takes_priority_over_slept_once_single_issue():
+    """until_sleep + slept_once=True + one AFK issue → RunImplementDirect, not Done."""
+    action = decide_iteration_action(
+        open_afk_count=1,
+        in_flight_count=0,
+        improve_mode="until_sleep",
+        slept_once=True,
+        improve_dispatched_this_iteration=False,
+    )
+    assert isinstance(action, RunImplementDirect)
+
+
+def test_until_sleep_work_takes_priority_over_slept_once_multiple_issues():
+    """until_sleep + slept_once=True + multiple AFK issues → RunPlan, not Done."""
+    action = decide_iteration_action(
+        open_afk_count=2,
+        in_flight_count=0,
+        improve_mode="until_sleep",
+        slept_once=True,
+        improve_dispatched_this_iteration=False,
+    )
+    assert isinstance(action, RunPlan)
+
+
+def test_until_sleep_in_flight_work_takes_priority_over_slept_once():
+    """until_sleep + slept_once=True + in-flight issue → RunImplementDirect, not Done."""
+    action = decide_iteration_action(
+        open_afk_count=0,
+        in_flight_count=1,
+        improve_mode="until_sleep",
+        slept_once=True,
+        improve_dispatched_this_iteration=False,
+    )
+    assert isinstance(action, RunImplementDirect)
+
+
+# ── Stop semantics: dispatched guard is mode-independent ─────────────────────
+
+
+def test_endless_mode_dispatched_guard_fires_regardless_of_slept_once():
+    """endless + slept_once=True + already dispatched → Done (one-per-iteration guard)."""
+    action = decide_iteration_action(
+        open_afk_count=0,
+        in_flight_count=0,
+        improve_mode="endless",
+        slept_once=True,
+        improve_dispatched_this_iteration=True,
+    )
+    assert isinstance(action, Done)
+
+
+def test_until_sleep_dispatched_guard_fires_with_slept_once_false():
+    """until_sleep + slept_once=False + already dispatched → Done (dispatched guard, not sleep gate)."""
+    action = decide_iteration_action(
+        open_afk_count=0,
+        in_flight_count=0,
+        improve_mode="until_sleep",
+        slept_once=False,
+        improve_dispatched_this_iteration=True,
+    )
+    assert isinstance(action, Done)
