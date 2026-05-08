@@ -49,9 +49,9 @@ def _is_in_flight(issue: dict, deps: Deps) -> bool:
 
 
 async def run_iteration(deps: Deps) -> IterationOutcome:
-    # Cheap pre-check: skip PREFLIGHT_CHECKS when idle and improve mode would stop anyway.
-    # open_issues_known_empty is set by the orchestrator after confirming no open issues,
-    # which also implies no in-flight issues, so (0, 0) counts are safe here.
+    # Cheap pre-check: skip PREFLIGHT_CHECKS when the orchestrator has already
+    # confirmed no open issues — that also rules out in-flight ones, so (0, 0)
+    # counts are sound and let the dispatcher tell us whether to bail early.
     if deps.open_issues_known_empty:
         early_action = decide_iteration_action(
             open_afk_count=0,
