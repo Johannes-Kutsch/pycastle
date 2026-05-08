@@ -32,6 +32,7 @@ def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
 
     return sorted(p for p in _walk(pkg, "") if p not in _SCOPED_FILES)
 
+
 _ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
 
 

@@ -139,3 +139,31 @@ class Deps:
     improve_mode: ImproveMode = None
     slept_once: bool = False
     improve_dispatched_this_iteration: bool = False
+
+
+def _make_deps(
+    repo_root: Path,
+    agent_runner: AgentRunnerProtocol,
+    *,
+    git_svc: GitService | None = None,
+    github_svc: GithubService | None = None,
+    cfg: Config | None = None,
+    logger: Logger | None = None,
+    status_display: StatusDisplay | None = None,
+) -> Deps:
+    """Factory for building a Deps with sensible test defaults for any unspecified field."""
+    from unittest.mock import MagicMock
+
+    return Deps(
+        repo_root=repo_root,
+        git_svc=git_svc if git_svc is not None else MagicMock(spec=GitService),
+        github_svc=github_svc
+        if github_svc is not None
+        else MagicMock(spec=GithubService),
+        agent_runner=agent_runner,
+        cfg=cfg if cfg is not None else Config(),
+        logger=logger if logger is not None else RecordingLogger(),
+        status_display=status_display
+        if status_display is not None
+        else RecordingStatusDisplay(),
+    )
