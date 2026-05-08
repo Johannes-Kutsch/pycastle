@@ -100,12 +100,13 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
     async with phase_row(deps.status_display, "Merge", initial_phase="Merging") as row:
         await _wait_for_clean_working_tree(deps, "Merge")
 
+        clean_issues: list[dict] = []
         conflict_issues: list[dict] = []
         for issue in completed:
-            if not deps.git_svc.try_merge(deps.repo_root, branch_for(issue["number"])):
+            if deps.git_svc.try_merge(deps.repo_root, branch_for(issue["number"])):
+                clean_issues.append(issue)
+            else:
                 conflict_issues.append(issue)
-
-        clean_issues = [i for i in completed if i not in conflict_issues]
 
         def _on_progress(done: int, total: int) -> None:
             deps.status_display.update_phase("Merge", f"Closing {done}/{total} issues")
