@@ -177,13 +177,12 @@ async def run(
             )
 
             has_open_issues = github_service.has_open_issues_with_label(cfg.issue_label)
-            if not has_open_issues:
-                if improve_mode is None:
-                    status_display.print(  # type: ignore[union-attr]
-                        "",
-                        f"No issues with label '{cfg.issue_label}' found. Skipping.",
-                    )
-                    break
+            if not has_open_issues and improve_mode is None:
+                status_display.print(  # type: ignore[union-attr]
+                    "",
+                    f"No issues with label '{cfg.issue_label}' found. Skipping.",
+                )
+                break
 
             if agent_runner is not None:
                 _agent_runner: AgentRunnerProtocol = agent_runner

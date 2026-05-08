@@ -1519,4 +1519,6 @@ def test_run_iteration_skips_preflight_checks_when_improve_would_stop(
     result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, Done)
-    assert not recording_runner.preflight_calls, "PREFLIGHT_CHECKS must not run on cheap pre-check exit"
+    assert not recording_runner.preflight_calls, (
+        "PREFLIGHT_CHECKS must not run on cheap pre-check exit"
+    )
