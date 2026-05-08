@@ -160,7 +160,7 @@ class GithubService:
             data={"state": "closed"},
         )
 
-    def get_issue_title(self, issue_number: int) -> str:
+    def get_issue(self, issue_number: int) -> dict[str, str]:
         payload, _ = self._request("GET", f"/repos/{self.repo}/issues/{issue_number}")
         if not isinstance(payload, dict) or "title" not in payload:
             raise GithubAPIError(
@@ -170,7 +170,13 @@ class GithubService:
                 method="GET",
                 path=f"/repos/{self.repo}/issues/{issue_number}",
             )
-        return str(payload["title"])
+        return {
+            "title": str(payload.get("title") or ""),
+            "body": str(payload.get("body") or ""),
+        }
+
+    def get_issue_title(self, issue_number: int) -> str:
+        return self.get_issue(issue_number)["title"]
 
     def get_issue_comments(self, issue_number: int) -> list[dict[str, str]]:
         results = self._paginate(

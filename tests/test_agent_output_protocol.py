@@ -13,6 +13,7 @@ from pycastle.agent_output_protocol import (
     CompletionOutput,
     IssueOutput,
     IssueParseError,
+    NoCandidateOutput,
     PlanParseError,
     PlannerOutput,
     PromiseParseError,
@@ -133,6 +134,16 @@ def test_completion_output_is_instantiable():
     assert isinstance(out, CompletionOutput)
 
 
+def test_completion_output_defaults_to_empty_issue_numbers():
+    out = CompletionOutput()
+    assert out.issue_numbers == ()
+
+
+def test_completion_output_stores_issue_numbers():
+    out = CompletionOutput(issue_numbers=(42, 43))
+    assert out.issue_numbers == (42, 43)
+
+
 def test_completion_output_is_frozen():
     out = CompletionOutput()
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -226,6 +237,28 @@ def test_process_stream_merger_returns_completion_output():
     lines = [_result_line("<promise>COMPLETE</promise>")]
     result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.MERGER)
     assert isinstance(result, CompletionOutput)
+
+
+def test_process_stream_improve_complete_returns_completion_output():
+    lines = [_result_line("<promise>COMPLETE</promise>")]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
+    assert isinstance(result, CompletionOutput)
+    assert result.issue_numbers == ()
+
+
+def test_process_stream_improve_captures_issue_numbers_from_complete_turn():
+    lines = [
+        _result_line("<issue>42</issue><issue>43</issue><promise>COMPLETE</promise>")
+    ]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
+    assert isinstance(result, CompletionOutput)
+    assert result.issue_numbers == (42, 43)
+
+
+def test_process_stream_improve_no_candidate_returns_no_candidate_output():
+    lines = [_result_line("<promise>NO-CANDIDATE</promise>")]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
+    assert isinstance(result, NoCandidateOutput)
 
 
 def test_process_stream_raises_usage_limit_error_on_429_json():

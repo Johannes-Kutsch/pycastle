@@ -325,6 +325,24 @@ def test_improve_phase_threads_short_sid_to_issues_phase(deps, agent_runner):
     assert len(issues_call.scope_args.get("IMPROVE_SHORT_SID", "")) == 8
 
 
+def test_improve_phase_issues_scope_args_include_all_improve_issues_keys(
+    deps, agent_runner
+):
+    """Phase 3 scope_args carry all IMPROVE_ISSUES placeholders."""
+    _run(deps)
+    issues_call = next(
+        c for c in agent_runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
+    )
+    required = {
+        "IMPROVE_SHORT_SID",
+        "ISSUE_NUMBER",
+        "ISSUE_TITLE",
+        "ISSUE_BODY",
+        "ISSUE_COMMENTS",
+    }
+    assert required == set(issues_call.scope_args.keys())
+
+
 def test_improve_phase_threads_short_sid_to_no_candidate_report_phase(
     tmp_path, git_svc
 ):
@@ -388,10 +406,29 @@ def test_improve_resumes_at_report_after_scan_no_candidate(tmp_path, git_svc):
     assert len(runner.calls) == 1
 
 
-def test_improve_resumes_at_issues_after_prd(tmp_path, git_svc):
-    """Resume from '02-prd' starts at phase 3 (sub-issues)."""
+def test_improve_orphan_reset_when_prd_done_but_no_in_flight(tmp_path, git_svc):
+    """Progress='02-prd' without in-flight='03-issues' means prd_number was lost.
+    improve_phase clears progress and restarts from phase 1 (orphan-reset)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "02-prd")
+    # 3 responses: scan → prd → issues (full fresh cycle)
+    runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()]
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+    _run(deps)
+    assert runner.calls[0].template == PromptTemplate.IMPROVE_SCAN
+    assert len(runner.calls) == 3
+
+
+def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
+    """Progress='02-prd' WITH in-flight='03-issues' means phase 3 was in flight.
+    improve_phase resumes at phase 3 (no orphan-reset)."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    role_session_dir = wt / ".pycastle-session" / "improve"
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    (role_session_dir / "_phase_progress").write_text("02-prd", encoding="utf-8")
+    (role_session_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
     runner = FakeAgentRunner([CompletionOutput()])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)

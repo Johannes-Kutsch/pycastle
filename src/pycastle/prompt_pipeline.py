@@ -74,6 +74,18 @@ class Scope(enum.Enum):
     PREFLIGHT = ("PREFLIGHT", frozenset({"CHECK_NAME", "COMMAND", "OUTPUT"}))
     IMPROVE_SCAN = ("IMPROVE_SCAN", frozenset[str]())
     IMPROVE_SESSION = ("IMPROVE_SESSION", frozenset({"IMPROVE_SHORT_SID"}))
+    IMPROVE_ISSUES = (
+        "IMPROVE_ISSUES",
+        frozenset(
+            {
+                "IMPROVE_SHORT_SID",
+                "ISSUE_NUMBER",
+                "ISSUE_TITLE",
+                "ISSUE_BODY",
+                "ISSUE_COMMENTS",
+            }
+        ),
+    )
     RESUME = ("RESUME", frozenset[str]())
 
     @property
@@ -89,7 +101,7 @@ class PromptTemplate(enum.Enum):
     PREFLIGHT_ISSUE = ("preflight-issue.md", Scope.PREFLIGHT)
     IMPROVE_SCAN = ("improve/01-scan.md", Scope.IMPROVE_SCAN)
     IMPROVE_PRD = ("improve/02-prd.md", Scope.IMPROVE_SESSION)
-    IMPROVE_ISSUES = ("improve/03-issues.md", Scope.IMPROVE_SESSION)
+    IMPROVE_ISSUES = ("improve/03-issues.md", Scope.IMPROVE_ISSUES)
     IMPROVE_NO_CANDIDATE = ("improve/04-no-candidate-report.md", Scope.IMPROVE_SESSION)
     RESUME = ("_resume-prompt.md", Scope.RESUME)
 
