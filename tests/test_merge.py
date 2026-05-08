@@ -1051,6 +1051,54 @@ def test_merge_phase_reuses_existing_sandbox_when_merger_session_is_resumable(
     )
 
 
+# ── Parallel branch teardown: warning routing ─────────────────────────────────
+
+
+def test_worktree_removal_warning_routed_to_status_display_not_stderr(
+    recording_deps, git_svc, capsys
+):
+    """When worktree removal fails, warning must go to status_display.print, not stderr."""
+    deps, recording = recording_deps
+    wt_path = deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "issue-1"
+    git_svc.list_worktrees.return_value = [wt_path]
+    git_svc.remove_worktree.side_effect = RuntimeError("disk full")
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, deps)
+
+    print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
+    assert any("could not remove worktree" in str(m) for m in print_msgs)
+    assert "could not remove worktree" not in capsys.readouterr().err
+
+
+def test_branch_deletion_warning_routed_to_status_display_not_stderr(
+    recording_deps, git_svc, capsys
+):
+    """When delete_branch fails, warning must go to status_display.print, not stderr."""
+    deps, recording = recording_deps
+    git_svc.delete_branch.side_effect = GitCommandError("fail", returncode=1, stderr="")
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, deps)
+
+    print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
+    assert any("could not delete branch" in str(m) for m in print_msgs)
+    assert "could not delete branch" not in capsys.readouterr().err
+
+
+def test_all_branches_processed_in_parallel_teardown(recording_deps, git_svc):
+    """All branches must be deleted even when processed in parallel."""
+    deps, recording = recording_deps
+    issues = [
+        {"number": 1, "title": "A"},
+        {"number": 2, "title": "B"},
+        {"number": 3, "title": "C"},
+    ]
+    _run(issues, deps)
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-1" in deleted
+    assert "pycastle/issue-2" in deleted
+    assert "pycastle/issue-3" in deleted
+
+
 # ── Parallel close_issue helper ───────────────────────────────────────────────
 
 

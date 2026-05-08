@@ -1,7 +1,6 @@
 import asyncio
 import dataclasses
 import shutil
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
@@ -41,27 +40,39 @@ class MergeResult:
     conflicts: list[dict]
 
 
-def _delete_merged_branches(branches: list[str], deps: _MergeDeps) -> list[str]:
+async def _delete_merged_branches(branches: list[str], deps: _MergeDeps) -> list[str]:
     deleted: list[str] = []
     registered_worktrees = deps.git_svc.list_worktrees(deps.repo_root)
-    for branch in branches:
+    lock = asyncio.Lock()
+
+    async def _teardown_one(branch: str) -> None:
         if not deps.git_svc.is_ancestor(branch, deps.repo_root):
-            continue
+            return
         worktree_path_ = worktree_path(worktree_name_for_branch(branch), deps)
         if worktree_path_ in registered_worktrees:
             try:
-                teardown_worktree(deps.git_svc, deps.repo_root, worktree_path_)
+                await asyncio.to_thread(
+                    teardown_worktree, deps.git_svc, deps.repo_root, worktree_path_
+                )
             except Exception as e:
-                print(
+                deps.status_display.print(
+                    "Merge",
                     f"Warning: could not remove worktree for {branch!r}: {e}",
-                    file=sys.stderr,
+                    "warning",
                 )
 
         try:
-            deps.git_svc.delete_branch(branch, deps.repo_root)
-            deleted.append(branch)
+            await asyncio.to_thread(deps.git_svc.delete_branch, branch, deps.repo_root)
+            async with lock:
+                deleted.append(branch)
         except GitCommandError as e:
-            print(f"Warning: could not delete branch {branch!r}: {e}", file=sys.stderr)
+            deps.status_display.print(
+                "Merge",
+                f"Warning: could not delete branch {branch!r}: {e}",
+                "warning",
+            )
+
+    await asyncio.gather(*[_teardown_one(b) for b in branches])
     return deleted
 
 
@@ -115,7 +126,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             await _close_issues_parallel(clean_issues, deps.github_svc, _on_progress)
             deps.github_svc.close_completed_parent_issues()
 
-        clean_deleted = _delete_merged_branches(
+        clean_deleted = await _delete_merged_branches(
             [branch_for(i["number"]) for i in clean_issues], deps
         )
 
@@ -168,7 +179,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 shutil.rmtree(
                     sandbox_path / ".pycastle-session" / "merger", ignore_errors=True
                 )
-            conflict_deleted = _delete_merged_branches(
+            conflict_deleted = await _delete_merged_branches(
                 [branch_for(i["number"]) for i in conflict_issues], deps
             )
             await _close_issues_parallel(conflict_issues, deps.github_svc, _on_progress)
