@@ -238,6 +238,8 @@ def test_run_iteration_returns_aborted_usage_limit_when_implementer_hits_limit(
     """run_iteration returns AbortedUsageLimit when an implementer hits the usage limit."""
 
     async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
         raise UsageLimitError(reset_time=None)
 
     deps = _make_deps(
@@ -254,6 +256,8 @@ def test_run_iteration_aborted_usage_limit_does_not_raise_system_exit(
     """run_iteration must return AbortedUsageLimit instead of calling sys.exit on usage limit."""
 
     async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
         raise UsageLimitError(reset_time=None)
 
     deps = _make_deps(
@@ -270,9 +274,11 @@ def test_run_iteration_aborted_usage_limit_does_not_raise_system_exit(
 def test_run_iteration_returns_continue_when_issues_complete_normally(
     tmp_path, git_svc, github_svc, logger
 ):
-    """run_iteration returns Continue after a normal implement→merge cycle (1-issue fast path)."""
+    """run_iteration returns Continue after a normal plan→implement→merge cycle."""
 
     async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
         return CompletionOutput()
 
     deps = _make_deps(
@@ -289,6 +295,8 @@ def test_run_iteration_returns_continue_when_no_implementers_complete(
     """run_iteration returns Continue (not Done) when implementers produce no commits."""
 
     async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
         raise PromiseParseError("no <promise>COMPLETE</promise> tag")
 
     deps = _make_deps(
@@ -305,7 +313,7 @@ def test_run_iteration_returns_continue_when_no_implementers_complete(
 def test_run_iteration_returns_continue_on_afk_preflight_verdict(
     tmp_path, git_svc, logger
 ):
-    """run_iteration implements the preflight-fix issue and returns Continue when
+    """run_iteration plans and implements the preflight-fix issue and returns Continue when
     preflight_phase returns PreflightAFK (preflight failure with AFK verdict)."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
@@ -314,6 +322,8 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
     async def _fake_agent(request: RunRequest):
         if "Pre-Flight Reporter" in request.name:
             return IssueOutput(number=55, labels=["ready-for-agent"])
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 55, "title": "Preflight fix"}])
         return CompletionOutput()
 
     deps = _make_deps(
@@ -329,11 +339,11 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
     assert isinstance(result, Continue)
 
 
-def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
+def test_run_iteration_afk_path_routes_through_planning_then_implements_fix_issue(
     tmp_path, git_svc, logger
 ):
-    """On AFK preflight verdict, run_iteration must spawn an Implementer for the
-    filed fix issue without invoking the Planner."""
+    """On AFK preflight verdict, run_iteration must invoke the Planner and then
+    spawn an Implementer for the filed fix issue."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     github_svc.get_issue_title.return_value = "Preflight fix"
@@ -344,6 +354,8 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
         agent_names.append(request.name)
         if "Pre-Flight Reporter" in request.name:
             return IssueOutput(number=77, labels=["ready-for-agent"])
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 77, "title": "Preflight fix"}])
         return CompletionOutput()
 
     deps = _make_deps(
@@ -357,8 +369,8 @@ def test_run_iteration_afk_path_spawns_implementer_for_fix_issue(
     asyncio.run(run_iteration(deps))
 
     implementer_calls = [n for n in agent_names if "Implement Agent" in n]
-    assert "Plan Agent" not in agent_names, (
-        "Plan Agent must not be called on AFK preflight path"
+    assert "Plan Agent" in agent_names, (
+        "Plan Agent must be called on AFK preflight path"
     )
     assert len(implementer_calls) == 1, "Exactly one Implement Agent for the fix issue"
     assert implementer_calls[0] == "Implement Agent #77"
@@ -407,6 +419,8 @@ def test_run_iteration_execution_complete_uses_consistent_source(
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
         return CompletionOutput()
 
     deps = _make_deps(
@@ -526,11 +540,11 @@ def test_run_iteration_calls_planning_phase_with_two_or_more_open_issues(
     )
 
 
-def test_run_iteration_skips_planning_phase_with_one_open_issue(
+def test_run_iteration_calls_planning_phase_with_one_open_issue(
     tmp_path, git_svc, logger
 ):
-    """With exactly one open issue and passing preflight, run_iteration must not
-    invoke the Planner and must pass the issue directly to implement_phase."""
+    """With exactly one open issue and passing preflight, run_iteration must invoke
+    the Planner (planning_phase) before implement_phase."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [{"number": 7, "title": "Single issue"}]
 
@@ -538,6 +552,8 @@ def test_run_iteration_skips_planning_phase_with_one_open_issue(
 
     async def _fake_agent(request: RunRequest):
         agent_names.append(request.name)
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 7, "title": "Single issue"}])
         return CompletionOutput()
 
     deps = _make_deps(
@@ -551,9 +567,7 @@ def test_run_iteration_skips_planning_phase_with_one_open_issue(
     result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, Continue)
-    assert "Plan Agent" not in agent_names, (
-        "Plan Agent must not be called for a single issue"
-    )
+    assert "Plan Agent" in agent_names, "Plan Agent must be called for a single issue"
     assert any("Implement Agent" in n for n in agent_names), (
         "Implement Agent must be called"
     )
@@ -722,6 +736,8 @@ def test_run_iteration_implement_row_removed_on_usage_limit(
     recording = RecordingStatusDisplay()
 
     async def _usage_limit(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
         raise UsageLimitError(reset_time=None)
 
     deps = _make_deps(
@@ -745,6 +761,8 @@ def test_run_iteration_registers_preflight_row_before_preflight_phase(
     recording = RecordingStatusDisplay()
 
     async def _noop_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
         return CompletionOutput()
 
     deps = _make_deps(
@@ -781,6 +799,8 @@ def test_run_iteration_registers_preflight_row_with_running_phase(
     recording = RecordingStatusDisplay()
 
     async def _noop_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
         return CompletionOutput()
 
     deps = _make_deps(
@@ -874,6 +894,8 @@ def test_run_iteration_registers_implement_row_with_running_phase(
     recording = RecordingStatusDisplay()
 
     async def _noop_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
         return CompletionOutput()
 
     deps = _make_deps(
@@ -1094,6 +1116,8 @@ def test_run_iteration_implement_close_message_success_format(
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
         return CompletionOutput()
 
     deps = _make_deps(
@@ -1123,6 +1147,8 @@ def test_run_iteration_no_commits_close_uses_warning_style(
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
         raise PromiseParseError("no promise tag")
 
     deps = _make_deps(
@@ -1153,6 +1179,8 @@ def test_run_iteration_preflight_failure_errors_use_implement_caller(
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
         return PF(failures=(("ruff", "ruff check .", "E501"),))
 
     deps = _make_deps(
@@ -1182,6 +1210,8 @@ def test_run_iteration_generic_error_uses_implement_caller(
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 1, "title": "Fix bug"}])
         raise PromiseParseError("bad output")
 
     deps = _make_deps(

@@ -201,6 +201,8 @@ def test_preflight_issue_branch_uses_pycastle_format(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if "Pre-Flight Reporter" in request.name:
             return IssueOutput(number=77, labels=["ready-for-agent"])
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 77, "title": "Preflight fix title"}])
         if "Implement Agent" in request.name:
             captured_branches.append((request.prompt_args or {}).get("BRANCH", ""))
             return CompletionOutput()
@@ -1172,8 +1174,8 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
 # ── Issue-176: preflight failure handling and HITL routing ────────────────────
 
 
-def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
-    """On plan-sandbox preflight failure with AFK verdict, Planner must NOT be called
+def test_preflight_failure_afk_routes_through_planning_then_one_implementer(tmp_path):
+    """On plan-sandbox preflight failure with AFK verdict, the Planner must be called
     and exactly one Implementer must be spawned for the preflight issue."""
     agent_names: list[str] = []
 
@@ -1181,6 +1183,8 @@ def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
         agent_names.append(request.name)
         if "Pre-Flight Reporter" in request.name:
             return IssueOutput(number=42, labels=["ready-for-agent"])
+        if request.name == "Plan Agent":
+            return _plan_output([{"number": 42, "title": "Preflight fix title"}])
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return CompletionOutput()
@@ -1196,8 +1200,8 @@ def test_preflight_failure_afk_planner_skipped_one_implementer(tmp_path):
     )
 
     implementer_calls = [n for n in agent_names if "Implement Agent" in n]
-    assert "Plan Agent" not in agent_names, (
-        "Plan Agent must not be called on AFK preflight path"
+    assert "Plan Agent" in agent_names, (
+        "Plan Agent must be called on AFK preflight path"
     )
     assert len(implementer_calls) == 1, (
         f"Exactly one Implement Agent must be spawned for the preflight fix; got {implementer_calls}"

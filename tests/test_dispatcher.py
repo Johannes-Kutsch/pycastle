@@ -63,8 +63,8 @@ def test_many_open_afk_routes_to_plan():
     assert isinstance(action, RunPlan)
 
 
-def test_single_open_afk_routes_to_implement_direct():
-    """Single open AFK issue → RunImplementDirect (fast path, skip planning)."""
+def test_single_open_afk_routes_to_plan():
+    """Single open AFK issue → RunPlan (routes through planning, same as multi-issue)."""
     action = decide_iteration_action(
         open_afk_count=1,
         in_flight_count=0,
@@ -72,7 +72,7 @@ def test_single_open_afk_routes_to_implement_direct():
         slept_once=False,
         improve_dispatched_this_iteration=False,
     )
-    assert isinstance(action, RunImplementDirect)
+    assert isinstance(action, RunPlan)
 
 
 # ── Idle: no work available ───────────────────────────────────────────────────
@@ -211,7 +211,7 @@ def test_improve_mode_ignored_when_in_flight_issues_present():
 
 
 def test_until_sleep_work_takes_priority_over_slept_once_single_issue():
-    """until_sleep + slept_once=True + one AFK issue → RunImplementDirect, not Done."""
+    """until_sleep + slept_once=True + one AFK issue → RunPlan, not Done."""
     action = decide_iteration_action(
         open_afk_count=1,
         in_flight_count=0,
@@ -219,7 +219,7 @@ def test_until_sleep_work_takes_priority_over_slept_once_single_issue():
         slept_once=True,
         improve_dispatched_this_iteration=False,
     )
-    assert isinstance(action, RunImplementDirect)
+    assert isinstance(action, RunPlan)
 
 
 def test_until_sleep_work_takes_priority_over_slept_once_multiple_issues():
