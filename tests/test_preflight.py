@@ -69,7 +69,7 @@ def test_preflight_phase_returns_ready_with_empty_issues_when_no_open_issues(
     tmp_path, git_svc, github_svc
 ):
     github_svc.get_open_issues.return_value = []
-    fake = FakeAgentRunner([], preflight_responses=[])
+    fake = FakeAgentRunner([], preflight_responses=[[]])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     result = asyncio.run(preflight_phase(deps))
@@ -79,30 +79,37 @@ def test_preflight_phase_returns_ready_with_empty_issues_when_no_open_issues(
     assert result.issues == []
 
 
-def test_preflight_phase_does_not_call_run_preflight_when_no_open_issues(
+def test_preflight_phase_calls_run_preflight_even_when_no_open_issues(
     tmp_path, git_svc, github_svc
 ):
+    """PREFLIGHT_CHECKS must run even when there are no open issues — so the safe SHA is
+    verified before any downstream phase (e.g. improve) uses it.
+    The gate for skipping preflight entirely lives in run_iteration."""
     github_svc.get_open_issues.return_value = []
-    fake = FakeAgentRunner([], preflight_responses=[])
+    fake = FakeAgentRunner([], preflight_responses=[[]])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     asyncio.run(preflight_phase(deps))
 
-    assert fake.preflight_calls == [], (
-        f"run_preflight must not be called when no issues; got {fake.preflight_calls}"
+    assert len(fake.preflight_calls) == 1, (
+        "run_preflight must be called even when no issues — PREFLIGHT_CHECKS must always run"
     )
 
 
-def test_preflight_phase_does_not_create_worktree_when_no_open_issues(
+def test_preflight_phase_creates_worktree_even_when_no_open_issues(
     tmp_path, git_svc, github_svc
 ):
+    """A pre-flight-sandbox worktree must be created even when there are no open issues."""
     github_svc.get_open_issues.return_value = []
-    fake = FakeAgentRunner([], preflight_responses=[])
+    fake = FakeAgentRunner([], preflight_responses=[[]])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     asyncio.run(preflight_phase(deps))
 
-    git_svc.checkout_detached.assert_not_called()
+    expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-flight-sandbox"
+    git_svc.checkout_detached.assert_called_once_with(
+        tmp_path, expected_worktree, "abc123"
+    )
 
 
 # ── preflight_phase: preflight passes ────────────────────────────────────────
@@ -378,7 +385,7 @@ def test_preflight_phase_returns_ready_when_all_checks_pass(
 def test_preflight_phase_prints_no_confirmation_when_no_open_issues(tmp_path, git_svc):
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = []
-    fake = FakeAgentRunner([], preflight_responses=[])
+    fake = FakeAgentRunner([], preflight_responses=[[]])
     recording = RecordingStatusDisplay()
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -533,7 +540,7 @@ def test_preflight_phase_waits_for_clean_working_tree_before_pulling(
 ):
     git_svc.is_working_tree_clean.side_effect = [False, True]
     github_svc.get_open_issues.return_value = []
-    fake = FakeAgentRunner([], preflight_responses=[])
+    fake = FakeAgentRunner([], preflight_responses=[[]])
     recording = RecordingStatusDisplay()
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -553,7 +560,7 @@ def test_dirty_working_tree_message_uses_preflight_caller_with_error_style(
     """Working-tree uncommitted-changes message must use 'Preflight' caller, style='error', no [red] markup."""
     git_svc.is_working_tree_clean.side_effect = [False, True]
     github_svc.get_open_issues.return_value = []
-    fake = FakeAgentRunner([], preflight_responses=[])
+    fake = FakeAgentRunner([], preflight_responses=[[]])
     recording = RecordingStatusDisplay()
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
