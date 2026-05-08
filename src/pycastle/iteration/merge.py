@@ -43,7 +43,6 @@ class MergeResult:
 async def _delete_merged_branches(branches: list[str], deps: _MergeDeps) -> list[str]:
     deleted: list[str] = []
     registered_worktrees = deps.git_svc.list_worktrees(deps.repo_root)
-    lock = asyncio.Lock()
 
     async def _teardown_one(branch: str) -> None:
         if not deps.git_svc.is_ancestor(branch, deps.repo_root):
@@ -63,8 +62,7 @@ async def _delete_merged_branches(branches: list[str], deps: _MergeDeps) -> list
 
         try:
             await asyncio.to_thread(deps.git_svc.delete_branch, branch, deps.repo_root)
-            async with lock:
-                deleted.append(branch)
+            deleted.append(branch)
         except GitCommandError as e:
             deps.status_display.print(
                 "Merge",
