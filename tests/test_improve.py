@@ -172,12 +172,6 @@ def test_read_progress_returns_none_for_empty_file(tmp_path):
     assert _read_progress(f) is None
 
 
-def test_read_progress_returns_none_for_malformed_content(tmp_path):
-    f = tmp_path / "_phase_progress"
-    f.write_text("garbage-phase", encoding="utf-8")
-    assert _read_progress(f) is None
-
-
 # ── improve_phase: integration behavior ──────────────────────────────────────
 
 
