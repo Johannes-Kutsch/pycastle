@@ -19,6 +19,15 @@ _STANDARDS_PHASES = frozenset({"01-scan.md"})
 _VALID_PHASE_IDS = frozenset(
     {"01-scan:picked", "01-scan:no-candidate", "02-prd", "03-issues", "04-report"}
 )
+_PHASE_DISPLAY: dict[str, tuple[str, str]] = {
+    "01-scan.md": ("Scan Agent", "picking an improvement"),
+    "02-prd.md": ("PRD Agent", "writing PRD"),
+    "03-issues.md": ("Slice Agent", "filing sub-issues"),
+    "04-no-candidate-report.md": (
+        "Rejection Report Agent",
+        "filing no-candidate report",
+    ),
+}
 
 
 def next_prompt(
@@ -99,9 +108,10 @@ async def improve_phase(deps: _ImproveDeps) -> None:
                     prompt_args = {"IMPROVE_SHORT_SID": short_sid}
                 else:
                     prompt_args = None
+                display_name, display_body = _PHASE_DISPLAY[prompt_name]
                 output = await deps.agent_runner.run(
                     RunRequest(
-                        name="Improve Agent",
+                        name=display_name,
                         prompt_file=deps.cfg.prompts_dir / "improve" / prompt_name,
                         mount_path=sandbox_path,
                         role=AgentRole.IMPROVE,
@@ -111,7 +121,7 @@ async def improve_phase(deps: _ImproveDeps) -> None:
                         effort=deps.cfg.improve_override.effort,
                         stage="improve-sandbox",
                         status_display=deps.status_display,
-                        work_body="Scanning for improvements",
+                        work_body=display_body,
                     )
                 )
 
