@@ -75,7 +75,6 @@ def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
 
 def _make_github_svc():
     mock = MagicMock(spec=GithubService)
-    mock.has_open_issues_with_label.return_value = True
     mock.get_open_issues.return_value = [
         {"number": 1, "title": "Default Issue"},
         {"number": 2, "title": "Default Issue 2"},
@@ -88,7 +87,6 @@ def _make_github_svc_afk():
     mock = MagicMock(spec=GithubService)
     mock.get_issue_title.return_value = "Preflight fix title"
     mock.get_open_issues.return_value = [{"number": 1, "title": "Default Issue"}]
-    mock.has_open_issues_with_label.return_value = True
     return mock
 
 
@@ -97,7 +95,6 @@ def _make_github_svc_hitl():
     mock = MagicMock(spec=GithubService)
     mock.get_issue_title.return_value = "Preflight fix title"
     mock.get_open_issues.return_value = [{"number": 1, "title": "Default Issue"}]
-    mock.has_open_issues_with_label.return_value = True
     return mock
 
 
@@ -1282,7 +1279,13 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
 def test_usage_limit_sleeps_instead_of_exiting(tmp_path):
     """When AbortedUsageLimit is received, run() must sleep instead of calling sys.exit()."""
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.side_effect = [True, False]
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue"},
+            {"number": 2, "title": "Default Issue 2"},
+        ],
+        [],
+    ]
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -1304,7 +1307,13 @@ def test_usage_limit_sleeps_instead_of_exiting(tmp_path):
 def test_usage_limit_prints_sleep_message_with_wake_time(tmp_path, capsys):
     """run() must print 'Usage limit reached. Sleeping until HH:MM. Press Ctrl+C to abort.'"""
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.side_effect = [True, False]
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue"},
+            {"number": 2, "title": "Default Issue 2"},
+        ],
+        [],
+    ]
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -1327,7 +1336,13 @@ def test_usage_limit_prints_sleep_message_with_wake_time(tmp_path, capsys):
 def test_usage_limit_loop_continues_after_sleep(tmp_path):
     """After sleeping on usage limit, run() must continue to the next iteration."""
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.side_effect = [True, False]
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue"},
+            {"number": 2, "title": "Default Issue 2"},
+        ],
+        [],
+    ]
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -1342,13 +1357,23 @@ def test_usage_limit_loop_continues_after_sleep(tmp_path):
             max_iterations=2,
         )
 
-    assert mock_github.has_open_issues_with_label.call_count == 2
+    assert mock_github.get_open_issues.call_count == 2
 
 
 def test_consecutive_usage_limits_sleep_multiple_times(tmp_path):
     """Consecutive AbortedUsageLimit outcomes must each trigger a separate sleep."""
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.side_effect = [True, True, False]
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue"},
+            {"number": 2, "title": "Default Issue 2"},
+        ],
+        [
+            {"number": 1, "title": "Default Issue"},
+            {"number": 2, "title": "Default Issue 2"},
+        ],
+        [],
+    ]
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -1374,7 +1399,13 @@ def test_usage_limit_wake_time_is_next_full_hour_plus_two_minutes(tmp_path, caps
     expected_str = "15:02"
 
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.side_effect = [True, False]
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue"},
+            {"number": 2, "title": "Default Issue 2"},
+        ],
+        [],
+    ]
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -1406,7 +1437,13 @@ def test_usage_limit_sleep_duration_matches_wake_time(tmp_path):
     expected_seconds = 32 * 60
 
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.side_effect = [True, False]
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue"},
+            {"number": 2, "title": "Default Issue 2"},
+        ],
+        [],
+    ]
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -1435,7 +1472,13 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
     errors_log = logs_dir / "errors.log"
 
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.side_effect = [True, False]
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue"},
+            {"number": 2, "title": "Default Issue 2"},
+        ],
+        [],
+    ]
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -1469,7 +1512,13 @@ def test_usage_limit_with_reset_time_uses_precise_wake_time(tmp_path, capsys):
     expected_seconds = 22 * 60  # 14:30 → 14:52
 
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.side_effect = [True, False]
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue"},
+            {"number": 2, "title": "Default Issue 2"},
+        ],
+        [],
+    ]
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -1497,7 +1546,13 @@ def test_usage_limit_with_reset_time_uses_precise_wake_time(tmp_path, capsys):
 def test_usage_limit_without_reset_time_appends_estimated_qualifier(tmp_path, capsys):
     """When reset_time is None, message must append '(estimated)'."""
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.side_effect = [True, False]
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue"},
+            {"number": 2, "title": "Default Issue 2"},
+        ],
+        [],
+    ]
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -1523,7 +1578,13 @@ def test_usage_limit_in_preflight_sleeps_instead_of_crashing(tmp_path):
     """UsageLimitError raised during preflight (Pre-Flight Reporter) must be caught and
     routed through the orchestrator's sleep-and-retry path rather than crashing."""
     mock_github = _make_github_svc_afk()
-    mock_github.has_open_issues_with_label.side_effect = [True, False]
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue"},
+            {"number": 2, "title": "Default Issue 2"},
+        ],
+        [],
+    ]
 
     async def _fake_run_agent(request: RunRequest):
         if "Pre-Flight Reporter" in request.name:
@@ -1535,7 +1596,7 @@ def test_usage_limit_in_preflight_sleeps_instead_of_crashing(tmp_path):
             tmp_path,
             agent_runner=FakeAgentRunner(
                 side_effect=_fake_run_agent,
-                preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+                preflight_responses=[(("ruff", "ruff check .", "E501"),), []],
             ),
             github_service=mock_github,
             max_iterations=2,
@@ -1549,7 +1610,7 @@ def test_usage_limit_in_preflight_sleeps_instead_of_crashing(tmp_path):
 
 
 def test_planner_not_invoked_when_no_ready_for_agent_issues(tmp_path):
-    """Planner must not be spawned when has_open_issues_with_label returns False."""
+    """Planner must not be spawned when there are no open issues."""
     agent_names: list[str] = []
 
     async def _fake_run_agent(request: RunRequest):
@@ -1557,7 +1618,7 @@ def test_planner_not_invoked_when_no_ready_for_agent_issues(tmp_path):
         return CompletionOutput()
 
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.return_value = False
+    mock_github.get_open_issues.return_value = []
 
     _run(tmp_path, _fake_run_agent, github_service=mock_github)
 
@@ -1575,7 +1636,7 @@ def test_skip_message_emitted_before_any_agent_when_no_issues(tmp_path, capsys):
         return CompletionOutput()
 
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.return_value = False
+    mock_github.get_open_issues.return_value = []
 
     _run(tmp_path, _fake_run_agent, github_service=mock_github)
 
@@ -1589,7 +1650,7 @@ def test_skip_message_emitted_before_any_agent_when_no_issues(tmp_path, capsys):
 
 
 def test_planner_invoked_when_ready_for_agent_issues_exist(tmp_path):
-    """Planner must be spawned when has_open_issues_with_label returns True."""
+    """Planner must be spawned when there are open issues."""
     agent_names: list[str] = []
 
     async def _fake_run_agent(request: RunRequest):
@@ -1601,7 +1662,6 @@ def test_planner_invoked_when_ready_for_agent_issues_exist(tmp_path):
         return CompletionOutput()
 
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.return_value = True
 
     _run(
         tmp_path,
@@ -1725,14 +1785,17 @@ def test_run_calls_check_auth_before_iteration(tmp_path):
     mock_github.check_auth.side_effect = lambda: (
         call_order.append("check_auth") or "octocat"
     )
-    mock_github.has_open_issues_with_label.side_effect = lambda label: (
-        call_order.append("has_open_issues_with_label") or False
+    mock_github.get_open_issues.side_effect = lambda label: (
+        call_order.append("get_open_issues") or []
     )
 
-    _run(tmp_path, github_service=mock_github)
+    async def _fake_run_agent(request: RunRequest):
+        return CompletionOutput()
+
+    _run(tmp_path, _fake_run_agent, github_service=mock_github)
 
     assert call_order[0] == "check_auth"
-    assert "has_open_issues_with_label" in call_order
+    assert "get_open_issues" in call_order
 
 
 def test_run_prints_authenticated_login_at_startup(tmp_path):
@@ -1740,9 +1803,14 @@ def test_run_prints_authenticated_login_at_startup(tmp_path):
     recording = RecordingStatusDisplay()
     mock_github = _make_github_svc()
     mock_github.check_auth.return_value = "octocat"
-    mock_github.has_open_issues_with_label.return_value = False
+    mock_github.get_open_issues.return_value = []
 
-    _run(tmp_path, github_service=mock_github, status_display=recording)
+    async def _fake_run_agent(request: RunRequest):
+        return CompletionOutput()
+
+    _run(
+        tmp_path, _fake_run_agent, github_service=mock_github, status_display=recording
+    )
 
     auth_prints = [
         c
@@ -2041,7 +2109,7 @@ def test_implementer_preflight_error_logs_check_details(tmp_path, capsys):
     )
 
 
-# ── Issue-206: worktree SHA + has_open_issues_with_label ──────────────────────
+# ── Issue-206: worktree SHA + full iteration path ─────────────────────────────
 
 
 def test_run_full_iteration_cold_path(git_repo):
@@ -2255,7 +2323,13 @@ def test_usage_limit_with_pool_available_does_not_sleep(tmp_path):
     from pycastle.account_pool import AccountPool
 
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.side_effect = [True, False]
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue"},
+            {"number": 2, "title": "Default Issue 2"},
+        ],
+        [],
+    ]
 
     pool = AccountPool([("secondary", "tok-s"), ("primary", "tok-p")])
     # Mark only the secondary as exhausted so primary is still available.
@@ -2292,7 +2366,13 @@ def test_usage_limit_with_pool_all_exhausted_sleeps_until_earliest_wake(tmp_path
     late = real_datetime(2026, 1, 1, 15, 30, 0)
 
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.side_effect = [True, False]
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue"},
+            {"number": 2, "title": "Default Issue 2"},
+        ],
+        [],
+    ]
 
     pool = AccountPool([("secondary", "tok-s"), ("primary", "tok-p")])
     pool.mark_exhausted("tok-s", late, now=fixed_now)
@@ -2325,7 +2405,7 @@ def test_pool_summary_printed_at_startup_with_both_accounts(tmp_path):
     from pycastle.account_pool import AccountPool
 
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.return_value = False
+    mock_github.get_open_issues.return_value = []
 
     pool = AccountPool([("secondary", "tok-s"), ("primary", "tok-p")])
     recording = RecordingStatusDisplay()
@@ -2351,7 +2431,7 @@ def test_pool_summary_printed_at_startup_with_primary_only(tmp_path):
     from pycastle.account_pool import AccountPool
 
     mock_github = _make_github_svc()
-    mock_github.has_open_issues_with_label.return_value = False
+    mock_github.get_open_issues.return_value = []
 
     pool = AccountPool([("primary", "tok-p")])
     recording = RecordingStatusDisplay()
