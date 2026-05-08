@@ -208,7 +208,14 @@ def test_managed_worktree_preserves_when_stage_done_sentinel_present(real_branch
 
     assert captured["path"].exists()
     branches = subprocess.run(
-        ["git", "-C", str(real_branch_deps.repo_root), "branch", "--list", "pycastle/issue-stage-done"],
+        [
+            "git",
+            "-C",
+            str(real_branch_deps.repo_root),
+            "branch",
+            "--list",
+            "pycastle/issue-stage-done",
+        ],
         capture_output=True,
         text=True,
     ).stdout
@@ -233,7 +240,14 @@ def test_managed_worktree_tears_down_when_no_role_dirs_and_clean_tree(real_branc
 
     assert not captured["path"].exists()
     branches = subprocess.run(
-        ["git", "-C", str(real_branch_deps.repo_root), "branch", "--list", "pycastle/issue-clean"],
+        [
+            "git",
+            "-C",
+            str(real_branch_deps.repo_root),
+            "branch",
+            "--list",
+            "pycastle/issue-clean",
+        ],
         capture_output=True,
         text=True,
     ).stdout
@@ -261,7 +275,14 @@ def test_managed_worktree_preserves_when_resumable_session_present(real_branch_d
 
     assert captured["path"].exists()
     branches = subprocess.run(
-        ["git", "-C", str(real_branch_deps.repo_root), "branch", "--list", "pycastle/issue-resumable"],
+        [
+            "git",
+            "-C",
+            str(real_branch_deps.repo_root),
+            "branch",
+            "--list",
+            "pycastle/issue-resumable",
+        ],
         capture_output=True,
         text=True,
     ).stdout
