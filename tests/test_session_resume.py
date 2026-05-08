@@ -181,3 +181,50 @@ def test_derived_session_uuid_uses_resolved_path(tmp_path):
     direct = derived_session_uuid(AgentRole.IMPLEMENTER, tmp_path)
     via_resolved = derived_session_uuid(AgentRole.IMPLEMENTER, tmp_path.resolve())
     assert direct == via_resolved
+
+
+# ── derived_session_uuid: namespace ──────────────────────────────────────────
+
+
+def test_derived_session_uuid_empty_namespace_is_byte_identical_to_no_namespace(
+    tmp_path,
+):
+    """Calling with namespace='' must produce the same UUID as the two-arg form."""
+    without = derived_session_uuid(AgentRole.IMPLEMENTER, tmp_path)
+    with_empty = derived_session_uuid(
+        AgentRole.IMPLEMENTER, tmp_path, session_namespace=""
+    )
+    assert without == with_empty
+
+
+def test_derived_session_uuid_differs_by_namespace(tmp_path):
+    """Different non-empty namespaces must produce different UUIDs."""
+    main_uuid = derived_session_uuid(
+        AgentRole.IMPROVE, tmp_path, session_namespace="main"
+    )
+    issues_uuid = derived_session_uuid(
+        AgentRole.IMPROVE, tmp_path, session_namespace="issues"
+    )
+    assert main_uuid != issues_uuid
+
+
+def test_derived_session_uuid_namespace_differs_from_no_namespace(tmp_path):
+    """A non-empty namespace UUID must differ from the base (no-namespace) UUID."""
+    base = derived_session_uuid(AgentRole.IMPROVE, tmp_path)
+    namespaced = derived_session_uuid(
+        AgentRole.IMPROVE, tmp_path, session_namespace="main"
+    )
+    assert base != namespaced
+
+
+def test_derived_session_uuid_namespace_is_deterministic(tmp_path):
+    """Same args produce the same UUID."""
+    a = derived_session_uuid(AgentRole.IMPROVE, tmp_path, session_namespace="main")
+    b = derived_session_uuid(AgentRole.IMPROVE, tmp_path, session_namespace="main")
+    assert a == b
+
+
+def test_derived_session_uuid_namespace_is_valid_uuid(tmp_path):
+    result = derived_session_uuid(AgentRole.IMPROVE, tmp_path, session_namespace="main")
+    parsed = uuid.UUID(result)
+    assert str(parsed) == result

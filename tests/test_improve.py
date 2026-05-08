@@ -487,3 +487,49 @@ def test_improve_fresh_run_on_malformed_progress(tmp_path, git_svc):
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert runner.calls[0].template == PromptTemplate.IMPROVE_SCAN
+
+
+# ── Session namespace per phase ───────────────────────────────────────────────
+
+
+def test_improve_phases_01_02_04_use_main_namespace(tmp_path, git_svc):
+    """Phases 01-scan, 02-prd, and 04-no-candidate-report must use session_namespace='main'."""
+    no_candidate_cfg = Config(logs_dir=tmp_path, improve_no_candidate_report=True)
+    runner = FakeAgentRunner(
+        [NoCandidateOutput(), CompletionOutput()]  # 01-scan NO-CANDIDATE → 04-report
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, cfg=no_candidate_cfg)
+    _run(deps)
+    assert runner.calls[0].template == PromptTemplate.IMPROVE_SCAN
+    assert runner.calls[0].session_namespace == "main"
+    assert runner.calls[1].template == PromptTemplate.IMPROVE_NO_CANDIDATE
+    assert runner.calls[1].session_namespace == "main"
+
+
+def test_improve_phase_02_uses_main_namespace(deps, agent_runner):
+    """Phase 02-prd must use session_namespace='main'."""
+    _run(deps)
+    prd_call = next(
+        c for c in agent_runner.calls if c.template == PromptTemplate.IMPROVE_PRD
+    )
+    assert prd_call.session_namespace == "main"
+
+
+def test_improve_phase_03_uses_issues_namespace(deps, agent_runner):
+    """Phase 03-issues must use session_namespace='issues' for an isolated Claude session."""
+    _run(deps)
+    issues_call = next(
+        c for c in agent_runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
+    )
+    assert issues_call.session_namespace == "issues"
+
+
+def test_improve_all_phases_have_correct_namespace(deps, agent_runner):
+    """Happy path: namespaces across all three phases match the expected mapping."""
+    _run(deps)
+    assert agent_runner.calls[0].template == PromptTemplate.IMPROVE_SCAN
+    assert agent_runner.calls[0].session_namespace == "main"
+    assert agent_runner.calls[1].template == PromptTemplate.IMPROVE_PRD
+    assert agent_runner.calls[1].session_namespace == "main"
+    assert agent_runner.calls[2].template == PromptTemplate.IMPROVE_ISSUES
+    assert agent_runner.calls[2].session_namespace == "issues"
