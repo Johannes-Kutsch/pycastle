@@ -379,6 +379,37 @@ def test_close_issue_raises_github_api_error_on_failure():
             svc.close_issue(42)
 
 
+# ── get_issue ────────────────────────────────────────────────────────────────
+
+
+def test_get_issue_returns_title_and_body():
+    svc = _make_service()
+    body = json.dumps({"number": 7, "title": "Fix bug", "body": "do it"}).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+    ):
+        assert svc.get_issue(7) == {"title": "Fix bug", "body": "do it"}
+
+
+def test_get_issue_returns_empty_string_for_null_body():
+    svc = _make_service()
+    body = json.dumps({"number": 7, "title": "Fix bug", "body": None}).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+    ):
+        assert svc.get_issue(7) == {"title": "Fix bug", "body": ""}
+
+
+def test_get_issue_raises_when_title_missing():
+    svc = _make_service()
+    body = json.dumps({"number": 7}).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+    ):
+        with pytest.raises(GithubAPIError):
+            svc.get_issue(7)
+
+
 # ── get_issue_title / get_labels ─────────────────────────────────────────────
 
 
