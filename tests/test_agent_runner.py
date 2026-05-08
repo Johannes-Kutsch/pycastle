@@ -48,7 +48,6 @@ _COMPLETE_STREAM = [
 _MERGER_COMPLETE_STREAM = [
     b'{"type": "result", "result": "<promise>COMPLETE</promise>", "is_error": false}\n'
 ]
-_IMPROVE_COMPLETE_STREAM = _MERGER_COMPLETE_STREAM
 
 
 # ── FakeAgentRunner: queue behaviour ─────────────────────────────────────────
