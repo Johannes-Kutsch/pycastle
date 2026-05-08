@@ -76,17 +76,9 @@ def _token_text(current: int, peak: int) -> Text:
     if current == 0:
         return Text("")
     text = Text()
-    cur_style = _token_style(current)
-    peak_style = _token_style(peak)
-    if cur_style:
-        text.append(_format_k(current), style=cur_style)
-    else:
-        text.append(_format_k(current))
+    text.append(_format_k(current), style=_token_style(current))
     text.append(" (↑")
-    if peak_style:
-        text.append(_format_k(peak), style=peak_style)
-    else:
-        text.append(_format_k(peak))
+    text.append(_format_k(peak), style=_token_style(peak))
     text.append(")")
     return text
 
