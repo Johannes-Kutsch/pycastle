@@ -62,6 +62,16 @@ Vertical-slice rules:
 - A completed slice is demoable or verifiable on its own
 - Prefer many thin slices over few thick ones
 
+### Granularity check
+
+Before approving each slice, answer these two explicitly:
+
+1. **Layer count** — Does the slice touch more than one independently-shippable architectural layer of the codebase? Identify the layers from `CONTEXT.md` and the module structure. If yes, sequence the layer changes as separate slices, each shipping a working intermediate state — unless the layer changes are genuinely indivisible (one cannot merge without the other compiling / passing tests).
+
+2. **Read-budget** — To implement this slice, would a fresh agent plausibly need to read more than ~5 files outside the ones being modified? If yes, the slice is bundling unrelated context.
+
+A slice that fails either check is a split candidate. The underlying constraint: each issue must fit in one usage window of an AFK agent. Work invested in a session that hits its limit before producing committable output is lost on resume — over-scoping is wasteful, not just inelegant.
+
 ## 4. Self-quiz
 
 Before filing, answer the following questions explicitly in the conversation:
@@ -70,6 +80,7 @@ Before filing, answer the following questions explicitly in the conversation:
 - Are the dependency relationships correct?
 - Should any slices be merged or split further?
 - Is every slice genuinely AFK-implementable?
+- Does each slice pass the granularity check?
 
 Iterate the breakdown in your reasoning until the answers are clean.
 
