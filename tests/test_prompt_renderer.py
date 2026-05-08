@@ -91,6 +91,13 @@ def test_scope_resume_is_empty():
     assert Scope.RESUME.placeholders == frozenset()
 
 
+def test_scopes_are_distinct_members():
+    # Regression: empty-frozenset values were aliased by Enum, collapsing
+    # IMPROVE_SCAN and RESUME into a single member.
+    assert Scope.IMPROVE_SCAN is not Scope.RESUME
+    assert len(list(Scope)) == 7
+
+
 # ── PromptTemplate enum has correct filename and scope ────────────────────────
 
 
