@@ -981,6 +981,64 @@ def test_transient_worktree_removes_worktrees_dir_when_last_worktree_exits(
     asyncio.run(_run())
 
 
+# ── post-creation clean-status invariant ─────────────────────────────────────
+
+
+def _set_autocrlf(repo_root, value):
+    subprocess.run(
+        ["git", "-C", str(repo_root), "config", "core.autocrlf", value],
+        check=True,
+        capture_output=True,
+    )
+
+
+def _assert_worktree_clean(path):
+    result = subprocess.run(
+        ["git", "-C", str(path), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "", (
+        f"dirty worktree after creation: {result.stdout!r}"
+    )
+
+
+@pytest.mark.parametrize("autocrlf", [None, "true"])
+def test_managed_worktree_has_clean_status_after_creation(real_branch_deps, autocrlf):
+    """managed_worktree must produce a clean working tree, even when host has core.autocrlf=true."""
+    if autocrlf is not None:
+        _set_autocrlf(real_branch_deps.repo_root, autocrlf)
+
+    async def _run():
+        async with managed_worktree(
+            f"issue-eol-{autocrlf}",
+            branch=f"pycastle/issue-eol-{autocrlf}",
+            sha=None,
+            delete_branch_on_teardown=True,
+            deps=real_branch_deps,
+        ) as path:
+            _assert_worktree_clean(path)
+
+    asyncio.run(_run())
+
+
+@pytest.mark.parametrize("autocrlf", [None, "true"])
+def test_transient_worktree_has_clean_status_after_creation(real_branch_deps, autocrlf):
+    """transient_worktree must produce a clean working tree, even when host has core.autocrlf=true."""
+    if autocrlf is not None:
+        _set_autocrlf(real_branch_deps.repo_root, autocrlf)
+    sha = real_branch_deps.git_svc.get_head_sha(real_branch_deps.repo_root)
+
+    async def _run():
+        async with transient_worktree(
+            f"sandbox-eol-{autocrlf}", sha=sha, deps=real_branch_deps
+        ) as path:
+            _assert_worktree_clean(path)
+
+    asyncio.run(_run())
+
+
 # ── managed_worktree: broadened preservation rule ────────────────────────────
 
 
