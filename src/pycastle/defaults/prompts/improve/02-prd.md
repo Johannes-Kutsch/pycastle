@@ -10,13 +10,15 @@ You must NOT modify any files in the worktree. Your only outputs are the GitHub 
 
 ## Process
 
-1. Reuse the codebase exploration and design-tree grilling already done in phase 1 — don't re-scan. Use `CONTEXT.md` vocabulary throughout the PRD, and respect any ADRs in the area you're touching.
+1. **Dedup check**: Before filing, run `gh issue list --search "[improve-{{IMPROVE_SHORT_SID}}] in:title" --state all --json number,title`. If a PRD issue already exists for this session, output its number and stop — do not file a duplicate.
 
-2. Sketch out the major modules you will need to build or modify to complete the implementation. Actively look for opportunities to extract deep modules that can be tested in isolation.
+2. Reuse the codebase exploration and design-tree grilling already done in phase 1 — don't re-scan. Use `CONTEXT.md` vocabulary throughout the PRD, and respect any ADRs in the area you're touching.
+
+3. Sketch out the major modules you will need to build or modify to complete the implementation. Actively look for opportunities to extract deep modules that can be tested in isolation.
 
 A deep module (as opposed to a shallow module) is one which encapsulates a lot of functionality in a simple, testable interface which rarely changes.
 
-3. Write the PRD using the template below, then publish it. **Always write the body to a temp file and use `gh issue create --body-file` — never pass the body inline, as PRD content breaks shell quoting.**
+4. Write the PRD using the template below, then publish it. **Always write the body to a temp file and use `gh issue create --body-file` — never pass the body inline, as PRD content breaks shell quoting.**
 
 The issue title must start with `[improve-{{IMPROVE_SHORT_SID}}]`. Do NOT apply any triage label — the PRD is a parent/tracking issue; only phase 3 sub-issues carry `ready-for-agent`.
 

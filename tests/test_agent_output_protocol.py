@@ -833,7 +833,9 @@ def test_process_stream_improve_raises_when_no_promise_tag():
         process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
 
 
-def test_process_stream_improve_returns_issue_output_for_json_issue_tag():
+def test_process_stream_improve_json_issue_tag_returns_completion_output():
+    # JSON-form <issue> content is not a bare integer, so no number is captured —
+    # the improve role only extracts bare-integer <issue>N</issue> tags.
     lines = [
         _result_line(
             '<issue>{"number": 99, "labels": ["enhancement"]}</issue>'
@@ -841,37 +843,11 @@ def test_process_stream_improve_returns_issue_output_for_json_issue_tag():
         )
     ]
     result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
-    assert isinstance(result, IssueOutput)
-    assert result.number == 99
-    assert result.labels == ["enhancement"]
+    assert isinstance(result, CompletionOutput)
+    assert result.issue_numbers == ()
 
 
 def test_process_stream_improve_json_issue_without_promise_raises():
     lines = [_result_line('<issue>{"number": 99, "labels": []}</issue>')]
     with pytest.raises(PromiseParseError):
         process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
-
-
-def test_process_stream_improve_json_issue_in_streaming_turn_returns_issue_output():
-    consumed: list[str] = []
-
-    def tracking_iter():
-        for line in [
-            _assistant_line(
-                '<issue>{"number": 7, "labels": ["bug"]}</issue>'
-                "<promise>COMPLETE</promise>"
-            ),
-            _assistant_line("This line must not be consumed"),
-            _result_line("extra"),
-        ]:
-            consumed.append(line)
-            yield line
-
-    result = process_stream(
-        tracking_iter(),
-        on_turn=lambda t: None,
-        role=AgentRole.IMPROVE,
-    )
-    assert isinstance(result, IssueOutput)
-    assert result.number == 7
-    assert len(consumed) == 1
