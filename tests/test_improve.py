@@ -533,6 +533,70 @@ def test_improve_is_terminal_after_report(tmp_path, git_svc):
     assert len(runner.calls) == 0
 
 
+# ── Issue #528: phase-boundary prompt shape ──────────────────────────────────
+
+
+def test_mid_phase_2_retry_does_not_signal_role_prompt(tmp_path, git_svc):
+    """Resume mid-phase-2 (interrupted before COMPLETE): phase 2's role prompt
+    is already in the resumed claude conversation history, so the retry must
+    NOT re-send it — send_role_prompt_on_resume stays False so container_runner
+    falls back to the continuation prompt."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    role_session_dir = wt / ".pycastle-session" / "improve"
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    (role_session_dir / "_phase_progress").write_text(
+        "01-scan:picked", encoding="utf-8"
+    )
+    (role_session_dir / "_phase_in_flight").write_text("02-prd", encoding="utf-8")
+    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
+    deps = _ImproveDepsStub(
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        agent_runner=runner,
+        cfg=Config(),
+        status_display=PlainStatusDisplay(),
+    )
+    _run(deps)
+    prd_call = next(c for c in runner.calls if c.prompt_file.name == "02-prd.md")
+    assert prd_call.send_role_prompt_on_resume is False
+
+
+def test_cross_teardown_resume_at_phase_2_signals_role_prompt(tmp_path, git_svc):
+    """Resume from '01-scan:picked' (phase 1 completed, container torn down):
+    phase 2's RunRequest signals send_role_prompt_on_resume=True so the PRD
+    prompt is delivered, not the continuation prompt."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_progress(wt, "01-scan:picked")
+    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
+    deps = _ImproveDepsStub(
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        agent_runner=runner,
+        cfg=Config(),
+        status_display=PlainStatusDisplay(),
+    )
+    _run(deps)
+    prd_call = next(c for c in runner.calls if c.prompt_file.name == "02-prd.md")
+    assert prd_call.send_role_prompt_on_resume is True
+
+
+def test_cold_start_phase_1_does_not_signal_role_prompt_on_resume(deps, agent_runner):
+    """Cold start: phase 1 RunRequest leaves send_role_prompt_on_resume False
+    so today's Fresh-run prompt-shape stays identical."""
+    _run(deps)
+    scan_call = agent_runner.calls[0]
+    assert scan_call.send_role_prompt_on_resume is False
+
+
+def test_phase_2_signals_role_prompt_on_resumed_session(deps, agent_runner):
+    """After phase 1 completes cleanly, phase 2's RunRequest signals that the
+    new role prompt must be sent despite the resumed claude session — otherwise
+    the agent would receive only the continuation prompt (issue #528)."""
+    _run(deps)
+    prd_call = next(c for c in agent_runner.calls if c.prompt_file.name == "02-prd.md")
+    assert prd_call.send_role_prompt_on_resume is True
+
+
 def test_improve_fresh_run_on_malformed_progress(tmp_path, git_svc):
     """Malformed progress file falls back to a fresh run starting at phase 1 (scan)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"

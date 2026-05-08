@@ -14,6 +14,7 @@ from ._rows import phase_row
 
 IMPROVE_SANDBOX = "pycastle/improve-sandbox"
 _PHASE_PROGRESS_FILE = "_phase_progress"
+_PHASE_IN_FLIGHT_FILE = "_phase_in_flight"
 _SID_PHASES = frozenset({"02-prd.md", "03-issues.md", "04-no-candidate-report.md"})
 _STANDARDS_PHASES = frozenset({"01-scan.md"})
 _VALID_PHASE_IDS = frozenset(
@@ -95,8 +96,14 @@ async def improve_phase(deps: _ImproveDeps) -> None:
                 sandbox_path / ".pycastle-session" / AgentRole.IMPROVE.value
             )
             progress_file = role_session_dir / _PHASE_PROGRESS_FILE
+            in_flight_file = role_session_dir / _PHASE_IN_FLIGHT_FILE
 
             last_id = _read_progress(progress_file)
+            in_flight_id = (
+                in_flight_file.read_text(encoding="utf-8").strip()
+                if in_flight_file.is_file()
+                else None
+            )
             prompt_name = next_prompt(
                 last_id,
                 no_candidate_report=deps.cfg.improve_no_candidate_report,
@@ -109,6 +116,10 @@ async def improve_phase(deps: _ImproveDeps) -> None:
                 else:
                     prompt_args = None
                 display_name, display_body = _PHASE_DISPLAY[prompt_name]
+                phase_key = prompt_name.removesuffix(".md")
+                is_mid_phase_retry = in_flight_id == phase_key
+                role_session_dir.mkdir(parents=True, exist_ok=True)
+                in_flight_file.write_text(phase_key, encoding="utf-8")
                 output = await deps.agent_runner.run(
                     RunRequest(
                         name=display_name,
@@ -122,6 +133,8 @@ async def improve_phase(deps: _ImproveDeps) -> None:
                         stage="improve-sandbox",
                         status_display=deps.status_display,
                         work_body=display_body,
+                        send_role_prompt_on_resume=last_id is not None
+                        and not is_mid_phase_retry,
                     )
                 )
 
@@ -129,6 +142,9 @@ async def improve_phase(deps: _ImproveDeps) -> None:
                 completed_id = _phase_id(prompt_name, output)
                 role_session_dir.mkdir(parents=True, exist_ok=True)
                 progress_file.write_text(completed_id, encoding="utf-8")
+                in_flight_file.unlink(missing_ok=True)
+                last_id = completed_id
+                in_flight_id = None
 
                 prompt_name = next_prompt(
                     completed_id,
