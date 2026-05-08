@@ -5,8 +5,8 @@ from ..agent_output_protocol import AgentOutput, AgentRole, NoCandidateOutput
 from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..session_resume import derived_session_uuid
 from ..services import GitService
+from ..session_resume import derived_session_uuid
 from ..status_display import StatusDisplay
 from ..worktree import managed_worktree
 from ._rows import phase_row
