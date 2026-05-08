@@ -100,7 +100,10 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         case Done():
             return Done()
         case DispatchImprove():
-            await improve_phase(deps, sha=preflight_sha)
+            try:
+                await improve_phase(deps, sha=preflight_sha)
+            except UsageLimitError as err:
+                return AbortedUsageLimit(reset_time=err.reset_time)
             return Continue()
         case RunImplementDirect():
             sha = preflight_sha
