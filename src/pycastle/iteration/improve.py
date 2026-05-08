@@ -5,6 +5,7 @@ from ..agent_output_protocol import AgentOutput, AgentRole, NoCandidateOutput
 from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..session_resume import derived_session_uuid
 from ..services import GitService
 from ..status_display import StatusDisplay
 from ..worktree import managed_worktree
@@ -12,6 +13,7 @@ from ._rows import phase_row
 
 IMPROVE_SANDBOX = "pycastle/improve-sandbox"
 _PHASE_PROGRESS_FILE = "_phase_progress"
+_SID_PHASES = frozenset({"02-prd.md", "03-issues.md", "04-no-candidate-report.md"})
 
 
 def next_prompt(
@@ -72,6 +74,9 @@ async def improve_phase(deps: _ImproveDeps) -> None:
             delete_branch_on_teardown=True,
             deps=deps,
         ) as sandbox_path:
+            short_sid = derived_session_uuid(AgentRole.IMPROVE, sandbox_path).split(
+                "-"
+            )[0]
             role_session_dir = (
                 sandbox_path / ".pycastle-session" / AgentRole.IMPROVE.value
             )
@@ -84,6 +89,11 @@ async def improve_phase(deps: _ImproveDeps) -> None:
             )
 
             while prompt_name is not None:
+                prompt_args = (
+                    {"IMPROVE_SHORT_SID": short_sid}
+                    if prompt_name in _SID_PHASES
+                    else None
+                )
                 output = await deps.agent_runner.run(
                     RunRequest(
                         name="Improve Agent",
@@ -91,6 +101,7 @@ async def improve_phase(deps: _ImproveDeps) -> None:
                         mount_path=sandbox_path,
                         role=AgentRole.IMPROVE,
                         skip_preflight=True,
+                        prompt_args=prompt_args,
                         model=deps.cfg.improve_override.model,
                         effort=deps.cfg.improve_override.effort,
                         stage="improve-sandbox",
