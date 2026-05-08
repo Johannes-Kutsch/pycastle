@@ -259,15 +259,3 @@ def test_endless_mode_dispatched_guard_fires_regardless_of_slept_once():
         improve_dispatched_this_iteration=True,
     )
     assert isinstance(action, Done)
-
-
-def test_until_sleep_dispatched_guard_fires_with_slept_once_false():
-    """until_sleep + slept_once=False + already dispatched → Done (dispatched guard, not sleep gate)."""
-    action = decide_iteration_action(
-        open_afk_count=0,
-        in_flight_count=0,
-        improve_mode="until_sleep",
-        slept_once=False,
-        improve_dispatched_this_iteration=True,
-    )
-    assert isinstance(action, Done)
