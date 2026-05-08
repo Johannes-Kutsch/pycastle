@@ -120,7 +120,7 @@ def test_conflict_spawns_merger_with_conflict_branches_only(
     _run(issues, deps)
     merger_calls = [c for c in agent_runner.calls if c.name == "Merge Agent"]
     assert len(merger_calls) == 1
-    branches_arg = merger_calls[0].prompt_args["BRANCHES"]
+    branches_arg = merger_calls[0].scope_args["BRANCHES"]
     assert "pycastle/issue-2" in branches_arg
     assert "pycastle/issue-1" not in branches_arg
 
@@ -175,7 +175,7 @@ def test_merger_does_not_receive_issues_prompt_arg(deps, git_svc, agent_runner):
     _run(issues, deps)
     merger_calls = [c for c in agent_runner.calls if c.name == "Merge Agent"]
     assert len(merger_calls) == 1
-    assert "ISSUES" not in merger_calls[0].prompt_args
+    assert "ISSUES" not in merger_calls[0].scope_args
 
 
 # ── Branch deletion edge cases ────────────────────────────────────────────────

@@ -8,13 +8,10 @@ from .agent_output_protocol import AgentOutput, AgentRole
 from .config import Config
 from .docker_session import DockerSession
 from .errors import DockerError
-from .prompt_pipeline import prepare_prompt
+from .prompt_pipeline import PromptRenderer, PromptTemplate
 from .session_resume import RunKind
 from .status_display import PlainStatusDisplay
 from .stream_session import WorkStream
-
-_DEFAULTS_PROMPTS = Path(__file__).parent / "defaults" / "prompts"
-_RESUME_PROMPT_FILE = _DEFAULTS_PROMPTS / "_resume-prompt.md"
 
 
 def _build_claude_command(
@@ -98,8 +95,9 @@ class ContainerRunner:
     async def work(
         self,
         role: AgentRole,
-        prompt_file: Path,
-        prompt_args: dict[str, str],
+        template: PromptTemplate,
+        scope_args: dict[str, str],
+        renderer: PromptRenderer,
         *,
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
@@ -113,13 +111,15 @@ class ContainerRunner:
             return await loop.run_in_executor(None, self._session.exec_simple, cmd)
 
         if run_kind == RunKind.RESUME and not send_role_prompt_on_resume:
-            prompt = _RESUME_PROMPT_FILE.read_text(encoding="utf-8")
+            prompt = await renderer.render(PromptTemplate.RESUME, {}, container_exec)
         elif run_kind == RunKind.RESUME and send_role_prompt_on_resume:
-            prompt = await prepare_prompt(prompt_file, prompt_args, container_exec)
+            prompt = await renderer.render(template, scope_args, container_exec)
         else:
-            role_prompt = await prepare_prompt(prompt_file, prompt_args, container_exec)
+            role_prompt = await renderer.render(template, scope_args, container_exec)
             if is_failsoft_recovery:
-                resume_text = _RESUME_PROMPT_FILE.read_text(encoding="utf-8")
+                resume_text = await renderer.render(
+                    PromptTemplate.RESUME, {}, container_exec
+                )
                 prompt = resume_text + "\n\n" + role_prompt
             else:
                 prompt = role_prompt

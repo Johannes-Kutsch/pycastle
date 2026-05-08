@@ -69,7 +69,7 @@ def test_planning_phase_passes_open_issues_as_json_to_planner(tmp_path, git_svc)
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     asyncio.run(planning_phase(deps, "abc123", issues))
 
-    assert fake.calls[0].prompt_args["OPEN_ISSUES_JSON"] == json.dumps(issues)
+    assert fake.calls[0].scope_args["OPEN_ISSUES_JSON"] == json.dumps(issues)
 
 
 # ── planning_phase: worktree lifecycle ──────────────────────────────────────

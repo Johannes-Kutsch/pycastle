@@ -11,6 +11,7 @@ from .config import Config
 from .container_runner import ContainerRunner
 from .docker_session import DockerSession, build_volume_spec
 from .errors import AgentTimeoutError, UsageLimitError
+from .prompt_pipeline import PromptRenderer, PromptTemplate
 from .session_resume import (
     RunKind,
     decide_agent_run_kind,
@@ -26,10 +27,10 @@ _CONTAINER_WORKSPACE = "/home/agent/workspace"
 @dataclasses.dataclass
 class RunRequest:
     name: str
-    prompt_file: Path
+    template: PromptTemplate
     mount_path: Path
     role: AgentRole = AgentRole.IMPLEMENTER
-    prompt_args: dict[str, str] | None = None
+    scope_args: dict[str, str] | None = None
     skip_preflight: bool = False
     model: str = ""
     effort: str = ""
@@ -69,6 +70,7 @@ class AgentRunner:
         self._git_service = git_service
         self._docker_client = docker_client
         self._account_pool = account_pool
+        self._renderer = PromptRenderer(cfg)
 
     def _build_session(
         self, mount_path: Path, role: AgentRole | None = None
@@ -99,10 +101,10 @@ class AgentRunner:
         from .iteration._rows import agent_row
 
         name = request.name
-        prompt_file = request.prompt_file
+        template = request.template
         mount_path = request.mount_path
         role = request.role
-        prompt_args = request.prompt_args
+        scope_args = request.scope_args or {}
         skip_preflight = request.skip_preflight
         model = request.model
         effort = request.effort
@@ -152,8 +154,9 @@ class AgentRunner:
                     try:
                         return await runner.work(
                             role,
-                            prompt_file,
-                            prompt_args or {},
+                            template,
+                            scope_args,
+                            self._renderer,
                             run_kind=run_kind,
                             session_uuid=session_uuid,
                             is_failsoft_recovery=is_failsoft_recovery,
