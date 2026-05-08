@@ -295,3 +295,43 @@ def test_prd_prompt_instructs_afk_safety_confirmation():
 def test_prd_prompt_instructs_session_footer():
     content = (_DEFAULTS / "02-prd.md").read_text(encoding="utf-8")
     assert "footer" in content.lower()
+
+
+# ── Phase 3 sub-issues template ───────────────────────────────────────────────
+
+_ISSUES_ARGS = {"IMPROVE_SHORT_SID": "abcd1234"}
+
+
+def test_issues_prompt_renders_without_error():
+    _render(_DEFAULTS / "03-issues.md", _ISSUES_ARGS)
+
+
+def test_issues_prompt_fails_without_short_sid_arg():
+    with pytest.raises(PromptRenderError, match="IMPROVE_SHORT_SID"):
+        _render(_DEFAULTS / "03-issues.md", {})
+
+
+def test_issues_prompt_expands_short_sid_in_dedup_search():
+    result = _render(_DEFAULTS / "03-issues.md", _ISSUES_ARGS)
+    assert "{{IMPROVE_SHORT_SID}}" not in result
+    assert "abcd1234" in result
+
+
+def test_issues_prompt_instructs_dedup_check():
+    content = (_DEFAULTS / "03-issues.md").read_text(encoding="utf-8")
+    assert "gh issue list" in content
+
+
+def test_issues_prompt_instructs_afk_safety_confirmation():
+    content = (_DEFAULTS / "03-issues.md").read_text(encoding="utf-8")
+    assert "afk" in content.lower() or "autonomous" in content.lower()
+
+
+def test_issues_prompt_instructs_session_footer():
+    content = (_DEFAULTS / "03-issues.md").read_text(encoding="utf-8")
+    assert "footer" in content.lower()
+
+
+def test_issues_prompt_instructs_sub_issue_registration():
+    content = (_DEFAULTS / "03-issues.md").read_text(encoding="utf-8")
+    assert "sub_issues" in content or "sub-issue" in content.lower()
