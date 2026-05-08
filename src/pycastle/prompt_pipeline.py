@@ -76,19 +76,25 @@ async def _preprocess(prompt: str, exec_fn) -> str:
 
 
 class Scope(enum.Enum):
-    PER_ISSUE = frozenset(
-        {"ISSUE_NUMBER", "ISSUE_TITLE", "ISSUE_BODY", "ISSUE_COMMENTS", "BRANCH"}
+    # Values are (name, placeholders) tuples — the name disambiguates scopes
+    # whose placeholder sets are equal (otherwise Enum would alias them, e.g.
+    # IMPROVE_SCAN and RESUME both have empty sets).
+    PER_ISSUE = (
+        "PER_ISSUE",
+        frozenset(
+            {"ISSUE_NUMBER", "ISSUE_TITLE", "ISSUE_BODY", "ISSUE_COMMENTS", "BRANCH"}
+        ),
     )
-    MERGE = frozenset({"BRANCHES"})
-    PLAN = frozenset({"OPEN_ISSUES_JSON"})
-    PREFLIGHT = frozenset({"CHECK_NAME", "COMMAND", "OUTPUT"})
-    IMPROVE_SCAN = frozenset[str]()
-    IMPROVE_SESSION = frozenset({"IMPROVE_SHORT_SID"})
-    RESUME = frozenset[str]()
+    MERGE = ("MERGE", frozenset({"BRANCHES"}))
+    PLAN = ("PLAN", frozenset({"OPEN_ISSUES_JSON"}))
+    PREFLIGHT = ("PREFLIGHT", frozenset({"CHECK_NAME", "COMMAND", "OUTPUT"}))
+    IMPROVE_SCAN = ("IMPROVE_SCAN", frozenset[str]())
+    IMPROVE_SESSION = ("IMPROVE_SESSION", frozenset({"IMPROVE_SHORT_SID"}))
+    RESUME = ("RESUME", frozenset[str]())
 
     @property
     def placeholders(self) -> frozenset[str]:
-        return self.value  # type: ignore[return-value]
+        return self.value[1]  # type: ignore[index,no-any-return]
 
 
 class PromptTemplate(enum.Enum):
