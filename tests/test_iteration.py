@@ -1584,3 +1584,124 @@ def test_run_iteration_skips_preflight_checks_when_improve_would_stop(
     assert not recording_runner.preflight_calls, (
         "PREFLIGHT_CHECKS must not run on cheap pre-check exit"
     )
+
+
+# ── Centralized UsageLimitError → AbortedUsageLimit conversion ───────────────
+
+
+@pytest.mark.parametrize(
+    "phase",
+    [
+        "preflight",
+        "plan",
+        "improve",
+        "merge",
+    ],
+)
+def test_run_iteration_returns_aborted_usage_limit_for_each_single_agent_phase(
+    tmp_path, git_svc, logger, phase
+):
+    """run_iteration returns AbortedUsageLimit for each single-agent phase when it hits
+    the usage limit. Adding a fifth single-agent phase requires one new parameter row."""
+    from datetime import datetime
+
+    reset_time = datetime(2026, 5, 8, 16, 0)
+    github_svc = MagicMock(spec=GithubService)
+
+    if phase == "preflight":
+        github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix"}]
+
+        async def agent_fn(req: RunRequest):
+            raise UsageLimitError(reset_time=reset_time)
+
+        deps = _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+        )
+    elif phase == "plan":
+        github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix"}]
+
+        async def agent_fn(req: RunRequest):
+            raise UsageLimitError(reset_time=reset_time)
+
+        deps = _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            preflight_responses=[[]],
+        )
+    elif phase == "improve":
+        github_svc.get_open_issues.return_value = []
+
+        async def agent_fn(req: RunRequest):
+            raise UsageLimitError(reset_time=reset_time)
+
+        deps = dataclasses.replace(
+            _make_deps(
+                tmp_path,
+                agent_fn,
+                git_svc=git_svc,
+                github_svc=github_svc,
+                logger=logger,
+                preflight_responses=[[]],
+            ),
+            improve_mode="endless",
+        )
+    else:  # merge
+        github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix"}]
+        git_svc.try_merge.return_value = False  # force conflict path → Merge Agent
+
+        async def agent_fn(req: RunRequest):
+            if req.name == "Plan Agent":
+                return _plan_output([{"number": 1, "title": "Fix"}])
+            if req.name == "Merge Agent":
+                raise UsageLimitError(reset_time=reset_time)
+            return CompletionOutput()
+
+        deps = _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            preflight_responses=[[]],
+        )
+
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedUsageLimit)
+    assert result.reset_time == reset_time
+
+
+def test_phase_row_paints_interrupted_style_on_usage_limit(tmp_path, git_svc, logger):
+    """When UsageLimitError propagates through a phase_row, the row is removed with
+    style 'interrupted' and message 'usage limit reached'."""
+    from datetime import datetime
+
+    recording = RecordingStatusDisplay()
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix"}]
+    reset_time = datetime(2026, 5, 8, 16, 0)
+
+    async def agent_fn(req: RunRequest):
+        raise UsageLimitError(reset_time=reset_time)
+
+    deps = _make_deps(
+        tmp_path,
+        agent_fn,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[[]],
+        status_display=recording,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedUsageLimit)
+    assert ("remove", "Plan", "usage limit reached", "interrupted") in recording.calls

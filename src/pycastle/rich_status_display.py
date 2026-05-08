@@ -262,6 +262,8 @@ class RichStatusDisplay:
                 text.stylize("green")
             elif style == "warning":
                 text.stylize("yellow")
+            elif style == "interrupted":
+                text.stylize("cyan")
             self._console.print(text)
 
     def stop(self) -> None:
