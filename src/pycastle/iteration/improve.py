@@ -7,7 +7,7 @@ from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompt_pipeline import load_standards
 from ..services import GitService
-from ..session_resume import derived_session_uuid
+from ..session_resume import clear_session_dir, derived_session_uuid
 from ..status_display import StatusDisplay
 from ..worktree import managed_worktree
 from ._rows import phase_row
@@ -16,6 +16,9 @@ IMPROVE_SANDBOX = "pycastle/improve-sandbox"
 _PHASE_PROGRESS_FILE = "_phase_progress"
 _SID_PHASES = frozenset({"02-prd.md", "03-issues.md", "04-no-candidate-report.md"})
 _STANDARDS_PHASES = frozenset({"01-scan.md"})
+_VALID_PHASE_IDS = frozenset(
+    {"01-scan:picked", "01-scan:no-candidate", "02-prd", "03-issues", "04-report"}
+)
 
 
 def next_prompt(
@@ -51,7 +54,7 @@ def _phase_id(prompt_name: str, output: AgentOutput) -> str:
 def _read_progress(progress_file: Path) -> str | None:
     try:
         value = progress_file.read_text(encoding="utf-8").strip()
-        return value or None
+        return value if value in _VALID_PHASE_IDS else None
     except OSError:
         return None
 
@@ -121,5 +124,7 @@ async def improve_phase(deps: _ImproveDeps) -> None:
                     completed_id,
                     no_candidate_report=deps.cfg.improve_no_candidate_report,
                 )
+
+            clear_session_dir(role_session_dir)
 
         row.close("finished")
