@@ -70,8 +70,8 @@ class IssueOutput:
 @dataclasses.dataclass(frozen=True)
 class CompletionOutput:
     # Bare-integer <issue>N</issue> tags captured from the COMPLETE turn.
-    # Phase 02 (PRD) emits exactly one; phase 03 emits one per sub-issue (ignored
-    # by improve_phase — only phase 02's first number is used as prd_number).
+    # Phase 02 (PRD) emits exactly one; phase 03 emits one per sub-issue.
+    # improve_phase uses phase 02's first number as prd_number; phase 03's are ignored.
     issue_numbers: tuple[int, ...] = ()
 
 
@@ -252,12 +252,9 @@ def _extract_issue_numbers(text: str) -> tuple[int, ...]:
     return tuple(int(m.group(1)) for m in _ISSUE_NUMBER_RE.finditer(text))
 
 
-def _extract_improve_output(text: str) -> IssueOutput | CompletionOutput:
-    # Phase 02 (PRD) emits a JSON-form <issue>; phase 03 emits bare integers.
-    try:
-        return _extract_issue_output(text)
-    except IssueParseError:
-        return CompletionOutput(issue_numbers=_extract_issue_numbers(text))
+def _extract_improve_output(text: str) -> CompletionOutput:
+    # Both phase 02 (PRD) and phase 03 (sub-issues) emit bare-integer <issue>N</issue> tags.
+    return CompletionOutput(issue_numbers=_extract_issue_numbers(text))
 
 
 def process_stream(

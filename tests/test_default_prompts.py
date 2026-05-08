@@ -269,6 +269,11 @@ def test_prd_prompt_instructs_session_footer():
     assert "_Filed by improve session" in content
 
 
+def test_prd_prompt_instructs_dedup_check():
+    content = (_IMPROVE / "02-prd.md").read_text(encoding="utf-8")
+    assert "gh issue list" in content
+
+
 # ── Phase 3 sub-issues template ───────────────────────────────────────────────
 
 _ISSUES_SCOPE = {
