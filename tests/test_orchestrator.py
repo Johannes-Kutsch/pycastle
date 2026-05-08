@@ -14,7 +14,7 @@ from pycastle.agent_result import (
     PreflightFailure,
 )
 from pycastle.agent_runner import RunRequest
-from pycastle.config import Config, StageOverride
+from pycastle.config import StageOverride
 from pycastle.errors import UsageLimitError
 from pycastle.services import (
     GitCommandError,
@@ -150,7 +150,7 @@ def test_run_does_not_crash_when_planner_omits_branch_field(tmp_path):
         if request.name == "Plan Agent":
             return PlannerOutput(issues=[{"number": 193, "title": "Fix branch bug"}])
         if "Implement Agent" in request.name:
-            dispatched.append((request.prompt_args or {}).get("BRANCH", ""))
+            dispatched.append((request.scope_args or {}).get("BRANCH", ""))
             return CompletionOutput()
         return CompletionOutput()
 
@@ -175,7 +175,7 @@ def test_run_computes_branch_from_issue_number_not_planner_slug(tmp_path):
         if request.name == "Plan Agent":
             return PlannerOutput(issues=[{"number": 42, "title": "Fix thing"}])
         if "Implement Agent" in request.name:
-            captured_branches.append((request.prompt_args or {}).get("BRANCH", ""))
+            captured_branches.append((request.scope_args or {}).get("BRANCH", ""))
             return CompletionOutput()
         return CompletionOutput()
 
@@ -201,7 +201,7 @@ def test_preflight_issue_branch_uses_pycastle_format(tmp_path):
         if request.name == "Plan Agent":
             return _plan_output([{"number": 77, "title": "Preflight fix title"}])
         if "Implement Agent" in request.name:
-            captured_branches.append((request.prompt_args or {}).get("BRANCH", ""))
+            captured_branches.append((request.scope_args or {}).get("BRANCH", ""))
             return CompletionOutput()
         return CompletionOutput()
 
@@ -550,31 +550,7 @@ def test_stage_overrides_are_independent(tmp_path):
     assert by_name["Merge Agent"]["effort"] == "high"
 
 
-# ── Issue-100: stage parameter and CHECKS prompt arg ─────────────────────────
-
-
-def test_merger_receives_checks_prompt_arg_from_preflight_checks(tmp_path):
-    """Merger must receive CHECKS built from preflight_checks commands joined by ' && '."""
-    captured: list[dict] = []
-
-    async def _fake_run_agent(request: RunRequest):
-        captured.append(
-            {"name": request.name, "prompt_args": (request.prompt_args or {})}
-        )
-        if "Implement Agent" in request.name:
-            return CompletionOutput()
-        return _plan_output([{"number": 1, "title": "Fix"}])
-
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        git_service=_make_git_svc(try_merge_side_effect=[False]),
-        github_service=_make_github_svc(),
-    )
-
-    merger_call = next(c for c in captured if c["name"] == "Merge Agent")
-    expected_checks = " && ".join(cmd for _, cmd in Config().preflight_checks)
-    assert merger_call["prompt_args"]["CHECKS"] == expected_checks
+# ── Issue-100: stage parameter ───────────────────────────────────────────────
 
 
 def test_each_agent_passes_correct_stage_string(tmp_path):
@@ -786,7 +762,7 @@ def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         captured.append(
-            {"name": request.name, "prompt_args": (request.prompt_args or {})}
+            {"name": request.name, "scope_args": (request.scope_args or {})}
         )
         if "Implement Agent" in request.name:
             return CompletionOutput()
@@ -803,7 +779,7 @@ def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
     assert len(merger_calls) == 1, (
         f"Expected exactly one Merger call; got {merger_calls}"
     )
-    branches_arg = merger_calls[0]["prompt_args"]["BRANCHES"]
+    branches_arg = merger_calls[0]["scope_args"]["BRANCHES"]
     assert "pycastle/issue-2" in branches_arg
     assert "pycastle/issue-1" not in branches_arg
 
@@ -868,7 +844,7 @@ def test_merger_does_not_receive_issues_prompt_arg(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         captured.append(
-            {"name": request.name, "prompt_args": (request.prompt_args or {})}
+            {"name": request.name, "scope_args": (request.scope_args or {})}
         )
         if "Implement Agent" in request.name:
             return CompletionOutput()
@@ -883,7 +859,7 @@ def test_merger_does_not_receive_issues_prompt_arg(tmp_path):
 
     merger_calls = [c for c in captured if c["name"] == "Merge Agent"]
     assert len(merger_calls) == 1
-    assert "ISSUES" not in merger_calls[0]["prompt_args"], (
+    assert "ISSUES" not in merger_calls[0]["scope_args"], (
         "Merger must not receive an ISSUES prompt arg"
     )
 
@@ -922,7 +898,7 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         captured.append(
-            {"name": request.name, "prompt_args": (request.prompt_args or {})}
+            {"name": request.name, "scope_args": (request.scope_args or {})}
         )
         if "Pre-Flight Reporter" in request.name:
             return IssueOutput(number=70, labels=["ready-for-human"])
@@ -948,7 +924,7 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
 
     pf_calls = [c for c in captured if "Pre-Flight Reporter" in c["name"]]
     assert len(pf_calls) == 1
-    args = pf_calls[0]["prompt_args"]
+    args = pf_calls[0]["scope_args"]
     assert args.get("COMMAND") == "pytest -x", (
         f"COMMAND must be 'pytest -x'; got {args.get('COMMAND')!r}"
     )
@@ -1240,7 +1216,7 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if "Pre-Flight Reporter" in request.name:
             preflight_issue_calls.append(
-                {"name": request.name, "prompt_args": request.prompt_args or {}}
+                {"name": request.name, "scope_args": request.scope_args or {}}
             )
             return IssueOutput(number=10, labels=["ready-for-human"])
         return CompletionOutput()
@@ -1264,7 +1240,7 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
     assert len(preflight_issue_calls) == 1, (
         f"Only one preflight-issue agent must be spawned; got {len(preflight_issue_calls)}"
     )
-    args = preflight_issue_calls[0]["prompt_args"]
+    args = preflight_issue_calls[0]["scope_args"]
     assert args.get("CHECK_NAME") == "ruff", (
         f"Must act on first check (ruff); got CHECK_NAME={args.get('CHECK_NAME')!r}"
     )
@@ -1684,7 +1660,7 @@ def test_planner_receives_open_issues_json_not_issue_label(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            captured_planner_args.update(request.prompt_args or {})
+            captured_planner_args.update(request.scope_args or {})
             return _plan_output([{"number": 1, "title": "Fix"}])
         if "Implement Agent" in request.name:
             return CompletionOutput()

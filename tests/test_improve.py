@@ -21,6 +21,7 @@ from pycastle.iteration.improve import (
     improve_phase,
     next_prompt,
 )
+from pycastle.prompt_pipeline import PromptTemplate
 from pycastle.services import GitService
 
 
@@ -196,43 +197,43 @@ def test_improve_phase_pins_worktree_to_provided_sha(deps, git_svc):
 
 
 def test_improve_phase_uses_scan_prompt_first(deps, agent_runner):
-    """First agent call uses 01-scan.md."""
+    """First agent call uses IMPROVE_SCAN template."""
     _run(deps)
-    assert agent_runner.calls[0].prompt_file.name == "01-scan.md"
+    assert agent_runner.calls[0].template == PromptTemplate.IMPROVE_SCAN
 
 
 def test_improve_phase_picked_path_runs_scan_then_prd(deps, agent_runner):
-    """Picked path runs 01-scan then 02-prd in order."""
+    """Picked path runs IMPROVE_SCAN then IMPROVE_PRD in order."""
     _run(deps)
-    names = [c.prompt_file.name for c in agent_runner.calls]
-    assert names[:2] == ["01-scan.md", "02-prd.md"]
+    templates = [c.template for c in agent_runner.calls]
+    assert templates[:2] == [PromptTemplate.IMPROVE_SCAN, PromptTemplate.IMPROVE_PRD]
 
 
 @pytest.mark.parametrize(
-    "prompt_name,expected_name,expected_body",
+    "template,expected_name,expected_body",
     [
-        ("01-scan.md", "Scan Agent", "picking an improvement"),
-        ("02-prd.md", "PRD Agent", "writing PRD"),
-        ("03-issues.md", "Slice Agent", "filing sub-issues"),
+        (PromptTemplate.IMPROVE_SCAN, "Scan Agent", "picking an improvement"),
+        (PromptTemplate.IMPROVE_PRD, "PRD Agent", "writing PRD"),
+        (PromptTemplate.IMPROVE_ISSUES, "Slice Agent", "filing sub-issues"),
         (
-            "04-no-candidate-report.md",
+            PromptTemplate.IMPROVE_NO_CANDIDATE,
             "Rejection Report Agent",
             "filing no-candidate report",
         ),
     ],
 )
 def test_improve_phase_dispatches_per_phase_display(
-    tmp_path, git_svc, prompt_name, expected_name, expected_body
+    tmp_path, git_svc, template, expected_name, expected_body
 ):
     """Each phase dispatches with its own RunRequest name and work_body."""
-    if prompt_name == "04-no-candidate-report.md":
+    if template == PromptTemplate.IMPROVE_NO_CANDIDATE:
         outputs = [NoCandidateOutput(), CompletionOutput()]
     else:
         outputs = [CompletionOutput(), CompletionOutput(), CompletionOutput()]
     runner = FakeAgentRunner(outputs)
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
-    call = next(c for c in runner.calls if c.prompt_file.name == prompt_name)
+    call = next(c for c in runner.calls if c.template == template)
     assert call.name == expected_name
     assert call.work_body == expected_body
 
@@ -243,8 +244,8 @@ def test_improve_phase_two_invocations_on_no_candidate_path(tmp_path, git_svc):
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert len(runner.calls) == 2
-    assert runner.calls[0].prompt_file.name == "01-scan.md"
-    assert runner.calls[1].prompt_file.name == "04-no-candidate-report.md"
+    assert runner.calls[0].template == PromptTemplate.IMPROVE_SCAN
+    assert runner.calls[1].template == PromptTemplate.IMPROVE_NO_CANDIDATE
 
 
 def test_improve_phase_one_invocation_when_no_candidate_report_disabled(
@@ -305,21 +306,23 @@ def test_improve_phase_progress_file_written_after_scan_no_candidate(tmp_path, g
 
 
 def test_improve_phase_threads_short_sid_to_prd_phase(deps, agent_runner):
-    """Phase 2 (PRD) RunRequest carries IMPROVE_SHORT_SID in prompt_args."""
+    """Phase 2 (PRD) RunRequest carries IMPROVE_SHORT_SID in scope_args."""
     _run(deps)
-    prd_call = next(c for c in agent_runner.calls if c.prompt_file.name == "02-prd.md")
-    assert prd_call.prompt_args is not None
-    assert len(prd_call.prompt_args.get("IMPROVE_SHORT_SID", "")) == 8
+    prd_call = next(
+        c for c in agent_runner.calls if c.template == PromptTemplate.IMPROVE_PRD
+    )
+    assert prd_call.scope_args is not None
+    assert len(prd_call.scope_args.get("IMPROVE_SHORT_SID", "")) == 8
 
 
 def test_improve_phase_threads_short_sid_to_issues_phase(deps, agent_runner):
-    """Phase 3 (sub-issues) RunRequest carries IMPROVE_SHORT_SID in prompt_args."""
+    """Phase 3 (sub-issues) RunRequest carries IMPROVE_SHORT_SID in scope_args."""
     _run(deps)
     issues_call = next(
-        c for c in agent_runner.calls if c.prompt_file.name == "03-issues.md"
+        c for c in agent_runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
     )
-    assert issues_call.prompt_args is not None
-    assert len(issues_call.prompt_args.get("IMPROVE_SHORT_SID", "")) == 8
+    assert issues_call.scope_args is not None
+    assert len(issues_call.scope_args.get("IMPROVE_SHORT_SID", "")) == 8
 
 
 def test_improve_phase_threads_short_sid_to_no_candidate_report_phase(
@@ -330,64 +333,27 @@ def test_improve_phase_threads_short_sid_to_no_candidate_report_phase(
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     report_call = runner.calls[1]
-    assert report_call.prompt_args is not None
-    assert len(report_call.prompt_args.get("IMPROVE_SHORT_SID", "")) == 8
+    assert report_call.scope_args is not None
+    assert len(report_call.scope_args.get("IMPROVE_SHORT_SID", "")) == 8
 
 
 def test_improve_phase_does_not_thread_short_sid_to_scan_phase(deps, agent_runner):
     """Phase 1 (scan) RunRequest does not receive IMPROVE_SHORT_SID."""
     _run(deps)
     scan_call = agent_runner.calls[0]
-    assert (scan_call.prompt_args or {}).get("IMPROVE_SHORT_SID") is None
+    assert (scan_call.scope_args or {}).get("IMPROVE_SHORT_SID") is None
 
 
 def test_improve_phase_short_sid_is_consistent_across_phases(deps, agent_runner):
     """All phases that receive IMPROVE_SHORT_SID use the same 8-hex value."""
     _run(deps)
     sid_values = [
-        c.prompt_args["IMPROVE_SHORT_SID"]
+        c.scope_args["IMPROVE_SHORT_SID"]
         for c in agent_runner.calls
-        if c.prompt_args and "IMPROVE_SHORT_SID" in c.prompt_args
+        if c.scope_args and "IMPROVE_SHORT_SID" in c.scope_args
     ]
     assert len(sid_values) == 2  # phases 02 and 03 on the picked path
     assert len(set(sid_values)) == 1  # all the same value
-
-
-# ── Coding standards threading to phase 1 ───────────────────────────────────
-
-_STANDARDS_KEYS = {
-    "TESTING_STANDARDS",
-    "MOCKING_STANDARDS",
-    "INTERFACES_STANDARDS",
-    "DEEP_MODULES_STANDARDS",
-    "REFACTORING_STANDARDS",
-}
-
-
-def test_improve_phase_threads_coding_standards_to_scan_phase(deps, agent_runner):
-    """Phase 1 (scan) RunRequest contains all coding-standards keys."""
-    _run(deps)
-    scan_call = agent_runner.calls[0]
-    assert scan_call.prompt_args is not None
-    assert _STANDARDS_KEYS <= scan_call.prompt_args.keys()
-
-
-def test_improve_phase_does_not_thread_coding_standards_to_prd_phase(
-    deps, agent_runner
-):
-    """Phase 2 (PRD) RunRequest does not contain coding-standards keys."""
-    _run(deps)
-    prd_call = next(c for c in agent_runner.calls if c.prompt_file.name == "02-prd.md")
-    assert not _STANDARDS_KEYS & (prd_call.prompt_args or {}).keys()
-
-
-def test_improve_phase_scan_standards_and_sid_are_separate(deps, agent_runner):
-    """Phase 1 receives coding standards, phases 2/3 receive IMPROVE_SHORT_SID — never mixed."""
-    _run(deps)
-    scan_call = agent_runner.calls[0]
-    assert "IMPROVE_SHORT_SID" not in (scan_call.prompt_args or {})
-    for call in agent_runner.calls[1:]:
-        assert not _STANDARDS_KEYS & (call.prompt_args or {}).keys()
 
 
 # ── Cross-teardown resume ─────────────────────────────────────────────────────
@@ -407,7 +373,7 @@ def test_improve_resumes_at_prd_after_scan_picked(tmp_path, git_svc):
     runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
-    assert runner.calls[0].prompt_file.name == "02-prd.md"
+    assert runner.calls[0].template == PromptTemplate.IMPROVE_PRD
     assert len(runner.calls) == 2
 
 
@@ -418,7 +384,7 @@ def test_improve_resumes_at_report_after_scan_no_candidate(tmp_path, git_svc):
     runner = FakeAgentRunner([CompletionOutput()])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
-    assert runner.calls[0].prompt_file.name == "04-no-candidate-report.md"
+    assert runner.calls[0].template == PromptTemplate.IMPROVE_NO_CANDIDATE
     assert len(runner.calls) == 1
 
 
@@ -429,7 +395,7 @@ def test_improve_resumes_at_issues_after_prd(tmp_path, git_svc):
     runner = FakeAgentRunner([CompletionOutput()])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
-    assert runner.calls[0].prompt_file.name == "03-issues.md"
+    assert runner.calls[0].template == PromptTemplate.IMPROVE_ISSUES
     assert len(runner.calls) == 1
 
 
@@ -471,7 +437,7 @@ def test_mid_phase_2_retry_does_not_signal_role_prompt(tmp_path, git_svc):
     runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
-    prd_call = next(c for c in runner.calls if c.prompt_file.name == "02-prd.md")
+    prd_call = next(c for c in runner.calls if c.template == PromptTemplate.IMPROVE_PRD)
     assert prd_call.send_role_prompt_on_resume is False
 
 
@@ -484,7 +450,7 @@ def test_cross_teardown_resume_at_phase_2_signals_role_prompt(tmp_path, git_svc)
     runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
-    prd_call = next(c for c in runner.calls if c.prompt_file.name == "02-prd.md")
+    prd_call = next(c for c in runner.calls if c.template == PromptTemplate.IMPROVE_PRD)
     assert prd_call.send_role_prompt_on_resume is True
 
 
@@ -501,7 +467,9 @@ def test_phase_2_signals_role_prompt_on_resumed_session(deps, agent_runner):
     new role prompt must be sent despite the resumed claude session — otherwise
     the agent would receive only the continuation prompt (issue #528)."""
     _run(deps)
-    prd_call = next(c for c in agent_runner.calls if c.prompt_file.name == "02-prd.md")
+    prd_call = next(
+        c for c in agent_runner.calls if c.template == PromptTemplate.IMPROVE_PRD
+    )
     assert prd_call.send_role_prompt_on_resume is True
 
 
@@ -518,4 +486,4 @@ def test_improve_fresh_run_on_malformed_progress(tmp_path, git_svc):
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
-    assert runner.calls[0].prompt_file.name == "01-scan.md"
+    assert runner.calls[0].template == PromptTemplate.IMPROVE_SCAN

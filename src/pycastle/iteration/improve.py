@@ -6,7 +6,7 @@ from ..agent_output_protocol import AgentOutput, AgentRole, NoCandidateOutput
 from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..prompt_pipeline import load_standards
+from ..prompt_pipeline import PromptTemplate
 from ..services import GitService
 from ..session_resume import derived_session_uuid
 from ..status_display import StatusDisplay
@@ -16,8 +16,12 @@ from ._rows import phase_row
 IMPROVE_SANDBOX = "pycastle/improve-sandbox"
 _PHASE_PROGRESS_FILE = "_phase_progress"
 _PHASE_IN_FLIGHT_FILE = "_phase_in_flight"
-_SID_PHASES = frozenset({"02-prd.md", "03-issues.md", "04-no-candidate-report.md"})
-_STANDARDS_PHASES = frozenset({"01-scan.md"})
+_PHASE_TEMPLATE: dict[str, PromptTemplate] = {
+    "01-scan.md": PromptTemplate.IMPROVE_SCAN,
+    "02-prd.md": PromptTemplate.IMPROVE_PRD,
+    "03-issues.md": PromptTemplate.IMPROVE_ISSUES,
+    "04-no-candidate-report.md": PromptTemplate.IMPROVE_NO_CANDIDATE,
+}
 _VALID_PHASE_IDS = frozenset(
     {"01-scan:picked", "01-scan:no-candidate", "02-prd", "03-issues", "04-report"}
 )
@@ -109,12 +113,11 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> None:
                 no_candidate_report=deps.cfg.improve_no_candidate_report,
             )
             while prompt_name is not None:
-                if prompt_name in _STANDARDS_PHASES:
-                    prompt_args = load_standards(deps.cfg.prompts_dir)
-                elif prompt_name in _SID_PHASES:
-                    prompt_args = {"IMPROVE_SHORT_SID": short_sid}
+                template = _PHASE_TEMPLATE[prompt_name]
+                if "IMPROVE_SHORT_SID" in template.scope.placeholders:
+                    scope_args: dict[str, str] | None = {"IMPROVE_SHORT_SID": short_sid}
                 else:
-                    prompt_args = None
+                    scope_args = None
                 display_name, display_body = _PHASE_DISPLAY[prompt_name]
                 phase_key = prompt_name.removesuffix(".md")
                 is_mid_phase_retry = in_flight_id == phase_key
@@ -123,11 +126,11 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> None:
                 output = await deps.agent_runner.run(
                     RunRequest(
                         name=display_name,
-                        prompt_file=deps.cfg.prompts_dir / "improve" / prompt_name,
+                        template=template,
                         mount_path=sandbox_path,
                         role=AgentRole.IMPROVE,
                         skip_preflight=True,
-                        prompt_args=prompt_args,
+                        scope_args=scope_args,
                         model=deps.cfg.improve_override.model,
                         effort=deps.cfg.improve_override.effort,
                         stage="improve-sandbox",

@@ -6,6 +6,7 @@ import pytest
 from pycastle.agent_output_protocol import CompletionOutput
 from pycastle.agent_result import PreflightFailure
 from pycastle.agent_runner import RunRequest
+from pycastle.prompt_pipeline import PromptTemplate
 from pycastle.iteration._deps import Deps, FakeAgentRunner, RecordingLogger, _make_deps
 
 
@@ -89,11 +90,6 @@ def test_make_deps_returns_deps_instance(tmp_path) -> None:
 
 
 @pytest.fixture
-def prompt_file(tmp_path):
-    return tmp_path / "prompt.md"
-
-
-@pytest.fixture
 def mount_path(tmp_path):
     return tmp_path
 
@@ -104,19 +100,21 @@ def test_fake_agent_runner_starts_with_no_calls() -> None:
     assert runner.calls == []
 
 
-def test_fake_agent_runner_returns_queued_response(prompt_file, mount_path) -> None:
+def test_fake_agent_runner_returns_queued_response(mount_path) -> None:
     runner = FakeAgentRunner(responses=[CompletionOutput()])
 
     result = asyncio.run(
         runner.run(
-            RunRequest(name="planner", prompt_file=prompt_file, mount_path=mount_path)
+            RunRequest(
+                name="planner", template=PromptTemplate.PLAN, mount_path=mount_path
+            )
         )
     )
 
     assert isinstance(result, CompletionOutput)
 
 
-def test_fake_agent_runner_returns_responses_in_order(prompt_file, mount_path) -> None:
+def test_fake_agent_runner_returns_responses_in_order(mount_path) -> None:
     r1, r2, r3 = CompletionOutput(), CompletionOutput(), CompletionOutput()
     runner = FakeAgentRunner(responses=[r1, r2, r3])
 
@@ -124,17 +122,19 @@ def test_fake_agent_runner_returns_responses_in_order(prompt_file, mount_path) -
         return [
             await runner.run(
                 RunRequest(
-                    name="planner", prompt_file=prompt_file, mount_path=mount_path
+                    name="planner", template=PromptTemplate.PLAN, mount_path=mount_path
                 )
             ),
             await runner.run(
                 RunRequest(
-                    name="implementer", prompt_file=prompt_file, mount_path=mount_path
+                    name="implementer",
+                    template=PromptTemplate.PLAN,
+                    mount_path=mount_path,
                 )
             ),
             await runner.run(
                 RunRequest(
-                    name="merger", prompt_file=prompt_file, mount_path=mount_path
+                    name="merger", template=PromptTemplate.PLAN, mount_path=mount_path
                 )
             ),
         ]
@@ -142,31 +142,35 @@ def test_fake_agent_runner_returns_responses_in_order(prompt_file, mount_path) -
     assert asyncio.run(_run()) == [r1, r2, r3]
 
 
-def test_fake_agent_runner_records_call_arguments(prompt_file, mount_path) -> None:
+def test_fake_agent_runner_records_call_arguments(mount_path) -> None:
     runner = FakeAgentRunner(responses=[CompletionOutput()])
 
     asyncio.run(
         runner.run(
-            RunRequest(name="planner", prompt_file=prompt_file, mount_path=mount_path)
+            RunRequest(
+                name="planner", template=PromptTemplate.PLAN, mount_path=mount_path
+            )
         )
     )
 
     assert len(runner.calls) == 1
     assert runner.calls[0].name == "planner"
-    assert runner.calls[0].prompt_file == prompt_file
+    assert runner.calls[0].template == PromptTemplate.PLAN
     assert runner.calls[0].mount_path == mount_path
 
 
-def test_fake_agent_runner_records_all_calls(prompt_file, mount_path) -> None:
+def test_fake_agent_runner_records_all_calls(mount_path) -> None:
     runner = FakeAgentRunner(responses=[CompletionOutput(), CompletionOutput()])
 
     async def _run():
         await runner.run(
-            RunRequest(name="planner", prompt_file=prompt_file, mount_path=mount_path)
+            RunRequest(
+                name="planner", template=PromptTemplate.PLAN, mount_path=mount_path
+            )
         )
         await runner.run(
             RunRequest(
-                name="implementer", prompt_file=prompt_file, mount_path=mount_path
+                name="implementer", template=PromptTemplate.PLAN, mount_path=mount_path
             )
         )
 
@@ -175,16 +179,14 @@ def test_fake_agent_runner_records_all_calls(prompt_file, mount_path) -> None:
     assert [c.name for c in runner.calls] == ["planner", "implementer"]
 
 
-def test_fake_agent_runner_records_call_even_on_queue_exhaustion(
-    prompt_file, mount_path
-) -> None:
+def test_fake_agent_runner_records_call_even_on_queue_exhaustion(mount_path) -> None:
     runner = FakeAgentRunner(responses=[])
 
     with pytest.raises(AssertionError):
         asyncio.run(
             runner.run(
                 RunRequest(
-                    name="planner", prompt_file=prompt_file, mount_path=mount_path
+                    name="planner", template=PromptTemplate.PLAN, mount_path=mount_path
                 )
             )
         )
@@ -192,16 +194,18 @@ def test_fake_agent_runner_records_call_even_on_queue_exhaustion(
     assert len(runner.calls) == 1
 
 
-def test_fake_agent_runner_queue_exhaustion_raises(prompt_file, mount_path) -> None:
+def test_fake_agent_runner_queue_exhaustion_raises(mount_path) -> None:
     runner = FakeAgentRunner(responses=[CompletionOutput()])
 
     async def _run():
         await runner.run(
-            RunRequest(name="planner", prompt_file=prompt_file, mount_path=mount_path)
+            RunRequest(
+                name="planner", template=PromptTemplate.PLAN, mount_path=mount_path
+            )
         )
         await runner.run(
             RunRequest(
-                name="implementer", prompt_file=prompt_file, mount_path=mount_path
+                name="implementer", template=PromptTemplate.PLAN, mount_path=mount_path
             )
         )
 
@@ -209,9 +213,7 @@ def test_fake_agent_runner_queue_exhaustion_raises(prompt_file, mount_path) -> N
         asyncio.run(_run())
 
 
-def test_fake_agent_runner_queue_exhaustion_error_names_agent(
-    prompt_file, mount_path
-) -> None:
+def test_fake_agent_runner_queue_exhaustion_error_names_agent(mount_path) -> None:
     runner = FakeAgentRunner(responses=[])
 
     with pytest.raises(AssertionError, match="unexpected-agent"):
@@ -219,57 +221,57 @@ def test_fake_agent_runner_queue_exhaustion_error_names_agent(
             runner.run(
                 RunRequest(
                     name="unexpected-agent",
-                    prompt_file=prompt_file,
+                    template=PromptTemplate.PLAN,
                     mount_path=mount_path,
                 )
             )
         )
 
 
-def test_fake_agent_runner_can_return_preflight_failure(
-    prompt_file, mount_path
-) -> None:
+def test_fake_agent_runner_can_return_preflight_failure(mount_path) -> None:
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     runner = FakeAgentRunner(responses=[failure])
 
     result = asyncio.run(
         runner.run(
-            RunRequest(name="planner", prompt_file=prompt_file, mount_path=mount_path)
+            RunRequest(
+                name="planner", template=PromptTemplate.PLAN, mount_path=mount_path
+            )
         )
     )
 
     assert result is failure
 
 
-def test_fake_agent_runner_raises_queued_exception(prompt_file, mount_path) -> None:
+def test_fake_agent_runner_raises_queued_exception(mount_path) -> None:
     runner = FakeAgentRunner(responses=[RuntimeError("agent crashed")])
 
     with pytest.raises(RuntimeError, match="agent crashed"):
         asyncio.run(
             runner.run(
                 RunRequest(
-                    name="planner", prompt_file=prompt_file, mount_path=mount_path
+                    name="planner", template=PromptTemplate.PLAN, mount_path=mount_path
                 )
             )
         )
 
 
-def test_fake_agent_runner_side_effect_bypasses_queue(prompt_file, mount_path) -> None:
+def test_fake_agent_runner_side_effect_bypasses_queue(mount_path) -> None:
     expected = CompletionOutput()
     runner = FakeAgentRunner(responses=[], side_effect=lambda _: expected)
 
     result = asyncio.run(
         runner.run(
-            RunRequest(name="planner", prompt_file=prompt_file, mount_path=mount_path)
+            RunRequest(
+                name="planner", template=PromptTemplate.PLAN, mount_path=mount_path
+            )
         )
     )
 
     assert result is expected
 
 
-def test_fake_agent_runner_async_side_effect_is_awaited(
-    prompt_file, mount_path
-) -> None:
+def test_fake_agent_runner_async_side_effect_is_awaited(mount_path) -> None:
     expected = CompletionOutput()
 
     async def async_effect(_) -> CompletionOutput:
@@ -279,20 +281,22 @@ def test_fake_agent_runner_async_side_effect_is_awaited(
 
     result = asyncio.run(
         runner.run(
-            RunRequest(name="planner", prompt_file=prompt_file, mount_path=mount_path)
+            RunRequest(
+                name="planner", template=PromptTemplate.PLAN, mount_path=mount_path
+            )
         )
     )
 
     assert result is expected
 
 
-def test_fake_agent_runner_side_effect_records_call(prompt_file, mount_path) -> None:
+def test_fake_agent_runner_side_effect_records_call(mount_path) -> None:
     runner = FakeAgentRunner(side_effect=lambda _: CompletionOutput())
 
     asyncio.run(
         runner.run(
             RunRequest(
-                name="implementer", prompt_file=prompt_file, mount_path=mount_path
+                name="implementer", template=PromptTemplate.PLAN, mount_path=mount_path
             )
         )
     )
