@@ -160,6 +160,21 @@ class GithubService:
             data={"state": "closed"},
         )
 
+    def get_issue(self, issue_number: int) -> dict[str, str]:
+        payload, _ = self._request("GET", f"/repos/{self.repo}/issues/{issue_number}")
+        if not isinstance(payload, dict) or "title" not in payload:
+            raise GithubAPIError(
+                f"GitHub API GET /repos/{self.repo}/issues/{issue_number} returned no title",
+                status=200,
+                body=str(payload),
+                method="GET",
+                path=f"/repos/{self.repo}/issues/{issue_number}",
+            )
+        return {
+            "title": str(payload["title"]),
+            "body": str(payload.get("body") or ""),
+        }
+
     def get_issue_title(self, issue_number: int) -> str:
         payload, _ = self._request("GET", f"/repos/{self.repo}/issues/{issue_number}")
         if not isinstance(payload, dict) or "title" not in payload:
