@@ -256,6 +256,19 @@ def test_render_rejects_typo_in_scope_arg(cfg, prompts_dir):
         )
 
 
+# ── render: unused global args do not produce warnings ───────────────────────
+
+
+def test_render_does_not_warn_for_unused_global_args(cfg, prompts_dir, capsys):
+    # Template uses only one global arg; others are unused and must be silent.
+    (prompts_dir / "plan-prompt.md").write_text("Issues: {{OPEN_ISSUES_JSON}}")
+    renderer = PromptRenderer(cfg)
+
+    _run(renderer.render(PromptTemplate.PLAN, {"OPEN_ISSUES_JSON": "[]"}, _noop_exec))
+
+    assert capsys.readouterr().err == ""
+
+
 # ── render: scope_args substituted alongside globals ─────────────────────────
 
 
