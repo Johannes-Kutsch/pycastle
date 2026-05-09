@@ -1,60 +1,9 @@
-"""Tests for dispatcher: decide_iteration_action (work routing) and should_dispatch_improve."""
+"""Tests for dispatcher.should_dispatch_improve: improve-mode gate."""
 
-from pycastle.iteration.dispatcher import (
-    Done,
-    RunImplementDirect,
-    RunPlan,
-    decide_iteration_action,
-    should_dispatch_improve,
-)
+from pycastle.iteration.dispatcher import should_dispatch_improve
 
 
-# ── decide_iteration_action: in-flight takes priority ────────────────────────
-
-
-def test_in_flight_issues_route_to_implement_direct():
-    """When in_flight_count > 0, always route to RunImplementDirect regardless of afk count."""
-    action = decide_iteration_action(open_afk_count=0, in_flight_count=1)
-    assert isinstance(action, RunImplementDirect)
-
-
-def test_in_flight_with_open_afk_still_routes_direct():
-    """In-flight issues take priority over open AFK issues — no planning when in-flight."""
-    action = decide_iteration_action(open_afk_count=5, in_flight_count=2)
-    assert isinstance(action, RunImplementDirect)
-
-
-# ── decide_iteration_action: open AFK issues ─────────────────────────────────
-
-
-def test_two_or_more_open_afk_routes_to_plan():
-    """Two or more open AFK issues with no in-flight → RunPlan."""
-    action = decide_iteration_action(open_afk_count=2, in_flight_count=0)
-    assert isinstance(action, RunPlan)
-
-
-def test_many_open_afk_routes_to_plan():
-    """Many open AFK issues → RunPlan."""
-    action = decide_iteration_action(open_afk_count=10, in_flight_count=0)
-    assert isinstance(action, RunPlan)
-
-
-def test_single_open_afk_routes_to_plan():
-    """Single open AFK issue → RunPlan (routes through planning, same as multi-issue)."""
-    action = decide_iteration_action(open_afk_count=1, in_flight_count=0)
-    assert isinstance(action, RunPlan)
-
-
-# ── decide_iteration_action: no work ─────────────────────────────────────────
-
-
-def test_no_work_returns_done():
-    """Zero AFK + zero in-flight → Done."""
-    action = decide_iteration_action(open_afk_count=0, in_flight_count=0)
-    assert isinstance(action, Done)
-
-
-# ── should_dispatch_improve: no improve mode ─────────────────────────────────
+# ── No improve mode ──────────────────────────────────────────────────────────
 
 
 def test_no_improve_mode_returns_false():
@@ -75,7 +24,7 @@ def test_no_improve_mode_ignores_slept_once():
     )
 
 
-# ── should_dispatch_improve: already dispatched guard ────────────────────────
+# ── Already dispatched guard ─────────────────────────────────────────────────
 
 
 def test_already_dispatched_returns_false_for_endless():
@@ -105,7 +54,7 @@ def test_dispatched_guard_fires_regardless_of_slept_once():
     )
 
 
-# ── should_dispatch_improve: endless mode ────────────────────────────────────
+# ── endless mode ─────────────────────────────────────────────────────────────
 
 
 def test_endless_dispatches_improve_when_idle():
@@ -126,7 +75,7 @@ def test_endless_dispatches_even_after_sleep():
     )
 
 
-# ── should_dispatch_improve: until_sleep mode ────────────────────────────────
+# ── until_sleep mode ─────────────────────────────────────────────────────────
 
 
 def test_until_sleep_dispatches_before_first_sleep():
