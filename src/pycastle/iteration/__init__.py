@@ -19,7 +19,7 @@ from .improve import improve_phase
 from .merge import merge_phase
 from .planning import AllBlocked as AllBlocked
 from .planning import PlanReady as PlanReady
-from .planning import planning_phase
+from .planning import hydrate_planned_issues, planning_phase
 from .preflight import PreflightHITL, PreflightReady, preflight_phase
 
 
@@ -160,8 +160,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                         + issue_lines
                     )
                 )
-                sha = plan_result.worktree_sha
-                issues = plan_result.issues
+                hydrated = hydrate_planned_issues(plan_result, open_issues)
+                sha = hydrated.worktree_sha
+                issues = hydrated.issues
 
         # ── Implement ────────────────────────────────────────────────────────
         issues = issues[: deps.cfg.max_parallel]

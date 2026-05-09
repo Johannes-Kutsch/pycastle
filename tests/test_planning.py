@@ -11,7 +11,12 @@ from pycastle.agent_output_protocol import (
 from pycastle.agent_result import PreflightFailure
 from pycastle.services import GitService
 from pycastle.iteration._deps import FakeAgentRunner, _make_deps
-from pycastle.iteration.planning import AllBlocked, PlanReady, planning_phase
+from pycastle.iteration.planning import (
+    AllBlocked,
+    PlanReady,
+    hydrate_planned_issues,
+    planning_phase,
+)
 
 
 def _plan_output(issues: list[dict]) -> PlannerOutput:
@@ -180,3 +185,54 @@ def test_planning_phase_all_blocked_carries_blocked_list(tmp_path, git_svc):
 
     assert isinstance(result, AllBlocked)
     assert result.blocked == blocked
+
+
+# ── hydrate_planned_issues ──────────────────────────────────────────────────
+
+
+def test_hydrate_planned_issues_merges_body_and_comments_from_open_issues():
+    plan = PlanReady(
+        worktree_sha="abc123",
+        issues=[{"number": 1, "title": "A"}, {"number": 2, "title": "B"}],
+    )
+    open_issues = [
+        {
+            "number": 1,
+            "title": "A",
+            "body": "body of A",
+            "comments": [{"author": "x", "created_at": "t", "body": "hi"}],
+            "labels": [],
+        },
+        {
+            "number": 2,
+            "title": "B",
+            "body": "body of B",
+            "comments": [],
+            "labels": [],
+        },
+    ]
+
+    result = hydrate_planned_issues(plan, open_issues)
+
+    assert result.worktree_sha == "abc123"
+    assert result.issues[0]["number"] == 1
+    assert result.issues[0]["body"] == "body of A"
+    assert result.issues[0]["comments"] == [
+        {"author": "x", "created_at": "t", "body": "hi"}
+    ]
+    assert result.issues[1]["number"] == 2
+    assert result.issues[1]["body"] == "body of B"
+    assert result.issues[1]["comments"] == []
+
+
+def test_hydrate_planned_issues_raises_when_planned_number_not_in_open_issues():
+    plan = PlanReady(
+        worktree_sha="abc123",
+        issues=[{"number": 99, "title": "Hallucinated"}],
+    )
+    open_issues = [
+        {"number": 1, "title": "A", "body": "x", "comments": [], "labels": []},
+    ]
+
+    with pytest.raises(RuntimeError, match="#99"):
+        hydrate_planned_issues(plan, open_issues)

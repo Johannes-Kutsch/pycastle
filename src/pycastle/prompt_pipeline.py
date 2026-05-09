@@ -139,8 +139,8 @@ def build_issue_scope_args(
     return {
         "ISSUE_NUMBER": str(issue["number"]),
         "ISSUE_TITLE": issue["title"],
-        "ISSUE_BODY": str(issue.get("body") or ""),
-        "ISSUE_COMMENTS": _format_issue_comments(issue.get("comments") or []),
+        "ISSUE_BODY": str(issue["body"] or ""),
+        "ISSUE_COMMENTS": _format_issue_comments(issue["comments"]),
         **extra_scope_args,
     }
 
