@@ -24,10 +24,10 @@ async def run_with_reprompt(
     when the agent signals failure explicitly).  After ``budget`` attempts
     without a successful parse, returns a synthesized ``FailedOutput``.
     """
-    for attempt in range(budget):
-        msg: str | None = None if attempt == 0 else reprompt_message
+    msg: str | None = None
+    for _ in range(budget):
         try:
             return await work_factory(msg)
         except AgentOutputProtocolError:
-            pass
+            msg = reprompt_message
     return FailedOutput()
