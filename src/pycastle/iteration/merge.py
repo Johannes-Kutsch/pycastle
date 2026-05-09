@@ -89,9 +89,13 @@ async def _delete_merged_branches(
         *[_teardown_one(b, i) for i, b in enumerate(branches)],
         return_exceptions=True,
     )
-    for r in results:
+    for branch, r in zip(branches, results, strict=True):
         if isinstance(r, BaseException):
-            deps.status_display.print("Merge", f"Warning: {r}", "warning")
+            deps.status_display.print(
+                "Merge",
+                f"Warning: teardown of {branch!r} failed: {r}",
+                "warning",
+            )
     return [s for s in slots if s is not None]
 
 
