@@ -1,12 +1,22 @@
-# ISSUES
+# ALL OPEN ISSUES
 
-Here are the open issues in the repo:
+Here are all open issues in the repo (any label), for blocker visibility:
 
-<issues-json>
+<all-open-issues-json>
 
-{{OPEN_ISSUES_JSON}}
+{{ALL_OPEN_ISSUES_JSON}}
 
-</issues-json>
+</all-open-issues-json>
+
+# READY-FOR-AGENT ISSUES
+
+Here are the open issues labeled ready-for-agent — your candidate set to pick from:
+
+<ready-for-agent-issues-json>
+
+{{READY_FOR_AGENT_ISSUES_JSON}}
+
+</ready-for-agent-issues-json>
 
 # TASK
 

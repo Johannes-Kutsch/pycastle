@@ -28,7 +28,7 @@ class PlanReady:
 
 
 async def planning_phase(
-    deps: _PlanningDeps, sha: str, open_issues: list[dict]
+    deps: _PlanningDeps, sha: str, open_issues: list[dict], all_open_issues: list[dict]
 ) -> PlanReady:
     async with transient_worktree("plan-sandbox", sha=sha, deps=deps) as wt:
         try:
@@ -38,7 +38,10 @@ async def planning_phase(
                     template=PromptTemplate.PLAN,
                     mount_path=wt,
                     role=AgentRole.PLANNER,
-                    scope_args={"OPEN_ISSUES_JSON": json.dumps(open_issues)},
+                    scope_args={
+                        "ALL_OPEN_ISSUES_JSON": json.dumps(all_open_issues),
+                        "READY_FOR_AGENT_ISSUES_JSON": json.dumps(open_issues),
+                    },
                     model=deps.cfg.plan_override.model,
                     effort=deps.cfg.plan_override.effort,
                     stage="plan-sandbox",

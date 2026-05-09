@@ -48,6 +48,7 @@ def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
 class PreflightReady:
     sha: str
     issues: list[dict]
+    all_open_issues: list[dict]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -118,6 +119,7 @@ async def preflight_phase(deps: _PreflightDeps) -> PreflightResult:
     open_issues = strip_stale_blocker_refs(
         deps.github_svc.get_open_issues(deps.cfg.issue_label)
     )
+    all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
     async with transient_worktree("pre-flight-sandbox", sha=sha, deps=deps) as wt:
         failures = await deps.agent_runner.run_preflight(
             name="Preflight Agent",
@@ -141,4 +143,6 @@ async def preflight_phase(deps: _PreflightDeps) -> PreflightResult:
                 worktree_sha=sha, issues=[{"number": pf_num, "title": pf_title}]
             )
 
-        return PreflightReady(sha=sha, issues=open_issues)
+        return PreflightReady(
+            sha=sha, issues=open_issues, all_open_issues=all_open_issues
+        )
