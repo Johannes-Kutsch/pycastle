@@ -8,7 +8,6 @@ from .agent_output_protocol import AgentOutput, AgentRole
 from .config import Config
 from .docker_session import DockerSession
 from .errors import DockerError
-from .prompt_pipeline import PromptRenderer, PromptTemplate
 from .session_resume import RunKind
 from .status_display import PlainStatusDisplay
 from .stream_session import WorkStream
@@ -95,36 +94,13 @@ class ContainerRunner:
     async def work(
         self,
         role: AgentRole,
-        template: PromptTemplate,
-        scope_args: dict[str, str],
-        renderer: PromptRenderer,
+        prompt: str,
         *,
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
-        is_failsoft_recovery: bool = False,
-        send_role_prompt_on_resume: bool = False,
     ) -> AgentOutput:
-        self._status_display.update_phase(self.name, "Prepare")
-        loop = asyncio.get_running_loop()
-
-        async def container_exec(cmd: str) -> str:
-            return await loop.run_in_executor(None, self._session.exec_simple, cmd)
-
-        if run_kind == RunKind.RESUME and not send_role_prompt_on_resume:
-            prompt = await renderer.render(PromptTemplate.RESUME, {}, container_exec)
-        elif run_kind == RunKind.RESUME and send_role_prompt_on_resume:
-            prompt = await renderer.render(template, scope_args, container_exec)
-        else:
-            role_prompt = await renderer.render(template, scope_args, container_exec)
-            if is_failsoft_recovery:
-                resume_text = await renderer.render(
-                    PromptTemplate.RESUME, {}, container_exec
-                )
-                prompt = resume_text + "\n\n" + role_prompt
-            else:
-                prompt = role_prompt
-
         self._status_display.update_phase(self.name, "Work")
+        loop = asyncio.get_running_loop()
 
         def on_turn(turn: str) -> None:
             self._status_display.print(self.name, turn)
