@@ -48,6 +48,9 @@ def git_svc():
 def github_svc():
     svc = MagicMock(spec=GithubService)
     svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+    svc.get_all_open_issues_lightweight.return_value = [
+        {"number": 1, "title": "Fix bug", "labels": ["ready-for-agent"]}
+    ]
     return svc
 
 
@@ -128,6 +131,35 @@ def test_preflight_phase_returns_ready_with_open_issues_when_preflight_passes(
     assert isinstance(result, PreflightReady)
     assert result.sha == "abc123"
     assert result.issues == issues
+
+
+def test_preflight_phase_ready_carries_all_open_issues(tmp_path, git_svc, github_svc):
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix bug", "body": ""}
+    ]
+    all_open = [
+        {"number": 1, "title": "Fix bug", "labels": ["ready-for-agent"]},
+        {"number": 2, "title": "Other", "labels": ["ready-for-human"]},
+    ]
+    github_svc.get_all_open_issues_lightweight.return_value = all_open
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    result = asyncio.run(preflight_phase(deps))
+
+    assert isinstance(result, PreflightReady)
+    assert result.all_open_issues == all_open
+
+
+def test_preflight_phase_calls_get_all_open_issues_lightweight(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    asyncio.run(preflight_phase(deps))
+
+    github_svc.get_all_open_issues_lightweight.assert_called_once()
 
 
 def test_preflight_phase_calls_checkout_detached_with_head_sha(

@@ -30,14 +30,14 @@ def _make_cfg(tmp_path: Path, **kwargs) -> Config:
     prompts_dir = tmp_path / "prompts"
     prompts_dir.mkdir(exist_ok=True)
     (prompts_dir / "plan-prompt.md").write_text(
-        "{{OPEN_ISSUES_JSON}}", encoding="utf-8"
+        "{{ALL_OPEN_ISSUES_JSON}} {{READY_FOR_AGENT_ISSUES_JSON}}", encoding="utf-8"
     )
     (prompts_dir / "_resume-prompt.md").write_text("resume", encoding="utf-8")
     return Config(logs_dir=tmp_path, prompts_dir=prompts_dir, **kwargs)
 
 
 _PLAN_TEMPLATE = PromptTemplate.PLAN
-_PLAN_SCOPE_ARGS = {"OPEN_ISSUES_JSON": "[]"}
+_PLAN_SCOPE_ARGS = {"ALL_OPEN_ISSUES_JSON": "[]", "READY_FOR_AGENT_ISSUES_JSON": "[]"}
 
 # A minimal NDJSON stream that process_stream accepts as CommitMessageOutput (IMPLEMENTER/REVIEWER role)
 _COMPLETE_STREAM = [
@@ -167,7 +167,10 @@ def test_fake_agent_runner_records_call_kwargs():
                 name="Planner",
                 template=PromptTemplate.PLAN,
                 mount_path=mount,
-                scope_args={"OPEN_ISSUES_JSON": "[]"},
+                scope_args={
+                    "ALL_OPEN_ISSUES_JSON": "[]",
+                    "READY_FOR_AGENT_ISSUES_JSON": "[]",
+                },
                 skip_preflight=True,
                 model="claude-3",
                 effort="high",
@@ -180,7 +183,10 @@ def test_fake_agent_runner_records_call_kwargs():
     assert call.name == "Planner"
     assert call.template == PromptTemplate.PLAN
     assert call.mount_path == mount
-    assert call.scope_args == {"OPEN_ISSUES_JSON": "[]"}
+    assert call.scope_args == {
+        "ALL_OPEN_ISSUES_JSON": "[]",
+        "READY_FOR_AGENT_ISSUES_JSON": "[]",
+    }
     assert call.skip_preflight is True
     assert call.model == "claude-3"
     assert call.effort == "high"

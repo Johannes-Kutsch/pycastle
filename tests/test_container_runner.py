@@ -310,26 +310,35 @@ def test_work_called_twice_renders_each_calls_scope_args(tmp_path):
     session.exec_stream = _stream  # type: ignore[method-assign]
     runner, _ = _make_runner(session=session, tmp_path=tmp_path)
 
-    # Use PLAN template so we can vary the OPEN_ISSUES_JSON scope arg.
+    # Use PLAN template so we can vary scope args between calls.
     prompts_dir = _make_prompts_dir(tmp_path)
     (prompts_dir / "plan-prompt.md").write_text(
-        "Hello {{OPEN_ISSUES_JSON}}", encoding="utf-8"
+        "All: {{ALL_OPEN_ISSUES_JSON}} Ready: {{READY_FOR_AGENT_ISSUES_JSON}}",
+        encoding="utf-8",
     )
     cfg = Config(logs_dir=tmp_path, prompts_dir=prompts_dir)
     renderer = PromptRenderer(cfg)
 
     asyncio.run(
-        runner.work(_ROLE, PromptTemplate.PLAN, {"OPEN_ISSUES_JSON": "First"}, renderer)
+        runner.work(
+            _ROLE,
+            PromptTemplate.PLAN,
+            {"ALL_OPEN_ISSUES_JSON": "First", "READY_FOR_AGENT_ISSUES_JSON": "R1"},
+            renderer,
+        )
     )
     asyncio.run(
         runner.work(
-            _ROLE, PromptTemplate.PLAN, {"OPEN_ISSUES_JSON": "Second"}, renderer
+            _ROLE,
+            PromptTemplate.PLAN,
+            {"ALL_OPEN_ISSUES_JSON": "Second", "READY_FOR_AGENT_ISSUES_JSON": "R2"},
+            renderer,
         )
     )
 
     prompt_writes = [c for c in session.write_calls if c[0] == "/tmp/.pycastle_prompt"]
-    assert prompt_writes[0][1] == "Hello First"
-    assert prompt_writes[1][1] == "Hello Second"
+    assert prompt_writes[0][1] == "All: First Ready: R1"
+    assert prompt_writes[1][1] == "All: Second Ready: R2"
 
 
 def test_work_expands_shell_expressions_via_session_exec(tmp_path):
@@ -380,7 +389,7 @@ def test_work_resume_with_role_prompt_writes_role_prompt_not_continuation(tmp_pa
     # Use PLAN template so we have a distinguishable scope arg value.
     prompts_dir = _make_prompts_dir(tmp_path, resume_content="continuation")
     (prompts_dir / "plan-prompt.md").write_text(
-        "{{OPEN_ISSUES_JSON}}", encoding="utf-8"
+        "{{ALL_OPEN_ISSUES_JSON}} {{READY_FOR_AGENT_ISSUES_JSON}}", encoding="utf-8"
     )
     cfg = Config(logs_dir=tmp_path, prompts_dir=prompts_dir)
     renderer = PromptRenderer(cfg)
@@ -389,7 +398,10 @@ def test_work_resume_with_role_prompt_writes_role_prompt_not_continuation(tmp_pa
         runner.work(
             _ROLE,
             PromptTemplate.PLAN,
-            {"OPEN_ISSUES_JSON": "PHASE_2_ROLE_PROMPT_CONTENT"},
+            {
+                "ALL_OPEN_ISSUES_JSON": "PHASE_2_ROLE_PROMPT_CONTENT",
+                "READY_FOR_AGENT_ISSUES_JSON": "[]",
+            },
             renderer,
             run_kind=RunKind.RESUME,
             session_uuid="uuid",
@@ -398,7 +410,7 @@ def test_work_resume_with_role_prompt_writes_role_prompt_not_continuation(tmp_pa
     )
 
     prompt_writes = [c for c in session.write_calls if c[0] == "/tmp/.pycastle_prompt"]
-    assert prompt_writes[0][1] == "PHASE_2_ROLE_PROMPT_CONTENT"
+    assert prompt_writes[0][1] == "PHASE_2_ROLE_PROMPT_CONTENT []"
 
 
 def test_work_uses_custom_logs_dir_from_cfg(tmp_path):
