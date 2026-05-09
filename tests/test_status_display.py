@@ -82,10 +82,10 @@ def test_rich_print_blank_line_when_switching_from_named_to_empty_caller(
     assert "hello\n\n" in out and "world" in out
 
 
-def test_rich_agents_render_sorted_by_phase_rank() -> None:
+def test_rich_agent_without_issue_number_sorts_before_agent_with_issue_number() -> None:
     d = RichStatusDisplay()
-    d.register("Implement Agent #5", "agent")  # priority 5, registered first
-    d.register("Plan Agent", "agent")  # priority 0, registered second
+    d.register("Implement Agent #5", "agent")
+    d.register("Plan Agent", "agent")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -108,10 +108,10 @@ def test_rich_implementers_render_sorted_by_issue_number() -> None:
     d.stop()
 
 
-def test_rich_unknown_agent_sorts_after_known_phases() -> None:
+def test_rich_agent_with_unknown_name_sorts_before_agent_with_issue_number() -> None:
     d = RichStatusDisplay()
-    d.register("Implement Agent #1", "agent")  # priority 1, registered first
-    d.register("Unknown-agent", "agent")  # priority 0, registered second
+    d.register("Implement Agent #1", "agent")
+    d.register("Unknown-agent", "agent")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -820,9 +820,9 @@ def test_rich_new_api_no_blank_line_on_same_caller(capsys) -> None:
 
 def test_rich_new_canonical_agent_names_sort_correctly() -> None:
     d = RichStatusDisplay()
-    d.register("Implement Agent #3", "agent")  # priority 3, registered first
-    d.register("Implement Agent #1", "agent")  # priority 1, registered second
-    d.register("Plan Agent", "agent")  # priority 0, registered third
+    d.register("Implement Agent #3", "agent")
+    d.register("Implement Agent #1", "agent")
+    d.register("Plan Agent", "agent")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -833,11 +833,10 @@ def test_rich_new_canonical_agent_names_sort_correctly() -> None:
     assert output.find("Implement Agent #1") < output.find("Implement Agent #3")
 
 
-def test_rich_preflight_agent_sorts_before_plan_agent() -> None:
-    # Phase rows get priority -1 and render before all agent rows (priority >= 0)
+def test_rich_preflight_phase_row_renders_above_plan_agent() -> None:
     d = RichStatusDisplay()
-    d.register("Plan Agent", "agent")  # priority 0, registered first
-    d.register("Preflight", "phase")  # priority -1, registered second
+    d.register("Plan Agent", "agent")
+    d.register("Preflight", "phase")
 
     console = Console(record=True, width=200)
     console.print(d)
@@ -848,10 +847,9 @@ def test_rich_preflight_agent_sorts_before_plan_agent() -> None:
 
 
 def test_rich_improve_phase_row_renders_above_scan_agent() -> None:
-    # Improve phase row (kind="phase", priority -1) renders before its agent rows (priority 0)
     d = RichStatusDisplay()
-    d.register("Scan Agent", "agent")  # priority 0, registered first
-    d.register("Improve", "phase")  # priority -1, registered second
+    d.register("Scan Agent", "agent")
+    d.register("Improve", "phase")
 
     console = Console(record=True, width=200)
     console.print(d)
