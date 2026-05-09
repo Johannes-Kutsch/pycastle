@@ -426,7 +426,9 @@ def _make_handler(role: AgentRole) -> _RoleHandler:
         return _PreflightIssueHandler()
     if role == AgentRole.IMPROVE:
         return _ImproveHandler()
-    return _MergerHandler()
+    if role == AgentRole.MERGER:
+        return _MergerHandler()
+    raise ValueError(f"Unhandled AgentRole: {role}")
 
 
 def process_stream(
