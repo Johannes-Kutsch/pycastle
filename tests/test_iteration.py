@@ -13,6 +13,7 @@ from pycastle.iteration import (
     AbortedUsageLimit,
     Continue,
     Done,
+    NoCandidate,
     run_iteration,
 )
 from pycastle.agent_runner import RunRequest
@@ -1514,10 +1515,10 @@ def test_run_iteration_endless_dispatches_improve_even_after_sleep(
     assert isinstance(result, Continue)
 
 
-def test_run_iteration_endless_returns_continue_after_no_candidate_improve(
+def test_run_iteration_returns_no_candidate_after_rejection_report_filed(
     tmp_path, git_svc, logger
 ):
-    """endless + NO-CANDIDATE improve outcome → Continue (outer loop re-dispatches improve)."""
+    """endless + NO-CANDIDATE improve + report filed → NoCandidate (stops the loop)."""
     deps = _make_improve_deps(
         tmp_path,
         git_svc,
@@ -1526,6 +1527,60 @@ def test_run_iteration_endless_returns_continue_after_no_candidate_improve(
         slept_once=False,
         # scan → NO-CANDIDATE, then report phase → COMPLETE
         agent_responses=[NoCandidateOutput(), CompletionOutput()],
+    )
+    result = asyncio.run(run_iteration(deps))
+    assert isinstance(result, NoCandidate)
+
+
+def test_run_iteration_returns_no_candidate_when_report_disabled(
+    tmp_path, git_svc, logger
+):
+    """endless + NO-CANDIDATE + report disabled → NoCandidate (scan terminates immediately)."""
+    import dataclasses as _dc
+
+    base = _make_improve_deps(
+        tmp_path,
+        git_svc,
+        logger,
+        improve_mode="endless",
+        slept_once=False,
+        agent_responses=[NoCandidateOutput()],
+    )
+    deps = _dc.replace(
+        base,
+        cfg=dataclasses.replace(base.cfg, improve_no_candidate_report=False),
+    )
+    result = asyncio.run(run_iteration(deps))
+    assert isinstance(result, NoCandidate)
+
+
+def test_run_iteration_returns_no_candidate_in_until_sleep_mode(
+    tmp_path, git_svc, logger
+):
+    """until_sleep + not slept + NO-CANDIDATE → NoCandidate (does not loop again)."""
+    deps = _make_improve_deps(
+        tmp_path,
+        git_svc,
+        logger,
+        improve_mode="until_sleep",
+        slept_once=False,
+        agent_responses=[NoCandidateOutput(), CompletionOutput()],
+    )
+    result = asyncio.run(run_iteration(deps))
+    assert isinstance(result, NoCandidate)
+
+
+def test_run_iteration_successful_improve_still_returns_continue(
+    tmp_path, git_svc, logger
+):
+    """endless + successful improve (picked path) → Continue (normal loop continues)."""
+    deps = _make_improve_deps(
+        tmp_path,
+        git_svc,
+        logger,
+        improve_mode="endless",
+        slept_once=False,
+        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
     )
     result = asyncio.run(run_iteration(deps))
     assert isinstance(result, Continue)
