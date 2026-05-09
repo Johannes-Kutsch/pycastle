@@ -38,7 +38,14 @@ class AbortedUsageLimit:
     reset_time: datetime | None = None
 
 
-IterationOutcome: TypeAlias = Continue | Done | AbortedHITL | AbortedUsageLimit
+@dataclasses.dataclass(frozen=True)
+class NoCandidate:
+    pass
+
+
+IterationOutcome: TypeAlias = (
+    Continue | Done | AbortedHITL | AbortedUsageLimit | NoCandidate
+)
 
 
 def _is_in_flight(issue: dict, deps: Deps) -> bool:
@@ -84,7 +91,8 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             case Done():
                 return Done()
             case DispatchImprove():
-                await improve_phase(deps, sha=preflight_sha)
+                if await improve_phase(deps, sha=preflight_sha):
+                    return NoCandidate()
                 return Continue()
             case RunImplementDirect():
                 sha = preflight_sha
@@ -127,7 +135,8 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                             improve_dispatched_this_iteration=deps.improve_dispatched_this_iteration,
                         )
                         if isinstance(fallback, DispatchImprove):
-                            await improve_phase(deps, sha=preflight_sha)
+                            if await improve_phase(deps, sha=preflight_sha):
+                                return NoCandidate()
                             return Continue()
                         return Done()
                     issue_lines = [
