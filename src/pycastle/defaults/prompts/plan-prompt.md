@@ -36,7 +36,10 @@ Only issues labeled `wontfix` are treated as effectively closed. Do not treat `w
 
 Any issue referenced as a dependency that does not appear in the open issues list above has already been completed. Do not treat absent issues as blockers. Do not infer blockers from integration stability concerns — if a referenced issue is not in the list, its work is fully integrated and stable.
 
-If an issue appears to be a PRD and it has implementation issues which link to it, the PRD cannot be worked on.
+**Parent PRDs and their implementation issues form a unit.** An implementation issue declares its parent PRD with a `## Parent` heading followed by `#N` near the top of its body. The relationship has two consequences:
+
+- The parent PRD cannot be worked on while any implementation child is open. The child supersedes the spec; the PRD's remaining work is delegated to it.
+- An implementation child is **not** blocked by its parent PRD. The PRD's role is to specify the work, and that role is complete the moment the child carries the spec forward. Do not list the parent as a blocker for the child.
 
 ## Conflict avoidance
 
