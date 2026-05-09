@@ -67,7 +67,7 @@ class Scope(enum.Enum):
         ),
     )
     MERGE = ("MERGE", frozenset({"BRANCHES"}))
-    PLAN = ("PLAN", frozenset({"OPEN_ISSUES_JSON"}))
+    PLAN = ("PLAN", frozenset({"ALL_OPEN_ISSUES_JSON", "READY_FOR_AGENT_ISSUES_JSON"}))
     PREFLIGHT = ("PREFLIGHT", frozenset({"CHECK_NAME", "COMMAND", "OUTPUT"}))
     IMPROVE_SCAN = ("IMPROVE_SCAN", frozenset[str]())
     IMPROVE_SESSION = ("IMPROVE_SESSION", frozenset({"IMPROVE_SHORT_SID"}))

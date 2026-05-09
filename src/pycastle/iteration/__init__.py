@@ -96,7 +96,14 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                     initial_phase="Planning",
                     startup_message=f"started planning for {len(open_issues)} issue(s) labeled {deps.cfg.issue_label}",
                 ) as row:
-                    plan_result = await planning_phase(deps, sha, open_issues)
+                    all_open_issues = (
+                        preflight_result.all_open_issues
+                        if isinstance(preflight_result, PreflightReady)
+                        else open_issues
+                    )
+                    plan_result = await planning_phase(
+                        deps, sha, open_issues, all_open_issues
+                    )
                     issue_lines = [
                         f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
                         for i in plan_result.issues

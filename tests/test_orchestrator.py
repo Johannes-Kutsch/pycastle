@@ -79,6 +79,7 @@ def _make_github_svc():
         {"number": 1, "title": "Default Issue"},
         {"number": 2, "title": "Default Issue 2"},
     ]
+    mock.get_all_open_issues_lightweight.return_value = []
     return mock
 
 
@@ -87,6 +88,7 @@ def _make_github_svc_afk():
     mock = MagicMock(spec=GithubService)
     mock.get_issue_title.return_value = "Preflight fix title"
     mock.get_open_issues.return_value = [{"number": 1, "title": "Default Issue"}]
+    mock.get_all_open_issues_lightweight.return_value = []
     return mock
 
 
@@ -95,6 +97,7 @@ def _make_github_svc_hitl():
     mock = MagicMock(spec=GithubService)
     mock.get_issue_title.return_value = "Preflight fix title"
     mock.get_open_issues.return_value = [{"number": 1, "title": "Default Issue"}]
+    mock.get_all_open_issues_lightweight.return_value = []
     return mock
 
 
@@ -1651,11 +1654,11 @@ def test_planner_invoked_when_ready_for_agent_issues_exist(tmp_path):
     )
 
 
-# ── Issue-200: planner receives OPEN_ISSUES_JSON (not ISSUE_LABEL) ────────────
+# ── Issue-200: planner receives READY_FOR_AGENT_ISSUES_JSON (not ISSUE_LABEL) ─
 
 
-def test_planner_receives_open_issues_json_not_issue_label(tmp_path):
-    """run() must pass OPEN_ISSUES_JSON (not ISSUE_LABEL) in planner prompt_args."""
+def test_planner_receives_ready_for_agent_issues_json_not_issue_label(tmp_path):
+    """run() must pass READY_FOR_AGENT_ISSUES_JSON (not ISSUE_LABEL) in planner prompt_args."""
     captured_planner_args: dict = {}
 
     async def _fake_run_agent(request: RunRequest):
@@ -1685,15 +1688,18 @@ def test_planner_receives_open_issues_json_not_issue_label(tmp_path):
         github_service=mock_github,
     )
 
-    assert "OPEN_ISSUES_JSON" in captured_planner_args, (
-        "Planner must receive OPEN_ISSUES_JSON in prompt_args"
+    assert "READY_FOR_AGENT_ISSUES_JSON" in captured_planner_args, (
+        "Planner must receive READY_FOR_AGENT_ISSUES_JSON in prompt_args"
+    )
+    assert "ALL_OPEN_ISSUES_JSON" in captured_planner_args, (
+        "Planner must receive ALL_OPEN_ISSUES_JSON in prompt_args"
     )
     assert "ISSUE_LABEL" not in captured_planner_args, (
         "Planner must not receive ISSUE_LABEL in prompt_args"
     )
-    assert "Blocked by #99" not in captured_planner_args["OPEN_ISSUES_JSON"], (
-        "Stale blocker reference must be stripped from OPEN_ISSUES_JSON"
-    )
+    assert (
+        "Blocked by #99" not in captured_planner_args["READY_FOR_AGENT_ISSUES_JSON"]
+    ), "Stale blocker reference must be stripped from READY_FOR_AGENT_ISSUES_JSON"
 
 
 # ── Issue-204: cfg injection ──────────────────────────────────────────────────

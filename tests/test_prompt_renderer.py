@@ -70,7 +70,9 @@ def test_scope_merge_placeholders():
 
 
 def test_scope_plan_placeholders():
-    assert Scope.PLAN.placeholders == frozenset({"OPEN_ISSUES_JSON"})
+    assert Scope.PLAN.placeholders == frozenset(
+        {"ALL_OPEN_ISSUES_JSON", "READY_FOR_AGENT_ISSUES_JSON"}
+    )
 
 
 def test_scope_preflight_placeholders():
@@ -162,7 +164,7 @@ def test_template_enum_has_ten_variants():
 
 def test_renderer_ctor_rejects_unknown_token(cfg, prompts_dir):
     (prompts_dir / "plan-prompt.md").write_text(
-        "Issues: {{OPEN_ISSUES_JSON}}\nUnknown: {{XYZZY}}"
+        "Issues: {{ALL_OPEN_ISSUES_JSON}}\nUnknown: {{XYZZY}}"
     )
     with pytest.raises(PromptRenderError, match="XYZZY"):
         PromptRenderer(cfg)
@@ -221,7 +223,9 @@ def test_renderer_ctor_accepts_global_token_in_merge_template(cfg, prompts_dir):
 
 
 def test_render_rejects_missing_scope_arg(cfg, prompts_dir):
-    (prompts_dir / "plan-prompt.md").write_text("Issues: {{OPEN_ISSUES_JSON}}")
+    (prompts_dir / "plan-prompt.md").write_text(
+        "Issues: {{ALL_OPEN_ISSUES_JSON}} {{READY_FOR_AGENT_ISSUES_JSON}}"
+    )
     renderer = PromptRenderer(cfg)
 
     with pytest.raises(PromptRenderError, match="missing"):
@@ -243,14 +247,19 @@ def test_render_rejects_extra_scope_arg(cfg, prompts_dir):
 
 
 def test_render_rejects_typo_in_scope_arg(cfg, prompts_dir):
-    (prompts_dir / "plan-prompt.md").write_text("Issues: {{OPEN_ISSUES_JSON}}")
+    (prompts_dir / "plan-prompt.md").write_text(
+        "Issues: {{ALL_OPEN_ISSUES_JSON}} {{READY_FOR_AGENT_ISSUES_JSON}}"
+    )
     renderer = PromptRenderer(cfg)
 
     with pytest.raises(PromptRenderError):
         _run(
             renderer.render(
                 PromptTemplate.PLAN,
-                {"OPEN_ISSUE_JSON": "[]"},  # typo: missing 'S'
+                {
+                    "ALL_OPEN_ISSUE_JSON": "[]",
+                    "READY_FOR_AGENT_ISSUES_JSON": "[]",
+                },  # typo in first key
                 _noop_exec,
             )
         )
@@ -260,11 +269,19 @@ def test_render_rejects_typo_in_scope_arg(cfg, prompts_dir):
 
 
 def test_render_does_not_warn_for_unused_global_args(cfg, prompts_dir, capsys):
-    # Template uses only one global arg; others are unused and must be silent.
-    (prompts_dir / "plan-prompt.md").write_text("Issues: {{OPEN_ISSUES_JSON}}")
+    # Template uses only scope args; global args are unused and must be silent.
+    (prompts_dir / "plan-prompt.md").write_text(
+        "All: {{ALL_OPEN_ISSUES_JSON}} Ready: {{READY_FOR_AGENT_ISSUES_JSON}}"
+    )
     renderer = PromptRenderer(cfg)
 
-    _run(renderer.render(PromptTemplate.PLAN, {"OPEN_ISSUES_JSON": "[]"}, _noop_exec))
+    _run(
+        renderer.render(
+            PromptTemplate.PLAN,
+            {"ALL_OPEN_ISSUES_JSON": "[]", "READY_FOR_AGENT_ISSUES_JSON": "[]"},
+            _noop_exec,
+        )
+    )
 
     assert capsys.readouterr().err == ""
 
@@ -273,14 +290,20 @@ def test_render_does_not_warn_for_unused_global_args(cfg, prompts_dir, capsys):
 
 
 def test_render_substitutes_scope_arg(cfg, prompts_dir):
-    (prompts_dir / "plan-prompt.md").write_text("Issues: {{OPEN_ISSUES_JSON}}")
+    (prompts_dir / "plan-prompt.md").write_text(
+        "All: {{ALL_OPEN_ISSUES_JSON}} Ready: {{READY_FOR_AGENT_ISSUES_JSON}}"
+    )
     renderer = PromptRenderer(cfg)
 
     result = _run(
-        renderer.render(PromptTemplate.PLAN, {"OPEN_ISSUES_JSON": "[1,2]"}, _noop_exec)
+        renderer.render(
+            PromptTemplate.PLAN,
+            {"ALL_OPEN_ISSUES_JSON": "[1,2]", "READY_FOR_AGENT_ISSUES_JSON": "[1]"},
+            _noop_exec,
+        )
     )
 
-    assert result == "Issues: [1,2]"
+    assert result == "All: [1,2] Ready: [1]"
 
 
 def test_render_resume_scope_accepts_empty_scope_args(cfg, prompts_dir):
