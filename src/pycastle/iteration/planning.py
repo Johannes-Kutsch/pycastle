@@ -32,6 +32,28 @@ class AllBlocked:
     blocked: list[dict]
 
 
+def hydrate_planned_issues(
+    plan_result: "PlanReady", open_issues: list[dict]
+) -> "PlanReady":
+    by_number = {i["number"]: i for i in open_issues}
+    hydrated: list[dict] = []
+    for issue in plan_result.issues:
+        source = by_number.get(issue["number"])
+        if source is None:
+            raise RuntimeError(
+                f"Planner returned issue #{issue['number']} which is not in the "
+                f"ready-for-agent open issues list"
+            )
+        hydrated.append(
+            {
+                **issue,
+                "body": source.get("body") or "",
+                "comments": source.get("comments") or [],
+            }
+        )
+    return PlanReady(worktree_sha=plan_result.worktree_sha, issues=hydrated)
+
+
 async def planning_phase(
     deps: _PlanningDeps, sha: str, open_issues: list[dict], all_open_issues: list[dict]
 ) -> PlanReady | AllBlocked:

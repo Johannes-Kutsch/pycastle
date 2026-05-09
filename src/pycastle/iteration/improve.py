@@ -120,7 +120,7 @@ def _build_issues_scope_args(
     github_svc: GithubService,
 ) -> dict[str, str]:
     if prd_number is None:
-        issue: dict = {"number": "", "title": "", "comments": []}
+        issue: dict = {"number": "", "title": "", "body": "", "comments": []}
     else:
         issue = {
             **github_svc.get_issue(prd_number),

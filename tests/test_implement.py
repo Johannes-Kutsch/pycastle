@@ -94,7 +94,7 @@ def test_branch_for_uses_issue_number():
 
 def test_implement_phase_returns_completed_issues(tmp_path):
     """implement_phase returns all issues in completed when every agent returns COMPLETE."""
-    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}, {"number": 2, "title": "Fix B", "body": "", "comments": []}]
     fake = FakeAgentRunner([CompletionOutput()] * 4)
 
     deps = _make_deps(tmp_path, fake)
@@ -123,7 +123,7 @@ def test_implement_phase_empty_issues_returns_empty_result(tmp_path):
 
 def test_implement_phase_signals_usage_limit_in_result(tmp_path):
     """implement_phase returns usage_limit_hit=True instead of calling sys.exit."""
-    issues = [{"number": 1, "title": "Fix A"}]
+    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
 
     async def _side_effect(request: RunRequest):
         raise UsageLimitError(reset_time=None)
@@ -137,7 +137,7 @@ def test_implement_phase_signals_usage_limit_in_result(tmp_path):
 
 def test_implement_phase_usage_limit_does_not_exit(tmp_path):
     """implement_phase must not call sys.exit() when a usage limit is hit."""
-    issues = [{"number": 1, "title": "Fix A"}]
+    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
 
     async def _side_effect(request: RunRequest):
         raise UsageLimitError(reset_time=None)
@@ -160,7 +160,7 @@ def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
         completed_agents.append(request.name)
         return CompletionOutput()
 
-    issues = [{"number": 1, "title": "Fail"}, {"number": 2, "title": "Pass"}]
+    issues = [{"number": 1, "title": "Fail", "body": "", "comments": []}, {"number": 2, "title": "Pass", "body": "", "comments": []}]
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
     asyncio.run(implement_phase(issues, None, deps))
@@ -175,7 +175,7 @@ def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
 
 def test_implement_phase_preflight_failure_goes_to_errors(tmp_path):
     """PreflightFailure returned by run_agent lands in result.errors."""
-    issues = [{"number": 1, "title": "Fix A"}]
+    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
     failure = PreflightFailure(failures=(("mypy", "mypy .", "error: missing module"),))
     fake = FakeAgentRunner([failure])
 
@@ -190,7 +190,7 @@ def test_implement_phase_preflight_failure_goes_to_errors(tmp_path):
 
 def test_implement_phase_exception_goes_to_errors(tmp_path):
     """An exception raised by run_agent lands in result.errors."""
-    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}, {"number": 2, "title": "Fix B", "body": "", "comments": []}]
 
     async def _side_effect(request: RunRequest):
         if "Implement Agent #1" in request.name or "Review Agent #1" in request.name:
@@ -209,7 +209,7 @@ def test_implement_phase_exception_goes_to_errors(tmp_path):
 
 def test_implement_phase_no_complete_tag_goes_to_errors(tmp_path):
     """When implementer raises PromiseParseError, issue goes to errors."""
-    issues = [{"number": 1, "title": "Fix A"}]
+    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
     fake = FakeAgentRunner([PromiseParseError("no <promise>COMPLETE</promise> tag")])
 
     deps = _make_deps(tmp_path, fake)
@@ -224,7 +224,7 @@ def test_implement_phase_no_complete_tag_goes_to_errors(tmp_path):
 
 def test_implement_phase_logs_preflight_failure_via_logger(tmp_path):
     """PreflightFailure must be passed to deps.logger.log_error()."""
-    issues = [{"number": 1, "title": "Fix A"}]
+    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     logger = RecordingLogger()
     fake = FakeAgentRunner([failure])
@@ -239,7 +239,7 @@ def test_implement_phase_logs_preflight_failure_via_logger(tmp_path):
 
 def test_implement_phase_logs_exception_via_logger(tmp_path):
     """Exceptions raised during run_issue must be passed to deps.logger.log_error()."""
-    issues = [{"number": 1, "title": "Fix A"}]
+    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
     boom = RuntimeError("agent crashed")
     logger = RecordingLogger()
     fake = FakeAgentRunner([boom])
@@ -254,7 +254,7 @@ def test_implement_phase_logs_exception_via_logger(tmp_path):
 
 def test_implement_phase_successful_issues_not_logged_as_errors(tmp_path):
     """Completed issues must not produce log_error() calls."""
-    issues = [{"number": 1, "title": "Fix A"}]
+    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
     logger = RecordingLogger()
     fake = FakeAgentRunner([CompletionOutput()] * 2)
 
@@ -266,7 +266,7 @@ def test_implement_phase_successful_issues_not_logged_as_errors(tmp_path):
 
 def test_implement_phase_does_not_log_implementer_output(tmp_path):
     """Implementer output is no longer logged via log_agent_output (raw string unavailable)."""
-    issues = [{"number": 7, "title": "Fix C"}]
+    issues = [{"number": 7, "title": "Fix C", "body": "", "comments": []}]
     logger = RecordingLogger()
     fake = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
 
@@ -278,7 +278,7 @@ def test_implement_phase_does_not_log_implementer_output(tmp_path):
 
 def test_implement_phase_reviewer_usage_limit_signals_in_result(tmp_path):
     """When reviewer hits usage limit, implement_phase returns usage_limit_hit=True and issue is not completed."""
-    issues = [{"number": 1, "title": "Fix A"}]
+    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
 
     async def _side_effect(request: RunRequest):
         if "Implement Agent" in request.name:
@@ -301,7 +301,7 @@ def test_run_issue_derives_branch_from_issue_number(tmp_path):
     """run_issue must derive the branch via branch_for(number) and pass it to create_worktree and prompt_args."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
 
-    issue = {"number": 7, "title": "Fix thing"}
+    issue = {"number": 7, "title": "Fix thing", "body": "", "comments": []}
     deps = _make_deps(tmp_path, fake)
     asyncio.run(run_issue(issue, deps))
 
@@ -315,7 +315,7 @@ def test_run_issue_implementer_invoked_with_skip_preflight_true(tmp_path):
     """run_issue must pass skip_preflight=True to the implementer agent."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
 
-    issue = {"number": 1, "title": "Fix thing"}
+    issue = {"number": 1, "title": "Fix thing", "body": "", "comments": []}
     deps = _make_deps(tmp_path, fake)
     asyncio.run(run_issue(issue, deps))
 
@@ -327,7 +327,7 @@ def test_run_issue_reviewer_invoked_with_skip_preflight_true(tmp_path):
     """run_issue must pass skip_preflight=True to the reviewer agent."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
 
-    issue = {"number": 1, "title": "Fix thing"}
+    issue = {"number": 1, "title": "Fix thing", "body": "", "comments": []}
     deps = _make_deps(tmp_path, fake)
     asyncio.run(run_issue(issue, deps))
 
@@ -339,7 +339,7 @@ def test_run_issue_raises_when_implementer_does_not_complete(tmp_path):
     """run_issue must raise PromiseParseError when implementer lacks COMPLETE tag."""
     fake = FakeAgentRunner([PromiseParseError("no <promise>COMPLETE</promise> tag")])
 
-    issue = {"number": 1, "title": "Fix thing"}
+    issue = {"number": 1, "title": "Fix thing", "body": "", "comments": []}
     deps = _make_deps(tmp_path, fake)
 
     with pytest.raises(PromiseParseError):
@@ -350,7 +350,7 @@ def test_run_issue_returns_issue_when_implementer_completes(tmp_path):
     """run_issue must return the issue dict when implementer produces COMPLETE."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
 
-    issue = {"number": 2, "title": "Fix thing"}
+    issue = {"number": 2, "title": "Fix thing", "body": "", "comments": []}
     deps = _make_deps(tmp_path, fake)
     result = asyncio.run(run_issue(issue, deps))
 
@@ -371,7 +371,7 @@ def test_run_issue_raises_agent_timeout_error_when_implementer_exhausts_retries(
         return CompletionOutput()
 
     fake = FakeAgentRunner(side_effect=_side_effect)
-    issue = {"number": 5, "title": "Fix thing"}
+    issue = {"number": 5, "title": "Fix thing", "body": "", "comments": []}
     deps = _make_deps(tmp_path, fake)
 
     with pytest.raises(AgentTimeoutError):
@@ -387,7 +387,7 @@ def test_run_issue_raises_agent_timeout_error_when_reviewer_exhausts_retries(tmp
         raise AgentTimeoutError("timeout")
 
     fake = FakeAgentRunner(side_effect=_side_effect)
-    issue = {"number": 5, "title": "Fix thing"}
+    issue = {"number": 5, "title": "Fix thing", "body": "", "comments": []}
     deps = _make_deps(tmp_path, fake)
 
     with pytest.raises(AgentTimeoutError):
@@ -396,7 +396,7 @@ def test_run_issue_raises_agent_timeout_error_when_reviewer_exhausts_retries(tmp
 
 def test_implement_phase_implementer_timeout_tracked_as_error(tmp_path):
     """When implementer raises AgentTimeoutError, implement_phase tracks the issue in errors."""
-    issues = [{"number": 3, "title": "Fix C"}]
+    issues = [{"number": 3, "title": "Fix C", "body": "", "comments": []}]
 
     async def _side_effect(request: RunRequest):
         if "Implement Agent" in request.name:
@@ -415,7 +415,7 @@ def test_implement_phase_implementer_timeout_tracked_as_error(tmp_path):
 
 def test_implement_phase_reviewer_timeout_does_not_complete_issue(tmp_path):
     """When reviewer raises AgentTimeoutError, the issue must not appear in completed."""
-    issues = [{"number": 4, "title": "Fix D"}]
+    issues = [{"number": 4, "title": "Fix D", "body": "", "comments": []}]
 
     async def _side_effect(request: RunRequest):
         if "Implement Agent" in request.name:
@@ -508,7 +508,7 @@ def test_run_issue_handles_issue_without_body_or_comments(tmp_path):
     """AFK-path issues lack body/comments — prompt args must still be populated."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
-    issue = {"number": 1, "title": "T"}
+    issue = {"number": 1, "title": "T", "body": "", "comments": []}
 
     asyncio.run(run_issue(issue, deps))
 
@@ -541,13 +541,18 @@ def test_build_issue_scope_args_formats_number_as_string():
     assert result["ISSUE_NUMBER"] == "42"
 
 
-def test_build_issue_scope_args_normalises_missing_or_none_body_to_empty():
-    missing = build_issue_scope_args({"number": 1, "title": "T"}, extra_scope_args={})
-    none_body = build_issue_scope_args(
-        {"number": 1, "title": "T", "body": None}, extra_scope_args={}
-    )
-    assert missing["ISSUE_BODY"] == ""
-    assert none_body["ISSUE_BODY"] == ""
+def test_build_issue_scope_args_raises_key_error_when_body_missing():
+    with pytest.raises(KeyError):
+        build_issue_scope_args(
+            {"number": 1, "title": "T", "comments": []}, extra_scope_args={}
+        )
+
+
+def test_build_issue_scope_args_raises_key_error_when_comments_missing():
+    with pytest.raises(KeyError):
+        build_issue_scope_args(
+            {"number": 1, "title": "T", "body": ""}, extra_scope_args={}
+        )
 
 
 def test_build_issue_scope_args_formats_comments():
@@ -586,7 +591,7 @@ def test_build_issue_scope_args_raises_on_missing_required_keys():
 
 
 def test_run_issue_passes_issue_title_to_implementer(tmp_path):
-    issue = {"number": 5, "title": "Fix auth timeout"}
+    issue = {"number": 5, "title": "Fix auth timeout", "body": "", "comments": []}
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
 
@@ -596,7 +601,7 @@ def test_run_issue_passes_issue_title_to_implementer(tmp_path):
 
 
 def test_run_issue_passes_issue_title_to_reviewer(tmp_path):
-    issue = {"number": 5, "title": "Fix auth timeout"}
+    issue = {"number": 5, "title": "Fix auth timeout", "body": "", "comments": []}
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
 
@@ -614,7 +619,7 @@ def test_run_issue_creates_two_worktrees_implementer_and_reviewer(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 10, "title": "Fix thing"}
+    issue = {"number": 10, "title": "Fix thing", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps))
 
     assert deps.git_svc.create_worktree.call_count == 2
@@ -626,7 +631,7 @@ def test_run_issue_removes_worktrees_after_successful_run(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 11, "title": "Fix thing"}
+    issue = {"number": 11, "title": "Fix thing", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps))
 
     assert deps.git_svc.remove_worktree.call_count == 2
@@ -644,7 +649,7 @@ def test_run_issue_preserves_worktree_on_usage_limit(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 12, "title": "Fix thing"}
+    issue = {"number": 12, "title": "Fix thing", "body": "", "comments": []}
     with pytest.raises(UsageLimitError):
         asyncio.run(run_issue(issue, deps))
 
@@ -657,7 +662,7 @@ def test_run_issue_preserves_worktree_when_dirty(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = False
 
-    issue = {"number": 13, "title": "Fix thing"}
+    issue = {"number": 13, "title": "Fix thing", "body": "", "comments": []}
     result = asyncio.run(run_issue(issue, deps))
 
     assert result == issue
@@ -676,7 +681,7 @@ def test_run_issue_raises_branch_collision_for_concurrent_same_issue(tmp_path):
     fake = FakeAgentRunner(side_effect=_yielding_side_effect)
     deps = _make_deps(tmp_path, fake)
     branch_locks: dict[str, asyncio.Lock] = {}
-    issue = {"number": 14, "title": "Fix thing"}
+    issue = {"number": 14, "title": "Fix thing", "body": "", "comments": []}
 
     async def _two_concurrent():
         return await asyncio.gather(
@@ -697,7 +702,7 @@ def test_run_issue_does_not_create_reviewer_worktree_on_preflight_failure(tmp_pa
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 15, "title": "Fix thing"}
+    issue = {"number": 15, "title": "Fix thing", "body": "", "comments": []}
     result = asyncio.run(run_issue(issue, deps))
 
     assert isinstance(result, PreflightFailure)
@@ -727,7 +732,7 @@ def test_run_issue_review_skip_returns_issue_without_invoking_any_agent(tmp_path
     deps = _make_deps(tmp_path, fake)
     _seed_review_stage_done(tmp_path, 20)
 
-    issue = {"number": 20, "title": "Fix auth"}
+    issue = {"number": 20, "title": "Fix auth", "body": "", "comments": []}
     result = asyncio.run(run_issue(issue, deps))
 
     assert result == issue
@@ -740,7 +745,7 @@ def test_run_issue_review_skip_creates_no_worktree(tmp_path):
     deps = _make_deps(tmp_path, fake)
     _seed_review_stage_done(tmp_path, 21)
 
-    issue = {"number": 21, "title": "Fix auth"}
+    issue = {"number": 21, "title": "Fix auth", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps))
 
     deps.git_svc.create_worktree.assert_not_called()
@@ -752,7 +757,7 @@ def test_run_issue_implement_skip_invokes_only_reviewer(tmp_path):
     deps = _make_deps(tmp_path, fake)
     _seed_implement_stage_done(tmp_path, 22)
 
-    issue = {"number": 22, "title": "Fix auth"}
+    issue = {"number": 22, "title": "Fix auth", "body": "", "comments": []}
     result = asyncio.run(run_issue(issue, deps))
 
     assert result == issue
@@ -767,7 +772,7 @@ def test_run_issue_implement_skip_creates_no_implementer_worktree(tmp_path):
     _seed_implement_stage_done(tmp_path, 23)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 23, "title": "Fix auth"}
+    issue = {"number": 23, "title": "Fix auth", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps))
 
     assert deps.git_svc.create_worktree.call_count == 1
@@ -780,7 +785,7 @@ def test_run_issue_no_stage_done_signal_runs_both_agents(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
 
-    issue = {"number": 24, "title": "Fix auth"}
+    issue = {"number": 24, "title": "Fix auth", "body": "", "comments": []}
     result = asyncio.run(run_issue(issue, deps))
 
     assert result == issue
@@ -799,7 +804,7 @@ def test_run_issue_releases_lock_on_unexpected_exception(tmp_path):
     deps = _make_deps(tmp_path, fake)
 
     branch_locks: dict[str, asyncio.Lock] = {}
-    issue = {"number": 25, "title": "Fix auth"}
+    issue = {"number": 25, "title": "Fix auth", "body": "", "comments": []}
 
     with pytest.raises(RuntimeError):
         asyncio.run(run_issue(issue, deps, branch_locks=branch_locks))
@@ -813,7 +818,7 @@ def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 16, "title": "Fix thing"}
+    issue = {"number": 16, "title": "Fix thing", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps, sha="abc123"))
 
     assert deps.git_svc.create_worktree.call_count == 2
@@ -826,7 +831,7 @@ def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
 
 def test_implement_phase_sets_initial_progress_text(tmp_path):
     """implement_phase registers 'Running: started Agents for 0/Y issues' before any agent runs."""
-    issues = [{"number": 1, "title": "A"}, {"number": 2, "title": "B"}]
+    issues = [{"number": 1, "title": "A", "body": "", "comments": []}, {"number": 2, "title": "B", "body": "", "comments": []}]
     fake = FakeAgentRunner([CompletionOutput()] * 4)
     sd = RecordingStatusDisplay()
     deps = _make_deps(tmp_path, fake, status_display=sd)
@@ -846,9 +851,9 @@ def test_implement_phase_sets_initial_progress_text(tmp_path):
 def test_implement_phase_increments_progress_text_per_semaphore_acquisition(tmp_path):
     """implement_phase increments the counter each time a new issue acquires the semaphore."""
     issues = [
-        {"number": 1, "title": "A"},
-        {"number": 2, "title": "B"},
-        {"number": 3, "title": "C"},
+        {"number": 1, "title": "A", "body": "", "comments": []},
+        {"number": 2, "title": "B", "body": "", "comments": []},
+        {"number": 3, "title": "C", "body": "", "comments": []},
     ]
     fake = FakeAgentRunner([CompletionOutput()] * 6)
     sd = RecordingStatusDisplay()
@@ -903,7 +908,7 @@ def test_run_issue_calls_on_started_once_per_issue(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
 
-    issue = {"number": 1, "title": "Fix thing"}
+    issue = {"number": 1, "title": "Fix thing", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))
 
     assert fired == [1]
@@ -916,7 +921,7 @@ def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
     deps = _make_deps(tmp_path, fake)
     _seed_review_stage_done(tmp_path, 1)
 
-    issue = {"number": 1, "title": "Fix thing"}
+    issue = {"number": 1, "title": "Fix thing", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))
 
     assert fired == []
@@ -933,7 +938,7 @@ def test_run_issue_commits_implementer_with_issue_number_and_message(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 40, "title": "Fix"}
+    issue = {"number": 40, "title": "Fix", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps))
 
     impl_call = deps.git_svc.commit.call_args_list[0]
@@ -948,7 +953,7 @@ def test_run_issue_commits_implementer_with_title_when_no_commit_message_tag(tmp
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 43, "title": "Fix the login bug"}
+    issue = {"number": 43, "title": "Fix the login bug", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps))
 
     impl_call = deps.git_svc.commit.call_args_list[0]
@@ -966,7 +971,7 @@ def test_run_issue_commits_reviewer_with_issue_number_and_message(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 41, "title": "Fix"}
+    issue = {"number": 41, "title": "Fix", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps))
 
     review_call = deps.git_svc.commit.call_args_list[1]
@@ -981,7 +986,7 @@ def test_run_issue_commits_reviewer_with_title_when_no_commit_message_tag(tmp_pa
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 44, "title": "Add dark mode"}
+    issue = {"number": 44, "title": "Add dark mode", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps))
 
     review_call = deps.git_svc.commit.call_args_list[1]
@@ -994,7 +999,7 @@ def test_run_issue_does_not_commit_on_preflight_failure(tmp_path):
     fake = FakeAgentRunner([failure])
     deps = _make_deps(tmp_path, fake)
 
-    issue = {"number": 42, "title": "Fix"}
+    issue = {"number": 42, "title": "Fix", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps))
 
     deps.git_svc.commit.assert_not_called()
@@ -1007,7 +1012,7 @@ def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
     deps = _make_deps(tmp_path, fake)
     _seed_implement_stage_done(tmp_path, 1)
 
-    issue = {"number": 1, "title": "Fix auth"}
+    issue = {"number": 1, "title": "Fix auth", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))
 
     assert fired == [1]
@@ -1041,7 +1046,7 @@ def test_run_issue_clears_implementer_session_dir_contents_after_commit(tmp_path
 
     deps.git_svc.create_worktree.side_effect = _seeding_create
 
-    issue = {"number": 50, "title": "Fix"}
+    issue = {"number": 50, "title": "Fix", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps))
 
     # Dir exists (not removed) but is empty (contents cleared = stage-done signal).
@@ -1074,7 +1079,7 @@ def test_run_issue_clears_reviewer_session_dir_contents_after_commit(tmp_path):
 
     deps.git_svc.create_worktree.side_effect = _seeding_create
 
-    issue = {"number": 51, "title": "Fix"}
+    issue = {"number": 51, "title": "Fix", "body": "", "comments": []}
     asyncio.run(run_issue(issue, deps))
 
     assert rev_session_dir.is_dir()
