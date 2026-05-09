@@ -9,11 +9,8 @@ from ._deps import Deps
 from ._rows import PhaseRow as PhaseRow
 from ._rows import agent_row as agent_row
 from ._rows import phase_row
-from .dispatcher import DispatchImprove as DispatchImprove
 from .dispatcher import Done as Done
-from .dispatcher import RunImplementDirect as RunImplementDirect
-from .dispatcher import RunPlan as RunPlan
-from .dispatcher import decide_iteration_action
+from .dispatcher import should_dispatch_improve
 from .implement import branch_for, implement_phase
 from .improve import improve_phase
 from .merge import merge_phase
@@ -58,6 +55,7 @@ def _is_in_flight(issue: dict, deps: Deps) -> bool:
 
 async def run_iteration(deps: Deps) -> IterationOutcome:
     try:
+        # ── Preflight ────────────────────────────────────────────────────────
         async with phase_row(
             deps.status_display,
             "Preflight",
@@ -80,80 +78,78 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
         open_issues = preflight_result.issues
         in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
-        action = decide_iteration_action(
-            open_afk_count=len(open_issues),
-            in_flight_count=len(in_flight),
-            improve_mode=deps.improve_mode,
-            slept_once=deps.slept_once,
-            improve_dispatched_this_iteration=deps.improve_dispatched_this_iteration,
-        )
-        match action:
-            case Done():
-                return Done()
-            case DispatchImprove():
+
+        # ── (Improve) — runs when idle: no AFK issues, no in-flight ─────────
+        if not open_issues and not in_flight:
+            if should_dispatch_improve(
+                deps.improve_mode,
+                deps.slept_once,
+                deps.improve_dispatched_this_iteration,
+            ):
                 if await improve_phase(deps, sha=preflight_sha):
                     return NoCandidate()
                 return Continue()
-            case RunImplementDirect():
-                sha = preflight_sha
-                issues = in_flight
-            case RunPlan():
-                sha = preflight_sha
-                async with phase_row(
-                    deps.status_display,
-                    "Plan",
-                    initial_phase="Planning",
-                    startup_message=f"started planning for {len(open_issues)} issue(s) labeled {deps.cfg.issue_label}",
-                ) as row:
-                    all_open_issues = (
-                        preflight_result.all_open_issues
-                        if isinstance(preflight_result, PreflightReady)
-                        else open_issues
-                    )
-                    plan_result = await planning_phase(
-                        deps, sha, open_issues, all_open_issues
-                    )
-                    if isinstance(plan_result, AllBlocked):
-                        blocked_lines = [
-                            f"  #{b['number']} blocked by #{b['blocked_by']}: {b['reason']}"
-                            for b in plan_result.blocked
-                        ]
-                        if blocked_lines:
-                            row.close(
-                                "\n".join(
-                                    ["All ready-for-agent issues are blocked:"]
-                                    + blocked_lines
-                                )
-                            )
-                        else:
-                            row.close("All ready-for-agent issues are blocked.")
-                        fallback = decide_iteration_action(
-                            open_afk_count=0,
-                            in_flight_count=0,
-                            improve_mode=deps.improve_mode,
-                            slept_once=deps.slept_once,
-                            improve_dispatched_this_iteration=deps.improve_dispatched_this_iteration,
-                        )
-                        if isinstance(fallback, DispatchImprove):
-                            if await improve_phase(deps, sha=preflight_sha):
-                                return NoCandidate()
-                            return Continue()
-                        return Done()
-                    issue_lines = [
-                        f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
-                        for i in plan_result.issues
-                    ]
-                    row.close(
-                        "\n".join(
-                            [
-                                f"Planning complete, implementing {len(plan_result.issues)} issue(s):"
-                            ]
-                            + issue_lines
-                        )
-                    )
-                    sha = plan_result.worktree_sha
-                    issues = plan_result.issues
+            return Done()
 
+        # ── Plan or implement-direct ─────────────────────────────────────────
+        if in_flight:
+            sha = preflight_sha
+            issues: list[dict] = in_flight
+        else:
+            sha = preflight_sha
+            async with phase_row(
+                deps.status_display,
+                "Plan",
+                initial_phase="Planning",
+                startup_message=f"started planning for {len(open_issues)} issue(s) labeled {deps.cfg.issue_label}",
+            ) as row:
+                all_open_issues = (
+                    preflight_result.all_open_issues
+                    if isinstance(preflight_result, PreflightReady)
+                    else open_issues
+                )
+                plan_result = await planning_phase(
+                    deps, sha, open_issues, all_open_issues
+                )
+                if isinstance(plan_result, AllBlocked):
+                    blocked_lines = [
+                        f"  #{b['number']} blocked by #{b['blocked_by']}: {b['reason']}"
+                        for b in plan_result.blocked
+                    ]
+                    if blocked_lines:
+                        row.close(
+                            "\n".join(
+                                ["All ready-for-agent issues are blocked:"]
+                                + blocked_lines
+                            )
+                        )
+                    else:
+                        row.close("All ready-for-agent issues are blocked.")
+                    if should_dispatch_improve(
+                        deps.improve_mode,
+                        deps.slept_once,
+                        deps.improve_dispatched_this_iteration,
+                    ):
+                        if await improve_phase(deps, sha=preflight_sha):
+                            return NoCandidate()
+                        return Continue()
+                    return Done()
+                issue_lines = [
+                    f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
+                    for i in plan_result.issues
+                ]
+                row.close(
+                    "\n".join(
+                        [
+                            f"Planning complete, implementing {len(plan_result.issues)} issue(s):"
+                        ]
+                        + issue_lines
+                    )
+                )
+                sha = plan_result.worktree_sha
+                issues = plan_result.issues
+
+        # ── Implement ────────────────────────────────────────────────────────
         issues = issues[: deps.cfg.max_parallel]
 
         token = CancellationToken()
@@ -200,6 +196,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 )
             )
 
+        # ── Merge ────────────────────────────────────────────────────────────
         await merge_phase(completed, deps)
 
         return Continue()
