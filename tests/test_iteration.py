@@ -53,6 +53,7 @@ def git_svc():
 def github_svc():
     svc = MagicMock(spec=GithubService)
     svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
+    svc.get_all_open_issues_lightweight.return_value = []
     return svc
 
 
@@ -92,6 +93,8 @@ def _make_deps(
     git_svc.list_worktrees.side_effect = _fake_list_worktrees
     git_svc.create_worktree.side_effect = _fake_create_worktree
     git_svc.remove_worktree.side_effect = _fake_remove_worktree
+    if isinstance(github_svc.get_all_open_issues_lightweight.return_value, MagicMock):
+        github_svc.get_all_open_issues_lightweight.return_value = []
 
     return Deps(
         repo_root=tmp_path,
