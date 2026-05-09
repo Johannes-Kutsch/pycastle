@@ -45,7 +45,7 @@ The body opens with a short paragraph naming the AFK-safety constraint(s) the ca
 ```
 ## Why human decision needed
 
-A short paragraph (2–4 sentences) explaining which AFK-safety constraint the candidate tripped (CLI surface change, breaking config change, scope/architecture choice with multiple defensible answers, ADR contradiction, product/UX call, or issue-tracker contract change) and why a human is the right decision-maker.
+A short paragraph (2–4 sentences) explaining which AFK-safety constraint the candidate tripped (CLI surface change, breaking config change, ADR contradiction, product/UX call, or issue-tracker contract change) and why a human is the right decision-maker.
 
 ## Problem Statement
 
