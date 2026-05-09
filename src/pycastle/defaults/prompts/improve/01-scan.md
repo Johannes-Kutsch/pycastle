@@ -38,7 +38,9 @@ This phase runs autonomously. Every candidate you shortlist must pass the AFK-sa
 
 **Allowed:** internal refactors, deepening shallow modules, test code duplication / fixture-sprawl cleanup, type tightening, naming alignment with `CONTEXT.md`, dead-code removal.
 
-**Forbidden:** CLI surface changes, breaking config changes, scope/architecture choices with multiple defensible answers, ADR contradictions, product/UX calls, issue-tracker contract changes.
+**Forbidden:** CLI surface changes, breaking config changes, ADR contradictions, product/UX calls, issue-tracker contract changes.
+
+The principle behind the forbidden list is **reversibility**: a wrong call on an internal seam (struct grouping, exception-vs-value, rename, regroup) is reversible at the code level alone — fair game. The forbidden categories above are the ones whose reversal would require migrating persisted artefacts (CLI flag names, on-disk session files, GitHub-issue body conventions, prompt-template placeholders, ADR-locked seams) — out of bounds. Multi-option *internal* decisions are not forbidden; pick the strongest reversible option and run with it.
 
 If every candidate fails the filter, emit `<promise>NO-CANDIDATE</promise>` and stop.
 
@@ -87,7 +89,7 @@ Walk the design tree for your top candidate in the conversation:
 After grilling, answer the following four questions explicitly:
 
 1. Why this pick over each rejected candidate?
-2. What could need a human and why doesn't it?
+2. What was the strongest runner-up among reversible options, and why this one?
 3. What is closest to front-facing functionality and why is it still safe?
 4. What is the strongest argument *against* the pick?
 
