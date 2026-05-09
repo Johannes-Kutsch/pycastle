@@ -117,15 +117,13 @@ class AgentRunner:
             return await self._renderer.render(
                 PromptTemplate.RESUME, {}, container_exec
             )
-        if run_kind == RunKind.RESUME and send_role_prompt_on_resume:
-            return await self._renderer.render(template, scope_args, container_exec)
         role_prompt = await self._renderer.render(template, scope_args, container_exec)
-        if is_failsoft_recovery:
-            resume_text = await self._renderer.render(
-                PromptTemplate.RESUME, {}, container_exec
-            )
-            return resume_text + "\n\n" + role_prompt
-        return role_prompt
+        if not is_failsoft_recovery:
+            return role_prompt
+        resume_text = await self._renderer.render(
+            PromptTemplate.RESUME, {}, container_exec
+        )
+        return resume_text + "\n\n" + role_prompt
 
     async def run(self, request: RunRequest) -> AgentOutput | PreflightFailure:
         from .iteration._rows import agent_row
