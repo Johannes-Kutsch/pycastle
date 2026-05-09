@@ -294,6 +294,36 @@ class GithubService:
             )
         return issues
 
+    def get_all_open_issues_lightweight(self) -> list[dict[str, Any]]:
+        results = self._paginate(f"/repos/{self.repo}/issues?state=open&per_page=100")
+        response_numbers = {
+            int(item["number"])
+            for item in results
+            if isinstance(item, dict) and "number" in item
+        }
+        self._recently_closed = {
+            n for n in self._recently_closed if n in response_numbers
+        }
+        issues: list[dict[str, Any]] = []
+        for item in results:
+            if not isinstance(item, dict) or "pull_request" in item:
+                continue
+            number = int(item["number"])
+            if number in self._recently_closed:
+                continue
+            issues.append(
+                {
+                    "number": number,
+                    "title": str(item.get("title") or ""),
+                    "labels": [
+                        str(label_obj["name"])
+                        for label_obj in (item.get("labels") or [])
+                        if "name" in label_obj
+                    ],
+                }
+            )
+        return issues
+
     def close_completed_parent_issues(self) -> None:
         changed = True
         while changed:
