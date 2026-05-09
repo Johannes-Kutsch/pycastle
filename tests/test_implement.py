@@ -10,7 +10,6 @@ from pycastle.agent_output_protocol import (
     CompletionOutput,
     PromiseParseError,
 )
-from pycastle.agent_result import PreflightFailure
 from pycastle.agent_runner import RunRequest
 from pycastle.config import Config
 from pycastle.errors import AgentTimeoutError, UsageLimitError
@@ -94,7 +93,10 @@ def test_branch_for_uses_issue_number():
 
 def test_implement_phase_returns_completed_issues(tmp_path):
     """implement_phase returns all issues in completed when every agent returns COMPLETE."""
-    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}, {"number": 2, "title": "Fix B", "body": "", "comments": []}]
+    issues = [
+        {"number": 1, "title": "Fix A", "body": "", "comments": []},
+        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+    ]
     fake = FakeAgentRunner([CompletionOutput()] * 4)
 
     deps = _make_deps(tmp_path, fake)
@@ -160,7 +162,10 @@ def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
         completed_agents.append(request.name)
         return CompletionOutput()
 
-    issues = [{"number": 1, "title": "Fail", "body": "", "comments": []}, {"number": 2, "title": "Pass", "body": "", "comments": []}]
+    issues = [
+        {"number": 1, "title": "Fail", "body": "", "comments": []},
+        {"number": 2, "title": "Pass", "body": "", "comments": []},
+    ]
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
     asyncio.run(implement_phase(issues, None, deps))
@@ -173,24 +178,12 @@ def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
 # ── implement_phase: per-issue error collection ───────────────────────────────
 
 
-def test_implement_phase_preflight_failure_goes_to_errors(tmp_path):
-    """PreflightFailure returned by run_agent lands in result.errors."""
-    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
-    failure = PreflightFailure(failures=(("mypy", "mypy .", "error: missing module"),))
-    fake = FakeAgentRunner([failure])
-
-    deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, None, deps))
-
-    assert result.completed == []
-    assert len(result.errors) == 1
-    assert result.errors[0][0] == issues[0]
-    assert result.errors[0][1] is failure
-
-
 def test_implement_phase_exception_goes_to_errors(tmp_path):
     """An exception raised by run_agent lands in result.errors."""
-    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}, {"number": 2, "title": "Fix B", "body": "", "comments": []}]
+    issues = [
+        {"number": 1, "title": "Fix A", "body": "", "comments": []},
+        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+    ]
 
     async def _side_effect(request: RunRequest):
         if "Implement Agent #1" in request.name or "Review Agent #1" in request.name:
@@ -220,21 +213,6 @@ def test_implement_phase_no_complete_tag_goes_to_errors(tmp_path):
 
 
 # ── implement_phase: errors passed to logger ─────────────────────────────────
-
-
-def test_implement_phase_logs_preflight_failure_via_logger(tmp_path):
-    """PreflightFailure must be passed to deps.logger.log_error()."""
-    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
-    failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-    logger = RecordingLogger()
-    fake = FakeAgentRunner([failure])
-
-    deps = _make_deps(tmp_path, fake, logger=logger)
-    asyncio.run(implement_phase(issues, None, deps))
-
-    assert len(logger.errors) == 1
-    assert logger.errors[0][0] == issues[0]
-    assert logger.errors[0][1] is failure
 
 
 def test_implement_phase_logs_exception_via_logger(tmp_path):
@@ -695,20 +673,6 @@ def test_run_issue_raises_branch_collision_for_concurrent_same_issue(tmp_path):
     assert any(isinstance(e, BranchCollisionError) for e in errors)
 
 
-def test_run_issue_does_not_create_reviewer_worktree_on_preflight_failure(tmp_path):
-    """When the Implementer returns PreflightFailure, run_issue must skip the Reviewer worktree."""
-    failure = PreflightFailure(failures=(("mypy", "mypy .", "error: missing module"),))
-    fake = FakeAgentRunner([failure])
-    deps = _make_deps(tmp_path, fake)
-    deps.git_svc.is_working_tree_clean.return_value = True
-
-    issue = {"number": 15, "title": "Fix thing", "body": "", "comments": []}
-    result = asyncio.run(run_issue(issue, deps))
-
-    assert isinstance(result, PreflightFailure)
-    assert deps.git_svc.create_worktree.call_count == 1
-
-
 # ── run_issue: role-dir stage-done skip logic ─────────────────────────────────
 
 
@@ -831,7 +795,10 @@ def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
 
 def test_implement_phase_sets_initial_progress_text(tmp_path):
     """implement_phase registers 'Running: started Agents for 0/Y issues' before any agent runs."""
-    issues = [{"number": 1, "title": "A", "body": "", "comments": []}, {"number": 2, "title": "B", "body": "", "comments": []}]
+    issues = [
+        {"number": 1, "title": "A", "body": "", "comments": []},
+        {"number": 2, "title": "B", "body": "", "comments": []},
+    ]
     fake = FakeAgentRunner([CompletionOutput()] * 4)
     sd = RecordingStatusDisplay()
     deps = _make_deps(tmp_path, fake, status_display=sd)
@@ -991,18 +958,6 @@ def test_run_issue_commits_reviewer_with_title_when_no_commit_message_tag(tmp_pa
 
     review_call = deps.git_svc.commit.call_args_list[1]
     assert review_call[0][2] == "Review #44 - Add dark mode"
-
-
-def test_run_issue_does_not_commit_on_preflight_failure(tmp_path):
-    """If Implementer returns PreflightFailure, no commit must be made."""
-    failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-    fake = FakeAgentRunner([failure])
-    deps = _make_deps(tmp_path, fake)
-
-    issue = {"number": 42, "title": "Fix", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps))
-
-    deps.git_svc.commit.assert_not_called()
 
 
 def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):

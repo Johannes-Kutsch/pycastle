@@ -1,11 +1,7 @@
-import dataclasses
-
 import pytest
 
-from pycastle.agent_result import (
-    CancellationToken,
-    PreflightFailure,
-)
+from pycastle.agent_result import CancellationToken
+from pycastle.errors import PreflightFailure
 
 
 # ── PreflightFailure ──────────────────────────────────────────────────────────
@@ -13,20 +9,19 @@ from pycastle.agent_result import (
 
 def test_preflight_failure_stores_failures():
     failures = (("check", "cmd", "output"),)
-    result = PreflightFailure(failures=failures)
-    assert result.failures == failures
+    exc = PreflightFailure(failures=failures)
+    assert exc.failures == failures
 
 
-def test_preflight_failure_is_frozen():
-    result = PreflightFailure(failures=())
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        result.failures = ()  # type: ignore[misc]
+def test_preflight_failure_is_exception():
+    exc = PreflightFailure(failures=())
+    assert isinstance(exc, Exception)
 
 
 def test_preflight_failure_failures_are_immutable():
-    result = PreflightFailure(failures=(("check", "cmd", "output"),))
+    exc = PreflightFailure(failures=(("check", "cmd", "output"),))
     with pytest.raises(TypeError):
-        result.failures[0] = ("x", "y", "z")  # type: ignore[index]
+        exc.failures[0] = ("x", "y", "z")  # type: ignore[index]
 
 
 # ── CancellationToken ─────────────────────────────────────────────────────────

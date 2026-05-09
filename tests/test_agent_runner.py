@@ -12,7 +12,8 @@ from pycastle.agent_output_protocol import (
     CommitMessageOutput,
     CompletionOutput,
 )
-from pycastle.agent_result import CancellationToken, PreflightFailure
+from pycastle.agent_result import CancellationToken
+from pycastle.errors import PreflightFailure
 from pycastle.agent_runner import AgentRunner, RunRequest
 from pycastle.config import Config
 from pycastle.errors import (
@@ -68,19 +69,20 @@ def test_fake_agent_runner_returns_queued_completion_output():
     assert isinstance(result, CompletionOutput)
 
 
-def test_fake_agent_runner_returns_queued_preflight_failure():
+def test_fake_agent_runner_raises_queued_preflight_failure():
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     fake = FakeAgentRunner([failure])
-    result = asyncio.run(
-        fake.run(
-            RunRequest(
-                name="Tester",
-                template=_PLAN_TEMPLATE,
-                mount_path=Path("/workspace"),
+    with pytest.raises(PreflightFailure) as exc_info:
+        asyncio.run(
+            fake.run(
+                RunRequest(
+                    name="Tester",
+                    template=_PLAN_TEMPLATE,
+                    mount_path=Path("/workspace"),
+                )
             )
         )
-    )
-    assert result is failure
+    assert exc_info.value.failures == (("ruff", "ruff check .", "E501"),)
 
 
 def test_fake_agent_runner_raises_queued_exception():
@@ -326,7 +328,7 @@ def test_agent_runner_run_returns_agent_output(tmp_path):
     assert isinstance(result, CommitMessageOutput)
 
 
-def test_agent_runner_run_returns_preflight_failure_when_check_fails(tmp_path):
+def test_agent_runner_run_raises_preflight_failure_when_check_fails(tmp_path):
     mock_client = MagicMock()
     mock_container = MagicMock()
     mock_client.containers.run.return_value = mock_container
@@ -345,20 +347,20 @@ def test_agent_runner_run_returns_preflight_failure_when_check_fails(tmp_path):
     cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(
-        runner.run(
-            RunRequest(
-                name="Test",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+    with pytest.raises(PreflightFailure) as exc_info:
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Test",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                )
             )
         )
-    )
 
-    assert isinstance(result, PreflightFailure)
-    assert len(result.failures) == 1
-    name, cmd, output = result.failures[0]
+    assert len(exc_info.value.failures) == 1
+    name, cmd, output = exc_info.value.failures[0]
     assert name == "ruff"
     assert "E501" in output
 

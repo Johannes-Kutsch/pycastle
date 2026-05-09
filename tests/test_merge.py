@@ -242,7 +242,7 @@ def test_incomplete_merger_raises_and_does_not_fast_forward(
 
 
 def _preflight_failure_deps(tmp_path, git_svc, github_svc):
-    from pycastle.agent_result import PreflightFailure
+    from pycastle.errors import PreflightFailure
 
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     git_svc.try_merge.return_value = False
@@ -263,7 +263,7 @@ def test_preflight_failure_returns_merge_result_without_raising(
 def test_preflight_failure_result_separates_clean_and_conflict_issues(
     tmp_path, git_svc, github_svc
 ):
-    from pycastle.agent_result import PreflightFailure
+    from pycastle.errors import PreflightFailure
 
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     git_svc.try_merge.side_effect = _conflict_on([2])
@@ -335,7 +335,7 @@ def test_preflight_failure_skip_message_uses_merge_caller(
 def test_preflight_failure_closes_parent_issues_for_clean_issues(
     tmp_path, git_svc, github_svc
 ):
-    from pycastle.agent_result import PreflightFailure
+    from pycastle.errors import PreflightFailure
 
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     git_svc.try_merge.side_effect = _conflict_on([2])
@@ -366,7 +366,7 @@ def test_preflight_failure_close_message_lists_clean_deleted_branches(
     tmp_path, git_svc, github_svc
 ):
     """When preflight fails after some clean merges, the close message lists the clean-deleted branches."""
-    from pycastle.agent_result import PreflightFailure
+    from pycastle.errors import PreflightFailure
 
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     git_svc.try_merge.side_effect = _conflict_on([2])
@@ -769,7 +769,7 @@ def test_merge_row_not_removed_with_failed_style_after_row_already_removed(
     tmp_path, git_svc, github_svc
 ):
     """The 'Merge' row must not get a second failed-style remove when the exception fires after the row was already removed."""
-    from pycastle.agent_result import PreflightFailure
+    from pycastle.errors import PreflightFailure
 
     recording = RecordingStatusDisplay()
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
@@ -826,7 +826,7 @@ def test_auto_push_calls_push_after_merger_fast_forward(deps, git_svc):
 def test_auto_push_calls_push_in_preflight_skip_when_clean_issues_exist(
     tmp_path, git_svc, github_svc
 ):
-    from pycastle.agent_result import PreflightFailure
+    from pycastle.errors import PreflightFailure
 
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     git_svc.try_merge.side_effect = _conflict_on([2])
@@ -841,7 +841,7 @@ def test_auto_push_calls_push_in_preflight_skip_when_clean_issues_exist(
 def test_auto_push_does_not_call_push_in_preflight_skip_when_no_clean_issues(
     tmp_path, git_svc, github_svc
 ):
-    from pycastle.agent_result import PreflightFailure
+    from pycastle.errors import PreflightFailure
 
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     git_svc.try_merge.return_value = False
@@ -871,7 +871,7 @@ def test_auto_push_false_does_not_call_push_on_conflict_path(deps, git_svc):
 def test_auto_push_false_does_not_call_push_in_preflight_skip(
     tmp_path, git_svc, github_svc
 ):
-    from pycastle.agent_result import PreflightFailure
+    from pycastle.errors import PreflightFailure
 
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     git_svc.try_merge.side_effect = _conflict_on([2])

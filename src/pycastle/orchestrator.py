@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from .account_pool import AccountPool
-from .agent_result import PreflightFailure
 from .agent_runner import AgentRunner, AgentRunnerProtocol, RunRequest
 from .config import Config, load_config
 from .iteration import (
@@ -36,9 +35,7 @@ class FileLogger:
     def __init__(self, logs_dir: Path) -> None:
         self._logs_dir = logs_dir
 
-    def log_error(self, issue: dict, error: Exception | PreflightFailure) -> None:
-        if isinstance(error, PreflightFailure):
-            return
+    def log_error(self, issue: dict, error: Exception) -> None:
         tb = "".join(
             traceback.format_exception(type(error), error, error.__traceback__)
         )

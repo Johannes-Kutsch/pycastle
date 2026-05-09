@@ -1319,41 +1319,6 @@ def test_run_iteration_no_commits_close_uses_warning_style(
     assert style == "warning"
 
 
-def test_run_iteration_preflight_failure_errors_use_implement_caller(
-    tmp_path, git_svc, github_svc, logger
-):
-    """PreflightFailure error lines must be printed with caller='Implement'."""
-    from pycastle.agent_result import PreflightFailure as PF
-
-    recording = RecordingStatusDisplay()
-
-    async def _fake_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
-            )
-        return PF(failures=(("ruff", "ruff check .", "E501"),))
-
-    deps = _make_deps(
-        tmp_path,
-        _fake_agent,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        logger=logger,
-        status_display=recording,
-    )
-    asyncio.run(run_iteration(deps))
-
-    error_prints = [
-        c
-        for c in recording.calls
-        if c[0] == "print" and c[1] == "Implement" and "pre-flight failed" in str(c[2])
-    ]
-    assert error_prints, (
-        "PreflightFailure message must be printed with caller='Implement'"
-    )
-
-
 def test_run_iteration_generic_error_uses_implement_caller(
     tmp_path, git_svc, github_svc, logger
 ):
@@ -1496,8 +1461,6 @@ def test_run_iteration_success_close_excludes_failed_branches(
     tmp_path, git_svc, logger
 ):
     """When some issues fail and others succeed, only completed branches appear in the close message."""
-    from pycastle.agent_result import PreflightFailure as PF
-
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
@@ -1514,7 +1477,7 @@ def test_run_iteration_success_close_excludes_failed_branches(
                 ]
             )
         if request.name == "Implement Agent #3":
-            return PF(failures=(("ruff", "ruff check .", "E501"),))
+            raise RuntimeError("agent failed")
         return CompletionOutput()
 
     deps = _make_deps(

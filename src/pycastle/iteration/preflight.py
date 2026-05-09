@@ -8,7 +8,6 @@ from ..agent_output_protocol import (
     AgentRole,
     IssueOutput,
 )
-from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompt_pipeline import PromptTemplate
@@ -90,10 +89,6 @@ async def handle_preflight_failure(
             work_body=f"reporting {check_name} issue",
         )
     )
-    if isinstance(agent_result, PreflightFailure):
-        raise RuntimeError(
-            "preflight-issue agent returned a PreflightFailure unexpectedly"
-        )
     if not isinstance(agent_result, IssueOutput):
         raise RuntimeError(
             f"Preflight-issue agent returned unexpected output type: {type(agent_result).__name__}"
