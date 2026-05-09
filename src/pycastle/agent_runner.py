@@ -14,6 +14,7 @@ from .container_runner import ContainerRunner
 from .docker_session import DockerSession, build_volume_spec
 from .errors import AgentTimeoutError, UsageLimitError
 from .prompt_pipeline import PromptRenderer, PromptTemplate
+from .reprompt_loop import REPROMPT_MESSAGE, run_with_reprompt
 from .session_resume import (
     RunKind,
     decide_agent_run_kind,
@@ -198,11 +199,20 @@ class AgentRunner:
                             is_failsoft_recovery=is_failsoft_recovery,
                             send_role_prompt_on_resume=request.send_role_prompt_on_resume,
                         )
-                        return await runner.work(
-                            role,
-                            prompt,
-                            run_kind=run_kind,
-                            session_uuid=session_uuid,
+
+                        async def _work_factory(
+                            reprompt: str | None,
+                            _prompt: str = prompt,
+                            _run_kind: RunKind = run_kind,
+                        ) -> AgentOutput:
+                            p = _prompt if reprompt is None else reprompt
+                            rk = _run_kind if reprompt is None else RunKind.RESUME
+                            return await runner.work(
+                                role, p, run_kind=rk, session_uuid=session_uuid
+                            )
+
+                        return await run_with_reprompt(
+                            _work_factory, reprompt_message=REPROMPT_MESSAGE
                         )
                     except AgentTimeoutError:
                         if retries_left <= 0:
