@@ -1165,3 +1165,163 @@ def test_merge_phase_progress_counter_reaches_total(recording_deps):
     ]
     closing_texts = [c[2] for c in update_calls if "Closing" in c[2]]
     assert "Closing 2/2 issues" in closing_texts
+
+
+# ── Teardown on_progress and input-order preservation ─────────────────────────
+
+
+def test_teardown_progress_fires_for_every_branch_including_non_ancestor_skips(
+    recording_deps, git_svc
+):
+    """on_progress fires for each branch including non-ancestors that are skipped."""
+    deps, recording = recording_deps
+
+    def _is_ancestor(branch, repo_root):
+        return "issue-1" in branch  # issue-2 is NOT an ancestor
+
+    git_svc.is_ancestor.side_effect = _is_ancestor
+    issues = [{"number": 1, "title": "A"}, {"number": 2, "title": "B"}]
+    _run(issues, deps)
+
+    update_calls = [
+        c for c in recording.calls if c[0] == "update_phase" and c[1] == "Merge"
+    ]
+    removing_texts = [c[2] for c in update_calls if "removing" in c[2]]
+    assert any("removing 2/2" in t for t in removing_texts), (
+        "Progress must reach 2/2 including the non-ancestor skip"
+    )
+
+
+def test_teardown_progress_fires_for_tolerated_delete_failures(recording_deps, git_svc):
+    """on_progress fires even when delete_branch raises a tolerated GitCommandError."""
+    deps, recording = recording_deps
+
+    def _delete_with_failure(branch, repo_root):
+        if "issue-1" in branch:
+            raise GitCommandError("fail", returncode=1, stderr="")
+
+    git_svc.delete_branch.side_effect = _delete_with_failure
+    issues = [{"number": 1, "title": "A"}, {"number": 2, "title": "B"}]
+    _run(issues, deps)
+
+    update_calls = [
+        c for c in recording.calls if c[0] == "update_phase" and c[1] == "Merge"
+    ]
+    removing_texts = [c[2] for c in update_calls if "removing" in c[2]]
+    assert any("removing 2/2" in t for t in removing_texts), (
+        "Progress must reach 2/2 even when one delete fails"
+    )
+
+
+def test_deleted_branches_preserve_input_order(recording_deps, git_svc):
+    """The close message lists deleted branches in the same order as the input."""
+    deps, recording = recording_deps
+    issues = [
+        {"number": 3, "title": "C"},
+        {"number": 1, "title": "A"},
+        {"number": 2, "title": "B"},
+    ]
+    _run(issues, deps)
+
+    remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
+    msg = remove_calls[-1][2]
+    assert msg.index("issue-3") < msg.index("issue-1") < msg.index("issue-2")
+
+
+def test_deleted_branches_preserve_input_order_under_staggered_completion(
+    recording_deps, git_svc
+):
+    """Input order is preserved even when the first branch's delete completes last."""
+    import threading
+
+    deps, recording = recording_deps
+    event = threading.Event()
+
+    def _staggered_delete(branch, repo_root):
+        if "issue-3" in branch:
+            event.wait(timeout=2)  # wait until issue-2 has completed
+        else:
+            event.set()
+
+    git_svc.delete_branch.side_effect = _staggered_delete
+    issues = [{"number": 3, "title": "C"}, {"number": 2, "title": "B"}]
+    _run(issues, deps)
+
+    remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
+    msg = remove_calls[-1][2]
+    assert msg.index("issue-3") < msg.index("issue-2"), (
+        "issue-3 (first in input) must appear before issue-2 even though issue-2 completed first"
+    )
+
+
+def test_uncaught_exception_in_teardown_does_not_cancel_siblings(
+    recording_deps, git_svc
+):
+    """An uncaught exception from is_ancestor in one task does not abort sibling teardowns."""
+    deps, recording = recording_deps
+
+    def _is_ancestor_raises_for_one(branch, repo_root):
+        if "issue-1" in branch:
+            raise RuntimeError("is_ancestor failed")
+        return True
+
+    git_svc.is_ancestor.side_effect = _is_ancestor_raises_for_one
+    issues = [{"number": 1, "title": "A"}, {"number": 2, "title": "B"}]
+    _run(issues, deps)
+
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-2" in deleted, "Sibling issue-2 must still be processed"
+
+
+def test_uncaught_exception_in_teardown_forwarded_to_status_display(
+    recording_deps, git_svc
+):
+    """An uncaught exception escaping _teardown_one is forwarded to status_display.print as a warning."""
+    deps, recording = recording_deps
+
+    def _is_ancestor_raises(branch, repo_root):
+        raise RuntimeError("unexpected teardown failure")
+
+    git_svc.is_ancestor.side_effect = _is_ancestor_raises
+    issues = [{"number": 1, "title": "A"}]
+    _run(issues, deps)
+
+    print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
+    assert any("unexpected teardown failure" in str(m) for m in print_msgs)
+
+
+def test_phase_row_shows_removing_progress_during_clean_teardown(recording_deps):
+    """During clean branch teardown, phase row reads 'Closing X/N issues, removing Y/M worktrees'."""
+    deps, recording = recording_deps
+    issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
+    _run(issues, deps)
+
+    update_calls = [
+        c for c in recording.calls if c[0] == "update_phase" and c[1] == "Merge"
+    ]
+    removing_texts = [c[2] for c in update_calls if "removing" in c[2]]
+    assert removing_texts, (
+        "Phase row must show 'removing Y/M worktrees' during teardown"
+    )
+    assert all(
+        "Closing" in t and "issues" in t and "removing" in t for t in removing_texts
+    )
+
+
+def test_phase_row_shows_removing_progress_during_conflict_teardown(
+    recording_deps, git_svc
+):
+    """During conflict branch teardown, phase row reads 'Closing X/N issues, removing Y/M worktrees'."""
+    deps, recording = recording_deps
+    git_svc.try_merge.return_value = False
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, deps)
+
+    update_calls = [
+        c for c in recording.calls if c[0] == "update_phase" and c[1] == "Merge"
+    ]
+    removing_texts = [c[2] for c in update_calls if "removing" in c[2]]
+    assert removing_texts, (
+        "Phase row must show 'removing Y/M worktrees' during conflict teardown"
+    )
+    assert all("Closing" in t and "removing" in t for t in removing_texts)

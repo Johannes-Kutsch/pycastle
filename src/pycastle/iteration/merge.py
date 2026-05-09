@@ -41,38 +41,58 @@ class MergeResult:
     conflicts: list[dict]
 
 
-async def _delete_merged_branches(branches: list[str], deps: _MergeDeps) -> list[str]:
-    deleted: list[str] = []
+async def _delete_merged_branches(
+    branches: list[str],
+    deps: _MergeDeps,
+    on_progress: Callable[[int, int], None] | None = None,
+) -> list[str]:
+    total = len(branches)
+    done = 0
+    slots: list[str | None] = [None] * total
     registered_worktrees = deps.git_svc.list_worktrees(deps.repo_root)
 
-    async def _teardown_one(branch: str) -> None:
-        if not deps.git_svc.is_ancestor(branch, deps.repo_root):
-            return
-        worktree_path_ = worktree_path(worktree_name_for_branch(branch), deps)
-        if worktree_path_ in registered_worktrees:
+    async def _teardown_one(branch: str, idx: int) -> None:
+        nonlocal done
+        try:
+            if not deps.git_svc.is_ancestor(branch, deps.repo_root):
+                return
+            worktree_path_ = worktree_path(worktree_name_for_branch(branch), deps)
+            if worktree_path_ in registered_worktrees:
+                try:
+                    await asyncio.to_thread(
+                        teardown_worktree, deps.git_svc, deps.repo_root, worktree_path_
+                    )
+                except Exception as e:
+                    deps.status_display.print(
+                        "Merge",
+                        f"Warning: could not remove worktree for {branch!r}: {e}",
+                        "warning",
+                    )
+
             try:
                 await asyncio.to_thread(
-                    teardown_worktree, deps.git_svc, deps.repo_root, worktree_path_
+                    deps.git_svc.delete_branch, branch, deps.repo_root
                 )
-            except Exception as e:
+                slots[idx] = branch
+            except GitCommandError as e:
                 deps.status_display.print(
                     "Merge",
-                    f"Warning: could not remove worktree for {branch!r}: {e}",
+                    f"Warning: could not delete branch {branch!r}: {e}",
                     "warning",
                 )
+        finally:
+            done += 1
+            if on_progress is not None:
+                on_progress(done, total)
 
-        try:
-            await asyncio.to_thread(deps.git_svc.delete_branch, branch, deps.repo_root)
-            deleted.append(branch)
-        except GitCommandError as e:
-            deps.status_display.print(
-                "Merge",
-                f"Warning: could not delete branch {branch!r}: {e}",
-                "warning",
-            )
-
-    await asyncio.gather(*[_teardown_one(b) for b in branches])
-    return deleted
+    results = await asyncio.gather(
+        *[_teardown_one(b, i) for i, b in enumerate(branches)],
+        return_exceptions=True,
+    )
+    for r in results:
+        if isinstance(r, BaseException):
+            deps.status_display.print("Merge", f"Warning: {r}", "warning")
+    return [s for s in slots if s is not None]
 
 
 def _build_close_message(deleted: list[str]) -> str:
@@ -118,15 +138,27 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             else:
                 conflict_issues.append(issue)
 
+        close_done = 0
+        close_total = 0
+
         def _on_progress(done: int, total: int) -> None:
+            nonlocal close_done, close_total
+            close_done = done
+            close_total = total
             deps.status_display.update_phase("Merge", f"Closing {done}/{total} issues")
+
+        def _on_teardown_progress(done: int, total: int) -> None:
+            deps.status_display.update_phase(
+                "Merge",
+                f"Closing {close_done}/{close_total} issues, removing {done}/{total} worktrees",
+            )
 
         if clean_issues:
             await _close_issues_parallel(clean_issues, deps.github_svc, _on_progress)
             deps.github_svc.close_completed_parent_issues()
 
         clean_deleted = await _delete_merged_branches(
-            [branch_for(i["number"]) for i in clean_issues], deps
+            [branch_for(i["number"]) for i in clean_issues], deps, _on_teardown_progress
         )
 
         if not conflict_issues:
@@ -183,7 +215,9 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                     sandbox_path / ".pycastle-session" / "merger", ignore_errors=True
                 )
             conflict_deleted = await _delete_merged_branches(
-                [branch_for(i["number"]) for i in conflict_issues], deps
+                [branch_for(i["number"]) for i in conflict_issues],
+                deps,
+                _on_teardown_progress,
             )
             await _close_issues_parallel(conflict_issues, deps.github_svc, _on_progress)
             deps.github_svc.close_completed_parent_issues()
