@@ -84,6 +84,7 @@ class Scope(enum.Enum):
         ),
     )
     RESUME = ("RESUME", frozenset[str]())
+    FAILURE_REPORT = ("FAILURE_REPORT", frozenset({"FAILED_ROLE", "SESSION_DIR"}))
 
     @property
     def placeholders(self) -> frozenset[str]:
@@ -101,6 +102,7 @@ class PromptTemplate(enum.Enum):
     IMPROVE_ISSUES = ("improve/03-issues.md", Scope.IMPROVE_ISSUES)
     IMPROVE_NO_CANDIDATE = ("improve/04-no-candidate-report.md", Scope.IMPROVE_SESSION)
     RESUME = ("_resume-prompt.md", Scope.RESUME)
+    FAILURE_REPORT = ("failure-report.md", Scope.FAILURE_REPORT)
 
     @property
     def filename(self) -> str:

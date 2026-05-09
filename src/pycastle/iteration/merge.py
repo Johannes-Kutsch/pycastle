@@ -5,10 +5,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from ..agent_output_protocol import AgentRole
+from ..agent_output_protocol import AgentRole, FailedOutput
 from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..errors import AgentFailedError
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..status_display import StatusDisplay
@@ -159,6 +160,11 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                         work_body=f"Merging {len(conflict_issues)} Branches",
                     )
                 )
+                if isinstance(merger_result, FailedOutput):
+                    raise AgentFailedError(
+                        role_value=AgentRole.MERGER.value,
+                        worktree_path=sandbox_path,
+                    )
                 if isinstance(merger_result, PreflightFailure):
                     deps.status_display.print(
                         "Merge",

@@ -85,6 +85,7 @@ def test_agent_role_has_all_members():
         "REVIEWER",
         "MERGER",
         "IMPROVE",
+        "FAILURE_REPORT",
     }
 
 
