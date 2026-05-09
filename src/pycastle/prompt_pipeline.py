@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import enum
 import re
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -41,8 +40,6 @@ def _render(template: str, args: dict[str, str]) -> str:
     missing = found - args.keys()
     if missing:
         raise PromptRenderError(f"Missing prompt args: {missing}")
-    for key in args.keys() - found:
-        print(f"  [warn] arg '{key}' unused in prompt", file=sys.stderr)
     return PLACEHOLDER.sub(lambda m: args[m.group(1)], template)
 
 
