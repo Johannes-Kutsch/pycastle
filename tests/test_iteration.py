@@ -118,6 +118,31 @@ def _make_deps(
     )
 
 
+# ── Initial issue fetch ───────────────────────────────────────────────────────
+
+
+def test_run_iteration_fetches_open_issues_and_all_open_issues_before_preflight(
+    tmp_path, git_svc, github_svc, logger
+):
+    """run_iteration must call get_open_issues and get_all_open_issues_lightweight
+    once before the Preflight phase on each iteration."""
+
+    async def _noop_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path, _noop_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    asyncio.run(run_iteration(deps))
+
+    github_svc.get_open_issues.assert_called()
+    github_svc.get_all_open_issues_lightweight.assert_called()
+
+
 # ── Done: no open issues ──────────────────────────────────────────────────────
 
 

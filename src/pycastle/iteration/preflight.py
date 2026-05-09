@@ -46,8 +46,6 @@ def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
 @dataclasses.dataclass(frozen=True)
 class PreflightReady:
     sha: str
-    issues: list[dict]
-    all_open_issues: list[dict]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -98,7 +96,11 @@ async def handle_preflight_failure(
     return "afk", agent_result.number
 
 
-async def preflight_phase(deps: _PreflightDeps) -> PreflightResult:
+async def preflight_phase(
+    deps: _PreflightDeps,
+    open_issues: list[dict],
+    all_open_issues: list[dict],
+) -> PreflightResult:
     await _wait_for_clean_working_tree(deps, "Preflight")
     try:
         deps.git_svc.pull(deps.repo_root)
@@ -111,10 +113,6 @@ async def preflight_phase(deps: _PreflightDeps) -> PreflightResult:
         )
         raise
     sha = deps.git_svc.get_head_sha(deps.repo_root)
-    open_issues = strip_stale_blocker_refs(
-        deps.github_svc.get_open_issues(deps.cfg.issue_label)
-    )
-    all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
     async with transient_worktree("pre-flight-sandbox", sha=sha, deps=deps) as wt:
         failures = await deps.agent_runner.run_preflight(
             name="Preflight Agent",
@@ -138,6 +136,4 @@ async def preflight_phase(deps: _PreflightDeps) -> PreflightResult:
                 worktree_sha=sha, issues=[{"number": pf_num, "title": pf_title}]
             )
 
-        return PreflightReady(
-            sha=sha, issues=open_issues, all_open_issues=all_open_issues
-        )
+        return PreflightReady(sha=sha)

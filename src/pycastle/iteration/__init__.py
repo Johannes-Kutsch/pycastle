@@ -21,6 +21,7 @@ from .planning import AllBlocked as AllBlocked
 from .planning import PlanReady as PlanReady
 from .planning import hydrate_planned_issues, planning_phase
 from .preflight import (
+    PreflightAFK,
     PreflightHITL,
     PreflightReady,
     preflight_phase,
@@ -75,12 +76,18 @@ def _is_in_flight(issue: dict, deps: Deps) -> bool:
 async def run_iteration(deps: Deps) -> IterationOutcome:
     try:
         # ── Preflight ────────────────────────────────────────────────────────
+        open_issues = strip_stale_blocker_refs(
+            deps.github_svc.get_open_issues(deps.cfg.issue_label)
+        )
+        all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
         async with phase_row(
             deps.status_display,
             "Preflight",
             initial_phase="Running",
         ) as preflight_row:
-            preflight_result = await preflight_phase(deps)
+            preflight_result = await preflight_phase(
+                deps, open_issues=open_issues, all_open_issues=all_open_issues
+            )
             preflight_row.close("finished")
 
         if isinstance(preflight_result, PreflightHITL):
@@ -95,13 +102,10 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             if isinstance(preflight_result, PreflightReady)
             else preflight_result.worktree_sha
         )
-        open_issues = preflight_result.issues
+        if isinstance(preflight_result, PreflightAFK):
+            open_issues = preflight_result.issues
+            all_open_issues = list(open_issues)
         in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
-        all_open_issues = (
-            preflight_result.all_open_issues
-            if isinstance(preflight_result, PreflightReady)
-            else list(open_issues)
-        )
 
         # ── (Improve) — runs when idle: no AFK issues, no in-flight ─────────
         if not open_issues and not in_flight:

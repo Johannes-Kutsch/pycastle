@@ -46,10 +46,6 @@ def git_svc():
 @pytest.fixture
 def github_svc():
     svc = MagicMock(spec=GithubService)
-    svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
-    svc.get_all_open_issues_lightweight.return_value = [
-        {"number": 1, "title": "Fix bug", "labels": ["ready-for-agent"]}
-    ]
     return svc
 
 
@@ -67,18 +63,16 @@ def _make_deps(tmp_path, agent_runner, *, git_svc, github_svc):
 # ── preflight_phase: no open issues ──────────────────────────────────────────
 
 
-def test_preflight_phase_returns_ready_with_empty_issues_when_no_open_issues(
+def test_preflight_phase_returns_ready_with_sha_when_no_open_issues(
     tmp_path, git_svc, github_svc
 ):
-    github_svc.get_open_issues.return_value = []
     fake = FakeAgentRunner([], preflight_responses=[[]])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    result = asyncio.run(preflight_phase(deps))
+    result = asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     assert isinstance(result, PreflightReady)
     assert result.sha == "abc123"
-    assert result.issues == []
 
 
 def test_preflight_phase_calls_run_preflight_even_when_no_open_issues(
@@ -87,11 +81,10 @@ def test_preflight_phase_calls_run_preflight_even_when_no_open_issues(
     """PREFLIGHT_CHECKS must run even when there are no open issues — so the safe SHA is
     verified before any downstream phase (e.g. improve) uses it.
     The gate for skipping preflight entirely lives in run_iteration."""
-    github_svc.get_open_issues.return_value = []
     fake = FakeAgentRunner([], preflight_responses=[[]])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     assert len(fake.preflight_calls) == 1, (
         "run_preflight must be called even when no issues — PREFLIGHT_CHECKS must always run"
@@ -102,11 +95,10 @@ def test_preflight_phase_creates_worktree_even_when_no_open_issues(
     tmp_path, git_svc, github_svc
 ):
     """A pre-flight-sandbox worktree must be created even when there are no open issues."""
-    github_svc.get_open_issues.return_value = []
     fake = FakeAgentRunner([], preflight_responses=[[]])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-flight-sandbox"
     git_svc.checkout_detached.assert_called_once_with(
@@ -117,48 +109,17 @@ def test_preflight_phase_creates_worktree_even_when_no_open_issues(
 # ── preflight_phase: preflight passes ────────────────────────────────────────
 
 
-def test_preflight_phase_returns_ready_with_open_issues_when_preflight_passes(
+def test_preflight_phase_returns_ready_with_sha_when_preflight_passes(
     tmp_path, git_svc, github_svc
 ):
     issues = [{"number": 1, "title": "Fix bug", "body": ""}]
-    github_svc.get_open_issues.return_value = issues
     fake = FakeAgentRunner([], preflight_responses=[[]])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    result = asyncio.run(preflight_phase(deps))
+    result = asyncio.run(preflight_phase(deps, open_issues=issues, all_open_issues=[]))
 
     assert isinstance(result, PreflightReady)
     assert result.sha == "abc123"
-    assert result.issues == issues
-
-
-def test_preflight_phase_ready_carries_all_open_issues(tmp_path, git_svc, github_svc):
-    github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix bug", "body": ""}
-    ]
-    all_open = [
-        {"number": 1, "title": "Fix bug", "labels": ["ready-for-agent"]},
-        {"number": 2, "title": "Other", "labels": ["ready-for-human"]},
-    ]
-    github_svc.get_all_open_issues_lightweight.return_value = all_open
-    fake = FakeAgentRunner([], preflight_responses=[[]])
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    result = asyncio.run(preflight_phase(deps))
-
-    assert isinstance(result, PreflightReady)
-    assert result.all_open_issues == all_open
-
-
-def test_preflight_phase_calls_get_all_open_issues_lightweight(
-    tmp_path, git_svc, github_svc
-):
-    fake = FakeAgentRunner([], preflight_responses=[[]])
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    asyncio.run(preflight_phase(deps))
-
-    github_svc.get_all_open_issues_lightweight.assert_called_once()
 
 
 def test_preflight_phase_calls_checkout_detached_with_head_sha(
@@ -167,7 +128,7 @@ def test_preflight_phase_calls_checkout_detached_with_head_sha(
     fake = FakeAgentRunner([], preflight_responses=[[]])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-flight-sandbox"
     git_svc.checkout_detached.assert_called_once_with(
@@ -181,7 +142,7 @@ def test_preflight_phase_passes_worktree_path_as_mount_path_to_run_preflight(
     fake = FakeAgentRunner([], preflight_responses=[[]])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-flight-sandbox"
     assert len(fake.preflight_calls) == 1
@@ -193,14 +154,13 @@ def test_preflight_phase_passes_worktree_path_as_mount_path_to_run_preflight(
 
 def test_preflight_phase_returns_hitl_on_hitl_preflight_verdict(tmp_path, git_svc):
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     fake = FakeAgentRunner(
         [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    result = asyncio.run(preflight_phase(deps))
+    result = asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     assert isinstance(result, PreflightHITL)
     assert result.issue_number == 55
@@ -212,7 +172,6 @@ def test_preflight_phase_returns_hitl_on_hitl_preflight_verdict(tmp_path, git_sv
 
 def test_preflight_phase_returns_afk_on_afk_preflight_verdict(tmp_path, git_svc):
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     github_svc.get_issue_title.return_value = "Fix preflight issue"
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent"])],
@@ -220,7 +179,7 @@ def test_preflight_phase_returns_afk_on_afk_preflight_verdict(tmp_path, git_svc)
     )
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    result = asyncio.run(preflight_phase(deps))
+    result = asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     assert isinstance(result, PreflightAFK)
     assert result.issues == [{"number": 42, "title": "Fix preflight issue"}]
@@ -229,7 +188,6 @@ def test_preflight_phase_returns_afk_on_afk_preflight_verdict(tmp_path, git_svc)
 
 def test_preflight_phase_hitl_routing_uses_configured_hitl_label(tmp_path, git_svc):
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     fake = FakeAgentRunner(
         [IssueOutput(number=55, labels=["custom-bug", "custom-human"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
@@ -246,7 +204,7 @@ def test_preflight_phase_hitl_routing_uses_configured_hitl_label(tmp_path, git_s
             hitl_label="custom-human",
         ),
     )
-    result = asyncio.run(preflight_phase(deps))
+    result = asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     assert isinstance(result, PreflightHITL)
     assert result.issue_number == 55
@@ -259,7 +217,6 @@ def test_preflight_phase_raises_runtime_error_when_preflight_agent_returns_no_is
     tmp_path, git_svc
 ):
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     fake = FakeAgentRunner(
         [IssueParseError("Agent produced no <issue>...</issue> tag.")],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
@@ -268,14 +225,13 @@ def test_preflight_phase_raises_runtime_error_when_preflight_agent_returns_no_is
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
     with pytest.raises(RuntimeError, match="issue"):
-        asyncio.run(preflight_phase(deps))
+        asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
 
 def test_preflight_phase_raises_runtime_error_when_preflight_agent_returns_wrong_type(
     tmp_path, git_svc
 ):
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     fake = FakeAgentRunner(
         [CompletionOutput()],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
@@ -284,7 +240,7 @@ def test_preflight_phase_raises_runtime_error_when_preflight_agent_returns_wrong
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
     with pytest.raises(RuntimeError, match="unexpected output type"):
-        asyncio.run(preflight_phase(deps))
+        asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
 
 # ── preflight_phase: worktree lifecycle ──────────────────────────────────────
@@ -296,7 +252,7 @@ def test_preflight_phase_removes_worktree_after_passing_preflight(
     fake = FakeAgentRunner([], preflight_responses=[[]])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-flight-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
@@ -304,7 +260,6 @@ def test_preflight_phase_removes_worktree_after_passing_preflight(
 
 def test_preflight_phase_removes_worktree_when_preflight_fails(tmp_path, git_svc):
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     github_svc.get_issue_title.return_value = "Preflight issue"
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent"])],
@@ -312,7 +267,7 @@ def test_preflight_phase_removes_worktree_when_preflight_fails(tmp_path, git_svc
     )
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-flight-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
@@ -325,7 +280,7 @@ def test_preflight_phase_removes_worktree_when_exception_raised(
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     with pytest.raises(RuntimeError, match="container error"):
-        asyncio.run(preflight_phase(deps))
+        asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-flight-sandbox"
     git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
@@ -342,7 +297,7 @@ def test_preflight_phase_passes_status_display_to_run_preflight(
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     deps = dataclasses.replace(deps, status_display=recording)
 
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     assert len(fake.preflight_calls) == 1
     assert fake.preflight_calls[0]["status_display"] is recording
@@ -354,7 +309,7 @@ def test_preflight_phase_uses_pre_flight_as_run_preflight_name(
     fake = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     assert len(fake.preflight_calls) == 1
     assert fake.preflight_calls[0]["name"] == "Preflight Agent"
@@ -366,7 +321,7 @@ def test_preflight_phase_passes_checking_work_body_to_run_preflight(
     fake = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     assert fake.preflight_calls[0]["work_body"] == "Checking"
 
@@ -377,7 +332,7 @@ def test_preflight_phase_passes_preflight_stage_string_to_run_preflight(
     fake = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     assert len(fake.preflight_calls) == 1
     assert fake.preflight_calls[0]["stage"] == "PREFLIGHT"
@@ -386,28 +341,24 @@ def test_preflight_phase_passes_preflight_stage_string_to_run_preflight(
 def test_preflight_phase_returns_ready_when_all_checks_pass(
     tmp_path, git_svc, github_svc
 ):
-    github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix bug", "body": ""}
-    ]
+    issues = [{"number": 1, "title": "Fix bug", "body": ""}]
     fake = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
-    result = asyncio.run(preflight_phase(deps))
+    result = asyncio.run(preflight_phase(deps, open_issues=issues, all_open_issues=[]))
 
     assert isinstance(result, PreflightReady)
-    assert result.issues
 
 
 def test_preflight_phase_prints_no_confirmation_when_no_open_issues(tmp_path, git_svc):
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = []
     fake = FakeAgentRunner([], preflight_responses=[[]])
     recording = RecordingStatusDisplay()
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     deps = dataclasses.replace(deps, status_display=recording)
 
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert "Preflight checks passed." not in print_messages
@@ -415,7 +366,6 @@ def test_preflight_phase_prints_no_confirmation_when_no_open_issues(tmp_path, gi
 
 def test_preflight_phase_prints_no_confirmation_when_check_fails(tmp_path, git_svc):
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     github_svc.get_issue_title.return_value = "Fix bug"
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["ready-for-agent"])],
@@ -426,7 +376,7 @@ def test_preflight_phase_prints_no_confirmation_when_check_fails(tmp_path, git_s
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     deps = dataclasses.replace(deps, status_display=recording)
 
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     print_messages = [c[2] for c in recording.calls if c[0] == "print"]
     assert "Preflight checks passed." not in print_messages
@@ -434,14 +384,13 @@ def test_preflight_phase_prints_no_confirmation_when_check_fails(tmp_path, git_s
 
 def test_preflight_failure_uses_pre_flight_reporter_as_agent_name(tmp_path, git_svc):
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["ready-for-human"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     assert len(fake.calls) == 1
     assert fake.calls[0].name == "Pre-Flight Reporter"
@@ -451,7 +400,6 @@ def test_preflight_failure_passes_configured_model_and_effort_to_run_request(
     tmp_path, git_svc
 ):
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["ready-for-human"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
@@ -466,7 +414,7 @@ def test_preflight_failure_passes_configured_model_and_effort_to_run_request(
         ),
     )
 
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     assert len(fake.calls) == 1
     assert fake.calls[0].model == "opus"
@@ -476,14 +424,13 @@ def test_preflight_failure_passes_configured_model_and_effort_to_run_request(
 def test_preflight_failure_passes_reporting_work_body_to_run(tmp_path, git_svc):
     check_name = "ruff"
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug"}]
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["ready-for-human"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
-    asyncio.run(preflight_phase(deps))
+    asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     assert fake.calls[0].work_body == f"reporting {check_name} issue"
 
@@ -495,13 +442,12 @@ def test_preflight_phase_propagates_error_when_pull_fails(
     tmp_path, git_svc, github_svc
 ):
     git_svc.pull.side_effect = GitCommandError("git pull --ff-only failed")
-    github_svc.get_open_issues.return_value = []
     fake = FakeAgentRunner([], preflight_responses=[])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
     with pytest.raises(GitCommandError):
-        asyncio.run(preflight_phase(deps))
+        asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     git_svc.get_head_sha.assert_not_called()
 
@@ -511,7 +457,6 @@ def test_preflight_phase_prints_pull_error_message_with_preflight_caller(
 ):
     """Pull failure message must use 'Preflight' caller, style='error', no [red] markup."""
     git_svc.pull.side_effect = GitCommandError("git pull --ff-only failed")
-    github_svc.get_open_issues.return_value = []
     fake = FakeAgentRunner([], preflight_responses=[])
     recording = RecordingStatusDisplay()
 
@@ -519,7 +464,7 @@ def test_preflight_phase_prints_pull_error_message_with_preflight_caller(
     deps = dataclasses.replace(deps, status_display=recording)
 
     with pytest.raises(GitCommandError):
-        asyncio.run(preflight_phase(deps))
+        asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     print_calls = [c for c in recording.calls if c[0] == "print"]
     error_calls = [c for c in print_calls if "git pull" in str(c[2])]
@@ -540,11 +485,10 @@ def test_preflight_phase_pins_sha_from_post_pull_head(tmp_path):
     git_svc.get_head_sha.return_value = "post_pull_sha"
     github_svc = MagicMock(spec=GithubService)
     issues = [{"number": 1, "title": "Fix bug", "body": ""}]
-    github_svc.get_open_issues.return_value = issues
     fake = FakeAgentRunner([], preflight_responses=[[]])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    result = asyncio.run(preflight_phase(deps))
+    result = asyncio.run(preflight_phase(deps, open_issues=issues, all_open_issues=[]))
 
     assert isinstance(result, PreflightReady)
     assert result.sha == "post_pull_sha"
@@ -555,7 +499,6 @@ def test_preflight_phase_waits_for_clean_working_tree_before_pulling(
     tmp_path, git_svc, github_svc
 ):
     git_svc.is_working_tree_clean.side_effect = [False, True]
-    github_svc.get_open_issues.return_value = []
     fake = FakeAgentRunner([], preflight_responses=[[]])
     recording = RecordingStatusDisplay()
 
@@ -563,7 +506,7 @@ def test_preflight_phase_waits_for_clean_working_tree_before_pulling(
     deps = dataclasses.replace(deps, status_display=recording)
 
     with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
-        result = asyncio.run(preflight_phase(deps))
+        result = asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     assert isinstance(result, PreflightReady)
     print_messages = [c[2] for c in recording.calls if c[0] == "print"]
@@ -575,7 +518,6 @@ def test_dirty_working_tree_message_uses_preflight_caller_with_error_style(
 ):
     """Working-tree uncommitted-changes message must use 'Preflight' caller, style='error', no [red] markup."""
     git_svc.is_working_tree_clean.side_effect = [False, True]
-    github_svc.get_open_issues.return_value = []
     fake = FakeAgentRunner([], preflight_responses=[[]])
     recording = RecordingStatusDisplay()
 
@@ -583,7 +525,7 @@ def test_dirty_working_tree_message_uses_preflight_caller_with_error_style(
     deps = dataclasses.replace(deps, status_display=recording)
 
     with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
-        asyncio.run(preflight_phase(deps))
+        asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     wt_calls = [
         c
