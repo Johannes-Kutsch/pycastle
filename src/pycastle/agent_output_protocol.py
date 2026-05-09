@@ -4,7 +4,7 @@ import json
 import re
 from collections.abc import Callable, Iterable
 from datetime import datetime, time, timedelta, timezone
-from typing import Literal, TypeAlias
+from typing import Literal, Protocol, TypeAlias
 
 from .errors import UsageLimitError
 
@@ -337,12 +337,105 @@ def _extract_improve_output(text: str) -> IssueOutput | CompletionOutput:
         return CompletionOutput(issue_numbers=_extract_issue_numbers(text))
 
 
+class _RoleHandler(Protocol):
+    def on_turn(self, turn: str) -> AgentOutput | None: ...
+    def on_end(self, text: str, tail: str) -> AgentOutput: ...
+
+
+class _CommitMessageHandler:
+    def on_turn(self, turn: str) -> AgentOutput | None:
+        body = _last_tag_block(turn, "commit_message")
+        if body is not None:
+            return CommitMessageOutput(message=body.strip())
+        return None
+
+    def on_end(self, text: str, tail: str) -> AgentOutput:
+        body = _last_tag_block(text, "commit_message")
+        if body is None:
+            return CommitMessageOutput(message=None)
+        return CommitMessageOutput(message=body.strip())
+
+
+class _PlannerHandler:
+    def on_turn(self, turn: str) -> AgentOutput | None:
+        try:
+            return _extract_planner_output(turn)
+        except PlanParseError:
+            return None
+
+    def on_end(self, text: str, tail: str) -> AgentOutput:
+        try:
+            return _extract_planner_output(text)
+        except PlanParseError as exc:
+            raise PlanParseError(f"{exc}{tail}") from exc.__cause__
+
+
+class _PreflightIssueHandler:
+    def on_turn(self, turn: str) -> AgentOutput | None:
+        try:
+            return _extract_issue_output(turn)
+        except IssueParseError:
+            return None
+
+    def on_end(self, text: str, tail: str) -> AgentOutput:
+        try:
+            return _extract_issue_output(text)
+        except IssueParseError as exc:
+            raise IssueParseError(f"{exc}{tail}") from exc.__cause__
+
+
+class _MergerHandler:
+    def on_turn(self, turn: str) -> AgentOutput | None:
+        if re.search(r"<promise>COMPLETE</promise>", turn):
+            return CompletionOutput()
+        return None
+
+    def on_end(self, text: str, tail: str) -> AgentOutput:
+        if not re.search(r"<promise>COMPLETE</promise>", text):
+            raise PromiseParseError(
+                f"Agent produced no <promise>COMPLETE</promise> tag.{tail}"
+            )
+        return CompletionOutput()
+
+
+class _ImproveHandler:
+    def on_turn(self, turn: str) -> AgentOutput | None:
+        if re.search(r"<promise>NO-CANDIDATE</promise>", turn):
+            return NoCandidateOutput()
+        if re.search(r"<promise>COMPLETE</promise>", turn):
+            return _extract_improve_output(turn)
+        return None
+
+    def on_end(self, text: str, tail: str) -> AgentOutput:
+        if re.search(r"<promise>NO-CANDIDATE</promise>", text):
+            return NoCandidateOutput()
+        if not re.search(r"<promise>COMPLETE</promise>", text):
+            raise PromiseParseError(
+                f"Agent produced no <promise>COMPLETE</promise> or"
+                f" <promise>NO-CANDIDATE</promise> tag.{tail}"
+            )
+        return _extract_improve_output(text)
+
+
+def _make_handler(role: AgentRole) -> _RoleHandler:
+    if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
+        return _CommitMessageHandler()
+    if role == AgentRole.PLANNER:
+        return _PlannerHandler()
+    if role == AgentRole.PREFLIGHT_ISSUE:
+        return _PreflightIssueHandler()
+    if role == AgentRole.IMPROVE:
+        return _ImproveHandler()
+    return _MergerHandler()
+
+
 def process_stream(
     lines: Iterable[str],
     on_turn: Callable[[str], None],
     role: AgentRole,
     on_tokens: Callable[[int], None] | None = None,
 ) -> AgentOutput:
+    handler = _make_handler(role)
     collected: list[str] = []
     result_text: str | None = None
     for line in lines:
@@ -355,28 +448,9 @@ def process_stream(
             on_tokens(tokens)
         if turn is not None:
             on_turn(turn)
-            if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
-                body = _last_tag_block(turn, "commit_message")
-                if body is not None:
-                    return CommitMessageOutput(message=body.strip())
-            elif role == AgentRole.IMPROVE:
-                if re.search(r"<promise>NO-CANDIDATE</promise>", turn):
-                    return NoCandidateOutput()
-                if re.search(r"<promise>COMPLETE</promise>", turn):
-                    return _extract_improve_output(turn)
-            elif role == AgentRole.MERGER:
-                if re.search(r"<promise>COMPLETE</promise>", turn):
-                    return CompletionOutput()
-            elif role == AgentRole.PLANNER:
-                try:
-                    return _extract_planner_output(turn)
-                except PlanParseError:
-                    pass
-            elif role == AgentRole.PREFLIGHT_ISSUE:
-                try:
-                    return _extract_issue_output(turn)
-                except IssueParseError:
-                    pass
+            result = handler.on_turn(turn)
+            if result is not None:
+                return result
         try:
             obj = json.loads(line)
         except json.JSONDecodeError:
@@ -388,32 +462,4 @@ def process_stream(
                 break
     text = result_text if result_text is not None else "\n".join(collected)
     tail = f"\nOutput tail: {text[-300:]!r}"
-    if role == AgentRole.PREFLIGHT_ISSUE:
-        try:
-            return _extract_issue_output(text)
-        except IssueParseError as exc:
-            raise IssueParseError(f"{exc}{tail}") from exc.__cause__
-    if role == AgentRole.PLANNER:
-        try:
-            return _extract_planner_output(text)
-        except PlanParseError as exc:
-            raise PlanParseError(f"{exc}{tail}") from exc.__cause__
-    if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
-        body = _last_tag_block(text, "commit_message")
-        if body is None:
-            return CommitMessageOutput(message=None)
-        return CommitMessageOutput(message=body.strip())
-    if role == AgentRole.IMPROVE:
-        if re.search(r"<promise>NO-CANDIDATE</promise>", text):
-            return NoCandidateOutput()
-        if not re.search(r"<promise>COMPLETE</promise>", text):
-            raise PromiseParseError(
-                f"Agent produced no <promise>COMPLETE</promise> or"
-                f" <promise>NO-CANDIDATE</promise> tag.{tail}"
-            )
-        return _extract_improve_output(text)
-    if not re.search(r"<promise>COMPLETE</promise>", text):
-        raise PromiseParseError(
-            f"Agent produced no <promise>COMPLETE</promise> tag.{tail}"
-        )
-    return CompletionOutput()
+    return handler.on_end(text, tail)
