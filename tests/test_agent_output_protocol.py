@@ -236,6 +236,81 @@ def test_process_stream_planner_handles_json_with_leading_and_trailing_whitespac
     assert result.issues == [{"number": 2, "title": "A"}]
 
 
+def test_process_stream_planner_picks_last_plan_block_when_stray_tag_in_prose():
+    payload = json.dumps(
+        {
+            "issues": [
+                {
+                    "number": 579,
+                    "title": "Add blocked field to PlannerOutput and <plan> parser",
+                }
+            ]
+        }
+    )
+    text = (
+        "I will plan issue 579 (titled 'Add blocked field to PlannerOutput "
+        "and <plan> parser').\n\n"
+        f"<plan>{payload}</plan>"
+    )
+    lines = [_result_line(text)]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == [
+        {
+            "number": 579,
+            "title": "Add blocked field to PlannerOutput and <plan> parser",
+        }
+    ]
+
+
+def test_process_stream_planner_recovers_when_plan_substring_appears_inside_json_title():
+    # Mirrors the issue #584 incident: the agent quotes an issue title that
+    # contains the literal substring `<plan>` in commentary AND the same
+    # title is echoed inside the real plan JSON.
+    payload = json.dumps(
+        {
+            "issues": [
+                {
+                    "number": 579,
+                    "title": "Add blocked field to PlannerOutput and <plan> parser",
+                },
+                {"number": 580, "title": "Other"},
+            ]
+        }
+    )
+    text = (
+        "...so they can be worked on in parallel without merge conflict risk.\n\n"
+        f"<plan>\n{payload}\n</plan>"
+    )
+    lines = [_result_line(text)]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert [i["number"] for i in result.issues] == [579, 580]
+
+
+def test_process_stream_preflight_issue_picks_last_issue_block_when_stray_tag_in_prose():
+    payload = json.dumps({"number": 42, "labels": ["bug"]})
+    text = f"I'll triage <issue> below.\n<issue>{payload}</issue>"
+    lines = [_result_line(text)]
+    result = process_stream(
+        lines, on_turn=lambda t: None, role=AgentRole.PREFLIGHT_ISSUE
+    )
+    assert isinstance(result, IssueOutput)
+    assert result.number == 42
+    assert result.labels == ["bug"]
+
+
+def test_process_stream_implementer_picks_last_commit_message_when_stray_tag_in_prose():
+    text = (
+        "Draft commit_message: I considered <commit_message> earlier.\n"
+        "<commit_message>final: fix bug</commit_message>"
+    )
+    lines = [_result_line(text)]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPLEMENTER)
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message == "final: fix bug"
+
+
 def test_process_stream_preflight_issue_returns_issue_output():
     lines = [
         _result_line(

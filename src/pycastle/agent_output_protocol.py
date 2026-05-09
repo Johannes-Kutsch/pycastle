@@ -120,12 +120,55 @@ def _strip_markdown_fence(s: str) -> str:
     return s.strip()
 
 
+def _iter_tag_block_candidates(text: str, tag: str) -> Iterable[str]:
+    # Yield candidate bodies for <tag>...</tag>, anchored on the LAST </tag>
+    # in the text and trying each preceding <tag> opening from the rightmost
+    # outward. This lets the parser recover when:
+    #   - agent commentary contains a stray <tag> mention before the real
+    #     block (a regex `<tag>(.*?)</tag>` would anchor on that first
+    #     mention and capture prose instead of the real payload), and
+    #   - the real payload itself contains a literal <tag> substring (e.g.
+    #     an issue title quoted inside JSON), so the rightmost opening is
+    #     not necessarily the real one — callers retry until parsing
+    #     succeeds.
+    open_tag = f"<{tag}>"
+    close_tag = f"</{tag}>"
+    end = text.rfind(close_tag)
+    if end == -1:
+        return
+    pos = end
+    while True:
+        start = text.rfind(open_tag, 0, pos)
+        if start == -1:
+            return
+        yield text[start + len(open_tag) : end]
+        pos = start
+
+
+def _last_tag_block(text: str, tag: str) -> str | None:
+    for body in _iter_tag_block_candidates(text, tag):
+        return body
+    return None
+
+
 def _extract_planner_output(text: str) -> PlannerOutput:
-    match = re.search(r"<plan>([\s\S]*?)</plan>", text)
-    if not match:
+    last_err: PlanParseError | None = None
+    saw_block = False
+    for body in _iter_tag_block_candidates(text, "plan"):
+        saw_block = True
+        try:
+            return _parse_planner_body(body)
+        except PlanParseError as exc:
+            last_err = exc
+    if not saw_block:
         raise PlanParseError("Planner produced no <plan> tag.")
+    assert last_err is not None
+    raise last_err
+
+
+def _parse_planner_body(body: str) -> PlannerOutput:
     try:
-        data = json.loads(_strip_markdown_fence(match.group(1)))
+        data = json.loads(_strip_markdown_fence(body))
     except json.JSONDecodeError as exc:
         raise PlanParseError(
             f"Planner produced malformed JSON inside <plan> tag: {exc}"
@@ -166,11 +209,23 @@ def _extract_planner_output(text: str) -> PlannerOutput:
 
 
 def _extract_issue_output(text: str) -> IssueOutput:
-    match = re.search(r"<issue>([\s\S]*?)</issue>", text)
-    if not match:
+    last_err: IssueParseError | None = None
+    saw_block = False
+    for body in _iter_tag_block_candidates(text, "issue"):
+        saw_block = True
+        try:
+            return _parse_issue_body(body)
+        except IssueParseError as exc:
+            last_err = exc
+    if not saw_block:
         raise IssueParseError("Agent produced no <issue>...</issue> tag.")
+    assert last_err is not None
+    raise last_err
+
+
+def _parse_issue_body(body: str) -> IssueOutput:
     try:
-        data = json.loads(match.group(1))
+        data = json.loads(body)
     except json.JSONDecodeError as exc:
         raise IssueParseError(f"Malformed JSON inside <issue> tag: {exc}") from exc
     try:
@@ -267,7 +322,6 @@ def _extract_turn(line: str) -> tuple[str | None, int | None]:
     return turn_text, tokens
 
 
-_COMMIT_MESSAGE_RE = re.compile(r"<commit_message>([\s\S]*?)</commit_message>")
 _ISSUE_NUMBER_RE = re.compile(r"<issue>(\d+)</issue>")
 
 
@@ -302,9 +356,9 @@ def process_stream(
         if turn is not None:
             on_turn(turn)
             if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
-                match = _COMMIT_MESSAGE_RE.search(turn)
-                if match:
-                    return CommitMessageOutput(message=match.group(1).strip())
+                body = _last_tag_block(turn, "commit_message")
+                if body is not None:
+                    return CommitMessageOutput(message=body.strip())
             elif role == AgentRole.IMPROVE:
                 if re.search(r"<promise>NO-CANDIDATE</promise>", turn):
                     return NoCandidateOutput()
@@ -345,10 +399,10 @@ def process_stream(
         except PlanParseError as exc:
             raise PlanParseError(f"{exc}{tail}") from exc.__cause__
     if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
-        match = _COMMIT_MESSAGE_RE.search(text)
-        if not match:
+        body = _last_tag_block(text, "commit_message")
+        if body is None:
             return CommitMessageOutput(message=None)
-        return CommitMessageOutput(message=match.group(1).strip())
+        return CommitMessageOutput(message=body.strip())
     if role == AgentRole.IMPROVE:
         if re.search(r"<promise>NO-CANDIDATE</promise>", text):
             return NoCandidateOutput()
