@@ -745,6 +745,111 @@ def test_get_open_issues_does_not_filter_issue_when_close_failed():
     assert [r["number"] for r in result] == [42]
 
 
+# ── get_all_open_issues_lightweight ─────────────────────────────────────────
+
+
+def test_get_all_open_issues_lightweight_returns_number_title_labels():
+    svc = _make_service()
+    body = json.dumps(
+        [
+            {
+                "number": 1,
+                "title": "Fix it",
+                "body": "should be ignored",
+                "labels": [{"name": "bug"}],
+            }
+        ]
+    ).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body, headers={}),
+    ):
+        result = svc.get_all_open_issues_lightweight()
+    assert result == [{"number": 1, "title": "Fix it", "labels": ["bug"]}]
+
+
+def test_get_all_open_issues_lightweight_excludes_pull_requests():
+    svc = _make_service()
+    body = json.dumps(
+        [
+            {"number": 1, "title": "Issue", "labels": []},
+            {
+                "number": 2,
+                "title": "PR",
+                "labels": [],
+                "pull_request": {"url": "x"},
+            },
+        ]
+    ).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body, headers={}),
+    ):
+        result = svc.get_all_open_issues_lightweight()
+    assert [r["number"] for r in result] == [1]
+
+
+def test_get_all_open_issues_lightweight_filters_recently_closed():
+    svc = _make_service()
+    issue_payload = [{"number": 42, "title": "T", "labels": []}]
+
+    def fake_request(method, path, data=None):
+        if method == "PATCH":
+            return None, {}
+        return issue_payload, {"Link": ""}
+
+    with patch.object(svc, "_request", side_effect=fake_request):
+        svc.close_issue(42)
+        result = svc.get_all_open_issues_lightweight()
+
+    assert [r["number"] for r in result] == []
+
+
+def test_get_all_open_issues_lightweight_self_heals_after_disappears():
+    svc = _make_service()
+    issue_payload = [{"number": 42, "title": "T", "labels": []}]
+    call_count = 0
+
+    def fake_request(method, path, data=None):
+        nonlocal call_count
+        if method == "PATCH":
+            return None, {}
+        call_count += 1
+        if call_count == 1:
+            return issue_payload, {"Link": ""}
+        if call_count == 2:
+            return [], {"Link": ""}
+        return issue_payload, {"Link": ""}
+
+    with patch.object(svc, "_request", side_effect=fake_request):
+        svc.close_issue(42)
+        svc.get_all_open_issues_lightweight()
+        svc.get_all_open_issues_lightweight()
+        result = svc.get_all_open_issues_lightweight()
+
+    assert [r["number"] for r in result] == [42]
+
+
+def test_get_all_open_issues_lightweight_paginates():
+    svc = _make_service()
+    page1_issues = [{"number": 1, "title": "A", "labels": []}]
+    page2_issues = [{"number": 2, "title": "B", "labels": [{"name": "feat"}]}]
+    call_count = 0
+
+    def fake_request(method, path, data=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return page1_issues, {"Link": '<https://api.github.com/page2>; rel="next"'}
+        return page2_issues, {"Link": ""}
+
+    with patch.object(svc, "_request", side_effect=fake_request):
+        result = svc.get_all_open_issues_lightweight()
+
+    assert [r["number"] for r in result] == [1, 2]
+    assert result[1]["labels"] == ["feat"]
+
+
 # ── close_completed_parent_issues ────────────────────────────────────────────
 
 

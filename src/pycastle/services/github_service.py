@@ -257,11 +257,7 @@ class GithubService:
             and "pull_request" not in item
         ]
 
-    def get_open_issues(self, label: str) -> list[dict[str, Any]]:
-        results = self._paginate(
-            f"/repos/{self.repo}/issues?state=open"
-            f"&labels={quote(label, safe='')}&per_page=100"
-        )
+    def _filter_open_issue_items(self, results: list[Any]) -> list[dict[str, Any]]:
         response_numbers = {
             int(item["number"])
             for item in results
@@ -270,29 +266,53 @@ class GithubService:
         self._recently_closed = {
             n for n in self._recently_closed if n in response_numbers
         }
+        return [
+            item
+            for item in results
+            if isinstance(item, dict)
+            and "pull_request" not in item
+            and int(item["number"]) not in self._recently_closed
+        ]
+
+    @staticmethod
+    def _extract_label_names(item: dict[str, Any]) -> list[str]:
+        return [
+            str(label_obj["name"])
+            for label_obj in (item.get("labels") or [])
+            if "name" in label_obj
+        ]
+
+    def get_open_issues(self, label: str) -> list[dict[str, Any]]:
+        results = self._paginate(
+            f"/repos/{self.repo}/issues?state=open"
+            f"&labels={quote(label, safe='')}&per_page=100"
+        )
         issues: list[dict[str, Any]] = []
-        for item in results:
-            if not isinstance(item, dict) or "pull_request" in item:
-                continue
+        for item in self._filter_open_issue_items(results):
             number = int(item["number"])
-            if number in self._recently_closed:
-                continue
             issues.append(
                 {
                     "number": number,
                     "title": str(item.get("title") or ""),
                     "body": item.get("body") or "",
-                    "labels": [
-                        str(label_obj["name"])
-                        for label_obj in (item.get("labels") or [])
-                        if "name" in label_obj
-                    ],
+                    "labels": self._extract_label_names(item),
                     "comments": self.get_issue_comments(number)
                     if item.get("comments")
                     else [],
                 }
             )
         return issues
+
+    def get_all_open_issues_lightweight(self) -> list[dict[str, Any]]:
+        results = self._paginate(f"/repos/{self.repo}/issues?state=open&per_page=100")
+        return [
+            {
+                "number": int(item["number"]),
+                "title": str(item.get("title") or ""),
+                "labels": self._extract_label_names(item),
+            }
+            for item in self._filter_open_issue_items(results)
+        ]
 
     def close_completed_parent_issues(self) -> None:
         changed = True
