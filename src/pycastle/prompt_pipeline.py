@@ -19,6 +19,8 @@ _STANDARDS_FILES = {
     "INTERFACES_STANDARDS": "interfaces.md",
     "DEEP_MODULES_STANDARDS": "deep-modules.md",
     "REFACTORING_STANDARDS": "refactoring.md",
+    "LANGUAGE_STANDARDS": "language.md",
+    "DEEPENING_STANDARDS": "deepening.md",
 }
 
 

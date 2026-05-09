@@ -329,6 +329,61 @@ def test_render_standards_available_in_improve_scan(cfg, prompts_dir):
     assert result == "test guidelines"
 
 
+# ── render: new language/deepening standards render in IMPROVE_SCAN ──────────
+
+
+def test_render_language_standards_available_in_improve_scan(cfg, prompts_dir):
+    standards_dir = prompts_dir / "coding-standards"
+    (standards_dir / "language.md").write_text("language guidelines")
+    (prompts_dir / "improve" / "01-scan.md").write_text("{{LANGUAGE_STANDARDS}}")
+    renderer = PromptRenderer(cfg)
+
+    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+
+    assert result == "language guidelines"
+
+
+def test_render_deepening_standards_available_in_improve_scan(cfg, prompts_dir):
+    standards_dir = prompts_dir / "coding-standards"
+    (standards_dir / "deepening.md").write_text("deepening guidelines")
+    (prompts_dir / "improve" / "01-scan.md").write_text("{{DEEPENING_STANDARDS}}")
+    renderer = PromptRenderer(cfg)
+
+    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+
+    assert result == "deepening guidelines"
+
+
+def test_render_language_standards_available_in_improve_prd(cfg, prompts_dir):
+    standards_dir = prompts_dir / "coding-standards"
+    (standards_dir / "language.md").write_text("language guidelines")
+    (prompts_dir / "improve" / "02-prd.md").write_text("{{LANGUAGE_STANDARDS}}")
+    renderer = PromptRenderer(cfg)
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPROVE_PRD, {"IMPROVE_SHORT_SID": "abc"}, _noop_exec
+        )
+    )
+
+    assert result == "language guidelines"
+
+
+def test_render_deepening_standards_available_in_improve_prd(cfg, prompts_dir):
+    standards_dir = prompts_dir / "coding-standards"
+    (standards_dir / "deepening.md").write_text("deepening guidelines")
+    (prompts_dir / "improve" / "02-prd.md").write_text("{{DEEPENING_STANDARDS}}")
+    renderer = PromptRenderer(cfg)
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPROVE_PRD, {"IMPROVE_SHORT_SID": "abc"}, _noop_exec
+        )
+    )
+
+    assert result == "deepening guidelines"
+
+
 # ── Security regressions (from test_prompt_utils.py, adapted for renderer) ───
 
 
