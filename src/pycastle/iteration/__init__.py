@@ -114,12 +114,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                             slept_once=deps.slept_once,
                             improve_dispatched_this_iteration=deps.improve_dispatched_this_iteration,
                         )
-                        match fallback:
-                            case Done():
-                                return Done()
-                            case DispatchImprove():
-                                await improve_phase(deps, sha=preflight_sha)
-                                return Continue()
+                        if isinstance(fallback, DispatchImprove):
+                            await improve_phase(deps, sha=preflight_sha)
+                            return Continue()
                         return Done()
                     issue_lines = [
                         f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
