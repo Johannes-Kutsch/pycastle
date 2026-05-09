@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Protocol
 
 from ..agent_output_protocol import AgentOutputProtocolError, AgentRole, PlannerOutput
-from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompt_pipeline import PromptTemplate
@@ -79,9 +78,6 @@ async def planning_phase(
             )
         except AgentOutputProtocolError as exc:
             raise RuntimeError(str(exc)) from exc
-
-        if isinstance(output, PreflightFailure):
-            raise RuntimeError("Planner returned a PreflightFailure unexpectedly")
 
         if not isinstance(output, PlannerOutput):
             raise RuntimeError(

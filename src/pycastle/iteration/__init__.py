@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import TypeAlias
 
 from ..agent_output_protocol import AgentRole, IssueOutput
-from ..agent_result import CancellationToken, PreflightFailure
+from ..agent_result import CancellationToken
 from ..agent_runner import RunRequest
 from ..errors import AgentFailedError, UsageLimitError
 from ..prompt_pipeline import PromptTemplate
@@ -179,22 +179,10 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 return AbortedUsageLimit(reset_time=impl_result.usage_limit_reset_time)
 
             for issue, error in impl_result.errors:
-                match error:
-                    case PreflightFailure(failures=fs):
-                        deps.status_display.print(
-                            "Implement",
-                            f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) pre-flight failed:",
-                        )
-                        for check_name, command, output in fs:
-                            deps.status_display.print(
-                                "Implement",
-                                f"    ✗ {check_name} ({command}): {output}",
-                            )
-                    case _:
-                        deps.status_display.print(
-                            "Implement",
-                            f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}",
-                        )
+                deps.status_display.print(
+                    "Implement",
+                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}",
+                )
 
             completed = impl_result.completed
 

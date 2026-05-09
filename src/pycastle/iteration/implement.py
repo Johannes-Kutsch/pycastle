@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from ..agent_output_protocol import AgentRole, CommitMessageOutput
-from ..agent_result import CancellationToken, PreflightFailure
+from ..agent_result import CancellationToken
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import BranchCollisionError, UsageLimitError
@@ -40,7 +40,7 @@ def branch_for(issue_number: int) -> str:
 @dataclasses.dataclass
 class ImplementResult:
     completed: list[dict]
-    errors: list[tuple[dict, Exception | PreflightFailure]]
+    errors: list[tuple[dict, Exception]]
     usage_limit_hit: bool = False
     usage_limit_reset_time: datetime | None = None
 
@@ -54,7 +54,7 @@ async def run_issue(
     sha: str | None = None,
     branch_locks: dict[str, asyncio.Lock] | None = None,
     on_started: Callable[[], None] | None = None,
-) -> dict | PreflightFailure:
+) -> dict:
     _branch = branch_for(issue["number"])
     _token = token if token is not None else CancellationToken()
     scope_args = build_issue_scope_args(issue, extra_scope_args={"BRANCH": _branch})
@@ -120,8 +120,6 @@ async def run_issue(
                             token=_token,
                         )
                     )
-                    if isinstance(result, PreflightFailure):
-                        return result
                     if isinstance(result, CommitMessageOutput):
                         _msg = result.message or issue["title"]
                         deps.git_svc.commit(
@@ -227,11 +225,11 @@ async def implement_phase(
         None,
     )
     completed: list[dict] = []
-    errors: list[tuple[dict, Exception | PreflightFailure]] = []
+    errors: list[tuple[dict, Exception]] = []
     for issue, result in zip(issues, results):
         if isinstance(result, UsageLimitError):
             continue
-        elif isinstance(result, (Exception, PreflightFailure)):
+        elif isinstance(result, Exception):
             deps.logger.log_error(issue, result)
             errors.append((issue, result))
         elif isinstance(result, dict):

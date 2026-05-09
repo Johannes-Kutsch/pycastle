@@ -8,11 +8,11 @@ from typing import Any, Protocol
 
 from .account_pool import AccountPool
 from .agent_output_protocol import AgentOutput, AgentRole
-from .agent_result import CancellationToken, PreflightFailure
+from .agent_result import CancellationToken
 from .config import Config
 from .container_runner import ContainerRunner
 from .docker_session import DockerSession, build_volume_spec
-from .errors import AgentTimeoutError, UsageLimitError
+from .errors import AgentTimeoutError, PreflightFailure, UsageLimitError
 from .prompt_pipeline import PromptRenderer, PromptTemplate
 from .reprompt_loop import REPROMPT_MESSAGE, run_with_reprompt
 from .session_resume import (
@@ -47,7 +47,7 @@ class RunRequest:
 
 
 class AgentRunnerProtocol(Protocol):
-    async def run(self, request: RunRequest) -> AgentOutput | PreflightFailure: ...
+    async def run(self, request: RunRequest) -> AgentOutput: ...
 
     async def run_preflight(
         self,
@@ -126,7 +126,7 @@ class AgentRunner:
         )
         return resume_text + "\n\n" + role_prompt
 
-    async def run(self, request: RunRequest) -> AgentOutput | PreflightFailure:
+    async def run(self, request: RunRequest) -> AgentOutput:
         from .iteration._rows import agent_row
 
         name = request.name
@@ -177,7 +177,7 @@ class AgentRunner:
                 if not skip_preflight:
                     failures = await runner.preflight(list(self._cfg.preflight_checks))
                     if failures:
-                        return PreflightFailure(failures=tuple(failures))
+                        raise PreflightFailure(failures=tuple(failures))
 
                 if run_kind == RunKind.FRESH:
                     shutil.rmtree(role_session_dir, ignore_errors=True)

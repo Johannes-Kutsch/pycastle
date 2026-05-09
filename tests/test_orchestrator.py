@@ -10,9 +10,6 @@ from pycastle.agent_output_protocol import (
     PlannerOutput,
     PromiseParseError,
 )
-from pycastle.agent_result import (
-    PreflightFailure,
-)
 from pycastle.agent_runner import RunRequest
 from pycastle.config import StageOverride
 from pycastle.errors import UsageLimitError
@@ -94,7 +91,9 @@ def _make_github_svc_afk():
     """GithubService mock for AFK path (verdict comes from agent output label)."""
     mock = MagicMock(spec=GithubService)
     mock.get_issue_title.return_value = "Preflight fix title"
-    mock.get_open_issues.return_value = [{"number": 1, "title": "Default Issue", "body": "", "comments": []}]
+    mock.get_open_issues.return_value = [
+        {"number": 1, "title": "Default Issue", "body": "", "comments": []}
+    ]
     mock.get_all_open_issues_lightweight.return_value = []
     return mock
 
@@ -103,7 +102,9 @@ def _make_github_svc_hitl():
     """GithubService mock for HITL path (verdict comes from agent output label)."""
     mock = MagicMock(spec=GithubService)
     mock.get_issue_title.return_value = "Preflight fix title"
-    mock.get_open_issues.return_value = [{"number": 1, "title": "Default Issue", "body": "", "comments": []}]
+    mock.get_open_issues.return_value = [
+        {"number": 1, "title": "Default Issue", "body": "", "comments": []}
+    ]
     mock.get_all_open_issues_lightweight.return_value = []
     return mock
 
@@ -158,7 +159,16 @@ def test_run_does_not_crash_when_planner_omits_branch_field(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return PlannerOutput(issues=[{"number": 193, "title": "Fix branch bug", "body": "", "comments": []}])
+            return PlannerOutput(
+                issues=[
+                    {
+                        "number": 193,
+                        "title": "Fix branch bug",
+                        "body": "",
+                        "comments": [],
+                    }
+                ]
+            )
         if "Implement Agent" in request.name:
             dispatched.append((request.scope_args or {}).get("BRANCH", ""))
             return CompletionOutput()
@@ -183,7 +193,11 @@ def test_run_computes_branch_from_issue_number_not_planner_slug(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return PlannerOutput(issues=[{"number": 42, "title": "Fix thing", "body": "", "comments": []}])
+            return PlannerOutput(
+                issues=[
+                    {"number": 42, "title": "Fix thing", "body": "", "comments": []}
+                ]
+            )
         if "Implement Agent" in request.name:
             captured_branches.append((request.scope_args or {}).get("BRANCH", ""))
             return CompletionOutput()
@@ -209,7 +223,16 @@ def test_preflight_issue_branch_uses_pycastle_format(tmp_path):
         if "Pre-Flight Reporter" in request.name:
             return IssueOutput(number=77, labels=["ready-for-agent"])
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 77, "title": "Preflight fix title", "body": "", "comments": []}])
+            return _plan_output(
+                [
+                    {
+                        "number": 77,
+                        "title": "Preflight fix title",
+                        "body": "",
+                        "comments": [],
+                    }
+                ]
+            )
         if "Implement Agent" in request.name:
             captured_branches.append((request.scope_args or {}).get("BRANCH", ""))
             return CompletionOutput()
@@ -348,7 +371,9 @@ def test_failed_agent_appends_traceback_to_errors_log(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix thing", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix thing", "body": "", "comments": []}]
+            )
         raise boom
 
     _run(
@@ -370,7 +395,9 @@ def test_failed_agent_errors_log_has_timestamp_separator(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix thing", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix thing", "body": "", "comments": []}]
+            )
         raise RuntimeError("boom")
 
     _run(
@@ -389,7 +416,9 @@ def test_failed_agent_prints_traceback_to_stderr(tmp_path, capsys):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix thing", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix thing", "body": "", "comments": []}]
+            )
         raise RuntimeError("stderr traceback check")
 
     _run(
@@ -947,7 +976,9 @@ def test_clean_merged_branches_are_deleted_after_try_merge(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if "Implement Agent" in request.name:
             return CompletionOutput()
-        return _plan_output([{"number": 1, "title": "Fix A", "body": "", "comments": []}])
+        return _plan_output(
+            [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
+        )
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=True)
     _run(
@@ -966,7 +997,9 @@ def test_conflict_branches_are_deleted_after_merger_agent(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if "Implement Agent" in request.name:
             return CompletionOutput()
-        return _plan_output([{"number": 2, "title": "Conflict", "body": "", "comments": []}])
+        return _plan_output(
+            [{"number": 2, "title": "Conflict", "body": "", "comments": []}]
+        )
 
     mock_git = _make_git_svc(try_merge_side_effect=[False], is_ancestor=True)
     _run(
@@ -985,7 +1018,9 @@ def test_non_ancestor_branch_not_deleted(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if "Implement Agent" in request.name:
             return CompletionOutput()
-        return _plan_output([{"number": 1, "title": "Fix A", "body": "", "comments": []}])
+        return _plan_output(
+            [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
+        )
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=False)
     _run(
@@ -1004,7 +1039,9 @@ def test_delete_branch_error_does_not_abort_run(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if "Implement Agent" in request.name:
             return CompletionOutput()
-        return _plan_output([{"number": 1, "title": "Fix A", "body": "", "comments": []}])
+        return _plan_output(
+            [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
+        )
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=True)
     mock_git.delete_branch.side_effect = GitCommandError(
@@ -1023,7 +1060,9 @@ def test_run_incomplete_implementers_skip_merge(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         raise PromiseParseError(
             "no COMPLETE tag"
         )  # implementer ran but didn't complete
@@ -1048,7 +1087,9 @@ def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         raise RuntimeError("agent failed")
 
     _run(
@@ -1167,7 +1208,16 @@ def test_preflight_failure_afk_routes_through_planning_then_one_implementer(tmp_
         if "Pre-Flight Reporter" in request.name:
             return IssueOutput(number=42, labels=["ready-for-agent"])
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 42, "title": "Preflight fix title", "body": "", "comments": []}])
+            return _plan_output(
+                [
+                    {
+                        "number": 42,
+                        "title": "Preflight fix title",
+                        "body": "",
+                        "comments": [],
+                    }
+                ]
+            )
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return CompletionOutput()
@@ -1275,7 +1325,9 @@ def test_usage_limit_sleeps_instead_of_exiting(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep") as mock_sleep:
@@ -1303,7 +1355,9 @@ def test_usage_limit_prints_sleep_message_with_wake_time(tmp_path, capsys):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep"):
@@ -1332,7 +1386,9 @@ def test_usage_limit_loop_continues_after_sleep(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep"):
@@ -1363,7 +1419,9 @@ def test_consecutive_usage_limits_sleep_multiple_times(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep") as mock_sleep:
@@ -1395,7 +1453,9 @@ def test_usage_limit_wake_time_is_next_full_hour_plus_two_minutes(tmp_path, caps
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=None)
 
     with (
@@ -1433,7 +1493,9 @@ def test_usage_limit_sleep_duration_matches_wake_time(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=None)
 
     with (
@@ -1468,7 +1530,9 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep"):
@@ -1508,7 +1572,9 @@ def test_usage_limit_with_reset_time_uses_precise_wake_time(tmp_path, capsys):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=fixed_reset)
 
     with (
@@ -1542,7 +1608,9 @@ def test_usage_limit_without_reset_time_appends_estimated_qualifier(tmp_path, ca
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep"):
@@ -1642,7 +1710,9 @@ def test_planner_invoked_when_ready_for_agent_issues_exist(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         agent_names.append(request.name)
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Do thing", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Do thing", "body": "", "comments": []}]
+            )
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return CompletionOutput()
@@ -1671,7 +1741,9 @@ def test_planner_receives_ready_for_agent_issues_json_not_issue_label(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             captured_planner_args.update(request.scope_args or {})
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return CompletionOutput()
@@ -1720,7 +1792,9 @@ def test_run_stops_after_max_iterations_from_cfg(tmp_path):
         if request.name == "Plan Agent":
             planner_calls[0] += 1
             if planner_calls[0] < 2:
-                return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+                return _plan_output(
+                    [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                )
             return _plan_output([])
         return CompletionOutput()
 
@@ -1973,7 +2047,9 @@ def test_worktree_sha_set_at_iteration_start(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             call_order.append("Planner")
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return CompletionOutput()
@@ -2009,7 +2085,9 @@ def test_worktree_sha_refreshed_each_iteration(tmp_path):
             planner_count[0] += 1
             call_order.append(f"Planner-{planner_count[0]}")
             if planner_count[0] == 1:
-                return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+                return _plan_output(
+                    [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                )
             return _plan_output([])
         if "Implement Agent" in request.name:
             return CompletionOutput()
@@ -2035,67 +2113,6 @@ def test_worktree_sha_refreshed_each_iteration(tmp_path):
         assert sha_idx < planner_idx, (
             f"get_head_sha must precede Planner each iteration; order={call_order}"
         )
-
-
-# ── Issue-187: implementer and reviewer skip preflight ───────────────────────
-
-
-def test_implementer_preflight_error_siblings_complete(tmp_path):
-    """An implementer PreflightFailure must not prevent sibling issues from completing."""
-    completed_issues: list[int] = []
-
-    issues = [
-        {"number": 1, "title": "Issue one", "body": "", "comments": []},
-        {"number": 2, "title": "Issue two", "body": "", "comments": []},
-    ]
-
-    async def _fake_run_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output(issues)
-        if request.name == "Implement Agent #1":
-            return PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-        if "Implement Agent" in request.name:
-            completed_issues.append(int(request.name.split("#")[1]))
-            return CompletionOutput()
-        return CompletionOutput()
-
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        git_service=_make_git_svc(),
-        github_service=_make_github_svc(),
-    )
-
-    assert 2 in completed_issues, (
-        f"Issue #2 must complete; completed: {completed_issues}"
-    )
-
-
-def test_implementer_preflight_error_logs_check_details(tmp_path, capsys):
-    """An implementer PreflightFailure must print the failed check name and command to stdout."""
-
-    async def _fake_run_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output([{"number": 3, "title": "Fix types", "body": "", "comments": []}])
-        return PreflightFailure(
-            failures=(("mypy", "mypy .", "error: Cannot find module"),)
-        )
-
-    logs_dir = tmp_path / "logs"
-    logs_dir.mkdir()
-    _run(
-        tmp_path,
-        _fake_run_agent,
-        github_service=_make_github_svc(numbers=[3]),
-        logs_dir=logs_dir,
-    )
-
-    out = capsys.readouterr().out
-    assert "mypy" in out
-    assert "mypy ." in out
-    assert "[('mypy'" not in out, (
-        "Output must not be raw tuple repr — format each check explicitly"
-    )
 
 
 # ── Issue-206: worktree SHA + full iteration path ─────────────────────────────
@@ -2135,7 +2152,9 @@ def test_run_full_iteration_cold_path(git_repo):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix thing", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix thing", "body": "", "comments": []}]
+            )
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return CompletionOutput()
@@ -2330,7 +2349,9 @@ def test_usage_limit_with_pool_available_does_not_sleep(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=None)
 
     with patch("time.sleep") as mock_sleep:
@@ -2369,7 +2390,9 @@ def test_usage_limit_with_pool_all_exhausted_sleeps_until_earliest_wake(tmp_path
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=None)
 
     with (

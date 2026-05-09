@@ -8,7 +8,6 @@ from pycastle.agent_output_protocol import (
     PlanParseError,
     PlannerOutput,
 )
-from pycastle.agent_result import PreflightFailure
 from pycastle.services import GitService
 from pycastle.iteration._deps import FakeAgentRunner, _make_deps
 from pycastle.iteration.planning import (
@@ -122,19 +121,6 @@ def test_planning_phase_removes_worktree_when_exception_raised(tmp_path, git_svc
 
 
 # ── planning_phase: error paths ─────────────────────────────────────────────
-
-
-def test_planning_phase_raises_runtime_error_when_planner_returns_preflight_failure(
-    tmp_path, git_svc
-):
-    issues = [{"number": 1, "title": "A"}]
-    fake = FakeAgentRunner(
-        [PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))]
-    )
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
-    with pytest.raises(RuntimeError, match="PreflightFailure unexpectedly"):
-        asyncio.run(planning_phase(deps, "abc123", issues, []))
 
 
 def test_planning_phase_raises_runtime_error_when_planner_output_has_no_plan_tag(

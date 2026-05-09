@@ -4,7 +4,7 @@ import dataclasses
 import pytest
 
 from pycastle.agent_output_protocol import CompletionOutput
-from pycastle.agent_result import PreflightFailure
+from pycastle.errors import PreflightFailure
 from pycastle.agent_runner import RunRequest
 from pycastle.prompt_pipeline import PromptTemplate
 from pycastle.iteration._deps import Deps, FakeAgentRunner, RecordingLogger, _make_deps
@@ -228,19 +228,20 @@ def test_fake_agent_runner_queue_exhaustion_error_names_agent(mount_path) -> Non
         )
 
 
-def test_fake_agent_runner_can_return_preflight_failure(mount_path) -> None:
+def test_fake_agent_runner_raises_queued_preflight_failure(mount_path) -> None:
     failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
     runner = FakeAgentRunner(responses=[failure])
 
-    result = asyncio.run(
-        runner.run(
-            RunRequest(
-                name="planner", template=PromptTemplate.PLAN, mount_path=mount_path
+    with pytest.raises(PreflightFailure) as exc_info:
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="planner", template=PromptTemplate.PLAN, mount_path=mount_path
+                )
             )
         )
-    )
 
-    assert result is failure
+    assert exc_info.value.failures == (("ruff", "ruff check .", "E501"),)
 
 
 def test_fake_agent_runner_raises_queued_exception(mount_path) -> None:

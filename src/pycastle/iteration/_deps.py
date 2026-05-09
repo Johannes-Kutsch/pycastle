@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from ..agent_output_protocol import AgentOutput
-from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..services import GitService
@@ -15,16 +14,16 @@ from .dispatcher import ImproveMode
 
 
 class Logger(Protocol):
-    def log_error(self, issue: dict, error: Exception | PreflightFailure) -> None: ...
+    def log_error(self, issue: dict, error: Exception) -> None: ...
     def log_agent_output(self, agent_name: str, output: str) -> None: ...
 
 
 class RecordingLogger:
     def __init__(self) -> None:
-        self.errors: list[tuple[dict, Exception | PreflightFailure]] = []
+        self.errors: list[tuple[dict, Exception]] = []
         self.agent_outputs: list[tuple[str, str]] = []
 
-    def log_error(self, issue: dict, error: Exception | PreflightFailure) -> None:
+    def log_error(self, issue: dict, error: Exception) -> None:
         self.errors.append((issue, error))
 
     def log_agent_output(self, agent_name: str, output: str) -> None:
@@ -71,15 +70,13 @@ class FakeAgentRunner:
 
     def __init__(
         self,
-        responses: list[AgentOutput | PreflightFailure | BaseException] | None = None,
+        responses: list[AgentOutput | BaseException] | None = None,
         *,
         side_effect: Callable[..., Any] | None = None,
         preflight_responses: list[list[tuple[str, str, str]] | BaseException]
         | None = None,
     ) -> None:
-        self._responses: list[AgentOutput | PreflightFailure | BaseException] = list(
-            responses or []
-        )
+        self._responses: list[AgentOutput | BaseException] = list(responses or [])
         self._side_effect = side_effect
         self._preflight_responses: list[list[tuple[str, str, str]] | BaseException] = (
             list(preflight_responses or [])
@@ -87,7 +84,7 @@ class FakeAgentRunner:
         self.calls: list[RunRequest] = []
         self.preflight_calls: list[dict] = []
 
-    async def run(self, request: RunRequest) -> AgentOutput | PreflightFailure:
+    async def run(self, request: RunRequest) -> AgentOutput:
         self.calls.append(request)
         if self._side_effect is not None:
             result = self._side_effect(request)

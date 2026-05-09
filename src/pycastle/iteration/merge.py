@@ -6,10 +6,9 @@ from pathlib import Path
 from typing import Protocol
 
 from ..agent_output_protocol import AgentRole, FailedOutput
-from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..errors import AgentFailedError
+from ..errors import AgentFailedError, PreflightFailure
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..status_display import StatusDisplay
@@ -142,30 +141,27 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 delete_branch_on_teardown=True,
                 deps=deps,
             ) as sandbox_path:
-                merger_result = await deps.agent_runner.run(
-                    RunRequest(
-                        name="Merge Agent",
-                        template=PromptTemplate.MERGE,
-                        mount_path=sandbox_path,
-                        role=AgentRole.MERGER,
-                        scope_args={
-                            "BRANCHES": "\n".join(
-                                f"- {branch_for(i['number'])}" for i in conflict_issues
-                            ),
-                        },
-                        model=deps.cfg.merge_override.model,
-                        status_display=deps.status_display,
-                        effort=deps.cfg.merge_override.effort,
-                        stage="pre-merge",
-                        work_body=f"Merging {len(conflict_issues)} Branches",
+                try:
+                    merger_result = await deps.agent_runner.run(
+                        RunRequest(
+                            name="Merge Agent",
+                            template=PromptTemplate.MERGE,
+                            mount_path=sandbox_path,
+                            role=AgentRole.MERGER,
+                            scope_args={
+                                "BRANCHES": "\n".join(
+                                    f"- {branch_for(i['number'])}"
+                                    for i in conflict_issues
+                                ),
+                            },
+                            model=deps.cfg.merge_override.model,
+                            status_display=deps.status_display,
+                            effort=deps.cfg.merge_override.effort,
+                            stage="pre-merge",
+                            work_body=f"Merging {len(conflict_issues)} Branches",
+                        )
                     )
-                )
-                if isinstance(merger_result, FailedOutput):
-                    raise AgentFailedError(
-                        role_value=AgentRole.MERGER.value,
-                        worktree_path=sandbox_path,
-                    )
-                if isinstance(merger_result, PreflightFailure):
+                except PreflightFailure:
                     deps.status_display.print(
                         "Merge",
                         "Merge-time preflight failed; skipping conflict branch merge. "
@@ -175,6 +171,11 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                     if deps.cfg.auto_push and clean_issues:
                         deps.git_svc.push(deps.repo_root)
                     return MergeResult(clean=clean_issues, conflicts=conflict_issues)
+                if isinstance(merger_result, FailedOutput):
+                    raise AgentFailedError(
+                        role_value=AgentRole.MERGER.value,
+                        worktree_path=sandbox_path,
+                    )
                 deps.git_svc.fast_forward_branch(
                     deps.repo_root, target_branch, MERGE_SANDBOX
                 )

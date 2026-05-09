@@ -10,7 +10,6 @@ from ..agent_output_protocol import (
     IssueOutput,
     NoCandidateOutput,
 )
-from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import AgentFailedError
@@ -207,7 +206,6 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> bool:
                     )
                 )
 
-                assert not isinstance(output, PreflightFailure)
                 if isinstance(output, FailedOutput):
                     raise AgentFailedError(
                         role_value=AgentRole.IMPROVE.value,
