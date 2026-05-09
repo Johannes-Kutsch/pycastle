@@ -82,10 +82,8 @@ def test_rich_print_blank_line_when_switching_from_named_to_empty_caller(
     assert "hello\n\n" in out and "world" in out
 
 
-def test_rich_agents_render_sorted_by_phase_rank() -> None:
+def test_rich_agent_without_issue_number_sorts_before_agent_with_issue_number() -> None:
     d = RichStatusDisplay()
-    d.register("Merge Agent", "agent")
-    d.register("Review Agent #5", "agent")
     d.register("Implement Agent #5", "agent")
     d.register("Plan Agent", "agent")
 
@@ -94,8 +92,6 @@ def test_rich_agents_render_sorted_by_phase_rank() -> None:
     output = console.export_text()
 
     assert output.find("Plan Agent") < output.find("Implement Agent #5")
-    assert output.find("Implement Agent #5") < output.find("Review Agent #5")
-    assert output.find("Review Agent #5") < output.find("Merge Agent")
     d.stop()
 
 
@@ -112,16 +108,16 @@ def test_rich_implementers_render_sorted_by_issue_number() -> None:
     d.stop()
 
 
-def test_rich_unknown_agent_sorts_after_known_phases() -> None:
+def test_rich_agent_with_unknown_name_sorts_before_agent_with_issue_number() -> None:
     d = RichStatusDisplay()
-    d.register("Plan Agent", "agent")
+    d.register("Implement Agent #1", "agent")
     d.register("Unknown-agent", "agent")
 
     console = Console(record=True, width=200)
     console.print(d)
     output = console.export_text()
 
-    assert output.find("Plan Agent") < output.find("Unknown-agent")
+    assert output.find("Unknown-agent") < output.find("Implement Agent #1")
     d.stop()
 
 
@@ -824,8 +820,7 @@ def test_rich_new_api_no_blank_line_on_same_caller(capsys) -> None:
 
 def test_rich_new_canonical_agent_names_sort_correctly() -> None:
     d = RichStatusDisplay()
-    d.register("Merge Agent", "agent")
-    d.register("Review Agent #3", "agent")
+    d.register("Implement Agent #3", "agent")
     d.register("Implement Agent #1", "agent")
     d.register("Plan Agent", "agent")
 
@@ -835,21 +830,33 @@ def test_rich_new_canonical_agent_names_sort_correctly() -> None:
     d.stop()
 
     assert output.find("Plan Agent") < output.find("Implement Agent #1")
-    assert output.find("Implement Agent #1") < output.find("Review Agent #3")
-    assert output.find("Review Agent #3") < output.find("Merge Agent")
+    assert output.find("Implement Agent #1") < output.find("Implement Agent #3")
 
 
-def test_rich_preflight_agent_sorts_before_plan_agent() -> None:
+def test_rich_preflight_phase_row_renders_above_plan_agent() -> None:
     d = RichStatusDisplay()
     d.register("Plan Agent", "agent")
-    d.register("Preflight Agent", "agent")
+    d.register("Preflight", "phase")
 
     console = Console(record=True, width=200)
     console.print(d)
     output = console.export_text()
     d.stop()
 
-    assert output.find("Preflight Agent") < output.find("Plan Agent")
+    assert output.find("Preflight") < output.find("Plan Agent")
+
+
+def test_rich_improve_phase_row_renders_above_scan_agent() -> None:
+    d = RichStatusDisplay()
+    d.register("Scan Agent", "agent")
+    d.register("Improve", "phase")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert output.find("Improve") < output.find("Scan Agent")
 
 
 def test_rich_new_api_first_print_has_leading_blank_line(capsys) -> None:

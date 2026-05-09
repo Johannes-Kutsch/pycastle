@@ -10,48 +10,12 @@ from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
 
-_PHASE_RANK: dict[str, int] = {
-    "preflight": -1,
-    "plan": 0,
-    "implement": 1,
-    "review": 2,
-    "merge": 3,
-    "improve": 4,
-}
 
-
-def _stage_from_name(name: str) -> str:
-    # Phase rows
-    if name == "Preflight":
-        return "preflight"
-    if name == "Plan":
-        return "plan"
-    if name == "Implement":
-        return "implement"
-    if name == "Merge":
-        return "merge"
-    # New canonical agent names
-    if name == "Preflight Agent":
-        return "preflight"
-    if name == "Plan Agent":
-        return "plan"
-    if name.startswith("Implement Agent"):
-        return "implement"
-    if name.startswith("Review Agent"):
-        return "review"
-    if name == "Merge Agent":
-        return "merge"
-    if name == "Pre-Flight Reporter":
-        return "plan"
-    if name in {"Scan Agent", "PRD Agent", "Slice Agent", "Rejection Report Agent"}:
-        return "improve"
-    return ""
-
-
-def _sort_key(name: str) -> tuple[int, int]:
-    rank = _PHASE_RANK.get(_stage_from_name(name), 99)
-    m = re.search(r"\d+", name)
-    return (rank, int(m.group()) if m else 0)
+def _row_priority(name: str, kinds: dict[str, str]) -> int:
+    if kinds.get(name) == "phase":
+        return -1
+    m = re.search(r"#(\d+)", name)
+    return int(m.group(1)) if m else 0
 
 
 def _format_duration(seconds: int) -> str:
@@ -129,7 +93,9 @@ class RichStatusDisplay:
         # Called by Live on each refresh tick from the Live thread.
         # Acquire lock only to snapshot row state, then release before yielding.
         with self._lock:
-            rows = sorted(self._rows.values(), key=lambda r: _sort_key(r.name))
+            rows = sorted(
+                self._rows.values(), key=lambda r: _row_priority(r.name, self._kinds)
+            )
 
         table = Table(show_header=False, expand=False, box=None)
         table.add_column(justify="right")  # elapsed
