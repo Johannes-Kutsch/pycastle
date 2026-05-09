@@ -21,6 +21,7 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.prompt_pipeline import PromptTemplate
+from pycastle.session_resume import RunKind
 from pycastle.services import GitCommandError, GitService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 
@@ -1727,3 +1728,125 @@ def test_agent_runner_failsoft_retries_as_fresh_when_merger_resume_run_fails(tmp
     )
 
     assert isinstance(result, CompletionOutput)
+
+
+# ── AgentRunner: _build_prompt ────────────────────────────────────────────────
+
+
+async def _noop_exec(cmd: str) -> str:
+    return ""
+
+
+def _make_build_prompt_cfg(tmp_path: Path) -> Config:
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir(exist_ok=True)
+    (prompts_dir / "plan-prompt.md").write_text(
+        "{{ALL_OPEN_ISSUES_JSON}} {{READY_FOR_AGENT_ISSUES_JSON}}", encoding="utf-8"
+    )
+    (prompts_dir / "_resume-prompt.md").write_text("resume-content", encoding="utf-8")
+    return Config(logs_dir=tmp_path, prompts_dir=prompts_dir)
+
+
+def test_build_prompt_uses_resume_template_on_resume_without_role_flag(tmp_path):
+    """On a Resume run without send_role_prompt_on_resume, _build_prompt uses the RESUME template."""
+    cfg = _make_build_prompt_cfg(tmp_path)
+    runner = AgentRunner({}, cfg, _make_git_service())
+
+    result = asyncio.run(
+        runner._build_prompt(
+            _PLAN_TEMPLATE,
+            _PLAN_SCOPE_ARGS,
+            _noop_exec,
+            run_kind=RunKind.RESUME,
+            is_failsoft_recovery=False,
+            send_role_prompt_on_resume=False,
+        )
+    )
+
+    assert result == "resume-content"
+
+
+def test_build_prompt_uses_role_template_on_resume_with_send_role_prompt(tmp_path):
+    """On a Resume run with send_role_prompt_on_resume=True, _build_prompt uses the role template."""
+    cfg = _make_build_prompt_cfg(tmp_path)
+    runner = AgentRunner({}, cfg, _make_git_service())
+
+    result = asyncio.run(
+        runner._build_prompt(
+            _PLAN_TEMPLATE,
+            _PLAN_SCOPE_ARGS,
+            _noop_exec,
+            run_kind=RunKind.RESUME,
+            is_failsoft_recovery=False,
+            send_role_prompt_on_resume=True,
+        )
+    )
+
+    assert result == "[] []"
+
+
+def test_build_prompt_uses_role_template_on_fresh_run(tmp_path):
+    """On a Fresh run, _build_prompt renders the role template."""
+    cfg = _make_build_prompt_cfg(tmp_path)
+    runner = AgentRunner({}, cfg, _make_git_service())
+
+    result = asyncio.run(
+        runner._build_prompt(
+            _PLAN_TEMPLATE,
+            _PLAN_SCOPE_ARGS,
+            _noop_exec,
+            run_kind=RunKind.FRESH,
+            is_failsoft_recovery=False,
+            send_role_prompt_on_resume=False,
+        )
+    )
+
+    assert result == "[] []"
+
+
+def test_build_prompt_prepends_resume_to_role_on_failsoft_recovery(tmp_path):
+    """On a failsoft recovery Fresh run, _build_prompt prepends RESUME template to the role template."""
+    cfg = _make_build_prompt_cfg(tmp_path)
+    runner = AgentRunner({}, cfg, _make_git_service())
+
+    result = asyncio.run(
+        runner._build_prompt(
+            _PLAN_TEMPLATE,
+            _PLAN_SCOPE_ARGS,
+            _noop_exec,
+            run_kind=RunKind.FRESH,
+            is_failsoft_recovery=True,
+            send_role_prompt_on_resume=False,
+        )
+    )
+
+    assert result == "resume-content\n\n[] []"
+
+
+def test_build_prompt_expands_shell_expressions_via_container_exec(tmp_path):
+    """_build_prompt passes container_exec to the renderer for shell expression expansion."""
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir(exist_ok=True)
+    (prompts_dir / "_resume-prompt.md").write_text(
+        "Result: !`echo hi`", encoding="utf-8"
+    )
+    cfg = Config(logs_dir=tmp_path, prompts_dir=prompts_dir)
+    runner = AgentRunner({}, cfg, _make_git_service())
+
+    async def fake_exec(cmd: str) -> str:
+        if "echo hi" in cmd:
+            return "expanded\n"
+        return ""
+
+    result = asyncio.run(
+        runner._build_prompt(
+            PromptTemplate.RESUME,
+            {},
+            fake_exec,
+            run_kind=RunKind.RESUME,
+            is_failsoft_recovery=False,
+            send_role_prompt_on_resume=False,
+        )
+    )
+
+    assert result == "Result: expanded"
