@@ -20,7 +20,12 @@ from .merge import merge_phase
 from .planning import AllBlocked as AllBlocked
 from .planning import PlanReady as PlanReady
 from .planning import hydrate_planned_issues, planning_phase
-from .preflight import PreflightHITL, PreflightReady, preflight_phase
+from .preflight import (
+    PreflightHITL,
+    PreflightReady,
+    preflight_phase,
+    strip_stale_blocker_refs,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -92,18 +97,27 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
         open_issues = preflight_result.issues
         in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
+        all_open_issues = (
+            preflight_result.all_open_issues
+            if isinstance(preflight_result, PreflightReady)
+            else list(open_issues)
+        )
 
         # ── (Improve) — runs when idle: no AFK issues, no in-flight ─────────
         if not open_issues and not in_flight:
-            if should_dispatch_improve(
-                deps.improve_mode,
-                deps.slept_once,
-                deps.improve_dispatched_this_iteration,
-            ):
+            if should_dispatch_improve(deps.improve_mode, deps.slept_once):
                 if await improve_phase(deps, sha=preflight_sha):
                     return NoCandidate()
-                return Continue()
-            return Done()
+                # Re-fetch open issues after improve filed new ready-for-agent issues
+                open_issues = strip_stale_blocker_refs(
+                    deps.github_svc.get_open_issues(deps.cfg.issue_label)
+                )
+                all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
+                if not open_issues:
+                    return Continue()
+                # Fall through to planning below
+            else:
+                return Done()
 
         # ── Plan or implement-direct ─────────────────────────────────────────
         if in_flight:
@@ -117,11 +131,6 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 initial_phase="Planning",
                 startup_message=f"started planning for {len(open_issues)} issue(s) labeled {deps.cfg.issue_label}",
             ) as row:
-                all_open_issues = (
-                    preflight_result.all_open_issues
-                    if isinstance(preflight_result, PreflightReady)
-                    else open_issues
-                )
                 plan_result = await planning_phase(
                     deps, sha, open_issues, all_open_issues
                 )
@@ -139,14 +148,6 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                         )
                     else:
                         row.close("All ready-for-agent issues are blocked.")
-                    if should_dispatch_improve(
-                        deps.improve_mode,
-                        deps.slept_once,
-                        deps.improve_dispatched_this_iteration,
-                    ):
-                        if await improve_phase(deps, sha=preflight_sha):
-                            return NoCandidate()
-                        return Continue()
                     return Done()
                 issue_lines = [
                     f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
