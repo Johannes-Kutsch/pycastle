@@ -11,7 +11,7 @@ from pycastle.agent_output_protocol import (
 from pycastle.agent_result import PreflightFailure
 from pycastle.services import GitService
 from pycastle.iteration._deps import FakeAgentRunner, _make_deps
-from pycastle.iteration.planning import PlanReady, planning_phase
+from pycastle.iteration.planning import AllBlocked, PlanReady, planning_phase
 
 
 def _plan_output(issues: list[dict]) -> PlannerOutput:
@@ -157,7 +157,7 @@ def test_planning_phase_raises_runtime_error_when_planner_returns_wrong_output_t
 # ── planning_phase: edge cases ───────────────────────────────────────────────
 
 
-def test_planning_phase_with_empty_issues_list_still_invokes_planner_and_returns_ready(
+def test_planning_phase_returns_all_blocked_when_planner_emits_empty_issues_list(
     tmp_path, git_svc
 ):
     fake = FakeAgentRunner([_plan_output([])])
@@ -165,7 +165,18 @@ def test_planning_phase_with_empty_issues_list_still_invokes_planner_and_returns
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     result = asyncio.run(planning_phase(deps, "abc123", [], []))
 
-    assert isinstance(result, PlanReady)
-    assert result.issues == []
-    assert result.worktree_sha == "abc123"
+    assert isinstance(result, AllBlocked)
+    assert result.blocked == []
     assert len(fake.calls) == 1
+
+
+def test_planning_phase_all_blocked_carries_blocked_list(tmp_path, git_svc):
+    blocked = [{"number": 5, "blocked_by": 3, "reason": "depends on #3"}]
+    output = PlannerOutput(issues=[], blocked=blocked)
+    fake = FakeAgentRunner([output])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(planning_phase(deps, "abc123", [], []))
+
+    assert isinstance(result, AllBlocked)
+    assert result.blocked == blocked
