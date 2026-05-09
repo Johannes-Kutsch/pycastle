@@ -17,6 +17,7 @@ from .dispatcher import decide_iteration_action
 from .implement import branch_for, implement_phase
 from .improve import improve_phase
 from .merge import merge_phase
+from .planning import AllBlocked as AllBlocked
 from .planning import PlanReady as PlanReady
 from .planning import planning_phase
 from .preflight import PreflightHITL, PreflightReady, preflight_phase
@@ -104,6 +105,20 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                     plan_result = await planning_phase(
                         deps, sha, open_issues, all_open_issues
                     )
+                    if isinstance(plan_result, AllBlocked):
+                        blocked_lines = [
+                            f"  #{b['number']} blocked by #{b['blocked_by']}: {b['reason']}"
+                            for b in plan_result.blocked
+                        ]
+                        row.close(
+                            "\n".join(
+                                ["All ready-for-agent issues are blocked:"]
+                                + blocked_lines
+                            )
+                            if blocked_lines
+                            else "All ready-for-agent issues are blocked."
+                        )
+                        return Continue()
                     issue_lines = [
                         f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
                         for i in plan_result.issues

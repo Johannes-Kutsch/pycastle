@@ -20,7 +20,7 @@ Here are the open issues labeled ready-for-agent — your candidate set to pick 
 
 # TASK
 
-Analyze the open issues and build a dependency graph. For each issue, determine whether it **blocks** or **is blocked by** any other open issue.
+Analyze the open issues and build a dependency graph. For each issue in the ready-for-agent list, determine whether it is **blocked** by any other open issue.
 
 An issue B is **blocked by** issue A if:
 
@@ -28,22 +28,42 @@ An issue B is **blocked by** issue A if:
 - B and A modify overlapping files or modules, making concurrent work likely to produce merge conflicts
 - B's requirements depend on a decision or API shape that A will establish
 
-An issue is **unblocked** if it has zero blocking dependencies on other open issues.
+## Blocker rules
+
+**Cross-label blockers apply.** Any open issue in the all-open issues list is a hard blocker, regardless of its label. A ready-for-agent issue can be blocked by issues labeled `ready-for-human`, `needs-info`, or `needs-triage` — not only by other ready-for-agent issues.
+
+Only issues labeled `wontfix` are treated as effectively closed. Do not treat `wontfix` issues as blockers.
 
 Any issue referenced as a dependency that does not appear in the open issues list above has already been completed. Do not treat absent issues as blockers. Do not infer blockers from integration stability concerns — if a referenced issue is not in the list, its work is fully integrated and stable.
 
-If the issue appears to be a PRD and it has implementation issues which link to it, the PRD cannot be worked on.
+If an issue appears to be a PRD and it has implementation issues which link to it, the PRD cannot be worked on.
+
+## Conflict avoidance
+
+If multiple unblocked issues work on the same part of the codebase, only include the highest-priority one to prevent merge conflicts.
+
+When priority is unclear, choose the one with the lowest issue number.
 
 # OUTPUT
 
-Output your plan as a JSON object wrapped in `<plan>` tags:
+Output your plan as a JSON object wrapped in `<plan>` tags.
+
+The JSON must have two fields:
+
+- `issues`: unblocked ready-for-agent issues to implement. Use an **empty list** if every candidate is blocked.
+- `blocked`: ready-for-agent issues held back because of a blocker. Each entry must have:
+  - `number`: the blocked issue's number
+  - `blocked_by`: the issue number that is blocking it
+  - `reason`: a short explanation of the dependency
+
+Example — some unblocked, some blocked:
 
 <plan>
-{"issues": [{"number": 42, "title": "Fix auth bug"}]}
+{"issues": [{"number": 42, "title": "Fix auth bug"}], "blocked": [{"number": 43, "blocked_by": 42, "reason": "depends on the auth interface introduced by #42"}]}
 </plan>
 
-Include only unblocked issues. If every issue is blocked, include the single highest-priority candidate (the one with the fewest or weakest dependencies).
+Example — all issues are blocked:
 
-If multiple unblocked issues work on the same part of the codebase, only include the highest priority one to prevent merge conflicts.
-
-When you are not sure which issue has a higher priority, choose the one with the lowest issue number.
+<plan>
+{"issues": [], "blocked": [{"number": 5, "blocked_by": 3, "reason": "requires the user model schema changes from #3 (ready-for-human)"}]}
+</plan>

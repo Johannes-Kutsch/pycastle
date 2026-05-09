@@ -1266,8 +1266,8 @@ def test_run_iteration_hitl_message_uses_preflight_caller(tmp_path, git_svc, log
 # ── Edge cases ────────────────────────────────────────────────────────────────
 
 
-def test_run_iteration_plan_close_message_with_zero_issues(tmp_path, git_svc, logger):
-    """When the planner returns no issues, Plan row closes with '0 issue(s):' and no sub-lines."""
+def test_run_iteration_plan_close_message_when_all_blocked(tmp_path, git_svc, logger):
+    """When the planner returns no issues (all blocked), Plan row closes with an all-blocked message."""
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
@@ -1292,7 +1292,7 @@ def test_run_iteration_plan_close_message_with_zero_issues(tmp_path, git_svc, lo
 
     plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
     assert plan_removes, "Plan row must be removed"
-    assert "Planning complete, implementing 0 issue(s):" in plan_removes[0][2]
+    assert "All ready-for-agent issues are blocked" in plan_removes[0][2]
 
 
 def test_run_iteration_implement_success_message_includes_all_branches(
