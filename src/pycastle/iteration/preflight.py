@@ -10,7 +10,7 @@ from ..agent_output_protocol import (
 )
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..errors import PycastleError
+from ..errors import PreflightIssueFiled
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..status_display import StatusDisplay
@@ -126,8 +126,6 @@ async def preflight_phase(
                 raise RuntimeError(str(parse_exc)) from parse_exc
             if verdict == "hitl":
                 return PreflightHITL(worktree_sha=sha, issue_number=pf_num)
-            raise PycastleError(
-                f"Preflight check failed; fix issue #{pf_num} filed for triage."
-            )
+            raise PreflightIssueFiled(pf_num)
 
         return PreflightReady(sha=sha)

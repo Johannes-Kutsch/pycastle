@@ -18,7 +18,7 @@ from pycastle.iteration._deps import (
     RecordingStatusDisplay,
 )
 from pycastle.status_display import PlainStatusDisplay
-from pycastle.errors import PycastleError
+from pycastle.errors import PreflightIssueFiled
 from pycastle.iteration.preflight import (
     PreflightHITL,
     PreflightReady,
@@ -179,7 +179,7 @@ def test_preflight_phase_raises_on_afk_preflight_verdict(tmp_path, git_svc):
     )
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    with pytest.raises(PycastleError):
+    with pytest.raises(PreflightIssueFiled):
         asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
 
@@ -264,7 +264,7 @@ def test_preflight_phase_removes_worktree_when_preflight_fails(tmp_path, git_svc
     )
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    with pytest.raises(PycastleError):
+    with pytest.raises(PreflightIssueFiled):
         asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "pre-flight-sandbox"
@@ -374,7 +374,7 @@ def test_preflight_phase_prints_no_confirmation_when_check_fails(tmp_path, git_s
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     deps = dataclasses.replace(deps, status_display=recording)
 
-    with pytest.raises(PycastleError):
+    with pytest.raises(PreflightIssueFiled):
         asyncio.run(preflight_phase(deps, open_issues=[], all_open_issues=[]))
 
     print_messages = [c[2] for c in recording.calls if c[0] == "print"]
