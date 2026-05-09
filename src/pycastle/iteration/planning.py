@@ -27,9 +27,14 @@ class PlanReady:
     issues: list[dict]
 
 
+@dataclasses.dataclass(frozen=True)
+class AllBlocked:
+    pass
+
+
 async def planning_phase(
     deps: _PlanningDeps, sha: str, open_issues: list[dict], all_open_issues: list[dict]
-) -> PlanReady:
+) -> PlanReady | AllBlocked:
     async with transient_worktree("plan-sandbox", sha=sha, deps=deps) as wt:
         try:
             output = await deps.agent_runner.run(
@@ -60,7 +65,10 @@ async def planning_phase(
             raise RuntimeError(
                 f"Planner returned unexpected output type: {type(output).__name__}"
             )
+        sorted_issues = sorted(output.issues, key=lambda i: i["number"])
+        if not sorted_issues:
+            return AllBlocked()
         return PlanReady(
             worktree_sha=sha,
-            issues=sorted(output.issues, key=lambda i: i["number"]),
+            issues=sorted_issues,
         )

@@ -17,6 +17,7 @@ from .dispatcher import decide_iteration_action
 from .implement import branch_for, implement_phase
 from .improve import improve_phase
 from .merge import merge_phase
+from .planning import AllBlocked as AllBlocked
 from .planning import PlanReady as PlanReady
 from .planning import planning_phase
 from .preflight import PreflightHITL, PreflightReady, preflight_phase
@@ -104,6 +105,22 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                     plan_result = await planning_phase(
                         deps, sha, open_issues, all_open_issues
                     )
+                    if isinstance(plan_result, AllBlocked):
+                        row.close("All issues are blocked; nothing to implement.")
+                        fallback = decide_iteration_action(
+                            open_afk_count=0,
+                            in_flight_count=0,
+                            improve_mode=deps.improve_mode,
+                            slept_once=deps.slept_once,
+                            improve_dispatched_this_iteration=deps.improve_dispatched_this_iteration,
+                        )
+                        match fallback:
+                            case Done():
+                                return Done()
+                            case DispatchImprove():
+                                await improve_phase(deps, sha=preflight_sha)
+                                return Continue()
+                        return Done()
                     issue_lines = [
                         f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
                         for i in plan_result.issues
