@@ -5,7 +5,7 @@ from typing import TypeAlias
 from ..agent_output_protocol import AgentRole, IssueOutput
 from ..agent_result import CancellationToken
 from ..agent_runner import RunRequest
-from ..errors import AgentFailedError, PycastleError, UsageLimitError
+from ..errors import AgentFailedError, PreflightIssueFiled, UsageLimitError
 from ..prompt_pipeline import PromptTemplate
 from ..worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
@@ -223,5 +223,5 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
     except UsageLimitError as err:
         return AbortedUsageLimit(reset_time=err.reset_time)
-    except PycastleError:
+    except PreflightIssueFiled:
         return Continue()
