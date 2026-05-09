@@ -141,7 +141,6 @@ class Deps:
     status_display: StatusDisplay
     improve_mode: ImproveMode = None
     slept_once: bool = False
-    improve_dispatched_this_iteration: bool = False
 
 
 def _make_deps(

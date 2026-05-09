@@ -11,7 +11,6 @@ def test_no_improve_mode_returns_false():
     assert not should_dispatch_improve(
         improve_mode=None,
         slept_once=False,
-        improve_dispatched_this_iteration=False,
     )
 
 
@@ -20,37 +19,6 @@ def test_no_improve_mode_ignores_slept_once():
     assert not should_dispatch_improve(
         improve_mode=None,
         slept_once=True,
-        improve_dispatched_this_iteration=False,
-    )
-
-
-# ── Already dispatched guard ─────────────────────────────────────────────────
-
-
-def test_already_dispatched_returns_false_for_endless():
-    """endless + already dispatched this iteration → False (one-per-iteration guard)."""
-    assert not should_dispatch_improve(
-        improve_mode="endless",
-        slept_once=False,
-        improve_dispatched_this_iteration=True,
-    )
-
-
-def test_already_dispatched_returns_false_for_until_sleep():
-    """until_sleep + already dispatched this iteration → False."""
-    assert not should_dispatch_improve(
-        improve_mode="until_sleep",
-        slept_once=False,
-        improve_dispatched_this_iteration=True,
-    )
-
-
-def test_dispatched_guard_fires_regardless_of_slept_once():
-    """endless + slept_once=True + already dispatched → False (guard is mode-independent)."""
-    assert not should_dispatch_improve(
-        improve_mode="endless",
-        slept_once=True,
-        improve_dispatched_this_iteration=True,
     )
 
 
@@ -58,20 +26,18 @@ def test_dispatched_guard_fires_regardless_of_slept_once():
 
 
 def test_endless_dispatches_improve_when_idle():
-    """endless + not dispatched → True."""
+    """endless + not slept → True."""
     assert should_dispatch_improve(
         improve_mode="endless",
         slept_once=False,
-        improve_dispatched_this_iteration=False,
     )
 
 
 def test_endless_dispatches_even_after_sleep():
-    """endless + slept_once=True + not dispatched → True (slept_once ignored in endless)."""
+    """endless + slept_once=True → True (slept_once ignored in endless)."""
     assert should_dispatch_improve(
         improve_mode="endless",
         slept_once=True,
-        improve_dispatched_this_iteration=False,
     )
 
 
@@ -79,27 +45,16 @@ def test_endless_dispatches_even_after_sleep():
 
 
 def test_until_sleep_dispatches_before_first_sleep():
-    """until_sleep + not slept yet + not dispatched → True."""
+    """until_sleep + not slept yet → True."""
     assert should_dispatch_improve(
         improve_mode="until_sleep",
         slept_once=False,
-        improve_dispatched_this_iteration=False,
     )
 
 
 def test_until_sleep_returns_false_after_sleep():
-    """until_sleep + slept_once=True + no work → False (backlog cleared post-sleep)."""
+    """until_sleep + slept_once=True → False (backlog cleared post-sleep)."""
     assert not should_dispatch_improve(
         improve_mode="until_sleep",
         slept_once=True,
-        improve_dispatched_this_iteration=False,
-    )
-
-
-def test_until_sleep_slept_and_dispatched_returns_false():
-    """until_sleep + slept + dispatched → False."""
-    assert not should_dispatch_improve(
-        improve_mode="until_sleep",
-        slept_once=True,
-        improve_dispatched_this_iteration=True,
     )

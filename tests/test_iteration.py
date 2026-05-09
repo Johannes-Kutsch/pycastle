@@ -56,7 +56,9 @@ def git_svc():
 @pytest.fixture
 def github_svc():
     svc = MagicMock(spec=GithubService)
-    svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+    svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+    ]
     svc.get_all_open_issues_lightweight.return_value = []
     return svc
 
@@ -141,7 +143,9 @@ def test_run_iteration_returns_done_when_no_open_issues(tmp_path, git_svc, logge
 def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, logger):
     """run_iteration returns AbortedHITL when preflight_phase returns PreflightHITL."""
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+    ]
 
     async def _fake_agent(request: RunRequest):
         return IssueOutput(number=42, labels=["ready-for-human"])
@@ -163,7 +167,9 @@ def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, l
 def test_run_iteration_aborted_hitl_carries_issue_number(tmp_path, git_svc, logger):
     """AbortedHITL must carry the issue number filed by the preflight-issue agent."""
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+    ]
 
     async def _fake_agent(request: RunRequest):
         return IssueOutput(number=99, labels=["ready-for-human"])
@@ -187,7 +193,9 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
 ):
     """run_iteration must return AbortedHITL instead of calling sys.exit on HITL verdict."""
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+    ]
 
     async def _fake_agent(request: RunRequest):
         return IssueOutput(number=7, labels=["ready-for-human"])
@@ -246,7 +254,9 @@ def test_run_iteration_returns_aborted_usage_limit_when_implementer_hits_limit(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=None)
 
     deps = _make_deps(
@@ -264,7 +274,9 @@ def test_run_iteration_aborted_usage_limit_does_not_raise_system_exit(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=None)
 
     deps = _make_deps(
@@ -285,7 +297,9 @@ def test_run_iteration_returns_continue_when_issues_complete_normally(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -303,7 +317,9 @@ def test_run_iteration_returns_continue_when_no_implementers_complete(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         raise PromiseParseError("no <promise>COMPLETE</promise> tag")
 
     deps = _make_deps(
@@ -323,14 +339,18 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
     """run_iteration plans and implements the preflight-fix issue and returns Continue when
     preflight_phase returns PreflightAFK (preflight failure with AFK verdict)."""
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+    ]
     github_svc.get_issue_title.return_value = "Preflight fix"
 
     async def _fake_agent(request: RunRequest):
         if "Pre-Flight Reporter" in request.name:
             return IssueOutput(number=55, labels=["ready-for-agent"])
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 55, "title": "Preflight fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 55, "title": "Preflight fix", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -352,7 +372,9 @@ def test_run_iteration_afk_path_routes_through_planning_then_implements_fix_issu
     """On AFK preflight verdict, run_iteration must invoke the Planner and then
     spawn an Implementer for the filed fix issue."""
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+    ]
     github_svc.get_issue_title.return_value = "Preflight fix"
 
     agent_names: list[str] = []
@@ -362,7 +384,9 @@ def test_run_iteration_afk_path_routes_through_planning_then_implements_fix_issu
         if "Pre-Flight Reporter" in request.name:
             return IssueOutput(number=77, labels=["ready-for-agent"])
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 77, "title": "Preflight fix", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 77, "title": "Preflight fix", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -399,7 +423,9 @@ def test_run_iteration_routes_planning_complete_through_status_display(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Issue A", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Issue A", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -427,7 +453,9 @@ def test_run_iteration_execution_complete_uses_consistent_source(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -460,7 +488,9 @@ def test_run_iteration_routes_hitl_abort_message_through_status_display(
     """run_iteration must route the HITL abort message through status_display.print()."""
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+    ]
 
     async def _fake_agent(request: RunRequest):
         return IssueOutput(number=42, labels=["ready-for-human"])
@@ -489,7 +519,9 @@ def test_run_iteration_routes_no_commits_message_through_status_display(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         raise PromiseParseError("no <promise>COMPLETE</promise> tag")
 
     deps = _make_deps(
@@ -528,7 +560,9 @@ def test_run_iteration_calls_planning_phase_with_two_or_more_open_issues(
     async def _fake_agent(request: RunRequest):
         agent_names.append(request.name)
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 3, "title": "Issue A", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 3, "title": "Issue A", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -553,14 +587,18 @@ def test_run_iteration_calls_planning_phase_with_one_open_issue(
     """With exactly one open issue and passing preflight, run_iteration must invoke
     the Planner (planning_phase) before implement_phase."""
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 7, "title": "Single issue", "body": "", "comments": []}]
+    github_svc.get_open_issues.return_value = [
+        {"number": 7, "title": "Single issue", "body": "", "comments": []}
+    ]
 
     agent_names: list[str] = []
 
     async def _fake_agent(request: RunRequest):
         agent_names.append(request.name)
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 7, "title": "Single issue", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 7, "title": "Single issue", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -607,16 +645,68 @@ def test_run_iteration_returns_done_when_all_issues_blocked(tmp_path, git_svc, l
     assert isinstance(result, Done)
 
 
-def test_run_iteration_dispatches_improve_when_all_issues_blocked_in_endless_mode(
+def test_run_iteration_all_blocked_ends_iteration_without_improve(
     tmp_path, git_svc, logger
 ):
-    """When AllBlocked in endless improve_mode, run_iteration dispatches improve and returns Continue."""
+    """When planning_phase returns AllBlocked, the iteration ends with Done even in endless
+    improve_mode — there is no within-iteration improve fallback from the AllBlocked path."""
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Issue A", "body": "", "comments": []}]
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Issue A", "body": "", "comments": []}
+    ]
+
+    improve_dispatched = False
+
+    async def _fake_agent(request: RunRequest):
+        nonlocal improve_dispatched
+        if request.name == "Plan Agent":
+            return _plan_output([])
+        # Any other agent call in this iteration would be the improve agent
+        improve_dispatched = True
+        return CompletionOutput()
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(),
+            preflight_responses=[[]],
+        ),
+        improve_mode="endless",
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Done)
+    assert not improve_dispatched, (
+        "improve must not be dispatched from the AllBlocked path"
+    )
+
+
+def test_run_iteration_improve_chains_into_planning_on_success(
+    tmp_path, git_svc, logger
+):
+    """When dispatcher returns DispatchImprove and improve succeeds (filed issues),
+    run_iteration re-fetches open issues and chains into planning, then implement.
+    Outcome is Continue."""
+    filed_issue = {
+        "number": 5,
+        "title": "Improve: refactor X",
+        "body": "",
+        "comments": [],
+    }
+
+    github_svc = MagicMock(spec=GithubService)
+    # First call (from preflight): no ready-for-agent issues → improve triggers
+    # Second call (re-fetch after improve): one new issue filed by improve
+    github_svc.get_open_issues.side_effect = [[], [filed_issue]]
+    github_svc.get_all_open_issues_lightweight.return_value = []
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([])
+            return _plan_output([filed_issue])
         return CompletionOutput()
 
     deps = dataclasses.replace(
@@ -634,6 +724,9 @@ def test_run_iteration_dispatches_improve_when_all_issues_blocked_in_endless_mod
     result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, Continue)
+    assert github_svc.get_open_issues.call_count == 2, (
+        "open issues must be re-fetched after improve before planning"
+    )
 
 
 # ── work_body ─────────────────────────────────────────────────────────────────
@@ -716,7 +809,9 @@ def test_run_iteration_preflight_row_removed_even_if_preflight_raises(tmp_path, 
     git_svc.get_head_sha.return_value = "abc123"
 
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+    ]
 
     deps = _make_deps(
         tmp_path,
@@ -771,7 +866,9 @@ def test_run_iteration_implement_row_removed_on_usage_limit(
 
     async def _usage_limit(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         raise UsageLimitError(reset_time=None)
 
     deps = _make_deps(
@@ -796,7 +893,9 @@ def test_run_iteration_registers_preflight_row_before_preflight_phase(
 
     async def _noop_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -834,7 +933,9 @@ def test_run_iteration_registers_preflight_row_with_running_phase(
 
     async def _noop_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -863,7 +964,9 @@ def test_run_iteration_registers_plan_row_with_planning_phase(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Issue A", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Issue A", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -898,7 +1001,9 @@ def test_run_iteration_plan_row_startup_message_uses_configured_issue_label(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Issue A", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Issue A", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -929,7 +1034,9 @@ def test_run_iteration_registers_implement_row_with_running_phase(
 
     async def _noop_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -1050,7 +1157,9 @@ def test_run_iteration_uses_preflight_sha_for_in_flight_issues(
     """When in-flight issues are used, the implement phase receives the preflight SHA
     unchanged — the in-flight path must not re-pin the SHA from a plan-sandbox."""
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 7, "title": "In flight", "body": "", "comments": []}]
+    github_svc.get_open_issues.return_value = [
+        {"number": 7, "title": "In flight", "body": "", "comments": []}
+    ]
     git_svc.verify_ref_exists.return_value = True
     git_svc.get_head_sha.return_value = "preflight-sha-abc"
 
@@ -1123,7 +1232,9 @@ def test_run_iteration_plan_close_message_contains_issue_details(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 3, "title": "Issue A", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 3, "title": "Issue A", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -1151,7 +1262,9 @@ def test_run_iteration_implement_close_message_success_format(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -1182,7 +1295,9 @@ def test_run_iteration_no_commits_close_uses_warning_style(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         raise PromiseParseError("no promise tag")
 
     deps = _make_deps(
@@ -1214,7 +1329,9 @@ def test_run_iteration_preflight_failure_errors_use_implement_caller(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         return PF(failures=(("ruff", "ruff check .", "E501"),))
 
     deps = _make_deps(
@@ -1245,7 +1362,9 @@ def test_run_iteration_generic_error_uses_implement_caller(
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            return _plan_output([{"number": 1, "title": "Fix bug", "body": "", "comments": []}])
+            return _plan_output(
+                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+            )
         raise PromiseParseError("bad output")
 
     deps = _make_deps(
@@ -1270,7 +1389,9 @@ def test_run_iteration_hitl_message_uses_preflight_caller(tmp_path, git_svc, log
     """'Preflight issue requires human intervention' must be printed with caller='Preflight'."""
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+    ]
 
     async def _fake_agent(request: RunRequest):
         return IssueOutput(number=42, labels=["ready-for-human"])
@@ -1685,7 +1806,9 @@ def test_run_iteration_returns_aborted_usage_limit_for_each_single_agent_phase(
     github_svc = MagicMock(spec=GithubService)
 
     if phase == "preflight":
-        github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+        github_svc.get_open_issues.return_value = [
+            {"number": 1, "title": "Fix", "body": "", "comments": []}
+        ]
 
         async def agent_fn(req: RunRequest):
             raise UsageLimitError(reset_time=reset_time)
@@ -1699,7 +1822,9 @@ def test_run_iteration_returns_aborted_usage_limit_for_each_single_agent_phase(
             preflight_responses=[(("ruff", "ruff check .", "E501"),)],
         )
     elif phase == "plan":
-        github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+        github_svc.get_open_issues.return_value = [
+            {"number": 1, "title": "Fix", "body": "", "comments": []}
+        ]
 
         async def agent_fn(req: RunRequest):
             raise UsageLimitError(reset_time=reset_time)
@@ -1730,12 +1855,16 @@ def test_run_iteration_returns_aborted_usage_limit_for_each_single_agent_phase(
             improve_mode="endless",
         )
     else:  # merge
-        github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+        github_svc.get_open_issues.return_value = [
+            {"number": 1, "title": "Fix", "body": "", "comments": []}
+        ]
         git_svc.try_merge.return_value = False  # force conflict path → Merge Agent
 
         async def agent_fn(req: RunRequest):
             if req.name == "Plan Agent":
-                return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+                return _plan_output(
+                    [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                )
             if req.name == "Merge Agent":
                 raise UsageLimitError(reset_time=reset_time)
             return CompletionOutput()
@@ -1762,7 +1891,9 @@ def test_phase_row_paints_interrupted_style_on_usage_limit(tmp_path, git_svc, lo
 
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix", "body": "", "comments": []}
+    ]
     reset_time = datetime(2026, 5, 8, 16, 0)
 
     async def agent_fn(req: RunRequest):
