@@ -622,3 +622,29 @@ def test_describe_config_layers_uses_appdata_form_on_windows(tmp_path, monkeypat
     summary = describe_config_layers(repo_root=tmp_path, global_dir=global_dir)
 
     assert summary == r"Config: defaults + %APPDATA%\pycastle\config.py"
+
+
+# ── Issue 613: improve_override defaults to opus/high ─────────────────────
+
+
+def test_config_improve_override_default_is_opus_high():
+    cfg = Config()
+    assert cfg.improve_override.model == "opus"
+    assert cfg.improve_override.effort == "high"
+
+
+def test_load_config_improve_override_default_is_opus_high(tmp_path):
+    cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
+    assert cfg.improve_override.model == "opus"
+    assert cfg.improve_override.effort == "high"
+
+
+def test_load_config_project_improve_override_takes_precedence(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pycastle import StageOverride\n"
+        'improve_override = StageOverride(model="sonnet", effort="medium")\n'
+    )
+    cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
+    assert cfg.improve_override.model == "sonnet"
+    assert cfg.improve_override.effort == "medium"

@@ -86,7 +86,9 @@ class Config:
     preflight_issue_override: StageOverride = dataclasses.field(
         default_factory=StageOverride
     )
-    improve_override: StageOverride = dataclasses.field(default_factory=StageOverride)
+    improve_override: StageOverride = dataclasses.field(
+        default_factory=lambda: StageOverride(model="opus", effort="high")
+    )
     diagnose_on_failure: bool = True
 
 
