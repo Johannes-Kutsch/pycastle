@@ -87,12 +87,18 @@ class CommitMessageOutput:
     message: str | None
 
 
+@dataclasses.dataclass(frozen=True)
+class FailedOutput:
+    pass
+
+
 AgentOutput: TypeAlias = (
     PlannerOutput
     | IssueOutput
     | CompletionOutput
     | NoCandidateOutput
     | CommitMessageOutput
+    | FailedOutput
 )
 
 
@@ -386,11 +392,15 @@ class _PreflightIssueHandler:
 
 class _MergerHandler:
     def on_turn(self, turn: str) -> AgentOutput | None:
+        if re.search(r"<promise>FAILED</promise>", turn):
+            return FailedOutput()
         if re.search(r"<promise>COMPLETE</promise>", turn):
             return CompletionOutput()
         return None
 
     def on_end(self, text: str, tail: str) -> AgentOutput:
+        if re.search(r"<promise>FAILED</promise>", text):
+            return FailedOutput()
         if not re.search(r"<promise>COMPLETE</promise>", text):
             raise PromiseParseError(
                 f"Agent produced no <promise>COMPLETE</promise> tag.{tail}"
@@ -400,6 +410,8 @@ class _MergerHandler:
 
 class _ImproveHandler:
     def on_turn(self, turn: str) -> AgentOutput | None:
+        if re.search(r"<promise>FAILED</promise>", turn):
+            return FailedOutput()
         if re.search(r"<promise>NO-CANDIDATE</promise>", turn):
             return NoCandidateOutput()
         if re.search(r"<promise>COMPLETE</promise>", turn):
@@ -407,6 +419,8 @@ class _ImproveHandler:
         return None
 
     def on_end(self, text: str, tail: str) -> AgentOutput:
+        if re.search(r"<promise>FAILED</promise>", text):
+            return FailedOutput()
         if re.search(r"<promise>NO-CANDIDATE</promise>", text):
             return NoCandidateOutput()
         if not re.search(r"<promise>COMPLETE</promise>", text):
