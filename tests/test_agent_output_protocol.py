@@ -105,6 +105,17 @@ def test_planner_output_stores_issues():
     assert out.issues == issues
 
 
+def test_planner_output_stores_blocked():
+    blocked = [{"number": 5, "blocked_by": 3, "reason": "depends on fix"}]
+    out = PlannerOutput(issues=[], blocked=blocked)
+    assert out.blocked == blocked
+
+
+def test_planner_output_blocked_defaults_to_empty_list():
+    out = PlannerOutput(issues=[])
+    assert out.blocked == []
+
+
 def test_planner_output_is_frozen():
     out = PlannerOutput(issues=[])
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -172,6 +183,40 @@ def test_process_stream_planner_returns_planner_output():
     result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
     assert isinstance(result, PlannerOutput)
     assert result.issues == [{"number": 1, "title": "Fix bug"}]
+
+
+def test_process_stream_planner_extracts_blocked_when_present():
+    payload = json.dumps(
+        {
+            "issues": [{"number": 2, "title": "B"}],
+            "blocked": [{"number": 5, "blocked_by": 3, "reason": "needs fix first"}],
+        }
+    )
+    lines = [_result_line(f"<plan>{payload}</plan>")]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.blocked == [
+        {"number": 5, "blocked_by": 3, "reason": "needs fix first"}
+    ]
+
+
+def test_process_stream_planner_defaults_blocked_to_empty_when_absent():
+    lines = [_result_line('<plan>{"issues": [{"number": 1, "title": "A"}]}</plan>')]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.blocked == []
+
+
+def test_process_stream_planner_raises_plan_parse_error_for_malformed_blocked():
+    payload = json.dumps(
+        {
+            "issues": [],
+            "blocked": [{"number": 5}],  # missing blocked_by and reason
+        }
+    )
+    lines = [_result_line(f"<plan>{payload}</plan>")]
+    with pytest.raises(PlanParseError, match="blocked"):
+        process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
 
 
 def test_process_stream_preflight_issue_returns_issue_output():
