@@ -5,32 +5,8 @@ ImproveMode: TypeAlias = Literal["until_sleep", "endless"] | None
 
 
 @dataclasses.dataclass(frozen=True)
-class RunPlan:
-    pass
-
-
-@dataclasses.dataclass(frozen=True)
-class RunImplementDirect:
-    pass
-
-
-@dataclasses.dataclass(frozen=True)
 class Done:
     pass
-
-
-IterationAction: TypeAlias = RunPlan | RunImplementDirect | Done
-
-
-def decide_iteration_action(
-    open_afk_count: int,
-    in_flight_count: int,
-) -> IterationAction:
-    if in_flight_count > 0:
-        return RunImplementDirect()
-    if open_afk_count >= 1:
-        return RunPlan()
-    return Done()
 
 
 def should_dispatch_improve(
