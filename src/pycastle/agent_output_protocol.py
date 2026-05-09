@@ -59,6 +59,7 @@ class AgentRole(enum.Enum):
 @dataclasses.dataclass(frozen=True)
 class PlannerOutput:
     issues: list[dict]
+    blocked: list[dict] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -134,13 +135,26 @@ def _extract_planner_output(text: str) -> PlannerOutput:
             f"Plan JSON has no 'unblocked_issues' or 'issues' key. Keys found: {list(data.keys())}"
         )
     try:
-        return PlannerOutput(
-            issues=[{"number": i["number"], "title": i["title"]} for i in raw]
-        )
+        issues = [{"number": i["number"], "title": i["title"]} for i in raw]
     except (KeyError, TypeError) as exc:
         raise PlanParseError(
             f"Plan JSON issues list has unexpected structure: {exc}"
         ) from exc
+    raw_blocked = data.get("blocked", [])
+    try:
+        blocked = [
+            {
+                "number": b["number"],
+                "blocked_by": b["blocked_by"],
+                "reason": b["reason"],
+            }
+            for b in raw_blocked
+        ]
+    except (KeyError, TypeError) as exc:
+        raise PlanParseError(
+            f"Plan JSON blocked list has unexpected structure: {exc}"
+        ) from exc
+    return PlannerOutput(issues=issues, blocked=blocked)
 
 
 def _extract_issue_output(text: str) -> IssueOutput:
