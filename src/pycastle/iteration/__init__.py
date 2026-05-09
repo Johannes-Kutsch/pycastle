@@ -110,14 +110,15 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                             f"  #{b['number']} blocked by #{b['blocked_by']}: {b['reason']}"
                             for b in plan_result.blocked
                         ]
-                        row.close(
-                            "\n".join(
-                                ["All ready-for-agent issues are blocked:"]
-                                + blocked_lines
+                        if blocked_lines:
+                            row.close(
+                                "\n".join(
+                                    ["All ready-for-agent issues are blocked:"]
+                                    + blocked_lines
+                                )
                             )
-                            if blocked_lines
-                            else "All ready-for-agent issues are blocked."
-                        )
+                        else:
+                            row.close("All ready-for-agent issues are blocked.")
                         return Continue()
                     issue_lines = [
                         f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
