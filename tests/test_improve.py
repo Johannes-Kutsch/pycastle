@@ -17,8 +17,6 @@ from pycastle.config import Config
 from pycastle.iteration._deps import FakeAgentRunner, _make_deps
 from pycastle.iteration.improve import (
     IMPROVE_SANDBOX,
-    _phase_id,
-    _read_progress,
     improve_phase,
     next_prompt,
 )
@@ -107,54 +105,6 @@ def test_next_prompt_returns_none_after_report():
 def test_next_prompt_returns_none_for_unknown_id():
     """Unrecognised phase ID maps to terminal (fail-soft)."""
     assert next_prompt("bogus-phase", no_candidate_report=True) is None
-
-
-# ── _phase_id: output → completed phase ID ───────────────────────────────────
-
-
-def test_phase_id_scan_with_completion():
-    assert _phase_id("01-scan.md", CompletionOutput()) == "01-scan:picked"
-
-
-def test_phase_id_scan_with_no_candidate():
-    assert _phase_id("01-scan.md", NoCandidateOutput()) == "01-scan:no-candidate"
-
-
-def test_phase_id_prd():
-    assert _phase_id("02-prd.md", CompletionOutput()) == "02-prd"
-
-
-def test_phase_id_issues():
-    assert _phase_id("03-issues.md", CompletionOutput()) == "03-issues"
-
-
-def test_phase_id_report():
-    assert _phase_id("04-no-candidate-report.md", CompletionOutput()) == "04-report"
-
-
-# ── _read_progress: phase progress file I/O ─────────────────────────────────
-
-
-def test_read_progress_returns_none_for_missing_file(tmp_path):
-    assert _read_progress(tmp_path / "nonexistent") is None
-
-
-def test_read_progress_returns_content(tmp_path):
-    f = tmp_path / "_phase_progress"
-    f.write_text("01-scan:picked", encoding="utf-8")
-    assert _read_progress(f) == "01-scan:picked"
-
-
-def test_read_progress_trims_whitespace(tmp_path):
-    f = tmp_path / "_phase_progress"
-    f.write_text("  02-prd\n", encoding="utf-8")
-    assert _read_progress(f) == "02-prd"
-
-
-def test_read_progress_returns_none_for_empty_file(tmp_path):
-    f = tmp_path / "_phase_progress"
-    f.write_text("", encoding="utf-8")
-    assert _read_progress(f) is None
 
 
 # ── improve_phase: integration behavior ──────────────────────────────────────
