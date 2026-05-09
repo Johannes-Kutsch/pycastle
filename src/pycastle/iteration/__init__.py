@@ -119,7 +119,17 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                             )
                         else:
                             row.close("All ready-for-agent issues are blocked.")
-                        return Continue()
+                        fallback = decide_iteration_action(
+                            open_afk_count=0,
+                            in_flight_count=0,
+                            improve_mode=deps.improve_mode,
+                            slept_once=deps.slept_once,
+                            improve_dispatched_this_iteration=deps.improve_dispatched_this_iteration,
+                        )
+                        if isinstance(fallback, DispatchImprove):
+                            await improve_phase(deps, sha=preflight_sha)
+                            return Continue()
+                        return Done()
                     issue_lines = [
                         f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
                         for i in plan_result.issues

@@ -576,11 +576,9 @@ def test_run_iteration_calls_planning_phase_with_one_open_issue(
     )
 
 
-def test_run_iteration_returns_continue_when_planning_phase_selects_no_issues(
-    tmp_path, git_svc, logger
-):
-    """When planning_phase returns zero issues (Planner picks none), run_iteration
-    produces no commits and returns Continue."""
+def test_run_iteration_returns_done_when_all_issues_blocked(tmp_path, git_svc, logger):
+    """When planning_phase returns AllBlocked (Planner selects zero issues), run_iteration
+    returns Done (no improve_mode)."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
         {"number": 1, "title": "Issue A"},
@@ -599,6 +597,35 @@ def test_run_iteration_returns_continue_when_planning_phase_selects_no_issues(
         github_svc=github_svc,
         logger=logger,
         preflight_responses=[[]],
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Done)
+
+
+def test_run_iteration_dispatches_improve_when_all_issues_blocked_in_endless_mode(
+    tmp_path, git_svc, logger
+):
+    """When AllBlocked in endless improve_mode, run_iteration dispatches improve and returns Continue."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [{"number": 1, "title": "Issue A"}]
+
+    async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([])
+        return CompletionOutput()
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(),
+            preflight_responses=[[]],
+        ),
+        improve_mode="endless",
     )
     result = asyncio.run(run_iteration(deps))
 
@@ -1267,7 +1294,7 @@ def test_run_iteration_hitl_message_uses_preflight_caller(tmp_path, git_svc, log
 
 
 def test_run_iteration_plan_close_message_when_all_blocked(tmp_path, git_svc, logger):
-    """When the planner returns no issues (all blocked), Plan row closes with an all-blocked message."""
+    """When the planner returns no issues (AllBlocked), Plan row closes with the all-blocked message."""
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
