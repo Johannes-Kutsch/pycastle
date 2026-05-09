@@ -219,6 +219,23 @@ def test_process_stream_planner_raises_plan_parse_error_for_malformed_blocked():
         process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
 
 
+def test_process_stream_planner_handles_json_wrapped_in_markdown_code_fence():
+    payload = json.dumps({"issues": [{"number": 1, "title": "Fix bug"}]})
+    fenced = f" ```json\n{payload}\n```"
+    lines = [_result_line(f"<plan>{fenced}</plan>")]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == [{"number": 1, "title": "Fix bug"}]
+
+
+def test_process_stream_planner_handles_json_with_leading_and_trailing_whitespace():
+    payload = json.dumps({"issues": [{"number": 2, "title": "A"}]})
+    lines = [_result_line(f"<plan>\n  {payload}\n</plan>")]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == [{"number": 2, "title": "A"}]
+
+
 def test_process_stream_preflight_issue_returns_issue_output():
     lines = [
         _result_line(

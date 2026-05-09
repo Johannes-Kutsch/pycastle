@@ -112,12 +112,20 @@ class PromiseParseError(AgentOutputProtocolError):
     pass
 
 
+def _strip_markdown_fence(s: str) -> str:
+    s = s.strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[^\n]*\n?", "", s)
+        s = re.sub(r"\n?```\s*$", "", s)
+    return s.strip()
+
+
 def _extract_planner_output(text: str) -> PlannerOutput:
     match = re.search(r"<plan>([\s\S]*?)</plan>", text)
     if not match:
         raise PlanParseError("Planner produced no <plan> tag.")
     try:
-        data = json.loads(match.group(1))
+        data = json.loads(_strip_markdown_fence(match.group(1)))
     except json.JSONDecodeError as exc:
         raise PlanParseError(
             f"Planner produced malformed JSON inside <plan> tag: {exc}"
