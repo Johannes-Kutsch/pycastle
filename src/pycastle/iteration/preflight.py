@@ -10,6 +10,7 @@ from ..agent_output_protocol import (
 )
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..errors import PycastleError
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..status_display import StatusDisplay
@@ -54,13 +55,7 @@ class PreflightHITL:
     issue_number: int
 
 
-@dataclasses.dataclass(frozen=True)
-class PreflightAFK:
-    worktree_sha: str
-    issues: list[dict]
-
-
-PreflightResult: TypeAlias = PreflightReady | PreflightHITL | PreflightAFK
+PreflightResult: TypeAlias = PreflightReady | PreflightHITL
 
 
 async def handle_preflight_failure(
@@ -131,9 +126,8 @@ async def preflight_phase(
                 raise RuntimeError(str(parse_exc)) from parse_exc
             if verdict == "hitl":
                 return PreflightHITL(worktree_sha=sha, issue_number=pf_num)
-            pf_title = deps.github_svc.get_issue_title(pf_num)
-            return PreflightAFK(
-                worktree_sha=sha, issues=[{"number": pf_num, "title": pf_title}]
+            raise PycastleError(
+                f"Preflight check failed; fix issue #{pf_num} filed for triage."
             )
 
         return PreflightReady(sha=sha)

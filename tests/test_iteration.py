@@ -355,14 +355,14 @@ def test_run_iteration_returns_continue_when_no_implementers_complete(
     assert isinstance(result, Continue)
 
 
-# ── PreflightAFK: preflight failure with AFK verdict ─────────────────────────
+# ── Preflight: AFK verdict ────────────────────────────────────────────────────
 
 
 def test_run_iteration_returns_continue_on_afk_preflight_verdict(
     tmp_path, git_svc, logger
 ):
-    """run_iteration plans and implements the preflight-fix issue and returns Continue when
-    preflight_phase returns PreflightAFK (preflight failure with AFK verdict)."""
+    """run_iteration returns Continue when preflight fails with an AFK verdict
+    (preflight reporter filed a fix issue; next iteration picks it up)."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
         {"number": 1, "title": "Fix bug", "body": "", "comments": []}
@@ -389,47 +389,6 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
     result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, Continue)
-
-
-def test_run_iteration_afk_path_routes_through_planning_then_implements_fix_issue(
-    tmp_path, git_svc, logger
-):
-    """On AFK preflight verdict, run_iteration must invoke the Planner and then
-    spawn an Implementer for the filed fix issue."""
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
-    ]
-    github_svc.get_issue_title.return_value = "Preflight fix"
-
-    agent_names: list[str] = []
-
-    async def _fake_agent(request: RunRequest):
-        agent_names.append(request.name)
-        if "Pre-Flight Reporter" in request.name:
-            return IssueOutput(number=77, labels=["ready-for-agent"])
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 77, "title": "Preflight fix", "body": "", "comments": []}]
-            )
-        return CompletionOutput()
-
-    deps = _make_deps(
-        tmp_path,
-        _fake_agent,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        logger=logger,
-        preflight_responses=[(("mypy", "mypy .", "error"),)],
-    )
-    asyncio.run(run_iteration(deps))
-
-    implementer_calls = [n for n in agent_names if "Implement Agent" in n]
-    assert "Plan Agent" in agent_names, (
-        "Plan Agent must be called on AFK preflight path"
-    )
-    assert len(implementer_calls) == 1, "Exactly one Implement Agent for the fix issue"
-    assert implementer_calls[0] == "Implement Agent #77"
 
 
 # ── StatusDisplay routing ──────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ from typing import TypeAlias
 from ..agent_output_protocol import AgentRole, IssueOutput
 from ..agent_result import CancellationToken
 from ..agent_runner import RunRequest
-from ..errors import AgentFailedError, UsageLimitError
+from ..errors import AgentFailedError, PycastleError, UsageLimitError
 from ..prompt_pipeline import PromptTemplate
 from ..worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
@@ -21,9 +21,7 @@ from .planning import AllBlocked as AllBlocked
 from .planning import PlanReady as PlanReady
 from .planning import hydrate_planned_issues, planning_phase
 from .preflight import (
-    PreflightAFK,
     PreflightHITL,
-    PreflightReady,
     preflight_phase,
     strip_stale_blocker_refs,
 )
@@ -97,14 +95,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             )
             return AbortedHITL(issue_number=preflight_result.issue_number)
 
-        preflight_sha = (
-            preflight_result.sha
-            if isinstance(preflight_result, PreflightReady)
-            else preflight_result.worktree_sha
-        )
-        if isinstance(preflight_result, PreflightAFK):
-            open_issues = preflight_result.issues
-            all_open_issues = list(open_issues)
+        preflight_sha = preflight_result.sha
         in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
 
         # ── (Improve) — runs when idle: no AFK issues, no in-flight ─────────
@@ -232,3 +223,5 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
     except UsageLimitError as err:
         return AbortedUsageLimit(reset_time=err.reset_time)
+    except PycastleError:
+        return Continue()

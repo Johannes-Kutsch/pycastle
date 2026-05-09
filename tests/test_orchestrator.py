@@ -215,44 +215,6 @@ def test_run_computes_branch_from_issue_number_not_planner_slug(tmp_path):
     )
 
 
-def test_preflight_issue_branch_uses_pycastle_format(tmp_path):
-    """A preflight fix issue must use branch pycastle/issue-N, not issue/N."""
-    captured_branches: list[str] = []
-
-    async def _fake_run_agent(request: RunRequest):
-        if "Pre-Flight Reporter" in request.name:
-            return IssueOutput(number=77, labels=["ready-for-agent"])
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [
-                    {
-                        "number": 77,
-                        "title": "Preflight fix title",
-                        "body": "",
-                        "comments": [],
-                    }
-                ]
-            )
-        if "Implement Agent" in request.name:
-            captured_branches.append((request.scope_args or {}).get("BRANCH", ""))
-            return CompletionOutput()
-        return CompletionOutput()
-
-    _run(
-        tmp_path,
-        agent_runner=FakeAgentRunner(
-            side_effect=_fake_run_agent,
-            preflight_responses=[(("ruff", "ruff check .", "E501"),)],
-        ),
-        git_service=_make_git_svc(try_merge_side_effect=[True]),
-        github_service=_make_github_svc_afk(),
-    )
-
-    assert captured_branches == ["pycastle/issue-77"], (
-        f"Expected pycastle/issue-77; got {captured_branches}"
-    )
-
-
 # ── Cycle 24-B1: prune_orphan_worktrees deletes orphan dirs ──────────────────
 
 
@@ -1196,49 +1158,6 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
 
 
 # ── Issue-176: preflight failure handling and HITL routing ────────────────────
-
-
-def test_preflight_failure_afk_routes_through_planning_then_one_implementer(tmp_path):
-    """On plan-sandbox preflight failure with AFK verdict, the Planner must be called
-    and exactly one Implementer must be spawned for the preflight issue."""
-    agent_names: list[str] = []
-
-    async def _fake_run_agent(request: RunRequest):
-        agent_names.append(request.name)
-        if "Pre-Flight Reporter" in request.name:
-            return IssueOutput(number=42, labels=["ready-for-agent"])
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [
-                    {
-                        "number": 42,
-                        "title": "Preflight fix title",
-                        "body": "",
-                        "comments": [],
-                    }
-                ]
-            )
-        if "Implement Agent" in request.name:
-            return CompletionOutput()
-        return CompletionOutput()
-
-    _run(
-        tmp_path,
-        agent_runner=FakeAgentRunner(
-            side_effect=_fake_run_agent,
-            preflight_responses=[(("ruff", "ruff check .", "E501 line too long"),)],
-        ),
-        git_service=_make_git_svc(try_merge_side_effect=[True]),
-        github_service=_make_github_svc_afk(),
-    )
-
-    implementer_calls = [n for n in agent_names if "Implement Agent" in n]
-    assert "Plan Agent" in agent_names, (
-        "Plan Agent must be called on AFK preflight path"
-    )
-    assert len(implementer_calls) == 1, (
-        f"Exactly one Implement Agent must be spawned for the preflight fix; got {implementer_calls}"
-    )
 
 
 def test_preflight_failure_hitl_exits_nonzero_no_implementer(tmp_path):
