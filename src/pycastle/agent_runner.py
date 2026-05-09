@@ -1,6 +1,8 @@
+import asyncio
 import dataclasses
 import shutil
 import traceback
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -102,6 +104,27 @@ class AgentRunner:
             picked_token,
         )
 
+    async def _build_prompt(
+        self,
+        template: PromptTemplate,
+        scope_args: dict[str, str],
+        container_exec: Callable[[str], Coroutine[Any, Any, str]],
+        run_kind: RunKind,
+        is_failsoft_recovery: bool,
+        send_role_prompt_on_resume: bool,
+    ) -> str:
+        if run_kind == RunKind.RESUME and not send_role_prompt_on_resume:
+            return await self._renderer.render(
+                PromptTemplate.RESUME, {}, container_exec
+            )
+        role_prompt = await self._renderer.render(template, scope_args, container_exec)
+        if not is_failsoft_recovery:
+            return role_prompt
+        resume_text = await self._renderer.render(
+            PromptTemplate.RESUME, {}, container_exec
+        )
+        return resume_text + "\n\n" + role_prompt
+
     async def run(self, request: RunRequest) -> AgentOutput | PreflightFailure:
         from .iteration._rows import agent_row
 
@@ -159,18 +182,27 @@ class AgentRunner:
                     shutil.rmtree(role_session_dir, ignore_errors=True)
                     role_session_dir.mkdir(parents=True, exist_ok=True)
 
+                loop = asyncio.get_running_loop()
+
+                async def container_exec(cmd: str) -> str:
+                    return await loop.run_in_executor(None, session.exec_simple, cmd)
+
                 retries_left = self._cfg.timeout_retries
                 while True:
                     try:
-                        return await runner.work(
-                            role,
+                        prompt = await self._build_prompt(
                             template,
                             scope_args,
-                            self._renderer,
+                            container_exec,
                             run_kind=run_kind,
-                            session_uuid=session_uuid,
                             is_failsoft_recovery=is_failsoft_recovery,
                             send_role_prompt_on_resume=request.send_role_prompt_on_resume,
+                        )
+                        return await runner.work(
+                            role,
+                            prompt,
+                            run_kind=run_kind,
+                            session_uuid=session_uuid,
                         )
                     except AgentTimeoutError:
                         if retries_left <= 0:
