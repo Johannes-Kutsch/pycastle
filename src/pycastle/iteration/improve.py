@@ -130,7 +130,7 @@ def _build_issues_scope_args(
 
 
 async def improve_phase(deps: _ImproveDeps, *, sha: str) -> bool:
-    is_no_candidate = False
+    """Run the improve pipeline. Returns True if the no-candidate path was taken."""
     async with phase_row(
         deps.status_display, "Improve", initial_phase="Running"
     ) as row:
@@ -220,8 +220,8 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> bool:
                     no_candidate_report=deps.cfg.improve_no_candidate_report,
                 )
 
-            is_no_candidate = last_id in {"01-scan:no-candidate", "04-report"}
+            no_candidate = last_id in {"01-scan:no-candidate", "04-report"}
             shutil.rmtree(role_session_dir, ignore_errors=True)
 
         row.close("finished")
-    return is_no_candidate
+    return no_candidate

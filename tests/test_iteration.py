@@ -1536,8 +1536,6 @@ def test_run_iteration_returns_no_candidate_when_report_disabled(
     tmp_path, git_svc, logger
 ):
     """endless + NO-CANDIDATE + report disabled → NoCandidate (scan terminates immediately)."""
-    import dataclasses as _dc
-
     base = _make_improve_deps(
         tmp_path,
         git_svc,
@@ -1546,7 +1544,7 @@ def test_run_iteration_returns_no_candidate_when_report_disabled(
         slept_once=False,
         agent_responses=[NoCandidateOutput()],
     )
-    deps = _dc.replace(
+    deps = dataclasses.replace(
         base,
         cfg=dataclasses.replace(base.cfg, improve_no_candidate_report=False),
     )
