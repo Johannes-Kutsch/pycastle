@@ -15,6 +15,7 @@ from .iteration import (
     AbortedUsageLimit,
     Continue,
     Done,
+    NoCandidate,
     run_iteration,
 )
 from .iteration._deps import Deps as IterationDeps
@@ -206,6 +207,12 @@ async def run(
                     status_display.print(  # type: ignore[union-attr]
                         "",
                         f"No issues with label '{cfg.issue_label}' found. Skipping.",
+                    )
+                    break
+                case NoCandidate():
+                    status_display.print(  # type: ignore[union-attr]
+                        "",
+                        "No improvement candidate found.",
                     )
                     break
                 case AbortedHITL():
