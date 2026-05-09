@@ -200,15 +200,19 @@ class AgentRunner:
                             send_role_prompt_on_resume=request.send_role_prompt_on_resume,
                         )
 
-                        async def _work_factory(
-                            reprompt: str | None,
-                            _prompt: str = prompt,
-                            _run_kind: RunKind = run_kind,
-                        ) -> AgentOutput:
-                            p = _prompt if reprompt is None else reprompt
-                            rk = _run_kind if reprompt is None else RunKind.RESUME
+                        async def _work_factory(reprompt: str | None) -> AgentOutput:
+                            if reprompt is None:
+                                return await runner.work(
+                                    role,
+                                    prompt,
+                                    run_kind=run_kind,
+                                    session_uuid=session_uuid,
+                                )
                             return await runner.work(
-                                role, p, run_kind=rk, session_uuid=session_uuid
+                                role,
+                                reprompt,
+                                run_kind=RunKind.RESUME,
+                                session_uuid=session_uuid,
                             )
 
                         return await run_with_reprompt(
