@@ -204,7 +204,7 @@ def test_improve_phase_one_invocation_when_no_candidate_report_disabled(
 ):
     """NO-CANDIDATE with report disabled terminates after one call."""
     runner = FakeAgentRunner([NoCandidateOutput()])
-    cfg = dataclasses.replace(Config(), improve_no_candidate_report=False)
+    cfg = dataclasses.replace(Config(), diagnose_on_failure=False)
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, cfg=cfg)
     _run(deps)
     assert len(runner.calls) == 1
@@ -591,7 +591,7 @@ def test_improve_resumes_correctly_with_whitespace_padded_progress(tmp_path, git
 
 def test_improve_phases_01_02_04_use_main_namespace(tmp_path, git_svc):
     """Phases 01-scan, 02-prd, and 04-no-candidate-report must use session_namespace='main'."""
-    no_candidate_cfg = Config(logs_dir=tmp_path, improve_no_candidate_report=True)
+    no_candidate_cfg = Config(logs_dir=tmp_path, diagnose_on_failure=True)
     runner = FakeAgentRunner(
         [NoCandidateOutput(), CompletionOutput()]  # 01-scan NO-CANDIDATE → 04-report
     )

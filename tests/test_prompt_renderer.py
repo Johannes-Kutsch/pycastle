@@ -109,7 +109,7 @@ def test_scopes_are_distinct_members():
     # Regression: empty-frozenset values were aliased by Enum, collapsing
     # IMPROVE_SCAN and RESUME into a single member.
     assert Scope.IMPROVE_SCAN is not Scope.RESUME
-    assert len(list(Scope)) == 8
+    assert len(list(Scope)) == 9
 
 
 # ── PromptTemplate enum has correct filename and scope ────────────────────────
@@ -155,8 +155,8 @@ def test_template_resume_has_correct_scope():
     assert PromptTemplate.RESUME.scope == Scope.RESUME
 
 
-def test_template_enum_has_ten_variants():
-    assert len(list(PromptTemplate)) == 10
+def test_template_enum_has_eleven_variants():
+    assert len(list(PromptTemplate)) == 11
 
 
 # ── Ctor validates: unknown token raises ─────────────────────────────────────

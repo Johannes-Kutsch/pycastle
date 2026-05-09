@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 
 
 class PycastleError(RuntimeError):
@@ -74,3 +75,20 @@ class UsageLimitError(PycastleError):
         super().__init__(
             f"Usage limit reached (reset_time={reset_time.isoformat() if reset_time else None})"
         )
+
+
+class AgentFailedError(PycastleError):
+    def __init__(
+        self, role_value: str, worktree_path: Path, namespace: str = ""
+    ) -> None:
+        super().__init__(f"Agent {role_value!r} failed irrecoverably")
+        self.role_value = role_value
+        self.worktree_path = worktree_path
+        self.namespace = namespace
+
+    @property
+    def session_dir(self) -> str:
+        parts = [".pycastle-session", self.role_value]
+        if self.namespace:
+            parts.append(self.namespace)
+        return "/".join(parts)

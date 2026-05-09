@@ -9,6 +9,7 @@ from pycastle.config import Config
 from pycastle.services import GitService
 from pycastle.services import GithubService
 from pycastle.iteration import (
+    AbortedAgentFailure,
     AbortedHITL,
     AbortedUsageLimit,
     Continue,
@@ -25,7 +26,9 @@ from pycastle.iteration._deps import (
 )
 from pycastle.status_display import PlainStatusDisplay
 from pycastle.agent_output_protocol import (
+    AgentRole,
     CompletionOutput,
+    FailedOutput,
     IssueOutput,
     NoCandidateOutput,
     PlannerOutput,
@@ -1546,7 +1549,7 @@ def test_run_iteration_returns_no_candidate_when_report_disabled(
     )
     deps = dataclasses.replace(
         base,
-        cfg=dataclasses.replace(base.cfg, improve_no_candidate_report=False),
+        cfg=dataclasses.replace(base.cfg, diagnose_on_failure=False),
     )
     result = asyncio.run(run_iteration(deps))
     assert isinstance(result, NoCandidate)
@@ -1778,3 +1781,109 @@ def test_phase_row_paints_interrupted_style_on_usage_limit(tmp_path, git_svc, lo
 
     assert isinstance(result, AbortedUsageLimit)
     assert ("remove", "Plan", "usage limit reached", "interrupted") in recording.calls
+
+
+# ── AbortedAgentFailure: FailedOutput recovery ────────────────────────────────
+
+
+def test_run_iteration_returns_aborted_agent_failure_when_improve_agent_fails(
+    tmp_path, git_svc, logger
+):
+    """When improve agent emits FAILED and diagnose_on_failure is on, run_iteration
+    spawns the failure-report agent and returns AbortedAgentFailure with issue_number."""
+    response_queue = [
+        FailedOutput(),
+        IssueOutput(number=42, labels=["bug", "needs-triage"]),
+    ]
+
+    async def agent_fn(req: RunRequest):
+        return response_queue.pop(0)
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(),
+        ),
+        improve_mode="endless",
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentFailure)
+    assert result.issue_number == 42
+    assert result.failed_role == "improve"
+
+
+def test_run_iteration_aborted_agent_failure_without_recovery_when_diagnose_disabled(
+    tmp_path, git_svc, logger
+):
+    """When diagnose_on_failure is off and improve agent emits FAILED, no recovery
+    agent is spawned and AbortedAgentFailure.issue_number is None."""
+    response_queue = [FailedOutput()]
+
+    async def agent_fn(req: RunRequest):
+        return response_queue.pop(0)
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+
+    base = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(diagnose_on_failure=False),
+        ),
+        improve_mode="endless",
+    )
+    result = asyncio.run(run_iteration(base))
+
+    assert isinstance(result, AbortedAgentFailure)
+    assert result.issue_number is None
+    assert result.failed_role == "improve"
+
+
+def test_run_iteration_failure_report_receives_correct_run_request(
+    tmp_path, git_svc, logger
+):
+    """Recovery RunRequest has FAILURE_REPORT role, the improve-sandbox worktree path,
+    and scope_args with FAILED_ROLE and SESSION_DIR."""
+    calls: list[RunRequest] = []
+    response_queue = [FailedOutput(), IssueOutput(number=99, labels=["bug"])]
+
+    async def agent_fn(req: RunRequest):
+        calls.append(req)
+        return response_queue.pop(0)
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(),
+        ),
+        improve_mode="endless",
+    )
+    asyncio.run(run_iteration(deps))
+
+    assert len(calls) == 2
+    failure_req = calls[1]
+    assert failure_req.role == AgentRole.FAILURE_REPORT
+    expected_wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    assert failure_req.mount_path == expected_wt
+    assert failure_req.scope_args is not None
+    assert failure_req.scope_args["FAILED_ROLE"] == "improve"
+    assert "SESSION_DIR" in failure_req.scope_args

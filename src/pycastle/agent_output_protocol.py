@@ -54,6 +54,7 @@ class AgentRole(enum.Enum):
     REVIEWER = "reviewer"
     MERGER = "merger"
     IMPROVE = "improve"
+    FAILURE_REPORT = "failure_report"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -436,7 +437,7 @@ def _make_handler(role: AgentRole) -> _RoleHandler:
         return _CommitMessageHandler()
     if role == AgentRole.PLANNER:
         return _PlannerHandler()
-    if role == AgentRole.PREFLIGHT_ISSUE:
+    if role in (AgentRole.PREFLIGHT_ISSUE, AgentRole.FAILURE_REPORT):
         return _PreflightIssueHandler()
     if role == AgentRole.IMPROVE:
         return _ImproveHandler()

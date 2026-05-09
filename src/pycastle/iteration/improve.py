@@ -6,12 +6,14 @@ from typing import Protocol
 from ..agent_output_protocol import (
     AgentOutput,
     AgentRole,
+    FailedOutput,
     IssueOutput,
     NoCandidateOutput,
 )
 from ..agent_result import PreflightFailure
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..errors import AgentFailedError
 from ..prompt_pipeline import PromptTemplate, Scope, build_issue_scope_args
 from ..services import GitService
 from ..services.github_service import GithubService
@@ -169,7 +171,7 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> bool:
             prd_number: int | None = None
             prompt_name = next_prompt(
                 last_id,
-                no_candidate_report=deps.cfg.improve_no_candidate_report,
+                no_candidate_report=deps.cfg.diagnose_on_failure,
             )
             while prompt_name is not None:
                 phase = _PHASES[prompt_name]
@@ -206,6 +208,12 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> bool:
                 )
 
                 assert not isinstance(output, PreflightFailure)
+                if isinstance(output, FailedOutput):
+                    raise AgentFailedError(
+                        role_value=AgentRole.IMPROVE.value,
+                        worktree_path=sandbox_path,
+                        namespace=phase.namespace,
+                    )
                 if prompt_name == "02-prd.md" and isinstance(output, IssueOutput):
                     prd_number = output.number
                 completed_id = _phase_id(prompt_name, output)
@@ -217,7 +225,7 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> bool:
 
                 prompt_name = next_prompt(
                     completed_id,
-                    no_candidate_report=deps.cfg.improve_no_candidate_report,
+                    no_candidate_report=deps.cfg.diagnose_on_failure,
                 )
 
             no_candidate = last_id in {"01-scan:no-candidate", "04-report"}

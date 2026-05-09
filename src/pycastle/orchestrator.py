@@ -11,6 +11,7 @@ from .agent_result import PreflightFailure
 from .agent_runner import AgentRunner, AgentRunnerProtocol, RunRequest
 from .config import Config, load_config
 from .iteration import (
+    AbortedAgentFailure,
     AbortedHITL,
     AbortedUsageLimit,
     Continue,
@@ -248,6 +249,12 @@ async def run(
                     time.sleep((wake_time - now).total_seconds())
                     slept_once = True
                     continue
+                case AbortedAgentFailure(failed_role=role, issue_number=issue_num):
+                    msg = f"Agent '{role}' failed irrecoverably."
+                    if issue_num is not None:
+                        msg += f" Filed issue #{issue_num} for triage."
+                    status_display.print("", msg)  # type: ignore[union-attr]
+                    sys.exit(1)
                 case Continue():
                     pass
 

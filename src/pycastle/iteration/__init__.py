@@ -2,8 +2,11 @@ import dataclasses
 from datetime import datetime
 from typing import TypeAlias
 
+from ..agent_output_protocol import AgentRole, IssueOutput
 from ..agent_result import CancellationToken, PreflightFailure
-from ..errors import UsageLimitError
+from ..agent_runner import RunRequest
+from ..errors import AgentFailedError, UsageLimitError
+from ..prompt_pipeline import PromptTemplate
 from ..worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
 from ._rows import PhaseRow as PhaseRow
@@ -40,8 +43,19 @@ class NoCandidate:
     pass
 
 
+@dataclasses.dataclass(frozen=True)
+class AbortedAgentFailure:
+    failed_role: str
+    issue_number: int | None = None
+
+
 IterationOutcome: TypeAlias = (
-    Continue | Done | AbortedHITL | AbortedUsageLimit | NoCandidate
+    Continue
+    | Done
+    | AbortedHITL
+    | AbortedUsageLimit
+    | NoCandidate
+    | AbortedAgentFailure
 )
 
 
@@ -200,5 +214,27 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         await merge_phase(completed, deps)
 
         return Continue()
+    except AgentFailedError as err:
+        issue_number: int | None = None
+        if deps.cfg.diagnose_on_failure:
+            result = await deps.agent_runner.run(
+                RunRequest(
+                    name="Failure Report Agent",
+                    template=PromptTemplate.FAILURE_REPORT,
+                    mount_path=err.worktree_path,
+                    role=AgentRole.FAILURE_REPORT,
+                    skip_preflight=True,
+                    scope_args={
+                        "FAILED_ROLE": err.role_value,
+                        "SESSION_DIR": err.session_dir,
+                    },
+                    status_display=deps.status_display,
+                )
+            )
+            if isinstance(result, IssueOutput):
+                issue_number = result.number
+        return AbortedAgentFailure(
+            failed_role=err.role_value, issue_number=issue_number
+        )
     except UsageLimitError as err:
         return AbortedUsageLimit(reset_time=err.reset_time)
