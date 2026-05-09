@@ -554,9 +554,7 @@ def test_improve_fresh_run_on_malformed_progress(tmp_path, git_svc):
 def test_improve_fresh_run_on_empty_progress_file(tmp_path, git_svc):
     """Empty progress file is treated as missing — fresh run starting at phase 1."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    role_session_dir = wt / ".pycastle-session" / "improve"
-    role_session_dir.mkdir(parents=True, exist_ok=True)
-    (role_session_dir / "_phase_progress").write_text("", encoding="utf-8")
+    _seed_progress(wt, "")
     runner = FakeAgentRunner(
         [CompletionOutput(), CompletionOutput(), CompletionOutput()]
     )
@@ -568,9 +566,7 @@ def test_improve_fresh_run_on_empty_progress_file(tmp_path, git_svc):
 def test_improve_fresh_run_on_whitespace_only_progress_file(tmp_path, git_svc):
     """Whitespace-only progress file is treated as missing — fresh run starting at phase 1."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    role_session_dir = wt / ".pycastle-session" / "improve"
-    role_session_dir.mkdir(parents=True, exist_ok=True)
-    (role_session_dir / "_phase_progress").write_text("\n  \t  \n", encoding="utf-8")
+    _seed_progress(wt, "\n  \t  \n")
     runner = FakeAgentRunner(
         [CompletionOutput(), CompletionOutput(), CompletionOutput()]
     )
@@ -582,11 +578,7 @@ def test_improve_fresh_run_on_whitespace_only_progress_file(tmp_path, git_svc):
 def test_improve_resumes_correctly_with_whitespace_padded_progress(tmp_path, git_svc):
     """Progress file with a valid phase ID surrounded by whitespace is still recognized — resumes at correct phase."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    role_session_dir = wt / ".pycastle-session" / "improve"
-    role_session_dir.mkdir(parents=True, exist_ok=True)
-    (role_session_dir / "_phase_progress").write_text(
-        "  01-scan:picked  \n", encoding="utf-8"
-    )
+    _seed_progress(wt, "  01-scan:picked  \n")
     runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
