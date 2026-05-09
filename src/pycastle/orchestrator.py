@@ -210,7 +210,7 @@ async def run(
                 case NoCandidate():
                     status_display.print(  # type: ignore[union-attr]
                         "",
-                        "No improvement candidate found.",
+                        "Improve agent reported no improvement candidate.",
                     )
                     break
                 case AbortedHITL():
