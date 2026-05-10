@@ -1,27 +1,4 @@
-import pytest
-
 from pycastle.agent_result import CancellationToken
-from pycastle.errors import PreflightFailure
-
-
-# ── PreflightFailure ──────────────────────────────────────────────────────────
-
-
-def test_preflight_failure_stores_failures():
-    failures = (("check", "cmd", "output"),)
-    exc = PreflightFailure(failures=failures)
-    assert exc.failures == failures
-
-
-def test_preflight_failure_is_exception():
-    exc = PreflightFailure(failures=())
-    assert isinstance(exc, Exception)
-
-
-def test_preflight_failure_failures_are_immutable():
-    exc = PreflightFailure(failures=(("check", "cmd", "output"),))
-    with pytest.raises(TypeError):
-        exc.failures[0] = ("x", "y", "z")  # type: ignore[index]
 
 
 # ── CancellationToken ─────────────────────────────────────────────────────────

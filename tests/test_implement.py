@@ -295,30 +295,6 @@ def test_run_issue_derives_branch_from_issue_number(tmp_path):
     assert branch_arg == "pycastle/issue-7"
 
 
-def test_run_issue_implementer_invoked_with_skip_preflight_true(tmp_path):
-    """run_issue must pass skip_preflight=True to the implementer agent."""
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-
-    issue = {"number": 1, "title": "Fix thing", "body": "", "comments": []}
-    deps = _make_deps(tmp_path, fake)
-    asyncio.run(run_issue(issue, deps))
-
-    impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert impl_call.skip_preflight is True
-
-
-def test_run_issue_reviewer_invoked_with_skip_preflight_true(tmp_path):
-    """run_issue must pass skip_preflight=True to the reviewer agent."""
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-
-    issue = {"number": 1, "title": "Fix thing", "body": "", "comments": []}
-    deps = _make_deps(tmp_path, fake)
-    asyncio.run(run_issue(issue, deps))
-
-    rev_call = next(c for c in fake.calls if "Review Agent" in c.name)
-    assert rev_call.skip_preflight is True
-
-
 def test_run_issue_raises_when_implementer_does_not_complete(tmp_path):
     """run_issue must raise PromiseParseError when implementer lacks COMPLETE tag."""
     fake = FakeAgentRunner([PromiseParseError("no <promise>COMPLETE</promise> tag")])

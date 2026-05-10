@@ -10,7 +10,7 @@ from .agent_result import CancellationToken
 from .config import Config
 from .container_runner import ContainerRunner
 from .docker_session import DockerSession, build_volume_spec
-from .errors import AgentTimeoutError, PreflightFailure, UsageLimitError
+from .errors import AgentTimeoutError, UsageLimitError
 from .prompt_pipeline import PromptRenderer, PromptTemplate
 from .reprompt_loop import REPROMPT_MESSAGE, run_with_reprompt
 from .session_resume import RoleSession, RunKind
@@ -27,7 +27,6 @@ class RunRequest:
     mount_path: Path
     role: AgentRole = AgentRole.IMPLEMENTER
     scope_args: dict[str, str] | None = None
-    skip_preflight: bool = False
     model: str = ""
     effort: str = ""
     stage: str = ""
@@ -127,7 +126,6 @@ class AgentRunner:
         mount_path = request.mount_path
         role = request.role
         scope_args = request.scope_args or {}
-        skip_preflight = request.skip_preflight
         model = request.model
         effort = request.effort
         token = request.token
@@ -162,10 +160,6 @@ class AgentRunner:
                 git_name = self._git_service.get_user_name()
                 git_email = self._git_service.get_user_email()
                 await runner.setup(git_name, git_email, work_body)
-                if not skip_preflight:
-                    failures = await runner.preflight(list(self._cfg.preflight_checks))
-                    if failures:
-                        raise PreflightFailure(failures=tuple(failures))
 
                 if run_kind == RunKind.FRESH:
                     role_session.start_fresh()
