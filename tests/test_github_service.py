@@ -422,6 +422,15 @@ def test_get_issue_title_returns_title():
         assert svc.get_issue_title(7) == "Fix bug"
 
 
+def test_get_issue_title_returns_title_when_body_key_absent():
+    svc = _make_service()
+    body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+    ):
+        assert svc.get_issue_title(7) == "Fix bug"
+
+
 def test_get_labels_returns_label_names():
     svc = _make_service()
     body = json.dumps(
