@@ -27,6 +27,7 @@ from pycastle.iteration._deps import (
 from pycastle.status_display import PlainStatusDisplay
 from pycastle.agent_output_protocol import (
     AgentRole,
+    CommitMessageOutput,
     CompletionOutput,
     FailedOutput,
     IssueOutput,
@@ -2115,3 +2116,164 @@ def test_run_iteration_failure_report_receives_correct_run_request(
     assert failure_req.scope_args is not None
     assert failure_req.scope_args["FAILED_ROLE"] == "improve"
     assert "SESSION_DIR" in failure_req.scope_args
+
+
+def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
+    tmp_path, git_svc, logger
+):
+    """Planner FailedOutput with two ready-for-agent issues spawns failure-report and
+    returns AbortedAgentFailure(failed_role='planner') with the filed issue number."""
+    calls: list[RunRequest] = []
+    response_queue = [FailedOutput(), IssueOutput(number=55, labels=["bug"])]
+
+    async def agent_fn(req: RunRequest):
+        calls.append(req)
+        return response_queue.pop(0)
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix A", "body": "", "comments": []},
+        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+    ]
+
+    deps = _make_deps(
+        tmp_path,
+        agent_fn,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        cfg=Config(),
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentFailure)
+    assert result.failed_role == "planner"
+    assert result.issue_number == 55
+
+    assert len(calls) == 2
+    failure_req = calls[1]
+    assert failure_req.role == AgentRole.FAILURE_REPORT
+    assert (
+        failure_req.mount_path == tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+    )
+    assert failure_req.scope_args is not None
+    assert failure_req.scope_args["FAILED_ROLE"] == "planner"
+    assert "SESSION_DIR" in failure_req.scope_args
+
+
+def test_run_iteration_returns_aborted_agent_failure_when_implementer_agent_fails(
+    tmp_path, git_svc, logger
+):
+    """Implementer FailedOutput on a single in-flight issue spawns failure-report and
+    returns AbortedAgentFailure(failed_role='implementer') with the filed issue number."""
+    calls: list[RunRequest] = []
+    response_queue = [FailedOutput(), IssueOutput(number=77, labels=["bug"])]
+
+    async def agent_fn(req: RunRequest):
+        calls.append(req)
+        return response_queue.pop(0)
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix A", "body": "", "comments": []},
+    ]
+
+    deps = _make_deps(
+        tmp_path,
+        agent_fn,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        cfg=Config(),
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentFailure)
+    assert result.failed_role == "implementer"
+    assert result.issue_number == 77
+
+    assert len(calls) == 2
+    failure_req = calls[1]
+    assert failure_req.role == AgentRole.FAILURE_REPORT
+    assert failure_req.mount_path == tmp_path / "pycastle" / ".worktrees" / "issue-1"
+    assert failure_req.scope_args is not None
+    assert failure_req.scope_args["FAILED_ROLE"] == "implementer"
+    assert "SESSION_DIR" in failure_req.scope_args
+
+
+def test_run_iteration_returns_aborted_agent_failure_when_reviewer_agent_fails(
+    tmp_path, git_svc, logger
+):
+    """Reviewer FailedOutput after a successful implementer spawns failure-report and
+    returns AbortedAgentFailure(failed_role='reviewer') with the filed issue number."""
+    calls: list[RunRequest] = []
+    response_queue = [
+        CommitMessageOutput(message="initial impl"),
+        FailedOutput(),
+        IssueOutput(number=88, labels=["bug"]),
+    ]
+
+    async def agent_fn(req: RunRequest):
+        calls.append(req)
+        return response_queue.pop(0)
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix A", "body": "", "comments": []},
+    ]
+
+    deps = _make_deps(
+        tmp_path,
+        agent_fn,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        cfg=Config(),
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentFailure)
+    assert result.failed_role == "reviewer"
+    assert result.issue_number == 88
+
+    assert len(calls) == 3
+    failure_req = calls[2]
+    assert failure_req.role == AgentRole.FAILURE_REPORT
+    assert failure_req.mount_path == tmp_path / "pycastle" / ".worktrees" / "issue-1"
+    assert failure_req.scope_args is not None
+    assert failure_req.scope_args["FAILED_ROLE"] == "reviewer"
+    assert "SESSION_DIR" in failure_req.scope_args
+
+
+def test_run_iteration_aborted_agent_failure_without_recovery_when_diagnose_disabled_planner(
+    tmp_path, git_svc, logger
+):
+    """With diagnose_on_failure=False, a planner FAILED yields issue_number=None and
+    no recovery RunRequest is dispatched."""
+    calls: list[RunRequest] = []
+    response_queue = [FailedOutput()]
+
+    async def agent_fn(req: RunRequest):
+        calls.append(req)
+        return response_queue.pop(0)
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix A", "body": "", "comments": []},
+        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+    ]
+
+    deps = _make_deps(
+        tmp_path,
+        agent_fn,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        cfg=Config(diagnose_on_failure=False),
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentFailure)
+    assert result.failed_role == "planner"
+    assert result.issue_number is None
+    assert len(calls) == 1

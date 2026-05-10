@@ -6,11 +6,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..agent_output_protocol import AgentRole, CommitMessageOutput
+from ..agent_output_protocol import AgentRole, CommitMessageOutput, FailedOutput
 from ..agent_result import CancellationToken
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..errors import BranchCollisionError, UsageLimitError
+from ..errors import AgentFailedError, BranchCollisionError, UsageLimitError
 from ..prompt_pipeline import PromptTemplate, build_issue_scope_args
 from ..session_resume import clear_session_dir, is_stage_done
 from ..status_display import StatusDisplay
@@ -120,6 +120,11 @@ async def run_issue(
                             token=_token,
                         )
                     )
+                    if isinstance(result, FailedOutput):
+                        raise AgentFailedError(
+                            role_value=AgentRole.IMPLEMENTER.value,
+                            worktree_path=impl_mount_path,
+                        )
                     if isinstance(result, CommitMessageOutput):
                         _msg = result.message or issue["title"]
                         deps.git_svc.commit(
@@ -160,6 +165,11 @@ async def run_issue(
                         token=_token,
                     )
                 )
+                if isinstance(review_result, FailedOutput):
+                    raise AgentFailedError(
+                        role_value=AgentRole.REVIEWER.value,
+                        worktree_path=review_mount_path,
+                    )
                 if isinstance(review_result, CommitMessageOutput):
                     _rev_msg = review_result.message or issue["title"]
                     deps.git_svc.commit(
@@ -218,6 +228,9 @@ async def implement_phase(
         ],
         return_exceptions=True,
     )
+    for result in results:
+        if isinstance(result, AgentFailedError):
+            raise result
     usage_limit_errors = [r for r in results if isinstance(r, UsageLimitError)]
     usage_limit_hit = bool(usage_limit_errors)
     usage_limit_reset_time = next(

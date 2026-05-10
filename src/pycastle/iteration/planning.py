@@ -3,9 +3,15 @@ import json
 from pathlib import Path
 from typing import Protocol
 
-from ..agent_output_protocol import AgentOutputProtocolError, AgentRole, PlannerOutput
+from ..agent_output_protocol import (
+    AgentOutputProtocolError,
+    AgentRole,
+    FailedOutput,
+    PlannerOutput,
+)
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..errors import AgentFailedError
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitService
 from ..status_display import StatusDisplay
@@ -120,6 +126,11 @@ async def planning_phase(
             except AgentOutputProtocolError as exc:
                 raise RuntimeError(str(exc)) from exc
 
+            if isinstance(output, FailedOutput):
+                raise AgentFailedError(
+                    role_value=AgentRole.PLANNER.value,
+                    worktree_path=wt,
+                )
             if not isinstance(output, PlannerOutput):
                 raise RuntimeError(
                     f"Planner returned unexpected output type: {type(output).__name__}"
