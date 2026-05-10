@@ -189,7 +189,9 @@ def test_improve_phase_dispatches_per_phase_display(
 
 def test_improve_phase_two_invocations_on_no_candidate_path(tmp_path, git_svc):
     """NO-CANDIDATE path (scan → report) triggers exactly two agent calls."""
-    runner = FakeAgentRunner([NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]])
+    runner = FakeAgentRunner(
+        [NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]]
+    )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert len(runner.calls) == 2
@@ -374,7 +376,9 @@ def test_improve_phase_threads_short_sid_to_no_candidate_report_phase(
     tmp_path, git_svc
 ):
     """Phase 4 (no-candidate report) RunRequest carries IMPROVE_SHORT_SID."""
-    runner = FakeAgentRunner([NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]])
+    runner = FakeAgentRunner(
+        [NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]]
+    )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     report_call = runner.calls[1]
@@ -415,7 +419,9 @@ def test_improve_resumes_at_prd_after_scan_picked(tmp_path, git_svc):
     """Resume from '01-scan:picked' starts at phase 2 (PRD)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
-    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()], preflight_responses=[[]])
+    runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
+    )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert runner.calls[0].template == PromptTemplate.IMPROVE_PRD
@@ -499,7 +505,9 @@ def test_mid_phase_2_retry_does_not_signal_role_prompt(tmp_path, git_svc):
         "01-scan:picked", encoding="utf-8"
     )
     (role_session_dir / "_phase_in_flight").write_text("02-prd", encoding="utf-8")
-    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()], preflight_responses=[[]])
+    runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
+    )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     prd_call = next(c for c in runner.calls if c.template == PromptTemplate.IMPROVE_PRD)
@@ -512,7 +520,9 @@ def test_cross_teardown_resume_at_phase_2_signals_role_prompt(tmp_path, git_svc)
     prompt is delivered, not the continuation prompt."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
-    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()], preflight_responses=[[]])
+    runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
+    )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     prd_call = next(c for c in runner.calls if c.template == PromptTemplate.IMPROVE_PRD)
@@ -585,7 +595,9 @@ def test_improve_resumes_correctly_with_whitespace_padded_progress(tmp_path, git
     """Progress file with a valid phase ID surrounded by whitespace is still recognized — resumes at correct phase."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "  01-scan:picked  \n")
-    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()], preflight_responses=[[]])
+    runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
+    )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert runner.calls[0].template == PromptTemplate.IMPROVE_PRD
@@ -652,7 +664,9 @@ def test_improve_phase_returns_improve_no_candidate_on_no_candidate_path(
     tmp_path, git_svc
 ):
     """NO-CANDIDATE path returns ImproveNoCandidate."""
-    runner = FakeAgentRunner([NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]])
+    runner = FakeAgentRunner(
+        [NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]]
+    )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     result = _run(deps)
     assert isinstance(result, ImproveNoCandidate)

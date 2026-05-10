@@ -114,6 +114,20 @@ async def _run_implement_and_merge(
     return Continue()
 
 
+async def _handle_preflight_outcome(
+    result: PreflightHITL | PreflightAFK, deps: Deps
+) -> IterationOutcome:
+    if isinstance(result, PreflightHITL):
+        deps.status_display.print(
+            "Preflight",
+            f"Preflight issue #{result.issue_number} requires human intervention. Exiting.",
+        )
+        return AbortedHITL(issue_number=result.issue_number)
+    raw = deps.github_svc.get_issue(result.issue_number)
+    afk_issue: dict = {**raw, "body": raw.get("body") or "", "comments": []}
+    return await _run_implement_and_merge([afk_issue], result.sha, deps)
+
+
 async def run_iteration(deps: Deps) -> IterationOutcome:
     try:
         # ── Fetch issues ─────────────────────────────────────────────────────
@@ -130,22 +144,8 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 improve_result = await improve_phase(deps)
                 if isinstance(improve_result, ImproveNoCandidate):
                     return NoCandidate()
-                if isinstance(improve_result, PreflightHITL):
-                    deps.status_display.print(
-                        "Preflight",
-                        f"Preflight issue #{improve_result.issue_number} requires human intervention. Exiting.",
-                    )
-                    return AbortedHITL(issue_number=improve_result.issue_number)
-                if isinstance(improve_result, PreflightAFK):
-                    raw = deps.github_svc.get_issue(improve_result.issue_number)
-                    afk_issue = {
-                        **raw,
-                        "body": raw.get("body") or "",
-                        "comments": [],
-                    }
-                    return await _run_implement_and_merge(
-                        [afk_issue], improve_result.sha, deps
-                    )
+                if isinstance(improve_result, (PreflightHITL, PreflightAFK)):
+                    return await _handle_preflight_outcome(improve_result, deps)
                 # ImproveContinue: re-fetch issues after improve filed new ones
                 open_issues = strip_stale_blocker_refs(
                     deps.github_svc.get_open_issues(deps.cfg.issue_label)
@@ -163,16 +163,8 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
         if isinstance(plan_result, AllBlocked):
             return Done()
-        if isinstance(plan_result, PreflightHITL):
-            deps.status_display.print(
-                "Preflight",
-                f"Preflight issue #{plan_result.issue_number} requires human intervention. Exiting.",
-            )
-            return AbortedHITL(issue_number=plan_result.issue_number)
-        if isinstance(plan_result, PreflightAFK):
-            raw = deps.github_svc.get_issue(plan_result.issue_number)
-            afk_issue = {**raw, "body": raw.get("body") or "", "comments": []}
-            return await _run_implement_and_merge([afk_issue], plan_result.sha, deps)
+        if isinstance(plan_result, (PreflightHITL, PreflightAFK)):
+            return await _handle_preflight_outcome(plan_result, deps)
 
         sha = plan_result.worktree_sha
         issues: list[dict] = plan_result.issues

@@ -87,7 +87,9 @@ class ContainerRunner:
         failures: list[tuple[str, str, str]] = []
         total = len(checks)
         for i, (check_name, command) in enumerate(checks, 1):
-            self._status_display.update_phase(self.name, f"Running {check_name} ({i}/{total})")
+            self._status_display.update_phase(
+                self.name, f"Running {check_name} ({i}/{total})"
+            )
             try:
                 await loop.run_in_executor(None, self._session.exec_simple, command)
             except DockerError as exc:
