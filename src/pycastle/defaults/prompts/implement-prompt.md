@@ -34,9 +34,7 @@ From the issue, derive a prioritized list of behaviors to test. Most critical pa
 
 Before writing any code, consider the following interface design and deep module guidelines:
 
-{{INTERFACES_STANDARDS}}
-
-{{DEEP_MODULES_STANDARDS}}
+{{IMPLEMENTATION_STANDARDS}}
 
 ## 3. Tracer Bullet
 
@@ -66,10 +64,6 @@ Rules:
 - Keep tests focused on observable behavior
 - Run `{{FEEDBACK_COMMANDS}}` after each GREEN
 
-{{TESTING_STANDARDS}}
-
-{{MOCKING_STANDARDS}}
-
 Checklist per cycle:
 
 ```
@@ -83,8 +77,6 @@ Checklist per cycle:
 ## 5. Refactor
 
 After all tests pass, look for refactor candidates:
-
-{{REFACTORING_STANDARDS}}
 
 - [ ] Apply SOLID principles where natural
 - [ ] Run `{{FEEDBACK_COMMANDS}}` after each refactor step

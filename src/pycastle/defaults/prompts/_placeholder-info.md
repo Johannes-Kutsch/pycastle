@@ -11,13 +11,8 @@ Prompt templates use a two-tier placeholder model: *global* placeholders are ava
 - `{{WONTFIX_LABEL}}` — GitHub label for issues that will not be fixed.
 - `{{FEEDBACK_COMMANDS}}` — Formatted list of implement-feedback commands (e.g. `ruff check --fix` and `pytest`).
 - `{{CHECKS}}` — All preflight check commands joined with `&&`.
-- `{{TESTING_STANDARDS}}` — Contents of `coding-standards/tests.md`.
-- `{{MOCKING_STANDARDS}}` — Contents of `coding-standards/mocking.md`.
-- `{{INTERFACES_STANDARDS}}` — Contents of `coding-standards/interfaces.md`.
-- `{{DEEP_MODULES_STANDARDS}}` — Contents of `coding-standards/deep-modules.md`.
-- `{{REFACTORING_STANDARDS}}` — Contents of `coding-standards/refactoring.md`.
-- `{{LANGUAGE_STANDARDS}}` — Contents of `coding-standards/language.md`.
-- `{{DEEPENING_STANDARDS}}` — Contents of `coding-standards/deepening.md`.
+- `{{DESIGN_STANDARDS}}` — Contents of `coding-standards/design.md` (architecture vocabulary and deepening strategy).
+- `{{IMPLEMENTATION_STANDARDS}}` — Contents of `coding-standards/implementation.md` (testing, mocking, deep modules, interfaces, and refactoring).
 
 ## Scope: PER_ISSUE
 

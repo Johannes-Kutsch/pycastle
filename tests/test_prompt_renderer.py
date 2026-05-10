@@ -323,46 +323,32 @@ def test_render_resume_scope_accepts_empty_scope_args(cfg, prompts_dir):
 # ── render: standards placeholders available in IMPROVE_SCAN scope ───────────
 
 
-def test_render_standards_available_in_improve_scan(cfg, prompts_dir):
+def test_render_implementation_standards_available_in_improve_scan(cfg, prompts_dir):
     standards_dir = prompts_dir / "coding-standards"
-    (standards_dir / "tests.md").write_text("test guidelines")
-    (prompts_dir / "improve" / "01-scan.md").write_text("{{TESTING_STANDARDS}}")
+    (standards_dir / "implementation.md").write_text("implementation guidelines")
+    (prompts_dir / "improve" / "01-scan.md").write_text("{{IMPLEMENTATION_STANDARDS}}")
     renderer = PromptRenderer(cfg)
 
     result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
 
-    assert result == "test guidelines"
+    assert result == "implementation guidelines"
 
 
-# ── render: new language/deepening standards render in IMPROVE_SCAN ──────────
-
-
-def test_render_language_standards_available_in_improve_scan(cfg, prompts_dir):
+def test_render_design_standards_available_in_improve_scan(cfg, prompts_dir):
     standards_dir = prompts_dir / "coding-standards"
-    (standards_dir / "language.md").write_text("language guidelines")
-    (prompts_dir / "improve" / "01-scan.md").write_text("{{LANGUAGE_STANDARDS}}")
+    (standards_dir / "design.md").write_text("design guidelines")
+    (prompts_dir / "improve" / "01-scan.md").write_text("{{DESIGN_STANDARDS}}")
     renderer = PromptRenderer(cfg)
 
     result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
 
-    assert result == "language guidelines"
+    assert result == "design guidelines"
 
 
-def test_render_deepening_standards_available_in_improve_scan(cfg, prompts_dir):
+def test_render_design_standards_available_in_improve_prd(cfg, prompts_dir):
     standards_dir = prompts_dir / "coding-standards"
-    (standards_dir / "deepening.md").write_text("deepening guidelines")
-    (prompts_dir / "improve" / "01-scan.md").write_text("{{DEEPENING_STANDARDS}}")
-    renderer = PromptRenderer(cfg)
-
-    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
-
-    assert result == "deepening guidelines"
-
-
-def test_render_language_standards_available_in_improve_prd(cfg, prompts_dir):
-    standards_dir = prompts_dir / "coding-standards"
-    (standards_dir / "language.md").write_text("language guidelines")
-    (prompts_dir / "improve" / "02-prd.md").write_text("{{LANGUAGE_STANDARDS}}")
+    (standards_dir / "design.md").write_text("design guidelines")
+    (prompts_dir / "improve" / "02-prd.md").write_text("{{DESIGN_STANDARDS}}")
     renderer = PromptRenderer(cfg)
 
     result = _run(
@@ -371,22 +357,7 @@ def test_render_language_standards_available_in_improve_prd(cfg, prompts_dir):
         )
     )
 
-    assert result == "language guidelines"
-
-
-def test_render_deepening_standards_available_in_improve_prd(cfg, prompts_dir):
-    standards_dir = prompts_dir / "coding-standards"
-    (standards_dir / "deepening.md").write_text("deepening guidelines")
-    (prompts_dir / "improve" / "02-prd.md").write_text("{{DEEPENING_STANDARDS}}")
-    renderer = PromptRenderer(cfg)
-
-    result = _run(
-        renderer.render(
-            PromptTemplate.IMPROVE_PRD, {"IMPROVE_SHORT_SID": "abc"}, _noop_exec
-        )
-    )
-
-    assert result == "deepening guidelines"
+    assert result == "design guidelines"
 
 
 # ── Security regressions (from test_prompt_utils.py, adapted for renderer) ───
@@ -435,51 +406,40 @@ def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
 # ── Standards loading: behaviours from the deleted test_prompt_utils.py ──────
 
 
-def test_renderer_loads_all_seven_standards_keys(prompts_dir):
+def test_renderer_loads_both_standards_keys(prompts_dir):
     standards_dir = prompts_dir / "coding-standards"
-    (standards_dir / "tests.md").write_text("testing content")
-    (standards_dir / "mocking.md").write_text("mocking content")
-    (standards_dir / "interfaces.md").write_text("interfaces content")
-    (standards_dir / "deep-modules.md").write_text("deep modules content")
-    (standards_dir / "refactoring.md").write_text("refactoring content")
-    (standards_dir / "language.md").write_text("language content")
-    (standards_dir / "deepening.md").write_text("deepening content")
+    (standards_dir / "design.md").write_text("design content")
+    (standards_dir / "implementation.md").write_text("implementation content")
     (prompts_dir / "improve" / "01-scan.md").write_text(
-        "{{TESTING_STANDARDS}}|{{MOCKING_STANDARDS}}|{{INTERFACES_STANDARDS}}"
-        "|{{DEEP_MODULES_STANDARDS}}|{{REFACTORING_STANDARDS}}"
-        "|{{LANGUAGE_STANDARDS}}|{{DEEPENING_STANDARDS}}"
+        "{{DESIGN_STANDARDS}}|{{IMPLEMENTATION_STANDARDS}}"
     )
     cfg = Config(prompts_dir=prompts_dir)
     renderer = PromptRenderer(cfg)
 
     result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
 
-    assert result == (
-        "testing content|mocking content|interfaces content"
-        "|deep modules content|refactoring content"
-        "|language content|deepening content"
-    )
+    assert result == "design content|implementation content"
 
 
 def test_renderer_returns_empty_string_for_missing_standards_file(prompts_dir):
     standards_dir = prompts_dir / "coding-standards"
-    (standards_dir / "tests.md").write_text("testing content")
-    # other files intentionally absent
+    (standards_dir / "design.md").write_text("design content")
+    # implementation.md intentionally absent
     (prompts_dir / "improve" / "01-scan.md").write_text(
-        "{{TESTING_STANDARDS}}|{{MOCKING_STANDARDS}}"
+        "{{DESIGN_STANDARDS}}|{{IMPLEMENTATION_STANDARDS}}"
     )
     cfg = Config(prompts_dir=prompts_dir)
     renderer = PromptRenderer(cfg)
 
     result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
 
-    assert result == "testing content|"
+    assert result == "design content|"
 
 
 def test_renderer_returns_all_empty_standards_when_dir_absent(tmp_path):
     (tmp_path / "improve").mkdir()
     (tmp_path / "improve" / "01-scan.md").write_text(
-        "{{TESTING_STANDARDS}}|{{MOCKING_STANDARDS}}"
+        "{{DESIGN_STANDARDS}}|{{IMPLEMENTATION_STANDARDS}}"
     )
     # no coding-standards dir created
     cfg = Config(prompts_dir=tmp_path)
@@ -488,6 +448,32 @@ def test_renderer_returns_all_empty_standards_when_dir_absent(tmp_path):
     result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
 
     assert result == "|"
+
+
+# ── No legacy standards placeholders in defaults-tree prompts ────────────────
+
+_LEGACY_STANDARDS_NAMES = {
+    "TESTING_STANDARDS",
+    "MOCKING_STANDARDS",
+    "INTERFACES_STANDARDS",
+    "DEEP_MODULES_STANDARDS",
+    "REFACTORING_STANDARDS",
+    "LANGUAGE_STANDARDS",
+    "DEEPENING_STANDARDS",
+}
+
+
+def test_no_legacy_standards_placeholder_in_defaults_prompts():
+    for path in _SHIPPED_PROMPTS_DIR.rglob("*.md"):
+        if path.name.startswith("_"):
+            continue
+        content = path.read_text(encoding="utf-8")
+        found = set(re.findall(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}", content))
+        legacy_found = found & _LEGACY_STANDARDS_NAMES
+        assert not legacy_found, (
+            f"{path.relative_to(_SHIPPED_PROMPTS_DIR)} references legacy placeholder(s): "
+            f"{legacy_found}"
+        )
 
 
 # ── Template shell expression tests ──────────────────────────────────────────
