@@ -1,3 +1,148 @@
+# Good and Bad Tests
+
+## Good Tests
+
+**Integration-style**: Test through real interfaces, not mocks of internal parts.
+
+```python
+# GOOD: Tests observable behavior
+def test_user_can_checkout_with_valid_cart():
+    cart = create_cart()
+    cart.add(product)
+    result = checkout(cart, payment_method)
+    assert result.status == "confirmed"
+```
+
+Characteristics:
+
+- Tests behavior callers care about
+- Uses public API only
+- Survives internal refactors
+- Describes WHAT, not HOW
+- One logical assertion per test
+
+## Bad Tests
+
+**Implementation-detail tests**: Coupled to internal structure.
+
+```python
+# BAD: Tests implementation details
+def test_checkout_calls_payment_service_process(mocker):
+    mock_payment = mocker.patch("myapp.payment_service")
+    checkout(cart, payment)
+    mock_payment.process.assert_called_once_with(cart.total)
+```
+
+Red flags:
+
+- Mocking internal collaborators (your own classes/modules)
+- Testing private methods (prefixed with `_`)
+- Asserting on call counts/order of internal calls
+- Test breaks when refactoring without behavior change
+- Test name describes HOW not WHAT
+- Verifying through external means instead of the interface
+
+```python
+# BAD: Bypasses interface to verify
+def test_create_user_saves_to_database(db):
+    create_user(name="Alice")
+    row = db.execute("SELECT * FROM users WHERE name = ?", ("Alice",)).fetchone()
+    assert row is not None
+
+# GOOD: Verifies through interface
+def test_create_user_makes_user_retrievable():
+    user = create_user(name="Alice")
+    retrieved = get_user(user.id)
+    assert retrieved.name == "Alice"
+```
+
+## pytest preference
+
+Use `pytest.fixture` for shared setup. Prefer fixtures over `setUp`/`tearDown`.
+
+```python
+@pytest.fixture
+def cart():
+    return create_cart()
+
+def test_checkout_with_valid_cart(cart):
+    result = checkout(cart, payment_method)
+    assert result.status == "confirmed"
+```
+
+## Escape hatch
+
+If you feel the urge to test a private method or internal collaborator, **stop**. Write the red test at the public interface for the behavior you're implementing. Get to GREEN with flat code first, then extract private helpers during refactor — no new tests needed for the helpers.
+
+# When to Mock
+
+Mock at **system boundaries** only:
+
+- External APIs (payment, email, third-party services)
+- Databases (sometimes — prefer a real test DB)
+- Time/randomness (`datetime.now`, `random`)
+- File system (sometimes)
+- Subprocess calls to external tools (`git`, `docker`, `gh`)
+
+Don't mock:
+
+- Your own classes/modules
+- Internal collaborators
+- Anything you control
+
+## Designing for Mockability
+
+At system boundaries, design interfaces that are easy to mock:
+
+**1. Use dependency injection**
+
+Pass external dependencies in rather than creating them internally:
+
+```python
+# Easy to mock
+def process_payment(order, payment_client):
+    return payment_client.charge(order.total)
+
+# Hard to mock
+def process_payment(order):
+    client = StripeClient(os.environ["STRIPE_KEY"])
+    return client.charge(order.total)
+```
+
+**2. Prefer SDK-style interfaces over generic callers**
+
+Create specific methods for each external operation instead of one generic method with conditional logic:
+
+```python
+# GOOD: Each method is independently mockable
+class GitService:
+    def get_head_sha(self, repo: Path) -> str: ...
+    def create_worktree(self, repo: Path, branch: str) -> None: ...
+    def try_merge(self, repo: Path, branch: str) -> bool: ...
+
+# BAD: Mocking requires conditional logic inside the mock
+class GitService:
+    def run(self, args: list[str]) -> str: ...
+```
+
+The SDK approach means:
+
+- Each mock returns one specific shape
+- No conditional logic in test setup
+- Easier to see which operations a test exercises
+- Type safety per operation
+
+## Test fixture pattern
+
+```python
+@pytest.fixture
+def git_svc():
+    svc = MagicMock(spec=GitService)
+    svc.get_head_sha.return_value = "abc123"
+    svc.try_merge.return_value = True
+    return svc
+```
+
 # Architecture Vocabulary
 
 Shared vocabulary for every architectural suggestion. Use these terms exactly — don't substitute "component," "service," "API," or "boundary." Consistent language is the whole point.
@@ -85,3 +230,55 @@ Third-party services (Stripe, Twilio, etc.) you don't control. The deepened modu
 - Write new tests at the deepened module's interface. The **interface is the test surface**.
 - Tests assert on observable outcomes through the interface, not internal state.
 - Tests should survive internal refactors — they describe behaviour, not implementation. If a test has to change when the implementation changes, it's testing past the interface.
+
+# Interface Design for Testability
+
+Good interfaces make testing natural:
+
+**1. Accept dependencies, don't create them**
+
+```python
+# Testable
+def process_order(order, payment_gateway):
+    return payment_gateway.charge(order.total)
+
+# Hard to test
+def process_order(order):
+    gateway = StripeGateway()
+    return gateway.charge(order.total)
+```
+
+**2. Return results, don't produce side effects**
+
+```python
+# Testable
+def calculate_discount(cart) -> Discount:
+    ...
+
+# Hard to test
+def apply_discount(cart) -> None:
+    cart.total -= discount
+```
+
+**3. Small surface area**
+
+- Fewer methods = fewer tests needed
+- Fewer parameters = simpler test setup
+- Optional parameters that change behavior are a warning sign — consider separate functions instead
+
+When designing a new interface, ask:
+
+- Can I reduce the number of methods or parameters?
+- Can I accept a dependency rather than creating it?
+- Does every method return a value the caller can assert on?
+
+# Refactor Candidates
+
+After all tests pass, look for:
+
+- **Duplication** → Extract function or class
+- **Long methods** → Break into private helpers (keep tests on the public interface)
+- **Shallow modules** → Combine or deepen
+- **Feature envy** → Move logic to where data lives
+- **Primitive obsession** → Introduce value objects or dataclasses
+- **Existing code** the new code reveals as problematic

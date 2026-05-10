@@ -38,9 +38,7 @@ Run `git diff main...` (and narrower variants scoped to specific paths) to inspe
 
 Identify all test files modified in the diff. For each, scan for red flags using the standards below:
 
-{{TESTING_STANDARDS}}
-
-{{MOCKING_STANDARDS}}
+{{IMPLEMENTATION_STANDARDS}}
 
 Also check that test names use the domain glossary from `CONTEXT.md`, not vague or off-glossary terms.
 
@@ -76,12 +74,6 @@ Look for opportunities to improve the code, while maintaining balance:
 - Choose clarity over brevity — explicit code is often better than overly compact code
 
 Structural design smells and interface design checks:
-
-{{REFACTORING_STANDARDS}}
-
-{{INTERFACES_STANDARDS}}
-
-{{DEEP_MODULES_STANDARDS}}
 
 Avoid over-simplification that reduces clarity, combines too many concerns, or makes the code harder to debug or extend.
 

@@ -148,13 +148,8 @@ def _format_feedback_commands(checks: Sequence[str]) -> str:
 
 class PromptRenderer:
     _STANDARDS_FILES: dict[str, str] = {
-        "TESTING_STANDARDS": "tests.md",
-        "MOCKING_STANDARDS": "mocking.md",
-        "INTERFACES_STANDARDS": "interfaces.md",
-        "DEEP_MODULES_STANDARDS": "deep-modules.md",
-        "REFACTORING_STANDARDS": "refactoring.md",
-        "LANGUAGE_STANDARDS": "language.md",
-        "DEEPENING_STANDARDS": "deepening.md",
+        "DESIGN_STANDARDS": "design.md",
+        "IMPLEMENTATION_STANDARDS": "implementation.md",
     }
 
     def __init__(self, cfg: Config) -> None:

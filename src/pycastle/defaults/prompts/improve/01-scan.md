@@ -12,33 +12,9 @@ You must NOT modify any files in the worktree. Your only output for this phase i
 
 Use the architectural vocabulary below in every observation and recommendation. Consistent language is the point — don't drift into "component," "service," "API," or "boundary."
 
-### Architecture vocabulary
+{{DESIGN_STANDARDS}}
 
-{{LANGUAGE_STANDARDS}}
-
-### Architecture
-
-{{DEEP_MODULES_STANDARDS}}
-
-### Dependencies and seams
-
-{{DEEPENING_STANDARDS}}
-
-### Refactoring smells
-
-{{REFACTORING_STANDARDS}}
-
-### Testing
-
-{{TESTING_STANDARDS}}
-
-### Mocking
-
-{{MOCKING_STANDARDS}}
-
-### Interface design
-
-{{INTERFACES_STANDARDS}}
+{{IMPLEMENTATION_STANDARDS}}
 
 ## AFK-safety filter
 

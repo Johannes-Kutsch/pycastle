@@ -8,13 +8,9 @@ Take the candidate picked in phase 1 and turn it into a PRD. Publish it as a Git
 
 You must NOT modify any files in the worktree. Your only outputs are the GitHub issue you file via `gh` and the `<promise>` tag.
 
-## Architecture vocabulary
+## Design standards
 
-{{LANGUAGE_STANDARDS}}
-
-## Dependencies and seams
-
-{{DEEPENING_STANDARDS}}
+{{DESIGN_STANDARDS}}
 
 ## Process
 
