@@ -169,6 +169,7 @@ async def run(
         status_display.print("", summary)  # type: ignore[union-attr]
 
     slept_once = False
+    improve_dispatched_count = 0
 
     try:
         for iteration in range(1, cfg.max_iterations + 1):
@@ -199,10 +200,18 @@ async def run(
                 status_display=status_display,  # type: ignore[arg-type]
                 improve_mode=improve_mode,
                 slept_once=slept_once,
+                improve_dispatched_count=improve_dispatched_count,
             )
             outcome = await run_iteration(deps)
+            improve_dispatched_count = deps.improve_dispatched_count
 
             match outcome:
+                case Done(improve_cap_reached=True):
+                    status_display.print(  # type: ignore[union-attr]
+                        "",
+                        f"improve_max ({cfg.improve_max}) dispatches reached. Stopping.",
+                    )
+                    break
                 case Done():
                     status_display.print(  # type: ignore[union-attr]
                         "",

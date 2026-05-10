@@ -93,6 +93,7 @@ class Config:
     improve_override: StageOverride = dataclasses.field(
         default_factory=lambda: StageOverride(model="opus", effort="high")
     )
+    improve_max: int | None = None
     diagnose_on_failure: bool = True
 
 
@@ -178,7 +179,16 @@ def load_config(
             cfg, docker_image_name=derive_docker_image_name(Path.cwd().name)
         )
     _validate_bug_report_repo(cfg)
+    _validate_improve_max(cfg)
     return _validate_efforts(cfg)
+
+
+def _validate_improve_max(cfg: Config) -> None:
+    if cfg.improve_max is not None and cfg.improve_max < 1:
+        raise ConfigValidationError(
+            "improve_max must be >= 1",
+            invalid_value=str(cfg.improve_max),
+        )
 
 
 def _validate_bug_report_repo(cfg: Config) -> None:
