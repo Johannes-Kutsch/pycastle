@@ -1693,7 +1693,7 @@ def test_planner_receives_ready_for_agent_issues_json_not_issue_label(tmp_path):
         "Planner must receive ALL_OPEN_ISSUES_JSON in prompt_args"
     )
     assert "READY_FOR_AGENT_LABEL" not in captured_planner_args, (
-        "Planner must not receive READY_FOR_AGENT_LABEL in scope_args"
+        "Planner must not receive READY_FOR_AGENT_LABEL in prompt_args"
     )
     assert (
         "Blocked by #99" not in captured_planner_args["READY_FOR_AGENT_ISSUES_JSON"]
