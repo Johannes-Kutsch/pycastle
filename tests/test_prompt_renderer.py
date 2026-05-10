@@ -36,7 +36,7 @@ def cfg(prompts_dir: Path) -> Config:
 
 
 def test_renderer_renders_global_placeholder(cfg, prompts_dir):
-    (prompts_dir / "implement-prompt.md").write_text("Label: {{ISSUE_LABEL}}")
+    (prompts_dir / "implement-prompt.md").write_text("Label: {{READY_FOR_AGENT_LABEL}}")
     renderer = PromptRenderer(cfg)
 
     result = _run(
