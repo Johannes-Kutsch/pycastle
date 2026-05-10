@@ -26,14 +26,6 @@ def session_dir_rel(role: AgentRole, namespace: str = "") -> str:
     return f"{SESSION_DIR_NAME}/{role.value}/"
 
 
-def is_stage_done_for(worktree: Path, role: AgentRole) -> bool:
-    return is_stage_done(session_dir_path(worktree, role))
-
-
-def clear_stage(worktree: Path, role: AgentRole, namespace: str = "") -> None:
-    clear_session_dir(session_dir_path(worktree, role, namespace))
-
-
 def has_resumable_session(role_dir: Path) -> bool:
     return role_dir.is_dir() and any(f.is_file() for f in role_dir.rglob("*"))
 
@@ -51,6 +43,14 @@ def clear_session_dir(role_dir: Path) -> None:
             child.unlink(missing_ok=True)
         elif child.is_dir():
             shutil.rmtree(child, ignore_errors=True)
+
+
+def is_stage_done_for(worktree: Path, role: AgentRole) -> bool:
+    return is_stage_done(session_dir_path(worktree, role))
+
+
+def clear_stage(worktree: Path, role: AgentRole, namespace: str = "") -> None:
+    clear_session_dir(session_dir_path(worktree, role, namespace))
 
 
 def any_role_dir_present(worktree_path: Path) -> bool:
