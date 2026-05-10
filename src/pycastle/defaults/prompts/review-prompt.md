@@ -2,8 +2,6 @@
 
 Review the code changes on branch {{BRANCH}} for issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
-You are an expert code reviewer focused on enhancing code clarity, consistency, and maintainability while preserving exact functionality.
-
 **Constraint**: Never change what the code does — only how it does it. All original features, outputs, and behaviors must remain intact.
 
 # CONTEXT
@@ -32,7 +30,7 @@ Attempt to reproduce the original bug with new test cases. If you can reproduce 
 
 ## 3. Read the diff
 
-Run `git diff main...` (and narrower variants scoped to specific paths) to inspect what changed on this branch. For anything that looks suspicious — fragile logic, unchecked assumptions, tricky conditions, implicit type coercions, missing guards — write a test that exercises it. Try to actually break it. If you can break it, fix it.
+Run `git diff main...` (and narrower variants scoped to specific paths) to inspect what changed. For anything that looks suspicious — fragile logic, unchecked assumptions, tricky conditions, implicit type coercions, missing guards — write a test that exercises it. Try to break it. If you can, fix it.
 
 ## 4. Enforce test standards
 
@@ -40,7 +38,7 @@ Identify all test files modified in the diff. For each, scan for red flags using
 
 {{IMPLEMENTATION_STANDARDS}}
 
-Also check that test names use the domain glossary from `CONTEXT.md`, not vague or off-glossary terms.
+Check that test names use the domain glossary from `CONTEXT.md`.
 
 For each red-flag test:
 
@@ -51,37 +49,15 @@ Run `{{FEEDBACK_COMMANDS}}` after any changes.
 
 ## 5. Stress-test edge cases
 
-Go beyond the happy path. For every changed code path, think about what inputs or states could cause problems:
-
-- Empty arrays, empty strings, zero, negative numbers
-- Missing optional fields, null values, undefined properties
-- Rapid repeated calls, race conditions, state that changes mid-operation
-- Off-by-one errors in loops or slice/substring operations
-- Regressions in adjacent functionality
-
-Write tests for anything that isn't already covered.
+For every changed code path, probe: empty/zero/null inputs, missing optional fields, off-by-one errors, rapid repeated calls, and adjacent-feature regressions. Write tests for uncovered cases.
 
 ## 6. Code quality
 
-Look for opportunities to improve the code, while maintaining balance:
-
-- Reduce unnecessary complexity and nesting
-- Eliminate redundant code and abstractions
-- Improve readability through clear variable and function names
-- Consolidate related logic
-- Remove unnecessary comments that describe obvious code
-- Avoid nested ternary operators — prefer if/else chains
-- Choose clarity over brevity — explicit code is often better than overly compact code
-
-Structural design smells and interface design checks:
-
-Avoid over-simplification that reduces clarity, combines too many concerns, or makes the code harder to debug or extend.
+Reduce unnecessary complexity and nesting, eliminate redundant code, improve naming clarity, consolidate related logic, remove comments that describe obvious code. Choose clarity over brevity.
 
 ## 7. Apply project standards
 
-Check that the implementation respects any ADRs in `docs/adr/` that touch the area being changed. Flag violations as issues to fix before committing.
-
-Standards were applied at each step above — no separate standards file reference needed.
+Consult `docs/adr/README.md` if present, then check that the implementation respects any ADRs in `docs/adr/` that touch the area being changed. Flag violations to fix before committing.
 
 Run `{{FEEDBACK_COMMANDS}}` to ensure nothing is broken.
 

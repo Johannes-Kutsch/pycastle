@@ -7,7 +7,7 @@ Merge the following branches into the current branch:
 For each branch:
 
 1. Run `git merge <branch> --no-edit`
-2. If there are merge conflicts, resolve them intelligently by reading both sides and choosing the correct resolution
+2. If there are merge conflicts, resolve them by reading both sides and choosing the correct resolution
 3. After resolving conflicts, run `{{CHECKS}}` to verify everything works
 4. If tests fail, fix the issues before proceeding to the next branch
 
