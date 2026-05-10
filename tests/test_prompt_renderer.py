@@ -595,3 +595,114 @@ def test_placeholder_info_no_unknown_scope_sections():
 
     for name in scopes:
         assert name in known, f"Unknown scope section: ## Scope: {name}"
+
+
+# ── FAILURE_REPORT scope ──────────────────────────────────────────────────────
+
+
+def test_scope_failure_report_placeholders():
+    assert Scope.FAILURE_REPORT.placeholders == frozenset(
+        {"FAILED_ROLE", "SESSION_DIR", "FAILURE_CLASS"}
+    )
+
+
+# ── failure-report.md conditional rendering ───────────────────────────────────
+
+_FAILURE_REPORT_SCOPE_ARGS_BASE = {
+    "FAILED_ROLE": "implementer",
+    "SESSION_DIR": "/sessions/abc",
+}
+
+
+def _make_failure_report_renderer() -> PromptRenderer:
+    from pycastle.config import Config
+
+    cfg = Config(prompts_dir=_SHIPPED_PROMPTS_DIR)
+    return PromptRenderer(cfg)
+
+
+def test_failure_report_renders_recovery_section_for_non_typed_crash():
+    renderer = _make_failure_report_renderer()
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.FAILURE_REPORT,
+            {**_FAILURE_REPORT_SCOPE_ARGS_BASE, "FAILURE_CLASS": "non_typed_crash"},
+            _noop_exec,
+        )
+    )
+
+    assert "## Recovery" in result
+    assert "rm -rf <SESSION_DIR>" in result
+
+
+def test_failure_report_omits_recovery_section_for_protocol_error():
+    renderer = _make_failure_report_renderer()
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.FAILURE_REPORT,
+            {**_FAILURE_REPORT_SCOPE_ARGS_BASE, "FAILURE_CLASS": "protocol_error"},
+            _noop_exec,
+        )
+    )
+
+    assert "## Recovery" not in result
+    assert "rm -rf <SESSION_DIR>" not in result
+
+
+# ── Conditional block rendering ───────────────────────────────────────────────
+
+
+def test_conditional_block_renders_when_condition_matches(cfg, prompts_dir):
+    (prompts_dir / "failure-report.md").write_text(
+        "Before\n{{#if FAILURE_CLASS=non_typed_crash}}\nSection\n{{/if}}\nAfter"
+    )
+    renderer = PromptRenderer(cfg)
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.FAILURE_REPORT,
+            {
+                "FAILED_ROLE": "r",
+                "SESSION_DIR": "/s",
+                "FAILURE_CLASS": "non_typed_crash",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert "Section" in result
+    assert "Before" in result
+    assert "After" in result
+
+
+def test_conditional_block_omitted_when_condition_does_not_match(cfg, prompts_dir):
+    (prompts_dir / "failure-report.md").write_text(
+        "Before\n{{#if FAILURE_CLASS=non_typed_crash}}\nSection\n{{/if}}\nAfter"
+    )
+    renderer = PromptRenderer(cfg)
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.FAILURE_REPORT,
+            {
+                "FAILED_ROLE": "r",
+                "SESSION_DIR": "/s",
+                "FAILURE_CLASS": "protocol_error",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert "Section" not in result
+    assert "Before" in result
+    assert "After" in result
+
+
+def test_renderer_ctor_rejects_out_of_scope_conditional_key(cfg, prompts_dir):
+    (prompts_dir / "failure-report.md").write_text(
+        "{{#if UNKNOWN_KEY=value}}\nContent\n{{/if}}"
+    )
+    with pytest.raises(PromptRenderError, match="UNKNOWN_KEY"):
+        PromptRenderer(cfg)

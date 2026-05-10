@@ -233,6 +233,7 @@ async def improve_phase(
                         role_value=AgentRole.IMPROVE.value,
                         worktree_path=sandbox_path,
                         namespace=phase.namespace,
+                        failure_class=output.failure_class,
                     )
                 if prompt_name == "02-prd.md" and isinstance(output, IssueOutput):
                     prd_number = output.number

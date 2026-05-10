@@ -149,6 +149,7 @@ async def planning_phase(
                 raise AgentFailedError(
                     role_value=AgentRole.PLANNER.value,
                     worktree_path=wt,
+                    failure_class=output.failure_class,
                 )
             if not isinstance(output, PlannerOutput):
                 raise RuntimeError(

@@ -225,7 +225,7 @@ class AgentRunner:
                         if run_kind != RunKind.RESUME:
                             raise
                         if non_typed_retry_done:
-                            return FailedOutput()
+                            return FailedOutput(failure_class="non_typed_crash")
                         non_typed_retry_done = True
             finally:
                 try:

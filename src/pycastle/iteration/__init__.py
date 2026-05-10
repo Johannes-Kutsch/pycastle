@@ -205,6 +205,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                     scope_args={
                         "FAILED_ROLE": err.role_value,
                         "SESSION_DIR": err.session_dir,
+                        "FAILURE_CLASS": err.failure_class,
                     },
                     status_display=deps.status_display,
                 )

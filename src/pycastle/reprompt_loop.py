@@ -30,4 +30,4 @@ async def run_with_reprompt(
             return await work_factory(msg)
         except AgentOutputProtocolError:
             msg = reprompt_message
-    return FailedOutput()
+    return FailedOutput(failure_class="protocol_error")

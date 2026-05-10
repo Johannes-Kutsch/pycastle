@@ -121,6 +121,7 @@ async def run_issue(
                         raise AgentFailedError(
                             role_value=AgentRole.IMPLEMENTER.value,
                             worktree_path=impl_mount_path,
+                            failure_class=result.failure_class,
                         )
                     if isinstance(result, CommitMessageOutput):
                         _msg = result.message or issue["title"]
@@ -164,6 +165,7 @@ async def run_issue(
                     raise AgentFailedError(
                         role_value=AgentRole.REVIEWER.value,
                         worktree_path=review_mount_path,
+                        failure_class=review_result.failure_class,
                     )
                 if isinstance(review_result, CommitMessageOutput):
                     _rev_msg = review_result.message or issue["title"]

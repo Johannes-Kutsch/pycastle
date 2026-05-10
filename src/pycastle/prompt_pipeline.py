@@ -12,6 +12,10 @@ if TYPE_CHECKING:
 
 PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 SHELL_EXPR = re.compile(r"!`([^`]+)`")
+CONDITIONAL_BLOCK = re.compile(
+    r"\{\{#if\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^\s}]+)\s*\}\}(.*?)\{\{/if\}\}",
+    re.DOTALL,
+)
 
 
 class PromptRenderError(Exception):
@@ -19,6 +23,10 @@ class PromptRenderError(Exception):
 
 
 def _render(template: str, args: dict[str, str]) -> str:
+    template = CONDITIONAL_BLOCK.sub(
+        lambda m: m.group(3) if args.get(m.group(1)) == m.group(2) else "",
+        template,
+    )
     found = set(PLACEHOLDER.findall(template))
     missing = found - args.keys()
     if missing:
@@ -67,7 +75,10 @@ class Scope(enum.Enum):
         ),
     )
     RESUME = ("RESUME", frozenset[str]())
-    FAILURE_REPORT = ("FAILURE_REPORT", frozenset({"FAILED_ROLE", "SESSION_DIR"}))
+    FAILURE_REPORT = (
+        "FAILURE_REPORT",
+        frozenset({"FAILED_ROLE", "SESSION_DIR", "FAILURE_CLASS"}),
+    )
 
     @property
     def placeholders(self) -> frozenset[str]:
@@ -183,6 +194,7 @@ class PromptRenderer:
                 continue
             content = path.read_text(encoding="utf-8")
             found = set(PLACEHOLDER.findall(content))
+            found |= {m.group(1) for m in CONDITIONAL_BLOCK.finditer(content)}
             allowed = global_keys | template.scope.placeholders
             unknown = found - allowed
             if unknown:

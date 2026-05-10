@@ -90,7 +90,7 @@ class CommitMessageOutput:
 
 @dataclasses.dataclass(frozen=True)
 class FailedOutput:
-    pass
+    failure_class: str = ""
 
 
 AgentOutput: TypeAlias = (
