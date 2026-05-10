@@ -15,6 +15,8 @@ from ._rows import phase_row
 from .dispatcher import Done as Done
 from .dispatcher import should_dispatch_improve
 from .implement import branch_for, implement_phase
+from .improve import ImproveContinue as ImproveContinue
+from .improve import ImproveNoCandidate as ImproveNoCandidate
 from .improve import improve_phase
 from .merge import merge_phase
 from .planning import AllBlocked as AllBlocked
@@ -101,7 +103,8 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         # ── (Improve) — runs when idle: no AFK issues, no in-flight ─────────
         if not open_issues and not in_flight:
             if should_dispatch_improve(deps.improve_mode, deps.slept_once):
-                if await improve_phase(deps, sha=preflight_sha):
+                improve_result = await improve_phase(deps, sha=preflight_sha)
+                if isinstance(improve_result, ImproveNoCandidate):
                     return NoCandidate()
                 # Re-fetch open issues after improve filed new ready-for-agent issues
                 open_issues = strip_stale_blocker_refs(

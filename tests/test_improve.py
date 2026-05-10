@@ -17,6 +17,8 @@ from pycastle.config import Config
 from pycastle.iteration._deps import FakeAgentRunner, _make_deps
 from pycastle.iteration.improve import (
     IMPROVE_SANDBOX,
+    ImproveContinue,
+    ImproveNoCandidate,
     improve_phase,
     next_prompt,
 )
@@ -53,7 +55,7 @@ def deps(tmp_path, git_svc, agent_runner):
 
 
 def _run(deps, sha="abc123"):
-    asyncio.run(improve_phase(deps, sha=sha))
+    return asyncio.run(improve_phase(deps, sha=sha))
 
 
 # ── next_prompt: pure transition function ────────────────────────────────────
@@ -630,3 +632,33 @@ def test_improve_all_phases_have_correct_namespace(deps, agent_runner):
     assert agent_runner.calls[1].session_namespace == "main"
     assert agent_runner.calls[2].template == PromptTemplate.IMPROVE_ISSUES
     assert agent_runner.calls[2].session_namespace == "issues"
+
+
+# ── Return type: sum-type variants ───────────────────────────────────────────
+
+
+def test_improve_phase_returns_improve_continue_on_picked_path(deps):
+    """Happy path (candidate found and filed) returns ImproveContinue."""
+    result = _run(deps)
+    assert isinstance(result, ImproveContinue)
+
+
+def test_improve_phase_returns_improve_no_candidate_on_no_candidate_path(
+    tmp_path, git_svc
+):
+    """NO-CANDIDATE path returns ImproveNoCandidate."""
+    runner = FakeAgentRunner([NoCandidateOutput(), CompletionOutput()])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+    result = _run(deps)
+    assert isinstance(result, ImproveNoCandidate)
+
+
+def test_improve_phase_returns_improve_no_candidate_when_report_disabled(
+    tmp_path, git_svc
+):
+    """NO-CANDIDATE with report disabled (scan terminates) returns ImproveNoCandidate."""
+    runner = FakeAgentRunner([NoCandidateOutput()])
+    cfg = dataclasses.replace(Config(), diagnose_on_failure=False)
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, cfg=cfg)
+    result = _run(deps)
+    assert isinstance(result, ImproveNoCandidate)
