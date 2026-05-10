@@ -12,7 +12,7 @@ from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import AgentFailedError, BranchCollisionError, UsageLimitError
 from ..prompt_pipeline import PromptTemplate, build_issue_scope_args
-from ..session_resume import clear_stage, is_stage_done_for
+from ..session_resume import RoleSession, is_stage_done_for
 from ..status_display import StatusDisplay
 from ..services import GitService
 from ..worktree import (
@@ -129,7 +129,7 @@ async def run_issue(
                             deps.repo_root,
                             f"Implement #{issue['number']} - {_msg}",
                         )
-                        clear_stage(impl_mount_path, AgentRole.IMPLEMENTER)
+                        RoleSession(impl_mount_path, AgentRole.IMPLEMENTER).mark_done()
                 finally:
                     if _impl_overlay is not None:
                         _impl_overlay.unlink(missing_ok=True)
@@ -172,7 +172,7 @@ async def run_issue(
                         deps.repo_root,
                         f"Review #{issue['number']} - {_rev_msg}",
                     )
-                    clear_stage(review_mount_path, AgentRole.REVIEWER)
+                    RoleSession(review_mount_path, AgentRole.REVIEWER).mark_done()
             finally:
                 if _review_overlay is not None:
                     _review_overlay.unlink(missing_ok=True)
