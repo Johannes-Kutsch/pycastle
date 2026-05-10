@@ -22,6 +22,7 @@ from pycastle.iteration.preflight import (
     PreflightAFK,
     PreflightHITL,
     PreflightReady,
+    ensure_preflight,
     preflight_phase,
 )
 
@@ -34,6 +35,7 @@ class _PreflightStub:
     status_display: PlainStatusDisplay
     agent_runner: FakeAgentRunner
     repo_root: Path
+    preflight_verdict: PreflightReady | None = None
 
 
 @pytest.fixture
@@ -540,3 +542,85 @@ def test_dirty_working_tree_message_uses_preflight_caller_with_error_style(
         assert "[red]" not in str(call[2]), (
             f"Message must not contain [red] markup: {call[2]!r}"
         )
+
+
+# ── ensure_preflight: basic return variants ───────────────────────────────────
+
+
+def test_ensure_preflight_returns_ready_with_sha_when_checks_pass(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    result = asyncio.run(ensure_preflight(deps, tmp_path))
+
+    assert isinstance(result, PreflightReady)
+    assert result.sha == "abc123"
+
+
+def test_ensure_preflight_returns_hitl_when_checks_fail_with_hitl_label(
+    tmp_path, git_svc
+):
+    github_svc = MagicMock(spec=GithubService)
+    fake = FakeAgentRunner(
+        [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    result = asyncio.run(ensure_preflight(deps, tmp_path))
+
+    assert isinstance(result, PreflightHITL)
+    assert result.issue_number == 55
+    assert result.worktree_sha == "abc123"
+
+
+def test_ensure_preflight_returns_afk_when_checks_fail_with_afk_label(
+    tmp_path, git_svc
+):
+    github_svc = MagicMock(spec=GithubService)
+    fake = FakeAgentRunner(
+        [IssueOutput(number=42, labels=["bug", "ready-for-agent"])],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    result = asyncio.run(ensure_preflight(deps, tmp_path))
+
+    assert isinstance(result, PreflightAFK)
+    assert result.issue_number == 42
+    assert result.sha == "abc123"
+
+
+# ── ensure_preflight: memoization ────────────────────────────────────────────
+
+
+def test_ensure_preflight_calls_run_preflight_once_across_two_invocations(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    result1 = asyncio.run(ensure_preflight(deps, tmp_path))
+    result2 = asyncio.run(ensure_preflight(deps, tmp_path))
+
+    assert isinstance(result1, PreflightReady)
+    assert result2 == result1
+    assert len(fake.preflight_calls) == 1
+
+
+# ── ensure_preflight: pull failure ───────────────────────────────────────────
+
+
+def test_ensure_preflight_propagates_git_command_error_on_pull_failure(
+    tmp_path, git_svc, github_svc
+):
+    git_svc.pull.side_effect = GitCommandError("git pull --ff-only failed")
+    fake = FakeAgentRunner([], preflight_responses=[])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    with pytest.raises(GitCommandError):
+        asyncio.run(ensure_preflight(deps, tmp_path))
+
+    git_svc.get_head_sha.assert_not_called()

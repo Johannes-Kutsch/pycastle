@@ -13,34 +13,8 @@ from ..config import Config
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..status_display import StatusDisplay
-from ..worktree import transient_worktree
+from ..worktree import teardown_worktree, worktree_path
 from ._utils import _wait_for_clean_working_tree
-
-
-class _PreflightDeps(Protocol):
-    git_svc: GitService
-    github_svc: GithubService
-    cfg: Config
-    status_display: StatusDisplay
-    agent_runner: AgentRunnerProtocol
-    repo_root: Path
-
-
-def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
-    open_numbers = {i["number"] for i in issues}
-    result = []
-    for issue in issues:
-        body = issue.get("body") or ""
-        lines = body.splitlines()
-        cleaned = []
-        for line in lines:
-            if re.search(r"blocked\s+by\s+#\d+", line, re.IGNORECASE):
-                refs = {int(m) for m in re.findall(r"#(\d+)", line)}
-                if refs.isdisjoint(open_numbers):
-                    continue
-            cleaned.append(line)
-        result.append({**issue, "body": "\n".join(cleaned)})
-    return result
 
 
 @dataclasses.dataclass(frozen=True)
@@ -61,6 +35,33 @@ class PreflightAFK:
 
 
 PreflightResult: TypeAlias = PreflightReady | PreflightHITL | PreflightAFK
+
+
+class _PreflightDeps(Protocol):
+    git_svc: GitService
+    github_svc: GithubService
+    cfg: Config
+    status_display: StatusDisplay
+    agent_runner: AgentRunnerProtocol
+    repo_root: Path
+    preflight_verdict: PreflightReady | None
+
+
+def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
+    open_numbers = {i["number"] for i in issues}
+    result = []
+    for issue in issues:
+        body = issue.get("body") or ""
+        lines = body.splitlines()
+        cleaned = []
+        for line in lines:
+            if re.search(r"blocked\s+by\s+#\d+", line, re.IGNORECASE):
+                refs = {int(m) for m in re.findall(r"#(\d+)", line)}
+                if refs.isdisjoint(open_numbers):
+                    continue
+            cleaned.append(line)
+        result.append({**issue, "body": "\n".join(cleaned)})
+    return result
 
 
 async def handle_preflight_failure(
@@ -96,11 +97,13 @@ async def handle_preflight_failure(
     return "afk", agent_result.number
 
 
-async def preflight_phase(
+async def ensure_preflight(
     deps: _PreflightDeps,
-    open_issues: list[dict],
-    all_open_issues: list[dict],
+    mount_path: Path,
 ) -> PreflightResult:
+    if deps.preflight_verdict is not None:
+        return deps.preflight_verdict
+
     await _wait_for_clean_working_tree(deps, "Preflight")
     try:
         deps.git_svc.pull(deps.repo_root)
@@ -113,24 +116,39 @@ async def preflight_phase(
         )
         raise
     sha = deps.git_svc.get_head_sha(deps.repo_root)
-    async with transient_worktree("pre-flight-sandbox", sha=sha, deps=deps) as wt:
-        failures = await deps.agent_runner.run_preflight(
-            name="Preflight Agent",
-            mount_path=wt,
-            stage="PREFLIGHT",
-            status_display=deps.status_display,
-            work_body="Checking",
-        )
+    deps.git_svc.checkout_detached(deps.repo_root, mount_path, sha)
 
-        if failures:
-            try:
-                verdict, pf_num = await handle_preflight_failure(
-                    tuple(failures), deps, wt
-                )
-            except AgentOutputProtocolError as parse_exc:
-                raise RuntimeError(str(parse_exc)) from parse_exc
-            if verdict == "hitl":
-                return PreflightHITL(worktree_sha=sha, issue_number=pf_num)
-            return PreflightAFK(sha=sha, issue_number=pf_num)
+    failures = await deps.agent_runner.run_preflight(
+        name="Preflight Agent",
+        mount_path=mount_path,
+        stage="PREFLIGHT",
+        status_display=deps.status_display,
+        work_body="Checking",
+    )
 
-        return PreflightReady(sha=sha)
+    if failures:
+        try:
+            verdict, pf_num = await handle_preflight_failure(
+                tuple(failures), deps, mount_path
+            )
+        except AgentOutputProtocolError as parse_exc:
+            raise RuntimeError(str(parse_exc)) from parse_exc
+        if verdict == "hitl":
+            return PreflightHITL(worktree_sha=sha, issue_number=pf_num)
+        return PreflightAFK(sha=sha, issue_number=pf_num)
+
+    result = PreflightReady(sha=sha)
+    deps.preflight_verdict = result
+    return result
+
+
+async def preflight_phase(
+    deps: _PreflightDeps,
+    open_issues: list[dict],
+    all_open_issues: list[dict],
+) -> PreflightResult:
+    wt = worktree_path("pre-flight-sandbox", deps)
+    try:
+        return await ensure_preflight(deps, wt)
+    finally:
+        teardown_worktree(deps.git_svc, deps.repo_root, wt)
