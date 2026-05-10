@@ -50,6 +50,10 @@ class Config:
     bug_label: str = "bug"
     issue_label: str = "ready-for-agent"
     hitl_label: str = "ready-for-human"
+    enhancement_label: str = "enhancement"
+    needs_triage_label: str = "needs-triage"
+    needs_info_label: str = "needs-info"
+    wontfix_label: str = "wontfix"
     pycastle_dir: Path = dataclasses.field(default_factory=lambda: Path("pycastle"))
     prompts_dir: Path = dataclasses.field(
         default_factory=lambda: Path("pycastle/prompts")

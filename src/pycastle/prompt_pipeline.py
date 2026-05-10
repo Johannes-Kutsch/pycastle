@@ -164,8 +164,12 @@ class PromptRenderer:
         checks = " && ".join(cmd for _, cmd in cfg.preflight_checks)
         return {
             "BUG_LABEL": cfg.bug_label,
-            "ISSUE_LABEL": cfg.issue_label,
-            "HITL_LABEL": cfg.hitl_label,
+            "READY_FOR_AGENT_LABEL": cfg.issue_label,
+            "READY_FOR_HUMAN_LABEL": cfg.hitl_label,
+            "ENHANCEMENT_LABEL": cfg.enhancement_label,
+            "NEEDS_TRIAGE_LABEL": cfg.needs_triage_label,
+            "NEEDS_INFO_LABEL": cfg.needs_info_label,
+            "WONTFIX_LABEL": cfg.wontfix_label,
             "FEEDBACK_COMMANDS": _format_feedback_commands(cfg.implement_checks),
             "CHECKS": checks,
             **standards,

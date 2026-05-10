@@ -27,18 +27,18 @@ Do not treat the raw output above as the final answer. Explore the repository to
 
 ### 2. Evaluate HITL
 
-Decide whether this fix requires human judgment. Apply the `{{HITL_LABEL}}` label when:
+Decide whether this fix requires human judgment. Apply the `{{READY_FOR_HUMAN_LABEL}}` label when:
 
 - The fix requires a design decision about intended behavior
 - It is unclear which of several plausible fixes is correct
 - The failure could be fixed in multiple incompatible ways and choosing the wrong one would have significant consequences
 - You are uncertain
 
-**Default to `{{HITL_LABEL}}` when in doubt.** Only choose `{{ISSUE_LABEL}}` when the fix is unambiguous and does not require guessing at design intent.
+**Default to `{{READY_FOR_HUMAN_LABEL}}` when in doubt.** Only choose `{{READY_FOR_AGENT_LABEL}}` when the fix is unambiguous and does not require guessing at design intent.
 
 ### 3. Determine the correct labels
 
-The configured label names are injected into this prompt as placeholders. Use `{{ISSUE_LABEL}}` as the agent-fixable label and `{{HITL_LABEL}}` as the human label.
+The configured label names are injected into this prompt as placeholders. Use `{{READY_FOR_AGENT_LABEL}}` as the agent-fixable label and `{{READY_FOR_HUMAN_LABEL}}` as the human label.
 
 **Never apply `needs-triage`.** The preflight-issue agent performs triage inline.
 
@@ -85,10 +85,10 @@ EOF
 
 ### 5. Apply labels
 
-Apply the `{{BUG_LABEL}}` label and either the `{{ISSUE_LABEL}}` or `{{HITL_LABEL}}` label to the newly created issue:
+Apply the `{{BUG_LABEL}}` label and either the `{{READY_FOR_AGENT_LABEL}}` or `{{READY_FOR_HUMAN_LABEL}}` label to the newly created issue:
 
 ```
-gh issue edit <number> --add-label "{{BUG_LABEL}}" --add-label "<{{ISSUE_LABEL}} or {{HITL_LABEL}}>"
+gh issue edit <number> --add-label "{{BUG_LABEL}}" --add-label "<{{READY_FOR_AGENT_LABEL}} or {{READY_FOR_HUMAN_LABEL}}>"
 ```
 
 Do **not** apply `needs-triage`.
