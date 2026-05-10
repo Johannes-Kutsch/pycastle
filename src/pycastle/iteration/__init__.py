@@ -19,7 +19,7 @@ from .improve import improve_phase
 from .merge import merge_phase
 from .planning import AllBlocked as AllBlocked
 from .planning import PlanReady as PlanReady
-from .planning import hydrate_planned_issues, planning_phase
+from .planning import planning_phase
 from .preflight import (
     PreflightHITL,
     preflight_phase,
@@ -114,51 +114,14 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             else:
                 return Done()
 
-        # ── Plan or implement-direct ─────────────────────────────────────────
-        if in_flight:
-            sha = preflight_sha
-            issues: list[dict] = in_flight
-        else:
-            sha = preflight_sha
-            async with phase_row(
-                deps.status_display,
-                "Plan",
-                initial_phase="Planning",
-                startup_message=f"started planning for {len(open_issues)} issue(s) labeled {deps.cfg.issue_label}",
-            ) as row:
-                plan_result = await planning_phase(
-                    deps, sha, open_issues, all_open_issues
-                )
-                if isinstance(plan_result, AllBlocked):
-                    blocked_lines = [
-                        f"  #{b['number']} blocked by #{b['blocked_by']}: {b['reason']}"
-                        for b in plan_result.blocked
-                    ]
-                    if blocked_lines:
-                        row.close(
-                            "\n".join(
-                                ["All ready-for-agent issues are blocked:"]
-                                + blocked_lines
-                            )
-                        )
-                    else:
-                        row.close("All ready-for-agent issues are blocked.")
-                    return Done()
-                issue_lines = [
-                    f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
-                    for i in plan_result.issues
-                ]
-                row.close(
-                    "\n".join(
-                        [
-                            f"Planning complete, implementing {len(plan_result.issues)} issue(s):"
-                        ]
-                        + issue_lines
-                    )
-                )
-                hydrated = hydrate_planned_issues(plan_result, open_issues)
-                sha = hydrated.worktree_sha
-                issues = hydrated.issues
+        # ── Plan ─────────────────────────────────────────────────────────────
+        plan_result = await planning_phase(
+            deps, preflight_sha, open_issues, all_open_issues, in_flight=in_flight
+        )
+        if isinstance(plan_result, AllBlocked):
+            return Done()
+        sha = plan_result.worktree_sha
+        issues: list[dict] = plan_result.issues
 
         # ── Implement ────────────────────────────────────────────────────────
         issues = issues[: deps.cfg.max_parallel]
