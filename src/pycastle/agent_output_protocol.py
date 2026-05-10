@@ -345,18 +345,18 @@ def _extract_improve_output(text: str) -> IssueOutput | CompletionOutput:
 
 
 class _RoleHandler(Protocol):
-    def on_turn(self, turn: str) -> AgentOutput | None: ...
-    def on_end(self, text: str, tail: str) -> AgentOutput: ...
+    def check_turn(self, turn: str) -> AgentOutput | None: ...
+    def extract_final(self, text: str, tail: str) -> AgentOutput: ...
 
 
 class _CommitMessageHandler:
-    def on_turn(self, turn: str) -> AgentOutput | None:
+    def check_turn(self, turn: str) -> AgentOutput | None:
         body = _last_tag_block(turn, "commit_message")
         if body is not None:
             return CommitMessageOutput(message=body.strip())
         return None
 
-    def on_end(self, text: str, tail: str) -> AgentOutput:
+    def extract_final(self, text: str, tail: str) -> AgentOutput:
         body = _last_tag_block(text, "commit_message")
         if body is None:
             return CommitMessageOutput(message=None)
@@ -364,13 +364,13 @@ class _CommitMessageHandler:
 
 
 class _PlannerHandler:
-    def on_turn(self, turn: str) -> AgentOutput | None:
+    def check_turn(self, turn: str) -> AgentOutput | None:
         try:
             return _extract_planner_output(turn)
         except PlanParseError:
             return None
 
-    def on_end(self, text: str, tail: str) -> AgentOutput:
+    def extract_final(self, text: str, tail: str) -> AgentOutput:
         try:
             return _extract_planner_output(text)
         except PlanParseError as exc:
@@ -378,13 +378,13 @@ class _PlannerHandler:
 
 
 class _PreflightIssueHandler:
-    def on_turn(self, turn: str) -> AgentOutput | None:
+    def check_turn(self, turn: str) -> AgentOutput | None:
         try:
             return _extract_issue_output(turn)
         except IssueParseError:
             return None
 
-    def on_end(self, text: str, tail: str) -> AgentOutput:
+    def extract_final(self, text: str, tail: str) -> AgentOutput:
         try:
             return _extract_issue_output(text)
         except IssueParseError as exc:
@@ -392,14 +392,14 @@ class _PreflightIssueHandler:
 
 
 class _MergerHandler:
-    def on_turn(self, turn: str) -> AgentOutput | None:
+    def check_turn(self, turn: str) -> AgentOutput | None:
         if re.search(r"<promise>FAILED</promise>", turn):
             return FailedOutput()
         if re.search(r"<promise>COMPLETE</promise>", turn):
             return CompletionOutput()
         return None
 
-    def on_end(self, text: str, tail: str) -> AgentOutput:
+    def extract_final(self, text: str, tail: str) -> AgentOutput:
         if re.search(r"<promise>FAILED</promise>", text):
             return FailedOutput()
         if not re.search(r"<promise>COMPLETE</promise>", text):
@@ -410,7 +410,7 @@ class _MergerHandler:
 
 
 class _ImproveHandler:
-    def on_turn(self, turn: str) -> AgentOutput | None:
+    def check_turn(self, turn: str) -> AgentOutput | None:
         if re.search(r"<promise>FAILED</promise>", turn):
             return FailedOutput()
         if re.search(r"<promise>NO-CANDIDATE</promise>", turn):
@@ -419,7 +419,7 @@ class _ImproveHandler:
             return _extract_improve_output(turn)
         return None
 
-    def on_end(self, text: str, tail: str) -> AgentOutput:
+    def extract_final(self, text: str, tail: str) -> AgentOutput:
         if re.search(r"<promise>FAILED</promise>", text):
             return FailedOutput()
         if re.search(r"<promise>NO-CANDIDATE</promise>", text):
@@ -432,18 +432,20 @@ class _ImproveHandler:
         return _extract_improve_output(text)
 
 
-def _make_handler(role: AgentRole) -> _RoleHandler:
-    if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
-        return _CommitMessageHandler()
-    if role == AgentRole.PLANNER:
-        return _PlannerHandler()
-    if role in (AgentRole.PREFLIGHT_ISSUE, AgentRole.FAILURE_REPORT):
-        return _PreflightIssueHandler()
-    if role == AgentRole.IMPROVE:
-        return _ImproveHandler()
-    if role == AgentRole.MERGER:
-        return _MergerHandler()
-    raise ValueError(f"Unhandled AgentRole: {role}")
+_commit_message_handler = _CommitMessageHandler()
+_preflight_issue_handler = _PreflightIssueHandler()
+
+_HANDLERS: dict[AgentRole, _RoleHandler] = {
+    AgentRole.IMPLEMENTER: _commit_message_handler,
+    AgentRole.REVIEWER: _commit_message_handler,
+    AgentRole.PLANNER: _PlannerHandler(),
+    AgentRole.PREFLIGHT_ISSUE: _preflight_issue_handler,
+    AgentRole.FAILURE_REPORT: _preflight_issue_handler,
+    AgentRole.IMPROVE: _ImproveHandler(),
+    AgentRole.MERGER: _MergerHandler(),
+}
+
+assert len(_HANDLERS) == len(AgentRole)
 
 
 def process_stream(
@@ -452,7 +454,7 @@ def process_stream(
     role: AgentRole,
     on_tokens: Callable[[int], None] | None = None,
 ) -> AgentOutput:
-    handler = _make_handler(role)
+    handler = _HANDLERS[role]
     collected: list[str] = []
     result_text: str | None = None
     for line in lines:
@@ -465,7 +467,7 @@ def process_stream(
             on_tokens(tokens)
         if turn is not None:
             on_turn(turn)
-            result = handler.on_turn(turn)
+            result = handler.check_turn(turn)
             if result is not None:
                 return result
         try:
@@ -479,4 +481,4 @@ def process_stream(
                 break
     text = result_text if result_text is not None else "\n".join(collected)
     tail = f"\nOutput tail: {text[-300:]!r}"
-    return handler.on_end(text, tail)
+    return handler.extract_final(text, tail)
