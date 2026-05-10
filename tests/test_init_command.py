@@ -105,11 +105,11 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
 # ── Cycle 4: init does not overwrite other existing files ─────────────────────
 
 
-# ── Cycle 242-3: init scaffolds five standards files ─────────────────────────
+# ── init scaffolds consolidated standards files ──────────────────────────────
 
 
-def test_init_scaffolds_five_standards_files(tmp_path, monkeypatch):
-    """init must copy all five standards files into pycastle/prompts/coding-standards/."""
+def test_init_scaffolds_consolidated_standards_files(tmp_path, monkeypatch):
+    """init must copy the consolidated standards files into pycastle/prompts/coding-standards/."""
     from pycastle.init_command import main
 
     monkeypatch.chdir(tmp_path)
@@ -120,11 +120,8 @@ def test_init_scaffolds_five_standards_files(tmp_path, monkeypatch):
         main()
 
     standards = tmp_path / "pycastle" / "prompts" / "coding-standards"
-    assert (standards / "tests.md").exists()
-    assert (standards / "mocking.md").exists()
-    assert (standards / "interfaces.md").exists()
-    assert (standards / "deep-modules.md").exists()
-    assert (standards / "refactoring.md").exists()
+    assert (standards / "design.md").exists()
+    assert (standards / "implementation.md").exists()
 
 
 def test_init_does_not_scaffold_coding_standards(tmp_path, monkeypatch):
