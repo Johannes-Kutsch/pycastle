@@ -38,12 +38,6 @@ class AgentTimeoutError(PycastleError, TimeoutError):
         super().__init__(message)
 
 
-class PreflightFailure(PycastleError):
-    def __init__(self, failures: tuple[tuple[str, str, str], ...]) -> None:
-        self.failures = failures
-        super().__init__(f"Preflight failed: {len(failures)} check(s) failed")
-
-
 class ConfigValidationError(PycastleError):
     def __init__(
         self,

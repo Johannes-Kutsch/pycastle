@@ -126,7 +126,6 @@ async def planning_phase(
                         model=deps.cfg.plan_override.model,
                         effort=deps.cfg.plan_override.effort,
                         stage="plan-sandbox",
-                        skip_preflight=True,
                         status_display=deps.status_display,
                         work_body=f"Creating Plan from {len(open_issues)} issues",
                     )

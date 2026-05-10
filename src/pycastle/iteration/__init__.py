@@ -200,7 +200,6 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                     template=PromptTemplate.FAILURE_REPORT,
                     mount_path=err.worktree_path,
                     role=AgentRole.FAILURE_REPORT,
-                    skip_preflight=True,
                     scope_args={
                         "FAILED_ROLE": err.role_value,
                         "SESSION_DIR": err.session_dir,

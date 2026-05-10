@@ -216,7 +216,6 @@ async def improve_phase(
                         template=template,
                         mount_path=sandbox_path,
                         role=AgentRole.IMPROVE,
-                        skip_preflight=True,
                         scope_args=scope_args,
                         model=deps.cfg.improve_override.model,
                         effort=deps.cfg.improve_override.effort,

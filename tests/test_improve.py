@@ -121,12 +121,6 @@ def test_improve_phase_runs_agent_with_improve_role(deps, agent_runner):
     assert all(call.role == AgentRole.IMPROVE for call in agent_runner.calls)
 
 
-def test_improve_phase_skips_preflight(deps, agent_runner):
-    """improve_phase always sets skip_preflight=True."""
-    _run(deps)
-    assert all(call.skip_preflight is True for call in agent_runner.calls)
-
-
 def test_improve_phase_mounts_improve_sandbox_path(deps, agent_runner, tmp_path):
     """Agent is mounted at the improve-sandbox worktree path."""
     _run(deps)

@@ -8,7 +8,7 @@ from typing import Protocol
 from ..agent_output_protocol import AgentRole, FailedOutput
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..errors import AgentFailedError, PreflightFailure
+from ..errors import AgentFailedError
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..session_resume import RoleSession
@@ -22,6 +22,7 @@ from ..worktree import (
 from ._rows import phase_row
 from ._utils import _wait_for_clean_working_tree
 from .implement import branch_for
+from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
 
 class _MergeDeps(Protocol):
@@ -31,6 +32,7 @@ class _MergeDeps(Protocol):
     status_display: StatusDisplay
     agent_runner: AgentRunnerProtocol
     repo_root: Path
+    preflight_cache: PreflightCache
 
 
 MERGE_SANDBOX = "pycastle/merge-sandbox"
@@ -170,44 +172,42 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             row.close(_build_close_message(clean_deleted))
         else:
             target_branch = deps.git_svc.get_current_branch(deps.repo_root)
-            sha = deps.git_svc.get_head_sha(deps.repo_root)
+            verdict = await deps.preflight_cache.get_safe_sha(deps)
+            if isinstance(verdict, (PreflightHITL, PreflightAFK)):
+                deps.status_display.print(
+                    "Merge",
+                    "Merge-time preflight failed; skipping conflict branch merge. "
+                    "Conflict issues remain open for recovery in the next iteration.",
+                )
+                row.close(_build_close_message(clean_deleted))
+                if deps.cfg.auto_push and clean_issues:
+                    deps.git_svc.push(deps.repo_root)
+                return MergeResult(clean=clean_issues, conflicts=conflict_issues)
             async with managed_worktree(
                 "merge-sandbox",
                 branch=MERGE_SANDBOX,
-                sha=sha,
+                sha=verdict.sha,
                 delete_branch_on_teardown=True,
                 deps=deps,
             ) as sandbox_path:
-                try:
-                    merger_result = await deps.agent_runner.run(
-                        RunRequest(
-                            name="Merge Agent",
-                            template=PromptTemplate.MERGE,
-                            mount_path=sandbox_path,
-                            role=AgentRole.MERGER,
-                            scope_args={
-                                "BRANCHES": "\n".join(
-                                    f"- {branch_for(i['number'])}"
-                                    for i in conflict_issues
-                                ),
-                            },
-                            model=deps.cfg.merge_override.model,
-                            status_display=deps.status_display,
-                            effort=deps.cfg.merge_override.effort,
-                            stage="pre-merge",
-                            work_body=f"Merging {len(conflict_issues)} Branches",
-                        )
+                merger_result = await deps.agent_runner.run(
+                    RunRequest(
+                        name="Merge Agent",
+                        template=PromptTemplate.MERGE,
+                        mount_path=sandbox_path,
+                        role=AgentRole.MERGER,
+                        scope_args={
+                            "BRANCHES": "\n".join(
+                                f"- {branch_for(i['number'])}" for i in conflict_issues
+                            ),
+                        },
+                        model=deps.cfg.merge_override.model,
+                        status_display=deps.status_display,
+                        effort=deps.cfg.merge_override.effort,
+                        stage="pre-merge",
+                        work_body=f"Merging {len(conflict_issues)} Branches",
                     )
-                except PreflightFailure:
-                    deps.status_display.print(
-                        "Merge",
-                        "Merge-time preflight failed; skipping conflict branch merge. "
-                        "Conflict issues remain open for recovery in the next iteration.",
-                    )
-                    row.close(_build_close_message(clean_deleted))
-                    if deps.cfg.auto_push and clean_issues:
-                        deps.git_svc.push(deps.repo_root)
-                    return MergeResult(clean=clean_issues, conflicts=conflict_issues)
+                )
                 if isinstance(merger_result, FailedOutput):
                     raise AgentFailedError(
                         role_value=AgentRole.MERGER.value,

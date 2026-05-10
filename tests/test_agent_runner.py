@@ -14,7 +14,6 @@ from pycastle.agent_output_protocol import (
     FailedOutput,
 )
 from pycastle.agent_result import CancellationToken
-from pycastle.errors import PreflightFailure
 from pycastle.agent_runner import AgentRunner, RunRequest
 from pycastle.config import Config
 from pycastle.errors import (
@@ -68,22 +67,6 @@ def test_fake_agent_runner_returns_queued_completion_output():
         )
     )
     assert isinstance(result, CompletionOutput)
-
-
-def test_fake_agent_runner_raises_queued_preflight_failure():
-    failure = PreflightFailure(failures=(("ruff", "ruff check .", "E501"),))
-    fake = FakeAgentRunner([failure])
-    with pytest.raises(PreflightFailure) as exc_info:
-        asyncio.run(
-            fake.run(
-                RunRequest(
-                    name="Tester",
-                    template=_PLAN_TEMPLATE,
-                    mount_path=Path("/workspace"),
-                )
-            )
-        )
-    assert exc_info.value.failures == (("ruff", "ruff check .", "E501"),)
 
 
 def test_fake_agent_runner_raises_queued_exception():
@@ -175,7 +158,6 @@ def test_fake_agent_runner_records_call_kwargs():
                     "ALL_OPEN_ISSUES_JSON": "[]",
                     "READY_FOR_AGENT_ISSUES_JSON": "[]",
                 },
-                skip_preflight=True,
                 model="claude-3",
                 effort="high",
                 stage="plan",
@@ -191,7 +173,6 @@ def test_fake_agent_runner_records_call_kwargs():
         "ALL_OPEN_ISSUES_JSON": "[]",
         "READY_FOR_AGENT_ISSUES_JSON": "[]",
     }
-    assert call.skip_preflight is True
     assert call.model == "claude-3"
     assert call.effort == "high"
     assert call.stage == "plan"
@@ -321,78 +302,6 @@ def test_agent_runner_run_returns_agent_output(tmp_path):
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
-                skip_preflight=True,
-            )
-        )
-    )
-
-    assert isinstance(result, CommitMessageOutput)
-
-
-def test_agent_runner_run_raises_preflight_failure_when_check_fails(tmp_path):
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def exec_side_effect(*args, **kwargs):
-        if kwargs.get("stream"):
-            r = MagicMock()
-            r.output = iter([b""])
-            return r
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if "ruff check" in cmd:
-            return MagicMock(exit_code=1, output=(b"E501 line too long", b""))
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
-    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
-
-    with pytest.raises(PreflightFailure) as exc_info:
-        asyncio.run(
-            runner.run(
-                RunRequest(
-                    name="Test",
-                    template=_PLAN_TEMPLATE,
-                    scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
-                )
-            )
-        )
-
-    assert len(exc_info.value.failures) == 1
-    name, cmd, output = exc_info.value.failures[0]
-    assert name == "ruff"
-    assert "E501" in output
-
-
-def test_agent_runner_run_skips_preflight_when_skip_preflight_true(tmp_path):
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def exec_side_effect(*args, **kwargs):
-        if kwargs.get("stream"):
-            r = MagicMock()
-            r.output = iter(_COMPLETE_STREAM)
-            return r
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if "ruff check" in cmd:
-            return MagicMock(exit_code=1, output=(b"E501 line too long", b""))
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
-    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
-
-    result = asyncio.run(
-        runner.run(
-            RunRequest(
-                name="Test",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                skip_preflight=True,
             )
         )
     )
@@ -447,7 +356,6 @@ def test_agent_runner_run_cancels_token_and_raises_on_usage_limit_in_stream(tmp_
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
-                    skip_preflight=True,
                     token=token,
                 )
             )
@@ -480,7 +388,6 @@ def test_agent_runner_run_raises_agent_timeout_error_when_retries_exhausted(tmp_
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
-                    skip_preflight=True,
                 )
             )
         )
@@ -516,7 +423,6 @@ def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
-                skip_preflight=True,
             )
         )
     )
@@ -538,7 +444,6 @@ def test_agent_runner_propagates_git_user_name_error(tmp_path):
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
-                    skip_preflight=True,
                 )
             )
         )
@@ -561,7 +466,6 @@ def test_agent_runner_run_registers_and_removes_status_row_on_success(tmp_path):
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
-                skip_preflight=True,
                 status_display=display,
             )
         )
@@ -585,7 +489,6 @@ def test_agent_runner_run_removes_status_row_when_setup_fails(tmp_path):
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
-                    skip_preflight=True,
                     status_display=display,
                 )
             )
@@ -864,7 +767,6 @@ def test_run_request_stores_required_fields():
     assert req.mount_path == Path("/workspace")
     assert req.role == AgentRole.IMPLEMENTER
     assert req.scope_args is None
-    assert req.skip_preflight is False
     assert req.model == ""
     assert req.effort == ""
     assert req.stage == ""
@@ -927,7 +829,6 @@ def test_agent_runner_injects_picked_token_into_container_env(tmp_path):
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
-                skip_preflight=True,
             )
         )
     )
@@ -965,7 +866,6 @@ def test_agent_runner_marks_picked_token_exhausted_on_usage_limit(tmp_path):
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
-                    skip_preflight=True,
                 )
             )
         )
@@ -1031,7 +931,6 @@ def test_agent_runner_injects_claude_config_dir_for_implementer(tmp_path):
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.IMPLEMENTER,
-                skip_preflight=True,
             )
         )
     )
@@ -1082,7 +981,6 @@ def test_agent_runner_injects_namespaced_claude_config_dir_when_session_namespac
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.IMPLEMENTER,
-                skip_preflight=True,
                 session_namespace="main",
             )
         )
@@ -1132,7 +1030,6 @@ def test_agent_runner_uses_namespace_subdir_for_resume_check(tmp_path):
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.IMPLEMENTER,
-                skip_preflight=True,
                 session_namespace="main",
             )
         )
@@ -1183,7 +1080,6 @@ def test_agent_runner_uses_fresh_for_different_namespace_when_other_namespace_ha
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.IMPLEMENTER,
-                skip_preflight=True,
                 session_namespace="main",
             )
         )
@@ -1230,7 +1126,6 @@ def test_agent_runner_passes_session_id_flag_to_claude_on_fresh_run(tmp_path):
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
-                skip_preflight=True,
             )
         )
     )
@@ -1284,7 +1179,6 @@ def test_agent_runner_passes_resume_flag_to_claude_when_session_exists(tmp_path)
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.IMPLEMENTER,
-                skip_preflight=True,
             )
         )
     )
@@ -1341,7 +1235,6 @@ def test_resume_run_non_typed_exception_retries_same_session_and_succeeds(tmp_pa
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
-                skip_preflight=True,
             )
         )
     )
@@ -1370,7 +1263,6 @@ def test_resume_run_consecutive_non_typed_exceptions_return_failed_output(tmp_pa
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
-                skip_preflight=True,
             )
         )
     )
@@ -1401,7 +1293,6 @@ def test_resume_run_non_typed_exception_does_not_wipe_session(tmp_path):
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
-                skip_preflight=True,
             )
         )
     )
@@ -1431,7 +1322,6 @@ def test_fresh_run_non_typed_exception_propagates(tmp_path):
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
-                    skip_preflight=True,
                 )
             )
         )
@@ -1486,7 +1376,6 @@ def test_agent_runner_injects_claude_config_dir_for_reviewer(tmp_path):
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.REVIEWER,
-                skip_preflight=True,
             )
         )
     )
@@ -1534,7 +1423,6 @@ def test_agent_runner_passes_resume_flag_to_claude_when_reviewer_session_exists(
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.REVIEWER,
-                skip_preflight=True,
             )
         )
     )
@@ -1591,7 +1479,6 @@ def test_agent_runner_passes_resume_flag_to_claude_when_merger_session_exists(tm
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.MERGER,
-                skip_preflight=True,
             )
         )
     )

@@ -80,7 +80,6 @@ async def handle_preflight_failure(
                 "COMMAND": command,
                 "OUTPUT": output,
             },
-            skip_preflight=True,
             model=deps.cfg.preflight_issue_override.model,
             effort=deps.cfg.preflight_issue_override.effort,
             status_display=deps.status_display,

@@ -112,23 +112,6 @@ def test_planning_phase_returns_plan_ready_with_issues_sorted_by_number(
     assert [i["number"] for i in result.issues] == [1, 2, 3]
 
 
-# ── planning_phase: skip_preflight ──────────────────────────────────────────
-
-
-def test_planning_phase_invokes_planner_with_skip_preflight_true(tmp_path, git_svc):
-    issues = [
-        {"number": 1, "title": "A", "body": "", "comments": []},
-        {"number": 2, "title": "B", "body": "", "comments": []},
-    ]
-    fake = FakeAgentRunner([_plan_output(issues)])
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
-    asyncio.run(planning_phase(deps, issues, []))
-
-    assert len(fake.calls) == 1
-    assert fake.calls[0].skip_preflight is True
-
-
 def test_planning_phase_passes_ready_for_agent_issues_as_json_to_planner(
     tmp_path, git_svc
 ):
