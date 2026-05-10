@@ -12,6 +12,7 @@ from .config import Config, load_config
 from .iteration import (
     AbortedAgentFailure,
     AbortedHITL,
+    AbortedTimeout,
     AbortedUsageLimit,
     Continue,
     Done,
@@ -253,6 +254,12 @@ async def run(
                         msg += f" Filed issue #{issue_num} for triage."
                     status_display.print("", msg)  # type: ignore[union-attr]
                     sys.exit(1)
+                case AbortedTimeout(failed_role=role):
+                    status_display.print(  # type: ignore[union-attr]
+                        "",
+                        f"Agent '{role}' timed out. Resuming next iteration.",
+                    )
+                    continue
                 case Continue():
                     pass
 

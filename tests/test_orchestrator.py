@@ -12,7 +12,7 @@ from pycastle.agent_output_protocol import (
 )
 from pycastle.agent_runner import RunRequest
 from pycastle.config import StageOverride
-from pycastle.errors import UsageLimitError
+from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.services import (
     GitCommandError,
     GithubAuthError,
@@ -2568,3 +2568,38 @@ def test_improve_and_plan_share_preflight_cache(tmp_path):
         f"ensure_preflight must run exactly once across improve+plan; "
         f"got {len(fake.preflight_calls)} calls"
     )
+
+
+# ── AbortedTimeout: orchestrator continues without sleep ─────────────────────
+
+
+def test_orchestrator_aborted_timeout_continues_to_next_iteration_without_sleep(
+    tmp_path,
+):
+    """AbortedTimeout from run_iteration causes the orchestrator to start the next
+    iteration immediately without calling time.sleep and without exiting the process."""
+    mock_github = _make_github_svc(numbers=[1, 2])
+    call_count = [0]
+
+    async def _fake_run_agent(req: RunRequest):
+        call_count[0] += 1
+        raise AgentTimeoutError("timeout")
+
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Fix", "body": "", "comments": []},
+            {"number": 2, "title": "Fix B", "body": "", "comments": []},
+        ],
+        [],
+    ]
+
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            max_iterations=2,
+        )
+
+    mock_sleep.assert_not_called()
+    assert call_count[0] >= 1
