@@ -1,4 +1,5 @@
 import asyncio
+import re
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,10 @@ from pycastle.prompt_pipeline import (
     PromptRenderer,
     PromptTemplate,
     Scope,
+)
+
+_SHIPPED_PROMPTS_DIR = (
+    Path(__file__).parent.parent / "src" / "pycastle" / "defaults" / "prompts"
 )
 
 
@@ -517,3 +522,76 @@ def test_template_shell_expr_runs_arg_shell_token_stays_inert(cfg, prompts_dir):
     assert calls == ["echo hi"]
     assert "Header: HI" in result
     assert "!`evil`" in result
+
+
+# ── _placeholder-info.md reference card validation ───────────────────────────
+
+_TOKEN_RE = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}")
+
+
+def _parse_placeholder_info() -> tuple[set[str], dict[str, tuple[set[str], set[str]]]]:
+    """Parse the shipped _placeholder-info.md.
+
+    Returns (global_tokens, {scope_name: (tokens, used_by_filenames)}).
+    """
+    text = (_SHIPPED_PROMPTS_DIR / "_placeholder-info.md").read_text(encoding="utf-8")
+    global_tokens: set[str] = set()
+    scopes: dict[str, tuple[set[str], set[str]]] = {}
+
+    for section in re.split(r"(?m)^## ", text)[1:]:
+        lines = section.splitlines()
+        heading = lines[0].strip()
+        body = "\n".join(lines[1:])
+
+        if heading == "Global placeholders":
+            global_tokens = set(_TOKEN_RE.findall(body))
+        elif heading.startswith("Scope: "):
+            scope_name = heading[len("Scope: ") :]
+            tokens = set(_TOKEN_RE.findall(body))
+            used_by: set[str] = set()
+            for line in lines[1:]:
+                if line.startswith("Used by:"):
+                    used_by = {f.strip() for f in line[len("Used by:") :].split(",")}
+                    break
+            scopes[scope_name] = (tokens, used_by)
+
+    return global_tokens, scopes
+
+
+def test_placeholder_info_global_tokens_match_code(cfg):
+    renderer = PromptRenderer(cfg)
+    expected = set(renderer._global_args.keys())
+
+    global_tokens, _ = _parse_placeholder_info()
+
+    assert global_tokens == expected
+
+
+def test_placeholder_info_scope_tokens_match_code():
+    _, scopes = _parse_placeholder_info()
+
+    for scope in Scope:
+        assert scope.name in scopes, f"Missing section for Scope.{scope.name}"
+        tokens, _ = scopes[scope.name]
+        assert tokens == scope.placeholders, (
+            f"Scope {scope.name}: file tokens {tokens!r} != code {scope.placeholders!r}"
+        )
+
+
+def test_placeholder_info_used_by_lines_match_code():
+    _, scopes = _parse_placeholder_info()
+
+    for scope in Scope:
+        _, used_by = scopes[scope.name]
+        expected = {t.filename for t in PromptTemplate if t.scope is scope}
+        assert used_by == expected, (
+            f"Scope {scope.name}: Used by {used_by!r} != expected {expected!r}"
+        )
+
+
+def test_placeholder_info_no_unknown_scope_sections():
+    _, scopes = _parse_placeholder_info()
+    known = {s.name for s in Scope}
+
+    for name in scopes:
+        assert name in known, f"Unknown scope section: ## Scope: {name}"
