@@ -35,7 +35,7 @@ PRDs are **peer-level** — no parent/child relationships, no sub-issue registra
 For each chosen candidate:
 
 - Title prefix: `[improve-{{IMPROVE_SHORT_SID}}]`
-- Label: `ready-for-human`
+- Label: `{{READY_FOR_HUMAN_LABEL}}`
 - **Always write the body to a temp file and use `gh issue create --body-file`.** PRD content breaks shell quoting.
 
 ### Issue body template
