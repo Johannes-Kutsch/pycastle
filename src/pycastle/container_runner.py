@@ -1,16 +1,18 @@
 import asyncio
+import json
+import queue
 import re
 import shlex
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from .agent_output_protocol import AgentOutput, AgentRole
+from .agent_output_protocol import AgentOutput, AgentRole, process_stream
 from .config import Config
 from .docker_session import DockerSession
-from .errors import DockerError
+from .errors import AgentTimeoutError, DockerError
 from .session_resume import RunKind
 from .status_display import PlainStatusDisplay
-from .stream_session import WorkStream
 
 
 def _build_claude_command(
@@ -140,15 +142,47 @@ class ContainerRunner:
             "session_uuid": session_uuid,
             "prompt": prompt,
         }
+
+        q: queue.Queue[bytes | object] = queue.Queue()
+        sentinel = object()
+
+        def _feed() -> None:
+            try:
+                for chunk in chunks:
+                    q.put(chunk)
+            finally:
+                q.put(sentinel)
+
+        threading.Thread(target=_feed, daemon=True).start()
+
         try:
-            ws = WorkStream(
-                chunks,
-                self._log_path,
-                self._cfg.idle_timeout,
-                lambda: self._status_display.reset_idle_timer(self.name),
-                input_record=input_record,
-            )
-            return ws.run(role, on_turn, on_tokens)
+            with open(self._log_path, "wb") as log:
+                log.write(json.dumps(input_record).encode() + b"\n")
+                log.flush()
+
+                def _lines():
+                    line_buf = ""
+                    while True:
+                        try:
+                            chunk = q.get(timeout=self._cfg.idle_timeout)
+                        except queue.Empty:
+                            raise AgentTimeoutError(
+                                f"Agent idle for more than {self._cfg.idle_timeout}s"
+                            )
+                        if chunk is sentinel:
+                            if line_buf:
+                                yield line_buf
+                            return
+                        assert isinstance(chunk, bytes)
+                        log.write(chunk)
+                        log.flush()
+                        self._status_display.reset_idle_timer(self.name)
+                        line_buf += chunk.decode("utf-8", errors="replace")
+                        while "\n" in line_buf:
+                            line, line_buf = line_buf.split("\n", 1)
+                            yield line
+
+                return process_stream(_lines(), on_turn, role, on_tokens)
         finally:
             try:
                 self._session.exec_simple("rm -f /tmp/.pycastle_prompt")
