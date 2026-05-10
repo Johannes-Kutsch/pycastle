@@ -8,7 +8,7 @@ from typing import Protocol
 from ..agent_output_protocol import AgentRole, FailedOutput
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..errors import AgentFailedError, AgentTimeoutError, PreflightFailure
+from ..errors import AgentFailedError, PreflightFailure
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..session_resume import RoleSession
@@ -198,11 +198,6 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                             work_body=f"Merging {len(conflict_issues)} Branches",
                         )
                     )
-                except AgentTimeoutError as err:
-                    if not err.role_value:
-                        err.role_value = AgentRole.MERGER.value
-                        err.worktree_path = sandbox_path
-                    raise
                 except PreflightFailure:
                     deps.status_display.print(
                         "Merge",
