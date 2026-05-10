@@ -7,10 +7,31 @@ from .agent_output_protocol import AgentRole
 
 _NAMESPACE = uuid.NAMESPACE_DNS
 
+SESSION_DIR_NAME = ".pycastle-session"
+
 
 class RunKind(Enum):
     FRESH = "fresh"
     RESUME = "resume"
+
+
+def session_dir_path(worktree: Path, role: AgentRole, namespace: str = "") -> Path:
+    base = worktree / SESSION_DIR_NAME / role.value
+    return base / namespace if namespace else base
+
+
+def session_dir_rel(role: AgentRole, namespace: str = "") -> str:
+    if namespace:
+        return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/"
+    return f"{SESSION_DIR_NAME}/{role.value}/"
+
+
+def is_stage_done_for(worktree: Path, role: AgentRole) -> bool:
+    return is_stage_done(session_dir_path(worktree, role))
+
+
+def clear_stage(worktree: Path, role: AgentRole, namespace: str = "") -> None:
+    clear_session_dir(session_dir_path(worktree, role, namespace))
 
 
 def has_resumable_session(role_dir: Path) -> bool:
@@ -33,7 +54,7 @@ def clear_session_dir(role_dir: Path) -> None:
 
 
 def any_role_dir_present(worktree_path: Path) -> bool:
-    session_base = worktree_path / ".pycastle-session"
+    session_base = worktree_path / SESSION_DIR_NAME
     if not session_base.is_dir():
         return False
     return any(d.is_dir() for d in session_base.iterdir())
