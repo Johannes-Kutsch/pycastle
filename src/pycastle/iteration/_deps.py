@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from ..agent_output_protocol import AgentOutput
 from ..agent_runner import AgentRunnerProtocol, RunRequest
@@ -11,6 +11,9 @@ from ..services import GitService
 from ..services import GithubService
 from ..status_display import StatusDisplay
 from .dispatcher import ImproveMode
+
+if TYPE_CHECKING:
+    from .preflight import PreflightReady
 
 
 class Logger(Protocol):
@@ -138,6 +141,7 @@ class Deps:
     status_display: StatusDisplay
     improve_mode: ImproveMode = None
     slept_once: bool = False
+    preflight_verdict: "PreflightReady | None" = None
 
 
 def _make_deps(
