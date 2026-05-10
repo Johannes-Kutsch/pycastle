@@ -16,7 +16,7 @@ Its session transcript (if present) is at: `{{SESSION_DIR}}/`
 2. Run `git status` and `git diff` to inspect any uncommitted worktree state the failed agent
    left behind.
 3. File exactly one GitHub issue in the working repository using `gh issue create` with:
-   - Labels: `bug` and `needs-triage`
+   - Labels: `{{BUG_LABEL}}` and `{{NEEDS_TRIAGE_LABEL}}`
    - A title that names the failed role and concisely describes the failure
    - A body that captures:
      - Which agent role failed
@@ -27,7 +27,7 @@ Its session transcript (if present) is at: `{{SESSION_DIR}}/`
 4. Once the issue is filed, output its number in this exact format:
 
 ```
-<issue>{"number": ISSUE_NUMBER, "labels": ["bug", "needs-triage"]}</issue>
+<issue>{"number": ISSUE_NUMBER, "labels": ["{{BUG_LABEL}}", "{{NEEDS_TRIAGE_LABEL}}"]}</issue>
 ```
 
 Replace `ISSUE_NUMBER` with the integer returned by `gh issue create`.
