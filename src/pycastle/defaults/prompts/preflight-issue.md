@@ -1,6 +1,6 @@
 # Preflight failure — investigate and file issue
 
-A preflight check has failed. Your job is to investigate the root cause, determine whether human judgment is required, and file a well-structured GitHub issue.
+A preflight check has failed. Investigate the root cause, determine whether human judgment is required, and file a well-structured GitHub issue.
 
 ## Failing check
 
@@ -22,12 +22,12 @@ Do not treat the raw output above as the final answer. Explore the repository to
 
 - Read the files implicated by the error output
 - Check recent commits (`git log --oneline -20`) to see if a recent change introduced the failure
-- Reproduce the failure locally if possible by running `{{COMMAND}}`
-- Identify whether the failure is a genuine bug in production code, a broken test, a missing dependency, or a configuration problem
+- Reproduce the failure locally by running `{{COMMAND}}`
+- Identify whether the failure is a genuine bug, a broken test, a missing dependency, or a configuration problem
 
 ### 2. Evaluate HITL
 
-Decide whether this fix requires human judgment. Apply the `{{READY_FOR_HUMAN_LABEL}}` label when:
+Decide whether this fix requires human judgment. Apply `{{READY_FOR_HUMAN_LABEL}}` when:
 
 - The fix requires a design decision about intended behavior
 - It is unclear which of several plausible fixes is correct
@@ -36,15 +36,9 @@ Decide whether this fix requires human judgment. Apply the `{{READY_FOR_HUMAN_LA
 
 **Default to `{{READY_FOR_HUMAN_LABEL}}` when in doubt.** Only choose `{{READY_FOR_AGENT_LABEL}}` when the fix is unambiguous and does not require guessing at design intent.
 
-### 3. Determine the correct labels
-
-The configured label names are injected into this prompt as placeholders. Use `{{READY_FOR_AGENT_LABEL}}` as the agent-fixable label and `{{READY_FOR_HUMAN_LABEL}}` as the human label.
-
-**Never apply `needs-triage`.** The preflight-issue agent performs triage inline.
-
 **Never band-aid the failure** (e.g. deleting a failing test, weakening an assertion, or adding an exception to make the check pass). The issue body must describe what is genuinely broken.
 
-### 4. File the GitHub issue
+### 3. File the GitHub issue
 
 Create a GitHub issue with:
 
@@ -62,7 +56,7 @@ Create a GitHub issue with:
 
 ## Fix prescription
 
-<describe the specific change needed to fix the root cause — be precise enough that an implementer can act on this without further investigation>
+<describe the specific change needed to fix the root cause — be precise enough that an implementer can act without further investigation>
 
 ## Reproduction
 
@@ -74,7 +68,7 @@ Create a GitHub issue with:
 \`\`\`
 ```
 
-Use this command to create the issue, substituting your actual body:
+Use this command to create the issue:
 
 ```
 gh issue create --title "{{CHECK_NAME}} preflight check failed" --body "$(cat <<'EOF'
@@ -83,24 +77,18 @@ EOF
 )"
 ```
 
-### 5. Apply labels
+### 4. Apply labels
 
-Apply the `{{BUG_LABEL}}` label and either the `{{READY_FOR_AGENT_LABEL}}` or `{{READY_FOR_HUMAN_LABEL}}` label to the newly created issue:
+Apply `{{BUG_LABEL}}` and either `{{READY_FOR_AGENT_LABEL}}` or `{{READY_FOR_HUMAN_LABEL}}`. Do **not** apply `needs-triage`.
 
 ```
 gh issue edit <number> --add-label "{{BUG_LABEL}}" --add-label "<{{READY_FOR_AGENT_LABEL}} or {{READY_FOR_HUMAN_LABEL}}>"
 ```
 
-Do **not** apply `needs-triage`.
-
-### 6. Output the issue number and labels
-
-After the issue is filed and labeled, output the details in this exact format:
+### 5. Output the issue number and labels
 
 ```
 <issue>
 {"number": NUMBER, "labels": ["LABEL 1", "LABEL 2"]}
 </issue>
 ```
-
-Where `labels` is the exact list of labels you applied to the issue.

@@ -6,7 +6,7 @@ Surface architectural friction in this codebase and pick **one** deepening oppor
 
 ## Safety net
 
-You must NOT modify any files in the worktree. Your only output for this phase is the conversation itself — the picked candidate, its justification, and a final `<promise>` tag. Phases 2/3/4 file GitHub issues; you do not.
+You must NOT modify any files in the worktree. Your only output for this phase is the conversation itself — the picked candidate, its justification, and a final `<promise>` tag.
 
 ## Glossary
 
@@ -24,7 +24,7 @@ This phase runs autonomously. Every candidate you shortlist must pass the AFK-sa
 
 **Forbidden:** CLI surface changes, breaking config changes, ADR contradictions, product/UX calls, issue-tracker contract changes.
 
-The principle behind the forbidden list is **reversibility**: a wrong call on an internal seam (struct grouping, exception-vs-value, rename, regroup) is reversible at the code level alone — fair game. The forbidden categories above are the ones whose reversal would require migrating persisted artefacts (CLI flag names, on-disk session files, GitHub-issue body conventions, prompt-template placeholders, ADR-locked seams) — out of bounds. Multi-option *internal* decisions are not forbidden; pick the strongest reversible option and run with it.
+The forbidden list is about **reversibility**: internal seam decisions are reversible at the code level alone — fair game. The forbidden categories require migrating persisted artefacts (CLI flag names, on-disk session files, GitHub-issue body conventions, prompt-template placeholders, ADR-locked seams) — out of bounds.
 
 If every candidate fails the filter, emit `<promise>NO-CANDIDATE</promise>` and stop.
 
@@ -32,17 +32,16 @@ If every candidate fails the filter, emit `<promise>NO-CANDIDATE</promise>` and 
 
 ### 1. Explore
 
-Read the project's domain glossary (`CONTEXT.md` at the root, or the per-context `CONTEXT.md` referenced from `CONTEXT-MAP.md` if it exists) and any ADRs in `docs/adr/` for the area you're touching first.
+Read the domain glossary (`CONTEXT.md`, or the per-context `CONTEXT.md` referenced from `CONTEXT-MAP.md` if present). Consult `docs/adr/README.md` if present, then read relevant ADRs for the area you're touching.
 
-Then walk the codebase. Don't follow rigid heuristics — explore organically and note where you experience friction:
+Walk the codebase and note friction:
 
 - Where does understanding one concept require bouncing between many small modules?
 - Where are modules **shallow** — interface nearly as complex as the implementation?
-- Where have pure functions been extracted just for testability, but the real bugs hide in how they're called (no **locality**)?
-- Where do tightly-coupled modules leak across their seams?
-- Which parts of the codebase are untested, or hard to test through their current interface?
+- Where have pure functions been extracted just for testability, hiding the real bugs in how they're called (no **locality**)?
+- Which parts are untested, or hard to test through their current interface?
 
-Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
+Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it?
 
 ### 2. Shortlist candidates
 
@@ -51,17 +50,15 @@ For each candidate:
 - **Files** — which files/modules are involved
 - **Problem** — why the current architecture is causing friction
 - **Solution** — plain English description of what would change
-- **Benefits** — explained in terms of locality and leverage, and also in how tests would improve
+- **Benefits** — explained in terms of locality and leverage, and how tests would improve
 
-Use `CONTEXT.md` vocabulary for the domain, and the architecture vocabulary above for the architecture. If `CONTEXT.md` defines "Order," talk about "the Order intake module" — not "the FooBarHandler," and not "the Order service."
-
-**ADR conflicts:** if a candidate contradicts an existing ADR, only surface it when the friction is real enough to warrant revisiting the ADR. Mark it clearly (e.g. _"contradicts ADR-0007 — but worth reopening because…"_).
+Use `CONTEXT.md` vocabulary. If a candidate contradicts an existing ADR, only surface it when the friction is real enough to warrant revisiting — mark it clearly.
 
 Drop any candidate that fails the AFK-safety filter.
 
 ### 3. Self-grilling
 
-Walk the design tree for your top candidate in the conversation:
+Walk the design tree for your top candidate:
 
 - Constraints any new interface would need to satisfy
 - Dependency category (in-process / local-substitutable / remote-owned / true-external) and the testing strategy that follows
