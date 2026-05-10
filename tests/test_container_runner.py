@@ -1,6 +1,8 @@
 """Tests for ContainerRunner using a fake DockerSession."""
 
 import asyncio
+import json
+import threading
 from pathlib import Path
 from typing import cast
 
@@ -10,7 +12,7 @@ from pycastle.agent_output_protocol import AgentRole, CommitMessageOutput
 from pycastle.config import Config
 from pycastle.container_runner import ContainerRunner, _build_claude_command
 from pycastle.docker_session import DockerSession
-from pycastle.errors import DockerError, UsageLimitError
+from pycastle.errors import AgentTimeoutError, DockerError, UsageLimitError
 from pycastle.iteration._deps import RecordingStatusDisplay
 from pycastle.session_resume import RunKind
 
@@ -325,3 +327,188 @@ def test_work_uses_custom_logs_dir_from_cfg(tmp_path):
     custom_logs = tmp_path / "my_logs"
     runner, _ = _make_runner(name="my-task", cfg=Config(logs_dir=custom_logs))
     assert runner.log_path.parent == custom_logs
+
+
+def _result_line(content: str) -> bytes:
+    return (
+        json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "result": content,
+                "is_error": False,
+            }
+        ).encode()
+        + b"\n"
+    )
+
+
+def _assistant_line(text: str) -> bytes:
+    return (
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": text}]},
+            }
+        ).encode()
+        + b"\n"
+    )
+
+
+def _assistant_with_usage_line(text: str, input_tokens: int) -> bytes:
+    return (
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [{"type": "text", "text": text}],
+                    "usage": {
+                        "input_tokens": input_tokens,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                    },
+                },
+            }
+        ).encode()
+        + b"\n"
+    )
+
+
+def _usage_limit_line() -> bytes:
+    return (
+        json.dumps(
+            {
+                "type": "result",
+                "is_error": True,
+                "api_error_status": 429,
+                "result": "rate limit",
+            }
+        ).encode()
+        + b"\n"
+    )
+
+
+def test_work_idle_timeout_raises_agent_timeout_error(tmp_path):
+    event = threading.Event()
+    session = FakeDockerSession()
+    session.exec_stream = lambda cmd: (event.wait() or b"never" for _ in range(1))  # type: ignore[method-assign]
+
+    cfg = Config(logs_dir=tmp_path, idle_timeout=0.05)
+    runner, _ = _make_runner(session=session, cfg=cfg)
+    with pytest.raises(AgentTimeoutError):
+        asyncio.run(runner.work(_ROLE, "prompt"))
+
+
+def test_work_log_first_line_is_pycastle_input_record_on_success(tmp_path):
+    session = FakeDockerSession(
+        stream_chunks=[_result_line("<commit_message>done</commit_message>")]
+    )
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+    asyncio.run(runner.work(_ROLE, "test prompt"))
+    first_line = runner.log_path.read_bytes().split(b"\n")[0]
+    record = json.loads(first_line)
+    assert record["type"] == "pycastle_input"
+    assert record["role"] == "implementer"
+    assert record["run_kind"] == "fresh"
+    assert record["prompt"] == "test prompt"
+
+
+def test_work_log_first_line_is_pycastle_input_record_on_agent_timeout(tmp_path):
+    event = threading.Event()
+    session = FakeDockerSession()
+    session.exec_stream = lambda cmd: (event.wait() or b"never" for _ in range(1))  # type: ignore[method-assign]
+
+    cfg = Config(logs_dir=tmp_path, idle_timeout=0.05)
+    runner, _ = _make_runner(session=session, cfg=cfg)
+    with pytest.raises(AgentTimeoutError):
+        asyncio.run(runner.work(_ROLE, "stalled prompt"))
+    first_line = runner.log_path.read_bytes().split(b"\n")[0]
+    record = json.loads(first_line)
+    assert record["type"] == "pycastle_input"
+    assert record["prompt"] == "stalled prompt"
+
+
+def test_work_log_first_line_is_pycastle_input_record_on_usage_limit_error(tmp_path):
+    session = FakeDockerSession(stream_chunks=[_usage_limit_line()])
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+    with pytest.raises(UsageLimitError):
+        asyncio.run(runner.work(_ROLE, "rate limited prompt"))
+    first_line = runner.log_path.read_bytes().split(b"\n")[0]
+    record = json.loads(first_line)
+    assert record["type"] == "pycastle_input"
+    assert record["prompt"] == "rate limited prompt"
+
+
+def test_work_log_contains_all_chunk_bytes_after_header(tmp_path):
+    chunk1 = b'{"type":"result","result":"<commit_message>done</commit_message>","is_error":false}'
+    chunk2 = b"\n"
+    session = FakeDockerSession(stream_chunks=[chunk1, chunk2])
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+    asyncio.run(runner.work(_ROLE, "prompt"))
+    log_bytes = runner.log_path.read_bytes()
+    _header, rest = log_bytes.split(b"\n", 1)
+    assert rest == chunk1 + chunk2
+
+
+def test_work_lines_split_across_chunk_boundaries_are_assembled(tmp_path):
+    full_line = b'{"type":"result","result":"<commit_message>done</commit_message>","is_error":false}\n'
+    mid = len(full_line) // 2
+    session = FakeDockerSession(stream_chunks=[full_line[:mid], full_line[mid:]])
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+    result = asyncio.run(runner.work(_ROLE, "prompt"))
+    assert isinstance(result, CommitMessageOutput)
+
+
+def test_work_partial_final_line_without_newline_is_processed(tmp_path):
+    line_bytes = b'{"type":"result","result":"<commit_message>done</commit_message>","is_error":false}'
+    session = FakeDockerSession(stream_chunks=[line_bytes])
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+    result = asyncio.run(runner.work(_ROLE, "prompt"))
+    assert isinstance(result, CommitMessageOutput)
+
+
+def test_work_chunk_with_multiple_newlines_yields_all_lines(tmp_path):
+    display = RecordingStatusDisplay()
+    line1 = (
+        b'{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}\n'
+    )
+    line2 = b'{"type":"result","result":"<commit_message>done</commit_message>","is_error":false}\n'
+    session = FakeDockerSession(stream_chunks=[line1 + line2])
+    runner, _ = _make_runner(session=session, status_display=display, tmp_path=tmp_path)
+    result = asyncio.run(runner.work(_ROLE, "prompt"))
+    assert isinstance(result, CommitMessageOutput)
+    assert any(
+        call[0] == "print" and "hello" in call[2]
+        for call in display.calls
+        if len(call) > 2
+    )
+
+
+def test_work_on_tokens_fires_when_usage_present(tmp_path):
+    session = FakeDockerSession(
+        stream_chunks=[
+            _assistant_with_usage_line("thinking", 50_000),
+            _result_line("<commit_message>done</commit_message>"),
+        ]
+    )
+    display = RecordingStatusDisplay()
+    runner, _ = _make_runner(
+        name="impl-1", session=session, status_display=display, tmp_path=tmp_path
+    )
+    asyncio.run(runner.work(_ROLE, "prompt"))
+    assert ("update_tokens", "impl-1", 50_000) in display.calls
+
+
+def test_work_on_tokens_silent_when_no_usage(tmp_path):
+    session = FakeDockerSession(
+        stream_chunks=[
+            _assistant_line("no usage"),
+            _result_line("<commit_message>done</commit_message>"),
+        ]
+    )
+    display = RecordingStatusDisplay()
+    runner, _ = _make_runner(
+        name="impl-1", session=session, status_display=display, tmp_path=tmp_path
+    )
+    asyncio.run(runner.work(_ROLE, "prompt"))
+    assert not any(call[0] == "update_tokens" for call in display.calls)
