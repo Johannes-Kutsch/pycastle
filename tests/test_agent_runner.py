@@ -11,6 +11,7 @@ from pycastle.agent_output_protocol import (
     AgentRole,
     CommitMessageOutput,
     CompletionOutput,
+    FailedOutput,
 )
 from pycastle.agent_result import CancellationToken
 from pycastle.errors import PreflightFailure
@@ -1293,7 +1294,7 @@ def test_agent_runner_passes_resume_flag_to_claude_when_session_exists(tmp_path)
     assert all("--session-id" not in c for c in captured_cmds)
 
 
-# ── AgentRunner: fail-soft fresh fallback ─────────────────────────────────────
+# ── AgentRunner: non-typed Resume retry ───────────────────────────────────────
 
 
 def _make_docker_client_with_controlled_streams(
@@ -1319,12 +1320,12 @@ def _make_docker_client_with_controlled_streams(
     return mock_client
 
 
-def test_agent_runner_failsoft_retries_as_fresh_when_resume_run_fails(tmp_path):
-    """When a Resume run raises a non-typed exception, fail-soft fires and retries as Fresh."""
+def test_resume_run_non_typed_exception_retries_same_session_and_succeeds(tmp_path):
+    """On a Resume run, a non-typed exception triggers one in-call retry; success on retry returns output."""
     _seed_implementer_session(tmp_path)
 
     mock_client = _make_docker_client_with_controlled_streams(
-        [RuntimeError("session corrupt"), _COMPLETE_STREAM]
+        [RuntimeError("transient error"), _COMPLETE_STREAM]
     )
     runner = AgentRunner(
         {},
@@ -1348,12 +1349,43 @@ def test_agent_runner_failsoft_retries_as_fresh_when_resume_run_fails(tmp_path):
     assert isinstance(result, CommitMessageOutput)
 
 
-def test_agent_runner_failsoft_logs_resume_failsoft_to_errors_log(tmp_path):
-    """Fail-soft writes [ResumeFailSoft] entry to errors.log."""
+def test_resume_run_consecutive_non_typed_exceptions_return_failed_output(tmp_path):
+    """On a Resume run, two consecutive non-typed exceptions cause the call to return FailedOutput."""
     _seed_implementer_session(tmp_path)
 
     mock_client = _make_docker_client_with_controlled_streams(
-        [RuntimeError("session corrupt"), _COMPLETE_STREAM]
+        [RuntimeError("first failure"), RuntimeError("second failure")]
+    )
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Impl",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                skip_preflight=True,
+            )
+        )
+    )
+
+    assert isinstance(result, FailedOutput)
+
+
+def test_resume_run_non_typed_exception_does_not_wipe_session(tmp_path):
+    """On consecutive non-typed exceptions during a Resume run, start_fresh is not called — session dir is preserved."""
+    _seed_implementer_session(tmp_path)
+    session_file = tmp_path / ".pycastle-session" / "implementer" / "session.json"
+    assert session_file.exists()
+
+    mock_client = _make_docker_client_with_controlled_streams(
+        [RuntimeError("first failure"), RuntimeError("second failure")]
     )
     runner = AgentRunner(
         {},
@@ -1374,42 +1406,12 @@ def test_agent_runner_failsoft_logs_resume_failsoft_to_errors_log(tmp_path):
         )
     )
 
-    errors_log = tmp_path / "errors.log"
-    assert errors_log.exists()
-    assert "[ResumeFailSoft]" in errors_log.read_text()
-
-
-def test_agent_runner_failsoft_is_single_shot_second_exception_propagates(tmp_path):
-    """Fail-soft fires only once; a second non-typed exception on the Fresh retry propagates."""
-    _seed_implementer_session(tmp_path)
-
-    mock_client = _make_docker_client_with_controlled_streams(
-        [RuntimeError("session corrupt"), RuntimeError("still broken")]
-    )
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
+    assert session_file.exists(), (
+        "session.json was wiped but should have been preserved"
     )
 
-    with pytest.raises(RuntimeError, match="still broken"):
-        asyncio.run(
-            runner.run(
-                RunRequest(
-                    name="Impl",
-                    template=_PLAN_TEMPLATE,
-                    scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
-                    skip_preflight=True,
-                )
-            )
-        )
 
-
-def test_agent_runner_non_typed_exception_on_fresh_run_propagates_without_failsoft(
-    tmp_path,
-):
+def test_fresh_run_non_typed_exception_propagates(tmp_path):
     """A non-typed exception on a Fresh run (no existing session) propagates immediately."""
     mock_client = _make_docker_client_with_controlled_streams(
         [RuntimeError("docker failure")]
@@ -1542,107 +1544,6 @@ def test_agent_runner_passes_resume_flag_to_claude_when_reviewer_session_exists(
     assert all("--session-id" not in c for c in captured_cmds)
 
 
-def test_agent_runner_failsoft_retries_as_fresh_when_reviewer_resume_run_fails(
-    tmp_path,
-):
-    """When a Reviewer Resume run raises a non-typed exception, fail-soft fires and retries as Fresh."""
-    from pycastle.agent_output_protocol import AgentRole
-
-    _seed_reviewer_session(tmp_path)
-
-    mock_client = _make_docker_client_with_controlled_streams(
-        [RuntimeError("session corrupt"), _COMPLETE_STREAM]
-    )
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
-
-    result = asyncio.run(
-        runner.run(
-            RunRequest(
-                name="Review",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.REVIEWER,
-                skip_preflight=True,
-            )
-        )
-    )
-
-    assert isinstance(result, CommitMessageOutput)
-
-
-def test_agent_runner_failsoft_logs_reviewer_resume_failsoft_to_errors_log(tmp_path):
-    """Reviewer fail-soft writes [ResumeFailSoft] entry to errors.log."""
-    from pycastle.agent_output_protocol import AgentRole
-
-    _seed_reviewer_session(tmp_path)
-
-    mock_client = _make_docker_client_with_controlled_streams(
-        [RuntimeError("session corrupt"), _COMPLETE_STREAM]
-    )
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
-
-    asyncio.run(
-        runner.run(
-            RunRequest(
-                name="Review",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.REVIEWER,
-                skip_preflight=True,
-            )
-        )
-    )
-
-    errors_log = tmp_path / "errors.log"
-    assert errors_log.exists()
-    assert "[ResumeFailSoft]" in errors_log.read_text()
-
-
-def test_agent_runner_failsoft_is_single_shot_for_reviewer_second_exception_propagates(
-    tmp_path,
-):
-    """Reviewer fail-soft fires only once; a second non-typed exception on the Fresh retry propagates."""
-    from pycastle.agent_output_protocol import AgentRole
-
-    _seed_reviewer_session(tmp_path)
-
-    mock_client = _make_docker_client_with_controlled_streams(
-        [RuntimeError("session corrupt"), RuntimeError("still broken")]
-    )
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
-
-    with pytest.raises(RuntimeError, match="still broken"):
-        asyncio.run(
-            runner.run(
-                RunRequest(
-                    name="Review",
-                    template=_PLAN_TEMPLATE,
-                    scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
-                    role=AgentRole.REVIEWER,
-                    skip_preflight=True,
-                )
-            )
-        )
-
-
 # ── AgentRunner: Merger resume parity ─────────────────────────────────────────
 
 
@@ -1700,38 +1601,6 @@ def test_agent_runner_passes_resume_flag_to_claude_when_merger_session_exists(tm
     assert all("--session-id" not in c for c in captured_cmds)
 
 
-def test_agent_runner_failsoft_retries_as_fresh_when_merger_resume_run_fails(tmp_path):
-    """When a Merger Resume run raises a non-typed exception, fail-soft fires and retries as Fresh."""
-    from pycastle.agent_output_protocol import AgentRole
-
-    _seed_merger_session(tmp_path)
-
-    mock_client = _make_docker_client_with_controlled_streams(
-        [RuntimeError("session corrupt"), _MERGER_COMPLETE_STREAM]
-    )
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
-
-    result = asyncio.run(
-        runner.run(
-            RunRequest(
-                name="Merge",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.MERGER,
-                skip_preflight=True,
-            )
-        )
-    )
-
-    assert isinstance(result, CompletionOutput)
-
-
 # ── AgentRunner: _build_prompt ────────────────────────────────────────────────
 
 
@@ -1760,7 +1629,6 @@ def test_build_prompt_uses_resume_template_on_resume_without_role_flag(tmp_path)
             _PLAN_SCOPE_ARGS,
             _noop_exec,
             run_kind=RunKind.RESUME,
-            is_failsoft_recovery=False,
             send_role_prompt_on_resume=False,
         )
     )
@@ -1779,7 +1647,6 @@ def test_build_prompt_uses_role_template_on_resume_with_send_role_prompt(tmp_pat
             _PLAN_SCOPE_ARGS,
             _noop_exec,
             run_kind=RunKind.RESUME,
-            is_failsoft_recovery=False,
             send_role_prompt_on_resume=True,
         )
     )
@@ -1798,31 +1665,11 @@ def test_build_prompt_uses_role_template_on_fresh_run(tmp_path):
             _PLAN_SCOPE_ARGS,
             _noop_exec,
             run_kind=RunKind.FRESH,
-            is_failsoft_recovery=False,
             send_role_prompt_on_resume=False,
         )
     )
 
     assert result == "[] []"
-
-
-def test_build_prompt_prepends_resume_to_role_on_failsoft_recovery(tmp_path):
-    """On a failsoft recovery Fresh run, _build_prompt prepends RESUME template to the role template."""
-    cfg = _make_build_prompt_cfg(tmp_path)
-    runner = AgentRunner({}, cfg, _make_git_service())
-
-    result = asyncio.run(
-        runner._build_prompt(
-            _PLAN_TEMPLATE,
-            _PLAN_SCOPE_ARGS,
-            _noop_exec,
-            run_kind=RunKind.FRESH,
-            is_failsoft_recovery=True,
-            send_role_prompt_on_resume=False,
-        )
-    )
-
-    assert result == "resume-content\n\n[] []"
 
 
 def test_build_prompt_expands_shell_expressions_via_container_exec(tmp_path):
@@ -1846,7 +1693,6 @@ def test_build_prompt_expands_shell_expressions_via_container_exec(tmp_path):
             {},
             fake_exec,
             run_kind=RunKind.RESUME,
-            is_failsoft_recovery=False,
             send_role_prompt_on_resume=False,
         )
     )
