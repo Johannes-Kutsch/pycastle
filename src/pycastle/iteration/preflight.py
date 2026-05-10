@@ -10,7 +10,6 @@ from ..agent_output_protocol import (
 )
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..errors import PreflightIssueFiled
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..status_display import StatusDisplay
@@ -55,7 +54,13 @@ class PreflightHITL:
     issue_number: int
 
 
-PreflightResult: TypeAlias = PreflightReady | PreflightHITL
+@dataclasses.dataclass(frozen=True)
+class PreflightAFK:
+    sha: str
+    issue_number: int
+
+
+PreflightResult: TypeAlias = PreflightReady | PreflightHITL | PreflightAFK
 
 
 async def handle_preflight_failure(
@@ -126,6 +131,6 @@ async def preflight_phase(
                 raise RuntimeError(str(parse_exc)) from parse_exc
             if verdict == "hitl":
                 return PreflightHITL(worktree_sha=sha, issue_number=pf_num)
-            raise PreflightIssueFiled(pf_num)
+            return PreflightAFK(sha=sha, issue_number=pf_num)
 
         return PreflightReady(sha=sha)
