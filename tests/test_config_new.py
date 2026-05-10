@@ -664,3 +664,33 @@ def test_load_config_project_improve_override_takes_precedence(tmp_path):
     cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
     assert cfg.improve_override.model == "sonnet"
     assert cfg.improve_override.effort == "medium"
+
+
+# ── Issue 655: improve_max field ────────────────────────────────────────────
+
+
+def test_config_improve_max_defaults_to_none():
+    assert Config().improve_max is None
+
+
+@pytest.mark.parametrize("value", [None, 1, 5, 1000])
+def test_load_config_improve_max_accepts_none_and_positive(tmp_path, value):
+    if value is None:
+        cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
+    else:
+        cfg = load_config(
+            repo_root=tmp_path,
+            global_dir=tmp_path / "no_global",
+            overrides={"improve_max": value},
+        )
+    assert cfg.improve_max == value
+
+
+@pytest.mark.parametrize("bad", [0, -1, -100])
+def test_load_config_improve_max_rejects_zero_and_negative(tmp_path, bad):
+    with pytest.raises(ConfigValidationError, match="improve_max must be >= 1"):
+        load_config(
+            repo_root=tmp_path,
+            global_dir=tmp_path / "no_global",
+            overrides={"improve_max": bad},
+        )

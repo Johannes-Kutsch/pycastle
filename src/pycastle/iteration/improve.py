@@ -123,6 +123,7 @@ class _ImproveDeps(Protocol):
     git_svc: GitService
     github_svc: GithubService
     preflight_verdict: PreflightReady | None
+    improve_dispatched_count: int
 
 
 def _build_issues_scope_args(
@@ -146,8 +147,14 @@ async def improve_phase(
     deps: _ImproveDeps,
 ) -> ImproveNoCandidate | ImproveContinue | PreflightHITL | PreflightAFK:
     """Run the improve pipeline."""
+    if deps.cfg.improve_max is not None:
+        phase_label = (
+            f"Improve ({deps.improve_dispatched_count}/{deps.cfg.improve_max})"
+        )
+    else:
+        phase_label = "Improve"
     async with phase_row(
-        deps.status_display, "Improve", initial_phase="Running"
+        deps.status_display, phase_label, initial_phase="Running"
     ) as row:
         async with managed_worktree(
             "improve-sandbox",
