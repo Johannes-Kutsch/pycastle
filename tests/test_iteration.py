@@ -2226,7 +2226,7 @@ def test_run_iteration_returns_aborted_timeout_for_each_single_agent_phase(
             preflight_responses=[(("ruff", "ruff check .", "E501"),)],
         )
         expected_role = AgentRole.PREFLIGHT_ISSUE.value
-        expected_wt = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+        expected_wt = tmp_path / "pycastle" / ".worktrees" / "preflight-sandbox"
     elif phase == "plan":
         github_svc.get_open_issues.return_value = [
             {"number": 1, "title": "Fix", "body": "", "comments": []},

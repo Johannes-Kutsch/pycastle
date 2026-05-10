@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
 from ..agent_output_protocol import AgentOutput
 from ..agent_runner import AgentRunnerProtocol, RunRequest
@@ -12,9 +12,7 @@ from ..services import GitService
 from ..services import GithubService
 from ..status_display import StatusDisplay
 from .dispatcher import ImproveMode
-
-if TYPE_CHECKING:
-    from .preflight import PreflightReady
+from .preflight import PreflightCache, PreflightReady, PreflightResult
 
 
 class Logger(Protocol):
@@ -140,6 +138,16 @@ class FakeAgentRunner:
         return response
 
 
+class StubPreflightCache:
+    """Test double: always returns a fixed verdict from get_safe_sha()."""
+
+    def __init__(self, verdict: PreflightResult | None = None) -> None:
+        self._verdict: PreflightResult = verdict or PreflightReady(sha="abc123")
+
+    async def get_safe_sha(self, deps: Any) -> PreflightResult:
+        return self._verdict
+
+
 @dataclasses.dataclass
 class Deps:
     repo_root: Path
@@ -152,7 +160,7 @@ class Deps:
     improve_mode: ImproveMode = None
     slept_once: bool = False
     improve_dispatched_count: int = 0
-    preflight_verdict: "PreflightReady | None" = None
+    preflight_cache: PreflightCache = dataclasses.field(default_factory=PreflightCache)
 
 
 def _make_deps(
@@ -164,6 +172,7 @@ def _make_deps(
     cfg: Config | None = None,
     logger: Logger | None = None,
     status_display: StatusDisplay | None = None,
+    preflight_cache: "PreflightCache | StubPreflightCache | None" = None,
 ) -> Deps:
     """Factory for building a Deps with sensible test defaults for any unspecified field."""
     from unittest.mock import MagicMock
@@ -180,4 +189,7 @@ def _make_deps(
         status_display=status_display
         if status_display is not None
         else RecordingStatusDisplay(),
+        preflight_cache=preflight_cache
+        if preflight_cache is not None
+        else StubPreflightCache(),  # type: ignore[arg-type]
     )

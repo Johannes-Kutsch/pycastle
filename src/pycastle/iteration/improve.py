@@ -20,7 +20,7 @@ from ..session_resume import RoleSession
 from ..status_display import StatusDisplay
 from ..worktree import managed_worktree
 from ._rows import phase_row
-from .preflight import PreflightAFK, PreflightHITL, PreflightReady, ensure_preflight
+from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
 
 IMPROVE_SANDBOX = "pycastle/improve-sandbox"
@@ -122,7 +122,7 @@ class _ImproveDeps(Protocol):
     repo_root: Path
     git_svc: GitService
     github_svc: GithubService
-    preflight_verdict: PreflightReady | None
+    preflight_cache: PreflightCache
     improve_dispatched_count: int
 
 
@@ -156,17 +156,18 @@ async def improve_phase(
     async with phase_row(
         deps.status_display, phase_label, initial_phase="Running"
     ) as row:
+        verdict = await deps.preflight_cache.get_safe_sha(deps)
+        if isinstance(verdict, (PreflightHITL, PreflightAFK)):
+            row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
+            return verdict
+
         async with managed_worktree(
             "improve-sandbox",
             branch=IMPROVE_SANDBOX,
-            sha=None,
+            sha=verdict.sha,
             delete_branch_on_teardown=True,
             deps=deps,
         ) as sandbox_path:
-            verdict = await ensure_preflight(deps, sandbox_path)
-            if isinstance(verdict, (PreflightHITL, PreflightAFK)):
-                row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
-                return verdict
             role_session = RoleSession(sandbox_path, AgentRole.IMPROVE)
             short_sid = role_session.session_uuid().split("-")[0]
             role_session_dir = role_session.path
