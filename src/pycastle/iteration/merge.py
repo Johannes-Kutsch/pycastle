@@ -11,7 +11,7 @@ from ..config import Config
 from ..errors import AgentFailedError, PreflightFailure
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
-from ..session_resume import session_dir_path
+from ..session_resume import RoleSession
 from ..status_display import StatusDisplay
 from ..worktree import (
     managed_worktree,
@@ -217,7 +217,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                     deps.repo_root, target_branch, MERGE_SANDBOX
                 )
                 shutil.rmtree(
-                    session_dir_path(sandbox_path, AgentRole.MERGER), ignore_errors=True
+                    RoleSession(sandbox_path, AgentRole.MERGER).path, ignore_errors=True
                 )
             conflict_deleted = await _delete_merged_branches(
                 [branch_for(i["number"]) for i in conflict_issues],
