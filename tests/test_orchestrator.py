@@ -2031,12 +2031,9 @@ def test_worktree_sha_refreshed_each_iteration(tmp_path):
     )
     for planner_idx in planner_indices:
         preceding_sha = any(
-            e == "get_head_sha" and i < planner_idx
-            for i, e in enumerate(call_order)
+            e == "get_head_sha" and i < planner_idx for i, e in enumerate(call_order)
         )
-        assert preceding_sha, (
-            f"get_head_sha must precede Planner; order={call_order}"
-        )
+        assert preceding_sha, f"get_head_sha must precede Planner; order={call_order}"
 
 
 # ── Issue-206: worktree SHA + full iteration path ─────────────────────────────
