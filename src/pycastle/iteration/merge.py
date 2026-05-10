@@ -212,6 +212,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                     raise AgentFailedError(
                         role_value=AgentRole.MERGER.value,
                         worktree_path=sandbox_path,
+                        failure_class=merger_result.failure_class,
                     )
                 deps.git_svc.fast_forward_branch(
                     deps.repo_root, target_branch, MERGE_SANDBOX

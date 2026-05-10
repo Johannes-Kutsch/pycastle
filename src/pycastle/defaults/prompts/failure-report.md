@@ -9,6 +9,8 @@ The agent role that failed: **`{{FAILED_ROLE}}`**
 
 Its session transcript (if present) is at: `{{SESSION_DIR}}/`
 
+Failure class: `{{FAILURE_CLASS}}`
+
 ## Your task
 
 1. Read the session transcript at `{{SESSION_DIR}}/` to understand what the agent attempted
@@ -33,3 +35,15 @@ Its session transcript (if present) is at: `{{SESSION_DIR}}/`
 Replace `ISSUE_NUMBER` with the integer returned by `gh issue create`.
 
 Do not attempt to fix the failure or run any checks — analysis and filing only.
+{{#if FAILURE_CLASS=non_typed_crash}}
+## Recovery
+
+The agent crashed mid-session with an untyped exception. If you suspect the session transcript
+is corrupted, the human can wipe the session state with:
+
+```
+rm -rf <SESSION_DIR>
+```
+
+Apply this only if transcript corruption is suspected — it cannot be undone.
+{{/if}}

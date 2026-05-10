@@ -84,3 +84,4 @@ Used by: failure-report.md
 
 - `{{FAILED_ROLE}}` — The agent role that failed.
 - `{{SESSION_DIR}}` — Path to the session log directory.
+- `{{FAILURE_CLASS}}` — Classification of the failure: `"protocol_error"` (reprompt-loop exhaustion) or `"non_typed_crash"` (untyped exception on resume retry).

@@ -93,12 +93,17 @@ class UsageLimitError(PycastleError):
 
 class AgentFailedError(PycastleError):
     def __init__(
-        self, role_value: str, worktree_path: Path, namespace: str = ""
+        self,
+        role_value: str,
+        worktree_path: Path,
+        namespace: str = "",
+        failure_class: str = "",
     ) -> None:
         super().__init__(f"Agent {role_value!r} failed irrecoverably")
         self.role_value = role_value
         self.worktree_path = worktree_path
         self.namespace = namespace
+        self.failure_class = failure_class
 
     @property
     def session_dir(self) -> str:
