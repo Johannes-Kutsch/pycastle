@@ -565,11 +565,11 @@ def test_run_iteration_calls_planning_phase_with_two_or_more_open_issues(
     )
 
 
-def test_run_iteration_calls_planning_phase_with_one_open_issue(
+def test_run_iteration_single_issue_skips_plan_agent_and_still_implements(
     tmp_path, git_svc, logger
 ):
-    """With exactly one open issue and passing preflight, run_iteration must invoke
-    the Planner (planning_phase) before implement_phase."""
+    """With exactly one open issue (not in-flight), planning_phase skips the planner
+    and the iteration proceeds directly to implement."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
         {"number": 7, "title": "Single issue", "body": "", "comments": []}
@@ -579,10 +579,6 @@ def test_run_iteration_calls_planning_phase_with_one_open_issue(
 
     async def _fake_agent(request: RunRequest):
         agent_names.append(request.name)
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 7, "title": "Single issue", "body": "", "comments": []}]
-            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -596,9 +592,11 @@ def test_run_iteration_calls_planning_phase_with_one_open_issue(
     result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, Continue)
-    assert "Plan Agent" in agent_names, "Plan Agent must be called for a single issue"
+    assert "Plan Agent" not in agent_names, (
+        "Plan Agent must be skipped for a single issue"
+    )
     assert any("Implement Agent" in n for n in agent_names), (
-        "Implement Agent must be called"
+        "Implement Agent must still run"
     )
 
 
@@ -636,7 +634,8 @@ def test_run_iteration_all_blocked_ends_iteration_without_improve(
     improve_mode — there is no within-iteration improve fallback from the AllBlocked path."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Issue A", "body": "", "comments": []}
+        {"number": 1, "title": "Issue A", "body": "", "comments": []},
+        {"number": 2, "title": "Issue B", "body": "", "comments": []},
     ]
 
     improve_dispatched = False
@@ -720,10 +719,10 @@ def test_implementer_and_reviewer_run_calls_pass_work_body_with_issue_title(
     tmp_path, git_svc, github_svc, logger
 ):
     issue_title = "Fix auth bug"
+    # Single issue: planning skips, so no Plan Agent call. Queue only needs implement+review.
     github_svc.get_open_issues.return_value = [{"number": 3, "title": issue_title}]
     recording_runner = FakeAgentRunner(
         [
-            _plan_output([{"number": 3, "title": issue_title}]),
             CompletionOutput(),
             CompletionOutput(),
         ],
@@ -1198,6 +1197,155 @@ def test_run_iteration_detects_in_flight_via_both_branch_and_worktree_signals(
     assert not any("Implement Agent #10" in n for n in agent_names), (
         "Deferred issue must not run"
     )
+
+
+# ── [Plan] row rendered on all paths ─────────────────────────────────────────
+
+
+def test_run_iteration_plan_row_rendered_for_single_afk_issue(
+    tmp_path, git_svc, logger
+):
+    """One open AFK issue + no in-flight: planning skips, [Plan] row appears."""
+    recording = RecordingStatusDisplay()
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 11, "title": "Solo", "body": "", "comments": []}
+    ]
+
+    async def _fake_agent(request: RunRequest):
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    plan_registers = [
+        c for c in recording.calls if c[0] == "register" and c[1] == "Plan"
+    ]
+    assert plan_registers, "[Plan] row must be registered for single-issue path"
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "[Plan] row must be removed for single-issue path"
+    assert "#11" in plan_removes[0][2], (
+        "Close message must mention the skipped issue number"
+    )
+    assert "skipping plan agent" in plan_removes[0][2]
+
+
+def test_run_iteration_plan_row_rendered_for_two_afk_issues(tmp_path, git_svc, logger):
+    """Two open AFK issues: planner runs, [Plan] row appears with 'Planning complete'."""
+    recording = RecordingStatusDisplay()
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 3, "title": "Issue A", "body": "", "comments": []},
+        {"number": 4, "title": "Issue B", "body": "", "comments": []},
+    ]
+
+    async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 3, "title": "Issue A", "body": "", "comments": []}]
+            )
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    plan_registers = [
+        c for c in recording.calls if c[0] == "register" and c[1] == "Plan"
+    ]
+    assert plan_registers, "[Plan] row must be registered for multi-issue path"
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "[Plan] row must be removed for multi-issue path"
+    assert "Planning complete" in plan_removes[0][2]
+
+
+def test_run_iteration_plan_row_rendered_for_one_in_flight_zero_afk(
+    tmp_path, git_svc, logger
+):
+    """One in-flight branch + zero AFK issues: planning skips with in-flight message, [Plan] row appears."""
+    recording = RecordingStatusDisplay()
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 20, "title": "In flight", "body": "", "comments": []}
+    ]
+    git_svc.verify_ref_exists.return_value = True
+
+    async def _fake_agent(request: RunRequest):
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    plan_registers = [
+        c for c in recording.calls if c[0] == "register" and c[1] == "Plan"
+    ]
+    assert plan_registers, "[Plan] row must be registered for in-flight path"
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "[Plan] row must be removed for in-flight path"
+    msg = plan_removes[0][2]
+    assert "in-flight" in msg
+    assert "#20" in msg
+    assert "skipping plan agent" in msg
+
+
+def test_run_iteration_plan_row_rendered_for_two_in_flight_branches(
+    tmp_path, git_svc, logger
+):
+    """Two in-flight branches: planning skips with in-flight message, [Plan] row appears."""
+    recording = RecordingStatusDisplay()
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 30, "title": "In flight A", "body": "", "comments": []},
+        {"number": 31, "title": "In flight B", "body": "", "comments": []},
+    ]
+    git_svc.verify_ref_exists.return_value = True
+
+    async def _fake_agent(request: RunRequest):
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=recording,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    plan_registers = [
+        c for c in recording.calls if c[0] == "register" and c[1] == "Plan"
+    ]
+    assert plan_registers, "[Plan] row must be registered for in-flight path"
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "[Plan] row must be removed for in-flight path"
+    msg = plan_removes[0][2]
+    assert "in-flight" in msg
+    assert "skipping plan agent" in msg
 
 
 # ── Plan phase row.close() message ────────────────────────────────────────────
@@ -1770,7 +1918,8 @@ def test_run_iteration_returns_aborted_usage_limit_for_each_single_agent_phase(
         )
     elif phase == "plan":
         github_svc.get_open_issues.return_value = [
-            {"number": 1, "title": "Fix", "body": "", "comments": []}
+            {"number": 1, "title": "Fix", "body": "", "comments": []},
+            {"number": 2, "title": "Fix B", "body": "", "comments": []},
         ]
 
         async def agent_fn(req: RunRequest):
@@ -1839,7 +1988,8 @@ def test_phase_row_paints_interrupted_style_on_usage_limit(tmp_path, git_svc, lo
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix", "body": "", "comments": []}
+        {"number": 1, "title": "Fix", "body": "", "comments": []},
+        {"number": 2, "title": "Fix B", "body": "", "comments": []},
     ]
     reset_time = datetime(2026, 5, 8, 16, 0)
 
