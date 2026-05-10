@@ -12,9 +12,11 @@ from pycastle.services import GithubService
 from pycastle.iteration._deps import (
     FakeAgentRunner,
     RecordingStatusDisplay,
+    StubPreflightCache,
     _make_deps,
 )
 from pycastle.iteration.merge import MergeResult, merge_phase
+from pycastle.iteration.preflight import PreflightAFK, PreflightHITL, PreflightReady
 
 
 @pytest.fixture
@@ -242,7 +244,6 @@ def test_incomplete_merger_raises_and_does_not_fast_forward(
 
 
 def _make_preflight_skip_deps(tmp_path, git_svc, github_svc, verdict):
-    from pycastle.iteration._deps import StubPreflightCache
 
     git_svc.try_merge.return_value = False
     cache = StubPreflightCache(verdict)
@@ -258,9 +259,6 @@ def _make_preflight_skip_deps(tmp_path, git_svc, github_svc, verdict):
 def test_merge_phase_calls_get_safe_sha_when_conflicts_remain(
     tmp_path, git_svc, github_svc
 ):
-    from unittest.mock import AsyncMock
-    from pycastle.iteration.preflight import PreflightReady
-    from pycastle.iteration._deps import StubPreflightCache
 
     git_svc.try_merge.side_effect = _conflict_on([2])
     cache = StubPreflightCache(PreflightReady(sha="abc123"))
@@ -278,7 +276,6 @@ def test_merge_phase_calls_get_safe_sha_when_conflicts_remain(
 
 
 def test_preflight_afk_returns_soft_skip_merge_result(tmp_path, git_svc, github_svc):
-    from pycastle.iteration.preflight import PreflightAFK
 
     verdict = PreflightAFK(sha="abc123", issue_number=99)
     local_deps = _make_preflight_skip_deps(tmp_path, git_svc, github_svc, verdict)
@@ -290,7 +287,6 @@ def test_preflight_afk_returns_soft_skip_merge_result(tmp_path, git_svc, github_
 
 
 def test_preflight_hitl_returns_soft_skip_merge_result(tmp_path, git_svc, github_svc):
-    from pycastle.iteration.preflight import PreflightHITL
 
     verdict = PreflightHITL(sha="abc123", issue_number=42)
     local_deps = _make_preflight_skip_deps(tmp_path, git_svc, github_svc, verdict)
@@ -302,11 +298,9 @@ def test_preflight_hitl_returns_soft_skip_merge_result(tmp_path, git_svc, github
 
 
 def test_preflight_skip_does_not_spawn_merger(tmp_path, git_svc, github_svc):
-    from pycastle.iteration.preflight import PreflightAFK
 
     verdict = PreflightAFK(sha="abc123", issue_number=99)
     git_svc.try_merge.return_value = False
-    from pycastle.iteration._deps import StubPreflightCache
 
     cache = StubPreflightCache(verdict)
     fake = FakeAgentRunner([])
@@ -323,7 +317,6 @@ def test_preflight_skip_does_not_spawn_merger(tmp_path, git_svc, github_svc):
 
 
 def test_preflight_skip_does_not_fast_forward(tmp_path, git_svc, github_svc):
-    from pycastle.iteration.preflight import PreflightAFK
 
     verdict = PreflightAFK(sha="abc123", issue_number=99)
     local_deps = _make_preflight_skip_deps(tmp_path, git_svc, github_svc, verdict)
@@ -333,11 +326,9 @@ def test_preflight_skip_does_not_fast_forward(tmp_path, git_svc, github_svc):
 
 
 def test_preflight_skip_prints_merge_caller_message(tmp_path, git_svc, github_svc):
-    from pycastle.iteration.preflight import PreflightAFK
 
     verdict = PreflightAFK(sha="abc123", issue_number=99)
     recording = RecordingStatusDisplay()
-    from pycastle.iteration._deps import StubPreflightCache
 
     git_svc.try_merge.return_value = False
     local_deps = dataclasses.replace(
@@ -364,11 +355,9 @@ def test_preflight_skip_prints_merge_caller_message(tmp_path, git_svc, github_sv
 def test_preflight_skip_separates_clean_and_conflict_issues(
     tmp_path, git_svc, github_svc
 ):
-    from pycastle.iteration.preflight import PreflightAFK
 
     verdict = PreflightAFK(sha="abc123", issue_number=99)
     git_svc.try_merge.side_effect = _conflict_on([2])
-    from pycastle.iteration._deps import StubPreflightCache
 
     local_deps = _make_deps(
         tmp_path,
@@ -386,11 +375,9 @@ def test_preflight_skip_separates_clean_and_conflict_issues(
 def test_preflight_skip_closes_parent_issues_for_clean_issues(
     tmp_path, git_svc, github_svc
 ):
-    from pycastle.iteration.preflight import PreflightAFK
 
     verdict = PreflightAFK(sha="abc123", issue_number=99)
     git_svc.try_merge.side_effect = _conflict_on([2])
-    from pycastle.iteration._deps import StubPreflightCache
 
     local_deps = _make_deps(
         tmp_path,
@@ -785,8 +772,6 @@ def test_merge_row_not_removed_with_failed_style_after_row_already_removed(
     tmp_path, git_svc, github_svc
 ):
     """The 'Merge' row must not get a second failed-style remove when the preflight gate blocks the merger."""
-    from pycastle.iteration.preflight import PreflightAFK
-    from pycastle.iteration._deps import StubPreflightCache
 
     recording = RecordingStatusDisplay()
     deps = _make_deps(
@@ -843,8 +828,6 @@ def test_auto_push_calls_push_after_merger_fast_forward(deps, git_svc):
 def test_auto_push_calls_push_in_preflight_skip_when_clean_issues_exist(
     tmp_path, git_svc, github_svc
 ):
-    from pycastle.iteration.preflight import PreflightAFK
-    from pycastle.iteration._deps import StubPreflightCache
 
     git_svc.try_merge.side_effect = _conflict_on([2])
     local_deps = _make_deps(
@@ -862,8 +845,6 @@ def test_auto_push_calls_push_in_preflight_skip_when_clean_issues_exist(
 def test_auto_push_does_not_call_push_in_preflight_skip_when_no_clean_issues(
     tmp_path, git_svc, github_svc
 ):
-    from pycastle.iteration.preflight import PreflightAFK
-    from pycastle.iteration._deps import StubPreflightCache
 
     git_svc.try_merge.return_value = False
     local_deps = _make_deps(
@@ -896,8 +877,6 @@ def test_auto_push_false_does_not_call_push_on_conflict_path(deps, git_svc):
 def test_auto_push_false_does_not_call_push_in_preflight_skip(
     tmp_path, git_svc, github_svc
 ):
-    from pycastle.iteration.preflight import PreflightAFK
-    from pycastle.iteration._deps import StubPreflightCache
 
     git_svc.try_merge.side_effect = _conflict_on([2])
     local_deps = dataclasses.replace(
