@@ -210,7 +210,9 @@ def test_planning_phase_raises_runtime_error_when_planner_output_has_no_plan_tag
         {"number": 1, "title": "A", "body": "", "comments": []},
         {"number": 2, "title": "B", "body": "", "comments": []},
     ]
-    fake = FakeAgentRunner([PlanParseError("Planner produced no <plan> tag.")], preflight_responses=[[]])
+    fake = FakeAgentRunner(
+        [PlanParseError("Planner produced no <plan> tag.")], preflight_responses=[[]]
+    )
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     with pytest.raises(RuntimeError, match="no <plan> tag"):

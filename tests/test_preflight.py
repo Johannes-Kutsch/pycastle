@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, patch
 
 from pycastle.agent_output_protocol import (
     IssueOutput,
-    IssueParseError,
 )
 from pycastle.config import Config
 from pycastle.services import GitCommandError, GitService

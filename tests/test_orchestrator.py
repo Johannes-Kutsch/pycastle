@@ -2503,6 +2503,7 @@ def test_preflight_afk_from_planning_routes_to_implement_same_iteration(tmp_path
 
 def test_preflight_hitl_from_planning_returns_aborted_hitl(tmp_path):
     """PreflightHITL returned from planning must abort with sys.exit non-zero."""
+
     async def _fake_run_agent(request: RunRequest):
         return IssueOutput(number=55, labels=["ready-for-human"])
 
@@ -2526,7 +2527,9 @@ def test_improve_and_plan_share_preflight_cache(tmp_path):
     mock_github = MagicMock(spec=GithubService)
     mock_github.get_open_issues.side_effect = [
         [],  # first call → triggers improve path
-        [{"number": 7, "title": "Filed issue", "body": "", "comments": []}],  # after improve
+        [
+            {"number": 7, "title": "Filed issue", "body": "", "comments": []}
+        ],  # after improve
     ]
     mock_github.get_all_open_issues_lightweight.return_value = []
     mock_github.get_issue.return_value = {

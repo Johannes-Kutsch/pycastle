@@ -139,5 +139,3 @@ async def ensure_preflight(
     result = PreflightReady(sha=sha)
     deps.preflight_verdict = result
     return result
-
-
