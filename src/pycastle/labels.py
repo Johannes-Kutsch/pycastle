@@ -46,6 +46,21 @@ def create_labels_interactive(
             "color": "d73a4a",
         },
         {
+            "name": _cfg.enhancement_label,
+            "description": "New feature or request",
+            "color": "a2eeef",
+        },
+        {
+            "name": _cfg.needs_triage_label,
+            "description": "Maintainer needs to evaluate this issue",
+            "color": "fbca04",
+        },
+        {
+            "name": _cfg.needs_info_label,
+            "description": "Waiting on reporter for more information",
+            "color": "d4c5f9",
+        },
+        {
             "name": _cfg.issue_label,
             "description": "Fully specified, ready for afk agent",
             "color": "0be348",
@@ -54,6 +69,11 @@ def create_labels_interactive(
             "name": _cfg.hitl_label,
             "description": "Requires human implementation",
             "color": "5181b8",
+        },
+        {
+            "name": _cfg.wontfix_label,
+            "description": "Will not be actioned",
+            "color": "ffffff",
         },
     ]
 
