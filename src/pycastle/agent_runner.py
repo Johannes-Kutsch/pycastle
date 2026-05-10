@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-import shutil
 import traceback
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -16,12 +15,8 @@ from .errors import AgentTimeoutError, PreflightFailure, UsageLimitError
 from .prompt_pipeline import PromptRenderer, PromptTemplate
 from .reprompt_loop import REPROMPT_MESSAGE, run_with_reprompt
 from .session_resume import (
+    RoleSession,
     RunKind,
-    decide_agent_run_kind,
-    derived_session_uuid,
-    has_resumable_session,
-    session_dir_path,
-    session_dir_rel,
 )
 from .services import GitService
 from .status_display import PlainStatusDisplay
@@ -81,8 +76,7 @@ class AgentRunner:
     def _build_session(
         self,
         mount_path: Path,
-        role: AgentRole | None = None,
-        session_namespace: str = "",
+        role_session: RoleSession | None = None,
     ) -> tuple[DockerSession, str | None]:
         volumes, auto_overlay = build_volume_spec(mount_path)
         container_env = dict(self._env)
@@ -90,9 +84,9 @@ class AgentRunner:
         if self._account_pool is not None:
             _, picked_token = self._account_pool.pick()
             container_env["CLAUDE_CODE_OAUTH_TOKEN"] = picked_token
-        if role is not None:
+        if role_session is not None:
             container_env["CLAUDE_CONFIG_DIR"] = (
-                f"{_CONTAINER_WORKSPACE}/{session_dir_rel(role, session_namespace)}"
+                f"{_CONTAINER_WORKSPACE}/{role_session.claude_config_dir_relpath()}"
             )
         return (
             DockerSession(
@@ -150,17 +144,14 @@ class AgentRunner:
             raise UsageLimitError(reset_time=None)
 
         session_namespace = request.session_namespace
-        role_session_dir = session_dir_path(mount_path, role, session_namespace)
-        session_dir_present = has_resumable_session(role_session_dir)
-        run_kind = decide_agent_run_kind(role, session_dir_present=session_dir_present)
-        session_uuid = derived_session_uuid(role, mount_path, session_namespace)
+        role_session = RoleSession(mount_path, role, session_namespace)
+        run_kind = role_session.run_kind()
+        session_uuid = role_session.session_uuid()
 
         is_failsoft_recovery = False
 
         async with agent_row(status_display, name, work_body):
-            session, picked_token = self._build_session(
-                mount_path, role, session_namespace
-            )
+            session, picked_token = self._build_session(mount_path, role_session)
             runner = ContainerRunner(
                 name,
                 session,
@@ -179,8 +170,7 @@ class AgentRunner:
                         raise PreflightFailure(failures=tuple(failures))
 
                 if run_kind == RunKind.FRESH:
-                    shutil.rmtree(role_session_dir, ignore_errors=True)
-                    role_session_dir.mkdir(parents=True, exist_ok=True)
+                    role_session.start_fresh()
 
                 loop = asyncio.get_running_loop()
 
@@ -238,8 +228,7 @@ class AgentRunner:
                         if run_kind == RunKind.RESUME and not is_failsoft_recovery:
                             tb = traceback.format_exc()
                             self._log_failsoft(name, tb)
-                            shutil.rmtree(role_session_dir, ignore_errors=True)
-                            role_session_dir.mkdir(parents=True, exist_ok=True)
+                            role_session.start_fresh()
                             run_kind = RunKind.FRESH
                             is_failsoft_recovery = True
                         else:
