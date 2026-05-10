@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import Protocol
 
 from ..agent_output_protocol import AgentRole, FailedOutput
-from ..session_resume import session_dir_path
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import AgentFailedError, PreflightFailure
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
+from ..session_resume import session_dir_path
 from ..status_display import StatusDisplay
 from ..worktree import (
     managed_worktree,
