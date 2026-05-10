@@ -16,7 +16,7 @@ from ..errors import AgentFailedError
 from ..prompt_pipeline import PromptTemplate, Scope, build_issue_scope_args
 from ..services import GitService
 from ..services.github_service import GithubService
-from ..session_resume import derived_session_uuid, session_dir_path
+from ..session_resume import RoleSession
 from ..status_display import StatusDisplay
 from ..worktree import managed_worktree
 from ._rows import phase_row
@@ -160,10 +160,9 @@ async def improve_phase(
             if isinstance(verdict, (PreflightHITL, PreflightAFK)):
                 row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
                 return verdict
-            short_sid = derived_session_uuid(AgentRole.IMPROVE, sandbox_path).split(
-                "-"
-            )[0]
-            role_session_dir = session_dir_path(sandbox_path, AgentRole.IMPROVE)
+            _role_session = RoleSession(sandbox_path, AgentRole.IMPROVE)
+            short_sid = _role_session.session_uuid().split("-")[0]
+            role_session_dir = _role_session.path
             progress_file = role_session_dir / _PHASE_PROGRESS_FILE
             in_flight_file = role_session_dir / _PHASE_IN_FLIGHT_FILE
 
