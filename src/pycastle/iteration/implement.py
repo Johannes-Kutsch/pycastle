@@ -12,7 +12,7 @@ from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import AgentFailedError, BranchCollisionError, UsageLimitError
 from ..prompt_pipeline import PromptTemplate, build_issue_scope_args
-from ..session_resume import clear_session_dir, is_stage_done
+from ..session_resume import clear_stage, is_stage_done_for
 from ..status_display import StatusDisplay
 from ..services import GitService
 from ..worktree import (
@@ -84,11 +84,8 @@ async def run_issue(
         _wt_name = worktree_name_for_branch(_branch)
         _wt_path = worktree_path(_wt_name, deps)
 
-        _impl_session_dir = _wt_path / ".pycastle-session" / "implementer"
-        _review_session_dir = _wt_path / ".pycastle-session" / "reviewer"
-
-        implement_done = is_stage_done(_impl_session_dir)
-        review_done = is_stage_done(_review_session_dir)
+        implement_done = is_stage_done_for(_wt_path, AgentRole.IMPLEMENTER)
+        review_done = is_stage_done_for(_wt_path, AgentRole.REVIEWER)
 
         if review_done:
             return issue
@@ -132,9 +129,7 @@ async def run_issue(
                             deps.repo_root,
                             f"Implement #{issue['number']} - {_msg}",
                         )
-                        clear_session_dir(
-                            impl_mount_path / ".pycastle-session" / "implementer"
-                        )
+                        clear_stage(impl_mount_path, AgentRole.IMPLEMENTER)
                 finally:
                     if _impl_overlay is not None:
                         _impl_overlay.unlink(missing_ok=True)
@@ -177,9 +172,7 @@ async def run_issue(
                         deps.repo_root,
                         f"Review #{issue['number']} - {_rev_msg}",
                     )
-                    clear_session_dir(
-                        review_mount_path / ".pycastle-session" / "reviewer"
-                    )
+                    clear_stage(review_mount_path, AgentRole.REVIEWER)
             finally:
                 if _review_overlay is not None:
                     _review_overlay.unlink(missing_ok=True)
