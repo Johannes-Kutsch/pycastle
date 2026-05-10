@@ -1,12 +1,11 @@
 import asyncio
 import dataclasses
-import traceback
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any, Protocol
 
 from .account_pool import AccountPool
-from .agent_output_protocol import AgentOutput, AgentRole
+from .agent_output_protocol import AgentOutput, AgentRole, FailedOutput
 from .agent_result import CancellationToken
 from .config import Config
 from .container_runner import ContainerRunner
@@ -103,20 +102,13 @@ class AgentRunner:
         scope_args: dict[str, str],
         container_exec: Callable[[str], Coroutine[Any, Any, str]],
         run_kind: RunKind,
-        is_failsoft_recovery: bool,
         send_role_prompt_on_resume: bool,
     ) -> str:
         if run_kind == RunKind.RESUME and not send_role_prompt_on_resume:
             return await self._renderer.render(
                 PromptTemplate.RESUME, {}, container_exec
             )
-        role_prompt = await self._renderer.render(template, scope_args, container_exec)
-        if not is_failsoft_recovery:
-            return role_prompt
-        resume_text = await self._renderer.render(
-            PromptTemplate.RESUME, {}, container_exec
-        )
-        return resume_text + "\n\n" + role_prompt
+        return await self._renderer.render(template, scope_args, container_exec)
 
     async def run(self, request: RunRequest) -> AgentOutput:
         from .iteration._rows import agent_row
@@ -145,7 +137,8 @@ class AgentRunner:
         run_kind = role_session.run_kind()
         session_uuid = role_session.session_uuid()
 
-        is_failsoft_recovery = False
+        was_resume_run = run_kind == RunKind.RESUME
+        non_typed_retry_done = False
 
         async with agent_row(status_display, name, work_body):
             session, picked_token = self._build_session(mount_path, role_session)
@@ -182,7 +175,6 @@ class AgentRunner:
                             scope_args,
                             container_exec,
                             run_kind=run_kind,
-                            is_failsoft_recovery=is_failsoft_recovery,
                             send_role_prompt_on_resume=request.send_role_prompt_on_resume,
                         )
 
@@ -222,12 +214,10 @@ class AgentRunner:
                         _token.cancel()
                         raise
                     except Exception:
-                        if run_kind == RunKind.RESUME and not is_failsoft_recovery:
-                            tb = traceback.format_exc()
-                            self._log_failsoft(name, tb)
-                            role_session.start_fresh()
-                            run_kind = RunKind.FRESH
-                            is_failsoft_recovery = True
+                        if was_resume_run and not non_typed_retry_done:
+                            non_typed_retry_done = True
+                        elif was_resume_run and non_typed_retry_done:
+                            return FailedOutput()
                         else:
                             raise
             finally:
@@ -235,14 +225,6 @@ class AgentRunner:
                     session.__exit__(None, None, None)
                 except Exception:
                     pass
-
-    def _log_failsoft(self, name: str, tb: str) -> None:
-        try:
-            self._cfg.logs_dir.mkdir(parents=True, exist_ok=True)
-            with open(self._cfg.logs_dir / "errors.log", "a", encoding="utf-8") as f:
-                f.write(f"[ResumeFailSoft] {name}\n{tb}\n")
-        except Exception:
-            pass
 
     async def run_preflight(
         self,
