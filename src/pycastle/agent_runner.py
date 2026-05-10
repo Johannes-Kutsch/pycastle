@@ -20,6 +20,8 @@ from .session_resume import (
     decide_agent_run_kind,
     derived_session_uuid,
     has_resumable_session,
+    session_dir_path,
+    session_dir_rel,
 )
 from .services import GitService
 from .status_display import PlainStatusDisplay
@@ -89,9 +91,8 @@ class AgentRunner:
             _, picked_token = self._account_pool.pick()
             container_env["CLAUDE_CODE_OAUTH_TOKEN"] = picked_token
         if role is not None:
-            namespace_suffix = f"{session_namespace}/" if session_namespace else ""
             container_env["CLAUDE_CONFIG_DIR"] = (
-                f"{_CONTAINER_WORKSPACE}/.pycastle-session/{role.value}/{namespace_suffix}"
+                f"{_CONTAINER_WORKSPACE}/{session_dir_rel(role, session_namespace)}"
             )
         return (
             DockerSession(
@@ -149,9 +150,7 @@ class AgentRunner:
             raise UsageLimitError(reset_time=None)
 
         session_namespace = request.session_namespace
-        role_session_dir = mount_path / ".pycastle-session" / role.value
-        if session_namespace:
-            role_session_dir = role_session_dir / session_namespace
+        role_session_dir = session_dir_path(mount_path, role, session_namespace)
         session_dir_present = has_resumable_session(role_session_dir)
         run_kind = decide_agent_run_kind(role, session_dir_present=session_dir_present)
         session_uuid = derived_session_uuid(role, mount_path, session_namespace)
