@@ -100,7 +100,7 @@ class AgentFailedError(PycastleError):
         from .session_resume import RoleSession
 
         return (
-            RoleSession(Path("/"), AgentRole(self.role_value), self.namespace)
+            RoleSession(self.worktree_path, AgentRole(self.role_value), self.namespace)
             .claude_config_dir_relpath()
             .rstrip("/")
         )
