@@ -80,7 +80,7 @@ Iterate the breakdown in your reasoning until the answers are clean.
 
 ## 5. File the issues
 
-For each approved slice, publish a new issue. **Always write the body to a temp file and use `gh issue create --body-file`.** Each title must start with `[auto-generated-improve]`. Apply the `{{READY_FOR_AGENT_LABEL}}` label so an agent can start work on the issue.
+For each approved slice, publish a new issue. **Always write the body to a temp file and use `gh issue create --body-file`.** Each title must start with `[improve-SLICE]`. Apply the `{{READY_FOR_AGENT_LABEL}}` label so an agent can start work on the issue.
 
 Publish issues in dependency order (blockers first) so you can reference real issue identifiers in the `Blocked by` field. The CONTEXT.md issue from step 2, if any, is filed first; every other slice references it.
 
