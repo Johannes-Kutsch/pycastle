@@ -6,6 +6,7 @@ import uuid
 from pycastle.agent_output_protocol import AgentRole
 from pycastle.session_resume import (
     SESSION_DIR_NAME,
+    RoleSession,
     RunKind,
     any_role_dir_present,
     clear_stage,
@@ -316,3 +317,98 @@ def test_clear_stage_with_namespace(tmp_path):
 
     assert role_dir.is_dir()
     assert not any(role_dir.iterdir())
+
+
+# ── RoleSession lifecycle ─────────────────────────────────────────────────────
+
+
+def test_role_session_fresh_worktree_reports_fresh_and_not_resumable_or_done(tmp_path):
+    rs = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    assert rs.run_kind() == RunKind.FRESH
+    assert rs.is_resumable() is False
+    assert rs.is_done() is False
+
+
+def test_role_session_after_start_fresh_and_file_is_resumable(tmp_path):
+    rs = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    rs.start_fresh()
+    (rs.path / "session.jsonl").write_text("{}\n")
+
+    assert rs.run_kind() == RunKind.RESUME
+    assert rs.is_resumable() is True
+    assert rs.is_done() is False
+
+
+def test_role_session_mark_done_signals_done_and_dir_survives(tmp_path):
+    rs = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    rs.start_fresh()
+    (rs.path / "session.jsonl").write_text("{}\n")
+
+    rs.mark_done()
+
+    assert rs.is_done() is True
+    assert rs.is_resumable() is False
+    assert rs.path.is_dir()
+
+    rs2 = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    assert rs2.run_kind() == RunKind.FRESH
+
+
+def test_role_session_start_fresh_on_populated_dir_makes_not_resumable(tmp_path):
+    rs = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    rs.start_fresh()
+    (rs.path / "session.jsonl").write_text("{}\n")
+
+    rs.start_fresh()
+
+    assert rs.is_resumable() is False
+
+
+def test_role_session_session_uuid_determinism(tmp_path):
+    rs1 = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    rs2 = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    assert rs1.session_uuid() == rs2.session_uuid()
+
+
+def test_role_session_session_uuid_differs_by_role(tmp_path):
+    impl = RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
+    rev = RoleSession(tmp_path, AgentRole.REVIEWER).session_uuid()
+    assert impl != rev
+
+
+def test_role_session_session_uuid_differs_by_worktree(tmp_path):
+    rs_a = RoleSession(tmp_path / "issue-1", AgentRole.IMPLEMENTER).session_uuid()
+    rs_b = RoleSession(tmp_path / "issue-2", AgentRole.IMPLEMENTER).session_uuid()
+    assert rs_a != rs_b
+
+
+def test_role_session_session_uuid_differs_by_namespace(tmp_path):
+    rs_a = RoleSession(tmp_path, AgentRole.IMPROVE, "main").session_uuid()
+    rs_b = RoleSession(tmp_path, AgentRole.IMPROVE, "issues").session_uuid()
+    assert rs_a != rs_b
+
+
+def test_role_session_empty_namespace_and_two_arg_form_yield_identical_uuid(tmp_path):
+    two_arg = RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
+    empty_ns = RoleSession(tmp_path, AgentRole.IMPLEMENTER, "").session_uuid()
+    assert two_arg == empty_ns
+
+
+def test_role_session_session_uuid_resolved_path_equals_direct(tmp_path):
+    direct = RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
+    resolved = RoleSession(tmp_path.resolve(), AgentRole.IMPLEMENTER).session_uuid()
+    assert direct == resolved
+
+
+def test_role_session_claude_config_dir_relpath_matches_session_dir_rel(tmp_path):
+    rs = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    assert rs.claude_config_dir_relpath() == session_dir_rel(AgentRole.IMPLEMENTER)
+
+
+def test_role_session_claude_config_dir_relpath_with_namespace_matches_session_dir_rel(
+    tmp_path,
+):
+    rs = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    assert rs.claude_config_dir_relpath() == session_dir_rel(
+        AgentRole.IMPROVE, namespace="main"
+    )
