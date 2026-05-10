@@ -14,7 +14,7 @@ from ..errors import AgentFailedError, BranchCollisionError, UsageLimitError
 from ..prompt_pipeline import PromptTemplate, build_issue_scope_args
 from ..session_resume import RoleSession, is_stage_done_for
 from ..status_display import StatusDisplay
-from ..services import GitService
+from ..services import GitService, GithubService
 from ..worktree import (
     managed_worktree,
     patch_gitdir_for_container,
@@ -22,6 +22,7 @@ from ..worktree import (
     worktree_path,
 )
 from ._deps import Logger
+from .preflight import PreflightCache
 
 
 class _ImplementDeps(Protocol):
@@ -29,8 +30,10 @@ class _ImplementDeps(Protocol):
     status_display: StatusDisplay
     agent_runner: AgentRunnerProtocol
     git_svc: GitService
+    github_svc: GithubService
     repo_root: Path
     logger: Logger
+    preflight_cache: PreflightCache
 
 
 def branch_for(issue_number: int) -> str:
@@ -51,13 +54,15 @@ async def run_issue(
     semaphore: asyncio.Semaphore | None = None,
     *,
     token: CancellationToken | None = None,
-    sha: str | None = None,
     branch_locks: dict[str, asyncio.Lock] | None = None,
     on_started: Callable[[], None] | None = None,
 ) -> dict:
     _branch = branch_for(issue["number"])
     _token = token if token is not None else CancellationToken()
     scope_args = build_issue_scope_args(issue, extra_scope_args={"BRANCH": _branch})
+
+    verdict = await deps.preflight_cache.get_safe_sha(deps)
+    sha = verdict.sha
 
     _started_fired = False
 
@@ -187,7 +192,6 @@ async def run_issue(
 
 async def implement_phase(
     issues: list[dict],
-    sha: str | None,
     deps: _ImplementDeps,
     *,
     token: CancellationToken | None = None,
@@ -215,7 +219,6 @@ async def implement_phase(
                 deps,
                 semaphore,
                 token=_token,
-                sha=sha,
                 branch_locks=branch_locks,
                 on_started=_on_started,
             )

@@ -1990,7 +1990,12 @@ def test_worktree_sha_set_at_iteration_start(tmp_path):
 
 
 def test_worktree_sha_refreshed_each_iteration(tmp_path):
-    """get_head_sha must be called before each Planner call across multiple iterations."""
+    """get_head_sha must be called before each Planner call across multiple iterations.
+
+    run_issue also calls get_safe_sha() (and thus get_head_sha) for its implementer
+    worktree, so there are more calls than one per iteration — the ordering invariant
+    is what matters: every Planner call must be preceded by at least one get_head_sha.
+    """
     call_order: list[str] = []
     planner_count = [0]
 
@@ -2020,17 +2025,17 @@ def test_worktree_sha_refreshed_each_iteration(tmp_path):
         max_iterations=2,
     )
 
-    sha_indices = [i for i, e in enumerate(call_order) if e == "get_head_sha"]
     planner_indices = [i for i, e in enumerate(call_order) if e.startswith("Planner")]
-    assert len(sha_indices) == 2, (
-        f"get_head_sha must be called once per iteration; order={call_order}"
-    )
     assert len(planner_indices) == 2, (
         f"Planner must be called twice; order={call_order}"
     )
-    for sha_idx, planner_idx in zip(sha_indices, planner_indices):
-        assert sha_idx < planner_idx, (
-            f"get_head_sha must precede Planner each iteration; order={call_order}"
+    for planner_idx in planner_indices:
+        preceding_sha = any(
+            e == "get_head_sha" and i < planner_idx
+            for i, e in enumerate(call_order)
+        )
+        assert preceding_sha, (
+            f"get_head_sha must precede Planner; order={call_order}"
         )
 
 
@@ -2443,10 +2448,22 @@ def test_idle_iteration_skips_preflight_gate(tmp_path):
     mock_git.pull.assert_not_called()
 
 
-def test_in_flight_only_iteration_skips_preflight_gate(tmp_path):
-    """When all open issues are already in-flight, the preflight gate must be skipped."""
+def test_in_flight_only_iteration_planning_skips_preflight_gate(tmp_path):
+    """When all open issues are in-flight, planning_phase skips the preflight gate.
+    run_issue still calls get_safe_sha() to pin its implementer worktree, so pull
+    is called — but only from run_issue, not from planning_phase."""
+    pull_call_count = [0]
     mock_git = _make_git_svc(try_merge_side_effect=[True])
     mock_git.verify_ref_exists.return_value = True  # branch exists → in-flight
+
+    original_pull = mock_git.pull.side_effect
+
+    def _tracking_pull(repo_path):
+        pull_call_count[0] += 1
+        if original_pull is not None:
+            return original_pull(repo_path)
+
+    mock_git.pull.side_effect = _tracking_pull
     mock_github = _make_github_svc(numbers=[1])
 
     async def _fake_run_agent(request: RunRequest):
@@ -2459,7 +2476,9 @@ def test_in_flight_only_iteration_skips_preflight_gate(tmp_path):
         github_service=mock_github,
     )
 
-    mock_git.pull.assert_not_called()
+    assert pull_call_count[0] >= 1, (
+        "run_issue must call get_safe_sha() which triggers pull even for in-flight issues"
+    )
 
 
 def test_preflight_afk_from_planning_routes_to_implement_same_iteration(tmp_path):

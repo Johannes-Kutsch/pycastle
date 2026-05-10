@@ -1043,13 +1043,14 @@ def test_run_iteration_uses_only_in_flight_issues_when_some_have_existing_branch
 def test_run_iteration_uses_preflight_sha_for_in_flight_issues(
     tmp_path, git_svc, logger
 ):
-    """In-flight issues bypass preflight entirely, so the implement worktree is created
-    without a pinned SHA (sha=None) — no preflight pull/checkout on the in-flight path."""
+    """run_issue self-fetches the safe SHA via preflight_cache.get_safe_sha() and pins
+    the implementer worktree to verdict.sha — even for in-flight issues."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
         {"number": 7, "title": "In flight", "body": "", "comments": []}
     ]
     git_svc.verify_ref_exists.return_value = True
+    git_svc.get_head_sha.return_value = "preflight-sha"
 
     async def _fake_agent(request: RunRequest):
         return CompletionOutput()
@@ -1060,18 +1061,14 @@ def test_run_iteration_uses_preflight_sha_for_in_flight_issues(
         git_svc=git_svc,
         github_svc=github_svc,
         logger=logger,
-        preflight_responses=[],
+        preflight_responses=[[]],
     )
     asyncio.run(run_iteration(deps))
 
-    git_svc.pull.assert_not_called()
-    worktree_calls_with_sha = [
-        c
-        for c in git_svc.create_worktree.call_args_list
-        if len(c.args) > 3 and c.args[3] is not None
-    ]
-    assert worktree_calls_with_sha == [], (
-        "In-flight path must not pin a SHA — worktree created with sha=None"
+    git_svc.pull.assert_called()
+    implementer_sha = git_svc.create_worktree.call_args_list[0].args[3]
+    assert implementer_sha == "preflight-sha", (
+        "In-flight implementer worktree must be pinned to the SHA from preflight_cache"
     )
 
 
