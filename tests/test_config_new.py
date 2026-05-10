@@ -22,6 +22,22 @@ def test_config_has_bug_label_default():
     assert cfg.bug_label == "bug"
 
 
+def test_config_has_enhancement_label_default():
+    assert Config().enhancement_label == "enhancement"
+
+
+def test_config_has_needs_triage_label_default():
+    assert Config().needs_triage_label == "needs-triage"
+
+
+def test_config_has_needs_info_label_default():
+    assert Config().needs_info_label == "needs-info"
+
+
+def test_config_has_wontfix_label_default():
+    assert Config().wontfix_label == "wontfix"
+
+
 def test_config_has_auto_file_bugs_default_true():
     assert Config().auto_file_bugs is True
 
