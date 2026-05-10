@@ -97,6 +97,10 @@ class AgentFailedError(PycastleError):
         from .agent_output_protocol import (
             AgentRole,
         )  # deferred to break circular import
-        from .session_resume import session_dir_rel
+        from .session_resume import RoleSession
 
-        return session_dir_rel(AgentRole(self.role_value), self.namespace).rstrip("/")
+        return (
+            RoleSession(self.worktree_path, AgentRole(self.role_value), self.namespace)
+            .claude_config_dir_relpath()
+            .rstrip("/")
+        )
