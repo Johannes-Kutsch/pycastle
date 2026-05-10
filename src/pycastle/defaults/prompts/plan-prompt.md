@@ -10,7 +10,7 @@ Here are all open issues in the repo (any label), for blocker visibility:
 
 # READY-FOR-AGENT ISSUES
 
-Here are the open issues labeled `{{READY_FOR_AGENT_LABEL}}` — your candidate set to pick from:
+Here are the open issues labeled {{READY_FOR_AGENT_LABEL}} — your candidate set to pick from:
 
 <ready-for-agent-issues-json>
 
@@ -20,7 +20,7 @@ Here are the open issues labeled `{{READY_FOR_AGENT_LABEL}}` — your candidate 
 
 # TASK
 
-Analyze the open issues and build a dependency graph. For each issue in the `{{READY_FOR_AGENT_LABEL}}` list, determine whether it is **blocked** by any other open issue.
+Analyze the open issues and build a dependency graph. For each issue in the {{READY_FOR_AGENT_LABEL}} list, determine whether it is **blocked** by any other open issue.
 
 An issue B is **blocked by** issue A if:
 
@@ -34,7 +34,7 @@ An issue B is **blocked by** issue A if:
 
 Only issues labeled `{{WONTFIX_LABEL}}` are treated as effectively closed. Do not treat `{{WONTFIX_LABEL}}` issues as blockers.
 
-Any issue referenced as a dependency that does not appear in either list above (neither the all-open list nor the `{{READY_FOR_AGENT_LABEL}}` list) has already been completed. Do not treat absent issues as blockers. Do not infer blockers from integration stability concerns — if a referenced issue is absent from both lists, its work is fully integrated and stable.
+Any issue referenced as a dependency that does not appear in either list above (neither the all-open list nor the {{READY_FOR_AGENT_LABEL}} list) has already been completed. Do not treat absent issues as blockers. Do not infer blockers from integration stability concerns — if a referenced issue is absent from both lists, its work is fully integrated and stable.
 
 **Parent PRDs and their implementation issues form a unit.** An implementation issue declares its parent PRD with a `## Parent` heading followed by `#N` near the top of its body. The relationship has two consequences:
 
@@ -53,7 +53,7 @@ Output your plan as a JSON object wrapped in `<plan>` tags.
 
 The JSON must have two fields:
 
-- `issues`: unblocked `{{READY_FOR_AGENT_LABEL}}` issues to implement. Entries must come from the `{{READY_FOR_AGENT_LABEL}}` list (the candidate set). Use an **empty list** if every candidate is blocked.
+- `issues`: unblocked {{READY_FOR_AGENT_LABEL}} issues to implement. Entries must come from the {{READY_FOR_AGENT_LABEL}} list (the candidate set). Use an **empty list** if every candidate is blocked.
 - `blocked`: {{READY_FOR_AGENT_LABEL}} issues held back because of a blocker. Each entry must have:
   - `number`: the blocked issue's number
   - `blocked_by`: the issue number that is blocking it
