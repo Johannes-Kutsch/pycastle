@@ -131,6 +131,7 @@ def _run(
     agent_runner=None,
     status_display=None,
     account_pool=None,
+    improve_mode=None,
     **config_kwargs,
 ):
     config_kwargs.setdefault("max_parallel", 4)
@@ -146,6 +147,7 @@ def _run(
             github_service=github_service,
             status_display=status_display,
             account_pool=account_pool,
+            improve_mode=improve_mode,
         )
     )
 
@@ -2427,3 +2429,139 @@ def test_ensure_session_excludes_preserves_existing_content(tmp_path):
 def test_ensure_session_excludes_noop_when_git_dir_absent(tmp_path):
     """ensure_session_excludes must not raise when .git/info/ does not exist."""
     ensure_session_excludes(tmp_path)  # should not raise
+
+
+# ── Issue-633: preflight gate wired into improve/plan ────────────────────────
+
+
+def test_idle_iteration_skips_preflight_gate(tmp_path):
+    """When there are no open issues and improve_mode is None, git pull must never be called."""
+    mock_git = _make_git_svc()
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.return_value = []
+
+    _run(tmp_path, github_service=mock_github, git_service=mock_git)
+
+    mock_git.pull.assert_not_called()
+
+
+def test_in_flight_only_iteration_skips_preflight_gate(tmp_path):
+    """When all open issues are already in-flight, the preflight gate must be skipped."""
+    mock_git = _make_git_svc(try_merge_side_effect=[True])
+    mock_git.verify_ref_exists.return_value = True  # branch exists → in-flight
+    mock_github = _make_github_svc(numbers=[1])
+
+    async def _fake_run_agent(request: RunRequest):
+        return CompletionOutput()
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=mock_git,
+        github_service=mock_github,
+    )
+
+    mock_git.pull.assert_not_called()
+
+
+def test_preflight_afk_from_planning_routes_to_implement_same_iteration(tmp_path):
+    """PreflightAFK returned from planning must route to implement in the same iteration,
+    calling the Implement Agent for the filed issue without invoking the Plan Agent."""
+    agent_names: list[str] = []
+
+    async def _fake_run_agent(request: RunRequest):
+        agent_names.append(request.name)
+        if "Pre-Flight Reporter" in request.name:
+            return IssueOutput(number=42, labels=["ready-for-agent"])
+        if "Implement Agent" in request.name:
+            return CompletionOutput()
+        return CompletionOutput()
+
+    mock_github = _make_github_svc_afk()
+    mock_github.get_issue.return_value = {
+        "number": 42,
+        "title": "Preflight fix",
+        "body": "",
+        "comments": [],
+    }
+
+    _run(
+        tmp_path,
+        agent_runner=FakeAgentRunner(
+            side_effect=_fake_run_agent,
+            preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+        ),
+        github_service=mock_github,
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+    )
+
+    assert "Plan Agent" not in agent_names, "Plan Agent must not be called on AFK path"
+    assert any("Implement Agent" in n for n in agent_names), (
+        "Implement Agent must be called for the AFK issue"
+    )
+
+
+def test_preflight_hitl_from_planning_returns_aborted_hitl(tmp_path):
+    """PreflightHITL returned from planning must abort with sys.exit non-zero."""
+    async def _fake_run_agent(request: RunRequest):
+        return IssueOutput(number=55, labels=["ready-for-human"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run(
+            tmp_path,
+            agent_runner=FakeAgentRunner(
+                side_effect=_fake_run_agent,
+                preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+            ),
+            github_service=_make_github_svc_hitl(),
+        )
+
+    assert exc_info.value.code != 0
+
+
+def test_improve_and_plan_share_preflight_cache(tmp_path):
+    """When improve runs then planning runs in the same iteration, ensure_preflight
+    must only be called once (the second call hits the cache)."""
+    mock_git = _make_git_svc(try_merge_side_effect=[True])
+    mock_github = MagicMock(spec=GithubService)
+    mock_github.get_open_issues.side_effect = [
+        [],  # first call → triggers improve path
+        [{"number": 7, "title": "Filed issue", "body": "", "comments": []}],  # after improve
+    ]
+    mock_github.get_all_open_issues_lightweight.return_value = []
+    mock_github.get_issue.return_value = {
+        "number": 5,
+        "title": "PRD",
+        "body": "",
+        "comments": [],
+    }
+    mock_github.get_issue_comments.return_value = []
+
+    async def _fake_run_agent(request: RunRequest):
+        if "Scan Agent" in request.name:
+            return IssueOutput(number=5, labels=[])  # 01-scan picks a candidate
+        if "PRD Agent" in request.name:
+            return IssueOutput(number=5, labels=[])  # 02-prd
+        if "Slice Agent" in request.name:
+            return CompletionOutput()  # 03-issues files sub-issues
+        if "Implement Agent" in request.name:
+            return CompletionOutput()
+        return CompletionOutput()
+
+    fake = FakeAgentRunner(
+        side_effect=_fake_run_agent,
+        preflight_responses=[[]],  # exactly one preflight pass
+    )
+
+    _run(
+        tmp_path,
+        agent_runner=fake,
+        github_service=mock_github,
+        git_service=mock_git,
+        improve_mode="endless",
+    )
+
+    assert len(fake.preflight_calls) == 1, (
+        f"ensure_preflight must run exactly once across improve+plan; "
+        f"got {len(fake.preflight_calls)} calls"
+    )

@@ -46,7 +46,10 @@ def git_svc(tmp_path):
 @pytest.fixture
 def agent_runner():
     # Happy path: 01-scan → 02-prd → 03-issues → terminal (3 calls)
-    return FakeAgentRunner([CompletionOutput(), CompletionOutput(), CompletionOutput()])
+    return FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
+    )
 
 
 @pytest.fixture
@@ -54,8 +57,8 @@ def deps(tmp_path, git_svc, agent_runner):
     return _make_deps(tmp_path, agent_runner, git_svc=git_svc)
 
 
-def _run(deps, sha="abc123"):
-    return asyncio.run(improve_phase(deps, sha=sha))
+def _run(deps):
+    return asyncio.run(improve_phase(deps))
 
 
 # ── next_prompt: pure transition function ────────────────────────────────────
@@ -139,13 +142,6 @@ def test_improve_phase_creates_worktree_on_improve_sandbox_branch(deps, git_svc)
     assert branch == IMPROVE_SANDBOX
 
 
-def test_improve_phase_pins_worktree_to_provided_sha(deps, git_svc):
-    """Worktree is pinned to the SHA passed to improve_phase, not a re-fetched HEAD."""
-    _run(deps, sha="deadbeef")
-    _repo, _wt, _branch, sha = git_svc.create_worktree.call_args[0]
-    assert sha == "deadbeef"
-
-
 # ── Multi-prompt execution ───────────────────────────────────────────────────
 
 
@@ -183,7 +179,7 @@ def test_improve_phase_dispatches_per_phase_display(
         outputs = [NoCandidateOutput(), CompletionOutput()]
     else:
         outputs = [CompletionOutput(), CompletionOutput(), CompletionOutput()]
-    runner = FakeAgentRunner(outputs)
+    runner = FakeAgentRunner(outputs, preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     call = next(c for c in runner.calls if c.template == template)
@@ -193,7 +189,7 @@ def test_improve_phase_dispatches_per_phase_display(
 
 def test_improve_phase_two_invocations_on_no_candidate_path(tmp_path, git_svc):
     """NO-CANDIDATE path (scan → report) triggers exactly two agent calls."""
-    runner = FakeAgentRunner([NoCandidateOutput(), CompletionOutput()])
+    runner = FakeAgentRunner([NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert len(runner.calls) == 2
@@ -205,7 +201,7 @@ def test_improve_phase_one_invocation_when_no_candidate_report_disabled(
     tmp_path, git_svc
 ):
     """NO-CANDIDATE with report disabled terminates after one call."""
-    runner = FakeAgentRunner([NoCandidateOutput()])
+    runner = FakeAgentRunner([NoCandidateOutput()], preflight_responses=[[]])
     cfg = dataclasses.replace(Config(), diagnose_on_failure=False)
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, cfg=cfg)
     _run(deps)
@@ -222,7 +218,8 @@ def test_improve_phase_removes_session_on_terminal_success(tmp_path, git_svc):
     removed outright to let managed_worktree's teardown predicate fire.
     """
     runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput(), CompletionOutput()]
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -249,7 +246,7 @@ def test_improve_phase_progress_file_written_after_scan_no_candidate(tmp_path, g
             progress_values.append(progress_file.read_text(encoding="utf-8").strip())
         return CompletionOutput()
 
-    runner = FakeAgentRunner(side_effect=_side_effect)
+    runner = FakeAgentRunner(side_effect=_side_effect, preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert "01-scan:no-candidate" in progress_values
@@ -308,7 +305,8 @@ def test_improve_phase_threads_prd_number_from_issue_output_to_issues_phase(
             CompletionOutput(),  # 01-scan
             IssueOutput(number=4242, labels=[]),  # 02-prd
             CompletionOutput(),  # 03-issues
-        ]
+        ],
+        preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
     _run(deps)
@@ -335,7 +333,8 @@ def test_improve_phase_assembles_prd_title_and_body_into_issues_scope(
             CompletionOutput(),  # 01-scan
             IssueOutput(number=99, labels=[]),  # 02-prd
             CompletionOutput(),  # 03-issues
-        ]
+        ],
+        preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
     _run(deps)
@@ -358,7 +357,8 @@ def test_improve_phase_fetches_prd_comments_for_issues_scope(tmp_path, git_svc):
             CompletionOutput(),  # 01-scan
             IssueOutput(number=77, labels=[]),  # 02-prd
             CompletionOutput(),  # 03-issues
-        ]
+        ],
+        preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
     _run(deps)
@@ -374,7 +374,7 @@ def test_improve_phase_threads_short_sid_to_no_candidate_report_phase(
     tmp_path, git_svc
 ):
     """Phase 4 (no-candidate report) RunRequest carries IMPROVE_SHORT_SID."""
-    runner = FakeAgentRunner([NoCandidateOutput(), CompletionOutput()])
+    runner = FakeAgentRunner([NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     report_call = runner.calls[1]
@@ -415,7 +415,7 @@ def test_improve_resumes_at_prd_after_scan_picked(tmp_path, git_svc):
     """Resume from '01-scan:picked' starts at phase 2 (PRD)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
-    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
+    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert runner.calls[0].template == PromptTemplate.IMPROVE_PRD
@@ -426,7 +426,7 @@ def test_improve_resumes_at_report_after_scan_no_candidate(tmp_path, git_svc):
     """Resume from '01-scan:no-candidate' starts at phase 4 (report)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:no-candidate")
-    runner = FakeAgentRunner([CompletionOutput()])
+    runner = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert runner.calls[0].template == PromptTemplate.IMPROVE_NO_CANDIDATE
@@ -440,7 +440,8 @@ def test_improve_orphan_reset_when_prd_done_but_no_in_flight(tmp_path, git_svc):
     _seed_progress(wt, "02-prd")
     # 3 responses: scan → prd → issues (full fresh cycle)
     runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput(), CompletionOutput()]
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -456,7 +457,7 @@ def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
     role_session_dir.mkdir(parents=True, exist_ok=True)
     (role_session_dir / "_phase_progress").write_text("02-prd", encoding="utf-8")
     (role_session_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
-    runner = FakeAgentRunner([CompletionOutput()])
+    runner = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert runner.calls[0].template == PromptTemplate.IMPROVE_ISSUES
@@ -467,7 +468,7 @@ def test_improve_is_terminal_after_issues(tmp_path, git_svc):
     """Resume from '03-issues' is immediately terminal — no agent calls."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "03-issues")
-    runner = FakeAgentRunner([])
+    runner = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert len(runner.calls) == 0
@@ -477,7 +478,7 @@ def test_improve_is_terminal_after_report(tmp_path, git_svc):
     """Resume from '04-report' is immediately terminal — no agent calls."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "04-report")
-    runner = FakeAgentRunner([])
+    runner = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert len(runner.calls) == 0
@@ -498,7 +499,7 @@ def test_mid_phase_2_retry_does_not_signal_role_prompt(tmp_path, git_svc):
         "01-scan:picked", encoding="utf-8"
     )
     (role_session_dir / "_phase_in_flight").write_text("02-prd", encoding="utf-8")
-    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
+    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     prd_call = next(c for c in runner.calls if c.template == PromptTemplate.IMPROVE_PRD)
@@ -511,7 +512,7 @@ def test_cross_teardown_resume_at_phase_2_signals_role_prompt(tmp_path, git_svc)
     prompt is delivered, not the continuation prompt."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
-    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
+    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     prd_call = next(c for c in runner.calls if c.template == PromptTemplate.IMPROVE_PRD)
@@ -546,7 +547,8 @@ def test_improve_fresh_run_on_malformed_progress(tmp_path, git_svc):
         "corrupted-data", encoding="utf-8"
     )
     runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput(), CompletionOutput()]
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -558,7 +560,8 @@ def test_improve_fresh_run_on_empty_progress_file(tmp_path, git_svc):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "")
     runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput(), CompletionOutput()]
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -570,7 +573,8 @@ def test_improve_fresh_run_on_whitespace_only_progress_file(tmp_path, git_svc):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "\n  \t  \n")
     runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput(), CompletionOutput()]
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -581,7 +585,7 @@ def test_improve_resumes_correctly_with_whitespace_padded_progress(tmp_path, git
     """Progress file with a valid phase ID surrounded by whitespace is still recognized — resumes at correct phase."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "  01-scan:picked  \n")
-    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
+    runner = FakeAgentRunner([CompletionOutput(), CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert runner.calls[0].template == PromptTemplate.IMPROVE_PRD
@@ -595,7 +599,8 @@ def test_improve_phases_01_02_04_use_main_namespace(tmp_path, git_svc):
     """Phases 01-scan, 02-prd, and 04-no-candidate-report must use session_namespace='main'."""
     no_candidate_cfg = Config(logs_dir=tmp_path, diagnose_on_failure=True)
     runner = FakeAgentRunner(
-        [NoCandidateOutput(), CompletionOutput()]  # 01-scan NO-CANDIDATE → 04-report
+        [NoCandidateOutput(), CompletionOutput()],  # 01-scan NO-CANDIDATE → 04-report
+        preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, cfg=no_candidate_cfg)
     _run(deps)
@@ -647,7 +652,7 @@ def test_improve_phase_returns_improve_no_candidate_on_no_candidate_path(
     tmp_path, git_svc
 ):
     """NO-CANDIDATE path returns ImproveNoCandidate."""
-    runner = FakeAgentRunner([NoCandidateOutput(), CompletionOutput()])
+    runner = FakeAgentRunner([NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     result = _run(deps)
     assert isinstance(result, ImproveNoCandidate)
@@ -657,7 +662,7 @@ def test_improve_phase_returns_improve_no_candidate_when_report_disabled(
     tmp_path, git_svc
 ):
     """NO-CANDIDATE with report disabled (scan terminates) returns ImproveNoCandidate."""
-    runner = FakeAgentRunner([NoCandidateOutput()])
+    runner = FakeAgentRunner([NoCandidateOutput()], preflight_responses=[[]])
     cfg = dataclasses.replace(Config(), diagnose_on_failure=False)
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, cfg=cfg)
     result = _run(deps)

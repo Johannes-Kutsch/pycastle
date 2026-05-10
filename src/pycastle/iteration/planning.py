@@ -1,7 +1,7 @@
 import dataclasses
 import json
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from ..agent_output_protocol import (
     AgentOutputProtocolError,
@@ -14,10 +14,15 @@ from ..config import Config
 from ..errors import AgentFailedError
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitService
+from ..services.github_service import GithubService
 from ..status_display import StatusDisplay
 from ..worktree import transient_worktree
 from ._rows import phase_row
 from .implement import branch_for
+from .preflight import PreflightAFK, PreflightHITL, PreflightReady, ensure_preflight
+
+if TYPE_CHECKING:
+    pass
 
 
 class _PlanningDeps(Protocol):
@@ -26,11 +31,13 @@ class _PlanningDeps(Protocol):
     agent_runner: AgentRunnerProtocol
     repo_root: Path
     git_svc: GitService
+    github_svc: GithubService
+    preflight_verdict: PreflightReady | None
 
 
 @dataclasses.dataclass(frozen=True)
 class PlanReady:
-    worktree_sha: str
+    worktree_sha: str | None
     issues: list[dict]
 
 
@@ -70,11 +77,10 @@ def _fill_fields(issues: list[dict]) -> list[dict]:
 
 async def planning_phase(
     deps: _PlanningDeps,
-    sha: str,
     open_issues: list[dict],
     all_open_issues: list[dict],
     in_flight: list[dict] | None = None,
-) -> PlanReady | AllBlocked:
+) -> PlanReady | AllBlocked | PreflightHITL | PreflightAFK:
     _in_flight = in_flight or []
 
     if _in_flight:
@@ -94,16 +100,29 @@ async def planning_phase(
                 f"resuming {len(_in_flight)} in-flight branch(es) ({nums}) labeled"
                 f" {deps.cfg.issue_label}, skipping plan agent"
             )
-            return PlanReady(worktree_sha=sha, issues=_fill_fields(_in_flight))
+            return PlanReady(worktree_sha=None, issues=_fill_fields(_in_flight))
 
-        if len(open_issues) == 1:
-            row.close(
-                f"only one open issue (#{open_issues[0]['number']}) labeled"
-                f" {deps.cfg.issue_label}, skipping plan agent"
-            )
-            return PlanReady(worktree_sha=sha, issues=_fill_fields(open_issues))
+        # Single-issue and multi-issue paths both need preflight + plan sandbox.
+        # When uncached, pass sha=None — ensure_preflight will call get_head_sha
+        # after pull, then checkout_detached the worktree to that sha.
+        _pre_sha = (
+            deps.preflight_verdict.sha if deps.preflight_verdict is not None else None
+        )
 
-        async with transient_worktree("plan-sandbox", sha=sha, deps=deps) as wt:
+        async with transient_worktree("plan-sandbox", sha=_pre_sha, deps=deps) as wt:
+            verdict = await ensure_preflight(deps, wt)
+            if isinstance(verdict, (PreflightHITL, PreflightAFK)):
+                row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
+                return verdict
+            sha = verdict.sha
+
+            if len(open_issues) == 1:
+                row.close(
+                    f"only one open issue (#{open_issues[0]['number']}) labeled"
+                    f" {deps.cfg.issue_label}, skipping plan agent"
+                )
+                return PlanReady(worktree_sha=sha, issues=_fill_fields(open_issues))
+
             try:
                 output = await deps.agent_runner.run(
                     RunRequest(

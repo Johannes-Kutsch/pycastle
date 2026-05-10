@@ -158,9 +158,10 @@ async def managed_worktree(
 
 
 @asynccontextmanager
-async def transient_worktree(name: str, *, sha: str, deps: _WorktreeDeps):
+async def transient_worktree(name: str, *, sha: str | None, deps: _WorktreeDeps):
     path = worktree_path(name, deps)
-    deps.git_svc.checkout_detached(deps.repo_root, path, sha)
+    if sha is not None:
+        deps.git_svc.checkout_detached(deps.repo_root, path, sha)
     try:
         yield path
     finally:
