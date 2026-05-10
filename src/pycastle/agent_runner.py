@@ -14,10 +14,7 @@ from .docker_session import DockerSession, build_volume_spec
 from .errors import AgentTimeoutError, PreflightFailure, UsageLimitError
 from .prompt_pipeline import PromptRenderer, PromptTemplate
 from .reprompt_loop import REPROMPT_MESSAGE, run_with_reprompt
-from .session_resume import (
-    RoleSession,
-    RunKind,
-)
+from .session_resume import RoleSession, RunKind
 from .services import GitService
 from .status_display import PlainStatusDisplay
 
