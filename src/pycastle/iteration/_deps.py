@@ -141,6 +141,7 @@ class Deps:
     status_display: StatusDisplay
     improve_mode: ImproveMode = None
     slept_once: bool = False
+    improve_dispatched_count: int = 0
     preflight_verdict: "PreflightReady | None" = None
 
 

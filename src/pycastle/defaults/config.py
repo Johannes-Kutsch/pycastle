@@ -44,6 +44,11 @@ from pycastle import StageOverride
 #     "pytest",
 # )
 
+# --- Improve cap ---
+# Maximum number of improve-agent dispatches per run. improve_mode must also
+# be active (--improve flag) for this to have any effect.
+# improve_max = 1
+
 # --- Stage overrides ---
 # model shorthands: haiku, sonnet, opus  (leave empty to use the Claude CLI default)
 # effort values:    low, medium, high, xhigh, max    (leave empty to use the Claude CLI default)

@@ -140,7 +140,13 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
         # ── (Improve) — runs when idle: no open issues, no in-flight ────────
         if not open_issues and not in_flight:
-            if should_dispatch_improve(deps.improve_mode, deps.slept_once):
+            if should_dispatch_improve(
+                deps.improve_mode,
+                deps.slept_once,
+                deps.improve_dispatched_count,
+                deps.cfg.improve_max,
+            ):
+                deps.improve_dispatched_count += 1
                 improve_result = await improve_phase(deps)
                 if isinstance(improve_result, ImproveNoCandidate):
                     return NoCandidate()
@@ -155,7 +161,12 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                     return Continue()
                 in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
             else:
-                return Done()
+                cap_hit = (
+                    deps.cfg.improve_max is not None
+                    and deps.improve_dispatched_count >= deps.cfg.improve_max
+                    and deps.improve_mode is not None
+                )
+                return Done(improve_cap_reached=cap_hit)
 
         # ── Plan ─────────────────────────────────────────────────────────────
         plan_result = await planning_phase(

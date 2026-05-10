@@ -1,60 +1,52 @@
 """Tests for dispatcher.should_dispatch_improve: improve-mode gate."""
 
+import pytest
+
 from pycastle.iteration.dispatcher import should_dispatch_improve
 
+# N used as the cap value in parametrised cases
+_N = 3
 
-# ── No improve mode ──────────────────────────────────────────────────────────
 
-
-def test_no_improve_mode_returns_false():
-    """improve_mode=None always returns False."""
-    assert not should_dispatch_improve(
-        improve_mode=None,
-        slept_once=False,
+@pytest.mark.parametrize(
+    "improve_mode, slept_once, dispatched_count, improve_max, expected",
+    [
+        # ── improve_mode=None: always False regardless of other args ──────────
+        (None, False, 0, None, False),
+        (None, False, 0, _N, False),
+        (None, True, 0, None, False),
+        (None, True, _N - 1, _N, False),
+        (None, False, _N, _N, False),
+        # ── endless mode, improve_max=None: always True ───────────────────────
+        ("endless", False, 0, None, True),
+        ("endless", True, 0, None, True),
+        ("endless", False, _N - 1, None, True),
+        # ── endless mode, improve_max=N: gated by count ───────────────────────
+        ("endless", False, 0, _N, True),
+        ("endless", False, _N - 1, _N, True),
+        ("endless", False, _N, _N, False),
+        ("endless", True, _N, _N, False),
+        # ── until_sleep mode, improve_max=None ───────────────────────────────
+        ("until_sleep", False, 0, None, True),
+        ("until_sleep", False, _N - 1, None, True),
+        ("until_sleep", True, 0, None, False),
+        ("until_sleep", True, _N - 1, None, False),
+        # ── until_sleep mode, improve_max=N: both exit conditions apply ───────
+        ("until_sleep", False, 0, _N, True),
+        ("until_sleep", False, _N - 1, _N, True),
+        ("until_sleep", False, _N, _N, False),  # cap stops it
+        ("until_sleep", True, 0, _N, False),  # sleep stops it
+        ("until_sleep", True, _N - 1, _N, False),  # sleep stops it
+        ("until_sleep", True, _N, _N, False),  # both stop it
+    ],
+)
+def test_should_dispatch_improve_matrix(
+    improve_mode, slept_once, dispatched_count, improve_max, expected
+):
+    result = should_dispatch_improve(
+        improve_mode=improve_mode,
+        slept_once=slept_once,
+        dispatched_count=dispatched_count,
+        improve_max=improve_max,
     )
-
-
-def test_no_improve_mode_ignores_slept_once():
-    """improve_mode=None returns False regardless of slept_once."""
-    assert not should_dispatch_improve(
-        improve_mode=None,
-        slept_once=True,
-    )
-
-
-# ── endless mode ─────────────────────────────────────────────────────────────
-
-
-def test_endless_dispatches_improve_when_idle():
-    """endless + not slept → True."""
-    assert should_dispatch_improve(
-        improve_mode="endless",
-        slept_once=False,
-    )
-
-
-def test_endless_dispatches_even_after_sleep():
-    """endless + slept_once=True → True (slept_once ignored in endless)."""
-    assert should_dispatch_improve(
-        improve_mode="endless",
-        slept_once=True,
-    )
-
-
-# ── until_sleep mode ─────────────────────────────────────────────────────────
-
-
-def test_until_sleep_dispatches_before_first_sleep():
-    """until_sleep + not slept yet → True."""
-    assert should_dispatch_improve(
-        improve_mode="until_sleep",
-        slept_once=False,
-    )
-
-
-def test_until_sleep_returns_false_after_sleep():
-    """until_sleep + slept_once=True → False (backlog cleared post-sleep)."""
-    assert not should_dispatch_improve(
-        improve_mode="until_sleep",
-        slept_once=True,
-    )
+    assert result is expected
