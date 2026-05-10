@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import re
 from pathlib import Path
@@ -43,7 +44,6 @@ class _PreflightDeps(Protocol):
     status_display: StatusDisplay
     agent_runner: AgentRunnerProtocol
     repo_root: Path
-    preflight_verdict: PreflightReady | None
 
 
 def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
@@ -96,46 +96,63 @@ async def handle_preflight_failure(
     return "afk", agent_result.number
 
 
-async def ensure_preflight(
-    deps: _PreflightDeps,
-    mount_path: Path,
-) -> PreflightResult:
-    if deps.preflight_verdict is not None:
-        return deps.preflight_verdict
+class PreflightCache:
+    """Single-slot, process-scoped cache for preflight verdicts.
 
-    await _wait_for_clean_working_tree(deps, "Preflight")
-    try:
-        deps.git_svc.pull(deps.repo_root)
-    except GitCommandError:
-        deps.status_display.print(
-            "Preflight",
-            "git pull --ff-only failed — remote branch has diverged or is unreachable. "
-            "Resolve manually and retry.",
-            style="error",
-        )
-        raise
-    sha = deps.git_svc.get_head_sha(deps.repo_root)
-    deps.git_svc.checkout_detached(deps.repo_root, mount_path, sha)
+    Constructed once in orchestrator.run() outside the iteration loop so its slot
+    survives iteration reconstruction.  All callers serialise via the internal lock.
+    """
 
-    failures = await deps.agent_runner.run_preflight(
-        name="Preflight Agent",
-        mount_path=mount_path,
-        stage="PREFLIGHT",
-        status_display=deps.status_display,
-        work_body="Checking",
-    )
+    def __init__(self) -> None:
+        self._verdict: PreflightResult | None = None
+        self._lock: asyncio.Lock = asyncio.Lock()
 
-    if failures:
-        try:
-            verdict, pf_num = await handle_preflight_failure(
-                tuple(failures), deps, mount_path
-            )
-        except AgentOutputProtocolError as parse_exc:
-            raise RuntimeError(str(parse_exc)) from parse_exc
-        if verdict == "hitl":
-            return PreflightHITL(sha=sha, issue_number=pf_num)
-        return PreflightAFK(sha=sha, issue_number=pf_num)
+    async def get_safe_sha(self, deps: _PreflightDeps) -> PreflightResult:
+        from ..worktree import transient_worktree
 
-    result = PreflightReady(sha=sha)
-    deps.preflight_verdict = result
-    return result
+        async with self._lock:
+            await _wait_for_clean_working_tree(deps, "Preflight")
+            try:
+                deps.git_svc.pull(deps.repo_root)
+            except GitCommandError:
+                deps.status_display.print(
+                    "Preflight",
+                    "git pull --ff-only failed — remote branch has diverged or is unreachable. "
+                    "Resolve manually and retry.",
+                    style="error",
+                )
+                raise
+            sha = deps.git_svc.get_head_sha(deps.repo_root)
+
+            if self._verdict is not None and self._verdict.sha == sha:
+                return self._verdict
+
+            async with transient_worktree(
+                "preflight-sandbox", sha=sha, deps=deps
+            ) as mount_path:
+                failures = await deps.agent_runner.run_preflight(
+                    name="Preflight Agent",
+                    mount_path=mount_path,
+                    stage="PREFLIGHT",
+                    status_display=deps.status_display,
+                    work_body="Checking",
+                )
+
+                if failures:
+                    try:
+                        verdict, pf_num = await handle_preflight_failure(
+                            tuple(failures), deps, mount_path
+                        )
+                    except AgentOutputProtocolError as parse_exc:
+                        raise RuntimeError(str(parse_exc)) from parse_exc
+                    if verdict == "hitl":
+                        result: PreflightResult = PreflightHITL(
+                            sha=sha, issue_number=pf_num
+                        )
+                    else:
+                        result = PreflightAFK(sha=sha, issue_number=pf_num)
+                else:
+                    result = PreflightReady(sha=sha)
+
+                self._verdict = result
+                return result

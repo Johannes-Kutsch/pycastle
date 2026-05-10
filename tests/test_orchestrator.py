@@ -1072,7 +1072,9 @@ def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
 def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
     tmp_path,
 ):
-    """After plan-sandbox preflight passes, the HEAD SHA must be used when creating the Implementer worktree."""
+    """PreflightCache uses the safe HEAD SHA for the preflight-sandbox.
+    SHA threading to implement_phase is handled in slice 2; in slice 1
+    implement_phase receives sha=None (transitional)."""
     fake_sha = "deadbeef123"
 
     mock_git = _make_git_svc(try_merge_side_effect=[True])
@@ -1090,13 +1092,13 @@ def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
         github_service=_make_github_svc(),
     )
 
-    sha_calls = [
-        call[0][3]
-        for call in mock_git.create_worktree.call_args_list
-        if call[0][3] is not None
-    ]
-    assert sha_calls == [fake_sha], (
-        f"Implementer worktree must use sha={fake_sha!r}; got {sha_calls}"
+    # The preflight-sandbox is created via checkout_detached (not create_worktree).
+    # SHA threading to implement worktrees is slice 2; implementer gets sha=None here.
+    detached_shas = {
+        c.args[2] for c in mock_git.checkout_detached.call_args_list if len(c.args) > 2
+    }
+    assert fake_sha in detached_shas, (
+        f"PreflightCache must call checkout_detached with {fake_sha!r}; got {detached_shas}"
     )
 
 
@@ -1120,7 +1122,9 @@ def test_preplanning_preflight_runs_on_cold_startup(tmp_path):
 
 
 def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
-    """The pinned SHA must be passed to create_worktree for every Implementer worktree."""
+    """PreflightCache uses the safe HEAD SHA for the preflight-sandbox.
+    SHA threading to each implementer worktree is handled in slice 2; in slice 1
+    all implementers receive sha=None (transitional)."""
     fake_sha = "cafebabe000"
 
     mock_git = _make_git_svc(try_merge_side_effect=[True, True])
@@ -1143,20 +1147,14 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    # Each issue has 2 worktree calls: implementer (with sha) and reviewer (sha=None).
-    # The first call per issue must use the pinned SHA.
-    sha_calls = [
-        call[0][3]
-        for call in mock_git.create_worktree.call_args_list
-        if call[0][3] is not None
-    ]
-    assert len(sha_calls) == 2, (
-        f"Expected 2 implementer worktree calls with sha; got {sha_calls}"
+    # The preflight-sandbox uses checkout_detached with the safe SHA.
+    # SHA threading to implementer worktrees is slice 2; implementers get sha=None here.
+    detached_shas = {
+        c.args[2] for c in mock_git.checkout_detached.call_args_list if len(c.args) > 2
+    }
+    assert fake_sha in detached_shas, (
+        f"PreflightCache must call checkout_detached with {fake_sha!r}; got {detached_shas}"
     )
-    for sha_val in sha_calls:
-        assert sha_val == fake_sha, (
-            f"Implementer worktree must use sha={fake_sha!r}; got {sha_val!r}"
-        )
 
 
 # ── Issue-176: preflight failure handling and HITL routing ────────────────────
@@ -2521,8 +2519,9 @@ def test_preflight_hitl_from_planning_returns_aborted_hitl(tmp_path):
 
 
 def test_improve_and_plan_share_preflight_cache(tmp_path):
-    """When improve runs then planning runs in the same iteration, ensure_preflight
-    must only be called once (the second call hits the cache)."""
+    """When improve runs then planning runs in the same iteration,
+    PreflightCache.get_safe_sha must only run preflight once (the second call
+    hits the cache)."""
     mock_git = _make_git_svc(try_merge_side_effect=[True])
     mock_github = MagicMock(spec=GithubService)
     mock_github.get_open_issues.side_effect = [
@@ -2565,7 +2564,7 @@ def test_improve_and_plan_share_preflight_cache(tmp_path):
     )
 
     assert len(fake.preflight_calls) == 1, (
-        f"ensure_preflight must run exactly once across improve+plan; "
+        f"preflight must run exactly once across improve+plan; "
         f"got {len(fake.preflight_calls)} calls"
     )
 

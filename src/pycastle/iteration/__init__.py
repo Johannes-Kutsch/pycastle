@@ -25,6 +25,7 @@ from .planning import PlanReady as PlanReady
 from .planning import planning_phase
 from .preflight import (
     PreflightAFK,
+    PreflightCache as PreflightCache,
     PreflightHITL,
     strip_stale_blocker_refs,
 )
@@ -185,12 +186,11 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         if isinstance(plan_result, (PreflightHITL, PreflightAFK)):
             return await _handle_preflight_outcome(plan_result, deps)
 
-        sha = plan_result.worktree_sha
         issues: list[dict] = plan_result.issues
 
         # ── Implement ────────────────────────────────────────────────────────
         issues = issues[: deps.cfg.max_parallel]
-        return await _run_implement_and_merge(issues, sha, deps)
+        return await _run_implement_and_merge(issues, None, deps)
 
     except AgentFailedError as err:
         issue_number: int | None = None

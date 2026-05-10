@@ -21,6 +21,7 @@ from .iteration import (
 )
 from .iteration._deps import Deps as IterationDeps
 from .iteration.dispatcher import ImproveMode
+from .iteration.preflight import PreflightCache
 from .rich_status_display import RichStatusDisplay
 from .services import (
     GitCommandError,
@@ -170,6 +171,7 @@ async def run(
 
     slept_once = False
     improve_dispatched_count = 0
+    preflight_cache = PreflightCache()
 
     try:
         for iteration in range(1, cfg.max_iterations + 1):
@@ -201,6 +203,7 @@ async def run(
                 improve_mode=improve_mode,
                 slept_once=slept_once,
                 improve_dispatched_count=improve_dispatched_count,
+                preflight_cache=preflight_cache,
             )
             outcome = await run_iteration(deps)
             improve_dispatched_count = deps.improve_dispatched_count
