@@ -36,14 +36,6 @@ class PreflightFailure(PycastleError):
         super().__init__(f"Preflight failed: {len(failures)} check(s) failed")
 
 
-class PreflightIssueFiled(PycastleError):
-    def __init__(self, issue_number: int) -> None:
-        self.issue_number = issue_number
-        super().__init__(
-            f"Preflight check failed; fix issue #{issue_number} filed for triage."
-        )
-
-
 class ConfigValidationError(PycastleError):
     def __init__(
         self,

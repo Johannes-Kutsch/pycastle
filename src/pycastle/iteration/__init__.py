@@ -5,7 +5,7 @@ from typing import TypeAlias
 from ..agent_output_protocol import AgentRole, IssueOutput
 from ..agent_result import CancellationToken
 from ..agent_runner import RunRequest
-from ..errors import AgentFailedError, PreflightIssueFiled, UsageLimitError
+from ..errors import AgentFailedError, UsageLimitError
 from ..prompt_pipeline import PromptTemplate
 from ..worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
@@ -21,6 +21,7 @@ from .planning import AllBlocked as AllBlocked
 from .planning import PlanReady as PlanReady
 from .planning import planning_phase
 from .preflight import (
+    PreflightAFK,
     PreflightHITL,
     preflight_phase,
     strip_stale_blocker_refs,
@@ -94,6 +95,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 f"Preflight issue #{preflight_result.issue_number} requires human intervention. Exiting.",
             )
             return AbortedHITL(issue_number=preflight_result.issue_number)
+
+        if isinstance(preflight_result, PreflightAFK):
+            return Continue()
 
         preflight_sha = preflight_result.sha
         in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
@@ -186,5 +190,3 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
     except UsageLimitError as err:
         return AbortedUsageLimit(reset_time=err.reset_time)
-    except PreflightIssueFiled:
-        return Continue()
