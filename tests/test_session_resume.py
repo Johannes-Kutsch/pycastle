@@ -1,336 +1,89 @@
-"""Tests for session_resume: decide_agent_run_kind, has_resumable_session, derived_session_uuid."""
+"""Tests for session_resume: RoleSession lifecycle and module-level helpers."""
 
 import uuid
 
+import pytest
 
 from pycastle.agent_output_protocol import AgentRole
 from pycastle.session_resume import (
-    SESSION_DIR_NAME,
     RoleSession,
     RunKind,
     any_role_dir_present,
-    clear_stage,
-    decide_agent_run_kind,
-    derived_session_uuid,
-    has_resumable_session,
-    is_stage_done,
     is_stage_done_for,
-    session_dir_path,
-    session_dir_rel,
 )
 
 
-# ── has_resumable_session ─────────────────────────────────────────────────────
+# ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
-def test_has_resumable_session_returns_false_when_dir_absent(tmp_path):
-    assert has_resumable_session(tmp_path / "implementer") is False
+@pytest.fixture
+def worktree(tmp_path):
+    return tmp_path
 
 
-def test_has_resumable_session_returns_false_when_dir_is_empty(tmp_path):
-    role_dir = tmp_path / "implementer"
-    role_dir.mkdir()
-    assert has_resumable_session(role_dir) is False
+@pytest.fixture
+def rs(worktree):
+    return RoleSession(worktree, AgentRole.IMPLEMENTER)
 
 
-def test_has_resumable_session_returns_true_when_dir_contains_a_file(tmp_path):
-    role_dir = tmp_path / "implementer"
-    role_dir.mkdir()
-    (role_dir / "session.json").write_text("{}")
-    assert has_resumable_session(role_dir) is True
+# ── session_uuid determinism ──────────────────────────────────────────────────
 
 
-def test_has_resumable_session_returns_true_for_nested_file(tmp_path):
-    role_dir = tmp_path / "reviewer"
-    (role_dir / "sub").mkdir(parents=True)
-    (role_dir / "sub" / "data.json").write_text("{}")
-    assert has_resumable_session(role_dir) is True
+def test_session_uuid_is_deterministic(worktree):
+    assert (
+        RoleSession(worktree, AgentRole.IMPLEMENTER).session_uuid()
+        == RoleSession(worktree, AgentRole.IMPLEMENTER).session_uuid()
+    )
 
 
-def test_has_resumable_session_returns_false_when_dir_has_only_empty_subdir(tmp_path):
-    role_dir = tmp_path / "merger"
-    (role_dir / "empty_sub").mkdir(parents=True)
-    assert has_resumable_session(role_dir) is False
+def test_session_uuid_differs_by_role(worktree):
+    assert (
+        RoleSession(worktree, AgentRole.IMPLEMENTER).session_uuid()
+        != RoleSession(worktree, AgentRole.REVIEWER).session_uuid()
+    )
 
 
-# ── is_stage_done ─────────────────────────────────────────────────────────────
-
-
-def test_is_stage_done_returns_false_when_dir_absent(tmp_path):
-    assert is_stage_done(tmp_path / "implementer") is False
-
-
-def test_is_stage_done_returns_false_when_dir_has_session_content(tmp_path):
-    role_dir = tmp_path / "implementer"
-    role_dir.mkdir()
-    (role_dir / "session.jsonl").write_text("{}\n")
-    assert is_stage_done(role_dir) is False
-
-
-def test_is_stage_done_returns_true_when_dir_present_and_empty(tmp_path):
-    role_dir = tmp_path / "implementer"
-    role_dir.mkdir()
-    assert is_stage_done(role_dir) is True
-
-
-# ── any_role_dir_present ──────────────────────────────────────────────────────
-
-
-def test_any_role_dir_present_returns_false_when_session_base_absent(tmp_path):
-    assert any_role_dir_present(tmp_path) is False
-
-
-def test_any_role_dir_present_returns_true_for_stage_done_only(tmp_path):
-    (tmp_path / ".pycastle-session" / "implementer").mkdir(parents=True)
-    assert any_role_dir_present(tmp_path) is True
-
-
-def test_any_role_dir_present_returns_true_for_resumable_only(tmp_path):
-    role_dir = tmp_path / ".pycastle-session" / "reviewer"
-    role_dir.mkdir(parents=True)
-    (role_dir / "session.jsonl").write_text("{}\n")
-    assert any_role_dir_present(tmp_path) is True
-
-
-def test_any_role_dir_present_returns_true_for_mixed(tmp_path):
-    base = tmp_path / ".pycastle-session"
-    (base / "implementer").mkdir(parents=True)
-    rev = base / "reviewer"
-    rev.mkdir()
-    (rev / "session.jsonl").write_text("{}\n")
-    assert any_role_dir_present(tmp_path) is True
-
-
-def test_any_role_dir_present_returns_false_when_session_base_empty(tmp_path):
-    (tmp_path / ".pycastle-session").mkdir()
-    assert any_role_dir_present(tmp_path) is False
-
-
-# ── decide_agent_run_kind ─────────────────────────────────────────────────────
-
-
-def test_decide_agent_run_kind_fresh_when_no_session():
-    kind = decide_agent_run_kind(AgentRole.IMPLEMENTER, session_dir_present=False)
-    assert kind == RunKind.FRESH
-
-
-def test_decide_agent_run_kind_resume_when_session_present():
-    kind = decide_agent_run_kind(AgentRole.IMPLEMENTER, session_dir_present=True)
-    assert kind == RunKind.RESUME
-
-
-def test_decide_agent_run_kind_fresh_for_reviewer_without_session():
-    kind = decide_agent_run_kind(AgentRole.REVIEWER, session_dir_present=False)
-    assert kind == RunKind.FRESH
-
-
-def test_decide_agent_run_kind_resume_for_reviewer_with_session():
-    kind = decide_agent_run_kind(AgentRole.REVIEWER, session_dir_present=True)
-    assert kind == RunKind.RESUME
-
-
-def test_decide_agent_run_kind_resume_for_merger_with_session():
-    kind = decide_agent_run_kind(AgentRole.MERGER, session_dir_present=True)
-    assert kind == RunKind.RESUME
-
-
-def test_decide_agent_run_kind_fresh_for_improve_without_session():
-    kind = decide_agent_run_kind(AgentRole.IMPROVE, session_dir_present=False)
-    assert kind == RunKind.FRESH
-
-
-def test_decide_agent_run_kind_resume_for_improve_with_session():
-    kind = decide_agent_run_kind(AgentRole.IMPROVE, session_dir_present=True)
-    assert kind == RunKind.RESUME
-
-
-def test_decide_agent_run_kind_returns_run_kind_enum():
-    kind = decide_agent_run_kind(AgentRole.IMPLEMENTER, session_dir_present=False)
-    assert isinstance(kind, RunKind)
-
-
-# ── derived_session_uuid ──────────────────────────────────────────────────────
-
-
-def test_derived_session_uuid_returns_string(tmp_path):
-    result = derived_session_uuid(AgentRole.IMPLEMENTER, tmp_path)
-    assert isinstance(result, str)
-
-
-def test_derived_session_uuid_is_deterministic(tmp_path):
-    a = derived_session_uuid(AgentRole.IMPLEMENTER, tmp_path)
-    b = derived_session_uuid(AgentRole.IMPLEMENTER, tmp_path)
-    assert a == b
-
-
-def test_derived_session_uuid_differs_by_role(tmp_path):
-    impl = derived_session_uuid(AgentRole.IMPLEMENTER, tmp_path)
-    rev = derived_session_uuid(AgentRole.REVIEWER, tmp_path)
-    assert impl != rev
-
-
-def test_derived_session_uuid_differs_by_worktree_path(tmp_path):
-    path_a = tmp_path / "issue-1"
-    path_b = tmp_path / "issue-2"
-    a = derived_session_uuid(AgentRole.IMPLEMENTER, path_a)
-    b = derived_session_uuid(AgentRole.IMPLEMENTER, path_b)
+def test_session_uuid_differs_by_worktree(tmp_path):
+    a = RoleSession(tmp_path / "issue-1", AgentRole.IMPLEMENTER).session_uuid()
+    b = RoleSession(tmp_path / "issue-2", AgentRole.IMPLEMENTER).session_uuid()
     assert a != b
 
 
-def test_derived_session_uuid_is_valid_uuid(tmp_path):
-    result = derived_session_uuid(AgentRole.IMPLEMENTER, tmp_path)
-    parsed = uuid.UUID(result)
-    assert str(parsed) == result
+def test_session_uuid_differs_by_namespace(worktree):
+    a = RoleSession(worktree, AgentRole.IMPROVE, "main").session_uuid()
+    b = RoleSession(worktree, AgentRole.IMPROVE, "issues").session_uuid()
+    assert a != b
 
 
-def test_derived_session_uuid_uses_resolved_path(tmp_path):
-    direct = derived_session_uuid(AgentRole.IMPLEMENTER, tmp_path)
-    via_resolved = derived_session_uuid(AgentRole.IMPLEMENTER, tmp_path.resolve())
-    assert direct == via_resolved
-
-
-# ── derived_session_uuid: namespace ──────────────────────────────────────────
-
-
-def test_derived_session_uuid_empty_namespace_is_byte_identical_to_no_namespace(
-    tmp_path,
-):
-    """Calling with namespace='' must produce the same UUID as the two-arg form."""
-    without = derived_session_uuid(AgentRole.IMPLEMENTER, tmp_path)
-    with_empty = derived_session_uuid(
-        AgentRole.IMPLEMENTER, tmp_path, session_namespace=""
+def test_session_uuid_empty_namespace_equals_no_namespace(worktree):
+    assert (
+        RoleSession(worktree, AgentRole.IMPLEMENTER).session_uuid()
+        == RoleSession(worktree, AgentRole.IMPLEMENTER, "").session_uuid()
     )
-    assert without == with_empty
 
 
-def test_derived_session_uuid_differs_by_namespace(tmp_path):
-    """Different non-empty namespaces must produce different UUIDs."""
-    main_uuid = derived_session_uuid(
-        AgentRole.IMPROVE, tmp_path, session_namespace="main"
+def test_session_uuid_resolved_path_equals_direct(worktree):
+    assert (
+        RoleSession(worktree, AgentRole.IMPLEMENTER).session_uuid()
+        == RoleSession(worktree.resolve(), AgentRole.IMPLEMENTER).session_uuid()
     )
-    issues_uuid = derived_session_uuid(
-        AgentRole.IMPROVE, tmp_path, session_namespace="issues"
-    )
-    assert main_uuid != issues_uuid
 
 
-def test_derived_session_uuid_namespace_differs_from_no_namespace(tmp_path):
-    """A non-empty namespace UUID must differ from the base (no-namespace) UUID."""
-    base = derived_session_uuid(AgentRole.IMPROVE, tmp_path)
-    namespaced = derived_session_uuid(
-        AgentRole.IMPROVE, tmp_path, session_namespace="main"
-    )
-    assert base != namespaced
-
-
-def test_derived_session_uuid_namespace_is_deterministic(tmp_path):
-    """Same args produce the same UUID."""
-    a = derived_session_uuid(AgentRole.IMPROVE, tmp_path, session_namespace="main")
-    b = derived_session_uuid(AgentRole.IMPROVE, tmp_path, session_namespace="main")
-    assert a == b
-
-
-def test_derived_session_uuid_namespace_is_valid_uuid(tmp_path):
-    result = derived_session_uuid(AgentRole.IMPROVE, tmp_path, session_namespace="main")
-    parsed = uuid.UUID(result)
-    assert str(parsed) == result
-
-
-# ── SESSION_DIR_NAME constant ─────────────────────────────────────────────────
-
-
-def test_session_dir_name_constant():
-    assert SESSION_DIR_NAME == ".pycastle-session"
-
-
-# ── session_dir_path ──────────────────────────────────────────────────────────
-
-
-def test_session_dir_path_empty_namespace(tmp_path):
-    result = session_dir_path(tmp_path, AgentRole.IMPLEMENTER)
-    assert result == tmp_path / ".pycastle-session" / "implementer"
-
-
-def test_session_dir_path_non_empty_namespace(tmp_path):
-    result = session_dir_path(tmp_path, AgentRole.IMPROVE, namespace="main")
-    assert result == tmp_path / ".pycastle-session" / "improve" / "main"
-
-
-# ── session_dir_rel ───────────────────────────────────────────────────────────
-
-
-def test_session_dir_rel_empty_namespace_matches_claude_config_dir_shape():
-    result = session_dir_rel(AgentRole.IMPLEMENTER)
-    assert result == ".pycastle-session/implementer/"
-
-
-def test_session_dir_rel_non_empty_namespace_matches_claude_config_dir_shape():
-    result = session_dir_rel(AgentRole.IMPROVE, namespace="main")
-    assert result == ".pycastle-session/improve/main/"
-
-
-# ── is_stage_done_for ─────────────────────────────────────────────────────────
-
-
-def test_is_stage_done_for_absent(tmp_path):
-    assert is_stage_done_for(tmp_path, AgentRole.IMPLEMENTER) is False
-
-
-def test_is_stage_done_for_empty_dir(tmp_path):
-    session_dir_path(tmp_path, AgentRole.IMPLEMENTER).mkdir(parents=True)
-    assert is_stage_done_for(tmp_path, AgentRole.IMPLEMENTER) is True
-
-
-def test_is_stage_done_for_non_empty(tmp_path):
-    role_dir = session_dir_path(tmp_path, AgentRole.IMPLEMENTER)
-    role_dir.mkdir(parents=True)
-    (role_dir / "session.jsonl").write_text("{}\n")
-    assert is_stage_done_for(tmp_path, AgentRole.IMPLEMENTER) is False
-
-
-def test_is_stage_done_for_delegates_to_is_stage_done(tmp_path):
-    role_dir = session_dir_path(tmp_path, AgentRole.REVIEWER)
-    role_dir.mkdir(parents=True)
-    assert is_stage_done_for(tmp_path, AgentRole.REVIEWER) == is_stage_done(role_dir)
-
-
-# ── clear_stage ───────────────────────────────────────────────────────────────
-
-
-def test_clear_stage_clears_contents_but_leaves_dir(tmp_path):
-    role_dir = session_dir_path(tmp_path, AgentRole.IMPLEMENTER)
-    role_dir.mkdir(parents=True)
-    (role_dir / "session.jsonl").write_text("{}\n")
-
-    clear_stage(tmp_path, AgentRole.IMPLEMENTER)
-
-    assert role_dir.is_dir()
-    assert not any(role_dir.iterdir())
-
-
-def test_clear_stage_with_namespace(tmp_path):
-    role_dir = session_dir_path(tmp_path, AgentRole.IMPROVE, namespace="main")
-    role_dir.mkdir(parents=True)
-    (role_dir / "data.json").write_text("{}")
-
-    clear_stage(tmp_path, AgentRole.IMPROVE, namespace="main")
-
-    assert role_dir.is_dir()
-    assert not any(role_dir.iterdir())
+def test_session_uuid_is_valid_uuid_string(worktree):
+    result = RoleSession(worktree, AgentRole.IMPLEMENTER).session_uuid()
+    assert str(uuid.UUID(result)) == result
 
 
 # ── RoleSession lifecycle ─────────────────────────────────────────────────────
 
 
-def test_role_session_fresh_worktree_reports_fresh_and_not_resumable_or_done(tmp_path):
-    rs = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+def test_fresh_worktree_reports_fresh(rs):
     assert rs.run_kind() == RunKind.FRESH
     assert rs.is_resumable() is False
     assert rs.is_done() is False
 
 
-def test_role_session_after_start_fresh_and_file_is_resumable(tmp_path):
-    rs = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+def test_populated_dir_is_resumable(rs):
     rs.start_fresh()
     (rs.path / "session.jsonl").write_text("{}\n")
 
@@ -339,76 +92,62 @@ def test_role_session_after_start_fresh_and_file_is_resumable(tmp_path):
     assert rs.is_done() is False
 
 
-def test_role_session_mark_done_signals_done_and_dir_survives(tmp_path):
-    rs = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+def test_mark_done_signals_done_dir_survives_next_session_is_fresh(rs, worktree):
     rs.start_fresh()
     (rs.path / "session.jsonl").write_text("{}\n")
-
     rs.mark_done()
 
     assert rs.is_done() is True
     assert rs.is_resumable() is False
     assert rs.path.is_dir()
-
-    rs2 = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    assert rs2.run_kind() == RunKind.FRESH
+    assert RoleSession(worktree, AgentRole.IMPLEMENTER).run_kind() == RunKind.FRESH
 
 
-def test_role_session_start_fresh_on_populated_dir_makes_not_resumable(tmp_path):
-    rs = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+def test_start_fresh_on_populated_dir_makes_not_resumable(rs):
     rs.start_fresh()
     (rs.path / "session.jsonl").write_text("{}\n")
-
     rs.start_fresh()
 
     assert rs.is_resumable() is False
 
 
-def test_role_session_session_uuid_determinism(tmp_path):
-    rs1 = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    rs2 = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    assert rs1.session_uuid() == rs2.session_uuid()
+# ── claude_config_dir_relpath ─────────────────────────────────────────────────
 
 
-def test_role_session_session_uuid_differs_by_role(tmp_path):
-    impl = RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
-    rev = RoleSession(tmp_path, AgentRole.REVIEWER).session_uuid()
-    assert impl != rev
+def test_claude_config_dir_relpath_trailing_slash(worktree):
+    result = RoleSession(worktree, AgentRole.IMPLEMENTER).claude_config_dir_relpath()
+    assert result == ".pycastle-session/implementer/"
 
 
-def test_role_session_session_uuid_differs_by_worktree(tmp_path):
-    rs_a = RoleSession(tmp_path / "issue-1", AgentRole.IMPLEMENTER).session_uuid()
-    rs_b = RoleSession(tmp_path / "issue-2", AgentRole.IMPLEMENTER).session_uuid()
-    assert rs_a != rs_b
+# ── any_role_dir_present ──────────────────────────────────────────────────────
 
 
-def test_role_session_session_uuid_differs_by_namespace(tmp_path):
-    rs_a = RoleSession(tmp_path, AgentRole.IMPROVE, "main").session_uuid()
-    rs_b = RoleSession(tmp_path, AgentRole.IMPROVE, "issues").session_uuid()
-    assert rs_a != rs_b
+def test_any_role_dir_present_false_when_no_session_base(worktree):
+    assert any_role_dir_present(worktree) is False
 
 
-def test_role_session_empty_namespace_and_two_arg_form_yield_identical_uuid(tmp_path):
-    two_arg = RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
-    empty_ns = RoleSession(tmp_path, AgentRole.IMPLEMENTER, "").session_uuid()
-    assert two_arg == empty_ns
+def test_any_role_dir_present_true_once_a_role_dir_exists(worktree):
+    RoleSession(worktree, AgentRole.IMPLEMENTER).start_fresh()
+    assert any_role_dir_present(worktree) is True
 
 
-def test_role_session_session_uuid_resolved_path_equals_direct(tmp_path):
-    direct = RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
-    resolved = RoleSession(tmp_path.resolve(), AgentRole.IMPLEMENTER).session_uuid()
-    assert direct == resolved
+def test_any_role_dir_present_true_regardless_of_done_state(worktree):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    rs.start_fresh()
+    rs.mark_done()
+    assert any_role_dir_present(worktree) is True
 
 
-def test_role_session_claude_config_dir_relpath_matches_session_dir_rel(tmp_path):
-    rs = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    assert rs.claude_config_dir_relpath() == session_dir_rel(AgentRole.IMPLEMENTER)
+# ── is_stage_done_for ─────────────────────────────────────────────────────────
 
 
-def test_role_session_claude_config_dir_relpath_with_namespace_matches_session_dir_rel(
-    tmp_path,
-):
-    rs = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    assert rs.claude_config_dir_relpath() == session_dir_rel(
-        AgentRole.IMPROVE, namespace="main"
-    )
+def test_is_stage_done_for_false_when_absent(worktree):
+    assert is_stage_done_for(worktree, AgentRole.IMPLEMENTER) is False
+
+
+def test_is_stage_done_for_true_after_mark_done(worktree):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    rs.start_fresh()
+    (rs.path / "session.jsonl").write_text("{}\n")
+    rs.mark_done()
+    assert is_stage_done_for(worktree, AgentRole.IMPLEMENTER) is True
