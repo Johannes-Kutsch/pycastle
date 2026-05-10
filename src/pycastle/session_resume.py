@@ -64,6 +64,41 @@ def decide_agent_run_kind(role: AgentRole, *, session_dir_present: bool) -> RunK
     return RunKind.RESUME if session_dir_present else RunKind.FRESH
 
 
+class RoleSession:
+    def __init__(self, worktree: Path, role: AgentRole, namespace: str = "") -> None:
+        self._worktree = worktree
+        self._role = role
+        self._namespace = namespace
+
+    @property
+    def path(self) -> Path:
+        return session_dir_path(self._worktree, self._role, self._namespace)
+
+    def claude_config_dir_relpath(self) -> str:
+        return session_dir_rel(self._role, self._namespace)
+
+    def session_uuid(self) -> str:
+        return derived_session_uuid(self._role, self._worktree, self._namespace)
+
+    def is_resumable(self) -> bool:
+        return has_resumable_session(self.path)
+
+    def is_done(self) -> bool:
+        return is_stage_done(self.path)
+
+    def run_kind(self) -> RunKind:
+        return decide_agent_run_kind(
+            self._role, session_dir_present=self.is_resumable()
+        )
+
+    def start_fresh(self) -> None:
+        shutil.rmtree(self.path, ignore_errors=True)
+        self.path.mkdir(parents=True, exist_ok=True)
+
+    def mark_done(self) -> None:
+        clear_session_dir(self.path)
+
+
 def derived_session_uuid(
     role: AgentRole, worktree_path: Path, session_namespace: str = ""
 ) -> str:
