@@ -64,6 +64,19 @@ def decide_agent_run_kind(role: AgentRole, *, session_dir_present: bool) -> RunK
     return RunKind.RESUME if session_dir_present else RunKind.FRESH
 
 
+def derived_session_uuid(
+    role: AgentRole, worktree_path: Path, session_namespace: str = ""
+) -> str:
+    role_key = (
+        f"pycastle.{role.value}.{session_namespace}"
+        if session_namespace
+        else f"pycastle.{role.value}"
+    )
+    role_ns = uuid.uuid5(_NAMESPACE, role_key)
+    session_id = uuid.uuid5(role_ns, str(worktree_path.resolve()))
+    return str(session_id)
+
+
 class RoleSession:
     def __init__(self, worktree: Path, role: AgentRole, namespace: str = "") -> None:
         self._worktree = worktree
@@ -97,16 +110,3 @@ class RoleSession:
 
     def mark_done(self) -> None:
         clear_session_dir(self.path)
-
-
-def derived_session_uuid(
-    role: AgentRole, worktree_path: Path, session_namespace: str = ""
-) -> str:
-    role_key = (
-        f"pycastle.{role.value}.{session_namespace}"
-        if session_namespace
-        else f"pycastle.{role.value}"
-    )
-    role_ns = uuid.uuid5(_NAMESPACE, role_key)
-    session_id = uuid.uuid5(role_ns, str(worktree_path.resolve()))
-    return str(session_id)
