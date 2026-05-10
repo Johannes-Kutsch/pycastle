@@ -11,7 +11,7 @@ from ..agent_output_protocol import (
 )
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..errors import AgentFailedError
+from ..errors import AgentFailedError, AgentTimeoutError
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitService
 from ..services.github_service import GithubService
@@ -110,7 +110,13 @@ async def planning_phase(
         )
 
         async with transient_worktree("plan-sandbox", sha=_pre_sha, deps=deps) as wt:
-            verdict = await ensure_preflight(deps, wt)
+            try:
+                verdict = await ensure_preflight(deps, wt)
+            except AgentTimeoutError as err:
+                if not err.role_value:
+                    err.role_value = AgentRole.PREFLIGHT_ISSUE.value
+                    err.worktree_path = wt
+                raise
             if isinstance(verdict, (PreflightHITL, PreflightAFK)):
                 row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
                 return verdict
@@ -142,6 +148,11 @@ async def planning_phase(
                         work_body=f"Creating Plan from {len(open_issues)} issues",
                     )
                 )
+            except AgentTimeoutError as err:
+                if not err.role_value:
+                    err.role_value = AgentRole.PLANNER.value
+                    err.worktree_path = wt
+                raise
             except AgentOutputProtocolError as exc:
                 raise RuntimeError(str(exc)) from exc
 

@@ -1,7 +1,7 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from ..errors import UsageLimitError
+from ..errors import AgentTimeoutError, UsageLimitError
 from ..status_display import StatusDisplay
 
 
@@ -33,6 +33,9 @@ async def phase_row(
         yield row
     except UsageLimitError:
         row.close("usage limit reached", shutdown_style="interrupted")
+        raise
+    except AgentTimeoutError:
+        row.close("timed out", shutdown_style="interrupted")
         raise
     except BaseException:
         row.close("failed", shutdown_style="error")

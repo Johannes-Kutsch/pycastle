@@ -27,7 +27,15 @@ class BranchCollisionError(WorktreeError):
 
 
 class AgentTimeoutError(PycastleError, TimeoutError):
-    pass
+    def __init__(
+        self,
+        message: str = "",
+        role_value: str = "",
+        worktree_path: Path | None = None,
+    ) -> None:
+        self.role_value = role_value
+        self.worktree_path = worktree_path
+        super().__init__(message)
 
 
 class PreflightFailure(PycastleError):
