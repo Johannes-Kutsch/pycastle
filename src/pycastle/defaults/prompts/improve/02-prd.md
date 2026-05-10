@@ -26,7 +26,7 @@ A deep module (as opposed to a shallow module) is one which encapsulates a lot o
 
 3. Write the PRD using the template below, then publish it. **Always write the body to a temp file and use `gh issue create --body-file` — never pass the body inline, as PRD content breaks shell quoting.**
 
-The issue title must start with `[improve-{{IMPROVE_SHORT_SID}}]`. Do NOT apply any triage label — the PRD is a parent/tracking issue; only phase 3 sub-issues carry `ready-for-agent`.
+The issue title must start with `[auto-generated-improve]`. Do NOT apply any triage label — the PRD is a parent/tracking issue; only phase 3 sub-issues carry `ready-for-agent`.
 
 ## Issue body template
 
@@ -84,7 +84,7 @@ Any further notes about the feature.
 
 Explicitly state that this change is autonomous-safe: no CLI surface changes, no breaking config changes, no ADR contradictions, no product/UX decisions.
 
-_Filed by improve session [improve-{{IMPROVE_SHORT_SID}}]._
+_Filed by improve session_
 ```
 
 ## Output
