@@ -558,10 +558,8 @@ def _parse_placeholder_info() -> tuple[set[str], dict[str, tuple[set[str], set[s
     return global_tokens, scopes
 
 
-def test_placeholder_info_global_tokens_match_code(tmp_path):
-    (tmp_path / "improve").mkdir()
-    (tmp_path / "coding-standards").mkdir()
-    renderer = PromptRenderer(Config(prompts_dir=tmp_path))
+def test_placeholder_info_global_tokens_match_code(cfg):
+    renderer = PromptRenderer(cfg)
     expected = set(renderer._global_args.keys())
 
     global_tokens, _ = _parse_placeholder_info()
