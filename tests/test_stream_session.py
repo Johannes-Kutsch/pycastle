@@ -58,17 +58,30 @@ def _noop_chunk() -> None:
     pass
 
 
+_DEFAULT_INPUT_RECORD = {
+    "type": "pycastle_input",
+    "role": "implementer",
+    "run_kind": "fresh",
+    "session_uuid": None,
+    "prompt": "test prompt",
+}
+
+
 def _make_workstream(
     chunks,
     tmp_path: Path,
     idle_timeout: float = 5.0,
     on_chunk: Callable[[], None] | None = None,
+    input_record: dict | None = None,
 ) -> WorkStream:
     return WorkStream(
         chunks=chunks,
         log_path=tmp_path / "test.log",
         idle_timeout=idle_timeout,
         on_chunk=on_chunk if on_chunk is not None else _noop_chunk,
+        input_record=input_record
+        if input_record is not None
+        else _DEFAULT_INPUT_RECORD,
     )
 
 
@@ -122,7 +135,67 @@ def test_log_file_contains_all_chunk_bytes(tmp_path):
     chunk2 = b"\n"
     ws = _make_workstream([chunk1, chunk2], tmp_path)
     ws.run(AgentRole.IMPLEMENTER, _noop)
-    assert (tmp_path / "test.log").read_bytes() == chunk1 + chunk2
+    log_bytes = (tmp_path / "test.log").read_bytes()
+    header_line, rest = log_bytes.split(b"\n", 1)
+    assert json.loads(header_line)["type"] == "pycastle_input"
+    assert rest == chunk1 + chunk2
+
+
+# ── pycastle_input header ─────────────────────────────────────────────────────
+
+
+def test_first_log_line_is_pycastle_input_record(tmp_path):
+    record = {
+        "type": "pycastle_input",
+        "role": "implementer",
+        "run_kind": "fresh",
+        "session_uuid": "abc-123",
+        "prompt": "do the thing",
+    }
+    chunks = [_result_line("<commit_message>done</commit_message>")]
+    ws = _make_workstream(chunks, tmp_path, input_record=record)
+    ws.run(AgentRole.IMPLEMENTER, _noop)
+    first_line = (tmp_path / "test.log").read_bytes().split(b"\n")[0]
+    assert json.loads(first_line) == record
+
+
+def test_first_log_line_present_on_agent_timeout(tmp_path):
+    import threading as _threading
+
+    record = {
+        "type": "pycastle_input",
+        "role": "implementer",
+        "run_kind": "fresh",
+        "session_uuid": None,
+        "prompt": "stalled prompt",
+    }
+    event = _threading.Event()
+
+    def stalled():
+        event.wait()
+        yield b"never"
+
+    ws = _make_workstream(stalled(), tmp_path, idle_timeout=0.05, input_record=record)
+    with pytest.raises(AgentTimeoutError):
+        ws.run(AgentRole.IMPLEMENTER, _noop)
+    first_line = (tmp_path / "test.log").read_bytes().split(b"\n")[0]
+    assert json.loads(first_line) == record
+
+
+def test_first_log_line_present_on_usage_limit_error(tmp_path):
+    record = {
+        "type": "pycastle_input",
+        "role": "implementer",
+        "run_kind": "fresh",
+        "session_uuid": None,
+        "prompt": "rate limited prompt",
+    }
+    chunks = [_usage_limit_line()]
+    ws = _make_workstream(chunks, tmp_path, input_record=record)
+    with pytest.raises(UsageLimitError):
+        ws.run(AgentRole.IMPLEMENTER, _noop)
+    first_line = (tmp_path / "test.log").read_bytes().split(b"\n")[0]
+    assert json.loads(first_line) == record
 
 
 # ── on_chunk callback ─────────────────────────────────────────────────────────
