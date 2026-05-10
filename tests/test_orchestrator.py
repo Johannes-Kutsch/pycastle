@@ -2519,8 +2519,9 @@ def test_preflight_hitl_from_planning_returns_aborted_hitl(tmp_path):
 
 
 def test_improve_and_plan_share_preflight_cache(tmp_path):
-    """When improve runs then planning runs in the same iteration, ensure_preflight
-    must only be called once (the second call hits the cache)."""
+    """When improve runs then planning runs in the same iteration,
+    PreflightCache.get_safe_sha must only run preflight once (the second call
+    hits the cache)."""
     mock_git = _make_git_svc(try_merge_side_effect=[True])
     mock_github = MagicMock(spec=GithubService)
     mock_github.get_open_issues.side_effect = [
@@ -2563,7 +2564,7 @@ def test_improve_and_plan_share_preflight_cache(tmp_path):
     )
 
     assert len(fake.preflight_calls) == 1, (
-        f"ensure_preflight must run exactly once across improve+plan; "
+        f"preflight must run exactly once across improve+plan; "
         f"got {len(fake.preflight_calls)} calls"
     )
 
