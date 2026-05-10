@@ -43,7 +43,6 @@ def test_planning_phase_skips_planner_when_in_flight(tmp_path, git_svc):
     result = asyncio.run(planning_phase(deps, issues, [], in_flight=issues))
 
     assert isinstance(result, PlanReady)
-    assert result.worktree_sha is None
     assert result.issues == issues
     assert len(fake.calls) == 0, "No agent must be called for in-flight skip"
     git_svc.create_worktree.assert_not_called()
@@ -67,13 +66,12 @@ def test_planning_phase_skip_in_flight_emits_plan_row(tmp_path, git_svc):
 
 def test_planning_phase_skips_planner_for_single_issue(tmp_path, git_svc):
     issues = [{"number": 5, "title": "Solo", "body": "", "comments": []}]
-    fake = FakeAgentRunner([], preflight_responses=[[]])  # no agent calls expected
+    fake = FakeAgentRunner([])  # no agent calls expected
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     result = asyncio.run(planning_phase(deps, issues, []))
 
     assert isinstance(result, PlanReady)
-    assert result.worktree_sha == "abc123"
     assert result.issues == issues
     assert len(fake.calls) == 0, "No agent must be called for single-issue skip"
     git_svc.create_worktree.assert_not_called()
@@ -82,7 +80,7 @@ def test_planning_phase_skips_planner_for_single_issue(tmp_path, git_svc):
 def test_planning_phase_skip_single_issue_emits_plan_row(tmp_path, git_svc):
     issues = [{"number": 42, "title": "Solo", "body": "", "comments": []}]
     recording = RecordingStatusDisplay()
-    fake = FakeAgentRunner([], preflight_responses=[[]])
+    fake = FakeAgentRunner([])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
     asyncio.run(planning_phase(deps, issues, []))
@@ -105,13 +103,12 @@ def test_planning_phase_returns_plan_ready_with_issues_sorted_by_number(
         {"number": 1, "title": "A", "body": "", "comments": []},
         {"number": 2, "title": "B", "body": "", "comments": []},
     ]
-    fake = FakeAgentRunner([_plan_output(issues)], preflight_responses=[[]])
+    fake = FakeAgentRunner([_plan_output(issues)])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     result = asyncio.run(planning_phase(deps, issues, []))
 
     assert isinstance(result, PlanReady)
-    assert result.worktree_sha == "abc123"
     assert [i["number"] for i in result.issues] == [1, 2, 3]
 
 
@@ -123,7 +120,7 @@ def test_planning_phase_invokes_planner_with_skip_preflight_true(tmp_path, git_s
         {"number": 1, "title": "A", "body": "", "comments": []},
         {"number": 2, "title": "B", "body": "", "comments": []},
     ]
-    fake = FakeAgentRunner([_plan_output(issues)], preflight_responses=[[]])
+    fake = FakeAgentRunner([_plan_output(issues)])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     asyncio.run(planning_phase(deps, issues, []))
@@ -141,7 +138,7 @@ def test_planning_phase_passes_ready_for_agent_issues_as_json_to_planner(
         {"number": 2, "title": "B", "body": "", "comments": []},
         {"number": 1, "title": "A", "body": "", "comments": []},
     ]
-    fake = FakeAgentRunner([_plan_output(issues)], preflight_responses=[[]])
+    fake = FakeAgentRunner([_plan_output(issues)])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     asyncio.run(planning_phase(deps, issues, []))
@@ -160,7 +157,7 @@ def test_planning_phase_passes_all_open_issues_as_json_to_planner(tmp_path, git_
         {"number": 1, "title": "A", "labels": ["ready-for-agent"]},
         {"number": 2, "title": "B", "labels": ["ready-for-human"]},
     ]
-    fake = FakeAgentRunner([_plan_output(issues)], preflight_responses=[[]])
+    fake = FakeAgentRunner([_plan_output(issues)])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     asyncio.run(planning_phase(deps, issues, all_open))
@@ -176,13 +173,13 @@ def test_planning_phase_removes_worktree_after_success(tmp_path, git_svc):
         {"number": 1, "title": "A", "body": "", "comments": []},
         {"number": 2, "title": "B", "body": "", "comments": []},
     ]
-    fake = FakeAgentRunner([_plan_output(issues)], preflight_responses=[[]])
+    fake = FakeAgentRunner([_plan_output(issues)])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     asyncio.run(planning_phase(deps, issues, []))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
-    git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
+    git_svc.remove_worktree.assert_any_call(tmp_path, expected_worktree)
 
 
 def test_planning_phase_removes_worktree_when_exception_raised(tmp_path, git_svc):
@@ -190,14 +187,14 @@ def test_planning_phase_removes_worktree_when_exception_raised(tmp_path, git_svc
         {"number": 1, "title": "A", "body": "", "comments": []},
         {"number": 2, "title": "B", "body": "", "comments": []},
     ]
-    fake = FakeAgentRunner([RuntimeError("agent crashed")], preflight_responses=[[]])
+    fake = FakeAgentRunner([RuntimeError("agent crashed")])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     with pytest.raises(RuntimeError, match="agent crashed"):
         asyncio.run(planning_phase(deps, issues, []))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
-    git_svc.remove_worktree.assert_called_once_with(tmp_path, expected_worktree)
+    git_svc.remove_worktree.assert_any_call(tmp_path, expected_worktree)
 
 
 # ── planning_phase: error paths ─────────────────────────────────────────────
@@ -210,9 +207,7 @@ def test_planning_phase_raises_runtime_error_when_planner_output_has_no_plan_tag
         {"number": 1, "title": "A", "body": "", "comments": []},
         {"number": 2, "title": "B", "body": "", "comments": []},
     ]
-    fake = FakeAgentRunner(
-        [PlanParseError("Planner produced no <plan> tag.")], preflight_responses=[[]]
-    )
+    fake = FakeAgentRunner([PlanParseError("Planner produced no <plan> tag.")])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     with pytest.raises(RuntimeError, match="no <plan> tag"):
@@ -226,7 +221,7 @@ def test_planning_phase_raises_runtime_error_when_planner_returns_wrong_output_t
         {"number": 1, "title": "A", "body": "", "comments": []},
         {"number": 2, "title": "B", "body": "", "comments": []},
     ]
-    fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
+    fake = FakeAgentRunner([CompletionOutput()])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     with pytest.raises(RuntimeError, match="unexpected output type"):
@@ -243,7 +238,7 @@ def test_planning_phase_returns_all_blocked_when_planner_emits_empty_issues_list
         {"number": 1, "title": "A", "body": "", "comments": []},
         {"number": 2, "title": "B", "body": "", "comments": []},
     ]
-    fake = FakeAgentRunner([_plan_output([])], preflight_responses=[[]])
+    fake = FakeAgentRunner([_plan_output([])])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     result = asyncio.run(planning_phase(deps, issues, []))
@@ -260,7 +255,7 @@ def test_planning_phase_all_blocked_carries_blocked_list(tmp_path, git_svc):
         {"number": 5, "title": "X", "body": "", "comments": []},
         {"number": 3, "title": "Y", "body": "", "comments": []},
     ]
-    fake = FakeAgentRunner([output], preflight_responses=[[]])
+    fake = FakeAgentRunner([output])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     result = asyncio.run(planning_phase(deps, issues, []))
@@ -274,7 +269,6 @@ def test_planning_phase_all_blocked_carries_blocked_list(tmp_path, git_svc):
 
 def test_hydrate_planned_issues_merges_body_and_comments_from_open_issues():
     plan = PlanReady(
-        worktree_sha="abc123",
         issues=[{"number": 1, "title": "A"}, {"number": 2, "title": "B"}],
     )
     open_issues = [
@@ -296,7 +290,6 @@ def test_hydrate_planned_issues_merges_body_and_comments_from_open_issues():
 
     result = hydrate_planned_issues(plan, open_issues)
 
-    assert result.worktree_sha == "abc123"
     assert result.issues[0]["number"] == 1
     assert result.issues[0]["body"] == "body of A"
     assert result.issues[0]["comments"] == [
@@ -309,7 +302,6 @@ def test_hydrate_planned_issues_merges_body_and_comments_from_open_issues():
 
 def test_hydrate_planned_issues_raises_when_planned_number_not_in_open_issues():
     plan = PlanReady(
-        worktree_sha="abc123",
         issues=[{"number": 99, "title": "Hallucinated"}],
     )
     open_issues = [

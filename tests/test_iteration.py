@@ -1735,8 +1735,9 @@ def test_run_iteration_improve_dispatch_runs_preflight_checks_with_no_open_issue
 
 
 def test_run_iteration_improve_uses_sha_from_preflight(tmp_path, git_svc, logger):
-    """improve_phase pins the worktree via checkout_detached (called by ensure_preflight)
-    using the SHA obtained after pull — not via a SHA arg to create_worktree."""
+    """improve_phase pins its worktree via checkout_detached (called by
+    PreflightCache.get_safe_sha) using the SHA obtained after pull — not via a
+    SHA arg to create_worktree."""
     git_svc.get_head_sha.return_value = "safe-sha-from-preflight"
     deps = _make_improve_deps(
         tmp_path,
@@ -1752,7 +1753,7 @@ def test_run_iteration_improve_uses_sha_from_preflight(tmp_path, git_svc, logger
         c.args[2] for c in git_svc.checkout_detached.call_args_list if len(c.args) > 2
     }
     assert "safe-sha-from-preflight" in detached_shas, (
-        "ensure_preflight must checkout_detached the improve-sandbox to the preflight SHA"
+        "PreflightCache.get_safe_sha must checkout_detached a worktree to the preflight SHA"
     )
 
 
@@ -2226,7 +2227,7 @@ def test_run_iteration_returns_aborted_timeout_for_each_single_agent_phase(
             preflight_responses=[(("ruff", "ruff check .", "E501"),)],
         )
         expected_role = AgentRole.PREFLIGHT_ISSUE.value
-        expected_wt = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+        expected_wt = tmp_path / "pycastle" / ".worktrees" / "preflight-sandbox"
     elif phase == "plan":
         github_svc.get_open_issues.return_value = [
             {"number": 1, "title": "Fix", "body": "", "comments": []},
