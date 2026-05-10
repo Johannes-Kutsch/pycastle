@@ -104,6 +104,16 @@ def _read_progress(progress_file: Path) -> str | None:
         return None
 
 
+@dataclass(frozen=True)
+class ImproveNoCandidate:
+    pass
+
+
+@dataclass(frozen=True)
+class ImproveContinue:
+    pass
+
+
 class _ImproveDeps(Protocol):
     cfg: Config
     status_display: StatusDisplay
@@ -130,8 +140,10 @@ def _build_issues_scope_args(
     )
 
 
-async def improve_phase(deps: _ImproveDeps, *, sha: str) -> bool:
-    """Run the improve pipeline. Returns True if the no-candidate path was taken."""
+async def improve_phase(
+    deps: _ImproveDeps, *, sha: str
+) -> ImproveNoCandidate | ImproveContinue:
+    """Run the improve pipeline."""
     async with phase_row(
         deps.status_display, "Improve", initial_phase="Running"
     ) as row:
@@ -230,4 +242,4 @@ async def improve_phase(deps: _ImproveDeps, *, sha: str) -> bool:
             shutil.rmtree(role_session_dir, ignore_errors=True)
 
         row.close("finished")
-    return no_candidate
+    return ImproveNoCandidate() if no_candidate else ImproveContinue()
