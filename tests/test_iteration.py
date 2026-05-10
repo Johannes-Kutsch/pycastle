@@ -4,13 +4,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.errors import UsageLimitError
+from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.config import Config
 from pycastle.services import GitService
 from pycastle.services import GithubService
 from pycastle.iteration import (
     AbortedAgentFailure,
     AbortedHITL,
+    AbortedTimeout,
     AbortedUsageLimit,
     Continue,
     Done,
@@ -2185,3 +2186,177 @@ def test_run_iteration_aborted_agent_failure_without_recovery_when_diagnose_disa
     assert result.failed_role == "planner"
     assert result.issue_number is None
     assert len(calls) == 1
+
+
+# ── AbortedTimeout: centralized AgentTimeoutError catch ──────────────────────
+
+
+@pytest.mark.parametrize(
+    "phase",
+    [
+        "preflight",
+        "plan",
+        "improve",
+        "merge",
+    ],
+)
+def test_run_iteration_returns_aborted_timeout_for_each_single_agent_phase(
+    tmp_path, git_svc, logger, phase
+):
+    """run_iteration returns AbortedTimeout for each single-agent phase when it times out.
+    Adding a fifth single-agent phase requires one new parameter row."""
+    from pycastle.agent_output_protocol import AgentRole
+
+    github_svc = MagicMock(spec=GithubService)
+
+    if phase == "preflight":
+        github_svc.get_open_issues.return_value = [
+            {"number": 1, "title": "Fix", "body": "", "comments": []}
+        ]
+
+        async def agent_fn(req: RunRequest):
+            raise AgentTimeoutError("timeout")
+
+        deps = _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+        )
+        expected_role = AgentRole.PREFLIGHT_ISSUE.value
+        expected_wt = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+    elif phase == "plan":
+        github_svc.get_open_issues.return_value = [
+            {"number": 1, "title": "Fix", "body": "", "comments": []},
+            {"number": 2, "title": "Fix B", "body": "", "comments": []},
+        ]
+
+        async def agent_fn(req: RunRequest):
+            raise AgentTimeoutError("timeout")
+
+        deps = _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            preflight_responses=[[]],
+        )
+        expected_role = AgentRole.PLANNER.value
+        expected_wt = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+    elif phase == "improve":
+        github_svc.get_open_issues.return_value = []
+
+        async def agent_fn(req: RunRequest):
+            raise AgentTimeoutError("timeout")
+
+        deps = dataclasses.replace(
+            _make_deps(
+                tmp_path,
+                agent_fn,
+                git_svc=git_svc,
+                github_svc=github_svc,
+                logger=logger,
+                preflight_responses=[[]],
+            ),
+            improve_mode="endless",
+        )
+        expected_role = AgentRole.IMPROVE.value
+        expected_wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    else:  # merge
+        github_svc.get_open_issues.return_value = [
+            {"number": 1, "title": "Fix", "body": "", "comments": []}
+        ]
+        git_svc.try_merge.return_value = False  # force conflict path → Merge Agent
+
+        async def agent_fn(req: RunRequest):
+            if req.name == "Plan Agent":
+                return _plan_output(
+                    [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                )
+            if req.name == "Merge Agent":
+                raise AgentTimeoutError("timeout")
+            return CompletionOutput()
+
+        deps = _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            preflight_responses=[[]],
+        )
+        expected_role = AgentRole.MERGER.value
+        expected_wt = tmp_path / "pycastle" / ".worktrees" / "merge-sandbox"
+
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedTimeout)
+    assert result.failed_role == expected_role
+    assert result.worktree_path == expected_wt
+
+
+def test_phase_row_paints_interrupted_style_on_agent_timeout(tmp_path, git_svc, logger):
+    """When AgentTimeoutError propagates through a phase_row, the row is removed with
+    style 'interrupted' and message 'timed out'."""
+    recording = RecordingStatusDisplay()
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix", "body": "", "comments": []},
+        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+    ]
+
+    async def agent_fn(req: RunRequest):
+        raise AgentTimeoutError("timeout")
+
+    deps = _make_deps(
+        tmp_path,
+        agent_fn,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[[]],
+        status_display=recording,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedTimeout)
+    assert ("remove", "Plan", "timed out", "interrupted") in recording.calls
+
+
+def test_run_iteration_aborted_timeout_preserves_worktree_when_session_populated(
+    tmp_path, git_svc, logger
+):
+    """When AbortedTimeout is returned for the improve phase, the role session worktree
+    is preserved because any_role_dir_present fires on the populated session dir."""
+    from pycastle.agent_output_protocol import AgentRole
+    from pycastle.session_resume import RoleSession
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+
+    async def agent_fn(req: RunRequest):
+        session = RoleSession(req.mount_path, AgentRole.IMPROVE)
+        session.path.mkdir(parents=True, exist_ok=True)
+        (session.path / "conversation.jsonl").write_text("{}")
+        raise AgentTimeoutError("timeout")
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            preflight_responses=[[]],
+        ),
+        improve_mode="endless",
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedTimeout)
+    assert result.worktree_path.exists()
+    session = RoleSession(result.worktree_path, AgentRole.IMPROVE)
+    assert session.is_resumable()
