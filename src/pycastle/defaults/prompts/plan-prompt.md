@@ -34,7 +34,7 @@ An issue B is **blocked by** issue A if:
 
 Only issues labeled `wontfix` are treated as effectively closed. Do not treat `wontfix` issues as blockers.
 
-Any issue referenced as a dependency that does not appear in the open issues list above has already been completed. Do not treat absent issues as blockers. Do not infer blockers from integration stability concerns — if a referenced issue is not in the list, its work is fully integrated and stable.
+Any issue referenced as a dependency that does not appear in either list above (neither the all-open list nor the ready-for-agent list) has already been completed. Do not treat absent issues as blockers. Do not infer blockers from integration stability concerns — if a referenced issue is absent from both lists, its work is fully integrated and stable.
 
 **Parent PRDs and their implementation issues form a unit.** An implementation issue declares its parent PRD with a `## Parent` heading followed by `#N` near the top of its body. The relationship has two consequences:
 
@@ -53,20 +53,20 @@ Output your plan as a JSON object wrapped in `<plan>` tags.
 
 The JSON must have two fields:
 
-- `issues`: unblocked ready-for-agent issues to implement. Use an **empty list** if every candidate is blocked.
+- `issues`: unblocked ready-for-agent issues to implement. Entries must come from the ready-for-agent list (the candidate set). Use an **empty list** if every candidate is blocked.
 - `blocked`: ready-for-agent issues held back because of a blocker. Each entry must have:
   - `number`: the blocked issue's number
   - `blocked_by`: the issue number that is blocking it
-  - `reason`: a short explanation of the dependency
+  - `reason`: the offending label string (e.g., `"ready-for-human"`, `"needs-info"`, `"needs-triage"`)
 
 Example — some unblocked, some blocked:
 
 <plan>
-{"issues": [{"number": 42, "title": "Fix auth bug"}], "blocked": [{"number": 43, "blocked_by": 42, "reason": "depends on the auth interface introduced by #42"}]}
+{"issues": [{"number": 42, "title": "Fix auth bug"}], "blocked": [{"number": 43, "blocked_by": 42, "reason": "needs-info"}]}
 </plan>
 
 Example — all issues are blocked:
 
 <plan>
-{"issues": [], "blocked": [{"number": 5, "blocked_by": 3, "reason": "requires the user model schema changes from #3 (ready-for-human)"}]}
+{"issues": [], "blocked": [{"number": 5, "blocked_by": 3, "reason": "ready-for-human"}]}
 </plan>
