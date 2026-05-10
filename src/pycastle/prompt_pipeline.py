@@ -13,25 +13,6 @@ if TYPE_CHECKING:
 PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 SHELL_EXPR = re.compile(r"!`([^`]+)`")
 
-_STANDARDS_FILES = {
-    "TESTING_STANDARDS": "tests.md",
-    "MOCKING_STANDARDS": "mocking.md",
-    "INTERFACES_STANDARDS": "interfaces.md",
-    "DEEP_MODULES_STANDARDS": "deep-modules.md",
-    "REFACTORING_STANDARDS": "refactoring.md",
-    "LANGUAGE_STANDARDS": "language.md",
-    "DEEPENING_STANDARDS": "deepening.md",
-}
-
-
-def load_standards(prompts_dir: Path) -> dict[str, str]:
-    standards_dir = prompts_dir / "coding-standards"
-    result = {}
-    for key, filename in _STANDARDS_FILES.items():
-        path = standards_dir / filename
-        result[key] = path.read_text(encoding="utf-8") if path.exists() else ""
-    return result
-
 
 class PromptRenderError(Exception):
     pass
@@ -155,13 +136,31 @@ def _format_feedback_commands(checks: Sequence[str]) -> str:
 
 
 class PromptRenderer:
+    _STANDARDS_FILES: dict[str, str] = {
+        "TESTING_STANDARDS": "tests.md",
+        "MOCKING_STANDARDS": "mocking.md",
+        "INTERFACES_STANDARDS": "interfaces.md",
+        "DEEP_MODULES_STANDARDS": "deep-modules.md",
+        "REFACTORING_STANDARDS": "refactoring.md",
+        "LANGUAGE_STANDARDS": "language.md",
+        "DEEPENING_STANDARDS": "deepening.md",
+    }
+
     def __init__(self, cfg: Config) -> None:
         self._prompts_dir: Path = cfg.prompts_dir
         self._global_args = self._build_global_args(cfg)
         self._validate_templates()
 
+    def _load_standards(self, prompts_dir: Path) -> dict[str, str]:
+        standards_dir = prompts_dir / "coding-standards"
+        result = {}
+        for key, filename in self._STANDARDS_FILES.items():
+            path = standards_dir / filename
+            result[key] = path.read_text(encoding="utf-8") if path.exists() else ""
+        return result
+
     def _build_global_args(self, cfg: Config) -> dict[str, str]:
-        standards = load_standards(cfg.prompts_dir)
+        standards = self._load_standards(cfg.prompts_dir)
         checks = " && ".join(cmd for _, cmd in cfg.preflight_checks)
         return {
             "BUG_LABEL": cfg.bug_label,

@@ -427,6 +427,67 @@ def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
     )
 
 
+# ── Standards loading: behaviours from the deleted test_prompt_utils.py ──────
+
+
+def test_renderer_loads_all_seven_standards_keys(prompts_dir):
+    standards_dir = prompts_dir / "coding-standards"
+    (standards_dir / "tests.md").write_text("testing content")
+    (standards_dir / "mocking.md").write_text("mocking content")
+    (standards_dir / "interfaces.md").write_text("interfaces content")
+    (standards_dir / "deep-modules.md").write_text("deep modules content")
+    (standards_dir / "refactoring.md").write_text("refactoring content")
+    (standards_dir / "language.md").write_text("language content")
+    (standards_dir / "deepening.md").write_text("deepening content")
+    (prompts_dir / "improve" / "01-scan.md").write_text(
+        "{{TESTING_STANDARDS}}|{{MOCKING_STANDARDS}}|{{INTERFACES_STANDARDS}}"
+        "|{{DEEP_MODULES_STANDARDS}}|{{REFACTORING_STANDARDS}}"
+        "|{{LANGUAGE_STANDARDS}}|{{DEEPENING_STANDARDS}}"
+    )
+    cfg = Config(prompts_dir=prompts_dir)
+    renderer = PromptRenderer(cfg)
+
+    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+
+    assert result == (
+        "testing content|mocking content|interfaces content"
+        "|deep modules content|refactoring content"
+        "|language content|deepening content"
+    )
+
+
+def test_renderer_returns_empty_string_for_missing_standards_file(prompts_dir):
+    standards_dir = prompts_dir / "coding-standards"
+    (standards_dir / "tests.md").write_text("testing content")
+    # other files intentionally absent
+    (prompts_dir / "improve" / "01-scan.md").write_text(
+        "{{TESTING_STANDARDS}}|{{MOCKING_STANDARDS}}"
+    )
+    cfg = Config(prompts_dir=prompts_dir)
+    renderer = PromptRenderer(cfg)
+
+    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+
+    assert result == "testing content|"
+
+
+def test_renderer_returns_all_empty_standards_when_dir_absent(tmp_path):
+    (tmp_path / "improve").mkdir()
+    (tmp_path / "improve" / "01-scan.md").write_text(
+        "{{TESTING_STANDARDS}}|{{MOCKING_STANDARDS}}"
+    )
+    # no coding-standards dir created
+    cfg = Config(prompts_dir=tmp_path)
+    renderer = PromptRenderer(cfg)
+
+    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+
+    assert result == "|"
+
+
+# ── Template shell expression tests ──────────────────────────────────────────
+
+
 def test_template_shell_expr_runs_arg_shell_token_stays_inert(cfg, prompts_dir):
     (prompts_dir / "implement-prompt.md").write_text(
         "Header: !`echo hi`\nBody: {{ISSUE_BODY}}\n"
