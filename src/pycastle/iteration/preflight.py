@@ -13,7 +13,6 @@ from ..config import Config
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..status_display import StatusDisplay
-from ..worktree import teardown_worktree, worktree_path
 from ._utils import _wait_for_clean_working_tree
 
 
@@ -142,13 +141,3 @@ async def ensure_preflight(
     return result
 
 
-async def preflight_phase(
-    deps: _PreflightDeps,
-    open_issues: list[dict],
-    all_open_issues: list[dict],
-) -> PreflightResult:
-    wt = worktree_path("pre-flight-sandbox", deps)
-    try:
-        return await ensure_preflight(deps, wt)
-    finally:
-        teardown_worktree(deps.git_svc, deps.repo_root, wt)

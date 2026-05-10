@@ -20,6 +20,7 @@ from ..session_resume import derived_session_uuid
 from ..status_display import StatusDisplay
 from ..worktree import managed_worktree
 from ._rows import phase_row
+from .preflight import PreflightAFK, PreflightHITL, PreflightReady, ensure_preflight
 
 
 IMPROVE_SANDBOX = "pycastle/improve-sandbox"
@@ -121,6 +122,7 @@ class _ImproveDeps(Protocol):
     repo_root: Path
     git_svc: GitService
     github_svc: GithubService
+    preflight_verdict: PreflightReady | None
 
 
 def _build_issues_scope_args(
@@ -141,8 +143,8 @@ def _build_issues_scope_args(
 
 
 async def improve_phase(
-    deps: _ImproveDeps, *, sha: str
-) -> ImproveNoCandidate | ImproveContinue:
+    deps: _ImproveDeps,
+) -> ImproveNoCandidate | ImproveContinue | PreflightHITL | PreflightAFK:
     """Run the improve pipeline."""
     async with phase_row(
         deps.status_display, "Improve", initial_phase="Running"
@@ -150,10 +152,14 @@ async def improve_phase(
         async with managed_worktree(
             "improve-sandbox",
             branch=IMPROVE_SANDBOX,
-            sha=sha,
+            sha=None,
             delete_branch_on_teardown=True,
             deps=deps,
         ) as sandbox_path:
+            verdict = await ensure_preflight(deps, sandbox_path)
+            if isinstance(verdict, (PreflightHITL, PreflightAFK)):
+                row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
+                return verdict
             short_sid = derived_session_uuid(AgentRole.IMPROVE, sandbox_path).split(
                 "-"
             )[0]

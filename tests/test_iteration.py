@@ -362,21 +362,21 @@ def test_run_iteration_returns_continue_when_no_implementers_complete(
 def test_run_iteration_returns_continue_on_afk_preflight_verdict(
     tmp_path, git_svc, logger
 ):
-    """run_iteration returns Continue when preflight fails with an AFK verdict
-    (preflight reporter filed a fix issue; next iteration picks it up)."""
+    """run_iteration returns Continue when preflight fails with an AFK verdict.
+    The filed fix issue is implemented in the same iteration without a plan step."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
         {"number": 1, "title": "Fix bug", "body": "", "comments": []}
     ]
-    github_svc.get_issue_title.return_value = "Preflight fix"
+    github_svc.get_issue.return_value = {
+        "number": 55,
+        "title": "Preflight fix",
+        "body": "",
+    }
 
     async def _fake_agent(request: RunRequest):
         if "Pre-Flight Reporter" in request.name:
             return IssueOutput(number=55, labels=["ready-for-agent"])
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 55, "title": "Preflight fix", "body": "", "comments": []}]
-            )
         return CompletionOutput()
 
     deps = _make_deps(
@@ -782,36 +782,6 @@ def test_planner_run_call_passes_work_body_with_issue_count(
 # ── Display row lifecycle ──────────────────────────────────────────────────────
 
 
-def test_run_iteration_preflight_row_removed_even_if_preflight_raises(tmp_path, logger):
-    """run_iteration must remove the 'Preflight' display row even when preflight_phase raises."""
-    from pycastle.services import GitCommandError
-
-    recording = RecordingStatusDisplay()
-    git_svc = MagicMock(spec=GitService)
-    git_svc.is_working_tree_clean.return_value = True
-    git_svc.pull.side_effect = GitCommandError("pull failed", returncode=1, stderr="")
-    git_svc.get_head_sha.return_value = "abc123"
-
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
-    ]
-
-    deps = _make_deps(
-        tmp_path,
-        None,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        logger=logger,
-        status_display=recording,
-    )
-
-    with pytest.raises(GitCommandError):
-        asyncio.run(run_iteration(deps))
-
-    assert ("remove", "Preflight", "failed", "error") in recording.calls
-
-
 def test_run_iteration_plan_row_removed_even_if_planning_raises(
     tmp_path, git_svc, logger
 ):
@@ -867,72 +837,6 @@ def test_run_iteration_implement_row_removed_on_usage_limit(
 
     assert isinstance(result, AbortedUsageLimit)
     assert ("remove", "Implement", "finished", "success") in recording.calls
-
-
-def test_run_iteration_registers_preflight_row_before_preflight_phase(
-    tmp_path, git_svc, github_svc, logger
-):
-    """run_iteration must register the 'Preflight' row before calling preflight_phase."""
-    recording = RecordingStatusDisplay()
-
-    async def _noop_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
-            )
-        return CompletionOutput()
-
-    deps = _make_deps(
-        tmp_path,
-        _noop_agent,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        logger=logger,
-        status_display=recording,
-    )
-    asyncio.run(run_iteration(deps))
-
-    register_idx = next(
-        (
-            i
-            for i, c in enumerate(recording.calls)
-            if c[:2] == ("register", "Preflight")
-        ),
-        None,
-    )
-    remove_idx = next(
-        (i for i, c in enumerate(recording.calls) if c[:2] == ("remove", "Preflight")),
-        None,
-    )
-    assert register_idx is not None, "Preflight row must be registered"
-    assert remove_idx is not None, "Preflight row must be removed"
-    assert register_idx < remove_idx
-
-
-def test_run_iteration_registers_preflight_row_with_running_phase(
-    tmp_path, git_svc, github_svc, logger
-):
-    """run_iteration must register the 'Preflight' row with initial_phase='Running'."""
-    recording = RecordingStatusDisplay()
-
-    async def _noop_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
-            )
-        return CompletionOutput()
-
-    deps = _make_deps(
-        tmp_path,
-        _noop_agent,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        logger=logger,
-        status_display=recording,
-    )
-    asyncio.run(run_iteration(deps))
-
-    assert ("register", "Preflight", "phase", "started", "Running") in recording.calls
 
 
 def test_run_iteration_registers_plan_row_with_planning_phase(
@@ -1138,30 +1042,35 @@ def test_run_iteration_uses_only_in_flight_issues_when_some_have_existing_branch
 def test_run_iteration_uses_preflight_sha_for_in_flight_issues(
     tmp_path, git_svc, logger
 ):
-    """When in-flight issues are used, the implement phase receives the preflight SHA
-    unchanged — the in-flight path must not re-pin the SHA from a plan-sandbox."""
+    """In-flight issues bypass preflight entirely, so the implement worktree is created
+    without a pinned SHA (sha=None) — no preflight pull/checkout on the in-flight path."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
         {"number": 7, "title": "In flight", "body": "", "comments": []}
     ]
     git_svc.verify_ref_exists.return_value = True
-    git_svc.get_head_sha.return_value = "preflight-sha-abc"
 
     async def _fake_agent(request: RunRequest):
         return CompletionOutput()
 
     deps = _make_deps(
-        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[],
     )
     asyncio.run(run_iteration(deps))
 
-    implement_shas = {
-        c.args[3]
+    git_svc.pull.assert_not_called()
+    worktree_calls_with_sha = [
+        c
         for c in git_svc.create_worktree.call_args_list
-        if c.args[3] is not None
-    }
-    assert "preflight-sha-abc" in implement_shas, (
-        "Implement phase must use the preflight SHA, not a re-pinned SHA"
+        if len(c.args) > 3 and c.args[3] is not None
+    ]
+    assert worktree_calls_with_sha == [], (
+        "In-flight path must not pin a SHA — worktree created with sha=None"
     )
 
 
@@ -1825,7 +1734,8 @@ def test_run_iteration_improve_dispatch_runs_preflight_checks_with_no_open_issue
 
 
 def test_run_iteration_improve_uses_sha_from_preflight(tmp_path, git_svc, logger):
-    """improve_phase must receive the SHA pinned by preflight, not re-fetch HEAD."""
+    """improve_phase pins the worktree via checkout_detached (called by ensure_preflight)
+    using the SHA obtained after pull — not via a SHA arg to create_worktree."""
     git_svc.get_head_sha.return_value = "safe-sha-from-preflight"
     deps = _make_improve_deps(
         tmp_path,
@@ -1837,13 +1747,11 @@ def test_run_iteration_improve_uses_sha_from_preflight(tmp_path, git_svc, logger
     )
     asyncio.run(run_iteration(deps))
 
-    worktree_shas = {
-        c.args[3]
-        for c in git_svc.create_worktree.call_args_list
-        if len(c.args) > 3 and c.args[3] is not None
+    detached_shas = {
+        c.args[2] for c in git_svc.checkout_detached.call_args_list if len(c.args) > 2
     }
-    assert "safe-sha-from-preflight" in worktree_shas, (
-        "improve-sandbox must be created from the preflight SHA"
+    assert "safe-sha-from-preflight" in detached_shas, (
+        "ensure_preflight must checkout_detached the improve-sandbox to the preflight SHA"
     )
 
 

@@ -25,7 +25,6 @@ from .planning import planning_phase
 from .preflight import (
     PreflightAFK,
     PreflightHITL,
-    preflight_phase,
     strip_stale_blocker_refs,
 )
 
@@ -74,101 +73,114 @@ def _is_in_flight(issue: dict, deps: Deps) -> bool:
     return worktree_path(name, deps).exists()
 
 
+async def _run_implement_and_merge(
+    issues: list[dict],
+    sha: str | None,
+    deps: Deps,
+) -> IterationOutcome:
+    token = CancellationToken()
+    async with phase_row(
+        deps.status_display, "Implement", initial_phase="Running"
+    ) as row:
+        impl_result = await implement_phase(issues, sha, deps, token=token)
+
+        if impl_result.usage_limit_hit:
+            row.close("finished")
+            return AbortedUsageLimit(reset_time=impl_result.usage_limit_reset_time)
+
+        for issue, error in impl_result.errors:
+            deps.status_display.print(
+                "Implement",
+                f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}",
+            )
+
+        completed = impl_result.completed
+
+        if not completed:
+            row.close(
+                "No commits produced. Nothing to merge.", shutdown_style="warning"
+            )
+            return Continue()
+
+        branch_lines = [f"  {branch_for(i['number'])}" for i in completed]
+        row.close(
+            "\n".join(
+                [f"Execution complete, {len(completed)} branch(es) with commits:"]
+                + branch_lines
+            )
+        )
+
+    await merge_phase(completed, deps)
+    return Continue()
+
+
 async def run_iteration(deps: Deps) -> IterationOutcome:
     try:
-        # ── Preflight ────────────────────────────────────────────────────────
+        # ── Fetch issues ─────────────────────────────────────────────────────
         open_issues = strip_stale_blocker_refs(
             deps.github_svc.get_open_issues(deps.cfg.issue_label)
         )
         all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
-        async with phase_row(
-            deps.status_display,
-            "Preflight",
-            initial_phase="Running",
-        ) as preflight_row:
-            preflight_result = await preflight_phase(
-                deps, open_issues=open_issues, all_open_issues=all_open_issues
-            )
-            preflight_row.close("finished")
 
-        if isinstance(preflight_result, PreflightHITL):
-            deps.status_display.print(
-                "Preflight",
-                f"Preflight issue #{preflight_result.issue_number} requires human intervention. Exiting.",
-            )
-            return AbortedHITL(issue_number=preflight_result.issue_number)
-
-        if isinstance(preflight_result, PreflightAFK):
-            return Continue()
-
-        preflight_sha = preflight_result.sha
         in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
 
-        # ── (Improve) — runs when idle: no AFK issues, no in-flight ─────────
+        # ── (Improve) — runs when idle: no open issues, no in-flight ────────
         if not open_issues and not in_flight:
             if should_dispatch_improve(deps.improve_mode, deps.slept_once):
-                improve_result = await improve_phase(deps, sha=preflight_sha)
+                improve_result = await improve_phase(deps)
                 if isinstance(improve_result, ImproveNoCandidate):
                     return NoCandidate()
-                # Re-fetch open issues after improve filed new ready-for-agent issues
+                if isinstance(improve_result, PreflightHITL):
+                    deps.status_display.print(
+                        "Preflight",
+                        f"Preflight issue #{improve_result.issue_number} requires human intervention. Exiting.",
+                    )
+                    return AbortedHITL(issue_number=improve_result.issue_number)
+                if isinstance(improve_result, PreflightAFK):
+                    raw = deps.github_svc.get_issue(improve_result.issue_number)
+                    afk_issue = {
+                        **raw,
+                        "body": raw.get("body") or "",
+                        "comments": [],
+                    }
+                    return await _run_implement_and_merge(
+                        [afk_issue], improve_result.sha, deps
+                    )
+                # ImproveContinue: re-fetch issues after improve filed new ones
                 open_issues = strip_stale_blocker_refs(
                     deps.github_svc.get_open_issues(deps.cfg.issue_label)
                 )
                 all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
                 if not open_issues:
                     return Continue()
-                # Fall through to planning below
+                in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
             else:
                 return Done()
 
         # ── Plan ─────────────────────────────────────────────────────────────
         plan_result = await planning_phase(
-            deps, preflight_sha, open_issues, all_open_issues, in_flight=in_flight
+            deps, open_issues, all_open_issues, in_flight=in_flight
         )
         if isinstance(plan_result, AllBlocked):
             return Done()
+        if isinstance(plan_result, PreflightHITL):
+            deps.status_display.print(
+                "Preflight",
+                f"Preflight issue #{plan_result.issue_number} requires human intervention. Exiting.",
+            )
+            return AbortedHITL(issue_number=plan_result.issue_number)
+        if isinstance(plan_result, PreflightAFK):
+            raw = deps.github_svc.get_issue(plan_result.issue_number)
+            afk_issue = {**raw, "body": raw.get("body") or "", "comments": []}
+            return await _run_implement_and_merge([afk_issue], plan_result.sha, deps)
+
         sha = plan_result.worktree_sha
         issues: list[dict] = plan_result.issues
 
         # ── Implement ────────────────────────────────────────────────────────
         issues = issues[: deps.cfg.max_parallel]
+        return await _run_implement_and_merge(issues, sha, deps)
 
-        token = CancellationToken()
-        async with phase_row(
-            deps.status_display, "Implement", initial_phase="Running"
-        ) as row:
-            impl_result = await implement_phase(issues, sha, deps, token=token)
-
-            if impl_result.usage_limit_hit:
-                row.close("finished")
-                return AbortedUsageLimit(reset_time=impl_result.usage_limit_reset_time)
-
-            for issue, error in impl_result.errors:
-                deps.status_display.print(
-                    "Implement",
-                    f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}",
-                )
-
-            completed = impl_result.completed
-
-            if not completed:
-                row.close(
-                    "No commits produced. Nothing to merge.", shutdown_style="warning"
-                )
-                return Continue()
-
-            branch_lines = [f"  {branch_for(i['number'])}" for i in completed]
-            row.close(
-                "\n".join(
-                    [f"Execution complete, {len(completed)} branch(es) with commits:"]
-                    + branch_lines
-                )
-            )
-
-        # ── Merge ────────────────────────────────────────────────────────────
-        await merge_phase(completed, deps)
-
-        return Continue()
     except AgentFailedError as err:
         issue_number: int | None = None
         if deps.cfg.diagnose_on_failure:

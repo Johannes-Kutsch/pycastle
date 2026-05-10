@@ -790,9 +790,9 @@ def test_agent_runner_run_preflight_updates_phase_for_each_check(tmp_path):
     )
 
     phase_updates = [c for c in display.calls if c[0] == "update_phase"]
-    assert any(c[2] == "Running ruff Checks" for c in phase_updates)
-    assert any(c[2] == "Running mypy Checks" for c in phase_updates)
-    assert any(c[2] == "Running pytest Checks" for c in phase_updates)
+    assert any(c[2] == "Running ruff (1/3)" for c in phase_updates)
+    assert any(c[2] == "Running mypy (2/3)" for c in phase_updates)
+    assert any(c[2] == "Running pytest (3/3)" for c in phase_updates)
 
 
 def test_agent_runner_run_preflight_removes_status_row_when_checks_fail(tmp_path):
