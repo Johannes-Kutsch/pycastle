@@ -137,7 +137,6 @@ class AgentRunner:
         run_kind = role_session.run_kind()
         session_uuid = role_session.session_uuid()
 
-        was_resume_run = run_kind == RunKind.RESUME
         non_typed_retry_done = False
 
         async with agent_row(status_display, name, work_body):
@@ -214,12 +213,11 @@ class AgentRunner:
                         _token.cancel()
                         raise
                     except Exception:
-                        if was_resume_run and not non_typed_retry_done:
-                            non_typed_retry_done = True
-                        elif was_resume_run and non_typed_retry_done:
-                            return FailedOutput()
-                        else:
+                        if run_kind != RunKind.RESUME:
                             raise
+                        if non_typed_retry_done:
+                            return FailedOutput()
+                        non_typed_retry_done = True
             finally:
                 try:
                     session.__exit__(None, None, None)
