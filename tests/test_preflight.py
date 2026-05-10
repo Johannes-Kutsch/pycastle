@@ -1,58 +1,51 @@
+"""Tests for PreflightCache.get_safe_sha: observable behaviour via the public interface."""
+
 import asyncio
 import dataclasses
 from pathlib import Path
-
-import pytest
 from unittest.mock import AsyncMock, patch
 
-from pycastle.agent_output_protocol import (
-    IssueOutput,
-)
+import pytest
+from unittest.mock import MagicMock
+
+from pycastle.agent_output_protocol import IssueOutput
 from pycastle.config import Config
-from pycastle.services import GitCommandError, GitService
-from pycastle.services import GithubService
-from pycastle.iteration._deps import (
-    FakeAgentRunner,
-)
+from pycastle.services import GitCommandError, GitService, GithubService
+from pycastle.iteration._deps import FakeAgentRunner
 from pycastle.status_display import PlainStatusDisplay
 from pycastle.iteration.preflight import (
     PreflightAFK,
+    PreflightCache,
     PreflightHITL,
     PreflightReady,
-    ensure_preflight,
 )
 
 
 @dataclasses.dataclass
-class _PreflightStub:
+class _CacheDeps:
     git_svc: GitService
     github_svc: GithubService
     cfg: Config
     status_display: PlainStatusDisplay
     agent_runner: FakeAgentRunner
     repo_root: Path
-    preflight_verdict: PreflightReady | None = None
 
 
 @pytest.fixture
 def git_svc():
-    from unittest.mock import MagicMock
-
     svc = MagicMock(spec=GitService)
     svc.get_head_sha.return_value = "abc123"
+    svc.is_working_tree_clean.return_value = True
     return svc
 
 
 @pytest.fixture
 def github_svc():
-    from unittest.mock import MagicMock
-
-    svc = MagicMock(spec=GithubService)
-    return svc
+    return MagicMock(spec=GithubService)
 
 
 def _make_deps(tmp_path, agent_runner, *, git_svc, github_svc):
-    return _PreflightStub(
+    return _CacheDeps(
         repo_root=tmp_path,
         git_svc=git_svc,
         github_svc=github_svc,
@@ -62,99 +55,195 @@ def _make_deps(tmp_path, agent_runner, *, git_svc, github_svc):
     )
 
 
-# ── ensure_preflight: basic return variants ───────────────────────────────────
+# ── get_safe_sha: basic return variants ──────────────────────────────────────
 
 
-def test_ensure_preflight_returns_ready_with_sha_when_checks_pass(
+def test_get_safe_sha_returns_ready_with_sha_when_checks_pass(
     tmp_path, git_svc, github_svc
 ):
     fake = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
 
-    result = asyncio.run(ensure_preflight(deps, tmp_path))
+    result = asyncio.run(cache.get_safe_sha(deps))
 
     assert isinstance(result, PreflightReady)
     assert result.sha == "abc123"
 
 
-def test_ensure_preflight_returns_hitl_when_checks_fail_with_hitl_label(
-    tmp_path, git_svc
+def test_get_safe_sha_returns_hitl_when_checks_fail_with_hitl_label(
+    tmp_path, git_svc, github_svc
 ):
-    from unittest.mock import MagicMock
-
-    github_svc = MagicMock(spec=GithubService)
     fake = FakeAgentRunner(
         [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
 
-    result = asyncio.run(ensure_preflight(deps, tmp_path))
+    result = asyncio.run(cache.get_safe_sha(deps))
 
     assert isinstance(result, PreflightHITL)
     assert result.issue_number == 55
     assert result.sha == "abc123"
 
 
-def test_ensure_preflight_returns_afk_when_checks_fail_with_afk_label(
-    tmp_path, git_svc
+def test_get_safe_sha_returns_afk_when_checks_fail_with_afk_label(
+    tmp_path, git_svc, github_svc
 ):
-    from unittest.mock import MagicMock
-
-    github_svc = MagicMock(spec=GithubService)
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
 
-    result = asyncio.run(ensure_preflight(deps, tmp_path))
+    result = asyncio.run(cache.get_safe_sha(deps))
 
     assert isinstance(result, PreflightAFK)
     assert result.issue_number == 42
     assert result.sha == "abc123"
 
 
-# ── ensure_preflight: memoization ────────────────────────────────────────────
+# ── get_safe_sha: same-SHA cache hit ─────────────────────────────────────────
 
 
-def test_ensure_preflight_calls_run_preflight_once_across_two_invocations(
+def test_get_safe_sha_returns_cached_verdict_on_same_sha_second_call(
     tmp_path, git_svc, github_svc
 ):
     fake = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
 
-    result1 = asyncio.run(ensure_preflight(deps, tmp_path))
-    result2 = asyncio.run(ensure_preflight(deps, tmp_path))
+    result1 = asyncio.run(cache.get_safe_sha(deps))
+    result2 = asyncio.run(cache.get_safe_sha(deps))
 
     assert isinstance(result1, PreflightReady)
-    assert result2 == result1
+    assert result2 is result1
     assert len(fake.preflight_calls) == 1
 
 
-# ── ensure_preflight: pull failure ───────────────────────────────────────────
+def test_get_safe_sha_failure_cached_on_second_call_at_same_sha(
+    tmp_path, git_svc, github_svc
+):
+    """Cache miss + checks fail dispatches preflight-issue once; second call at same
+    SHA reuses the cached AFK verdict without re-running checks or re-filing."""
+    fake = FakeAgentRunner(
+        [IssueOutput(number=99, labels=["ready-for-agent"])],
+        preflight_responses=[[("mypy", "mypy .", "error")]],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result1 = asyncio.run(cache.get_safe_sha(deps))
+    result2 = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result1, PreflightAFK)
+    assert result1.issue_number == 99
+    assert result2 is result1
+    assert len(fake.preflight_calls) == 1
+    assert len(fake.calls) == 1  # preflight-issue agent called only once
 
 
-def test_ensure_preflight_propagates_git_command_error_on_pull_failure(
+# ── get_safe_sha: HEAD advance replaces slot ──────────────────────────────────
+
+
+def test_get_safe_sha_reruns_checks_when_head_advances(tmp_path, git_svc, github_svc):
+    git_svc.get_head_sha.side_effect = ["sha-v1", "sha-v2"]
+    fake = FakeAgentRunner([], preflight_responses=[[], []])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result1 = asyncio.run(cache.get_safe_sha(deps))
+    result2 = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result1, PreflightReady)
+    assert result1.sha == "sha-v1"
+    assert isinstance(result2, PreflightReady)
+    assert result2.sha == "sha-v2"
+    assert len(fake.preflight_calls) == 2
+
+
+# ── get_safe_sha: pull failure ────────────────────────────────────────────────
+
+
+def test_get_safe_sha_propagates_git_command_error_on_pull_failure(
     tmp_path, git_svc, github_svc
 ):
     git_svc.pull.side_effect = GitCommandError("git pull --ff-only failed")
     fake = FakeAgentRunner([], preflight_responses=[])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
 
     with pytest.raises(GitCommandError):
-        asyncio.run(ensure_preflight(deps, tmp_path))
+        asyncio.run(cache.get_safe_sha(deps))
 
     git_svc.get_head_sha.assert_not_called()
 
 
-def test_ensure_preflight_waits_for_clean_working_tree(tmp_path, git_svc, github_svc):
+def test_get_safe_sha_leaves_slot_unchanged_on_pull_failure(
+    tmp_path, git_svc, github_svc
+):
+    """Pull failure must not corrupt the cache slot."""
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    # First call succeeds
+    result1 = asyncio.run(cache.get_safe_sha(deps))
+    assert isinstance(result1, PreflightReady)
+
+    # Second call: pull fails
+    git_svc.pull.side_effect = GitCommandError("diverged")
+    # Different SHA so it would invalidate cache
+    git_svc.get_head_sha.return_value = "sha-new"
+
+    with pytest.raises(GitCommandError):
+        asyncio.run(cache.get_safe_sha(deps))
+
+    # The slot still holds the original verdict
+    git_svc.pull.side_effect = None
+    git_svc.get_head_sha.return_value = "abc123"
+    result3 = asyncio.run(cache.get_safe_sha(deps))
+    assert result3 is result1
+
+
+# ── get_safe_sha: clean tree wait ────────────────────────────────────────────
+
+
+def test_get_safe_sha_waits_for_clean_working_tree(tmp_path, git_svc, github_svc):
     git_svc.is_working_tree_clean.side_effect = [False, True]
     fake = FakeAgentRunner([], preflight_responses=[[]])
-
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
 
     with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
-        result = asyncio.run(ensure_preflight(deps, tmp_path))
+        result = asyncio.run(cache.get_safe_sha(deps))
 
     assert isinstance(result, PreflightReady)
+
+
+# ── get_safe_sha: parallel callers serialise ─────────────────────────────────
+
+
+def test_get_safe_sha_parallel_callers_run_preflight_once(
+    tmp_path, git_svc, github_svc
+):
+    """Concurrent callers at the same SHA must serialise on the lock and observe
+    a single preflight run — only one run_preflight call total."""
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    async def _run_two():
+        results = await asyncio.gather(
+            cache.get_safe_sha(deps),
+            cache.get_safe_sha(deps),
+        )
+        return results
+
+    results = asyncio.run(_run_two())
+
+    assert all(isinstance(r, PreflightReady) for r in results)
+    assert results[0] is results[1]
+    assert len(fake.preflight_calls) == 1

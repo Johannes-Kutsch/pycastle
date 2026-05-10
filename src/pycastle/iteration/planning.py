@@ -1,7 +1,7 @@
 import dataclasses
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from ..agent_output_protocol import (
     AgentOutputProtocolError,
@@ -19,10 +19,7 @@ from ..status_display import StatusDisplay
 from ..worktree import transient_worktree
 from ._rows import phase_row
 from .implement import branch_for
-from .preflight import PreflightAFK, PreflightHITL, PreflightReady, ensure_preflight
-
-if TYPE_CHECKING:
-    pass
+from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
 
 class _PlanningDeps(Protocol):
@@ -32,12 +29,11 @@ class _PlanningDeps(Protocol):
     repo_root: Path
     git_svc: GitService
     github_svc: GithubService
-    preflight_verdict: PreflightReady | None
+    preflight_cache: PreflightCache
 
 
 @dataclasses.dataclass(frozen=True)
 class PlanReady:
-    worktree_sha: str | None
     issues: list[dict]
 
 
@@ -65,7 +61,7 @@ def hydrate_planned_issues(
                 "comments": source.get("comments") or [],
             }
         )
-    return PlanReady(worktree_sha=plan_result.worktree_sha, issues=hydrated)
+    return PlanReady(issues=hydrated)
 
 
 def _fill_fields(issues: list[dict]) -> list[dict]:
@@ -100,29 +96,22 @@ async def planning_phase(
                 f"resuming {len(_in_flight)} in-flight branch(es) ({nums}) labeled"
                 f" {deps.cfg.issue_label}, skipping plan agent"
             )
-            return PlanReady(worktree_sha=None, issues=_fill_fields(_in_flight))
+            return PlanReady(issues=_fill_fields(_in_flight))
 
-        # Single-issue and multi-issue paths both need preflight + plan sandbox.
-        # When uncached, pass sha=None — ensure_preflight will call get_head_sha
-        # after pull, then checkout_detached the worktree to that sha.
-        _pre_sha = (
-            deps.preflight_verdict.sha if deps.preflight_verdict is not None else None
-        )
+        verdict = await deps.preflight_cache.get_safe_sha(deps)
+        if isinstance(verdict, (PreflightHITL, PreflightAFK)):
+            row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
+            return verdict
+        sha = verdict.sha
 
-        async with transient_worktree("plan-sandbox", sha=_pre_sha, deps=deps) as wt:
-            verdict = await ensure_preflight(deps, wt)
-            if isinstance(verdict, (PreflightHITL, PreflightAFK)):
-                row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
-                return verdict
-            sha = verdict.sha
+        if len(open_issues) == 1:
+            row.close(
+                f"only one open issue (#{open_issues[0]['number']}) labeled"
+                f" {deps.cfg.issue_label}, skipping plan agent"
+            )
+            return PlanReady(issues=_fill_fields(open_issues))
 
-            if len(open_issues) == 1:
-                row.close(
-                    f"only one open issue (#{open_issues[0]['number']}) labeled"
-                    f" {deps.cfg.issue_label}, skipping plan agent"
-                )
-                return PlanReady(worktree_sha=sha, issues=_fill_fields(open_issues))
-
+        async with transient_worktree("plan-sandbox", sha=sha, deps=deps) as wt:
             try:
                 output = await deps.agent_runner.run(
                     RunRequest(
@@ -171,7 +160,6 @@ async def planning_phase(
                 return AllBlocked(blocked=output.blocked)
 
             plan = PlanReady(
-                worktree_sha=sha,
                 issues=sorted(output.issues, key=lambda i: i["number"]),
             )
             hydrated = hydrate_planned_issues(plan, open_issues)
