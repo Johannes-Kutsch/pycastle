@@ -160,8 +160,6 @@ def test_first_log_line_is_pycastle_input_record(tmp_path):
 
 
 def test_first_log_line_present_on_agent_timeout(tmp_path):
-    import threading as _threading
-
     record = {
         "type": "pycastle_input",
         "role": "implementer",
@@ -169,7 +167,7 @@ def test_first_log_line_present_on_agent_timeout(tmp_path):
         "session_uuid": None,
         "prompt": "stalled prompt",
     }
-    event = _threading.Event()
+    event = threading.Event()
 
     def stalled():
         event.wait()
