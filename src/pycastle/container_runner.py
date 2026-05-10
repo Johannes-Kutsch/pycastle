@@ -133,12 +133,20 @@ class ContainerRunner:
                 session_uuid=session_uuid,
             )
         )
+        input_record = {
+            "type": "pycastle_input",
+            "role": role.value,
+            "run_kind": run_kind.value,
+            "session_uuid": session_uuid,
+            "prompt": prompt,
+        }
         try:
             ws = WorkStream(
                 chunks,
                 self._log_path,
                 self._cfg.idle_timeout,
                 lambda: self._status_display.reset_idle_timer(self.name),
+                input_record=input_record,
             )
             return ws.run(role, on_turn, on_tokens)
         finally:

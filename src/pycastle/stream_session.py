@@ -1,3 +1,4 @@
+import json
 import queue
 import threading
 from collections.abc import Callable, Iterable
@@ -14,11 +15,13 @@ class WorkStream:
         log_path: Path,
         idle_timeout: float,
         on_chunk: Callable[[], None],
+        input_record: dict,
     ) -> None:
         self._chunks = chunks
         self._log_path = log_path
         self._idle_timeout = idle_timeout
         self._on_chunk = on_chunk
+        self._input_record = input_record
 
     def run(
         self,
@@ -39,6 +42,8 @@ class WorkStream:
         threading.Thread(target=_feed, daemon=True).start()
 
         log = open(self._log_path, "wb")  # noqa: WPS515
+        log.write(json.dumps(self._input_record).encode() + b"\n")
+        log.flush()
         try:
 
             def _lines():
