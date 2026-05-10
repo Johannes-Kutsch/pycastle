@@ -23,7 +23,7 @@ class PreflightReady:
 
 @dataclasses.dataclass(frozen=True)
 class PreflightHITL:
-    worktree_sha: str
+    sha: str
     issue_number: int
 
 
@@ -133,7 +133,7 @@ async def ensure_preflight(
         except AgentOutputProtocolError as parse_exc:
             raise RuntimeError(str(parse_exc)) from parse_exc
         if verdict == "hitl":
-            return PreflightHITL(worktree_sha=sha, issue_number=pf_num)
+            return PreflightHITL(sha=sha, issue_number=pf_num)
         return PreflightAFK(sha=sha, issue_number=pf_num)
 
     result = PreflightReady(sha=sha)

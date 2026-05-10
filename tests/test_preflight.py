@@ -93,7 +93,7 @@ def test_ensure_preflight_returns_hitl_when_checks_fail_with_hitl_label(
 
     assert isinstance(result, PreflightHITL)
     assert result.issue_number == 55
-    assert result.worktree_sha == "abc123"
+    assert result.sha == "abc123"
 
 
 def test_ensure_preflight_returns_afk_when_checks_fail_with_afk_label(
