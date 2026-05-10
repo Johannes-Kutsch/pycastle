@@ -94,7 +94,9 @@ class AgentFailedError(PycastleError):
 
     @property
     def session_dir(self) -> str:
-        parts = [".pycastle-session", self.role_value]
-        if self.namespace:
-            parts.append(self.namespace)
-        return "/".join(parts)
+        from .agent_output_protocol import (
+            AgentRole,
+        )  # deferred to break circular import
+        from .session_resume import session_dir_rel
+
+        return session_dir_rel(AgentRole(self.role_value), self.namespace).rstrip("/")

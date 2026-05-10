@@ -27,6 +27,7 @@ from .services import (
     GithubService,
     GitService,
 )
+from .session_resume import SESSION_DIR_NAME
 from .status_display import StatusDisplay
 from .worktree import remove_worktrees_dir_if_empty
 
@@ -50,7 +51,7 @@ class FileLogger:
         pass
 
 
-_SESSION_EXCLUDES = (".pycastle-session/", ".claude/")
+_SESSION_EXCLUDES = (f"{SESSION_DIR_NAME}/", ".claude/")
 
 
 def ensure_session_excludes(repo_root: Path) -> None:

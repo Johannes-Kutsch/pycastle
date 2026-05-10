@@ -5,12 +5,17 @@ import uuid
 
 from pycastle.agent_output_protocol import AgentRole
 from pycastle.session_resume import (
+    SESSION_DIR_NAME,
     RunKind,
     any_role_dir_present,
+    clear_stage,
     decide_agent_run_kind,
     derived_session_uuid,
     has_resumable_session,
     is_stage_done,
+    is_stage_done_for,
+    session_dir_path,
+    session_dir_rel,
 )
 
 
@@ -228,3 +233,86 @@ def test_derived_session_uuid_namespace_is_valid_uuid(tmp_path):
     result = derived_session_uuid(AgentRole.IMPROVE, tmp_path, session_namespace="main")
     parsed = uuid.UUID(result)
     assert str(parsed) == result
+
+
+# ── SESSION_DIR_NAME constant ─────────────────────────────────────────────────
+
+
+def test_session_dir_name_constant():
+    assert SESSION_DIR_NAME == ".pycastle-session"
+
+
+# ── session_dir_path ──────────────────────────────────────────────────────────
+
+
+def test_session_dir_path_empty_namespace(tmp_path):
+    result = session_dir_path(tmp_path, AgentRole.IMPLEMENTER)
+    assert result == tmp_path / ".pycastle-session" / "implementer"
+
+
+def test_session_dir_path_non_empty_namespace(tmp_path):
+    result = session_dir_path(tmp_path, AgentRole.IMPROVE, namespace="main")
+    assert result == tmp_path / ".pycastle-session" / "improve" / "main"
+
+
+# ── session_dir_rel ───────────────────────────────────────────────────────────
+
+
+def test_session_dir_rel_empty_namespace_matches_claude_config_dir_shape():
+    result = session_dir_rel(AgentRole.IMPLEMENTER)
+    assert result == ".pycastle-session/implementer/"
+
+
+def test_session_dir_rel_non_empty_namespace_matches_claude_config_dir_shape():
+    result = session_dir_rel(AgentRole.IMPROVE, namespace="main")
+    assert result == ".pycastle-session/improve/main/"
+
+
+# ── is_stage_done_for ─────────────────────────────────────────────────────────
+
+
+def test_is_stage_done_for_absent(tmp_path):
+    assert is_stage_done_for(tmp_path, AgentRole.IMPLEMENTER) is False
+
+
+def test_is_stage_done_for_empty_dir(tmp_path):
+    session_dir_path(tmp_path, AgentRole.IMPLEMENTER).mkdir(parents=True)
+    assert is_stage_done_for(tmp_path, AgentRole.IMPLEMENTER) is True
+
+
+def test_is_stage_done_for_non_empty(tmp_path):
+    role_dir = session_dir_path(tmp_path, AgentRole.IMPLEMENTER)
+    role_dir.mkdir(parents=True)
+    (role_dir / "session.jsonl").write_text("{}\n")
+    assert is_stage_done_for(tmp_path, AgentRole.IMPLEMENTER) is False
+
+
+def test_is_stage_done_for_delegates_to_is_stage_done(tmp_path):
+    role_dir = session_dir_path(tmp_path, AgentRole.REVIEWER)
+    role_dir.mkdir(parents=True)
+    assert is_stage_done_for(tmp_path, AgentRole.REVIEWER) == is_stage_done(role_dir)
+
+
+# ── clear_stage ───────────────────────────────────────────────────────────────
+
+
+def test_clear_stage_clears_contents_but_leaves_dir(tmp_path):
+    role_dir = session_dir_path(tmp_path, AgentRole.IMPLEMENTER)
+    role_dir.mkdir(parents=True)
+    (role_dir / "session.jsonl").write_text("{}\n")
+
+    clear_stage(tmp_path, AgentRole.IMPLEMENTER)
+
+    assert role_dir.is_dir()
+    assert not any(role_dir.iterdir())
+
+
+def test_clear_stage_with_namespace(tmp_path):
+    role_dir = session_dir_path(tmp_path, AgentRole.IMPROVE, namespace="main")
+    role_dir.mkdir(parents=True)
+    (role_dir / "data.json").write_text("{}")
+
+    clear_stage(tmp_path, AgentRole.IMPROVE, namespace="main")
+
+    assert role_dir.is_dir()
+    assert not any(role_dir.iterdir())
