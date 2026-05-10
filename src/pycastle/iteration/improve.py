@@ -12,7 +12,7 @@ from ..agent_output_protocol import (
 )
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..errors import AgentFailedError
+from ..errors import AgentFailedError, AgentTimeoutError
 from ..prompt_pipeline import PromptTemplate, Scope, build_issue_scope_args
 from ..services import GitService
 from ..services.github_service import GithubService
@@ -202,24 +202,30 @@ async def improve_phase(
                 is_mid_phase_retry = in_flight_id == phase_key
                 role_session_dir.mkdir(parents=True, exist_ok=True)
                 in_flight_file.write_text(phase_key, encoding="utf-8")
-                output = await deps.agent_runner.run(
-                    RunRequest(
-                        name=phase.display_name,
-                        template=template,
-                        mount_path=sandbox_path,
-                        role=AgentRole.IMPROVE,
-                        skip_preflight=True,
-                        scope_args=scope_args,
-                        model=deps.cfg.improve_override.model,
-                        effort=deps.cfg.improve_override.effort,
-                        stage="improve-sandbox",
-                        status_display=deps.status_display,
-                        work_body=phase.display_body,
-                        send_role_prompt_on_resume=last_id is not None
-                        and not is_mid_phase_retry,
-                        session_namespace=phase.namespace,
+                try:
+                    output = await deps.agent_runner.run(
+                        RunRequest(
+                            name=phase.display_name,
+                            template=template,
+                            mount_path=sandbox_path,
+                            role=AgentRole.IMPROVE,
+                            skip_preflight=True,
+                            scope_args=scope_args,
+                            model=deps.cfg.improve_override.model,
+                            effort=deps.cfg.improve_override.effort,
+                            stage="improve-sandbox",
+                            status_display=deps.status_display,
+                            work_body=phase.display_body,
+                            send_role_prompt_on_resume=last_id is not None
+                            and not is_mid_phase_retry,
+                            session_namespace=phase.namespace,
+                        )
                     )
-                )
+                except AgentTimeoutError as err:
+                    if not err.role_value:
+                        err.role_value = AgentRole.IMPROVE.value
+                        err.worktree_path = sandbox_path
+                    raise
 
                 if isinstance(output, FailedOutput):
                     raise AgentFailedError(

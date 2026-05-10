@@ -1,11 +1,12 @@
 import dataclasses
 from datetime import datetime
+from pathlib import Path
 from typing import TypeAlias
 
 from ..agent_output_protocol import AgentRole, IssueOutput
 from ..agent_result import CancellationToken
 from ..agent_runner import RunRequest
-from ..errors import AgentFailedError, UsageLimitError
+from ..errors import AgentFailedError, AgentTimeoutError, UsageLimitError
 from ..prompt_pipeline import PromptTemplate
 from ..worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
@@ -55,6 +56,12 @@ class AbortedAgentFailure:
     issue_number: int | None = None
 
 
+@dataclasses.dataclass(frozen=True)
+class AbortedTimeout:
+    failed_role: str
+    worktree_path: Path
+
+
 IterationOutcome: TypeAlias = (
     Continue
     | Done
@@ -62,6 +69,7 @@ IterationOutcome: TypeAlias = (
     | AbortedUsageLimit
     | NoCandidate
     | AbortedAgentFailure
+    | AbortedTimeout
 )
 
 
@@ -197,3 +205,8 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
     except UsageLimitError as err:
         return AbortedUsageLimit(reset_time=err.reset_time)
+    except AgentTimeoutError as err:
+        return AbortedTimeout(
+            failed_role=err.role_value,
+            worktree_path=err.worktree_path or deps.repo_root,
+        )
