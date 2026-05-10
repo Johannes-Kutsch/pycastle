@@ -208,9 +208,9 @@ def test_rich_agent_names_are_right_aligned_by_elapsed_column(monkeypatch) -> No
     import pycastle.rich_status_display as mod
 
     # #7 started at t=0, #42 started at t=270; render at t=312
-    # elapsed #7 = 5m 12s (6 chars), elapsed #42 = 42s (3 chars)
-    # right-justified elapsed column must be 6 chars wide for both rows,
-    # so both "Implement Agent" names start at the same column.
+    # elapsed #7 = 5m 12s, elapsed #42 = 42s — different widths.
+    # Rich right-aligns the elapsed column naturally, so both agent names
+    # start at the same column regardless of fixed-width enforcement.
     times = iter([0.0, 270.0] + [312.0] * 20)
     monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
 
