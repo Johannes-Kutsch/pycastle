@@ -80,7 +80,7 @@ Iterate the breakdown in your reasoning until the answers are clean.
 
 ## 5. File the issues
 
-For each approved slice, publish a new issue. **Always write the body to a temp file and use `gh issue create --body-file`.** Each title must start with `[improve-{{IMPROVE_SHORT_SID}}]`. Apply the `ready-for-agent` label so an agent can start work on the issue.
+For each approved slice, publish a new issue. **Always write the body to a temp file and use `gh issue create --body-file`.** Each title must start with `[auto-generated-improve]`. Apply the `ready-for-agent` label so an agent can start work on the issue.
 
 Publish issues in dependency order (blockers first) so you can reference real issue identifiers in the `Blocked by` field. The CONTEXT.md issue from step 2, if any, is filed first; every other slice references it.
 
@@ -111,7 +111,7 @@ Or "None - can start immediately" if no blockers.
 
 Explicitly state that this slice is autonomous-safe: no CLI surface changes, no breaking config changes, no ADR contradictions, no product/UX decisions.
 
-_Filed by improve session [improve-{{IMPROVE_SHORT_SID}}]._
+_Filed by improve session_
 ```
 
 ## Sub-issue registration
