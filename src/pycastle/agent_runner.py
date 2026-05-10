@@ -119,6 +119,15 @@ class AgentRunner:
         return resume_text + "\n\n" + role_prompt
 
     async def run(self, request: RunRequest) -> AgentOutput:
+        try:
+            return await self._run(request)
+        except AgentTimeoutError as err:
+            if not err.role_value:
+                err.role_value = request.role.value
+                err.worktree_path = request.mount_path
+            raise
+
+    async def _run(self, request: RunRequest) -> AgentOutput:
         from .iteration._rows import agent_row
 
         name = request.name

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from ..agent_output_protocol import AgentOutput
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..errors import AgentTimeoutError
 from ..services import GitService
 from ..services import GithubService
 from ..status_display import StatusDisplay
@@ -88,6 +89,15 @@ class FakeAgentRunner:
         self.preflight_calls: list[dict] = []
 
     async def run(self, request: RunRequest) -> AgentOutput:
+        try:
+            return await self._run(request)
+        except AgentTimeoutError as err:
+            if not err.role_value:
+                err.role_value = request.role.value
+                err.worktree_path = request.mount_path
+            raise
+
+    async def _run(self, request: RunRequest) -> AgentOutput:
         self.calls.append(request)
         if self._side_effect is not None:
             result = self._side_effect(request)
