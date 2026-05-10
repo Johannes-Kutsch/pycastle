@@ -18,7 +18,9 @@ from pycastle.iteration._deps import (
     FakeAgentRunner,
     RecordingLogger,
     RecordingStatusDisplay,
+    StubPreflightCache,
 )
+from pycastle.services import GithubService
 from pycastle.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.iteration.implement import (
     ImplementResult,
@@ -37,12 +39,14 @@ class _ImplementStub:
     status_display: StatusDisplay
     agent_runner: FakeAgentRunner
     git_svc: GitService
+    github_svc: GithubService
     repo_root: Path
     logger: RecordingLogger
+    preflight_cache: StubPreflightCache
 
 
 def _make_deps(
-    tmp_path, agent_runner, logger=None, status_display=None
+    tmp_path, agent_runner, logger=None, status_display=None, preflight_cache=None
 ) -> _ImplementStub:
     import shutil as _shutil
 
@@ -69,10 +73,12 @@ def _make_deps(
     return _ImplementStub(
         repo_root=tmp_path,
         git_svc=git_svc,
+        github_svc=MagicMock(spec=GithubService),
         agent_runner=agent_runner,
         cfg=Config(max_parallel=4, max_iterations=1),
         logger=logger or RecordingLogger(),
         status_display=status_display or PlainStatusDisplay(),
+        preflight_cache=preflight_cache or StubPreflightCache(),
     )
 
 
@@ -100,7 +106,7 @@ def test_implement_phase_returns_completed_issues(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 4)
 
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, None, deps))
+    result = asyncio.run(implement_phase(issues, deps))
 
     assert result.completed == issues
     assert result.errors == []
@@ -112,7 +118,7 @@ def test_implement_phase_empty_issues_returns_empty_result(tmp_path):
     fake = FakeAgentRunner([])
 
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase([], None, deps))
+    result = asyncio.run(implement_phase([], deps))
 
     assert result.completed == []
     assert result.errors == []
@@ -132,7 +138,7 @@ def test_implement_phase_signals_usage_limit_in_result(tmp_path):
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, None, deps))
+    result = asyncio.run(implement_phase(issues, deps))
 
     assert result.usage_limit_hit is True
 
@@ -148,7 +154,7 @@ def test_implement_phase_usage_limit_does_not_exit(tmp_path):
     deps = _make_deps(tmp_path, fake)
 
     # Should not raise SystemExit
-    result = asyncio.run(implement_phase(issues, None, deps))
+    result = asyncio.run(implement_phase(issues, deps))
     assert isinstance(result, ImplementResult)
 
 
@@ -168,7 +174,7 @@ def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
     ]
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
-    asyncio.run(implement_phase(issues, None, deps))
+    asyncio.run(implement_phase(issues, deps))
 
     assert any("Implement Agent #2" in n for n in completed_agents), (
         f"Sibling Implement Agent #2 must complete before returning; completed={completed_agents}"
@@ -192,7 +198,7 @@ def test_implement_phase_exception_goes_to_errors(tmp_path):
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, None, deps))
+    result = asyncio.run(implement_phase(issues, deps))
 
     assert result.completed == [issues[0]]
     assert len(result.errors) == 1
@@ -206,7 +212,7 @@ def test_implement_phase_no_complete_tag_goes_to_errors(tmp_path):
     fake = FakeAgentRunner([PromiseParseError("no <promise>COMPLETE</promise> tag")])
 
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, None, deps))
+    result = asyncio.run(implement_phase(issues, deps))
 
     assert result.completed == []
     assert len(result.errors) == 1
@@ -223,7 +229,7 @@ def test_implement_phase_logs_exception_via_logger(tmp_path):
     fake = FakeAgentRunner([boom])
 
     deps = _make_deps(tmp_path, fake, logger=logger)
-    asyncio.run(implement_phase(issues, None, deps))
+    asyncio.run(implement_phase(issues, deps))
 
     assert len(logger.errors) == 1
     assert logger.errors[0][0] == issues[0]
@@ -237,7 +243,7 @@ def test_implement_phase_successful_issues_not_logged_as_errors(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
 
     deps = _make_deps(tmp_path, fake, logger=logger)
-    asyncio.run(implement_phase(issues, None, deps))
+    asyncio.run(implement_phase(issues, deps))
 
     assert logger.errors == []
 
@@ -249,7 +255,7 @@ def test_implement_phase_does_not_log_implementer_output(tmp_path):
     fake = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
 
     deps = _make_deps(tmp_path, fake, logger=logger)
-    asyncio.run(implement_phase(issues, None, deps))
+    asyncio.run(implement_phase(issues, deps))
 
     assert logger.agent_outputs == []
 
@@ -265,7 +271,7 @@ def test_implement_phase_reviewer_usage_limit_signals_in_result(tmp_path):
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, None, deps))
+    result = asyncio.run(implement_phase(issues, deps))
 
     assert result.usage_limit_hit is True
     assert result.completed == []
@@ -383,7 +389,7 @@ def test_implement_phase_implementer_timeout_tracked_as_error(tmp_path):
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, None, deps))
+    result = asyncio.run(implement_phase(issues, deps))
 
     assert result.completed == []
     assert len(result.errors) == 1
@@ -402,7 +408,7 @@ def test_implement_phase_reviewer_timeout_does_not_complete_issue(tmp_path):
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, None, deps))
+    result = asyncio.run(implement_phase(issues, deps))
 
     assert result.completed == []
     assert len(result.errors) == 1
@@ -776,6 +782,26 @@ def test_run_issue_releases_lock_on_unexpected_exception(tmp_path):
     assert not branch_locks["pycastle/issue-25"].locked()
 
 
+def test_run_issue_implementer_worktree_uses_sha_from_preflight_cache(tmp_path):
+    """run_issue must pin the implementer worktree to verdict.sha from preflight_cache.get_safe_sha()."""
+    from pycastle.iteration.preflight import PreflightReady
+
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        preflight_cache=StubPreflightCache(PreflightReady(sha="dead1234")),
+    )
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    issue = {"number": 16, "title": "Fix thing", "body": "", "comments": []}
+    asyncio.run(run_issue(issue, deps))
+
+    assert deps.git_svc.create_worktree.call_count == 2
+    implementer_sha = deps.git_svc.create_worktree.call_args_list[0][0][3]
+    assert implementer_sha == "dead1234"
+
+
 def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
     """run_issue must create the Reviewer worktree without a pinned SHA (existing-branch path)."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
@@ -783,7 +809,7 @@ def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
     deps.git_svc.is_working_tree_clean.return_value = True
 
     issue = {"number": 16, "title": "Fix thing", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps, sha="abc123"))
+    asyncio.run(run_issue(issue, deps))
 
     assert deps.git_svc.create_worktree.call_count == 2
     reviewer_sha = deps.git_svc.create_worktree.call_args_list[1][0][3]
@@ -803,7 +829,7 @@ def test_implement_phase_sets_initial_progress_text(tmp_path):
     sd = RecordingStatusDisplay()
     deps = _make_deps(tmp_path, fake, status_display=sd)
 
-    asyncio.run(implement_phase(issues, None, deps))
+    asyncio.run(implement_phase(issues, deps))
 
     update_phase_calls = [
         c for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
@@ -826,7 +852,7 @@ def test_implement_phase_increments_progress_text_per_semaphore_acquisition(tmp_
     sd = RecordingStatusDisplay()
     deps = _make_deps(tmp_path, fake, status_display=sd)
 
-    asyncio.run(implement_phase(issues, None, deps))
+    asyncio.run(implement_phase(issues, deps))
 
     update_phase_calls = [
         c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
@@ -844,7 +870,7 @@ def test_implement_phase_progress_total_matches_issue_count(tmp_path):
     sd = RecordingStatusDisplay()
     deps = _make_deps(tmp_path, fake, status_display=sd)
 
-    asyncio.run(implement_phase(issues, None, deps))
+    asyncio.run(implement_phase(issues, deps))
 
     initial = next(
         c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
@@ -859,7 +885,7 @@ def test_implement_phase_counter_is_monotonic(tmp_path):
     sd = RecordingStatusDisplay()
     deps = _make_deps(tmp_path, fake, status_display=sd)
 
-    asyncio.run(implement_phase(issues, None, deps))
+    asyncio.run(implement_phase(issues, deps))
 
     counts = [
         int(c[2].split("for ")[1].split("/")[0])
