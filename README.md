@@ -21,7 +21,9 @@ pip install pycastle
 
 ### `pycastle init`
 
-Copies the default `pycastle/` configuration directory into your project root. This directory contains the `Dockerfile`, `config.py`, and prompt templates (`plan-prompt.md`, `implement-prompt.md`, `review-prompt.md`, `merge-prompt.md`, `CODING_STANDARDS.md`) that drive the agents. Run this once per repository, then customise the files to suit your project.
+Copies the default `pycastle/` configuration directory into your project root. This directory contains the `Dockerfile`, `config.py`, prompt templates that drive the agents (`plan-prompt.md`, `implement-prompt.md`, `review-prompt.md`, `merge-prompt.md`, plus coding standards under `prompts/coding-standards/`), and the cron wrappers (`cron.sh`, `cron-install.sh`, `cron-uninstall.sh`). Run this once per repository, then customise the files to suit your project.
+
+Pass `--refresh` to re-copy every bundled default over the existing files, leaving `config.py` and `.env` untouched. `cron.sh` invokes this on every tick so bug fixes ship automatically when you upgrade pycastle.
 
 ```bash
 pycastle init                # asks once: scaffold config.py / .env globally or locally?
@@ -55,7 +57,21 @@ Runs the full agent pipeline. The pipeline iterates up to `max_iterations` times
 
 ```bash
 pycastle run
+pycastle run --improve              # dispatch the improve agent when no issues are ready (defaults to 'until_sleep')
+pycastle run --improve endless      # keep generating improvements until Ctrl-C
 ```
+
+Set `improve_mode = "until_sleep"` (or `"endless"`) in `pycastle/config.py` to make this the default for a repo without passing the flag every time — useful for the cron wrapper. The CLI flag overrides the config value.
+
+## Unattended operation
+
+Every `pycastle init` (and `pycastle init --refresh`) scaffolds three host-side cron helpers into your project's `pycastle/` directory:
+
+- `cron.sh` — bootstrap-and-run wrapper. Acquires a global flock at `$PYCASTLE_HOME/.cron.lock` (6-hour timeout) so multiple repos on the same host serialize cleanly, asserts `.venv/` exists, upgrades pycastle, reinstalls the consuming project, runs `pycastle init --refresh`, rebuilds the Docker image, and finally invokes `pycastle run`.
+- `cron-install.sh` — idempotently installs a daily entry (`0 1 * * *`) into your user crontab, tagged `# pycastle:<absolute-repo-path>` so multiple repos coexist.
+- `cron-uninstall.sh` — removes only the line bearing this repo's marker.
+
+For a step-by-step setup on a fresh Raspberry Pi (or any Debian host), see [`pi-setup.md`](src/pycastle/defaults/pi-setup.md).
 
 ## How the pipeline works
 
@@ -119,6 +135,8 @@ All runtime configuration lives in `pycastle/config.py`. Key settings:
 | `preflight_checks` | ruff, mypy, pytest | Commands run before planning |
 | `implement_checks` | ruff fix, mypy, pytest | Commands the implementer must pass |
 | `skip_preflight` | `False` | Set to `True` to bypass preflight entirely |
+| `improve_mode` | `None` | `"until_sleep"` or `"endless"`; default for `pycastle run` when no `--improve` flag is passed |
+| `improve_max` | `1` | Maximum improve-agent dispatches per run when improve mode is active |
 | `plan_override` / `implement_override` / `review_override` / `merge_override` | — | Per-stage model and effort overrides |
 
 Edit `pycastle/config.py` (created by `pycastle init`) to tailor these to your project.
