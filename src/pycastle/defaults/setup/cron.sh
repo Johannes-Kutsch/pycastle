@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Crontab usage:
-#   0 * * * * /absolute/path/to/repo/pycastle/cron.sh >> /path/to/logfile.log 2>&1
+#   0 * * * * /absolute/path/to/repo/pycastle/setup/cron.sh >> /path/to/logfile.log 2>&1
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 if [ ! -d ".venv" ]; then
     echo "Error: .venv/ not found. Create it first: python -m venv .venv && .venv/bin/pip install pycastle" >&2

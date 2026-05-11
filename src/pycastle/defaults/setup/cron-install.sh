@@ -6,9 +6,9 @@ if ! command -v crontab >/dev/null 2>&1; then
     exit 1
 fi
 
-REPO_ROOT="$(realpath "$(dirname "$0")/..")"
+REPO_ROOT="$(realpath "$(dirname "$0")/../..")"
 MARKER="# pycastle:$REPO_ROOT"
-CRON_LINE="0 1 * * * $REPO_ROOT/pycastle/cron.sh $MARKER"
+CRON_LINE="0 1 * * * $REPO_ROOT/pycastle/setup/cron.sh $MARKER"
 
 kept=""
 while IFS= read -r line || [ -n "$line" ]; do

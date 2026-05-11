@@ -22,9 +22,9 @@ def test_init_creates_all_scaffold_files(tmp_path, monkeypatch):
     assert (scaffold / ".env").exists()
     assert (scaffold / "Dockerfile").exists()
     assert (scaffold / ".gitignore").exists()
-    assert (scaffold / "cron.sh").exists()
-    assert (scaffold / "cron-install.sh").exists()
-    assert (scaffold / "cron-uninstall.sh").exists()
+    assert (scaffold / "setup" / "cron.sh").exists()
+    assert (scaffold / "setup" / "cron-install.sh").exists()
+    assert (scaffold / "setup" / "cron-uninstall.sh").exists()
     assert (scaffold / "prompts" / "plan-prompt.md").exists()
     assert (scaffold / "prompts" / "implement-prompt.md").exists()
     assert (scaffold / "prompts" / "review-prompt.md").exists()
@@ -44,7 +44,7 @@ def test_init_cron_sh_is_executable(tmp_path, monkeypatch):
     ):
         main()
 
-    cron_sh = tmp_path / "pycastle" / "cron.sh"
+    cron_sh = tmp_path / "pycastle" / "setup" / "cron.sh"
     mode = cron_sh.stat().st_mode
     assert mode & stat.S_IXUSR, "cron.sh must be user-executable"
 
@@ -447,7 +447,7 @@ def test_init_refresh_copies_cron_sh(tmp_path, monkeypatch):
     ):
         main(scope="local")
 
-    cron_sh = tmp_path / "pycastle" / "cron.sh"
+    cron_sh = tmp_path / "pycastle" / "setup" / "cron.sh"
     cron_sh.unlink()
 
     refresh()
@@ -466,7 +466,7 @@ def test_init_refresh_copies_cron_install_sh(tmp_path, monkeypatch):
     ):
         main(scope="local")
 
-    cron_install = tmp_path / "pycastle" / "cron-install.sh"
+    cron_install = tmp_path / "pycastle" / "setup" / "cron-install.sh"
     cron_install.unlink()
 
     refresh()
@@ -485,7 +485,7 @@ def test_init_refresh_copies_cron_uninstall_sh(tmp_path, monkeypatch):
     ):
         main(scope="local")
 
-    cron_uninstall = tmp_path / "pycastle" / "cron-uninstall.sh"
+    cron_uninstall = tmp_path / "pycastle" / "setup" / "cron-uninstall.sh"
     cron_uninstall.unlink()
 
     refresh()

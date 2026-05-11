@@ -6,7 +6,7 @@ if ! command -v crontab >/dev/null 2>&1; then
     exit 1
 fi
 
-REPO_ROOT="$(realpath "$(dirname "$0")/..")"
+REPO_ROOT="$(realpath "$(dirname "$0")/../..")"
 MARKER="# pycastle:$REPO_ROOT"
 
 kept=""
