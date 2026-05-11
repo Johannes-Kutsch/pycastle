@@ -1,9 +1,14 @@
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32", reason="bash/crontab not available on Windows"
+)
 
 DEFAULTS_DIR = Path(__file__).parent.parent / "src" / "pycastle" / "defaults"
 SETUP_DIR = DEFAULTS_DIR / "setup"
