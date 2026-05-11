@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 import sys
 from importlib.resources import files
 from importlib.resources.abc import Traversable
@@ -75,6 +76,10 @@ def _copy_template(rel: str, target: Path, pkg: Traversable) -> None:
         src = src / part
     try:
         target.write_bytes(src.read_bytes())
+        if target.suffix == ".sh":
+            target.chmod(
+                target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+            )
     except Exception as e:
         click.echo(
             click.style(f"Error: could not write {target} — {e}", fg="red"),
