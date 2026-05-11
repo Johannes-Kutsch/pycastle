@@ -193,12 +193,15 @@ def run_cmd(improve_mode: str | None) -> None:
     container_env = {
         k: v for k, v in env.items() if k != "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY"
     }
+    effective_improve_mode = (
+        improve_mode if improve_mode is not None else cfg.improve_mode
+    )
     asyncio.run(
         run(
             container_env,
             Path(".").resolve(),
             account_pool=pool,
-            improve_mode=cast(ImproveMode, improve_mode),
+            improve_mode=cast(ImproveMode, effective_improve_mode),
         )
     )
 
