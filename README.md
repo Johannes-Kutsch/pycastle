@@ -21,7 +21,7 @@ pip install pycastle
 
 ### `pycastle init`
 
-Copies the default `pycastle/` configuration directory into your project root. This directory contains the `Dockerfile`, `config.py`, prompt templates that drive the agents (`plan-prompt.md`, `implement-prompt.md`, `review-prompt.md`, `merge-prompt.md`, plus coding standards under `prompts/coding-standards/`), and the cron wrappers (`cron.sh`, `cron-install.sh`, `cron-uninstall.sh`). Run this once per repository, then customise the files to suit your project.
+Copies the default `pycastle/` configuration directory into your project root. This directory contains the `Dockerfile`, `config.py`, prompt templates that drive the agents (`plan-prompt.md`, `implement-prompt.md`, `review-prompt.md`, `merge-prompt.md`, plus coding standards under `prompts/coding-standards/`), and the cron wrappers (`setup/cron.sh`, `setup/cron-install.sh`, `setup/cron-uninstall.sh`). Run this once per repository, then customise the files to suit your project.
 
 Pass `--refresh` to re-copy every bundled default over the existing files, leaving `config.py` and `.env` untouched. `cron.sh` invokes this on every tick so bug fixes ship automatically when you upgrade pycastle.
 
@@ -65,13 +65,13 @@ Set `improve_mode = "until_sleep"` (or `"endless"`) in `pycastle/config.py` to m
 
 ## Unattended operation
 
-Every `pycastle init` (and `pycastle init --refresh`) scaffolds three host-side cron helpers into your project's `pycastle/` directory:
+Every `pycastle init` (and `pycastle init --refresh`) scaffolds three host-side cron helpers into your project's `pycastle/setup/` directory:
 
-- `cron.sh` — bootstrap-and-run wrapper. Acquires a global flock at `$PYCASTLE_HOME/.cron.lock` (6-hour timeout) so multiple repos on the same host serialize cleanly, asserts `.venv/` exists, upgrades pycastle, reinstalls the consuming project, runs `pycastle init --refresh`, rebuilds the Docker image, and finally invokes `pycastle run`.
-- `cron-install.sh` — idempotently installs a daily entry (`0 1 * * *`) into your user crontab, tagged `# pycastle:<absolute-repo-path>` so multiple repos coexist.
-- `cron-uninstall.sh` — removes only the line bearing this repo's marker.
+- `setup/cron.sh` — bootstrap-and-run wrapper. Acquires a global flock at `$PYCASTLE_HOME/.cron.lock` (6-hour timeout) so multiple repos on the same host serialize cleanly, asserts `.venv/` exists, upgrades pycastle, reinstalls the consuming project, runs `pycastle init --refresh`, rebuilds the Docker image, and finally invokes `pycastle run`.
+- `setup/cron-install.sh` — idempotently installs a daily entry (`0 1 * * *`) into your user crontab, tagged `# pycastle:<absolute-repo-path>` so multiple repos coexist.
+- `setup/cron-uninstall.sh` — removes only the line bearing this repo's marker.
 
-For a step-by-step setup on a fresh Raspberry Pi (or any Debian host), see [`pi-setup.md`](src/pycastle/defaults/pi-setup.md).
+For a step-by-step setup on a fresh Raspberry Pi (or any Debian host), see [`pi-setup.md`](src/pycastle/defaults/setup/pi-setup.md).
 
 ## How the pipeline works
 

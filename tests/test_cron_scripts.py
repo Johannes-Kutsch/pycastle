@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 DEFAULTS_DIR = Path(__file__).parent.parent / "src" / "pycastle" / "defaults"
+SETUP_DIR = DEFAULTS_DIR / "setup"
 
 
 @pytest.fixture()
@@ -40,12 +41,12 @@ def cron_env(tmp_path, fake_crontab):
     """Fake consuming project with cron scripts and fake crontab shim on PATH."""
     bin_dir, data_file = fake_crontab
 
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
+    setup_dir = tmp_path / "pycastle" / "setup"
+    setup_dir.mkdir(parents=True)
 
     for script in ["cron-install.sh", "cron-uninstall.sh"]:
-        dst = pycastle_dir / script
-        dst.write_bytes((DEFAULTS_DIR / script).read_bytes())
+        dst = setup_dir / script
+        dst.write_bytes((SETUP_DIR / script).read_bytes())
         dst.chmod(dst.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
     env = os.environ.copy()
@@ -53,8 +54,8 @@ def cron_env(tmp_path, fake_crontab):
 
     return {
         "project_dir": tmp_path,
-        "install_sh": pycastle_dir / "cron-install.sh",
-        "uninstall_sh": pycastle_dir / "cron-uninstall.sh",
+        "install_sh": setup_dir / "cron-install.sh",
+        "uninstall_sh": setup_dir / "cron-uninstall.sh",
         "env": env,
         "data_file": data_file,
     }
@@ -126,7 +127,7 @@ def test_uninstall_is_noop_when_no_matching_line(cron_env):
 
 
 def test_uninstall_leaves_other_lines_intact(cron_env):
-    other = "0 2 * * * /other/repo/pycastle/cron.sh # pycastle:/other/repo"
+    other = "0 2 * * * /other/repo/pycastle/setup/cron.sh # pycastle:/other/repo"
     cron_env["data_file"].write_text(other + "\n")
 
     _run(cron_env["install_sh"], cron_env["env"])
@@ -140,7 +141,7 @@ def test_uninstall_leaves_other_lines_intact(cron_env):
 def test_uninstall_does_not_touch_repo_whose_path_extends_ours(cron_env):
     """Marker match must anchor to end-of-line: '# pycastle:/a' must not match '# pycastle:/ab'."""
     sibling = f"{cron_env['project_dir']}-sibling"
-    sibling_line = f"0 1 * * * {sibling}/pycastle/cron.sh # pycastle:{sibling}"
+    sibling_line = f"0 1 * * * {sibling}/pycastle/setup/cron.sh # pycastle:{sibling}"
     cron_env["data_file"].write_text(sibling_line + "\n")
 
     _run(cron_env["install_sh"], cron_env["env"])
@@ -154,10 +155,10 @@ def test_uninstall_does_not_touch_repo_whose_path_extends_ours(cron_env):
 
 
 def test_install_fails_when_crontab_not_on_path(tmp_path):
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    install_sh = pycastle_dir / "cron-install.sh"
-    install_sh.write_bytes((DEFAULTS_DIR / "cron-install.sh").read_bytes())
+    setup_dir = tmp_path / "pycastle" / "setup"
+    setup_dir.mkdir(parents=True)
+    install_sh = setup_dir / "cron-install.sh"
+    install_sh.write_bytes((SETUP_DIR / "cron-install.sh").read_bytes())
     install_sh.chmod(install_sh.stat().st_mode | stat.S_IEXEC)
 
     empty_bin = tmp_path / "empty_bin"
@@ -172,10 +173,10 @@ def test_install_fails_when_crontab_not_on_path(tmp_path):
 
 
 def test_uninstall_fails_when_crontab_not_on_path(tmp_path):
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    uninstall_sh = pycastle_dir / "cron-uninstall.sh"
-    uninstall_sh.write_bytes((DEFAULTS_DIR / "cron-uninstall.sh").read_bytes())
+    setup_dir = tmp_path / "pycastle" / "setup"
+    setup_dir.mkdir(parents=True)
+    uninstall_sh = setup_dir / "cron-uninstall.sh"
+    uninstall_sh.write_bytes((SETUP_DIR / "cron-uninstall.sh").read_bytes())
     uninstall_sh.chmod(uninstall_sh.stat().st_mode | stat.S_IEXEC)
 
     empty_bin = tmp_path / "empty_bin"

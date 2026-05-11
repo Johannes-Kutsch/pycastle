@@ -1,6 +1,6 @@
 # Pi Setup Runbook
 
-Brings a fresh Pi to the point where the cron wrapper (`pycastle/cron.sh`) takes over a consuming project.
+Brings a fresh Pi to the point where the cron wrapper (`pycastle/setup/cron.sh`) takes over a consuming project.
 Target completion time: under one hour for an attentive operator with no prior knowledge of this project.
 
 For an overview of what pycastle does and how the pipeline works, read the project README first.
@@ -138,7 +138,7 @@ Pycastle needs a GitHub PAT and a Claude OAuth token. Have these ready before ru
     .venv/bin/pycastle init
     ```
     Paste your `GH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` when prompted.
-    Expected: `pycastle/` directory created containing `Dockerfile`, `config.py`, `.env`, `cron.sh`, `cron-install.sh`, `cron-uninstall.sh`, and `prompts/`.
+    Expected: `pycastle/` directory created containing `Dockerfile`, `config.py`, `.env`, `setup/cron.sh`, `setup/cron-install.sh`, `setup/cron-uninstall.sh`, `setup/pi-setup.md`, and `prompts/`.
 
 17. Build the agent image:
     ```bash
@@ -152,7 +152,7 @@ Pycastle needs a GitHub PAT and a Claude OAuth token. Have these ready before ru
 
 18. Install the daily cron entry. The schedule is hardcoded to `0 1 * * *` (01:00 daily); the line is tagged `# pycastle:<absolute-repo-path>` so multiple repos coexist:
     ```bash
-    bash pycastle/cron-install.sh
+    bash pycastle/setup/cron-install.sh
     ```
     Expected: `crontab -l` shows a new line with the repo's marker.
 
@@ -183,7 +183,7 @@ The daily cron tick will then dispatch the improve agent automatically when no i
 
 20. Run the wrapper manually once to verify the full pipeline before waiting for cron:
     ```bash
-    bash pycastle/cron.sh
+    bash pycastle/setup/cron.sh
     ```
     Expected: pip upgrade ×2 completes, project reinstalled, `pycastle init --refresh` and `pycastle build` complete, `pycastle run` starts and exits cleanly (immediately if the issue tracker has nothing ready).
 
@@ -192,7 +192,7 @@ The daily cron tick will then dispatch the improve agent automatically when no i
 ## Detaching a repo
 
 ```bash
-bash pycastle/cron-uninstall.sh
+bash pycastle/setup/cron-uninstall.sh
 ```
 
 Removes only the line bearing this repo's marker. No-op if no matching line exists.
@@ -201,4 +201,4 @@ Removes only the line bearing this repo's marker. No-op if no matching line exis
 
 ## Logging
 
-`cron.sh` writes nothing to disk itself — handle output at the crontab level. To capture output, run `crontab -e` and append `>> /path/to/log 2>&1` to the installed line. The header comment in `pycastle/cron.sh` shows the canonical snippet.
+`cron.sh` writes nothing to disk itself — handle output at the crontab level. To capture output, run `crontab -e` and append `>> /path/to/log 2>&1` to the installed line. The header comment in `pycastle/setup/cron.sh` shows the canonical snippet.
