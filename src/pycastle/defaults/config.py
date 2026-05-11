@@ -44,9 +44,13 @@ from pycastle import StageOverride
 #     "pytest",
 # )
 
-# --- Improve cap ---
+# --- Improve ---
+# Default improve mode used when --improve is not passed on the CLI.
+# "until_sleep" exits after the first sleep clears the backlog; "endless" runs until Ctrl-C.
+# improve_mode = "until_sleep"
+
 # Maximum number of improve-agent dispatches per run. improve_mode must also
-# be active (--improve flag) for this to have any effect.
+# be active (--improve flag or improve_mode config) for this to have any effect.
 # improve_max = 1
 
 # --- Stage overrides ---

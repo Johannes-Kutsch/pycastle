@@ -422,3 +422,69 @@ def test_run_cmd_fails_fast_when_primary_token_missing_even_with_secondary(
 
     assert result.exit_code == 1
     assert "CLAUDE_CODE_OAUTH_TOKEN" in result.output
+
+
+# ── Issue 670: improve_mode config field / CLI precedence matrix ──────────────
+
+
+def _run_cmd_capturing_improve_mode(
+    tmp_path, monkeypatch, cli_args: list[str], cfg: Config
+):
+    """Helper: invoke run_cmd and return the improve_mode passed to orchestrator.run."""
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    captured: dict = {}
+
+    async def _fake_run(env, repo_root, **kwargs):
+        captured["improve_mode"] = kwargs.get("improve_mode")
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.orchestrator.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"] + cli_args)
+
+    assert result.exit_code == 0, result.output
+    return captured["improve_mode"]
+
+
+def test_run_cmd_improve_mode_absent_flag_absent_config_is_none(tmp_path, monkeypatch):
+    mode = _run_cmd_capturing_improve_mode(tmp_path, monkeypatch, [], Config())
+    assert mode is None
+
+
+def test_run_cmd_improve_mode_absent_flag_config_set_uses_config(tmp_path, monkeypatch):
+    mode = _run_cmd_capturing_improve_mode(
+        tmp_path, monkeypatch, [], Config(improve_mode="until_sleep")
+    )
+    assert mode == "until_sleep"
+
+
+def test_run_cmd_improve_mode_flag_set_absent_config_uses_flag(tmp_path, monkeypatch):
+    mode = _run_cmd_capturing_improve_mode(
+        tmp_path, monkeypatch, ["--improve", "endless"], Config()
+    )
+    assert mode == "endless"
+
+
+def test_run_cmd_improve_mode_flag_overrides_config(tmp_path, monkeypatch):
+    mode = _run_cmd_capturing_improve_mode(
+        tmp_path,
+        monkeypatch,
+        ["--improve", "endless"],
+        Config(improve_mode="until_sleep"),
+    )
+    assert mode == "endless"
+
+
+def test_run_cmd_improve_mode_bare_flag_defaults_to_until_sleep(tmp_path, monkeypatch):
+    mode = _run_cmd_capturing_improve_mode(
+        tmp_path, monkeypatch, ["--improve"], Config()
+    )
+    assert mode == "until_sleep"

@@ -694,3 +694,33 @@ def test_load_config_improve_max_rejects_zero_and_negative(tmp_path, bad):
             global_dir=tmp_path / "no_global",
             overrides={"improve_max": bad},
         )
+
+
+# ── Issue 670: improve_mode field ───────────────────────────────────────────
+
+
+def test_config_improve_mode_defaults_to_none():
+    assert Config().improve_mode is None
+
+
+@pytest.mark.parametrize("value", [None, "until_sleep", "endless"])
+def test_load_config_improve_mode_accepts_none_and_valid(tmp_path, value):
+    if value is None:
+        cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
+    else:
+        cfg = load_config(
+            repo_root=tmp_path,
+            global_dir=tmp_path / "no_global",
+            overrides={"improve_mode": value},
+        )
+    assert cfg.improve_mode == value
+
+
+@pytest.mark.parametrize("bad", ["UNTIL_SLEEP", "forever", "", "true"])
+def test_load_config_improve_mode_rejects_invalid(tmp_path, bad):
+    with pytest.raises(ConfigValidationError, match="improve_mode"):
+        load_config(
+            repo_root=tmp_path,
+            global_dir=tmp_path / "no_global",
+            overrides={"improve_mode": bad},
+        )
