@@ -73,6 +73,75 @@ Every `pycastle init` (and `pycastle init --refresh`) scaffolds three host-side 
 
 For a step-by-step setup on a fresh Raspberry Pi (or any Debian host), see [`pi-setup.md`](src/pycastle/defaults/setup/pi-setup.md).
 
+### Upgrading pycastle on a deployed host
+
+Run these steps inside each consuming project on the host (e.g. over SSH on the pi):
+
+1. **Enter the project and activate its venv**
+
+   ```bash
+   cd <project-dir>
+   source .venv/bin/activate
+   ```
+
+2. **Update pycastle**
+
+   ```bash
+   pip install --upgrade pycastle
+   # or pin: pip install --upgrade 'pycastle==<version>'
+   ```
+
+3. **Refresh the bundled defaults**
+
+   ```bash
+   pycastle init --refresh
+   ```
+
+   This re-copies the bundled `setup/` scripts, prompts, and Dockerfile, leaving your `config.py` and `.env` untouched.
+
+4. **Remove the existing cronjob**
+
+   The uninstall script keys off a marker derived from the project's absolute path, so it only touches that project's line:
+
+   ```bash
+   bash pycastle/setup/cron-uninstall.sh
+   ```
+
+5. **Install the new cronjob**
+
+   ```bash
+   bash pycastle/setup/cron-install.sh
+   ```
+
+6. **Verify**
+
+   ```bash
+   crontab -l | grep pycastle
+   ```
+
+   You should see one line per project, each ending with `# pycastle:<absolute-project-path>`.
+
+#### Minimal local `config.py`
+
+To enable `improve` mode for the cron tick without touching anything else, create (or edit) `pycastle/config.py` in the project root.
+
+Create from scratch:
+
+```bash
+cat > pycastle/config.py <<'EOF'
+improve_mode = "until_sleep"
+improve_max = 1
+EOF
+```
+
+Or edit an existing one and add the same two lines:
+
+```bash
+nano pycastle/config.py
+```
+
+Only the keys you set override defaults — everything else stays on the bundled values. Drop `improve_max` if you want unlimited improve dispatches until the next sleep.
+
 ## How the pipeline works
 
 Each iteration of `pycastle run` moves through five phases in order.
