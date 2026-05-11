@@ -23,6 +23,8 @@ def test_init_creates_all_scaffold_files(tmp_path, monkeypatch):
     assert (scaffold / "Dockerfile").exists()
     assert (scaffold / ".gitignore").exists()
     assert (scaffold / "cron.sh").exists()
+    assert (scaffold / "cron-install.sh").exists()
+    assert (scaffold / "cron-uninstall.sh").exists()
     assert (scaffold / "prompts" / "plan-prompt.md").exists()
     assert (scaffold / "prompts" / "implement-prompt.md").exists()
     assert (scaffold / "prompts" / "review-prompt.md").exists()
@@ -451,6 +453,44 @@ def test_init_refresh_copies_cron_sh(tmp_path, monkeypatch):
     refresh()
 
     assert cron_sh.exists()
+
+
+def test_init_refresh_copies_cron_install_sh(tmp_path, monkeypatch):
+    """`pycastle init --refresh` copies cron-install.sh into the consuming project."""
+    from pycastle.init_command import main, refresh
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    cron_install = tmp_path / "pycastle" / "cron-install.sh"
+    cron_install.unlink()
+
+    refresh()
+
+    assert cron_install.exists()
+
+
+def test_init_refresh_copies_cron_uninstall_sh(tmp_path, monkeypatch):
+    """`pycastle init --refresh` copies cron-uninstall.sh into the consuming project."""
+    from pycastle.init_command import main, refresh
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    cron_uninstall = tmp_path / "pycastle" / "cron-uninstall.sh"
+    cron_uninstall.unlink()
+
+    refresh()
+
+    assert cron_uninstall.exists()
 
 
 def test_init_refresh_leaves_local_config_unchanged(tmp_path, monkeypatch):
