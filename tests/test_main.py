@@ -428,7 +428,7 @@ def test_run_cmd_fails_fast_when_primary_token_missing_even_with_secondary(
 
 
 def _run_cmd_capturing_improve_mode(
-    tmp_path, monkeypatch, cli_args: list[str], cfg: "Config"
+    tmp_path, monkeypatch, cli_args: list[str], cfg: Config
 ):
     """Helper: invoke run_cmd and return the improve_mode passed to orchestrator.run."""
     from pycastle.main import main as cli
@@ -444,9 +444,11 @@ def _run_cmd_capturing_improve_mode(
     async def _fake_run(env, repo_root, **kwargs):
         captured["improve_mode"] = kwargs.get("improve_mode")
 
-    with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.orchestrator.run", _fake_run):
-            result = CliRunner().invoke(cli, ["run"] + cli_args)
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.orchestrator.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"] + cli_args)
 
     assert result.exit_code == 0, result.output
     return captured["improve_mode"]
