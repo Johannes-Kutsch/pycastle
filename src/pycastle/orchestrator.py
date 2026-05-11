@@ -56,6 +56,12 @@ class FileLogger:
 _SESSION_EXCLUDES = (f"{SESSION_DIR_NAME}/", ".claude/")
 
 
+def _fmt_wake(wake: datetime, now: datetime) -> str:
+    if wake.date() != now.date():
+        return wake.strftime("%b %-d, %H:%M")
+    return wake.strftime("%H:%M")
+
+
 def ensure_session_excludes(repo_root: Path) -> None:
     exclude_file = repo_root / ".git" / "info" / "exclude"
     if not exclude_file.parent.exists():
@@ -236,7 +242,7 @@ async def run(
                         wake = account_pool.earliest_wake_time()
                         status_display.print(  # type: ignore[union-attr]
                             "",
-                            f"Account exhausted until {wake.strftime('%H:%M')}, "
+                            f"Account exhausted until {_fmt_wake(wake, now)}, "
                             f"switching to '{next_name}'.",
                         )
                         continue
@@ -254,7 +260,7 @@ async def run(
                         suffix = " (estimated)"
                     status_display.print(  # type: ignore[union-attr]
                         "",
-                        f"Usage limit reached. Sleeping until {wake_time.strftime('%H:%M')}{suffix}."
+                        f"Usage limit reached. Sleeping until {_fmt_wake(wake_time, now)}{suffix}."
                         " Press Ctrl+C to abort.",
                     )
                     time.sleep((wake_time - now).total_seconds())
