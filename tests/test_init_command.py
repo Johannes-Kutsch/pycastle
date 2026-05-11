@@ -1,5 +1,7 @@
+import sys
 from unittest.mock import patch
 
+import pytest
 from click.testing import CliRunner
 
 
@@ -31,6 +33,10 @@ def test_init_creates_all_scaffold_files(tmp_path, monkeypatch):
     assert (scaffold / "prompts" / "merge-prompt.md").exists()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX executable bit not meaningful on Windows",
+)
 def test_init_cron_sh_is_executable(tmp_path, monkeypatch):
     """cron.sh must be executable after init scaffolds it."""
     import stat
