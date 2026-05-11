@@ -1544,6 +1544,180 @@ def test_usage_limit_without_reset_time_appends_estimated_qualifier(tmp_path, ca
     assert "(estimated)" in out
 
 
+# ── Issue-668: date shown in sleep messages when wake-time is not today ───────
+
+
+def test_usage_limit_sleep_message_same_day_shows_hhmm_only(tmp_path, capsys):
+    """When wake-time is on the same day, message shows only HH:MM."""
+    from datetime import datetime as real_datetime
+
+    fixed_now = real_datetime(2026, 1, 1, 14, 30, 0)
+    fixed_reset = real_datetime(2026, 1, 1, 14, 50, 0)
+
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
+            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+        ],
+        [],
+    ]
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
+        raise UsageLimitError(reset_time=fixed_reset)
+
+    with (
+        patch("time.sleep"),
+        patch("pycastle.orchestrator.datetime") as mock_dt,
+    ):
+        mock_dt.now.return_value = fixed_now
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            max_iterations=2,
+        )
+
+    out = capsys.readouterr().out
+    assert "14:52" in out
+    assert "Jan" not in out
+
+
+def test_usage_limit_sleep_message_cross_day_shows_date(tmp_path, capsys):
+    """When wake-time is on a different day, message includes the date."""
+    from datetime import datetime as real_datetime
+
+    fixed_now = real_datetime(2026, 1, 1, 23, 30, 0)
+    fixed_reset = real_datetime(2026, 1, 2, 6, 0, 0)  # next day
+
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
+            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+        ],
+        [],
+    ]
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
+        raise UsageLimitError(reset_time=fixed_reset)
+
+    with (
+        patch("time.sleep"),
+        patch("pycastle.orchestrator.datetime") as mock_dt,
+    ):
+        mock_dt.now.return_value = fixed_now
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            max_iterations=2,
+        )
+
+    out = capsys.readouterr().out
+    # wake = reset + 2 min = Jan 2, 06:02
+    assert "Jan 2, 06:02" in out
+
+
+def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, capsys):
+    """Account-switch message shows only HH:MM when wake-time is same day."""
+    from datetime import datetime as real_datetime
+    from pycastle.account_pool import AccountPool
+
+    fixed_now = real_datetime(2026, 1, 1, 14, 0, 0)
+    early = real_datetime(2026, 1, 1, 15, 0, 0)
+
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
+            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+        ],
+        [],
+    ]
+
+    pool = AccountPool([("secondary", "tok-s"), ("primary", "tok-p")])
+    pool.mark_exhausted("tok-s", early, now=fixed_now)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
+        raise UsageLimitError(reset_time=None)
+
+    with (
+        patch("time.sleep"),
+        patch("pycastle.orchestrator.datetime") as mock_dt,
+    ):
+        mock_dt.now.return_value = fixed_now
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            account_pool=pool,
+            max_iterations=2,
+        )
+
+    out = capsys.readouterr().out
+    # earliest_wake_time() adds 2 min buffer → 15:02, same day → no date
+    assert "exhausted until 15:02" in out
+    assert "Jan" not in out
+
+
+def test_usage_limit_pool_switch_message_cross_day_shows_date(tmp_path, capsys):
+    """Account-switch message includes the date when wake-time is on a different day."""
+    from datetime import datetime as real_datetime
+    from pycastle.account_pool import AccountPool
+
+    fixed_now = real_datetime(2026, 1, 1, 23, 0, 0)
+    next_day = real_datetime(2026, 1, 2, 6, 0, 0)
+
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.side_effect = [
+        [
+            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
+            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+        ],
+        [],
+    ]
+
+    pool = AccountPool([("secondary", "tok-s"), ("primary", "tok-p")])
+    pool.mark_exhausted("tok-s", next_day, now=fixed_now)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
+        raise UsageLimitError(reset_time=None)
+
+    with (
+        patch("time.sleep"),
+        patch("pycastle.orchestrator.datetime") as mock_dt,
+    ):
+        mock_dt.now.return_value = fixed_now
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            account_pool=pool,
+            max_iterations=2,
+        )
+
+    out = capsys.readouterr().out
+    # earliest_wake_time() adds 2 min buffer → 06:02; cross-day → date shown
+    assert "exhausted until Jan 2, 06:02" in out
+
+
 # ── Preflight-phase usage-limit handling ─────────────────────────────────────
 
 
