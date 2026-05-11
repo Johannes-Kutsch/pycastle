@@ -67,9 +67,18 @@ Set `improve_mode = "until_sleep"` (or `"endless"`) in `pycastle/config.py` to m
 
 Every `pycastle init` (and `pycastle init --refresh`) scaffolds three host-side cron helpers into your project's `pycastle/setup/` directory:
 
-- `setup/cron.sh` — bootstrap-and-run wrapper. Acquires a global flock at `$PYCASTLE_HOME/.cron.lock` (6-hour timeout) so multiple repos on the same host serialize cleanly, asserts `.venv/` exists, upgrades pycastle, reinstalls the consuming project, runs `pycastle init --refresh`, rebuilds the Docker image, and finally invokes `pycastle run`.
-- `setup/cron-install.sh` — idempotently installs a daily entry (`0 1 * * *`) into your user crontab, tagged `# pycastle:<absolute-repo-path>` so multiple repos coexist.
+- `setup/cron.sh` — bootstrap-and-run wrapper. Acquires a global flock at `$PYCASTLE_HOME/.cron.lock` (6-hour timeout) so multiple repos on the same host serialize cleanly, asserts `.venv/` exists, upgrades pycastle, reinstalls the consuming project, runs `pycastle init --refresh`, rebuilds the Docker image, invokes `pycastle run`, then trims `cron.log` to the last 10000 lines so it cannot grow unbounded.
+- `setup/cron-install.sh` — idempotently installs a daily entry (`0 1 * * *`) into your user crontab, tagged `# pycastle:<absolute-repo-path>` so multiple repos coexist. The crontab line redirects stdout+stderr into `<logs_dir>/cron.log` (resolved from the project's `pycastle/config.py` at install time), so cron output lands alongside the per-agent logs and is captured from second 0 — including bootstrap failures like a missing `.venv/` or pip errors.
 - `setup/cron-uninstall.sh` — removes only the line bearing this repo's marker.
+
+Point `logs_dir` somewhere outside the repo (e.g. a Syncthing-shared directory) in each project's `pycastle/config.py` to ship cron + agent logs off the host automatically:
+
+```python
+from pathlib import Path
+logs_dir = Path.home() / "Syncthing" / "pycastle-cron-logs" / "<project-name>"
+```
+
+Re-run `bash pycastle/setup/cron-install.sh` after changing `logs_dir` so the new path is baked into the crontab line.
 
 For a step-by-step setup on a fresh Raspberry Pi (or any Debian host), see [`pi-setup.md`](src/pycastle/defaults/setup/pi-setup.md).
 

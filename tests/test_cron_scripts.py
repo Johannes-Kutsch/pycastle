@@ -85,6 +85,35 @@ def test_install_creates_entry_with_correct_marker(cron_env):
     assert "0 1 * * *" in content
 
 
+def test_install_redirects_output_to_logs_dir(cron_env):
+    """Crontab line must redirect stdout+stderr into <logs_dir>/cron.log."""
+    result = _run(cron_env["install_sh"], cron_env["env"])
+
+    assert result.returncode == 0, result.stderr
+    content = cron_env["data_file"].read_text()
+    expected_log = cron_env["project_dir"] / "pycastle" / "logs" / "cron.log"
+    assert f">> {expected_log} 2>&1" in content
+
+
+def test_install_creates_logs_dir(cron_env):
+    """The logs directory must exist after install so cron can write to it."""
+    _run(cron_env["install_sh"], cron_env["env"])
+
+    assert (cron_env["project_dir"] / "pycastle" / "logs").is_dir()
+
+
+def test_install_marker_remains_end_of_line(cron_env):
+    """The marker must stay at end-of-line so cron-uninstall.sh can still match it."""
+    _run(cron_env["install_sh"], cron_env["env"])
+
+    content = cron_env["data_file"].read_text()
+    marker = f"# pycastle:{cron_env['project_dir']}"
+    lines = [line for line in content.splitlines() if marker in line]
+    assert lines, "expected at least one line containing the marker"
+    for line in lines:
+        assert line.endswith(marker), f"marker not at end-of-line: {line!r}"
+
+
 def test_install_is_idempotent(cron_env):
     _run(cron_env["install_sh"], cron_env["env"])
     _run(cron_env["install_sh"], cron_env["env"])

@@ -166,7 +166,23 @@ All repos installed via `cron-install.sh` fire at 01:00 and serialize through a 
 
 ---
 
-## 9. Optional: enable improve mode
+## 9. Optional: ship logs off the host via Syncthing
+
+By default, cron stdout/stderr and pycastle's per-agent logs land in `<repo>/pycastle/logs/`. To make logs visible from another machine (laptop, etc.), point `logs_dir` at a Syncthing-shared directory and re-run the cron installer:
+
+1. On the pi, create a Syncthing folder (e.g. `~/Syncthing/pycastle-cron-logs/`) and share it with your other devices.
+2. In each project's `pycastle/config.py`, set:
+   ```python
+   from pathlib import Path
+   logs_dir = Path.home() / "Syncthing" / "pycastle-cron-logs" / "<project-name>"
+   ```
+3. Re-run `bash pycastle/setup/cron-install.sh` so the new `logs_dir` is baked into the crontab redirect.
+
+`cron.sh` trims `cron.log` to the last 10000 lines at the end of each run, so the file size stays bounded even on long-running deployments.
+
+---
+
+## 10. Optional: enable improve mode
 
 For repos you're actively developing, edit `pycastle/config.py`:
 
@@ -179,7 +195,7 @@ The daily cron tick will then dispatch the improve agent automatically when no i
 
 ---
 
-## 10. Smoke test
+## 11. Smoke test
 
 20. Run the wrapper manually once to verify the full pipeline before waiting for cron:
     ```bash
