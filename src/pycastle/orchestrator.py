@@ -58,7 +58,7 @@ _SESSION_EXCLUDES = (f"{SESSION_DIR_NAME}/", ".claude/")
 
 def _fmt_wake(wake: datetime, now: datetime) -> str:
     if wake.date() != now.date():
-        return wake.strftime("%b %-d, %H:%M")
+        return wake.strftime("%b ") + str(wake.day) + wake.strftime(", %H:%M")
     return wake.strftime("%H:%M")
 
 
