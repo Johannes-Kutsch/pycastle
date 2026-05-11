@@ -8,7 +8,7 @@ import types
 from collections.abc import Mapping
 from difflib import get_close_matches
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import platformdirs
 
@@ -94,6 +94,7 @@ class Config:
         default_factory=lambda: StageOverride(model="opus", effort="high")
     )
     improve_max: int | None = None
+    improve_mode: Literal["until_sleep", "endless"] | None = None
     diagnose_on_failure: bool = True
 
 
@@ -180,7 +181,19 @@ def load_config(
         )
     _validate_bug_report_repo(cfg)
     _validate_improve_max(cfg)
+    _validate_improve_mode(cfg)
     return _validate_efforts(cfg)
+
+
+def _validate_improve_mode(cfg: Config) -> None:
+    valid = {"until_sleep", "endless"}
+    if cfg.improve_mode is not None and cfg.improve_mode not in valid:
+        raise ConfigValidationError(
+            f"Invalid improve_mode {cfg.improve_mode!r}; valid values: {sorted(valid)}",
+            invalid_value=cfg.improve_mode,
+            suggestion="until_sleep",
+            valid_options=sorted(valid),
+        )
 
 
 def _validate_improve_max(cfg: Config) -> None:
