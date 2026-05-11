@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -1279,7 +1280,11 @@ def test_usage_limit_prints_sleep_message_with_wake_time(tmp_path, capsys):
             )
         raise UsageLimitError(reset_time=None)
 
-    with patch("time.sleep"):
+    fixed_now = datetime(2026, 5, 11, 12, 0, 0)
+    mock_datetime = MagicMock(wraps=datetime)
+    mock_datetime.now.return_value = fixed_now
+
+    with patch("time.sleep"), patch("pycastle.orchestrator.datetime", mock_datetime):
         _run(
             tmp_path,
             _fake_run_agent,
