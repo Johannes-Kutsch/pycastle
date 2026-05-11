@@ -1,25 +1,6 @@
-# ADR 0001: Runtime dependency installation over image bake-in
+# Runtime dependency installation over image bake-in
 
-**Status:** Accepted  
-**Date:** 2026-05-01
-
-## Context
-
-The default Dockerfile ships with the Python runtime, system utilities (git, gh), and the Claude Code CLI. It does not include any consuming project dev tools (ruff, mypy, pytest, etc.).
-
-The default `PREFLIGHT_CHECKS` run `ruff check .`, `mypy .`, and `pytest` inside the agent container. These tools must be available before the Pre-flight phase runs.
-
-Two approaches were considered:
-
-**Option A — Bake into the image at build time:**  
-`pycastle build` uses the consuming project's root as the Docker build context, so `pyproject.toml` is accessible. The Dockerfile could `COPY pyproject.toml` and run `pip install ".[dev]"` during the image build.
-
-**Option B — Install at runtime during the Setup phase:**  
-`_setup` runs `pip install -e '.[dev]' || pip install -r requirements.txt` after the container starts and the worktree is mounted. Tools and project dependencies are always installed fresh from the current `pyproject.toml`.
-
-## Decision
-
-**Option B.** Dependency installation happens at runtime in the Setup phase, not at image build time.
+**Option B.** Dependency installation happens at runtime in the Setup phase (`pip install -e '.[dev]' || pip install -r requirements.txt`), not at image build time.
 
 ## Reasons
 
