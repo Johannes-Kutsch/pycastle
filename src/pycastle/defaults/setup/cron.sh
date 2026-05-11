@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Crontab usage:
-#   0 * * * * /absolute/path/to/repo/pycastle/setup/cron.sh >> /path/to/logfile.log 2>&1
+# Crontab usage (cron-install.sh writes this for you):
+#   0 1 * * * /abs/path/to/repo/pycastle/setup/cron.sh >> <logs_dir>/cron.log 2>&1 # pycastle:/abs/path
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -29,3 +29,18 @@ mkdir -p "$PYCASTLE_HOME"
     .venv/bin/pycastle build
     .venv/bin/pycastle run
 ) 200>"$PYCASTLE_HOME/.cron.lock"
+
+# Trim cron.log to the last 10000 lines so it cannot grow unbounded.
+# Resolved via the same logs_dir the cron line redirects into.
+LOG_FILE=$(.venv/bin/python -c "
+from pathlib import Path
+from pycastle.config.loader import load_config
+p = load_config().logs_dir
+base = p if p.is_absolute() else (Path.cwd() / p).resolve()
+print(base / 'cron.log')
+" 2>/dev/null) || LOG_FILE=""
+
+if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
+    trimmed=$(tail -n 10000 "$LOG_FILE" 2>/dev/null) || trimmed=""
+    printf '%s\n' "$trimmed" > "$LOG_FILE"
+fi
