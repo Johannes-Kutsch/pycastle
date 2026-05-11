@@ -22,10 +22,29 @@ def test_init_creates_all_scaffold_files(tmp_path, monkeypatch):
     assert (scaffold / ".env").exists()
     assert (scaffold / "Dockerfile").exists()
     assert (scaffold / ".gitignore").exists()
+    assert (scaffold / "cron.sh").exists()
     assert (scaffold / "prompts" / "plan-prompt.md").exists()
     assert (scaffold / "prompts" / "implement-prompt.md").exists()
     assert (scaffold / "prompts" / "review-prompt.md").exists()
     assert (scaffold / "prompts" / "merge-prompt.md").exists()
+
+
+def test_init_cron_sh_is_executable(tmp_path, monkeypatch):
+    """cron.sh must be executable after init scaffolds it."""
+    import stat
+
+    from pycastle.init_command import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main()
+
+    cron_sh = tmp_path / "pycastle" / "cron.sh"
+    mode = cron_sh.stat().st_mode
+    assert mode & stat.S_IXUSR, "cron.sh must be user-executable"
 
 
 # ── Cycle 2: docker_image_name is set to the inferred project name ────────────
@@ -413,6 +432,25 @@ def test_init_refresh_overwrites_stale_prompt_file(tmp_path, monkeypatch):
     refresh()
 
     assert plan_prompt.read_bytes() == bundled_bytes
+
+
+def test_init_refresh_copies_cron_sh(tmp_path, monkeypatch):
+    """`pycastle init --refresh` copies cron.sh into the consuming project."""
+    from pycastle.init_command import main, refresh
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    cron_sh = tmp_path / "pycastle" / "cron.sh"
+    cron_sh.unlink()
+
+    refresh()
+
+    assert cron_sh.exists()
 
 
 def test_init_refresh_leaves_local_config_unchanged(tmp_path, monkeypatch):
