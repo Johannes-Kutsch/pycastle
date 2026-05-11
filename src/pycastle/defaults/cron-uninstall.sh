@@ -9,16 +9,21 @@ fi
 REPO_ROOT="$(realpath "$(dirname "$0")/..")"
 MARKER="# pycastle:$REPO_ROOT"
 
-current="$(crontab -l 2>/dev/null || true)"
+kept=""
+matched=0
+while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+        *"$MARKER") matched=1 ;;
+        *) kept+="$line"$'\n' ;;
+    esac
+done < <(crontab -l 2>/dev/null || true)
 
-if ! printf '%s\n' "$current" | grep -qF "$MARKER"; then
+if [ "$matched" -eq 0 ]; then
     exit 0
 fi
 
-filtered="$(printf '%s\n' "$current" | grep -Fv "$MARKER" || true)"
-
-if [ -n "$filtered" ]; then
-    printf '%s\n' "$filtered" | crontab -
+if [ -n "$kept" ]; then
+    printf '%s' "$kept" | crontab -
 else
     crontab -r 2>/dev/null || true
 fi

@@ -137,6 +137,19 @@ def test_uninstall_leaves_other_lines_intact(cron_env):
     assert f"# pycastle:{cron_env['project_dir']}" not in remaining
 
 
+def test_uninstall_does_not_touch_repo_whose_path_extends_ours(cron_env):
+    """Marker match must anchor to end-of-line: '# pycastle:/a' must not match '# pycastle:/ab'."""
+    sibling = f"{cron_env['project_dir']}-sibling"
+    sibling_line = f"0 1 * * * {sibling}/pycastle/cron.sh # pycastle:{sibling}"
+    cron_env["data_file"].write_text(sibling_line + "\n")
+
+    _run(cron_env["install_sh"], cron_env["env"])
+    _run(cron_env["uninstall_sh"], cron_env["env"])
+
+    remaining = cron_env["data_file"].read_text()
+    assert sibling_line in remaining
+
+
 # ── Error handling ────────────────────────────────────────────────────────────
 
 
