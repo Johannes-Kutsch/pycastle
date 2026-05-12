@@ -114,6 +114,7 @@ async def _close_issues_parallel(
     issues: list[dict],
     github_svc: GithubService,
     on_progress: Callable[[int, int], None] | None = None,
+    on_error: Callable[[int, BaseException], None] | None = None,
 ) -> None:
     n = len(issues)
     done = 0
@@ -128,9 +129,10 @@ async def _close_issues_parallel(
     results = await asyncio.gather(
         *[_close_one(i) for i in issues], return_exceptions=True
     )
-    for r in results:
+    for issue, r in zip(issues, results, strict=True):
         if isinstance(r, BaseException):
-            raise r
+            if on_error is not None:
+                on_error(issue["number"], r)
 
 
 async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
@@ -160,8 +162,17 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 f"Closing {close_done}/{close_total} issues, removing {done}/{total} worktrees",
             )
 
+        def _on_close_error(issue_number: int, exc: BaseException) -> None:
+            deps.status_display.print(
+                "Merge",
+                f"Warning: could not close issue #{issue_number}: {exc}",
+                "warning",
+            )
+
         if clean_issues:
-            await _close_issues_parallel(clean_issues, deps.github_svc, _on_progress)
+            await _close_issues_parallel(
+                clean_issues, deps.github_svc, _on_progress, _on_close_error
+            )
             deps.github_svc.close_completed_parent_issues()
 
         clean_deleted = await _delete_merged_branches(
@@ -225,7 +236,9 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 deps,
                 _on_teardown_progress,
             )
-            await _close_issues_parallel(conflict_issues, deps.github_svc, _on_progress)
+            await _close_issues_parallel(
+                conflict_issues, deps.github_svc, _on_progress, _on_close_error
+            )
             deps.github_svc.close_completed_parent_issues()
             row.close(_build_close_message(clean_deleted + conflict_deleted))
 
