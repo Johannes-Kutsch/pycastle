@@ -369,14 +369,64 @@ def test_close_issue_sends_patch_with_state_closed():
     assert json.loads(req.data.decode()) == {"state": "closed"}
 
 
-def test_close_issue_raises_github_api_error_on_failure():
+def test_close_issue_raises_github_api_error_on_500():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_http_error(500, b"server error"),
+    ):
+        with pytest.raises(GithubAPIError) as ei:
+            svc.close_issue(42)
+    assert ei.value.status == 500
+
+
+def test_close_issue_returns_normally_on_410():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_http_error(410, b'{"message":"This issue was deleted"}'),
+    ):
+        svc.close_issue(42)  # must not raise
+
+
+def test_close_issue_returns_normally_on_404():
     svc = _make_service()
     with patch(
         "pycastle.services.github_service.urlopen",
         side_effect=_make_http_error(404, b'{"message":"Not Found"}'),
     ):
-        with pytest.raises(GithubAPIError):
+        svc.close_issue(42)  # must not raise
+
+
+def test_close_issue_410_emits_warning_with_issue_number():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_http_error(410, b'{"message":"This issue was deleted"}'),
+    ):
+        with pytest.warns(UserWarning, match="42"):
             svc.close_issue(42)
+
+
+def test_close_issue_404_emits_warning_with_issue_number():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_http_error(404, b'{"message":"Not Found"}'),
+    ):
+        with pytest.warns(UserWarning, match="42"):
+            svc.close_issue(42)
+
+
+def test_close_issue_adds_to_recently_closed_on_410():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_http_error(410, b'{"message":"This issue was deleted"}'),
+    ):
+        with pytest.warns(UserWarning):
+            svc.close_issue(99)
+    assert 99 in svc._recently_closed
 
 
 # ── get_issue ────────────────────────────────────────────────────────────────

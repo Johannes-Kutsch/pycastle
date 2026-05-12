@@ -8,7 +8,7 @@ from pycastle.agent_output_protocol import CompletionOutput, PromiseParseError
 from pycastle.agent_runner import RunRequest
 from pycastle.config import Config
 from pycastle.services import GitCommandError, GitService
-from pycastle.services import GithubService
+from pycastle.services import GithubAPIError, GithubService
 from pycastle.iteration._deps import (
     FakeAgentRunner,
     RecordingStatusDisplay,
@@ -1112,24 +1112,35 @@ def test_all_branches_processed_in_parallel_teardown(recording_deps, git_svc):
 # ── Parallel close_issue helper ───────────────────────────────────────────────
 
 
-def test_close_issue_failure_propagates_and_aborts_merge_phase(deps, github_svc):
-    error = RuntimeError("API error")
-    github_svc.close_issue.side_effect = error
+def test_close_issue_failure_does_not_abort_merge_phase(
+    recording_deps, github_svc
+):
+    deps, recording = recording_deps
+    github_svc.close_issue.side_effect = RuntimeError("API error")
     issues = [{"number": 1, "title": "Fix A"}]
-    with pytest.raises(RuntimeError, match="API error"):
-        _run(issues, deps)
+    result = _run(issues, deps)
+    assert result.clean == issues
+    print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
+    assert any("API error" in str(m) for m in print_msgs)
 
 
-def test_close_issue_failure_in_conflict_path_propagates(deps, git_svc, github_svc):
+def test_close_issue_failure_in_conflict_path_does_not_abort(
+    recording_deps, git_svc, github_svc
+):
+    deps, recording = recording_deps
     git_svc.try_merge.return_value = False
-    error = RuntimeError("conflict close failed")
-    github_svc.close_issue.side_effect = error
+    github_svc.close_issue.side_effect = RuntimeError("conflict close failed")
     issues = [{"number": 1, "title": "Conflict"}]
-    with pytest.raises(RuntimeError, match="conflict close failed"):
-        _run(issues, deps)
+    result = _run(issues, deps)
+    assert result.conflicts == issues
+    print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
+    assert any("conflict close failed" in str(m) for m in print_msgs)
 
 
-def test_close_issue_first_exception_raised_in_input_order(deps, github_svc):
+def test_close_issue_all_failures_reported_via_status_display(
+    recording_deps, github_svc
+):
+    deps, recording = recording_deps
     errors = {1: RuntimeError("first"), 2: RuntimeError("second")}
 
     def _side_effect(number):
@@ -1137,8 +1148,10 @@ def test_close_issue_first_exception_raised_in_input_order(deps, github_svc):
 
     github_svc.close_issue.side_effect = _side_effect
     issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
-    with pytest.raises(RuntimeError, match="first"):
-        _run(issues, deps)
+    _run(issues, deps)
+    print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
+    assert any("first" in str(m) for m in print_msgs)
+    assert any("second" in str(m) for m in print_msgs)
 
 
 def test_merge_phase_shows_closing_progress_during_clean_merge(recording_deps):
@@ -1335,3 +1348,64 @@ def test_phase_row_shows_removing_progress_during_conflict_teardown(
         "Phase row must show 'removing Y/M worktrees' during conflict teardown"
     )
     assert all("Closing" in t and "removing" in t for t in removing_texts)
+
+
+# ── Close-failure resilience ──────────────────────────────────────────────────
+
+
+def _api_error(status: int) -> GithubAPIError:
+    return GithubAPIError("fail", status=status, body="err", method="PATCH", path="/x")
+
+
+def test_merge_phase_proceeds_to_branch_deletion_when_all_closes_fail(
+    recording_deps, git_svc, github_svc
+):
+    """Branch deletion runs even when every close_issue raises."""
+    deps, _ = recording_deps
+    github_svc.close_issue.side_effect = _api_error(500)
+    issues = [{"number": 1, "title": "A"}, {"number": 2, "title": "B"}]
+    _run(issues, deps)
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-1" in deleted
+    assert "pycastle/issue-2" in deleted
+
+
+def test_merge_phase_proceeds_to_parent_close_when_all_closes_fail(
+    recording_deps, github_svc
+):
+    """close_completed_parent_issues runs even when every close_issue raises."""
+    deps, _ = recording_deps
+    github_svc.close_issue.side_effect = _api_error(500)
+    issues = [{"number": 1, "title": "A"}]
+    _run(issues, deps)
+    assert github_svc.close_completed_parent_issues.call_count == 1
+
+
+def test_merge_phase_surfaces_close_failure_via_status_display(
+    recording_deps, github_svc
+):
+    """A close_issue failure is printed to status_display with the issue number and message."""
+    deps, recording = recording_deps
+    github_svc.close_issue.side_effect = _api_error(500)
+    issues = [{"number": 42, "title": "A"}]
+    _run(issues, deps)
+    print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
+    assert any("42" in str(m) for m in print_msgs)
+
+
+def test_merge_phase_partial_close_failure_still_closes_successful_issue(
+    recording_deps, github_svc
+):
+    """When one close fails (500) and one succeeds, the successful close is recorded."""
+    deps, _ = recording_deps
+
+    def _side_effect(number: int) -> None:
+        if number == 1:
+            raise _api_error(500)
+
+    github_svc.close_issue.side_effect = _side_effect
+    issues = [{"number": 1, "title": "Fail"}, {"number": 2, "title": "OK"}]
+    result = _run(issues, deps)
+    assert result.clean == issues
+    closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
+    assert 2 in closed
