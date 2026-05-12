@@ -1112,9 +1112,7 @@ def test_all_branches_processed_in_parallel_teardown(recording_deps, git_svc):
 # ── Parallel close_issue helper ───────────────────────────────────────────────
 
 
-def test_close_issue_failure_does_not_abort_merge_phase(
-    recording_deps, github_svc
-):
+def test_close_issue_failure_does_not_abort_merge_phase(recording_deps, github_svc):
     deps, recording = recording_deps
     github_svc.close_issue.side_effect = RuntimeError("API error")
     issues = [{"number": 1, "title": "Fix A"}]
