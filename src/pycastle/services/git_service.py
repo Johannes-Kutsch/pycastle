@@ -1,6 +1,5 @@
 import logging
 import shutil
-import subprocess
 import time
 from pathlib import Path
 
@@ -276,34 +275,33 @@ class GitService(_SubprocessService):
         message: str,
         operation: str,
         cwd: Path | None = None,
-    ) -> subprocess.CompletedProcess[bytes]:
-        last_exc: GitCommandError | None = None
+    ) -> None:
         for attempt in range(1, _MAX_ATTEMPTS + 1):
             try:
-                result = self._run_or_raise(cmd, message, cwd=cwd)
+                self._run_or_raise(cmd, message, cwd=cwd)
+            except GitCommandError as exc:
+                if any(p in exc.stderr.lower() for p in _PERMANENT_FAILURE_PATTERNS):
+                    raise
+                if attempt == _MAX_ATTEMPTS:
+                    raise
+                delay = _RETRY_DELAYS[attempt - 1]
+                logger.warning(
+                    "git %s failed (attempt %d/%d), retrying in %ds: %s",
+                    operation,
+                    attempt,
+                    _MAX_ATTEMPTS,
+                    delay,
+                    exc.stderr,
+                )
+                time.sleep(delay)
+            else:
                 if attempt > 1:
                     logger.warning(
                         "git %s succeeded on attempt %d after transient failure",
                         operation,
                         attempt,
                     )
-                return result
-            except GitCommandError as exc:
-                if any(p in exc.stderr.lower() for p in _PERMANENT_FAILURE_PATTERNS):
-                    raise
-                last_exc = exc
-                if attempt < _MAX_ATTEMPTS:
-                    delay = _RETRY_DELAYS[attempt - 1]
-                    logger.warning(
-                        "git %s failed (attempt %d/%d), retrying in %ds: %s",
-                        operation,
-                        attempt,
-                        _MAX_ATTEMPTS,
-                        delay,
-                        exc.stderr,
-                    )
-                    time.sleep(delay)
-        raise last_exc  # type: ignore[misc]
+                return
 
     def pull(self, repo_path: Path) -> None:
         self._run_or_raise_with_retry(
