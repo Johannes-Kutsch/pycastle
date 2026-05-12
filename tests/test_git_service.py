@@ -42,6 +42,27 @@ def test_git_command_error_carries_returncode_and_stderr():
     assert err.stderr == "fatal: bad ref"
 
 
+def test_git_command_error_str_includes_stderr_and_returncode():
+    err = GitCommandError(
+        "git pull --ff-only failed",
+        128,
+        "fatal: Not possible to fast-forward, aborting.",
+    )
+    s = str(err)
+    assert "fatal: Not possible to fast-forward, aborting." in s
+    assert "128" in s
+
+
+def test_git_command_error_str_omits_stderr_section_when_empty():
+    err = GitCommandError("git push failed", 1, "")
+    assert "stderr:" not in str(err)
+
+
+def test_git_command_error_str_first_line_is_original_message():
+    err = GitCommandError("git pull --ff-only failed", 128, "fatal: error")
+    assert str(err).splitlines()[0] == "git pull --ff-only failed"
+
+
 # ── Config injection ───────────────────────────────────────────────────────────
 
 
