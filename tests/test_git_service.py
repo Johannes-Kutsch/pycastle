@@ -1,3 +1,4 @@
+import logging
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -1330,3 +1331,292 @@ def test_push_raises_git_timeout_error_on_timeout(tmp_path):
     ):
         with pytest.raises(GitTimeoutError):
             svc.push(tmp_path)
+
+
+# ── retry behaviour (pull / push / fetch) ─────────────────────────────────────
+
+
+def test_pull_retries_on_transient_failure_and_succeeds(tmp_path):
+    svc = GitService(_cfg)
+    responses = iter(
+        [
+            MagicMock(returncode=1, stdout=b"", stderr=b"RPC failed; connection reset"),
+            MagicMock(
+                returncode=1,
+                stdout=b"",
+                stderr=b"Another git process seems to be running",
+            ),
+            MagicMock(returncode=0, stdout=b"Already up to date.\n", stderr=b""),
+        ]
+    )
+
+    with (
+        patch("subprocess.run", side_effect=lambda *a, **kw: next(responses)),
+        patch("time.sleep") as mock_sleep,
+    ):
+        svc.pull(tmp_path)  # must not raise
+
+    assert mock_sleep.call_count == 2
+    assert mock_sleep.call_args_list[0][0][0] == 1
+    assert mock_sleep.call_args_list[1][0][0] == 3
+
+
+def test_pull_raises_immediately_on_permanent_failure(tmp_path):
+    svc = GitService(_cfg)
+    attempts = 0
+
+    def fake_run(*a, **kw):
+        nonlocal attempts
+        attempts += 1
+        return MagicMock(
+            returncode=1,
+            stdout=b"",
+            stderr=b"fatal: Not possible to fast-forward, aborting.",
+        )
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(GitCommandError):
+            svc.pull(tmp_path)
+
+    assert attempts == 1
+    mock_sleep.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        b"fatal: Not possible to fast-forward, aborting.",
+        b"hint: Need to specify how to reconcile divergent branches.",
+        b"! [rejected] main -> main (non-fast-forward)",
+        b"remote: Authentication failed for 'https://github.com/owner/repo.git'",
+        b"fatal: could not read Username for 'https://github.com': No such device or address",
+        b"Permission denied (publickey).",
+        b"fatal: 'origin' does not appear to be a git repository",
+        b"remote: Repository not found.",
+        b"fatal: refusing to merge unrelated histories",
+        b"CONFLICT (content): Merge conflict in README.md",
+    ],
+)
+def test_pull_raises_immediately_for_each_permanent_pattern(tmp_path, stderr):
+    svc = GitService(_cfg)
+    attempts = 0
+
+    def fake_run(*a, **kw):
+        nonlocal attempts
+        attempts += 1
+        return MagicMock(returncode=1, stdout=b"", stderr=stderr)
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(GitCommandError):
+            svc.pull(tmp_path)
+
+    assert attempts == 1
+    mock_sleep.assert_not_called()
+
+
+def test_pull_final_exception_carries_last_attempt_stderr(tmp_path):
+    svc = GitService(_cfg)
+    responses = iter(
+        [
+            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 1"),
+            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 2"),
+            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 3"),
+        ]
+    )
+
+    with (
+        patch("subprocess.run", side_effect=lambda *a, **kw: next(responses)),
+        patch("time.sleep"),
+    ):
+        with pytest.raises(GitCommandError) as exc_info:
+            svc.pull(tmp_path)
+
+    assert exc_info.value.stderr == "transient error attempt 3"
+
+
+def test_pull_successful_retry_emits_warning(tmp_path, caplog):
+    svc = GitService(_cfg)
+    responses = iter(
+        [
+            MagicMock(returncode=1, stdout=b"", stderr=b"transient network error"),
+            MagicMock(returncode=0, stdout=b"Already up to date.\n", stderr=b""),
+        ]
+    )
+
+    with (
+        patch("subprocess.run", side_effect=lambda *a, **kw: next(responses)),
+        patch("time.sleep"),
+        caplog.at_level(logging.WARNING, logger="pycastle.services.git_service"),
+    ):
+        svc.pull(tmp_path)
+
+    assert any(
+        "pull" in record.message and "2" in record.message for record in caplog.records
+    )
+
+
+def test_pull_timeout_error_is_not_retried(tmp_path):
+    svc = GitService(_cfg)
+    call_count = 0
+
+    def fake_run(*a, **kw):
+        nonlocal call_count
+        call_count += 1
+        raise subprocess.TimeoutExpired(cmd="git", timeout=30)
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(GitTimeoutError):
+            svc.pull(tmp_path)
+
+    assert call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_pull_not_found_error_is_not_retried(tmp_path):
+    svc = GitService(_cfg)
+    call_count = 0
+
+    def fake_run(*a, **kw):
+        nonlocal call_count
+        call_count += 1
+        raise FileNotFoundError
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(GitNotFoundError):
+            svc.pull(tmp_path)
+
+    assert call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_push_retries_on_transient_failure(tmp_path):
+    svc = GitService(_cfg)
+    responses = iter(
+        [
+            MagicMock(
+                returncode=1, stdout=b"", stderr=b"error: failed to push some refs"
+            ),
+            MagicMock(returncode=0, stdout=b"", stderr=b""),
+        ]
+    )
+
+    with (
+        patch("subprocess.run", side_effect=lambda *a, **kw: next(responses)),
+        patch("time.sleep") as mock_sleep,
+    ):
+        svc.push(tmp_path)  # must not raise
+
+    assert mock_sleep.call_count == 1
+
+
+def test_push_raises_immediately_on_non_fast_forward(tmp_path):
+    svc = GitService(_cfg)
+    attempts = 0
+
+    def fake_run(*a, **kw):
+        nonlocal attempts
+        attempts += 1
+        return MagicMock(
+            returncode=1,
+            stdout=b"",
+            stderr=b"! [rejected] main -> main (non-fast-forward)",
+        )
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(GitCommandError):
+            svc.push(tmp_path)
+
+    assert attempts == 1
+    mock_sleep.assert_not_called()
+
+
+# ── fetch() ───────────────────────────────────────────────────────────────────
+
+
+def test_fetch_succeeds_on_zero_exit(tmp_path):
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
+    ):
+        svc.fetch(tmp_path)  # must not raise
+
+
+def test_fetch_raises_git_command_error_on_nonzero_exit(tmp_path):
+    svc = GitService(_cfg)
+    with (
+        patch(
+            "subprocess.run",
+            return_value=MagicMock(returncode=1, stdout=b"", stderr=b"network error"),
+        ),
+        patch("time.sleep"),
+    ):
+        with pytest.raises(GitCommandError):
+            svc.fetch(tmp_path)
+
+
+def test_fetch_retries_on_transient_failure(tmp_path):
+    svc = GitService(_cfg)
+    responses = iter(
+        [
+            MagicMock(returncode=1, stdout=b"", stderr=b"error: RPC failed; curl 56"),
+            MagicMock(returncode=0, stdout=b"", stderr=b""),
+        ]
+    )
+
+    with (
+        patch("subprocess.run", side_effect=lambda *a, **kw: next(responses)),
+        patch("time.sleep") as mock_sleep,
+    ):
+        svc.fetch(tmp_path)  # must not raise
+
+    assert mock_sleep.call_count == 1
+
+
+def test_fetch_raises_immediately_on_auth_failure(tmp_path):
+    svc = GitService(_cfg)
+    attempts = 0
+
+    def fake_run(*a, **kw):
+        nonlocal attempts
+        attempts += 1
+        return MagicMock(
+            returncode=128,
+            stdout=b"",
+            stderr=b"remote: Authentication failed",
+        )
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(GitCommandError):
+            svc.fetch(tmp_path)
+
+    assert attempts == 1
+    mock_sleep.assert_not_called()
+
+
+def test_fetch_raises_git_timeout_error_on_timeout(tmp_path):
+    svc = GitService(_cfg)
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    ):
+        with pytest.raises(GitTimeoutError):
+            svc.fetch(tmp_path)
