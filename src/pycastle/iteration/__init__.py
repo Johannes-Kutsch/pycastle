@@ -85,12 +85,13 @@ def _is_in_flight(issue: dict, deps: Deps) -> bool:
 async def _run_implement_and_merge(
     issues: list[dict],
     deps: Deps,
+    sha: str,
 ) -> IterationOutcome:
     token = CancellationToken()
     async with phase_row(
         deps.status_display, "Implement", initial_phase="Running"
     ) as row:
-        impl_result = await implement_phase(issues, deps, token=token)
+        impl_result = await implement_phase(issues, deps, sha, token=token)
 
         if impl_result.usage_limit_hit:
             row.close("finished")
@@ -133,7 +134,7 @@ async def _handle_preflight_outcome(
         return AbortedHITL(issue_number=result.issue_number)
     raw = deps.github_svc.get_issue(result.issue_number)
     afk_issue: dict = {**raw, "body": raw.get("body") or "", "comments": []}
-    return await _run_implement_and_merge([afk_issue], deps)
+    return await _run_implement_and_merge([afk_issue], deps, result.sha)
 
 
 async def run_iteration(deps: Deps) -> IterationOutcome:
@@ -189,7 +190,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
         # ── Implement ────────────────────────────────────────────────────────
         issues = issues[: deps.cfg.max_parallel]
-        return await _run_implement_and_merge(issues, deps)
+        return await _run_implement_and_merge(issues, deps, plan_result.sha)
 
     except AgentFailedError as err:
         issue_number: int | None = None

@@ -18,7 +18,6 @@ from pycastle.iteration._deps import (
     FakeAgentRunner,
     RecordingLogger,
     RecordingStatusDisplay,
-    StubPreflightCache,
 )
 from pycastle.services import GithubService
 from pycastle.status_display import PlainStatusDisplay, StatusDisplay
@@ -42,11 +41,10 @@ class _ImplementStub:
     github_svc: GithubService
     repo_root: Path
     logger: RecordingLogger
-    preflight_cache: StubPreflightCache
 
 
 def _make_deps(
-    tmp_path, agent_runner, logger=None, status_display=None, preflight_cache=None
+    tmp_path, agent_runner, logger=None, status_display=None
 ) -> _ImplementStub:
     import shutil as _shutil
 
@@ -78,7 +76,6 @@ def _make_deps(
         cfg=Config(max_parallel=4, max_iterations=1),
         logger=logger or RecordingLogger(),
         status_display=status_display or PlainStatusDisplay(),
-        preflight_cache=preflight_cache or StubPreflightCache(),
     )
 
 
@@ -106,7 +103,7 @@ def test_implement_phase_returns_completed_issues(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 4)
 
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, deps))
+    result = asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     assert result.completed == issues
     assert result.errors == []
@@ -118,7 +115,7 @@ def test_implement_phase_empty_issues_returns_empty_result(tmp_path):
     fake = FakeAgentRunner([])
 
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase([], deps))
+    result = asyncio.run(implement_phase([], deps, "sha-abc"))
 
     assert result.completed == []
     assert result.errors == []
@@ -138,7 +135,7 @@ def test_implement_phase_signals_usage_limit_in_result(tmp_path):
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, deps))
+    result = asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     assert result.usage_limit_hit is True
 
@@ -154,7 +151,7 @@ def test_implement_phase_usage_limit_does_not_exit(tmp_path):
     deps = _make_deps(tmp_path, fake)
 
     # Should not raise SystemExit
-    result = asyncio.run(implement_phase(issues, deps))
+    result = asyncio.run(implement_phase(issues, deps, "sha-abc"))
     assert isinstance(result, ImplementResult)
 
 
@@ -174,7 +171,7 @@ def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
     ]
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
-    asyncio.run(implement_phase(issues, deps))
+    asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     assert any("Implement Agent #2" in n for n in completed_agents), (
         f"Sibling Implement Agent #2 must complete before returning; completed={completed_agents}"
@@ -198,7 +195,7 @@ def test_implement_phase_exception_goes_to_errors(tmp_path):
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, deps))
+    result = asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     assert result.completed == [issues[0]]
     assert len(result.errors) == 1
@@ -212,7 +209,7 @@ def test_implement_phase_no_complete_tag_goes_to_errors(tmp_path):
     fake = FakeAgentRunner([PromiseParseError("no <promise>COMPLETE</promise> tag")])
 
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, deps))
+    result = asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     assert result.completed == []
     assert len(result.errors) == 1
@@ -229,7 +226,7 @@ def test_implement_phase_logs_exception_via_logger(tmp_path):
     fake = FakeAgentRunner([boom])
 
     deps = _make_deps(tmp_path, fake, logger=logger)
-    asyncio.run(implement_phase(issues, deps))
+    asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     assert len(logger.errors) == 1
     assert logger.errors[0][0] == issues[0]
@@ -243,7 +240,7 @@ def test_implement_phase_successful_issues_not_logged_as_errors(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
 
     deps = _make_deps(tmp_path, fake, logger=logger)
-    asyncio.run(implement_phase(issues, deps))
+    asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     assert logger.errors == []
 
@@ -255,7 +252,7 @@ def test_implement_phase_does_not_log_implementer_output(tmp_path):
     fake = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
 
     deps = _make_deps(tmp_path, fake, logger=logger)
-    asyncio.run(implement_phase(issues, deps))
+    asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     assert logger.agent_outputs == []
 
@@ -271,7 +268,7 @@ def test_implement_phase_reviewer_usage_limit_signals_in_result(tmp_path):
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, deps))
+    result = asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     assert result.usage_limit_hit is True
     assert result.completed == []
@@ -287,7 +284,7 @@ def test_run_issue_derives_branch_from_issue_number(tmp_path):
 
     issue = {"number": 7, "title": "Fix thing", "body": "", "comments": []}
     deps = _make_deps(tmp_path, fake)
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
     assert implementer_call.scope_args["BRANCH"] == "pycastle/issue-7"
@@ -303,7 +300,7 @@ def test_run_issue_raises_when_implementer_does_not_complete(tmp_path):
     deps = _make_deps(tmp_path, fake)
 
     with pytest.raises(PromiseParseError):
-        asyncio.run(run_issue(issue, deps))
+        asyncio.run(run_issue(issue, deps, "sha-abc"))
 
 
 def test_run_issue_returns_issue_when_implementer_completes(tmp_path):
@@ -312,7 +309,7 @@ def test_run_issue_returns_issue_when_implementer_completes(tmp_path):
 
     issue = {"number": 2, "title": "Fix thing", "body": "", "comments": []}
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(run_issue(issue, deps))
+    result = asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert result == issue
 
@@ -335,7 +332,7 @@ def test_run_issue_raises_agent_timeout_error_when_implementer_exhausts_retries(
     deps = _make_deps(tmp_path, fake)
 
     with pytest.raises(AgentTimeoutError):
-        asyncio.run(run_issue(issue, deps))
+        asyncio.run(run_issue(issue, deps, "sha-abc"))
 
 
 def test_run_issue_raises_agent_timeout_error_when_reviewer_exhausts_retries(tmp_path):
@@ -351,7 +348,7 @@ def test_run_issue_raises_agent_timeout_error_when_reviewer_exhausts_retries(tmp
     deps = _make_deps(tmp_path, fake)
 
     with pytest.raises(AgentTimeoutError):
-        asyncio.run(run_issue(issue, deps))
+        asyncio.run(run_issue(issue, deps, "sha-abc"))
 
 
 def test_implement_phase_implementer_timeout_tracked_as_error(tmp_path):
@@ -365,7 +362,7 @@ def test_implement_phase_implementer_timeout_tracked_as_error(tmp_path):
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, deps))
+    result = asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     assert result.completed == []
     assert len(result.errors) == 1
@@ -384,7 +381,7 @@ def test_implement_phase_reviewer_timeout_does_not_complete_issue(tmp_path):
 
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, deps))
+    result = asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     assert result.completed == []
     assert len(result.errors) == 1
@@ -399,7 +396,7 @@ def test_run_issue_threads_issue_body_to_implementer_prompt(tmp_path):
     deps = _make_deps(tmp_path, fake)
     issue = {"number": 1, "title": "T", "body": "BODY-X", "comments": []}
 
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
     assert impl_call.scope_args["ISSUE_BODY"] == "BODY-X"
@@ -410,7 +407,7 @@ def test_run_issue_threads_issue_body_to_reviewer_prompt(tmp_path):
     deps = _make_deps(tmp_path, fake)
     issue = {"number": 1, "title": "T", "body": "BODY-X", "comments": []}
 
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     rev_call = next(c for c in fake.calls if "Review Agent" in c.name)
     assert rev_call.scope_args["ISSUE_BODY"] == "BODY-X"
@@ -429,7 +426,7 @@ def test_run_issue_threads_issue_comments_formatted_to_implementer(tmp_path):
         ],
     }
 
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
     rendered = impl_call.scope_args["ISSUE_COMMENTS"]
@@ -445,7 +442,7 @@ def test_run_issue_renders_empty_string_when_no_comments(tmp_path):
     deps = _make_deps(tmp_path, fake)
     issue = {"number": 1, "title": "T", "body": "x", "comments": []}
 
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
     assert impl_call.scope_args["ISSUE_COMMENTS"] == ""
@@ -456,7 +453,7 @@ def test_run_issue_does_not_pass_diff_to_either_agent(tmp_path):
     deps = _make_deps(tmp_path, fake)
     issue = {"number": 1, "title": "T", "body": "", "comments": []}
 
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
     rev_call = next(c for c in fake.calls if "Review Agent" in c.name)
@@ -470,7 +467,7 @@ def test_run_issue_handles_issue_without_body_or_comments(tmp_path):
     deps = _make_deps(tmp_path, fake)
     issue = {"number": 1, "title": "T", "body": "", "comments": []}
 
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
     assert impl_call.scope_args["ISSUE_BODY"] == ""
@@ -555,7 +552,7 @@ def test_run_issue_passes_issue_title_to_implementer(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
 
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert fake.calls[0].issue_title == "Fix auth timeout"
 
@@ -565,7 +562,7 @@ def test_run_issue_passes_issue_title_to_reviewer(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
 
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert fake.calls[1].issue_title == "Fix auth timeout"
 
@@ -580,7 +577,7 @@ def test_run_issue_creates_two_worktrees_implementer_and_reviewer(tmp_path):
     deps.git_svc.is_working_tree_clean.return_value = True
 
     issue = {"number": 10, "title": "Fix thing", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert deps.git_svc.create_worktree.call_count == 2
 
@@ -592,7 +589,7 @@ def test_run_issue_removes_worktrees_after_successful_run(tmp_path):
     deps.git_svc.is_working_tree_clean.return_value = True
 
     issue = {"number": 11, "title": "Fix thing", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert deps.git_svc.remove_worktree.call_count == 2
 
@@ -611,7 +608,7 @@ def test_run_issue_preserves_worktree_on_usage_limit(tmp_path):
 
     issue = {"number": 12, "title": "Fix thing", "body": "", "comments": []}
     with pytest.raises(UsageLimitError):
-        asyncio.run(run_issue(issue, deps))
+        asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     deps.git_svc.remove_worktree.assert_not_called()
 
@@ -623,7 +620,7 @@ def test_run_issue_preserves_worktree_when_dirty(tmp_path):
     deps.git_svc.is_working_tree_clean.return_value = False
 
     issue = {"number": 13, "title": "Fix thing", "body": "", "comments": []}
-    result = asyncio.run(run_issue(issue, deps))
+    result = asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert result == issue
     deps.git_svc.remove_worktree.assert_not_called()
@@ -645,8 +642,8 @@ def test_run_issue_raises_branch_collision_for_concurrent_same_issue(tmp_path):
 
     async def _two_concurrent():
         return await asyncio.gather(
-            run_issue(issue, deps, branch_locks=branch_locks),
-            run_issue(issue, deps, branch_locks=branch_locks),
+            run_issue(issue, deps, "sha-abc", branch_locks=branch_locks),
+            run_issue(issue, deps, "sha-abc", branch_locks=branch_locks),
             return_exceptions=True,
         )
 
@@ -679,7 +676,7 @@ def test_run_issue_review_skip_returns_issue_without_invoking_any_agent(tmp_path
     _seed_review_stage_done(tmp_path, 20)
 
     issue = {"number": 20, "title": "Fix auth", "body": "", "comments": []}
-    result = asyncio.run(run_issue(issue, deps))
+    result = asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert result == issue
     assert fake.calls == []
@@ -692,7 +689,7 @@ def test_run_issue_review_skip_creates_no_worktree(tmp_path):
     _seed_review_stage_done(tmp_path, 21)
 
     issue = {"number": 21, "title": "Fix auth", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     deps.git_svc.create_worktree.assert_not_called()
 
@@ -704,7 +701,7 @@ def test_run_issue_implement_skip_invokes_only_reviewer(tmp_path):
     _seed_implement_stage_done(tmp_path, 22)
 
     issue = {"number": 22, "title": "Fix auth", "body": "", "comments": []}
-    result = asyncio.run(run_issue(issue, deps))
+    result = asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert result == issue
     assert len(fake.calls) == 1
@@ -719,7 +716,7 @@ def test_run_issue_implement_skip_creates_no_implementer_worktree(tmp_path):
     deps.git_svc.is_working_tree_clean.return_value = True
 
     issue = {"number": 23, "title": "Fix auth", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert deps.git_svc.create_worktree.call_count == 1
     branch_arg = deps.git_svc.create_worktree.call_args[0][2]
@@ -732,7 +729,7 @@ def test_run_issue_no_stage_done_signal_runs_both_agents(tmp_path):
     deps = _make_deps(tmp_path, fake)
 
     issue = {"number": 24, "title": "Fix auth", "body": "", "comments": []}
-    result = asyncio.run(run_issue(issue, deps))
+    result = asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert result == issue
     assert len(fake.calls) == 2
@@ -753,25 +750,19 @@ def test_run_issue_releases_lock_on_unexpected_exception(tmp_path):
     issue = {"number": 25, "title": "Fix auth", "body": "", "comments": []}
 
     with pytest.raises(RuntimeError):
-        asyncio.run(run_issue(issue, deps, branch_locks=branch_locks))
+        asyncio.run(run_issue(issue, deps, "sha-abc", branch_locks=branch_locks))
 
     assert not branch_locks["pycastle/issue-25"].locked()
 
 
-def test_run_issue_implementer_worktree_uses_sha_from_preflight_cache(tmp_path):
-    """run_issue must pin the implementer worktree to verdict.sha from preflight_cache.get_safe_sha()."""
-    from pycastle.iteration.preflight import PreflightReady
-
+def test_run_issue_pins_worktree_to_caller_supplied_sha(tmp_path):
+    """run_issue must pin the implementer worktree to the SHA supplied by the caller."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(
-        tmp_path,
-        fake,
-        preflight_cache=StubPreflightCache(PreflightReady(sha="dead1234")),
-    )
+    deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
     issue = {"number": 16, "title": "Fix thing", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "dead1234"))
 
     assert deps.git_svc.create_worktree.call_count == 2
     implementer_sha = deps.git_svc.create_worktree.call_args_list[0][0][3]
@@ -785,7 +776,7 @@ def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
     deps.git_svc.is_working_tree_clean.return_value = True
 
     issue = {"number": 16, "title": "Fix thing", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert deps.git_svc.create_worktree.call_count == 2
     reviewer_sha = deps.git_svc.create_worktree.call_args_list[1][0][3]
@@ -805,7 +796,7 @@ def test_implement_phase_sets_initial_progress_text(tmp_path):
     sd = RecordingStatusDisplay()
     deps = _make_deps(tmp_path, fake, status_display=sd)
 
-    asyncio.run(implement_phase(issues, deps))
+    asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     update_phase_calls = [
         c for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
@@ -828,7 +819,7 @@ def test_implement_phase_increments_progress_text_per_semaphore_acquisition(tmp_
     sd = RecordingStatusDisplay()
     deps = _make_deps(tmp_path, fake, status_display=sd)
 
-    asyncio.run(implement_phase(issues, deps))
+    asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     update_phase_calls = [
         c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
@@ -846,7 +837,7 @@ def test_implement_phase_progress_total_matches_issue_count(tmp_path):
     sd = RecordingStatusDisplay()
     deps = _make_deps(tmp_path, fake, status_display=sd)
 
-    asyncio.run(implement_phase(issues, deps))
+    asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     initial = next(
         c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
@@ -861,7 +852,7 @@ def test_implement_phase_counter_is_monotonic(tmp_path):
     sd = RecordingStatusDisplay()
     deps = _make_deps(tmp_path, fake, status_display=sd)
 
-    asyncio.run(implement_phase(issues, deps))
+    asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
     counts = [
         int(c[2].split("for ")[1].split("/")[0])
@@ -878,7 +869,7 @@ def test_run_issue_calls_on_started_once_per_issue(tmp_path):
     deps = _make_deps(tmp_path, fake)
 
     issue = {"number": 1, "title": "Fix thing", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))
+    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda: fired.append(1)))
 
     assert fired == [1]
 
@@ -891,7 +882,7 @@ def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
     _seed_review_stage_done(tmp_path, 1)
 
     issue = {"number": 1, "title": "Fix thing", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))
+    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda: fired.append(1)))
 
     assert fired == []
 
@@ -908,7 +899,7 @@ def test_run_issue_commits_implementer_with_issue_number_and_message(tmp_path):
     deps.git_svc.is_working_tree_clean.return_value = True
 
     issue = {"number": 40, "title": "Fix", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     impl_call = deps.git_svc.commit.call_args_list[0]
     assert impl_call[0][2] == "Implement #40 - add foo"
@@ -923,7 +914,7 @@ def test_run_issue_commits_implementer_with_title_when_no_commit_message_tag(tmp
     deps.git_svc.is_working_tree_clean.return_value = True
 
     issue = {"number": 43, "title": "Fix the login bug", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     impl_call = deps.git_svc.commit.call_args_list[0]
     assert impl_call[0][2] == "Implement #43 - Fix the login bug"
@@ -941,7 +932,7 @@ def test_run_issue_commits_reviewer_with_issue_number_and_message(tmp_path):
     deps.git_svc.is_working_tree_clean.return_value = True
 
     issue = {"number": 41, "title": "Fix", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     review_call = deps.git_svc.commit.call_args_list[1]
     assert review_call[0][2] == "Review #41 - rename var"
@@ -956,7 +947,7 @@ def test_run_issue_commits_reviewer_with_title_when_no_commit_message_tag(tmp_pa
     deps.git_svc.is_working_tree_clean.return_value = True
 
     issue = {"number": 44, "title": "Add dark mode", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     review_call = deps.git_svc.commit.call_args_list[1]
     assert review_call[0][2] == "Review #44 - Add dark mode"
@@ -970,7 +961,7 @@ def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
     _seed_implement_stage_done(tmp_path, 1)
 
     issue = {"number": 1, "title": "Fix auth", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps, on_started=lambda: fired.append(1)))
+    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda: fired.append(1)))
 
     assert fired == [1]
 
@@ -1004,7 +995,7 @@ def test_run_issue_clears_implementer_session_dir_contents_after_commit(tmp_path
     deps.git_svc.create_worktree.side_effect = _seeding_create
 
     issue = {"number": 50, "title": "Fix", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     # Dir exists (not removed) but is empty (contents cleared = stage-done signal).
     assert impl_session_dir.is_dir()
@@ -1037,7 +1028,7 @@ def test_run_issue_clears_reviewer_session_dir_contents_after_commit(tmp_path):
     deps.git_svc.create_worktree.side_effect = _seeding_create
 
     issue = {"number": 51, "title": "Fix", "body": "", "comments": []}
-    asyncio.run(run_issue(issue, deps))
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert rev_session_dir.is_dir()
     assert not any(rev_session_dir.iterdir())

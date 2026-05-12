@@ -35,6 +35,7 @@ class _PlanningDeps(Protocol):
 @dataclasses.dataclass(frozen=True)
 class PlanReady:
     issues: list[dict]
+    sha: str
 
 
 @dataclasses.dataclass(frozen=True)
@@ -61,7 +62,7 @@ def hydrate_planned_issues(
                 "comments": source.get("comments") or [],
             }
         )
-    return PlanReady(issues=hydrated)
+    return PlanReady(issues=hydrated, sha=plan_result.sha)
 
 
 def _fill_fields(issues: list[dict]) -> list[dict]:
@@ -91,12 +92,17 @@ async def planning_phase(
         startup_message=startup_msg,
     ) as row:
         if _in_flight:
+            verdict = await deps.preflight_cache.get_safe_sha(deps)
+            if isinstance(verdict, (PreflightHITL, PreflightAFK)):
+                row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
+                return verdict
+            sha = verdict.sha
             nums = ", ".join(f"#{i['number']}" for i in _in_flight)
             row.close(
                 f"resuming {len(_in_flight)} in-flight branch(es) ({nums}) labeled"
                 f" {deps.cfg.issue_label}, skipping plan agent"
             )
-            return PlanReady(issues=_fill_fields(_in_flight))
+            return PlanReady(issues=_fill_fields(_in_flight), sha=sha)
 
         verdict = await deps.preflight_cache.get_safe_sha(deps)
         if isinstance(verdict, (PreflightHITL, PreflightAFK)):
@@ -109,7 +115,7 @@ async def planning_phase(
                 f"only one open issue (#{open_issues[0]['number']}) labeled"
                 f" {deps.cfg.issue_label}, skipping plan agent"
             )
-            return PlanReady(issues=_fill_fields(open_issues))
+            return PlanReady(issues=_fill_fields(open_issues), sha=sha)
 
         async with transient_worktree("plan-sandbox", sha=sha, deps=deps) as wt:
             try:
@@ -160,6 +166,7 @@ async def planning_phase(
 
             plan = PlanReady(
                 issues=sorted(output.issues, key=lambda i: i["number"]),
+                sha=sha,
             )
             hydrated = hydrate_planned_issues(plan, open_issues)
             issue_lines = [
