@@ -22,7 +22,7 @@ Only work on the issue specified. Work on branch {{BRANCH}}.
 
 ## 1. Explore
 
-Explore only the files mentioned in the issue body and the test files that directly touch those files. Do not survey the full repository.
+Explore only the files mentioned in the issue and the test files that directly touch those files. Do not survey the full repository.
 
 Use the domain glossary in `CONTEXT.md` so that test names and interface vocabulary match the project's language. Consult `docs/adr/README.md` if present, then read any ADRs that touch the area you're changing.
 
