@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -155,11 +156,20 @@ class GithubService:
         return str(payload["login"])
 
     def close_issue(self, number: int) -> None:
-        self._request(
-            "PATCH",
-            f"/repos/{self.repo}/issues/{number}",
-            data={"state": "closed"},
-        )
+        try:
+            self._request(
+                "PATCH",
+                f"/repos/{self.repo}/issues/{number}",
+                data={"state": "closed"},
+            )
+        except GithubAPIError as exc:
+            if exc.status not in (404, 410):
+                raise
+            warnings.warn(
+                f"Issue #{number} is gone (HTTP {exc.status}); treating close as a no-op",
+                UserWarning,
+                stacklevel=2,
+            )
         self._recently_closed.add(number)
 
     def get_issue(self, issue_number: int) -> dict[str, str | int]:

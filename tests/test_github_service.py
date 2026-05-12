@@ -369,14 +369,43 @@ def test_close_issue_sends_patch_with_state_closed():
     assert json.loads(req.data.decode()) == {"state": "closed"}
 
 
-def test_close_issue_raises_github_api_error_on_failure():
+def test_close_issue_raises_github_api_error_on_500():
     svc = _make_service()
     with patch(
         "pycastle.services.github_service.urlopen",
-        side_effect=_make_http_error(404, b'{"message":"Not Found"}'),
+        side_effect=_make_http_error(500, b"server error"),
     ):
-        with pytest.raises(GithubAPIError):
+        with pytest.raises(GithubAPIError) as ei:
             svc.close_issue(42)
+    assert ei.value.status == 500
+
+
+@pytest.mark.parametrize("status", [404, 410])
+def test_close_issue_treats_gone_as_no_op_with_warning(status):
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_http_error(status, b'{"message":"gone"}'),
+    ):
+        with pytest.warns(UserWarning, match="42"):
+            svc.close_issue(42)
+
+
+def test_close_issue_on_410_marks_issue_as_closed_for_subsequent_listings():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_http_error(410, b'{"message":"This issue was deleted"}'),
+    ):
+        with pytest.warns(UserWarning):
+            svc.close_issue(99)
+    body = json.dumps([{"number": 99, "title": "gone", "labels": []}]).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body, headers={}),
+    ):
+        open_issues = svc.get_all_open_issues_lightweight()
+    assert all(i["number"] != 99 for i in open_issues)
 
 
 # ── get_issue ────────────────────────────────────────────────────────────────
