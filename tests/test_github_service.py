@@ -380,45 +380,18 @@ def test_close_issue_raises_github_api_error_on_500():
     assert ei.value.status == 500
 
 
-def test_close_issue_returns_normally_on_410():
+@pytest.mark.parametrize("status", [404, 410])
+def test_close_issue_treats_gone_as_no_op_with_warning(status):
     svc = _make_service()
     with patch(
         "pycastle.services.github_service.urlopen",
-        side_effect=_make_http_error(410, b'{"message":"This issue was deleted"}'),
-    ):
-        svc.close_issue(42)  # must not raise
-
-
-def test_close_issue_returns_normally_on_404():
-    svc = _make_service()
-    with patch(
-        "pycastle.services.github_service.urlopen",
-        side_effect=_make_http_error(404, b'{"message":"Not Found"}'),
-    ):
-        svc.close_issue(42)  # must not raise
-
-
-def test_close_issue_410_emits_warning_with_issue_number():
-    svc = _make_service()
-    with patch(
-        "pycastle.services.github_service.urlopen",
-        side_effect=_make_http_error(410, b'{"message":"This issue was deleted"}'),
+        side_effect=_make_http_error(status, b'{"message":"gone"}'),
     ):
         with pytest.warns(UserWarning, match="42"):
             svc.close_issue(42)
 
 
-def test_close_issue_404_emits_warning_with_issue_number():
-    svc = _make_service()
-    with patch(
-        "pycastle.services.github_service.urlopen",
-        side_effect=_make_http_error(404, b'{"message":"Not Found"}'),
-    ):
-        with pytest.warns(UserWarning, match="42"):
-            svc.close_issue(42)
-
-
-def test_close_issue_adds_to_recently_closed_on_410():
+def test_close_issue_on_410_marks_issue_as_closed_for_subsequent_listings():
     svc = _make_service()
     with patch(
         "pycastle.services.github_service.urlopen",
@@ -426,7 +399,13 @@ def test_close_issue_adds_to_recently_closed_on_410():
     ):
         with pytest.warns(UserWarning):
             svc.close_issue(99)
-    assert 99 in svc._recently_closed
+    body = json.dumps([{"number": 99, "title": "gone", "labels": []}]).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body, headers={}),
+    ):
+        open_issues = svc.get_all_open_issues_lightweight()
+    assert all(i["number"] != 99 for i in open_issues)
 
 
 # ── get_issue ────────────────────────────────────────────────────────────────
