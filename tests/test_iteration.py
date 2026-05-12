@@ -2358,3 +2358,55 @@ def test_run_iteration_aborted_timeout_preserves_worktree_when_session_populated
     assert result.worktree_path.exists()
     session = RoleSession(result.worktree_path, AgentRole.IMPROVE)
     assert session.is_resumable()
+
+
+# ── Regression #679: implement SHA pinned to planner's SHA ──────────────────
+
+
+def test_run_iteration_preflight_fix_uses_planner_sha_not_second_call(
+    tmp_path, git_svc, logger
+):
+    """Regression #679: when HEAD advances between planning and implement, the implementer
+    worktree must be pinned to the SHA from planning's preflight call, not a re-derived SHA.
+    Verified by a sequential stub that would return X2 on a second get_safe_sha call."""
+    from pycastle.iteration.preflight import PreflightAFK
+
+    call_count = 0
+
+    class _SequentialCache:
+        async def get_safe_sha(self, deps):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return PreflightAFK(sha="sha-x1", issue_number=181)
+            return PreflightAFK(sha="sha-x2", issue_number=182)
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+    ]
+    github_svc.get_issue.return_value = {
+        "number": 181,
+        "title": "Fix preflight failure",
+        "body": "",
+        "comments": [],
+    }
+
+    async def _fake_agent(request: RunRequest):
+        return CompletionOutput()
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+        ),
+        preflight_cache=_SequentialCache(),  # type: ignore[arg-type]
+    )
+    asyncio.run(run_iteration(deps))
+
+    assert call_count == 1, (
+        "get_safe_sha must be called exactly once (from planning_phase)"
+    )
+    implementer_sha = git_svc.create_worktree.call_args_list[0][0][3]
+    assert implementer_sha == "sha-x1", (
+        "implementer worktree must be pinned to planning's SHA"
+    )
