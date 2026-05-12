@@ -253,6 +253,7 @@ def test_planning_phase_all_blocked_carries_blocked_list(tmp_path, git_svc):
 def test_hydrate_planned_issues_merges_body_and_comments_from_open_issues():
     plan = PlanReady(
         issues=[{"number": 1, "title": "A"}, {"number": 2, "title": "B"}],
+        sha="abc123",
     )
     open_issues = [
         {
@@ -286,6 +287,7 @@ def test_hydrate_planned_issues_merges_body_and_comments_from_open_issues():
 def test_hydrate_planned_issues_raises_when_planned_number_not_in_open_issues():
     plan = PlanReady(
         issues=[{"number": 99, "title": "Hallucinated"}],
+        sha="abc123",
     )
     open_issues = [
         {"number": 1, "title": "A", "body": "x", "comments": [], "labels": []},
