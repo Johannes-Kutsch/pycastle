@@ -15,6 +15,13 @@ class GitCommandError(GitServiceError):
         self.stderr = stderr
         super().__init__(message)
 
+    def __str__(self) -> str:
+        base = super().__str__()
+        parts = [base, f"returncode: {self.returncode}"]
+        if self.stderr:
+            parts.append(f"stderr: {self.stderr}")
+        return "\n".join(parts)
+
 
 class GitTimeoutError(GitServiceError, TimeoutError):
     pass
