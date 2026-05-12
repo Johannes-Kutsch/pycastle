@@ -1,8 +1,30 @@
+import logging
 import shutil
+import subprocess
+import time
 from pathlib import Path
 
 from ..config import Config
 from ._base import _SubprocessService
+
+logger = logging.getLogger(__name__)
+
+_PERMANENT_FAILURE_PATTERNS = [
+    "not possible to fast-forward",
+    "need to specify how to reconcile divergent branches",
+    "non-fast-forward",
+    "authentication failed",
+    "could not read username",
+    "permission denied",
+    "does not appear to be a git repository",
+    "repository not found",
+    "remote: not found",
+    "refusing to merge unrelated histories",
+    "conflict",
+]
+
+_RETRY_DELAYS = [1, 3]
+_MAX_ATTEMPTS = 3
 
 
 class GitServiceError(RuntimeError):
@@ -248,10 +270,46 @@ class GitService(_SubprocessService):
         )
         self._normalize_line_endings(worktree_path)
 
+    def _run_or_raise_with_retry(
+        self,
+        cmd: list[str],
+        message: str,
+        operation: str,
+        cwd: Path | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        last_exc: GitCommandError | None = None
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            try:
+                result = self._run_or_raise(cmd, message, cwd=cwd)
+                if attempt > 1:
+                    logger.warning(
+                        "git %s succeeded on attempt %d after transient failure",
+                        operation,
+                        attempt,
+                    )
+                return result
+            except GitCommandError as exc:
+                if any(p in exc.stderr.lower() for p in _PERMANENT_FAILURE_PATTERNS):
+                    raise
+                last_exc = exc
+                if attempt < _MAX_ATTEMPTS:
+                    delay = _RETRY_DELAYS[attempt - 1]
+                    logger.warning(
+                        "git %s failed (attempt %d/%d), retrying in %ds: %s",
+                        operation,
+                        attempt,
+                        _MAX_ATTEMPTS,
+                        delay,
+                        exc.stderr,
+                    )
+                    time.sleep(delay)
+        raise last_exc  # type: ignore[misc]
+
     def pull(self, repo_path: Path) -> None:
-        self._run_or_raise(
+        self._run_or_raise_with_retry(
             ["git", "pull", "--ff-only"],
             "git pull --ff-only failed",
+            operation="pull",
             cwd=repo_path,
         )
 
@@ -275,10 +333,19 @@ class GitService(_SubprocessService):
         )
         return True
 
+    def fetch(self, repo_path: Path) -> None:
+        self._run_or_raise_with_retry(
+            ["git", "fetch"],
+            "git fetch failed",
+            operation="fetch",
+            cwd=repo_path,
+        )
+
     def push(self, repo_path: Path) -> None:
-        self._run_or_raise(
+        self._run_or_raise_with_retry(
             ["git", "push"],
             "git push failed",
+            operation="push",
             cwd=repo_path,
         )
 
