@@ -22,7 +22,6 @@ from ..worktree import (
     worktree_path,
 )
 from ._deps import Logger
-from .preflight import PreflightCache
 
 
 class _ImplementDeps(Protocol):
@@ -33,7 +32,6 @@ class _ImplementDeps(Protocol):
     github_svc: GithubService
     repo_root: Path
     logger: Logger
-    preflight_cache: PreflightCache
 
 
 def branch_for(issue_number: int) -> str:
@@ -51,6 +49,7 @@ class ImplementResult:
 async def run_issue(
     issue: dict,
     deps: _ImplementDeps,
+    sha: str,
     semaphore: asyncio.Semaphore | None = None,
     *,
     token: CancellationToken | None = None,
@@ -60,9 +59,6 @@ async def run_issue(
     _branch = branch_for(issue["number"])
     _token = token if token is not None else CancellationToken()
     scope_args = build_issue_scope_args(issue, extra_scope_args={"BRANCH": _branch})
-
-    verdict = await deps.preflight_cache.get_safe_sha(deps)
-    sha = verdict.sha
 
     _started_fired = False
 
@@ -191,6 +187,7 @@ async def run_issue(
 async def implement_phase(
     issues: list[dict],
     deps: _ImplementDeps,
+    sha: str,
     *,
     token: CancellationToken | None = None,
 ) -> ImplementResult:
@@ -215,6 +212,7 @@ async def implement_phase(
             run_issue(
                 issue,
                 deps,
+                sha,
                 semaphore,
                 token=_token,
                 branch_locks=branch_locks,
