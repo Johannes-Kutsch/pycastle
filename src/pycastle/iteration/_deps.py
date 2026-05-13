@@ -4,10 +4,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..agent_output_protocol import AgentOutput
+from ..agent_output_protocol import AgentOutput, AgentSuccessOutput, FailedOutput
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..errors import AgentTimeoutError
+from ..errors import AgentFailedError, AgentTimeoutError
 from ..services import GitService
 from ..services import GithubService
 from ..status_display import StatusDisplay
@@ -86,9 +86,17 @@ class FakeAgentRunner:
         self.calls: list[RunRequest] = []
         self.preflight_calls: list[dict] = []
 
-    async def run(self, request: RunRequest) -> AgentOutput:
+    async def run(self, request: RunRequest) -> AgentSuccessOutput:
         try:
-            return await self._run(request)
+            output = await self._run(request)
+            if isinstance(output, FailedOutput):
+                raise AgentFailedError(
+                    role_value=request.role.value,
+                    worktree_path=request.mount_path,
+                    namespace=request.session_namespace,
+                    failure_class=output.failure_class,
+                )
+            return output
         except AgentTimeoutError as err:
             if not err.role_value:
                 err.role_value = request.role.value
@@ -100,7 +108,9 @@ class FakeAgentRunner:
         if self._side_effect is not None:
             result = self._side_effect(request)
             if asyncio.iscoroutine(result):
-                return await result
+                result = await result
+            if isinstance(result, BaseException):
+                raise result
             return result
         if not self._responses:
             raise AssertionError(

@@ -58,7 +58,7 @@ pycastle = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 testpaths = ["tests"]
 markers = [
     "integration: tests that require a live Docker daemon and the pycastle image",
