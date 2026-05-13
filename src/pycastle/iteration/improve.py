@@ -6,13 +6,11 @@ from typing import Protocol
 from ..agent_output_protocol import (
     AgentOutput,
     AgentRole,
-    FailedOutput,
     IssueOutput,
     NoCandidateOutput,
 )
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..errors import AgentFailedError
 from ..prompt_pipeline import PromptTemplate, Scope, build_issue_scope_args
 from ..services import GitService
 from ..services.github_service import GithubService
@@ -228,13 +226,6 @@ async def improve_phase(
                     )
                 )
 
-                if isinstance(output, FailedOutput):
-                    raise AgentFailedError(
-                        role_value=AgentRole.IMPROVE.value,
-                        worktree_path=sandbox_path,
-                        namespace=phase.namespace,
-                        failure_class=output.failure_class,
-                    )
                 if prompt_name == "02-prd.md" and isinstance(output, IssueOutput):
                     prd_number = output.number
                 completed_id = _phase_id(prompt_name, output)

@@ -5,12 +5,17 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .account_pool import AccountPool
-from .agent_output_protocol import AgentOutput, AgentRole, FailedOutput
+from .agent_output_protocol import (
+    AgentOutput,
+    AgentRole,
+    AgentSuccessOutput,
+    FailedOutput,
+)
 from .agent_result import CancellationToken
 from .config import Config
 from .container_runner import ContainerRunner
 from .docker_session import DockerSession, build_volume_spec
-from .errors import AgentTimeoutError, UsageLimitError
+from .errors import AgentFailedError, AgentTimeoutError, UsageLimitError
 from .prompt_pipeline import PromptRenderer, PromptTemplate
 from .reprompt_loop import REPROMPT_MESSAGE, run_with_reprompt
 from .session_resume import RoleSession, RunKind
@@ -39,7 +44,7 @@ class RunRequest:
 
 
 class AgentRunnerProtocol(Protocol):
-    async def run(self, request: RunRequest) -> AgentOutput: ...
+    async def run(self, request: RunRequest) -> AgentSuccessOutput: ...
 
     async def run_preflight(
         self,
@@ -109,9 +114,17 @@ class AgentRunner:
             )
         return await self._renderer.render(template, scope_args, container_exec)
 
-    async def run(self, request: RunRequest) -> AgentOutput:
+    async def run(self, request: RunRequest) -> AgentSuccessOutput:
         try:
-            return await self._run(request)
+            output = await self._run(request)
+            if isinstance(output, FailedOutput):
+                raise AgentFailedError(
+                    role_value=request.role.value,
+                    worktree_path=request.mount_path,
+                    namespace=request.session_namespace,
+                    failure_class=output.failure_class,
+                )
+            return output
         except AgentTimeoutError as err:
             if not err.role_value:
                 err.role_value = request.role.value

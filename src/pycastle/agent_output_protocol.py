@@ -102,6 +102,14 @@ AgentOutput: TypeAlias = (
     | FailedOutput
 )
 
+AgentSuccessOutput: TypeAlias = (
+    PlannerOutput
+    | IssueOutput
+    | CompletionOutput
+    | NoCandidateOutput
+    | CommitMessageOutput
+)
+
 
 class AgentOutputProtocolError(Exception):
     pass

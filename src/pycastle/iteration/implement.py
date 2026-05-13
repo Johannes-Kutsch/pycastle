@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..agent_output_protocol import AgentRole, CommitMessageOutput, FailedOutput
+from ..agent_output_protocol import AgentRole, CommitMessageOutput
 from ..agent_result import CancellationToken
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
@@ -117,12 +117,6 @@ async def run_issue(
                             token=_token,
                         )
                     )
-                    if isinstance(result, FailedOutput):
-                        raise AgentFailedError(
-                            role_value=AgentRole.IMPLEMENTER.value,
-                            worktree_path=impl_mount_path,
-                            failure_class=result.failure_class,
-                        )
                     if isinstance(result, CommitMessageOutput):
                         _msg = result.message or issue["title"]
                         deps.git_svc.commit(
@@ -160,12 +154,6 @@ async def run_issue(
                         token=_token,
                     )
                 )
-                if isinstance(review_result, FailedOutput):
-                    raise AgentFailedError(
-                        role_value=AgentRole.REVIEWER.value,
-                        worktree_path=review_mount_path,
-                        failure_class=review_result.failure_class,
-                    )
                 if isinstance(review_result, CommitMessageOutput):
                     _rev_msg = review_result.message or issue["title"]
                     deps.git_svc.commit(
