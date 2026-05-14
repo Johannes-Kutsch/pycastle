@@ -4,7 +4,7 @@ import json
 import re
 from collections.abc import Callable, Iterable
 from datetime import datetime, time, timedelta, timezone
-from typing import Literal, Protocol, TypeAlias
+from typing import Any, Literal, Protocol, TypeAlias
 
 from .errors import UsageLimitError
 
@@ -454,6 +454,37 @@ _HANDLERS: dict[AgentRole, _RoleHandler] = {
 }
 
 assert len(_HANDLERS) == len(AgentRole)
+
+
+def process_stream_from_events(
+    events: "Iterable[Any]",
+    on_turn: Callable[[str], None],
+    role: AgentRole,
+    on_tokens: Callable[[int], None] | None = None,
+) -> AgentOutput:
+    from .services.agent_service import AssistantTurn, Result, Tokens, UsageLimit
+
+    handler = _HANDLERS[role]
+    result_text: str | None = None
+    collected_turns: list[str] = []
+    for event in events:
+        if isinstance(event, UsageLimit):
+            raise UsageLimitError(reset_time=event.reset_time)
+        elif isinstance(event, Tokens):
+            if on_tokens is not None:
+                on_tokens(event.count)
+        elif isinstance(event, AssistantTurn):
+            on_turn(event.text)
+            collected_turns.append(event.text)
+            result = handler.check_turn(event.text)
+            if result is not None:
+                return result
+        elif isinstance(event, Result):
+            result_text = event.text
+            break
+    text = result_text if result_text is not None else "\n".join(collected_turns)
+    tail = f"\nOutput tail: {text[-300:]!r}"
+    return handler.extract_final(text, tail)
 
 
 def process_stream(

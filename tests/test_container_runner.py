@@ -10,11 +10,11 @@ import pytest
 
 from pycastle.agent_output_protocol import AgentRole, CommitMessageOutput
 from pycastle.config import Config
-from pycastle.container_runner import ContainerRunner, _build_claude_command
+from pycastle.container_runner import ContainerRunner
 from pycastle.docker_session import DockerSession
 from pycastle.errors import AgentTimeoutError, DockerError, UsageLimitError
 from pycastle.iteration._deps import RecordingStatusDisplay
-from pycastle.session_resume import RunKind
+from pycastle.services.claude_service import ClaudeService
 
 _ROLE = AgentRole.IMPLEMENTER
 
@@ -85,63 +85,9 @@ def _make_runner(
         effort=effort,
         status_display=status_display,
         cfg=cfg,
+        service=ClaudeService(),
     )
     return runner, session
-
-
-# ── _build_claude_command ────────────────────────────────────────────────────
-
-
-def test_build_claude_command_includes_output_format_stream_json():
-    assert "--output-format stream-json" in _build_claude_command()
-
-
-def test_build_claude_command_includes_dangerously_skip_permissions():
-    assert "--dangerously-skip-permissions" in _build_claude_command()
-
-
-def test_build_claude_command_includes_verbose():
-    assert "--verbose" in _build_claude_command()
-
-
-def test_build_claude_command_includes_stdin_redirect():
-    assert "< /tmp/.pycastle_prompt" in _build_claude_command()
-
-
-def test_build_claude_command_does_not_include_print_flag():
-    assert "--print" not in _build_claude_command()
-
-
-def test_build_claude_command_includes_model_when_set():
-    assert "--model claude-opus-4-7" in _build_claude_command(model="claude-opus-4-7")
-
-
-def test_build_claude_command_includes_effort_when_set():
-    assert "--effort high" in _build_claude_command(effort="high")
-
-
-def test_build_claude_command_excludes_flags_when_unset():
-    cmd = _build_claude_command()
-    assert "--model" not in cmd
-    assert "--effort" not in cmd
-
-
-def test_build_claude_command_includes_session_id_when_fresh_with_uuid():
-    cmd = _build_claude_command(run_kind=RunKind.FRESH, session_uuid="abc-123")
-    assert "--session-id abc-123" in cmd
-    assert "--resume" not in cmd
-
-
-def test_build_claude_command_includes_resume_when_resume_with_uuid():
-    cmd = _build_claude_command(run_kind=RunKind.RESUME, session_uuid="abc-123")
-    assert "--resume abc-123" in cmd
-    assert "--session-id" not in cmd
-
-
-def test_build_claude_command_excludes_session_flags_when_uuid_absent():
-    cmd = _build_claude_command()
-    assert "--session-id" not in cmd
-    assert "--resume" not in cmd
 
 
 # ── Constructor ──────────────────────────────────────────────────────────────
@@ -150,7 +96,10 @@ def test_build_claude_command_excludes_session_flags_when_uuid_absent():
 def test_container_runner_constructor_takes_session(tmp_path):
     session = FakeDockerSession()
     runner = ContainerRunner(
-        "agent", cast(DockerSession, session), cfg=Config(logs_dir=tmp_path)
+        "agent",
+        cast(DockerSession, session),
+        cfg=Config(logs_dir=tmp_path),
+        service=ClaudeService(),
     )
     assert runner.name == "agent"
     assert runner.log_path.parent == tmp_path

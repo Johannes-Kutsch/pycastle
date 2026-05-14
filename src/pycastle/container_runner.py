@@ -2,36 +2,17 @@ import asyncio
 import json
 import queue
 import re
-import shlex
 import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from .agent_output_protocol import AgentOutput, AgentRole, process_stream
+from .agent_output_protocol import AgentOutput, AgentRole, process_stream_from_events
 from .config import Config
 from .docker_session import DockerSession
 from .errors import AgentTimeoutError, DockerError
+from .services.agent_service import AgentService
 from .session_resume import RunKind
 from .status_display import PlainStatusDisplay
-
-
-def _build_claude_command(
-    model: str = "",
-    effort: str = "",
-    run_kind: RunKind = RunKind.FRESH,
-    session_uuid: str | None = None,
-) -> str:
-    flags = "--verbose --dangerously-skip-permissions --output-format stream-json -p -"
-    if model:
-        flags += f" --model {model}"
-    if effort:
-        flags += f" --effort {effort}"
-    if session_uuid:
-        if run_kind == RunKind.RESUME:
-            flags += f" --resume {session_uuid}"
-        else:
-            flags += f" --session-id {session_uuid}"
-    return f"claude {flags} < /tmp/.pycastle_prompt"
 
 
 class ContainerRunner:
@@ -44,12 +25,14 @@ class ContainerRunner:
         status_display=None,
         *,
         cfg: Config,
+        service: AgentService,
     ) -> None:
         self.name = name
         self._session = session
         self.model = model
         self.effort = effort
         self._cfg = cfg
+        self._service = service
         self._status_display = (
             status_display if status_display is not None else PlainStatusDisplay()
         )
@@ -61,6 +44,8 @@ class ContainerRunner:
         return self._log_path
 
     async def setup(self, git_name: str, git_email: str, work_body: str = "") -> None:
+        import shlex
+
         self._cfg.logs_dir.mkdir(parents=True, exist_ok=True)
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._session.__enter__)
@@ -130,14 +115,13 @@ class ContainerRunner:
         session_uuid: str | None = None,
     ) -> AgentOutput:
         self._session.write_file(prompt, "/tmp/.pycastle_prompt")
-        chunks = self._session.exec_stream(
-            _build_claude_command(
-                model=self.model,
-                effort=self.effort,
-                run_kind=run_kind,
-                session_uuid=session_uuid,
-            )
+        command = self._service.build_command(
+            model=self.model,
+            effort=self.effort,
+            run_kind=run_kind,
+            session_uuid=session_uuid,
         )
+        chunks = self._session.exec_stream(command)
         input_record = {
             "type": "pycastle_input",
             "role": role.value,
@@ -185,7 +169,9 @@ class ContainerRunner:
                             line, line_buf = line_buf.split("\n", 1)
                             yield line
 
-                return process_stream(_lines(), on_turn, role, on_tokens)
+                return process_stream_from_events(
+                    self._service.run(_lines()), on_turn, role, on_tokens
+                )
         finally:
             try:
                 self._session.exec_simple("rm -f /tmp/.pycastle_prompt")
