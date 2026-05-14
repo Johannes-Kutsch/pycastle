@@ -1,3 +1,11 @@
+from .agent_service import (
+    AgentService,
+    AssistantTurn,
+    ParsedTurn,
+    Result,
+    Tokens,
+    UsageLimit,
+)
 from .claude_service import ClaudeService
 from .docker_service import DockerService
 from .git_service import (
@@ -16,6 +24,8 @@ from .github_service import (
 )
 
 __all__ = [
+    "AgentService",
+    "AssistantTurn",
     "ClaudeService",
     "DockerService",
     "GitCommandError",
@@ -28,4 +38,8 @@ __all__ = [
     "GithubNetworkError",
     "GithubService",
     "GithubServiceError",
+    "ParsedTurn",
+    "Result",
+    "Tokens",
+    "UsageLimit",
 ]

@@ -20,6 +20,8 @@ from .prompt_pipeline import PromptRenderer, PromptTemplate
 from .reprompt_loop import REPROMPT_MESSAGE, run_with_reprompt
 from .session_resume import RoleSession, RunKind
 from .services import GitService
+from .services.agent_service import AgentService
+from .services.claude_service import ClaudeService
 from .status_display import PlainStatusDisplay
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
@@ -65,12 +67,16 @@ class AgentRunner:
         git_service: GitService,
         docker_client=None,
         account_pool: AccountPool | None = None,
+        service: AgentService | None = None,
     ) -> None:
         self._env = env
         self._cfg = cfg
         self._git_service = git_service
         self._docker_client = docker_client
         self._account_pool = account_pool
+        self._service: AgentService = (
+            service if service is not None else ClaudeService()
+        )
         self._renderer = PromptRenderer(cfg)
 
     def _build_session(
@@ -83,11 +89,12 @@ class AgentRunner:
         picked_token: str | None = None
         if self._account_pool is not None:
             _, picked_token = self._account_pool.pick()
-            container_env["CLAUDE_CODE_OAUTH_TOKEN"] = picked_token
+        state_dir: str | None = None
         if role_session is not None:
-            container_env["CLAUDE_CONFIG_DIR"] = (
+            state_dir = (
                 f"{_CONTAINER_WORKSPACE}/{role_session.claude_config_dir_relpath()}"
             )
+        container_env.update(self._service.build_env(state_dir, picked_token))
         return (
             DockerSession(
                 volumes=volumes,
@@ -168,6 +175,7 @@ class AgentRunner:
                 effort=effort,
                 status_display=status_display,
                 cfg=self._cfg,
+                service=self._service,
             )
             try:
                 git_name = self._git_service.get_user_name()
@@ -263,6 +271,7 @@ class AgentRunner:
                 session,
                 status_display=status_display,
                 cfg=self._cfg,
+                service=self._service,
             )
             try:
                 await runner.setup(git_name, git_email, work_body)
