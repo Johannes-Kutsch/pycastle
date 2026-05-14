@@ -5,10 +5,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from ..agent_output_protocol import AgentRole, FailedOutput
+from ..agent_output_protocol import AgentRole
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..errors import AgentFailedError
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..session_resume import RoleSession
@@ -201,7 +200,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 delete_branch_on_teardown=True,
                 deps=deps,
             ) as sandbox_path:
-                merger_result = await deps.agent_runner.run(
+                await deps.agent_runner.run(
                     RunRequest(
                         name="Merge Agent",
                         template=PromptTemplate.MERGE,
@@ -219,12 +218,6 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                         work_body=f"Merging {len(conflict_issues)} Branches",
                     )
                 )
-                if isinstance(merger_result, FailedOutput):
-                    raise AgentFailedError(
-                        role_value=AgentRole.MERGER.value,
-                        worktree_path=sandbox_path,
-                        failure_class=merger_result.failure_class,
-                    )
                 deps.git_svc.fast_forward_branch(
                     deps.repo_root, target_branch, MERGE_SANDBOX
                 )
