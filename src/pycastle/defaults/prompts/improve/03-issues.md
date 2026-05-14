@@ -63,61 +63,7 @@ Before approving each slice:
 
 Each issue must fit in one usage window of an AFK agent; over-scoping is wasteful.
 
-## 3a. Classify each slice by mode
-
-Every slice is exactly one of three **slice modes**. The mode determines which implement prompt the agent will run, and shapes the acceptance criteria you write in step 4.
-
-**`behavior-slice`** — introduces or changes observable behavior verifiable by a new test.
-
-**`refactor-slice`** — changes structure without changing observable behavior: symbol moves, renames, protocol introductions, import rewires, dead-code removal, dependency-injection rewiring.
-
-**`docs-slice`** — markdown-only: CONTEXT.md additions, ADRs, README updates. No code touched. (The dedicated CONTEXT.md update issue from step 2 above is always a `docs-slice`.)
-
-### Slicing rule
-
-**If a step cannot be verified by a new test of observable behavior, file it as its own `refactor-slice`. Refactor steps never ride along inside a `behavior-slice`.**
-
-Multiple refactor steps may be bundled into one `refactor-slice` — one slice can rename five functions, extract two modules, and rewire three imports. Bundling avoids issue-count explosion; what's *not* allowed is mixing refactor and behavior in the same slice.
-
-Refactor slices land first. The dependent behavior slice lists the refactor in `Blocked by`.
-
-**Canonical extract-it-as-a-refactor-slice cases:** extract a symbol to a new module, rename a public name used across modules, introduce a protocol/interface used by call sites outside the behavior slice, rewire imports across packages.
-
-## 4. Acceptance criteria shape per slice mode
-
-Acceptance criteria are how the implement agent learns what "done" looks like. The shape differs by mode.
-
-**`behavior-slice`** — behavior + observable surface. State the behavior in terms of what the system does and where that's visible.
-
-> _Good:_ "The parser log file contains `http_get_start` for the attempt and does not contain a matching `http_get_ok`."
->
-> _Bad:_ "A test asserts the log contains `http_get_start` with no matching `http_get_ok`."
-
-**`refactor-slice`** — outcome-shaped. State the new structural fact plus "no behavior change."
-
-> _Good:_ "`current_stage` is imported from `_context`. No behavior change. Existing test suite passes."
->
-> _Bad:_ "A test verifies the import path."
-
-**`docs-slice`** — file-state-shaped. State what the file should contain after the edit.
-
-> _Good:_ "`CONTEXT.md` contains the term `slice mode` defined as `One of refactor-slice, behavior-slice, docs-slice; …`."
->
-> _Bad:_ "The glossary is updated."
-
-### Acceptance-criteria banlist
-
-**Never use these sentence shapes in acceptance criteria:**
-
-- "a test asserts X"
-- "test verifies X"
-- "unit test X"
-- "the test should X"
-- "a test simulates X"
-
-Phrase verification as the system's observable behavior, not as test-code structure. The implement agent derives the tests from the behavior; if you pre-specify the tests, you collapse its discovery loop into a checklist and prime an "implement-then-test-at-the-end" failure.
-
-## 5. Self-quiz
+## 4. Self-quiz
 
 Before filing, answer:
 
@@ -125,17 +71,12 @@ Before filing, answer:
 - Are the dependency relationships correct?
 - Should any slices be merged or split further?
 - Is every slice genuinely AFK-implementable?
-- Is the mode classification right? Any refactor steps sneaking into a behavior slice?
-- Do all acceptance criteria use the mode-appropriate shape and avoid the banned sentence shapes?
 
-## 6. File the issues
+## 5. File the issues
 
-For each approved slice, publish a new issue. **Always write the body to a temp file and use `gh issue create --body-file`.** Each title must start with `[improve-SLICE]`. Apply two labels:
+For each approved slice, publish a new issue. **Always write the body to a temp file and use `gh issue create --body-file`.** Each title must start with `[improve-SLICE]`. Apply the `{{READY_FOR_AGENT_LABEL}}` label.
 
-- `{{READY_FOR_AGENT_LABEL}}` (state)
-- One of `{{REFACTOR_SLICE_LABEL}}`, `{{BEHAVIOR_SLICE_LABEL}}`, `{{DOCS_SLICE_LABEL}}` (mode)
-
-Publish in dependency order (blockers first) so you can reference real issue identifiers in `Blocked by`. The CONTEXT.md issue from step 2, if any, is filed first; refactor slices land before the behavior slices that depend on them.
+Publish in dependency order (blockers first) so you can reference real issue identifiers in `Blocked by`. The CONTEXT.md issue from step 2, if any, is filed first.
 
 ## Sub-issue body template
 
@@ -153,8 +94,6 @@ A concise description of this vertical slice. Describe the end-to-end behavior, 
 - [ ] Criterion 1
 - [ ] Criterion 2
 - [ ] Criterion 3
-
-Use the shape that matches the slice mode (see step 4). Never use the banned sentence shapes.
 
 ## Blocked by
 
