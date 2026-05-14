@@ -17,6 +17,7 @@ from pycastle.agent_result import CancellationToken
 from pycastle.agent_runner import AgentRunner, RunRequest
 from pycastle.config import Config
 from pycastle.errors import (
+    AgentFailedError,
     AgentTimeoutError,
     DockerError,
     UsageLimitError,
@@ -391,6 +392,62 @@ def test_agent_runner_run_raises_agent_timeout_error_when_retries_exhausted(tmp_
                 )
             )
         )
+
+
+def test_agent_runner_run_raises_agent_failed_error_for_non_typed_crash(tmp_path):
+    from unittest.mock import AsyncMock, patch
+
+    runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
+    request = RunRequest(
+        name="Test",
+        template=_PLAN_TEMPLATE,
+        scope_args=_PLAN_SCOPE_ARGS,
+        mount_path=tmp_path,
+        role=AgentRole.IMPLEMENTER,
+        session_namespace="test-ns",
+    )
+
+    with patch.object(
+        runner,
+        "_run",
+        new=AsyncMock(return_value=FailedOutput(failure_class="non_typed_crash")),
+    ):
+        with pytest.raises(AgentFailedError) as exc_info:
+            asyncio.run(runner.run(request))
+
+    err = exc_info.value
+    assert err.failure_class == "non_typed_crash"
+    assert err.role_value == AgentRole.IMPLEMENTER.value
+    assert err.worktree_path == tmp_path
+    assert err.namespace == "test-ns"
+
+
+def test_agent_runner_run_raises_agent_failed_error_for_protocol_error(tmp_path):
+    from unittest.mock import AsyncMock, patch
+
+    runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
+    request = RunRequest(
+        name="Test",
+        template=_PLAN_TEMPLATE,
+        scope_args=_PLAN_SCOPE_ARGS,
+        mount_path=tmp_path,
+        role=AgentRole.PLANNER,
+        session_namespace="",
+    )
+
+    with patch.object(
+        runner,
+        "_run",
+        new=AsyncMock(return_value=FailedOutput(failure_class="protocol_error")),
+    ):
+        with pytest.raises(AgentFailedError) as exc_info:
+            asyncio.run(runner.run(request))
+
+    err = exc_info.value
+    assert err.failure_class == "protocol_error"
+    assert err.role_value == AgentRole.PLANNER.value
+    assert err.worktree_path == tmp_path
+    assert err.namespace == ""
 
 
 def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
@@ -1242,8 +1299,8 @@ def test_resume_run_non_typed_exception_retries_same_session_and_succeeds(tmp_pa
     assert isinstance(result, CommitMessageOutput)
 
 
-def test_resume_run_consecutive_non_typed_exceptions_return_failed_output(tmp_path):
-    """On a Resume run, two consecutive non-typed exceptions cause the call to return FailedOutput."""
+def test_resume_run_consecutive_non_typed_exceptions_raise_agent_failed_error(tmp_path):
+    """On a Resume run, two consecutive non-typed exceptions cause AgentRunner.run to raise AgentFailedError."""
     _seed_implementer_session(tmp_path)
 
     mock_client = _make_docker_client_with_controlled_streams(
@@ -1256,18 +1313,19 @@ def test_resume_run_consecutive_non_typed_exceptions_return_failed_output(tmp_pa
         docker_client=mock_client,
     )
 
-    result = asyncio.run(
-        runner.run(
-            RunRequest(
-                name="Impl",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+    with pytest.raises(AgentFailedError) as exc_info:
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Impl",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                )
             )
         )
-    )
 
-    assert isinstance(result, FailedOutput)
+    assert exc_info.value.failure_class == "non_typed_crash"
 
 
 def test_resume_run_non_typed_exception_does_not_wipe_session(tmp_path):
@@ -1286,16 +1344,17 @@ def test_resume_run_non_typed_exception_does_not_wipe_session(tmp_path):
         docker_client=mock_client,
     )
 
-    asyncio.run(
-        runner.run(
-            RunRequest(
-                name="Impl",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+    with pytest.raises(AgentFailedError):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Impl",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                )
             )
         )
-    )
 
     assert session_file.exists(), (
         "session.json was wiped but should have been preserved"
