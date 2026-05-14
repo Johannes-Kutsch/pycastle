@@ -1,10 +1,11 @@
 import asyncio
 import dataclasses
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.errors import AgentTimeoutError, UsageLimitError
+from pycastle.errors import AgentFailedError, AgentTimeoutError, UsageLimitError
 from pycastle.config import Config
 from pycastle.services import GitService
 from pycastle.services import GithubService
@@ -35,7 +36,15 @@ from pycastle.agent_output_protocol import (
     PlannerOutput,
     PromiseParseError,
 )
-from _helpers import make_agent_failed_error  # type: ignore[import-not-found]
+
+
+def _make_agent_failed_error(role: AgentRole, worktree_path: Path) -> AgentFailedError:
+    return AgentFailedError(
+        role_value=role.value,
+        worktree_path=worktree_path,
+        namespace="",
+        failure_class="",
+    )
 
 
 def _plan_output(issues: list[dict]) -> PlannerOutput:
@@ -1928,7 +1937,7 @@ def test_run_iteration_returns_aborted_agent_failure_when_improve_agent_fails(
     """When improve agent emits FAILED and diagnose_on_failure is on, run_iteration
     spawns the failure-report agent and returns AbortedAgentFailure with issue_number."""
     response_queue = [
-        make_agent_failed_error(
+        _make_agent_failed_error(
             AgentRole.IMPROVE, tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
         ),
         IssueOutput(number=42, labels=["bug", "needs-triage"]),
@@ -1964,7 +1973,7 @@ def test_run_iteration_aborted_agent_failure_without_recovery_when_diagnose_disa
     """When diagnose_on_failure is off and improve agent emits FAILED, no recovery
     agent is spawned and AbortedAgentFailure.issue_number is None."""
     response_queue = [
-        make_agent_failed_error(
+        _make_agent_failed_error(
             AgentRole.IMPROVE, tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
         )
     ]
@@ -2000,7 +2009,7 @@ def test_run_iteration_failure_report_receives_correct_run_request(
     and scope_args with FAILED_ROLE and SESSION_DIR."""
     calls: list[RunRequest] = []
     response_queue = [
-        make_agent_failed_error(
+        _make_agent_failed_error(
             AgentRole.IMPROVE, tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
         ),
         IssueOutput(number=99, labels=["bug"]),
@@ -2043,7 +2052,7 @@ def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
     returns AbortedAgentFailure(failed_role='planner') with the filed issue number."""
     calls: list[RunRequest] = []
     response_queue = [
-        make_agent_failed_error(
+        _make_agent_failed_error(
             AgentRole.PLANNER, tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
         ),
         IssueOutput(number=55, labels=["bug"]),
@@ -2091,7 +2100,7 @@ def test_run_iteration_returns_aborted_agent_failure_when_implementer_agent_fail
     returns AbortedAgentFailure(failed_role='implementer') with the filed issue number."""
     calls: list[RunRequest] = []
     response_queue = [
-        make_agent_failed_error(
+        _make_agent_failed_error(
             AgentRole.IMPLEMENTER, tmp_path / "pycastle" / ".worktrees" / "issue-1"
         ),
         IssueOutput(number=77, labels=["bug"]),
@@ -2137,7 +2146,7 @@ def test_run_iteration_returns_aborted_agent_failure_when_reviewer_agent_fails(
     calls: list[RunRequest] = []
     response_queue = [
         CommitMessageOutput(message="initial impl"),
-        make_agent_failed_error(
+        _make_agent_failed_error(
             AgentRole.REVIEWER, tmp_path / "pycastle" / ".worktrees" / "issue-1"
         ),
         IssueOutput(number=88, labels=["bug"]),
@@ -2182,7 +2191,7 @@ def test_run_iteration_aborted_agent_failure_without_recovery_when_diagnose_disa
     no recovery RunRequest is dispatched."""
     calls: list[RunRequest] = []
     response_queue = [
-        make_agent_failed_error(
+        _make_agent_failed_error(
             AgentRole.PLANNER, tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
         )
     ]
