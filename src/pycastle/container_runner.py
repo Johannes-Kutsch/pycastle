@@ -2,6 +2,7 @@ import asyncio
 import json
 import queue
 import re
+import shlex
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -44,8 +45,6 @@ class ContainerRunner:
         return self._log_path
 
     async def setup(self, git_name: str, git_email: str, work_body: str = "") -> None:
-        import shlex
-
         self._cfg.logs_dir.mkdir(parents=True, exist_ok=True)
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._session.__enter__)
