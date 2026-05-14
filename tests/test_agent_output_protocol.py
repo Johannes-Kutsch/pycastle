@@ -18,8 +18,15 @@ from pycastle.agent_output_protocol import (
     PlannerOutput,
     PromiseParseError,
     process_stream,
+    process_stream_from_events,
 )
 from pycastle.errors import UsageLimitError
+from pycastle.services.agent_service import (
+    AssistantTurn,
+    Result,
+    Tokens,
+    UsageLimit,
+)
 
 
 def _result_line(content: str) -> str:
@@ -1013,3 +1020,93 @@ def test_process_stream_improve_json_issue_in_streaming_turn_returns_issue_outpu
     assert isinstance(result, IssueOutput)
     assert result.number == 7
     assert len(consumed) == 1
+
+
+# ── process_stream_from_events: fake AgentService driving the coordinator ─────
+
+
+def test_process_stream_from_events_planner_driven_by_canned_events():
+    events = [
+        AssistantTurn(text='<plan>{"issues": [{"number": 1, "title": "Fix"}]}</plan>'),
+        Result(text="done"),
+    ]
+    result = process_stream_from_events(
+        iter(events), on_turn=lambda t: None, role=AgentRole.PLANNER
+    )
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == [{"number": 1, "title": "Fix"}]
+
+
+def test_process_stream_from_events_implementer_returns_commit_message():
+    events = [
+        AssistantTurn(text="<commit_message>add feature</commit_message>"),
+    ]
+    result = process_stream_from_events(
+        iter(events), on_turn=lambda t: None, role=AgentRole.IMPLEMENTER
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message == "add feature"
+
+
+def test_process_stream_from_events_raises_usage_limit_on_usage_limit_event():
+    events = [UsageLimit(reset_time=None)]
+    with pytest.raises(UsageLimitError) as exc_info:
+        process_stream_from_events(
+            iter(events), on_turn=lambda t: None, role=AgentRole.IMPLEMENTER
+        )
+    assert exc_info.value.reset_time is None
+
+
+def test_process_stream_from_events_calls_on_tokens():
+    token_counts: list[int] = []
+    events = [
+        Tokens(count=42_000),
+        AssistantTurn(text="<commit_message>done</commit_message>"),
+    ]
+    process_stream_from_events(
+        iter(events),
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        on_tokens=token_counts.append,
+    )
+    assert token_counts == [42_000]
+
+
+def test_process_stream_from_events_on_turn_called_for_each_assistant_turn():
+    received: list[str] = []
+    events = [
+        AssistantTurn(text="first"),
+        AssistantTurn(text="second"),
+        Result(text="<commit_message>done</commit_message>"),
+    ]
+    process_stream_from_events(
+        iter(events), on_turn=received.append, role=AgentRole.IMPLEMENTER
+    )
+    assert received == ["first", "second"]
+
+
+def test_process_stream_from_events_stops_after_result_event():
+    received: list[str] = []
+    events = [
+        Result(text="<commit_message>done</commit_message>"),
+        AssistantTurn(text="should not appear"),
+    ]
+    process_stream_from_events(
+        iter(events), on_turn=received.append, role=AgentRole.IMPLEMENTER
+    )
+    assert received == []
+
+
+def test_process_stream_from_events_empty_events_returns_none_message_for_implementer():
+    result = process_stream_from_events(
+        iter([]), on_turn=lambda t: None, role=AgentRole.IMPLEMENTER
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message is None
+
+
+def test_process_stream_from_events_merger_raises_promise_parse_error_on_empty():
+    with pytest.raises(PromiseParseError):
+        process_stream_from_events(
+            iter([]), on_turn=lambda t: None, role=AgentRole.MERGER
+        )
