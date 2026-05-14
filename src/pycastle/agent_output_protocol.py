@@ -4,7 +4,10 @@ import json
 import re
 from collections.abc import Callable, Iterable
 from datetime import datetime, time, timedelta, timezone
-from typing import Any, Literal, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
+
+if TYPE_CHECKING:
+    from .services.agent_service import ParsedTurn
 
 from .errors import UsageLimitError
 
@@ -457,7 +460,7 @@ assert len(_HANDLERS) == len(AgentRole)
 
 
 def process_stream_from_events(
-    events: "Iterable[Any]",
+    events: "Iterable[ParsedTurn]",
     on_turn: Callable[[str], None],
     role: AgentRole,
     on_tokens: Callable[[int], None] | None = None,
