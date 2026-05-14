@@ -9,6 +9,7 @@ from datetime import datetime, time, timedelta, timezone
 from functools import lru_cache
 from typing import Literal
 
+from .. import agent_output_protocol as _proto
 from ..errors import ClaudeCliNotFoundError
 from ..session_resume import RunKind
 from .agent_service import AssistantTurn, ParsedTurn, Result, Tokens, UsageLimit
@@ -79,9 +80,8 @@ def _check_usage_limit(line: str) -> datetime | None | Literal[False]:
     elif ampm == "am" and hour == 12:
         hour = 0
 
-    # Late import so monkeypatch(agent_output_protocol, "_now_utc", ...) in tests works.
-    from .. import agent_output_protocol as _proto
-
+    # Attribute lookup (not `from ... import _now_utc`) so test monkeypatches of
+    # agent_output_protocol._now_utc take effect.
     now_utc = _proto._now_utc()
     now_local = now_utc.astimezone().replace(tzinfo=None)
 
