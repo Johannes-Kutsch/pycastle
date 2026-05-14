@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
+import shlex
 import shutil
 from collections.abc import Iterable, Iterator
+from datetime import datetime, time, timedelta, timezone
 from functools import lru_cache
+from typing import Literal
 
-from ..agent_output_protocol import _check_usage_limit, _extract_turn
 from ..errors import ClaudeCliNotFoundError
 from ..session_resume import RunKind
 from .agent_service import AssistantTurn, ParsedTurn, Result, Tokens, UsageLimit
@@ -16,6 +19,129 @@ _KNOWN_MODELS: tuple[str, ...] = (
     "claude-sonnet-4-6",
     "claude-opus-4-7",
 )
+
+_RESET_TIME_RE = re.compile(
+    r"resets\s+"
+    r"(?:(?P<month>[A-Za-z]+)\s+(?P<day>\d{1,2}),\s+)?"
+    r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?(?P<ampm>am|pm)\s+\(UTC\)",
+    re.IGNORECASE,
+)
+
+_MONTHS = {
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sept": 9,
+    "sep": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
+}
+
+
+def _check_usage_limit(line: str) -> datetime | None | Literal[False]:
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(obj, dict) or obj.get("api_error_status") != 429:
+        return False
+    result_text = obj.get("result")
+    if not isinstance(result_text, str):
+        return None
+    match = _RESET_TIME_RE.search(result_text)
+    if not match:
+        return None
+
+    hour = int(match.group("hour"))
+    minute = int(match.group("minute") or 0)
+    ampm = match.group("ampm").lower()
+    if not (1 <= hour <= 12) or not (0 <= minute <= 59):
+        return None
+    if ampm == "pm" and hour != 12:
+        hour += 12
+    elif ampm == "am" and hour == 12:
+        hour = 0
+
+    # Late import so monkeypatch(agent_output_protocol, "_now_utc", ...) in tests works.
+    from .. import agent_output_protocol as _proto
+
+    now_utc = _proto._now_utc()
+    now_local = now_utc.astimezone().replace(tzinfo=None)
+
+    month_str = match.group("month")
+    if month_str is not None:
+        month = _MONTHS.get(month_str.lower())
+        if month is None:
+            return None
+        day = int(match.group("day"))
+        try:
+            utc_dt = datetime(
+                now_utc.year, month, day, hour, minute, tzinfo=timezone.utc
+            )
+        except ValueError:
+            return None
+        local_dt = utc_dt.astimezone().replace(tzinfo=None)
+        if local_dt < now_local - timedelta(days=31):
+            try:
+                utc_dt = utc_dt.replace(year=utc_dt.year + 1)
+            except ValueError:
+                return None
+            local_dt = utc_dt.astimezone().replace(tzinfo=None)
+        return local_dt
+
+    utc_dt = datetime.combine(now_utc.date(), time(hour, minute), tzinfo=timezone.utc)
+    local_dt = utc_dt.astimezone().replace(tzinfo=None)
+    if local_dt < now_local - timedelta(minutes=2):
+        local_dt += timedelta(days=1)
+    return local_dt
+
+
+def _extract_turn(line: str) -> tuple[str | None, int | None]:
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return None, None
+    if not isinstance(obj, dict) or obj.get("type") != "assistant":
+        return None, None
+    msg = obj.get("message") or {}
+    content = msg.get("content") or []
+    parts: list[str] = []
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            text = (block.get("text") or "").strip()
+            if text:
+                parts.append(text)
+    turn_text = "\n\n".join(parts) if parts else None
+
+    usage = msg.get("usage") or {}
+    tokens: int | None = None
+    if usage:
+        total = (
+            (usage.get("input_tokens") or 0)
+            + (usage.get("cache_creation_input_tokens") or 0)
+            + (usage.get("cache_read_input_tokens") or 0)
+        )
+        if total > 0:
+            tokens = total
+
+    return turn_text, tokens
 
 
 @lru_cache(maxsize=1)
@@ -52,9 +178,9 @@ class ClaudeService:
             flags += f" --effort {effort}"
         if session_uuid:
             if run_kind == RunKind.RESUME:
-                flags += f" --resume {session_uuid}"
+                flags += f" --resume {shlex.quote(session_uuid)}"
             else:
-                flags += f" --session-id {session_uuid}"
+                flags += f" --session-id {shlex.quote(session_uuid)}"
         return f"claude {flags} < /tmp/.pycastle_prompt"
 
     def build_env(

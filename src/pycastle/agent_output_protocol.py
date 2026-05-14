@@ -3,47 +3,13 @@ import enum
 import json
 import re
 from collections.abc import Callable, Iterable
-from datetime import datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Protocol, TypeAlias
 
 if TYPE_CHECKING:
     from .services.agent_service import ParsedTurn
 
 from .errors import UsageLimitError
-
-_RESET_TIME_RE = re.compile(
-    r"resets\s+"
-    r"(?:(?P<month>[A-Za-z]+)\s+(?P<day>\d{1,2}),\s+)?"
-    r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?(?P<ampm>am|pm)\s+\(UTC\)",
-    re.IGNORECASE,
-)
-
-_MONTHS = {
-    "january": 1,
-    "jan": 1,
-    "february": 2,
-    "feb": 2,
-    "march": 3,
-    "mar": 3,
-    "april": 4,
-    "apr": 4,
-    "may": 5,
-    "june": 6,
-    "jun": 6,
-    "july": 7,
-    "jul": 7,
-    "august": 8,
-    "aug": 8,
-    "september": 9,
-    "sept": 9,
-    "sep": 9,
-    "october": 10,
-    "oct": 10,
-    "november": 11,
-    "nov": 11,
-    "december": 12,
-    "dec": 12,
-}
 
 
 def _now_utc() -> datetime:
@@ -254,92 +220,6 @@ def _parse_issue_body(body: str) -> IssueOutput:
     return IssueOutput(labels=labels, number=number)
 
 
-def _check_usage_limit(line: str) -> datetime | None | Literal[False]:
-    try:
-        obj = json.loads(line)
-    except json.JSONDecodeError:
-        return False
-    if not isinstance(obj, dict) or obj.get("api_error_status") != 429:
-        return False
-    result_text = obj.get("result")
-    if not isinstance(result_text, str):
-        return None
-    match = _RESET_TIME_RE.search(result_text)
-    if not match:
-        return None
-
-    hour = int(match.group("hour"))
-    minute = int(match.group("minute") or 0)
-    ampm = match.group("ampm").lower()
-    if not (1 <= hour <= 12) or not (0 <= minute <= 59):
-        return None
-    if ampm == "pm" and hour != 12:
-        hour += 12
-    elif ampm == "am" and hour == 12:
-        hour = 0
-
-    now_utc = _now_utc()
-    now_local = now_utc.astimezone().replace(tzinfo=None)
-
-    month_str = match.group("month")
-    if month_str is not None:
-        month = _MONTHS.get(month_str.lower())
-        if month is None:
-            return None
-        day = int(match.group("day"))
-        try:
-            utc_dt = datetime(
-                now_utc.year, month, day, hour, minute, tzinfo=timezone.utc
-            )
-        except ValueError:
-            return None
-        local_dt = utc_dt.astimezone().replace(tzinfo=None)
-        if local_dt < now_local - timedelta(days=31):
-            try:
-                utc_dt = utc_dt.replace(year=utc_dt.year + 1)
-            except ValueError:
-                return None
-            local_dt = utc_dt.astimezone().replace(tzinfo=None)
-        return local_dt
-
-    utc_dt = datetime.combine(now_utc.date(), time(hour, minute), tzinfo=timezone.utc)
-    local_dt = utc_dt.astimezone().replace(tzinfo=None)
-    if local_dt < now_local - timedelta(minutes=2):
-        local_dt += timedelta(days=1)
-    return local_dt
-
-
-def _extract_turn(line: str) -> tuple[str | None, int | None]:
-    try:
-        obj = json.loads(line)
-    except json.JSONDecodeError:
-        return None, None
-    if not isinstance(obj, dict) or obj.get("type") != "assistant":
-        return None, None
-    msg = obj.get("message") or {}
-    content = msg.get("content") or []
-    parts: list[str] = []
-    for block in content:
-        if isinstance(block, dict) and block.get("type") == "text":
-            text = (block.get("text") or "").strip()
-            if text:
-                parts.append(text)
-    turn_text = "\n\n".join(parts) if parts else None
-
-    usage = msg.get("usage") or {}
-    tokens: int | None = None
-    if usage:
-        total = (
-            (usage.get("input_tokens") or 0)
-            + (usage.get("cache_creation_input_tokens") or 0)
-            + (usage.get("cache_read_input_tokens") or 0)
-        )
-        if total > 0:
-            tokens = total
-
-    return turn_text, tokens
-
-
 _ISSUE_NUMBER_RE = re.compile(r"<issue>(\d+)</issue>")
 
 
@@ -496,31 +376,8 @@ def process_stream(
     role: AgentRole,
     on_tokens: Callable[[int], None] | None = None,
 ) -> AgentOutput:
-    handler = _HANDLERS[role]
-    collected: list[str] = []
-    result_text: str | None = None
-    for line in lines:
-        collected.append(line)
-        usage_limit = _check_usage_limit(line)
-        if usage_limit is not False:
-            raise UsageLimitError(reset_time=usage_limit)
-        turn, tokens = _extract_turn(line)
-        if tokens is not None and on_tokens is not None:
-            on_tokens(tokens)
-        if turn is not None:
-            on_turn(turn)
-            result = handler.check_turn(turn)
-            if result is not None:
-                return result
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict) and obj.get("type") == "result":
-            r = obj.get("result")
-            if isinstance(r, str):
-                result_text = r
-                break
-    text = result_text if result_text is not None else "\n".join(collected)
-    tail = f"\nOutput tail: {text[-300:]!r}"
-    return handler.extract_final(text, tail)
+    from .services.claude_service import ClaudeService
+
+    return process_stream_from_events(
+        ClaudeService().run(lines), on_turn, role, on_tokens
+    )
