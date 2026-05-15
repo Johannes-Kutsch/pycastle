@@ -10,7 +10,12 @@ from ..agent_output_protocol import AgentRole, CommitMessageOutput
 from ..agent_result import CancellationToken
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..errors import AgentFailedError, BranchCollisionError, UsageLimitError
+from ..errors import (
+    AgentFailedError,
+    BranchCollisionError,
+    InvalidSliceLabelError,
+    UsageLimitError,
+)
 from ..prompt_pipeline import PromptTemplate, build_issue_scope_args, build_wip_clause
 from ..session_resume import RoleSession, is_stage_done_for
 from ..status_display import StatusDisplay
@@ -36,6 +41,27 @@ class _ImplementDeps(Protocol):
 
 def branch_for(issue_number: int) -> str:
     return f"pycastle/issue-{issue_number}"
+
+
+def pick_implement_template(issue: dict, cfg: Config) -> PromptTemplate:
+    slice_map = {
+        cfg.refactor_slice_label: PromptTemplate.IMPLEMENT_REFACTOR,
+        cfg.behavior_slice_label: PromptTemplate.IMPLEMENT_BEHAVIOR,
+        cfg.docs_slice_label: PromptTemplate.IMPLEMENT_DOCS,
+    }
+    issue_labels: list[str] = issue.get("labels", [])
+    matches = [
+        (label, tmpl) for label, tmpl in slice_map.items() if label in issue_labels
+    ]
+    if len(matches) == 1:
+        return matches[0][1]
+    if len(matches) == 0:
+        detail = f"expected one of {list(slice_map)}, got labels={issue_labels}"
+    else:
+        detail = f"multiple slice-mode labels found: {[m[0] for m in matches]}"
+    raise InvalidSliceLabelError(
+        f"Issue #{issue['number']}: invalid slice-mode label — {detail}"
+    )
 
 
 @dataclasses.dataclass
@@ -103,6 +129,7 @@ async def run_issue(
             return issue
 
         if not implement_done:
+            _impl_template = pick_implement_template(issue, deps.cfg)
             async with managed_worktree(
                 _wt_name,
                 branch=_branch,
@@ -118,7 +145,7 @@ async def run_issue(
                     result = await _bounded_run_agent(
                         RunRequest(
                             name=f"Implement Agent #{issue['number']}",
-                            template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                            template=_impl_template,
                             mount_path=impl_mount_path,
                             role=AgentRole.IMPLEMENTER,
                             scope_args=_impl_scope_args,

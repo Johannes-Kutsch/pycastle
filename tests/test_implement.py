@@ -21,10 +21,12 @@ from pycastle.iteration._deps import (
 )
 from pycastle.services import GithubService
 from pycastle.status_display import PlainStatusDisplay, StatusDisplay
+from pycastle.errors import InvalidSliceLabelError
 from pycastle.iteration.implement import (
     ImplementResult,
     branch_for,
     implement_phase,
+    pick_implement_template,
     run_issue,
 )
 from pycastle.prompt_pipeline import PromptRenderError, build_issue_scope_args
@@ -91,14 +93,108 @@ def test_branch_for_uses_issue_number():
     assert branch_for(42) == "pycastle/issue-42"
 
 
+# ── pick_implement_template ───────────────────────────────────────────────────
+
+
+def test_pick_implement_template_behavior_slice_resolves_to_behavior_template():
+    from pycastle.prompt_pipeline import PromptTemplate
+
+    issue = {"number": 1, "title": "T", "labels": ["behavior-slice"]}
+    assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_BEHAVIOR
+
+
+def test_pick_implement_template_refactor_slice_resolves_to_refactor_template():
+    from pycastle.prompt_pipeline import PromptTemplate
+
+    issue = {"number": 1, "title": "T", "labels": ["refactor-slice"]}
+    assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_REFACTOR
+
+
+def test_pick_implement_template_docs_slice_resolves_to_docs_template():
+    from pycastle.prompt_pipeline import PromptTemplate
+
+    issue = {"number": 1, "title": "T", "labels": ["docs-slice"]}
+    assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_DOCS
+
+
+def test_pick_implement_template_ignores_unrelated_labels():
+    from pycastle.prompt_pipeline import PromptTemplate
+
+    issue = {
+        "number": 1,
+        "title": "T",
+        "labels": ["bug", "ready-for-agent", "behavior-slice"],
+    }
+    assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_BEHAVIOR
+
+
+def test_pick_implement_template_no_slice_label_raises():
+    issue = {"number": 1, "title": "T", "labels": ["bug"]}
+    with pytest.raises(InvalidSliceLabelError):
+        pick_implement_template(issue, _cfg)
+
+
+def test_pick_implement_template_empty_labels_raises():
+    issue = {"number": 1, "title": "T", "labels": []}
+    with pytest.raises(InvalidSliceLabelError):
+        pick_implement_template(issue, _cfg)
+
+
+def test_pick_implement_template_multiple_slice_labels_raises():
+    issue = {"number": 1, "title": "T", "labels": ["behavior-slice", "refactor-slice"]}
+    with pytest.raises(InvalidSliceLabelError):
+        pick_implement_template(issue, _cfg)
+
+
+def test_pick_implement_template_unknown_slice_shaped_label_raises():
+    issue = {"number": 1, "title": "T", "labels": ["feature-slice"]}
+    with pytest.raises(InvalidSliceLabelError):
+        pick_implement_template(issue, _cfg)
+
+
+def test_implement_phase_malformed_label_goes_to_errors_other_issues_continue(tmp_path):
+    """Issue with no slice-mode label is skipped with an error; sibling issues complete."""
+    issues = [
+        {
+            "number": 1,
+            "title": "OK",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {"number": 2, "title": "Bad", "body": "", "comments": [], "labels": []},
+    ]
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    result = asyncio.run(implement_phase(issues, deps, "sha-abc"))
+
+    assert len(result.completed) == 1
+    assert result.completed[0]["number"] == 1
+    assert len(result.errors) == 1
+    assert result.errors[0][0]["number"] == 2
+    assert isinstance(result.errors[0][1], InvalidSliceLabelError)
+
+
 # ── implement_phase: parallel execution (tracer bullet) ───────────────────────
 
 
 def test_implement_phase_returns_completed_issues(tmp_path):
     """implement_phase returns all issues in completed when every agent returns COMPLETE."""
     issues = [
-        {"number": 1, "title": "Fix A", "body": "", "comments": []},
-        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     fake = FakeAgentRunner([CompletionOutput()] * 4)
 
@@ -128,7 +224,15 @@ def test_implement_phase_empty_issues_returns_empty_result(tmp_path):
 
 def test_implement_phase_signals_usage_limit_in_result(tmp_path):
     """implement_phase returns usage_limit_hit=True instead of calling sys.exit."""
-    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
+    issues = [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
 
     async def _side_effect(request: RunRequest):
         raise UsageLimitError(reset_time=None)
@@ -142,7 +246,15 @@ def test_implement_phase_signals_usage_limit_in_result(tmp_path):
 
 def test_implement_phase_usage_limit_does_not_exit(tmp_path):
     """implement_phase must not call sys.exit() when a usage limit is hit."""
-    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
+    issues = [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
 
     async def _side_effect(request: RunRequest):
         raise UsageLimitError(reset_time=None)
@@ -166,8 +278,20 @@ def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
         return CompletionOutput()
 
     issues = [
-        {"number": 1, "title": "Fail", "body": "", "comments": []},
-        {"number": 2, "title": "Pass", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fail",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Pass",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     fake = FakeAgentRunner(side_effect=_side_effect)
     deps = _make_deps(tmp_path, fake)
@@ -184,8 +308,20 @@ def test_implement_phase_usage_limit_awaits_siblings(tmp_path):
 def test_implement_phase_exception_goes_to_errors(tmp_path):
     """An exception raised by run_agent lands in result.errors."""
     issues = [
-        {"number": 1, "title": "Fix A", "body": "", "comments": []},
-        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _side_effect(request: RunRequest):
@@ -205,7 +341,15 @@ def test_implement_phase_exception_goes_to_errors(tmp_path):
 
 def test_implement_phase_no_complete_tag_goes_to_errors(tmp_path):
     """When implementer raises PromiseParseError, issue goes to errors."""
-    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
+    issues = [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
     fake = FakeAgentRunner([PromiseParseError("no <promise>COMPLETE</promise> tag")])
 
     deps = _make_deps(tmp_path, fake)
@@ -220,7 +364,15 @@ def test_implement_phase_no_complete_tag_goes_to_errors(tmp_path):
 
 def test_implement_phase_logs_exception_via_logger(tmp_path):
     """Exceptions raised during run_issue must be passed to deps.logger.log_error()."""
-    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
+    issues = [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
     boom = RuntimeError("agent crashed")
     logger = RecordingLogger()
     fake = FakeAgentRunner([boom])
@@ -235,7 +387,15 @@ def test_implement_phase_logs_exception_via_logger(tmp_path):
 
 def test_implement_phase_successful_issues_not_logged_as_errors(tmp_path):
     """Completed issues must not produce log_error() calls."""
-    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
+    issues = [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
     logger = RecordingLogger()
     fake = FakeAgentRunner([CompletionOutput()] * 2)
 
@@ -247,7 +407,15 @@ def test_implement_phase_successful_issues_not_logged_as_errors(tmp_path):
 
 def test_implement_phase_does_not_log_implementer_output(tmp_path):
     """Implementer output is no longer logged via log_agent_output (raw string unavailable)."""
-    issues = [{"number": 7, "title": "Fix C", "body": "", "comments": []}]
+    issues = [
+        {
+            "number": 7,
+            "title": "Fix C",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
     logger = RecordingLogger()
     fake = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
 
@@ -259,7 +427,15 @@ def test_implement_phase_does_not_log_implementer_output(tmp_path):
 
 def test_implement_phase_reviewer_usage_limit_signals_in_result(tmp_path):
     """When reviewer hits usage limit, implement_phase returns usage_limit_hit=True and issue is not completed."""
-    issues = [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
+    issues = [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
 
     async def _side_effect(request: RunRequest):
         if "Implement Agent" in request.name:
@@ -282,7 +458,13 @@ def test_run_issue_derives_branch_from_issue_number(tmp_path):
     """run_issue must derive the branch via branch_for(number) and pass it to create_worktree and prompt_args."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
 
-    issue = {"number": 7, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 7,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     deps = _make_deps(tmp_path, fake)
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
@@ -296,7 +478,13 @@ def test_run_issue_raises_when_implementer_does_not_complete(tmp_path):
     """run_issue must raise PromiseParseError when implementer lacks COMPLETE tag."""
     fake = FakeAgentRunner([PromiseParseError("no <promise>COMPLETE</promise> tag")])
 
-    issue = {"number": 1, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 1,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     deps = _make_deps(tmp_path, fake)
 
     with pytest.raises(PromiseParseError):
@@ -307,7 +495,13 @@ def test_run_issue_returns_issue_when_implementer_completes(tmp_path):
     """run_issue must return the issue dict when implementer produces COMPLETE."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
 
-    issue = {"number": 2, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 2,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     deps = _make_deps(tmp_path, fake)
     result = asyncio.run(run_issue(issue, deps, "sha-abc"))
 
@@ -328,7 +522,13 @@ def test_run_issue_raises_agent_timeout_error_when_implementer_exhausts_retries(
         return CompletionOutput()
 
     fake = FakeAgentRunner(side_effect=_side_effect)
-    issue = {"number": 5, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 5,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     deps = _make_deps(tmp_path, fake)
 
     with pytest.raises(AgentTimeoutError):
@@ -344,7 +544,13 @@ def test_run_issue_raises_agent_timeout_error_when_reviewer_exhausts_retries(tmp
         raise AgentTimeoutError("timeout")
 
     fake = FakeAgentRunner(side_effect=_side_effect)
-    issue = {"number": 5, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 5,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     deps = _make_deps(tmp_path, fake)
 
     with pytest.raises(AgentTimeoutError):
@@ -353,7 +559,15 @@ def test_run_issue_raises_agent_timeout_error_when_reviewer_exhausts_retries(tmp
 
 def test_implement_phase_implementer_timeout_tracked_as_error(tmp_path):
     """When implementer raises AgentTimeoutError, implement_phase tracks the issue in errors."""
-    issues = [{"number": 3, "title": "Fix C", "body": "", "comments": []}]
+    issues = [
+        {
+            "number": 3,
+            "title": "Fix C",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
 
     async def _side_effect(request: RunRequest):
         if "Implement Agent" in request.name:
@@ -372,7 +586,15 @@ def test_implement_phase_implementer_timeout_tracked_as_error(tmp_path):
 
 def test_implement_phase_reviewer_timeout_does_not_complete_issue(tmp_path):
     """When reviewer raises AgentTimeoutError, the issue must not appear in completed."""
-    issues = [{"number": 4, "title": "Fix D", "body": "", "comments": []}]
+    issues = [
+        {
+            "number": 4,
+            "title": "Fix D",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
 
     async def _side_effect(request: RunRequest):
         if "Implement Agent" in request.name:
@@ -394,7 +616,13 @@ def test_implement_phase_reviewer_timeout_does_not_complete_issue(tmp_path):
 def test_run_issue_threads_issue_body_to_implementer_prompt(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
-    issue = {"number": 1, "title": "T", "body": "BODY-X", "comments": []}
+    issue = {
+        "number": 1,
+        "title": "T",
+        "body": "BODY-X",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
 
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
@@ -405,7 +633,13 @@ def test_run_issue_threads_issue_body_to_implementer_prompt(tmp_path):
 def test_run_issue_threads_issue_body_to_reviewer_prompt(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
-    issue = {"number": 1, "title": "T", "body": "BODY-X", "comments": []}
+    issue = {
+        "number": 1,
+        "title": "T",
+        "body": "BODY-X",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
 
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
@@ -424,6 +658,7 @@ def test_run_issue_threads_issue_comments_formatted_to_implementer(tmp_path):
             {"author": "alice", "created_at": "2026-01-01T10:00:00Z", "body": "hi"},
             {"author": "bob", "created_at": "2026-01-02T11:00:00Z", "body": "yo"},
         ],
+        "labels": ["behavior-slice"],
     }
 
     asyncio.run(run_issue(issue, deps, "sha-abc"))
@@ -440,7 +675,13 @@ def test_run_issue_threads_issue_comments_formatted_to_implementer(tmp_path):
 def test_run_issue_renders_empty_string_when_no_comments(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
-    issue = {"number": 1, "title": "T", "body": "x", "comments": []}
+    issue = {
+        "number": 1,
+        "title": "T",
+        "body": "x",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
 
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
@@ -451,7 +692,13 @@ def test_run_issue_renders_empty_string_when_no_comments(tmp_path):
 def test_run_issue_does_not_pass_diff_to_either_agent(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
-    issue = {"number": 1, "title": "T", "body": "", "comments": []}
+    issue = {
+        "number": 1,
+        "title": "T",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
 
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
@@ -465,7 +712,13 @@ def test_run_issue_handles_issue_without_body_or_comments(tmp_path):
     """AFK-path issues lack body/comments — prompt args must still be populated."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
-    issue = {"number": 1, "title": "T", "body": "", "comments": []}
+    issue = {
+        "number": 1,
+        "title": "T",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
 
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
@@ -478,7 +731,13 @@ def test_run_issue_handles_issue_without_body_or_comments(tmp_path):
 
 
 def test_build_issue_scope_args_merges_extra_into_required_keys():
-    issue = {"number": 1, "title": "Fix bug", "body": "details", "comments": []}
+    issue = {
+        "number": 1,
+        "title": "Fix bug",
+        "body": "details",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     result = build_issue_scope_args(
         issue, extra_scope_args={"BRANCH": "pycastle/issue-1"}
     )
@@ -493,7 +752,13 @@ def test_build_issue_scope_args_merges_extra_into_required_keys():
 
 
 def test_build_issue_scope_args_formats_number_as_string():
-    issue = {"number": 42, "title": "T", "body": "", "comments": []}
+    issue = {
+        "number": 42,
+        "title": "T",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     result = build_issue_scope_args(issue, extra_scope_args={})
     assert result["ISSUE_NUMBER"] == "42"
 
@@ -532,7 +797,13 @@ def test_build_issue_scope_args_formats_comments():
     ["ISSUE_NUMBER", "ISSUE_TITLE", "ISSUE_BODY", "ISSUE_COMMENTS"],
 )
 def test_build_issue_scope_args_rejects_collision_with_reserved_keys(colliding_key):
-    issue = {"number": 1, "title": "T", "body": "", "comments": []}
+    issue = {
+        "number": 1,
+        "title": "T",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     with pytest.raises(PromptRenderError):
         build_issue_scope_args(issue, extra_scope_args={colliding_key: "x"})
 
@@ -548,7 +819,13 @@ def test_build_issue_scope_args_raises_on_missing_required_keys():
 
 
 def test_run_issue_passes_issue_title_to_implementer(tmp_path):
-    issue = {"number": 5, "title": "Fix auth timeout", "body": "", "comments": []}
+    issue = {
+        "number": 5,
+        "title": "Fix auth timeout",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
 
@@ -558,7 +835,13 @@ def test_run_issue_passes_issue_title_to_implementer(tmp_path):
 
 
 def test_run_issue_passes_issue_title_to_reviewer(tmp_path):
-    issue = {"number": 5, "title": "Fix auth timeout", "body": "", "comments": []}
+    issue = {
+        "number": 5,
+        "title": "Fix auth timeout",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
 
@@ -576,7 +859,13 @@ def test_run_issue_creates_two_worktrees_implementer_and_reviewer(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 10, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 10,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert deps.git_svc.create_worktree.call_count == 2
@@ -588,7 +877,13 @@ def test_run_issue_removes_worktrees_after_successful_run(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 11, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 11,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert deps.git_svc.remove_worktree.call_count == 2
@@ -606,7 +901,13 @@ def test_run_issue_preserves_worktree_on_usage_limit(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 12, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 12,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     with pytest.raises(UsageLimitError):
         asyncio.run(run_issue(issue, deps, "sha-abc"))
 
@@ -619,7 +920,13 @@ def test_run_issue_preserves_worktree_when_dirty(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = False
 
-    issue = {"number": 13, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 13,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     result = asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert result == issue
@@ -638,7 +945,13 @@ def test_run_issue_raises_branch_collision_for_concurrent_same_issue(tmp_path):
     fake = FakeAgentRunner(side_effect=_yielding_side_effect)
     deps = _make_deps(tmp_path, fake)
     branch_locks: dict[str, asyncio.Lock] = {}
-    issue = {"number": 14, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 14,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
 
     async def _two_concurrent():
         return await asyncio.gather(
@@ -675,7 +988,13 @@ def test_run_issue_review_skip_returns_issue_without_invoking_any_agent(tmp_path
     deps = _make_deps(tmp_path, fake)
     _seed_review_stage_done(tmp_path, 20)
 
-    issue = {"number": 20, "title": "Fix auth", "body": "", "comments": []}
+    issue = {
+        "number": 20,
+        "title": "Fix auth",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     result = asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert result == issue
@@ -688,7 +1007,13 @@ def test_run_issue_review_skip_creates_no_worktree(tmp_path):
     deps = _make_deps(tmp_path, fake)
     _seed_review_stage_done(tmp_path, 21)
 
-    issue = {"number": 21, "title": "Fix auth", "body": "", "comments": []}
+    issue = {
+        "number": 21,
+        "title": "Fix auth",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     deps.git_svc.create_worktree.assert_not_called()
@@ -700,7 +1025,13 @@ def test_run_issue_implement_skip_invokes_only_reviewer(tmp_path):
     deps = _make_deps(tmp_path, fake)
     _seed_implement_stage_done(tmp_path, 22)
 
-    issue = {"number": 22, "title": "Fix auth", "body": "", "comments": []}
+    issue = {
+        "number": 22,
+        "title": "Fix auth",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     result = asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert result == issue
@@ -715,7 +1046,13 @@ def test_run_issue_implement_skip_creates_no_implementer_worktree(tmp_path):
     _seed_implement_stage_done(tmp_path, 23)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 23, "title": "Fix auth", "body": "", "comments": []}
+    issue = {
+        "number": 23,
+        "title": "Fix auth",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert deps.git_svc.create_worktree.call_count == 1
@@ -728,7 +1065,13 @@ def test_run_issue_no_stage_done_signal_runs_both_agents(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
 
-    issue = {"number": 24, "title": "Fix auth", "body": "", "comments": []}
+    issue = {
+        "number": 24,
+        "title": "Fix auth",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     result = asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert result == issue
@@ -747,7 +1090,13 @@ def test_run_issue_releases_lock_on_unexpected_exception(tmp_path):
     deps = _make_deps(tmp_path, fake)
 
     branch_locks: dict[str, asyncio.Lock] = {}
-    issue = {"number": 25, "title": "Fix auth", "body": "", "comments": []}
+    issue = {
+        "number": 25,
+        "title": "Fix auth",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
 
     with pytest.raises(RuntimeError):
         asyncio.run(run_issue(issue, deps, "sha-abc", branch_locks=branch_locks))
@@ -761,7 +1110,13 @@ def test_run_issue_pins_worktree_to_caller_supplied_sha(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 16, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 16,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "dead1234"))
 
     assert deps.git_svc.create_worktree.call_count == 2
@@ -775,7 +1130,13 @@ def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 16, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 16,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert deps.git_svc.create_worktree.call_count == 2
@@ -789,8 +1150,20 @@ def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
 def test_implement_phase_sets_initial_progress_text(tmp_path):
     """implement_phase registers 'Running: started Agents for 0/Y issues' before any agent runs."""
     issues = [
-        {"number": 1, "title": "A", "body": "", "comments": []},
-        {"number": 2, "title": "B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     fake = FakeAgentRunner([CompletionOutput()] * 4)
     sd = RecordingStatusDisplay()
@@ -811,9 +1184,27 @@ def test_implement_phase_sets_initial_progress_text(tmp_path):
 def test_implement_phase_increments_progress_text_per_semaphore_acquisition(tmp_path):
     """implement_phase increments the counter each time a new issue acquires the semaphore."""
     issues = [
-        {"number": 1, "title": "A", "body": "", "comments": []},
-        {"number": 2, "title": "B", "body": "", "comments": []},
-        {"number": 3, "title": "C", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 3,
+            "title": "C",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     fake = FakeAgentRunner([CompletionOutput()] * 6)
     sd = RecordingStatusDisplay()
@@ -832,7 +1223,16 @@ def test_implement_phase_increments_progress_text_per_semaphore_acquisition(tmp_
 
 def test_implement_phase_progress_total_matches_issue_count(tmp_path):
     """Y in the progress text equals the number of issues passed to implement_phase."""
-    issues = [{"number": i, "title": f"Issue {i}"} for i in range(1, 6)]
+    issues = [
+        {
+            "number": i,
+            "title": f"Issue {i}",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+        for i in range(1, 6)
+    ]
     fake = FakeAgentRunner([CompletionOutput()] * 10)
     sd = RecordingStatusDisplay()
     deps = _make_deps(tmp_path, fake, status_display=sd)
@@ -847,7 +1247,16 @@ def test_implement_phase_progress_total_matches_issue_count(tmp_path):
 
 def test_implement_phase_counter_is_monotonic(tmp_path):
     """Counter in progress text only increases and never decrements."""
-    issues = [{"number": i, "title": f"Issue {i}"} for i in range(1, 4)]
+    issues = [
+        {
+            "number": i,
+            "title": f"Issue {i}",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+        for i in range(1, 4)
+    ]
     fake = FakeAgentRunner([CompletionOutput()] * 6)
     sd = RecordingStatusDisplay()
     deps = _make_deps(tmp_path, fake, status_display=sd)
@@ -868,7 +1277,13 @@ def test_run_issue_calls_on_started_once_per_issue(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
 
-    issue = {"number": 1, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 1,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda: fired.append(1)))
 
     assert fired == [1]
@@ -881,7 +1296,13 @@ def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
     deps = _make_deps(tmp_path, fake)
     _seed_review_stage_done(tmp_path, 1)
 
-    issue = {"number": 1, "title": "Fix thing", "body": "", "comments": []}
+    issue = {
+        "number": 1,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda: fired.append(1)))
 
     assert fired == []
@@ -898,7 +1319,13 @@ def test_run_issue_commits_implementer_with_issue_number_and_message(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 40, "title": "Fix", "body": "", "comments": []}
+    issue = {
+        "number": 40,
+        "title": "Fix",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     impl_call = deps.git_svc.commit.call_args_list[0]
@@ -913,7 +1340,13 @@ def test_run_issue_commits_implementer_with_title_when_no_commit_message_tag(tmp
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 43, "title": "Fix the login bug", "body": "", "comments": []}
+    issue = {
+        "number": 43,
+        "title": "Fix the login bug",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     impl_call = deps.git_svc.commit.call_args_list[0]
@@ -931,7 +1364,13 @@ def test_run_issue_commits_reviewer_with_issue_number_and_message(tmp_path):
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 41, "title": "Fix", "body": "", "comments": []}
+    issue = {
+        "number": 41,
+        "title": "Fix",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     review_call = deps.git_svc.commit.call_args_list[1]
@@ -946,7 +1385,13 @@ def test_run_issue_commits_reviewer_with_title_when_no_commit_message_tag(tmp_pa
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
 
-    issue = {"number": 44, "title": "Add dark mode", "body": "", "comments": []}
+    issue = {
+        "number": 44,
+        "title": "Add dark mode",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     review_call = deps.git_svc.commit.call_args_list[1]
@@ -960,7 +1405,13 @@ def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
     deps = _make_deps(tmp_path, fake)
     _seed_implement_stage_done(tmp_path, 1)
 
-    issue = {"number": 1, "title": "Fix auth", "body": "", "comments": []}
+    issue = {
+        "number": 1,
+        "title": "Fix auth",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda: fired.append(1)))
 
     assert fired == [1]
@@ -994,7 +1445,13 @@ def test_run_issue_clears_implementer_session_dir_contents_after_commit(tmp_path
 
     deps.git_svc.create_worktree.side_effect = _seeding_create
 
-    issue = {"number": 50, "title": "Fix", "body": "", "comments": []}
+    issue = {
+        "number": 50,
+        "title": "Fix",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     # Dir exists (not removed) but is empty (contents cleared = stage-done signal).
@@ -1027,7 +1484,13 @@ def test_run_issue_clears_reviewer_session_dir_contents_after_commit(tmp_path):
 
     deps.git_svc.create_worktree.side_effect = _seeding_create
 
-    issue = {"number": 51, "title": "Fix", "body": "", "comments": []}
+    issue = {
+        "number": 51,
+        "title": "Fix",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert rev_session_dir.is_dir()
