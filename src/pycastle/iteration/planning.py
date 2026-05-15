@@ -98,7 +98,6 @@ The implement phase skips this issue until the labeling is fixed.
 
 
 def _sync_needs_slice_type(
-    open_issues: list[dict],
     well_formed: list[dict],
     malformed: list[dict],
     cfg: "Config",
@@ -109,24 +108,23 @@ def _sync_needs_slice_type(
         cfg.behavior_slice_label,
         cfg.docs_slice_label,
     }
-    malformed_numbers = {i["number"] for i in malformed}
+    flag = cfg.needs_slice_type_label
 
-    for issue in open_issues:
-        number = issue["number"]
+    for issue in malformed:
         labels: list[str] = issue.get("labels") or []
-        has_flag = cfg.needs_slice_type_label in labels
+        if flag in labels:
+            continue
+        github_svc.add_label_to_issue(issue["number"], flag)
+        current = [lbl for lbl in labels if lbl in slice_labels]
+        current_slice = ", ".join(f"`{lbl}`" for lbl in current) or "none"
+        github_svc.post_comment(
+            issue["number"], _MALFORMED_COMMENT.format(current_slice=current_slice)
+        )
 
-        if number in malformed_numbers:
-            if not has_flag:
-                github_svc.add_label_to_issue(number, cfg.needs_slice_type_label)
-                current = [lbl for lbl in labels if lbl in slice_labels]
-                current_slice = ", ".join(f"`{lbl}`" for lbl in current) or "none"
-                github_svc.post_comment(
-                    number, _MALFORMED_COMMENT.format(current_slice=current_slice)
-                )
-        else:
-            if has_flag:
-                github_svc.remove_label_from_issue(number, cfg.needs_slice_type_label)
+    for issue in well_formed:
+        labels = issue.get("labels") or []
+        if flag in labels:
+            github_svc.remove_label_from_issue(issue["number"], flag)
 
 
 def _fill_fields(issues: list[dict]) -> list[dict]:
@@ -175,9 +173,7 @@ async def planning_phase(
         sha = verdict.sha
 
         well_formed, malformed = partition_by_slice_label(open_issues, deps.cfg)
-        _sync_needs_slice_type(
-            open_issues, well_formed, malformed, deps.cfg, deps.github_svc
-        )
+        _sync_needs_slice_type(well_formed, malformed, deps.cfg, deps.github_svc)
 
         if len(well_formed) == 1:
             row.close(
