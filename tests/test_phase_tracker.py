@@ -58,18 +58,9 @@ def test_load_with_02_prd_and_03_issues_in_flight_is_not_orphan(
     assert tracker.load() == ("02-prd", "03-issues")
 
 
-def test_malformed_progress_fails_soft_to_no_state(
-    tmp_path: Path,
-) -> None:
+def test_malformed_progress_fails_soft_to_no_state(tracker: _PhaseTracker) -> None:
     """Malformed (unrecognised) progress ID fails soft to (None, None)."""
-    role_session_dir = tmp_path / "role-session"
-    role_session_dir.mkdir()
-    tracker = _PhaseTracker(role_session_dir)
-    # Seed a malformed value via a completed-id that isn't in the valid set
-    tracker.record_in_flight("01-scan")
-    # Bypass record_completed to write a bad value directly
-    (role_session_dir / "_phase_progress").write_text("corrupted!", encoding="utf-8")
-    (role_session_dir / "_phase_in_flight").unlink(missing_ok=True)
+    tracker.record_completed("corrupted!")
     assert tracker.load() == (None, None)
 
 
