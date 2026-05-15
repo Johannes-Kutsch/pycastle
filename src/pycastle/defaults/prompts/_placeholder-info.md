@@ -9,6 +9,9 @@ Prompt templates use a two-tier placeholder model: *global* placeholders are ava
 - `{{NEEDS_TRIAGE_LABEL}}` — GitHub label for issues awaiting triage.
 - `{{NEEDS_INFO_LABEL}}` — GitHub label for issues awaiting more information.
 - `{{WONTFIX_LABEL}}` — GitHub label for issues that will not be fixed.
+- `{{REFACTOR_SLICE_LABEL}}` — GitHub label marking refactor-slice issues.
+- `{{BEHAVIOR_SLICE_LABEL}}` — GitHub label marking behavior-slice issues.
+- `{{DOCS_SLICE_LABEL}}` — GitHub label marking docs-slice issues.
 - `{{FEEDBACK_COMMANDS}}` — Formatted list of implement-feedback commands (e.g. `ruff check --fix` and `pytest`).
 - `{{CHECKS}}` — All preflight check commands joined with `&&`.
 - `{{DESIGN_STANDARDS}}` — Contents of `coding-standards/design.md` (architecture vocabulary and deepening strategy).
