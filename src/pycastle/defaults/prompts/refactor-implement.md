@@ -44,8 +44,4 @@ Run `{{FEEDBACK_COMMANDS}}` after the refactor to confirm all existing tests sti
 
 Before finishing, run `{{FEEDBACK_COMMANDS}}` to ensure all tests pass.
 
-Do not stage files or run `git commit` — the orchestrator handles commits.
-
-Emit a `<commit_message>` tag with a plain description of the changes. Keep it concise — structural change made, files changed, and any follow-up behavior-slice issues filed.
-
-Example: `<commit_message>task completed + PRD reference; key decisions; files changed; Blockers or notes for next iteration</commit_message>`
+{{IMPLEMENT_OUTPUT_RULES}}

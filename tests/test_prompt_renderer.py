@@ -371,6 +371,32 @@ def test_render_design_standards_available_in_improve_prd(cfg, prompts_dir):
     assert result == "design guidelines"
 
 
+def test_render_implement_output_rules_available_in_per_issue_template(
+    cfg, prompts_dir
+):
+    standards_dir = prompts_dir / "coding-standards"
+    (standards_dir / "implement-output-rules.md").write_text("output rules content")
+    (prompts_dir / "behavior-implement.md").write_text("{{IMPLEMENT_OUTPUT_RULES}}")
+    renderer = PromptRenderer(cfg)
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
+            {
+                "ISSUE_NUMBER": "1",
+                "ISSUE_TITLE": "t",
+                "ISSUE_BODY": "",
+                "ISSUE_COMMENTS": "",
+                "BRANCH": "b",
+                "WIP_COMMITS": "",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert result == "output rules content"
+
+
 # ── Security regressions (from test_prompt_utils.py, adapted for renderer) ───
 
 

@@ -183,6 +183,7 @@ class PromptRenderer:
     _STANDARDS_FILES: dict[str, str] = {
         "DESIGN_STANDARDS": "design.md",
         "IMPLEMENTATION_STANDARDS": "implementation.md",
+        "IMPLEMENT_OUTPUT_RULES": "implement-output-rules.md",
     }
 
     def __init__(self, cfg: Config) -> None:

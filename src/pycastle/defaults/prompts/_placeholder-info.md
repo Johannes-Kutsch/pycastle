@@ -16,6 +16,7 @@ Prompt templates use a two-tier placeholder model: *global* placeholders are ava
 - `{{CHECKS}}` — All preflight check commands joined with `&&`.
 - `{{DESIGN_STANDARDS}}` — Contents of `coding-standards/design.md` (architecture vocabulary and deepening strategy).
 - `{{IMPLEMENTATION_STANDARDS}}` — Contents of `coding-standards/implementation.md` (testing, mocking, deep modules, interfaces, and refactoring).
+- `{{IMPLEMENT_OUTPUT_RULES}}` — Contents of `coding-standards/implement-output-rules.md` (commit-message tag format and convention, do-not-stage rule).
 
 ## Scope: PER_ISSUE
 
