@@ -1,5 +1,4 @@
-# Architecture Vocabulary
-
+<design-standards>
 Shared vocabulary for every architectural suggestion. Use these terms exactly — don't substitute "component," "service," "API," or "boundary." Consistent language is the whole point.
 
 ## Terms
@@ -78,3 +77,4 @@ Third-party services (Stripe, Twilio, etc.) you don't control. The deepened modu
 - Write new tests at the deepened module's interface. The **interface is the test surface**.
 - Tests assert on observable outcomes through the interface, not internal state.
 - Tests should survive internal refactors — they describe behaviour, not implementation. If a test has to change when the implementation changes, it's testing past the interface.
+</design-standards>

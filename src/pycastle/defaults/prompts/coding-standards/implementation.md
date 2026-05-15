@@ -1,5 +1,4 @@
-# Good and Bad Tests
-
+<implementation-standards>
 ## Good Tests
 
 **Integration-style**: Test through real interfaces, not mocks of internal parts.
@@ -282,3 +281,4 @@ After all tests pass, look for:
 - **Feature envy** → Move logic to where data lives
 - **Primitive obsession** → Introduce value objects or dataclasses
 - **Existing code** the new code reveals as problematic
+</implementation-standards>
