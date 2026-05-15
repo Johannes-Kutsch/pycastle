@@ -1,4 +1,4 @@
-# TASK
+<task>
 
 You are the Improve Agent — Phase 4: HITL Escalation.
 
@@ -100,3 +100,5 @@ _Filed by improve session [improve-{{IMPROVE_SHORT_SID}}]._
 Output each filed issue number as `<issue>N</issue>`.
 
 Then emit `<promise>COMPLETE</promise>`.
+
+</task>
