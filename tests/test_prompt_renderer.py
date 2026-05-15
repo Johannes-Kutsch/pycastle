@@ -30,6 +30,7 @@ def _run(coro):
 def prompts_dir(tmp_path: Path) -> Path:
     (tmp_path / "improve").mkdir()
     (tmp_path / "coding-standards").mkdir()
+    (tmp_path / "implement").mkdir()
     return tmp_path
 
 
@@ -42,7 +43,7 @@ def cfg(prompts_dir: Path) -> Config:
 
 
 def test_renderer_renders_global_placeholder(cfg, prompts_dir):
-    (prompts_dir / "behavior-implement.md").write_text(
+    (prompts_dir / "implement" / "behavior.md").write_text(
         "Label: {{READY_FOR_AGENT_LABEL}}"
     )
     renderer = PromptRenderer(cfg)
@@ -132,7 +133,7 @@ def test_scopes_are_distinct_members():
 
 
 def test_template_implement_behavior_has_correct_filename_and_scope():
-    assert PromptTemplate.IMPLEMENT_BEHAVIOR.filename == "behavior-implement.md"
+    assert PromptTemplate.IMPLEMENT_BEHAVIOR.filename == "implement/behavior.md"
     assert PromptTemplate.IMPLEMENT_BEHAVIOR.scope == Scope.PER_ISSUE
 
 
@@ -376,7 +377,7 @@ def test_render_implement_output_rules_available_in_per_issue_template(
 ):
     standards_dir = prompts_dir / "coding-standards"
     (standards_dir / "implement-output-rules.md").write_text("output rules content")
-    (prompts_dir / "behavior-implement.md").write_text("{{IMPLEMENT_OUTPUT_RULES}}")
+    (prompts_dir / "implement" / "behavior.md").write_text("{{IMPLEMENT_OUTPUT_RULES}}")
     renderer = PromptRenderer(cfg)
 
     result = _run(
@@ -401,7 +402,7 @@ def test_render_implement_output_rules_available_in_per_issue_template(
 
 
 def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
-    (prompts_dir / "behavior-implement.md").write_text("Diff:\n{{ISSUE_BODY}}\n")
+    (prompts_dir / "implement" / "behavior.md").write_text("Diff:\n{{ISSUE_BODY}}\n")
     renderer = PromptRenderer(cfg)
 
     calls: list[str] = []
@@ -519,7 +520,7 @@ def test_no_legacy_standards_placeholder_in_defaults_prompts():
 
 
 def test_template_shell_expr_runs_arg_shell_token_stays_inert(cfg, prompts_dir):
-    (prompts_dir / "behavior-implement.md").write_text(
+    (prompts_dir / "implement" / "behavior.md").write_text(
         "Header: !`echo hi`\nBody: {{ISSUE_BODY}}\n"
     )
     renderer = PromptRenderer(cfg)
@@ -803,7 +804,9 @@ def test_wip_clause_filters_by_issue_number():
 
 
 def test_render_includes_wip_clause_when_wip_commits_non_empty(cfg, prompts_dir):
-    (prompts_dir / "behavior-implement.md").write_text("Context:{{WIP_COMMITS}}Done")
+    (prompts_dir / "implement" / "behavior.md").write_text(
+        "Context:{{WIP_COMMITS}}Done"
+    )
     renderer = PromptRenderer(cfg)
     wip = build_wip_clause(
         ["WIP: implementer #1 - interrupted"], False, role="implementer", issue_number=1
@@ -821,7 +824,9 @@ def test_render_includes_wip_clause_when_wip_commits_non_empty(cfg, prompts_dir)
 
 
 def test_render_omits_wip_clause_when_wip_commits_empty(cfg, prompts_dir):
-    (prompts_dir / "behavior-implement.md").write_text("Context:{{WIP_COMMITS}}Done")
+    (prompts_dir / "implement" / "behavior.md").write_text(
+        "Context:{{WIP_COMMITS}}Done"
+    )
     renderer = PromptRenderer(cfg)
 
     result = _run(

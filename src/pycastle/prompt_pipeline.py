@@ -93,9 +93,9 @@ class Scope(enum.Enum):
 
 
 class PromptTemplate(enum.Enum):
-    IMPLEMENT_BEHAVIOR = ("behavior-implement.md", Scope.PER_ISSUE)
-    IMPLEMENT_REFACTOR = ("refactor-implement.md", Scope.PER_ISSUE)
-    IMPLEMENT_DOCS = ("docs-implement.md", Scope.PER_ISSUE)
+    IMPLEMENT_BEHAVIOR = ("implement/behavior.md", Scope.PER_ISSUE)
+    IMPLEMENT_REFACTOR = ("implement/refactor.md", Scope.PER_ISSUE)
+    IMPLEMENT_DOCS = ("implement/docs.md", Scope.PER_ISSUE)
     REVIEW = ("review-prompt.md", Scope.PER_ISSUE)
     MERGE = ("merge-prompt.md", Scope.MERGE)
     PLAN = ("plan-prompt.md", Scope.PLAN)
