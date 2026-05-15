@@ -54,7 +54,14 @@ class Scope(enum.Enum):
     PER_ISSUE = (
         "PER_ISSUE",
         frozenset(
-            {"ISSUE_NUMBER", "ISSUE_TITLE", "ISSUE_BODY", "ISSUE_COMMENTS", "BRANCH"}
+            {
+                "ISSUE_NUMBER",
+                "ISSUE_TITLE",
+                "ISSUE_BODY",
+                "ISSUE_COMMENTS",
+                "BRANCH",
+                "WIP_COMMITS",
+            }
         ),
     )
     MERGE = ("MERGE", frozenset({"BRANCHES"}))
@@ -137,6 +144,30 @@ def build_issue_scope_args(
         "ISSUE_COMMENTS": _format_issue_comments(issue["comments"]),
         **extra_scope_args,
     }
+
+
+def build_wip_clause(
+    wip_subjects: list[str],
+    is_resumable: bool,
+    *,
+    role: str,
+    issue_number: int,
+) -> str:
+    """Return WIP narrative when both conditions hold: WIP commits exist and service is not resumable."""
+    if is_resumable:
+        return ""
+    prefix = f"WIP: {role} #{issue_number} -"
+    matching = [s for s in wip_subjects if s.startswith(prefix)]
+    if not matching:
+        return ""
+    items = "\n".join(f"- {s}" for s in matching)
+    return (
+        "\n# WIP Context\n\n"
+        "This branch carries interrupted work from a previous agent run. "
+        "Inspect these WIP commits to understand where the previous run left off "
+        "and continue from that point:\n\n"
+        f"{items}\n"
+    )
 
 
 def _format_feedback_commands(checks: Sequence[str]) -> str:

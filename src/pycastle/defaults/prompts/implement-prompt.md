@@ -17,7 +17,7 @@ Only work on the issue specified. Work on branch {{BRANCH}}.
 {{ISSUE_COMMENTS}}
 
 </comments>
-
+{{WIP_COMMITS}}
 # WORKFLOW
 
 ## 1. Explore
