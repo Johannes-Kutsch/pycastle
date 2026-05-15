@@ -58,7 +58,7 @@ def create_labels_interactive(
         {
             "name": _cfg.needs_info_label,
             "description": "Waiting on reporter for more information",
-            "color": "d4c5f9",
+            "color": "b03176",
         },
         {
             "name": _cfg.issue_label,
