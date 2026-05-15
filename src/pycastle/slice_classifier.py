@@ -44,15 +44,13 @@ def slice_labels(cfg: Config) -> frozenset[str]:
 
 
 def classify_slice(issue: dict, cfg: Config) -> SliceClassification:
-    all_labels = slice_labels(cfg)
+    label_to_mode = {
+        cfg.refactor_slice_label: SliceMode.REFACTOR,
+        cfg.behavior_slice_label: SliceMode.BEHAVIOR,
+        cfg.docs_slice_label: SliceMode.DOCS,
+    }
     issue_labels: list[str] = issue.get("labels") or []
-    matches = [lbl for lbl in issue_labels if lbl in all_labels]
+    matches = [lbl for lbl in issue_labels if lbl in label_to_mode]
     if len(matches) == 1:
-        label = matches[0]
-        if label == cfg.refactor_slice_label:
-            return WellFormed(SliceMode.REFACTOR)
-        elif label == cfg.behavior_slice_label:
-            return WellFormed(SliceMode.BEHAVIOR)
-        else:
-            return WellFormed(SliceMode.DOCS)
+        return WellFormed(label_to_mode[matches[0]])
     return Malformed(found=matches)
