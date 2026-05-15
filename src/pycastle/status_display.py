@@ -37,10 +37,8 @@ class PlainStatusDisplay:
             return True
         if caller == self._last_caller:
             return False
-        cur_kind = self._kinds.get(caller)
-        if {self._last_kind, cur_kind} == {"phase", "agent"}:
-            return False
-        if self._last_kind == "agent" and cur_kind == "agent":
+        kinds = {self._last_kind, self._kinds.get(caller)}
+        if "agent" in kinds and kinds <= {"phase", "agent"}:
             return False
         return True
 
