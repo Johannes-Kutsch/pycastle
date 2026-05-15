@@ -222,3 +222,14 @@ def test_uninstall_fails_when_crontab_not_on_path(tmp_path):
 
     assert result.returncode != 0
     assert "crontab" in result.stderr.lower()
+
+
+# ── cron.sh contents ──────────────────────────────────────────────────────────
+
+
+def test_cron_sh_does_not_install_consuming_project_deps():
+    """cron.sh must not pip-install the consuming project on the host venv."""
+    cron_sh = SETUP_DIR / "cron.sh"
+    content = cron_sh.read_text()
+    assert "pip install -e" not in content
+    assert "pip install -r requirements.txt" not in content

@@ -77,13 +77,12 @@ Pycastle needs a GitHub PAT and a Claude OAuth token. Have these ready before ru
    ```
    Expected: `.venv/` directory exists with `bin/python` inside.
 
-6. Install pycastle and the consuming project (same fallback chain `cron.sh` uses on every tick):
+6. Install pycastle into the host venv:
    ```bash
    .venv/bin/python -m pip install --upgrade pip
    .venv/bin/python -m pip install --upgrade pycastle
-   .venv/bin/python -m pip install -e ".[dev]" || .venv/bin/python -m pip install -r requirements.txt
    ```
-   Expected: pycastle installed, consuming project installed editable (or via `requirements.txt` fallback).
+   Expected: pycastle installed. Consuming-project dependencies are installed inside the agent container per ADR 0001 — no host-side project install is needed.
 
 7. Confirm the CLI is reachable:
    ```bash
@@ -114,7 +113,7 @@ Pycastle needs a GitHub PAT and a Claude OAuth token. Have these ready before ru
 
 The cron helpers scaffolded into `pycastle/setup/` manage unattended operation:
 
-- **`setup/cron.sh`** — bootstrap-and-run wrapper. Acquires a global flock at `$PYCASTLE_HOME/.cron.lock` (6-hour timeout) so multiple repos on the same host serialize cleanly, asserts `.venv/` exists, upgrades pycastle, reinstalls the consuming project, runs `pycastle init --refresh`, rebuilds the Docker image, invokes `pycastle run`, then trims `cron.log` to the last 10000 lines so it cannot grow unbounded.
+- **`setup/cron.sh`** — bootstrap-and-run wrapper. Acquires a global flock at `$PYCASTLE_HOME/.cron.lock` (6-hour timeout) so multiple repos on the same host serialize cleanly, asserts `.venv/` exists, upgrades pycastle (the host venv only needs pycastle itself — consuming-project deps are installed inside the agent container per ADR 0001), runs `pycastle init --refresh`, rebuilds the Docker image, invokes `pycastle run`, then trims `cron.log` to the last 10000 lines so it cannot grow unbounded.
 - **`setup/cron-install.sh`** — idempotently installs a daily entry (`0 1 * * *`) into your user crontab, tagged `# pycastle:<absolute-repo-path>` so multiple repos coexist. The crontab line redirects stdout+stderr into `<logs_dir>/cron.log` (resolved from the project's `pycastle/config.py` at install time), so cron output lands alongside the per-agent logs and is captured from second 0 — including bootstrap failures like a missing `.venv/` or pip errors.
 - **`setup/cron-uninstall.sh`** — removes only the line bearing this repo's marker.
 
@@ -140,7 +139,7 @@ All repos installed via `cron-install.sh` fire at 01:00 and serialize through a 
     ```bash
     bash pycastle/setup/cron.sh
     ```
-    Expected: pip upgrade ×2 completes, project reinstalled, `pycastle init --refresh` and `pycastle build` complete, `pycastle run` starts and exits cleanly (immediately if the issue tracker has nothing ready).
+    Expected: pip upgrade ×2 completes, `pycastle init --refresh` and `pycastle build` complete, `pycastle run` starts and exits cleanly (immediately if the issue tracker has nothing ready).
 
 ---
 
