@@ -21,7 +21,7 @@ pip install pycastle
 
 ### `pycastle init`
 
-Copies the default `pycastle/` configuration directory into your project root. This directory contains the `Dockerfile`, `config.py`, prompt templates that drive the agents (`plan-prompt.md`, `implement-prompt.md`, `review-prompt.md`, `merge-prompt.md`, plus coding standards under `prompts/coding-standards/`), and the cron wrappers (`setup/cron.sh`, `setup/cron-install.sh`, `setup/cron-uninstall.sh`). Run this once per repository, then customise the files to suit your project.
+Copies the default `pycastle/` configuration directory into your project root. This directory contains the `Dockerfile`, `config.py`, prompt templates that drive the agents (`plan-prompt.md`, `behavior-implement.md`, `refactor-implement.md`, `docs-implement.md`, `review-prompt.md`, `merge-prompt.md`, plus coding standards under `prompts/coding-standards/`), and the cron wrappers (`setup/cron.sh`, `setup/cron-install.sh`, `setup/cron-uninstall.sh`). Run this once per repository, then customise the files to suit your project.
 
 Pass `--refresh` to re-copy every bundled default over the existing files, leaving `config.py` and `.env` untouched. `cron.sh` invokes this on every tick so bug fixes ship automatically when you upgrade pycastle.
 
