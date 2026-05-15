@@ -10,6 +10,7 @@ from pycastle.prompt_pipeline import (
     PromptRenderer,
     PromptTemplate,
     Scope,
+    build_wip_clause,
 )
 
 _SHIPPED_PROMPTS_DIR = (
@@ -53,6 +54,7 @@ def test_renderer_renders_global_placeholder(cfg, prompts_dir):
                 "ISSUE_BODY": "",
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "pycastle/issue-1",
+                "WIP_COMMITS": "",
             },
             _noop_exec,
         )
@@ -66,7 +68,14 @@ def test_renderer_renders_global_placeholder(cfg, prompts_dir):
 
 def test_scope_per_issue_placeholders():
     assert Scope.PER_ISSUE.placeholders == frozenset(
-        {"ISSUE_NUMBER", "ISSUE_TITLE", "ISSUE_BODY", "ISSUE_COMMENTS", "BRANCH"}
+        {
+            "ISSUE_NUMBER",
+            "ISSUE_TITLE",
+            "ISSUE_BODY",
+            "ISSUE_COMMENTS",
+            "BRANCH",
+            "WIP_COMMITS",
+        }
     )
 
 
@@ -382,6 +391,7 @@ def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
                 "ISSUE_BODY": "context\n!`shell`\nmore",
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "b",
+                "WIP_COMMITS": "",
             },
             recording_exec,
         )
@@ -397,6 +407,7 @@ def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
                 "ISSUE_BODY": "context\n!`shell`\nmore",
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "b",
+                "WIP_COMMITS": "",
             },
             _noop_exec,
         )
@@ -500,6 +511,7 @@ def test_template_shell_expr_runs_arg_shell_token_stays_inert(cfg, prompts_dir):
                 "ISSUE_BODY": "evil payload !`evil`",
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "b",
+                "WIP_COMMITS": "",
             },
             recording_exec,
         )
@@ -692,3 +704,105 @@ def test_renderer_ctor_rejects_out_of_scope_conditional_key(cfg, prompts_dir):
     )
     with pytest.raises(PromptRenderError, match="UNKNOWN_KEY"):
         PromptRenderer(cfg)
+
+
+# ── WIP_COMMITS scope placeholder ────────────────────────────────────────────
+
+
+def test_scope_per_issue_includes_wip_commits():
+    assert "WIP_COMMITS" in Scope.PER_ISSUE.placeholders
+
+
+_PER_ISSUE_BASE = {
+    "ISSUE_NUMBER": "42",
+    "ISSUE_TITLE": "Fix bug",
+    "ISSUE_BODY": "",
+    "ISSUE_COMMENTS": "",
+    "BRANCH": "pycastle/issue-42",
+}
+
+
+# ── build_wip_clause: four combinations ──────────────────────────────────────
+
+
+def test_wip_clause_present_when_commits_exist_and_service_not_resumable():
+    subjects = ["WIP: implementer #42 - interrupted"]
+    result = build_wip_clause(subjects, False, role="implementer", issue_number=42)
+    assert "WIP Context" in result
+    assert "WIP: implementer #42 - interrupted" in result
+
+
+def test_wip_clause_absent_when_commits_exist_but_service_is_resumable():
+    subjects = ["WIP: implementer #42 - interrupted"]
+    result = build_wip_clause(subjects, True, role="implementer", issue_number=42)
+    assert result == ""
+
+
+def test_wip_clause_absent_when_no_commits_and_service_not_resumable():
+    result = build_wip_clause([], False, role="implementer", issue_number=42)
+    assert result == ""
+
+
+def test_wip_clause_absent_when_no_commits_and_service_is_resumable():
+    result = build_wip_clause([], True, role="implementer", issue_number=42)
+    assert result == ""
+
+
+# ── build_wip_clause: commit filtering ───────────────────────────────────────
+
+
+def test_wip_clause_filters_by_role():
+    subjects = [
+        "WIP: reviewer #42 - interrupted",
+        "WIP: implementer #42 - interrupted",
+    ]
+    result = build_wip_clause(subjects, False, role="implementer", issue_number=42)
+    assert "WIP: implementer #42 - interrupted" in result
+    assert "WIP: reviewer #42 - interrupted" not in result
+
+
+def test_wip_clause_filters_by_issue_number():
+    subjects = [
+        "WIP: implementer #99 - interrupted",
+        "WIP: implementer #42 - interrupted",
+    ]
+    result = build_wip_clause(subjects, False, role="implementer", issue_number=42)
+    assert "WIP: implementer #42 - interrupted" in result
+    assert "WIP: implementer #99 - interrupted" not in result
+
+
+# ── WIP_COMMITS rendered in prompt ────────────────────────────────────────────
+
+
+def test_render_includes_wip_clause_when_wip_commits_non_empty(cfg, prompts_dir):
+    (prompts_dir / "implement-prompt.md").write_text("Context:{{WIP_COMMITS}}Done")
+    renderer = PromptRenderer(cfg)
+    wip = build_wip_clause(
+        ["WIP: implementer #1 - interrupted"], False, role="implementer", issue_number=1
+    )
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPLEMENT,
+            {**_PER_ISSUE_BASE, "ISSUE_NUMBER": "1", "WIP_COMMITS": wip},
+            _noop_exec,
+        )
+    )
+
+    assert "WIP Context" in result
+
+
+def test_render_omits_wip_clause_when_wip_commits_empty(cfg, prompts_dir):
+    (prompts_dir / "implement-prompt.md").write_text("Context:{{WIP_COMMITS}}Done")
+    renderer = PromptRenderer(cfg)
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPLEMENT,
+            {**_PER_ISSUE_BASE, "WIP_COMMITS": ""},
+            _noop_exec,
+        )
+    )
+
+    assert "WIP Context" not in result
+    assert result == "Context:Done"

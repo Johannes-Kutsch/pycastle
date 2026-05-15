@@ -17,7 +17,7 @@ Review the code changes on branch {{BRANCH}} for issue #{{ISSUE_NUMBER}}: {{ISSU
 {{ISSUE_COMMENTS}}
 
 </comments>
-
+{{WIP_COMMITS}}
 # WORKFLOW
 
 ## 1. Confirm baseline

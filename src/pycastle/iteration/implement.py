@@ -11,7 +11,7 @@ from ..agent_result import CancellationToken
 from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import AgentFailedError, BranchCollisionError, UsageLimitError
-from ..prompt_pipeline import PromptTemplate, build_issue_scope_args
+from ..prompt_pipeline import PromptTemplate, build_issue_scope_args, build_wip_clause
 from ..session_resume import RoleSession, is_stage_done_for
 from ..status_display import StatusDisplay
 from ..services import GitService, GithubService
@@ -58,7 +58,7 @@ async def run_issue(
 ) -> dict:
     _branch = branch_for(issue["number"])
     _token = token if token is not None else CancellationToken()
-    scope_args = build_issue_scope_args(issue, extra_scope_args={"BRANCH": _branch})
+    _base_extra: dict[str, str] = {"BRANCH": _branch}
 
     _started_fired = False
 
@@ -100,6 +100,19 @@ async def run_issue(
                 deps=deps,
             ) as impl_mount_path:
                 _impl_overlay = patch_gitdir_for_container(impl_mount_path)
+                _impl_wip_subjects = deps.git_svc.get_branch_commit_subjects(
+                    _branch, deps.repo_root
+                )
+                _impl_wip = build_wip_clause(
+                    _impl_wip_subjects,
+                    RoleSession(impl_mount_path, AgentRole.IMPLEMENTER).is_resumable(),
+                    role=AgentRole.IMPLEMENTER.value,
+                    issue_number=issue["number"],
+                )
+                _impl_scope_args = build_issue_scope_args(
+                    issue,
+                    extra_scope_args={**_base_extra, "WIP_COMMITS": _impl_wip},
+                )
                 try:
                     result = await _bounded_run_agent(
                         RunRequest(
@@ -107,7 +120,7 @@ async def run_issue(
                             template=PromptTemplate.IMPLEMENT,
                             mount_path=impl_mount_path,
                             role=AgentRole.IMPLEMENTER,
-                            scope_args=scope_args,
+                            scope_args=_impl_scope_args,
                             model=deps.cfg.implement_override.model,
                             effort=deps.cfg.implement_override.effort,
                             stage="pre-implementation",
@@ -137,6 +150,19 @@ async def run_issue(
             deps=deps,
         ) as review_mount_path:
             _review_overlay = patch_gitdir_for_container(review_mount_path)
+            _review_wip_subjects = deps.git_svc.get_branch_commit_subjects(
+                _branch, deps.repo_root
+            )
+            _review_wip = build_wip_clause(
+                _review_wip_subjects,
+                RoleSession(review_mount_path, AgentRole.REVIEWER).is_resumable(),
+                role=AgentRole.REVIEWER.value,
+                issue_number=issue["number"],
+            )
+            _review_scope_args = build_issue_scope_args(
+                issue,
+                extra_scope_args={**_base_extra, "WIP_COMMITS": _review_wip},
+            )
             try:
                 review_result = await _bounded_run_agent(
                     RunRequest(
@@ -144,7 +170,7 @@ async def run_issue(
                         template=PromptTemplate.REVIEW,
                         mount_path=review_mount_path,
                         role=AgentRole.REVIEWER,
-                        scope_args=scope_args,
+                        scope_args=_review_scope_args,
                         model=deps.cfg.review_override.model,
                         effort=deps.cfg.review_override.effort,
                         stage="pre-review",
