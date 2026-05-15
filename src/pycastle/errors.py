@@ -85,6 +85,10 @@ class UsageLimitError(PycastleError):
         )
 
 
+class InvalidSliceLabelError(PycastleError):
+    pass
+
+
 class AgentFailedError(PycastleError):
     def __init__(
         self,

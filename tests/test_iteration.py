@@ -49,7 +49,14 @@ def _make_agent_failed_error(role: AgentRole, worktree_path: Path) -> AgentFaile
 
 def _plan_output(issues: list[dict]) -> PlannerOutput:
     return PlannerOutput(
-        issues=[{"number": i["number"], "title": i["title"]} for i in issues]
+        issues=[
+            {
+                "number": i["number"],
+                "title": i["title"],
+                "labels": i.get("labels", ["behavior-slice"]),
+            }
+            for i in issues
+        ]
     )
 
 
@@ -68,7 +75,13 @@ def git_svc():
 def github_svc():
     svc = MagicMock(spec=GithubService)
     svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+        {
+            "number": 1,
+            "title": "Fix bug",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
     ]
     svc.get_all_open_issues_lightweight.return_value = []
     return svc
@@ -141,7 +154,15 @@ def test_run_iteration_fetches_open_issues_and_all_open_issues_before_preflight(
     async def _noop_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix bug",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         return CompletionOutput()
 
@@ -180,7 +201,13 @@ def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, l
     """run_iteration returns AbortedHITL when preflight_phase returns PreflightHITL."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+        {
+            "number": 1,
+            "title": "Fix bug",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
     ]
 
     async def _fake_agent(request: RunRequest):
@@ -204,7 +231,13 @@ def test_run_iteration_aborted_hitl_carries_issue_number(tmp_path, git_svc, logg
     """AbortedHITL must carry the issue number filed by the preflight-issue agent."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+        {
+            "number": 1,
+            "title": "Fix bug",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
     ]
 
     async def _fake_agent(request: RunRequest):
@@ -230,7 +263,13 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
     """run_iteration must return AbortedHITL instead of calling sys.exit on HITL verdict."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+        {
+            "number": 1,
+            "title": "Fix bug",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
     ]
 
     async def _fake_agent(request: RunRequest):
@@ -261,8 +300,20 @@ def test_run_iteration_returns_aborted_usage_limit_when_planner_hits_limit(
 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix A", "body": "", "comments": []},
-        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     reset_time = datetime(2026, 5, 7, 13, 10)
 
@@ -291,7 +342,15 @@ def test_run_iteration_returns_aborted_usage_limit_when_implementer_hits_limit(
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix bug",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -311,7 +370,15 @@ def test_run_iteration_aborted_usage_limit_does_not_raise_system_exit(
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix bug",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -334,7 +401,15 @@ def test_run_iteration_returns_continue_when_issues_complete_normally(
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix bug",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         return CompletionOutput()
 
@@ -354,7 +429,15 @@ def test_run_iteration_returns_continue_when_no_implementers_complete(
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix bug",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         raise PromiseParseError("no <promise>COMPLETE</promise> tag")
 
@@ -376,12 +459,19 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
     The filed fix issue is implemented in the same iteration without a plan step."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+        {
+            "number": 1,
+            "title": "Fix bug",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
     ]
     github_svc.get_issue.return_value = {
         "number": 55,
         "title": "Preflight fix",
         "body": "",
+        "labels": ["behavior-slice"],
     }
 
     async def _fake_agent(request: RunRequest):
@@ -412,14 +502,34 @@ def test_run_iteration_routes_planning_complete_through_status_display(
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Issue A", "body": "", "comments": []},
-        {"number": 2, "title": "Issue B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Issue A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Issue B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Issue A", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Issue A",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         return CompletionOutput()
 
@@ -449,7 +559,15 @@ def test_run_iteration_execution_complete_uses_consistent_source(
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix bug",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         return CompletionOutput()
 
@@ -484,7 +602,13 @@ def test_run_iteration_routes_hitl_abort_message_through_status_display(
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+        {
+            "number": 1,
+            "title": "Fix bug",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
     ]
 
     async def _fake_agent(request: RunRequest):
@@ -515,7 +639,15 @@ def test_run_iteration_routes_no_commits_message_through_status_display(
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix bug",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         raise PromiseParseError("no <promise>COMPLETE</promise> tag")
 
@@ -546,8 +678,20 @@ def test_run_iteration_calls_planning_phase_with_two_or_more_open_issues(
     the Planner (planning_phase) before implement_phase."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 3, "title": "Issue A", "body": "", "comments": []},
-        {"number": 7, "title": "Issue B", "body": "", "comments": []},
+        {
+            "number": 3,
+            "title": "Issue A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 7,
+            "title": "Issue B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     agent_names: list[str] = []
@@ -556,7 +700,15 @@ def test_run_iteration_calls_planning_phase_with_two_or_more_open_issues(
         agent_names.append(request.name)
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 3, "title": "Issue A", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 3,
+                        "title": "Issue A",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         return CompletionOutput()
 
@@ -583,7 +735,13 @@ def test_run_iteration_single_issue_skips_plan_agent_and_still_implements(
     and the iteration proceeds directly to implement."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 7, "title": "Single issue", "body": "", "comments": []}
+        {
+            "number": 7,
+            "title": "Single issue",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
     ]
 
     agent_names: list[str] = []
@@ -616,8 +774,20 @@ def test_run_iteration_returns_done_when_all_issues_blocked(tmp_path, git_svc, l
     returns Done (no improve_mode)."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Issue A", "body": "", "comments": []},
-        {"number": 2, "title": "Issue B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Issue A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Issue B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_agent(request: RunRequest):
@@ -645,8 +815,20 @@ def test_run_iteration_all_blocked_ends_iteration_without_improve(
     improve_mode — there is no within-iteration improve fallback from the AllBlocked path."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Issue A", "body": "", "comments": []},
-        {"number": 2, "title": "Issue B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Issue A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Issue B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     improve_dispatched = False
@@ -731,7 +913,9 @@ def test_implementer_and_reviewer_run_calls_pass_work_body_with_issue_title(
 ):
     issue_title = "Fix auth bug"
     # Single issue: planning skips, so no Plan Agent call. Queue only needs implement+review.
-    github_svc.get_open_issues.return_value = [{"number": 3, "title": issue_title}]
+    github_svc.get_open_issues.return_value = [
+        {"number": 3, "title": issue_title, "labels": ["behavior-slice"]}
+    ]
     recording_runner = FakeAgentRunner(
         [
             CompletionOutput(),
@@ -762,14 +946,42 @@ def test_planner_run_call_passes_work_body_with_issue_count(
     tmp_path, git_svc, github_svc, logger
 ):
     open_issues = [
-        {"number": 1, "title": "Fix A", "body": "", "comments": []},
-        {"number": 2, "title": "Fix B", "body": "", "comments": []},
-        {"number": 3, "title": "Fix C", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 3,
+            "title": "Fix C",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     github_svc.get_open_issues.return_value = open_issues
     recording_runner = FakeAgentRunner(
         [
-            _plan_output([{"number": 1, "title": "Fix A", "body": "", "comments": []}]),
+            _plan_output(
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix A",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
+            ),
             CompletionOutput(),
             CompletionOutput(),
         ],
@@ -800,8 +1012,20 @@ def test_run_iteration_plan_row_removed_even_if_planning_raises(
 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Issue A", "body": "", "comments": []},
-        {"number": 2, "title": "Issue B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Issue A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Issue B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _bad_planner(request: RunRequest):
@@ -831,7 +1055,15 @@ def test_run_iteration_implement_row_removed_on_usage_limit(
     async def _usage_limit(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix bug",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -855,15 +1087,35 @@ def test_run_iteration_registers_plan_row_with_planning_phase(
     """run_iteration must register the 'Plan' row with initial_phase='Planning'."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Issue A", "body": "", "comments": []},
-        {"number": 2, "title": "Issue B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Issue A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Issue B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Issue A", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Issue A",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         return CompletionOutput()
 
@@ -892,15 +1144,35 @@ def test_run_iteration_plan_row_startup_message_uses_configured_issue_label(
     """Plan row startup message uses deps.cfg.issue_label, not a hardcoded string."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Issue A", "body": "", "comments": []},
-        {"number": 2, "title": "Issue B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Issue A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Issue B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     recording = RecordingStatusDisplay()
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Issue A", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Issue A",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         return CompletionOutput()
 
@@ -933,7 +1205,15 @@ def test_run_iteration_registers_implement_row_with_running_phase(
     async def _noop_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix bug",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         return CompletionOutput()
 
@@ -960,8 +1240,20 @@ def test_run_iteration_skips_planning_when_all_issues_have_existing_branches(
     and the iteration proceeds with those issues as the working set."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix A", "body": "", "comments": []},
-        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     git_svc.verify_ref_exists.return_value = True
 
@@ -992,8 +1284,20 @@ def test_run_iteration_skips_planning_when_all_issues_have_existing_worktrees(
     planning_phase is not invoked."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 3, "title": "Fix C", "body": "", "comments": []},
-        {"number": 4, "title": "Fix D", "body": "", "comments": []},
+        {
+            "number": 3,
+            "title": "Fix C",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 4,
+            "title": "Fix D",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     git_svc.verify_ref_exists.return_value = False
     for n in [3, 4]:
@@ -1023,8 +1327,20 @@ def test_run_iteration_uses_only_in_flight_issues_when_some_have_existing_branch
     are used as the working set and planning_phase is not invoked."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 5, "title": "In flight", "body": "", "comments": []},
-        {"number": 6, "title": "Deferred", "body": "", "comments": []},
+        {
+            "number": 5,
+            "title": "In flight",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 6,
+            "title": "Deferred",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     git_svc.verify_ref_exists.side_effect = lambda ref, path: ref == "pycastle/issue-5"
 
@@ -1056,7 +1372,13 @@ def test_run_iteration_uses_preflight_sha_for_in_flight_issues(
     the implementer worktree to verdict.sha — even for in-flight issues."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 7, "title": "In flight", "body": "", "comments": []}
+        {
+            "number": 7,
+            "title": "In flight",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
     ]
     git_svc.verify_ref_exists.return_value = True
     git_svc.get_head_sha.return_value = "preflight-sha"
@@ -1089,9 +1411,27 @@ def test_run_iteration_detects_in_flight_via_both_branch_and_worktree_signals(
     an issue with neither are handled correctly in a single iteration."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 8, "title": "Branch only", "body": "", "comments": []},
-        {"number": 9, "title": "Worktree only", "body": "", "comments": []},
-        {"number": 10, "title": "Deferred", "body": "", "comments": []},
+        {
+            "number": 8,
+            "title": "Branch only",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 9,
+            "title": "Worktree only",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 10,
+            "title": "Deferred",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     git_svc.verify_ref_exists.side_effect = lambda ref, path: ref == "pycastle/issue-8"
     (tmp_path / "pycastle" / ".worktrees" / "issue-9").mkdir(parents=True)
@@ -1126,7 +1466,13 @@ def test_run_iteration_plan_row_rendered_for_single_afk_issue(
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 11, "title": "Solo", "body": "", "comments": []}
+        {
+            "number": 11,
+            "title": "Solo",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
     ]
 
     async def _fake_agent(request: RunRequest):
@@ -1160,14 +1506,34 @@ def test_run_iteration_plan_row_rendered_for_two_afk_issues(tmp_path, git_svc, l
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 3, "title": "Issue A", "body": "", "comments": []},
-        {"number": 4, "title": "Issue B", "body": "", "comments": []},
+        {
+            "number": 3,
+            "title": "Issue A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 4,
+            "title": "Issue B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 3, "title": "Issue A", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 3,
+                        "title": "Issue A",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         return CompletionOutput()
 
@@ -1198,7 +1564,13 @@ def test_run_iteration_plan_row_rendered_for_one_in_flight_zero_afk(
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 20, "title": "In flight", "body": "", "comments": []}
+        {
+            "number": 20,
+            "title": "In flight",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
     ]
     git_svc.verify_ref_exists.return_value = True
 
@@ -1235,8 +1607,20 @@ def test_run_iteration_plan_row_rendered_for_two_in_flight_branches(
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 30, "title": "In flight A", "body": "", "comments": []},
-        {"number": 31, "title": "In flight B", "body": "", "comments": []},
+        {
+            "number": 30,
+            "title": "In flight A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 31,
+            "title": "In flight B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     git_svc.verify_ref_exists.return_value = True
 
@@ -1275,14 +1659,34 @@ def test_run_iteration_plan_close_message_contains_issue_details(
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 3, "title": "Issue A", "body": "", "comments": []},
-        {"number": 7, "title": "Issue B", "body": "", "comments": []},
+        {
+            "number": 3,
+            "title": "Issue A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 7,
+            "title": "Issue B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 3, "title": "Issue A", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 3,
+                        "title": "Issue A",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         return CompletionOutput()
 
@@ -1312,7 +1716,15 @@ def test_run_iteration_implement_close_message_success_format(
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix bug",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         return CompletionOutput()
 
@@ -1345,7 +1757,15 @@ def test_run_iteration_no_commits_close_uses_warning_style(
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix bug",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         raise PromiseParseError("no promise tag")
 
@@ -1377,7 +1797,15 @@ def test_run_iteration_generic_error_uses_implement_caller(
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix bug", "body": "", "comments": []}]
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix bug",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
             )
         raise PromiseParseError("bad output")
 
@@ -1404,7 +1832,13 @@ def test_run_iteration_hitl_message_uses_preflight_caller(tmp_path, git_svc, log
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+        {
+            "number": 1,
+            "title": "Fix bug",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
     ]
 
     async def _fake_agent(request: RunRequest):
@@ -1437,8 +1871,20 @@ def test_run_iteration_plan_close_message_when_all_blocked(tmp_path, git_svc, lo
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Issue A", "body": "", "comments": []},
-        {"number": 2, "title": "Issue B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Issue A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Issue B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_agent(request: RunRequest):
@@ -1468,16 +1914,40 @@ def test_run_iteration_implement_success_message_includes_all_branches(
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 5, "title": "Issue Five", "body": "", "comments": []},
-        {"number": 6, "title": "Issue Six", "body": "", "comments": []},
+        {
+            "number": 5,
+            "title": "Issue Five",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 6,
+            "title": "Issue Six",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
                 [
-                    {"number": 5, "title": "Issue Five", "body": "", "comments": []},
-                    {"number": 6, "title": "Issue Six", "body": "", "comments": []},
+                    {
+                        "number": 5,
+                        "title": "Issue Five",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    },
+                    {
+                        "number": 6,
+                        "title": "Issue Six",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    },
                 ]
             )
         return CompletionOutput()
@@ -1513,16 +1983,40 @@ def test_run_iteration_success_close_excludes_failed_branches(
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 3, "title": "Issue Three", "body": "", "comments": []},
-        {"number": 4, "title": "Issue Four", "body": "", "comments": []},
+        {
+            "number": 3,
+            "title": "Issue Three",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 4,
+            "title": "Issue Four",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
                 [
-                    {"number": 3, "title": "Issue Three", "body": "", "comments": []},
-                    {"number": 4, "title": "Issue Four", "body": "", "comments": []},
+                    {
+                        "number": 3,
+                        "title": "Issue Three",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    },
+                    {
+                        "number": 4,
+                        "title": "Issue Four",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    },
                 ]
             )
         if request.name == "Implement Agent #3":
@@ -1819,7 +2313,13 @@ def test_run_iteration_returns_aborted_usage_limit_for_each_single_agent_phase(
 
     if phase == "preflight":
         github_svc.get_open_issues.return_value = [
-            {"number": 1, "title": "Fix", "body": "", "comments": []}
+            {
+                "number": 1,
+                "title": "Fix",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
         ]
 
         async def agent_fn(req: RunRequest):
@@ -1835,8 +2335,20 @@ def test_run_iteration_returns_aborted_usage_limit_for_each_single_agent_phase(
         )
     elif phase == "plan":
         github_svc.get_open_issues.return_value = [
-            {"number": 1, "title": "Fix", "body": "", "comments": []},
-            {"number": 2, "title": "Fix B", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Fix",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Fix B",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ]
 
         async def agent_fn(req: RunRequest):
@@ -1869,14 +2381,28 @@ def test_run_iteration_returns_aborted_usage_limit_for_each_single_agent_phase(
         )
     else:  # merge
         github_svc.get_open_issues.return_value = [
-            {"number": 1, "title": "Fix", "body": "", "comments": []}
+            {
+                "number": 1,
+                "title": "Fix",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
         ]
         git_svc.try_merge.return_value = False  # force conflict path → Merge Agent
 
         async def agent_fn(req: RunRequest):
             if req.name == "Plan Agent":
                 return _plan_output(
-                    [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                    [
+                        {
+                            "number": 1,
+                            "title": "Fix",
+                            "body": "",
+                            "comments": [],
+                            "labels": ["behavior-slice"],
+                        }
+                    ]
                 )
             if req.name == "Merge Agent":
                 raise UsageLimitError(reset_time=reset_time)
@@ -1905,8 +2431,20 @@ def test_phase_row_paints_interrupted_style_on_usage_limit(tmp_path, git_svc, lo
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix", "body": "", "comments": []},
-        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fix",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
     reset_time = datetime(2026, 5, 8, 16, 0)
 
@@ -2064,8 +2602,20 @@ def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix A", "body": "", "comments": []},
-        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     deps = _make_deps(
@@ -2112,7 +2662,13 @@ def test_run_iteration_returns_aborted_agent_failure_when_implementer_agent_fail
 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix A", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     deps = _make_deps(
@@ -2158,7 +2714,13 @@ def test_run_iteration_returns_aborted_agent_failure_when_reviewer_agent_fails(
 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix A", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     deps = _make_deps(
@@ -2202,8 +2764,20 @@ def test_run_iteration_aborted_agent_failure_without_recovery_when_diagnose_disa
 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix A", "body": "", "comments": []},
-        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     deps = _make_deps(
@@ -2245,7 +2819,13 @@ def test_run_iteration_returns_aborted_timeout_for_each_single_agent_phase(
 
     if phase == "preflight":
         github_svc.get_open_issues.return_value = [
-            {"number": 1, "title": "Fix", "body": "", "comments": []}
+            {
+                "number": 1,
+                "title": "Fix",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
         ]
 
         async def agent_fn(req: RunRequest):
@@ -2263,8 +2843,20 @@ def test_run_iteration_returns_aborted_timeout_for_each_single_agent_phase(
         expected_wt = tmp_path / "pycastle" / ".worktrees" / "preflight-sandbox"
     elif phase == "plan":
         github_svc.get_open_issues.return_value = [
-            {"number": 1, "title": "Fix", "body": "", "comments": []},
-            {"number": 2, "title": "Fix B", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Fix",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Fix B",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ]
 
         async def agent_fn(req: RunRequest):
@@ -2301,14 +2893,28 @@ def test_run_iteration_returns_aborted_timeout_for_each_single_agent_phase(
         expected_wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     else:  # merge
         github_svc.get_open_issues.return_value = [
-            {"number": 1, "title": "Fix", "body": "", "comments": []}
+            {
+                "number": 1,
+                "title": "Fix",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
         ]
         git_svc.try_merge.return_value = False  # force conflict path → Merge Agent
 
         async def agent_fn(req: RunRequest):
             if req.name == "Plan Agent":
                 return _plan_output(
-                    [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                    [
+                        {
+                            "number": 1,
+                            "title": "Fix",
+                            "body": "",
+                            "comments": [],
+                            "labels": ["behavior-slice"],
+                        }
+                    ]
                 )
             if req.name == "Merge Agent":
                 raise AgentTimeoutError("timeout")
@@ -2338,8 +2944,20 @@ def test_phase_row_paints_interrupted_style_on_agent_timeout(tmp_path, git_svc, 
     recording = RecordingStatusDisplay()
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix", "body": "", "comments": []},
-        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fix",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def agent_fn(req: RunRequest):
@@ -2419,13 +3037,20 @@ def test_run_iteration_preflight_fix_uses_planner_sha_not_second_call(
 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
-        {"number": 1, "title": "Fix bug", "body": "", "comments": []}
+        {
+            "number": 1,
+            "title": "Fix bug",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
     ]
     github_svc.get_issue.return_value = {
         "number": 181,
         "title": "Fix preflight failure",
         "body": "",
         "comments": [],
+        "labels": ["behavior-slice"],
     }
 
     async def _fake_agent(request: RunRequest):

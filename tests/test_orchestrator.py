@@ -33,7 +33,14 @@ from pycastle.orchestrator import (
 
 def _plan_output(issues: list[dict]) -> PlannerOutput:
     return PlannerOutput(
-        issues=[{"number": i["number"], "title": i["title"]} for i in issues]
+        issues=[
+            {
+                "number": i["number"],
+                "title": i["title"],
+                "labels": i.get("labels", ["behavior-slice"]),
+            }
+            for i in issues
+        ]
     )
 
 
@@ -75,12 +82,30 @@ def _make_github_svc(numbers: list[int] | None = None):
     mock = MagicMock(spec=GithubService)
     if numbers is None:
         issues = [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ]
     else:
         issues = [
-            {"number": n, "title": f"Issue {n}", "body": "", "comments": []}
+            {
+                "number": n,
+                "title": f"Issue {n}",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
             for n in numbers
         ]
     mock.get_open_issues.return_value = issues
@@ -209,6 +234,7 @@ def test_run_does_not_crash_when_planner_omits_branch_field(tmp_path):
                         "title": "Fix branch bug",
                         "body": "",
                         "comments": [],
+                        "labels": ["behavior-slice"],
                     }
                 ]
             )
@@ -238,7 +264,13 @@ def test_run_computes_branch_from_issue_number_not_planner_slug(tmp_path):
         if request.name == "Plan Agent":
             return PlannerOutput(
                 issues=[
-                    {"number": 42, "title": "Fix thing", "body": "", "comments": []}
+                    {
+                        "number": 42,
+                        "title": "Fix thing",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
                 ]
             )
         if "Implement Agent" in request.name:
@@ -743,8 +775,20 @@ def test_clean_merges_skip_merger(tmp_path):
     agent_names: list[str] = []
 
     issues = [
-        {"number": 1, "title": "Fix A", "body": "", "comments": []},
-        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_run_agent(request: RunRequest):
@@ -771,8 +815,20 @@ def test_clean_merge_calls_close_issue_per_issue_and_close_completed_parent_issu
     """Each cleanly-merged issue must be closed via close_issue(); close_completed_parent_issues()
     must be called once after all merges."""
     issues = [
-        {"number": 7, "title": "Fix A", "body": "", "comments": []},
-        {"number": 8, "title": "Fix B", "body": "", "comments": []},
+        {
+            "number": 7,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 8,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_run_agent(request: RunRequest):
@@ -800,8 +856,20 @@ def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
     captured: list[dict] = []
 
     issues = [
-        {"number": 1, "title": "Clean", "body": "", "comments": []},
-        {"number": 2, "title": "Conflict", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Clean",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Conflict",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_run_agent(request: RunRequest):
@@ -831,8 +899,20 @@ def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
 def test_conflict_branch_closed_after_merger_agent(tmp_path):
     """Conflicting branches must be closed by the orchestrator after the Merger agent returns."""
     issues = [
-        {"number": 1, "title": "Clean", "body": "", "comments": []},
-        {"number": 2, "title": "Conflict", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Clean",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Conflict",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_run_agent(request: RunRequest):
@@ -882,8 +962,20 @@ def test_merger_does_not_receive_issues_prompt_arg(tmp_path):
     captured: list[dict] = []
 
     issues = [
-        {"number": 3, "title": "Clean issue", "body": "", "comments": []},
-        {"number": 4, "title": "Conflict issue", "body": "", "comments": []},
+        {
+            "number": 3,
+            "title": "Clean issue",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 4,
+            "title": "Conflict issue",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_run_agent(request: RunRequest):
@@ -911,9 +1003,27 @@ def test_merger_does_not_receive_issues_prompt_arg(tmp_path):
 def test_multiple_conflict_issues_all_closed_after_merger(tmp_path):
     """Each conflict issue must be individually closed when there are multiple conflicts."""
     issues = [
-        {"number": 10, "title": "Conflict A", "body": "", "comments": []},
-        {"number": 11, "title": "Conflict B", "body": "", "comments": []},
-        {"number": 12, "title": "Conflict C", "body": "", "comments": []},
+        {
+            "number": 10,
+            "title": "Conflict A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 11,
+            "title": "Conflict B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 12,
+            "title": "Conflict C",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_run_agent(request: RunRequest):
@@ -1172,8 +1282,20 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
     mock_git.get_head_sha.return_value = fake_sha
 
     issues = [
-        {"number": 1, "title": "Fix A", "body": "", "comments": []},
-        {"number": 2, "title": "Fix B", "body": "", "comments": []},
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
     ]
 
     async def _fake_run_agent(request: RunRequest):
@@ -1277,8 +1399,20 @@ def test_usage_limit_sleeps_instead_of_exiting(tmp_path):
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -1307,8 +1441,20 @@ def test_usage_limit_prints_sleep_message_with_wake_time(tmp_path, capsys):
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -1342,8 +1488,20 @@ def test_usage_limit_loop_continues_after_sleep(tmp_path):
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -1371,12 +1529,36 @@ def test_consecutive_usage_limits_sleep_multiple_times(tmp_path):
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -1409,8 +1591,20 @@ def test_usage_limit_wake_time_is_next_full_hour_plus_two_minutes(tmp_path, caps
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -1449,8 +1643,20 @@ def test_usage_limit_sleep_duration_matches_wake_time(tmp_path):
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -1486,8 +1692,20 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -1528,8 +1746,20 @@ def test_usage_limit_with_reset_time_uses_precise_wake_time(tmp_path, capsys):
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -1564,8 +1794,20 @@ def test_usage_limit_without_reset_time_appends_estimated_qualifier(tmp_path, ca
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -1602,8 +1844,20 @@ def test_usage_limit_sleep_message_same_day_shows_hhmm_only(tmp_path, capsys):
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -1642,8 +1896,20 @@ def test_usage_limit_sleep_message_cross_day_shows_date(tmp_path, capsys):
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -1682,8 +1948,20 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -1727,8 +2005,20 @@ def test_usage_limit_pool_switch_message_cross_day_shows_date(tmp_path, capsys):
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -1769,8 +2059,20 @@ def test_usage_limit_in_preflight_sleeps_instead_of_crashing(tmp_path):
     mock_github = _make_github_svc_afk()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -2467,8 +2769,20 @@ def test_usage_limit_with_service_available_does_not_sleep(tmp_path):
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -2504,8 +2818,20 @@ def test_usage_limit_with_all_services_exhausted_sleeps_until_earliest_wake(tmp_
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Default Issue", "body": "", "comments": []},
-            {"number": 2, "title": "Default Issue 2", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
@@ -2699,6 +3025,7 @@ def test_preflight_afk_from_planning_routes_to_implement_same_iteration(tmp_path
         "title": "Preflight fix",
         "body": "",
         "comments": [],
+        "labels": ["behavior-slice"],
     }
 
     _run(
@@ -2804,8 +3131,20 @@ def test_orchestrator_aborted_timeout_continues_to_next_iteration_without_sleep(
 
     mock_github.get_open_issues.side_effect = [
         [
-            {"number": 1, "title": "Fix", "body": "", "comments": []},
-            {"number": 2, "title": "Fix B", "body": "", "comments": []},
+            {
+                "number": 1,
+                "title": "Fix",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Fix B",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
         ],
         [],
     ]
