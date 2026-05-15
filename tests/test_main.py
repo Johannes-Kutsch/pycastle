@@ -354,7 +354,7 @@ def test_init_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
     assert "Config: defaults" in result.output
 
 
-# ── Issue 504: AccountPool seeding from env ───────────────────────────────────
+# ── Issue 504/691: service registry seeding from env ─────────────────────────
 
 
 def test_run_cmd_seeds_pool_with_primary_only_when_secondary_absent(
@@ -372,16 +372,18 @@ def test_run_cmd_seeds_pool_with_primary_only_when_secondary_absent(
 
     async def _fake_run(env, repo_root, **kwargs):
         captured["env"] = env
-        captured["pool"] = kwargs.get("account_pool")
+        captured["registry"] = kwargs.get("service_registry")
 
     with patch("pycastle.orchestrator.run", _fake_run):
         result = CliRunner().invoke(cli, ["run"])
 
     assert result.exit_code == 0, result.output
-    pool = captured["pool"]
-    assert pool is not None
-    assert pool.names() == ["primary"]
-    assert pool.pick() == ("primary", "primary-tok")
+    registry = captured["registry"]
+    assert registry is not None
+    svc = registry["claude"]
+    assert svc.account_names() == ["primary"]
+    env = svc.build_env()
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "primary-tok"
 
 
 def test_run_cmd_seeds_pool_with_secondary_first_when_present(tmp_path, monkeypatch):
@@ -397,15 +399,17 @@ def test_run_cmd_seeds_pool_with_secondary_first_when_present(tmp_path, monkeypa
 
     async def _fake_run(env, repo_root, **kwargs):
         captured["env"] = env
-        captured["pool"] = kwargs.get("account_pool")
+        captured["registry"] = kwargs.get("service_registry")
 
     with patch("pycastle.orchestrator.run", _fake_run):
         result = CliRunner().invoke(cli, ["run"])
 
     assert result.exit_code == 0, result.output
-    pool = captured["pool"]
-    assert pool.names() == ["secondary", "primary"]
-    assert pool.pick() == ("secondary", "secondary-tok")
+    registry = captured["registry"]
+    svc = registry["claude"]
+    assert svc.account_names() == ["secondary", "primary"]
+    env = svc.build_env()
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "secondary-tok"
 
 
 def test_run_cmd_fails_fast_when_primary_token_missing_even_with_secondary(

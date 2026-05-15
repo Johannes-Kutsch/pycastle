@@ -844,11 +844,11 @@ def test_run_request_session_namespace_can_be_set():
     assert req.session_namespace == "main"
 
 
-# ── AgentRunner: AccountPool integration ─────────────────────────────────────
+# ── AgentRunner: ClaudeService pool integration ───────────────────────────────
 
 
 def test_agent_runner_injects_picked_token_into_container_env(tmp_path):
-    from pycastle.account_pool import AccountPool
+    from pycastle.services.claude_service import ClaudeService
 
     captured_env: dict = {}
     mock_client = MagicMock()
@@ -870,13 +870,15 @@ def test_agent_runner_injects_picked_token_into_container_env(tmp_path):
 
     mock_container.exec_run.side_effect = exec_side_effect
 
-    pool = AccountPool([("secondary", "tok-secondary"), ("primary", "tok-primary")])
+    svc = ClaudeService(
+        accounts=[("secondary", "tok-secondary"), ("primary", "tok-primary")]
+    )
     runner = AgentRunner(
         {"GH_TOKEN": "gh"},
         _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
-        account_pool=pool,
+        service=svc,
     )
 
     asyncio.run(
@@ -894,9 +896,7 @@ def test_agent_runner_injects_picked_token_into_container_env(tmp_path):
 
 
 def test_agent_runner_marks_picked_token_exhausted_on_usage_limit(tmp_path):
-    from datetime import datetime
-
-    from pycastle.account_pool import AccountPool
+    from pycastle.services.claude_service import ClaudeService
 
     mock_client = _make_docker_client(
         [
@@ -905,16 +905,17 @@ def test_agent_runner_marks_picked_token_exhausted_on_usage_limit(tmp_path):
         ]
     )
 
-    pool = AccountPool([("secondary", "tok-secondary"), ("primary", "tok-primary")])
+    svc = ClaudeService(
+        accounts=[("secondary", "tok-secondary"), ("primary", "tok-primary")]
+    )
     runner = AgentRunner(
         {},
         _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
-        account_pool=pool,
+        service=svc,
     )
 
-    fixed_now = datetime(2026, 1, 1, 14, 0, 0)
     with pytest.raises(UsageLimitError):
         asyncio.run(
             runner.run(
@@ -927,10 +928,10 @@ def test_agent_runner_marks_picked_token_exhausted_on_usage_limit(tmp_path):
             )
         )
 
-    # secondary was picked (highest priority); now exhausted, so primary should be next
-    name, tok = pool.pick(now=fixed_now)
-    assert name == "primary"
-    assert tok == "tok-primary"
+    # secondary was picked (highest priority) and marked exhausted; primary should now be available
+    assert svc.is_available() is True
+    env = svc.build_env()
+    assert env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok-primary"
 
 
 def test_fake_agent_runner_accepts_run_request_and_records_it():

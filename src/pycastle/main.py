@@ -167,9 +167,10 @@ def build_cmd(no_cache: bool) -> None:
 def run_cmd(improve_mode: str | None) -> None:
     from typing import cast
 
-    from .account_pool import AccountPool
     from .iteration.dispatcher import ImproveMode
     from .orchestrator import run
+    from .services.agent_service import AgentService
+    from .services.claude_service import ClaudeService
 
     _print_layer_summary()
     cfg = _load_config_or_exit()
@@ -187,9 +188,11 @@ def run_cmd(improve_mode: str | None) -> None:
     if secondary:
         accounts.append(("secondary", secondary))
     accounts.append(("primary", primary))
-    pool = AccountPool(accounts)
-    # Strip the secondary token from container env; AgentRunner injects the
-    # pool-picked token into CLAUDE_CODE_OAUTH_TOKEN per session.
+    service_registry: dict[str, AgentService] = {
+        "claude": ClaudeService(accounts=accounts)
+    }
+    # Strip the secondary token from container env; ClaudeService picks the
+    # active token from its internal pool per session.
     container_env = {
         k: v for k, v in env.items() if k != "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY"
     }
@@ -200,7 +203,7 @@ def run_cmd(improve_mode: str | None) -> None:
         run(
             container_env,
             Path(".").resolve(),
-            account_pool=pool,
+            service_registry=service_registry,
             improve_mode=cast(ImproveMode, effective_improve_mode),
         )
     )

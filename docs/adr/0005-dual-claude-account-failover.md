@@ -14,8 +14,9 @@ Pycastle previously supported three Claude authentication paths in parallel: `CL
 
 - `~/.claude.json` is no longer read by pycastle; users who authenticated only via `claude login` must run `claude setup-token` once and paste the result into `.env`. One-time migration step.
 - `ANTHROPIC_API_KEY` is removed from `_ENV_KEYS`, the init template, and all credential plumbing. Pycastle is committed to subscription auth only.
-- `AccountPool` is constructed in `main.py` alongside `_load_env` and passed to `AgentRunner.__init__`. It is *not* threaded through `Deps` — the iteration layer has no access to credentials.
-- The existing `UsageLimitError` → `AbortedUsageLimit` plumbing is reused unchanged; only the orchestrator's match arm at `orchestrator.py:182` is gated on `pool.has_available()` before sleeping. Single-token users see no change.
-- Failover is per-agent-run granularity. Each parallel agent that 429s calls `mark_exhausted` on the same token (idempotent) and unwinds via the standard preserve-and-restart flow.
+- **Amended by issue #691**: `AccountPool` is no longer a public orchestrator-level construct. Its logic lives inside `ClaudeService` as a private `_AccountPool` detail. `main.py` constructs a `dict[str, AgentService]` service registry (currently `{"claude": ClaudeService(accounts=...)}`) and passes it to `orchestrator.run()` instead of an `AccountPool`. `AgentRunner` receives the `ClaudeService` via the `service` parameter; token pick and exhaustion are entirely internal to the service.
+- `AgentService` protocol gains `is_available(now)`, `next_wake_time()`, and `mark_exhausted(reset_time)` methods. The orchestrator's `AbortedUsageLimit` arm consults `service.is_available(now)` across registry values; it sleeps until `min(next_wake_time())` only when all services are unavailable.
+- The existing `UsageLimitError` → `AbortedUsageLimit` plumbing is reused unchanged. Single-token users see no change.
+- Failover is per-agent-run granularity. Each parallel agent that 429s calls `service.mark_exhausted(reset_time)` and unwinds via the standard preserve-and-restart flow.
 - `_inject_claude_credentials` and the `CLAUDE_ACCOUNT_JSON` env-filter in `_build_session` are deleted.
 - `pycastle init` still prompts for a single OAuth token. The secondary is documented as an optional `.env` addition.

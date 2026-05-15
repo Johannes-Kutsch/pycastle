@@ -110,6 +110,46 @@ def _make_github_svc_hitl():
     return mock
 
 
+class _FakeService:
+    """Minimal AgentService stub for orchestrator failover tests."""
+
+    def __init__(
+        self,
+        available: bool = True,
+        wake_time=None,
+        names: list[str] | None = None,
+    ) -> None:
+        self._available = available
+        self._wake_time = wake_time
+        self._names = names or []
+
+    def is_available(self, now=None) -> bool:
+        return self._available
+
+    def next_wake_time(self):
+        return self._wake_time
+
+    def mark_exhausted(self, reset_time) -> None:
+        pass
+
+    def account_names(self) -> list[str]:
+        return self._names
+
+    # unused protocol stubs
+    @property
+    def name(self) -> str:
+        return "fake"
+
+    def build_command(self, model, effort, run_kind, session_uuid):
+        return ""
+
+    def build_env(self, state_dir_container_path=None, token=None):
+        return {}
+
+    def run(self, lines):
+        return iter([])
+
+
 def _write_config(tmp_path: Path, **kwargs) -> None:
     (tmp_path / "pycastle").mkdir(exist_ok=True)
     lines = ["from pycastle import StageOverride", "from pathlib import Path"]
@@ -131,7 +171,7 @@ def _run(
     github_service=None,
     agent_runner=None,
     status_display=None,
-    account_pool=None,
+    service_registry=None,
     improve_mode=None,
     **config_kwargs,
 ):
@@ -147,7 +187,7 @@ def _run(
             git_service=git_service if git_service is not None else _make_git_svc(),
             github_service=github_service,
             status_display=status_display,
-            account_pool=account_pool,
+            service_registry=service_registry,
             improve_mode=improve_mode,
         )
     )
@@ -1635,10 +1675,9 @@ def test_usage_limit_sleep_message_cross_day_shows_date(tmp_path, capsys):
 def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, capsys):
     """Account-switch message shows only HH:MM when wake-time is same day."""
     from datetime import datetime as real_datetime
-    from pycastle.account_pool import AccountPool
 
     fixed_now = real_datetime(2026, 1, 1, 14, 0, 0)
-    early = real_datetime(2026, 1, 1, 15, 0, 0)
+    wake = real_datetime(2026, 1, 1, 15, 2, 0)  # same day
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
@@ -1649,8 +1688,9 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
         [],
     ]
 
-    pool = AccountPool([("secondary", "tok-s"), ("primary", "tok-p")])
-    pool.mark_exhausted("tok-s", early, now=fixed_now)
+    # One account exhausted (secondary), one still available (primary)
+    svc_exhausted = _FakeService(available=False, wake_time=wake)
+    svc_available = _FakeService(available=True)
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -1668,12 +1708,11 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
             tmp_path,
             _fake_run_agent,
             github_service=mock_github,
-            account_pool=pool,
+            service_registry={"secondary": svc_exhausted, "primary": svc_available},
             max_iterations=2,
         )
 
     out = capsys.readouterr().out
-    # earliest_wake_time() adds 2 min buffer → 15:02, same day → no date
     assert "exhausted until 15:02" in out
     assert "Jan" not in out
 
@@ -1681,10 +1720,9 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
 def test_usage_limit_pool_switch_message_cross_day_shows_date(tmp_path, capsys):
     """Account-switch message includes the date when wake-time is on a different day."""
     from datetime import datetime as real_datetime
-    from pycastle.account_pool import AccountPool
 
     fixed_now = real_datetime(2026, 1, 1, 23, 0, 0)
-    next_day = real_datetime(2026, 1, 2, 6, 0, 0)
+    wake = real_datetime(2026, 1, 2, 6, 2, 0)  # next day
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
@@ -1695,8 +1733,8 @@ def test_usage_limit_pool_switch_message_cross_day_shows_date(tmp_path, capsys):
         [],
     ]
 
-    pool = AccountPool([("secondary", "tok-s"), ("primary", "tok-p")])
-    pool.mark_exhausted("tok-s", next_day, now=fixed_now)
+    svc_exhausted = _FakeService(available=False, wake_time=wake)
+    svc_available = _FakeService(available=True)
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -1714,12 +1752,11 @@ def test_usage_limit_pool_switch_message_cross_day_shows_date(tmp_path, capsys):
             tmp_path,
             _fake_run_agent,
             github_service=mock_github,
-            account_pool=pool,
+            service_registry={"secondary": svc_exhausted, "primary": svc_available},
             max_iterations=2,
         )
 
     out = capsys.readouterr().out
-    # earliest_wake_time() adds 2 min buffer → 06:02; cross-day → date shown
     assert "exhausted until Jan 2, 06:02" in out
 
 
@@ -2422,14 +2459,11 @@ def test_iteration_header_uses_anonymous_caller(tmp_path):
         assert call[1] == "", f"Iteration header must use '' as caller; got {call[1]!r}"
 
 
-# ── Issue-504: AccountPool failover ─────────────────────────────────────────
+# ── Issue-504: service registry failover ─────────────────────────────────────
 
 
-def test_usage_limit_with_pool_available_does_not_sleep(tmp_path):
-    """When AccountPool.has_available() is True, orchestrator must not sleep on AbortedUsageLimit."""
-    from datetime import datetime as real_datetime
-    from pycastle.account_pool import AccountPool
-
+def test_usage_limit_with_service_available_does_not_sleep(tmp_path):
+    """When service.is_available() is True, orchestrator must not sleep on AbortedUsageLimit."""
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
         [
@@ -2439,13 +2473,7 @@ def test_usage_limit_with_pool_available_does_not_sleep(tmp_path):
         [],
     ]
 
-    pool = AccountPool([("secondary", "tok-s"), ("primary", "tok-p")])
-    # Mark only the secondary as exhausted so primary is still available.
-    pool.mark_exhausted(
-        "tok-s",
-        real_datetime(2026, 1, 1, 15, 0, 0),
-        now=real_datetime(2026, 1, 1, 14, 0, 0),
-    )
+    svc = _FakeService(available=True)
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -2459,21 +2487,19 @@ def test_usage_limit_with_pool_available_does_not_sleep(tmp_path):
             tmp_path,
             _fake_run_agent,
             github_service=mock_github,
-            account_pool=pool,
+            service_registry={"claude": svc},
             max_iterations=2,
         )
 
     mock_sleep.assert_not_called()
 
 
-def test_usage_limit_with_pool_all_exhausted_sleeps_until_earliest_wake(tmp_path):
-    """When all accounts in pool are exhausted, orchestrator sleeps until earliest wake."""
+def test_usage_limit_with_all_services_exhausted_sleeps_until_earliest_wake(tmp_path):
+    """When all services are unavailable, orchestrator sleeps until earliest wake."""
     from datetime import datetime as real_datetime
-    from pycastle.account_pool import AccountPool
 
     fixed_now = real_datetime(2026, 1, 1, 14, 30, 0)
-    early = real_datetime(2026, 1, 1, 14, 40, 0)
-    late = real_datetime(2026, 1, 1, 15, 30, 0)
+    early_wake = real_datetime(2026, 1, 1, 14, 42, 0)
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
@@ -2484,9 +2510,7 @@ def test_usage_limit_with_pool_all_exhausted_sleeps_until_earliest_wake(tmp_path
         [],
     ]
 
-    pool = AccountPool([("secondary", "tok-s"), ("primary", "tok-p")])
-    pool.mark_exhausted("tok-s", late, now=fixed_now)
-    pool.mark_exhausted("tok-p", early, now=fixed_now)
+    svc = _FakeService(available=False, wake_time=early_wake)
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -2504,22 +2528,21 @@ def test_usage_limit_with_pool_all_exhausted_sleeps_until_earliest_wake(tmp_path
             tmp_path,
             _fake_run_agent,
             github_service=mock_github,
-            account_pool=pool,
+            service_registry={"claude": svc},
             max_iterations=2,
         )
 
-    expected_wake = early + __import__("datetime").timedelta(minutes=2)
-    expected_seconds = (expected_wake - fixed_now).total_seconds()
+    expected_seconds = (early_wake - fixed_now).total_seconds()
     mock_sleep.assert_called_once_with(expected_seconds)
 
 
 def test_pool_summary_printed_at_startup_with_both_accounts(tmp_path):
-    from pycastle.account_pool import AccountPool
+    from pycastle.services.claude_service import ClaudeService
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.return_value = []
 
-    pool = AccountPool([("secondary", "tok-s"), ("primary", "tok-p")])
+    svc = ClaudeService(accounts=[("secondary", "tok-s"), ("primary", "tok-p")])
     recording = RecordingStatusDisplay()
 
     async def _fake_run_agent(request: RunRequest):
@@ -2529,7 +2552,7 @@ def test_pool_summary_printed_at_startup_with_both_accounts(tmp_path):
         tmp_path,
         _fake_run_agent,
         github_service=mock_github,
-        account_pool=pool,
+        service_registry={"claude": svc},
         status_display=recording,
     )
 
@@ -2540,12 +2563,12 @@ def test_pool_summary_printed_at_startup_with_both_accounts(tmp_path):
 
 
 def test_pool_summary_printed_at_startup_with_primary_only(tmp_path):
-    from pycastle.account_pool import AccountPool
+    from pycastle.services.claude_service import ClaudeService
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.return_value = []
 
-    pool = AccountPool([("primary", "tok-p")])
+    svc = ClaudeService(accounts=[("primary", "tok-p")])
     recording = RecordingStatusDisplay()
 
     async def _fake_run_agent(request: RunRequest):
@@ -2555,7 +2578,7 @@ def test_pool_summary_printed_at_startup_with_primary_only(tmp_path):
         tmp_path,
         _fake_run_agent,
         github_service=mock_github,
-        account_pool=pool,
+        service_registry={"claude": svc},
         status_display=recording,
     )
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 import shlex
@@ -13,6 +14,67 @@ from .. import agent_output_protocol as _proto
 from ..errors import ClaudeCliNotFoundError
 from ..session_resume import RunKind
 from .agent_service import AssistantTurn, ParsedTurn, Result, Tokens, UsageLimit
+
+
+# ── private account pool ──────────────────────────────────────────────────────
+
+
+@dataclasses.dataclass
+class _Account:
+    name: str
+    token: str
+    exhausted_until: datetime | None = None
+
+
+class _AccountPool:
+    def __init__(self, accounts: list[tuple[str, str]]) -> None:
+        if not accounts:
+            raise ValueError("ClaudeService requires at least one account")
+        self._accounts: list[_Account] = [
+            _Account(name=n, token=t) for n, t in accounts
+        ]
+
+    def _is_exhausted(self, acc: _Account, now: datetime) -> bool:
+        return acc.exhausted_until is not None and acc.exhausted_until > now
+
+    def pick(self, now: datetime | None = None) -> tuple[str, str]:
+        now = now or datetime.now()
+        for acc in self._accounts:
+            if not self._is_exhausted(acc, now):
+                return acc.name, acc.token
+        raise RuntimeError("No available Claude accounts")
+
+    def mark_exhausted(
+        self, token: str, reset_time: datetime | None, now: datetime | None = None
+    ) -> None:
+        now = now or datetime.now()
+        if reset_time is not None:
+            wake = reset_time + timedelta(minutes=2)
+        else:
+            next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(
+                hours=1
+            )
+            wake = next_hour + timedelta(minutes=2)
+        for acc in self._accounts:
+            if acc.token == token:
+                acc.exhausted_until = wake
+                return
+
+    def has_available(self, now: datetime | None = None) -> bool:
+        now = now or datetime.now()
+        return any(not self._is_exhausted(a, now) for a in self._accounts)
+
+    def earliest_wake_time(self) -> datetime:
+        wakes = [
+            a.exhausted_until for a in self._accounts if a.exhausted_until is not None
+        ]
+        if not wakes:
+            raise RuntimeError("No exhausted accounts")
+        return min(wakes)
+
+    def names(self) -> list[str]:
+        return [a.name for a in self._accounts]
+
 
 # claude CLI does not expose a list-models subcommand; this list is kept in sync manually.
 _KNOWN_MODELS: tuple[str, ...] = (
@@ -155,9 +217,36 @@ def _list_models() -> tuple[str, ...]:
 
 
 class ClaudeService:
+    def __init__(self, accounts: list[tuple[str, str]] | None = None) -> None:
+        self._pool: _AccountPool | None = (
+            _AccountPool(accounts) if accounts is not None else None
+        )
+        self._current_token: str | None = None
+
     @property
     def name(self) -> str:
         return "claude"
+
+    def is_available(self, now: datetime | None = None) -> bool:
+        if self._pool is None:
+            return True
+        return self._pool.has_available(now=now)
+
+    def next_wake_time(self) -> datetime:
+        if self._pool is None:
+            raise RuntimeError("ClaudeService.next_wake_time called with no pool")
+        return self._pool.earliest_wake_time()
+
+    def mark_exhausted(
+        self, reset_time: datetime | None, *, _now: datetime | None = None
+    ) -> None:
+        if self._pool is not None and self._current_token is not None:
+            self._pool.mark_exhausted(self._current_token, reset_time, now=_now)
+
+    def account_names(self) -> list[str]:
+        if self._pool is None:
+            return []
+        return self._pool.names()
 
     def list_models(self) -> tuple[str, ...]:
         return _list_models()
@@ -188,6 +277,11 @@ class ClaudeService:
         state_dir_container_path: str | None = None,
         token: str | None = None,
     ) -> dict[str, str]:
+        if token is None and self._pool is not None:
+            _, self._current_token = self._pool.pick()
+            token = self._current_token
+        elif token is not None:
+            self._current_token = token
         env: dict[str, str] = {}
         if token:
             env["CLAUDE_CODE_OAUTH_TOKEN"] = token

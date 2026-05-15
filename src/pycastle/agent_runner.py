@@ -4,7 +4,6 @@ from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any, Protocol
 
-from .account_pool import AccountPool
 from .agent_output_protocol import (
     AgentOutput,
     AgentRole,
@@ -66,14 +65,12 @@ class AgentRunner:
         cfg: Config,
         git_service: GitService,
         docker_client=None,
-        account_pool: AccountPool | None = None,
         service: AgentService | None = None,
     ) -> None:
         self._env = env
         self._cfg = cfg
         self._git_service = git_service
         self._docker_client = docker_client
-        self._account_pool = account_pool
         self._service: AgentService = (
             service if service is not None else ClaudeService()
         )
@@ -83,28 +80,22 @@ class AgentRunner:
         self,
         mount_path: Path,
         role_session: RoleSession | None = None,
-    ) -> tuple[DockerSession, str | None]:
+    ) -> DockerSession:
         volumes, auto_overlay = build_volume_spec(mount_path)
         container_env = dict(self._env)
-        picked_token: str | None = None
-        if self._account_pool is not None:
-            _, picked_token = self._account_pool.pick()
         state_dir: str | None = None
         if role_session is not None:
             state_dir = (
                 f"{_CONTAINER_WORKSPACE}/{role_session.claude_config_dir_relpath()}"
             )
-        container_env.update(self._service.build_env(state_dir, picked_token))
-        return (
-            DockerSession(
-                volumes=volumes,
-                container_env=container_env,
-                image_name=self._cfg.docker_image_name,
-                cfg=self._cfg,
-                docker_client=self._docker_client,
-                auto_overlay=auto_overlay,
-            ),
-            picked_token,
+        container_env.update(self._service.build_env(state_dir))
+        return DockerSession(
+            volumes=volumes,
+            container_env=container_env,
+            image_name=self._cfg.docker_image_name,
+            cfg=self._cfg,
+            docker_client=self._docker_client,
+            auto_overlay=auto_overlay,
         )
 
     async def _build_prompt(
@@ -167,7 +158,7 @@ class AgentRunner:
         non_typed_retry_done = False
 
         async with agent_row(status_display, name, work_body):
-            session, picked_token = self._build_session(mount_path, role_session)
+            session = self._build_session(mount_path, role_session)
             runner = ContainerRunner(
                 name,
                 session,
@@ -230,10 +221,7 @@ class AgentRunner:
                         )
                         retries_left -= 1
                     except UsageLimitError as err:
-                        if self._account_pool is not None and picked_token is not None:
-                            self._account_pool.mark_exhausted(
-                                picked_token, err.reset_time
-                            )
+                        self._service.mark_exhausted(err.reset_time)
                         _token.cancel()
                         raise
                     except Exception:
@@ -265,7 +253,7 @@ class AgentRunner:
         git_name = self._git_service.get_user_name()
         git_email = self._git_service.get_user_email()
         async with agent_row(status_display, name, work_body):
-            session, _picked_token = self._build_session(mount_path)
+            session = self._build_session(mount_path)
             runner = ContainerRunner(
                 name,
                 session,
