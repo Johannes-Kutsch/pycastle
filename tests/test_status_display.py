@@ -1554,41 +1554,47 @@ def test_rich_same_issue_number_gives_same_prefix_color() -> None:
     assert impl_rgb.group(1) == review_rgb.group(1)
 
 
-def test_rich_consecutive_issue_numbers_land_on_different_hue_families() -> None:
-    """#N and #(N+1) must not share the same hue family (purple/orange/yellow)."""
-    from pycastle.rich_status_display import _PALETTE
+def _prefix_ansi_style(caller: str, message: str) -> str:
+    """Capture the raw ANSI escape sequence applied to the [caller] prefix."""
+    ansi = _truecolor_print_output(caller, message)
+    m = re.search(rf"(\x1b\[[\d;]*m)\[{re.escape(caller)}\]", ansi)
+    assert m, f"could not find styled prefix for {caller!r} in {ansi!r}"
+    return m.group(1)
 
-    def hue_family(n: int) -> int:
-        return (n % len(_PALETTE)) % 3  # 0=purple, 1=orange, 2=yellow
 
-    for n in range(18):  # test two full palette cycles
-        assert hue_family(n) != hue_family(n + 1), (
-            f"#{n} and #{n + 1} share hue family {hue_family(n)}"
+def _prefix_rgb(caller: str) -> tuple[int, int, int]:
+    """Parse the truecolor RGB used for the [caller] prefix from rendered output."""
+    ansi = _truecolor_print_output(caller, "hello")
+    idx = ansi.find(f"[{caller}]")
+    assert idx >= 0
+    m = re.search(r"38;2;(\d+);(\d+);(\d+)", ansi[:idx])
+    assert m, f"no truecolor RGB found before prefix in {ansi!r}"
+    return int(m.group(1)), int(m.group(2)), int(m.group(3))
+
+
+def test_rich_palette_index_0_renders_deeply_saturated_purple() -> None:
+    # N=9 → 9 % 9 = 0
+    assert _prefix_rgb("Implement Agent #9") == (149, 97, 226)
+
+
+def test_rich_palette_index_1_renders_deeply_saturated_orange() -> None:
+    # N=10 → 10 % 9 = 1
+    assert _prefix_rgb("Implement Agent #10") == (255, 140, 50)
+
+
+def test_rich_palette_index_2_renders_deeply_saturated_yellow() -> None:
+    # N=11 → 11 % 9 = 2
+    assert _prefix_rgb("Implement Agent #11") == (240, 205, 45)
+
+
+def test_rich_consecutive_issue_numbers_render_in_different_styles() -> None:
+    """Adjacent #N values must render the [Caller] prefix with distinct styles."""
+    # A full palette cycle: each pair of adjacent Ns crosses a hue family.
+    styles = [_prefix_ansi_style(f"Implement Agent #{n}", "hello") for n in range(10)]
+    for n in range(len(styles) - 1):
+        assert styles[n] != styles[n + 1], (
+            f"#{n} and #{n + 1} render with identical style {styles[n]!r}"
         )
-
-
-def test_rich_palette_index_0_is_deeply_saturated_purple() -> None:
-    """palette[0] is deeply-saturated purple: rgb(149, 97, 226)."""
-    from pycastle.rich_status_display import _PALETTE
-
-    r, g, b = _PALETTE[0]
-    assert r == 149 and g == 97 and b == 226
-
-
-def test_rich_palette_index_1_is_deeply_saturated_orange() -> None:
-    """palette[1] is deeply-saturated orange: rgb(255, 140, 50)."""
-    from pycastle.rich_status_display import _PALETTE
-
-    r, g, b = _PALETTE[1]
-    assert r == 255 and g == 140 and b == 50
-
-
-def test_rich_palette_index_2_is_deeply_saturated_yellow() -> None:
-    """palette[2] is deeply-saturated yellow: rgb(240, 205, 45)."""
-    from pycastle.rich_status_display import _PALETTE
-
-    r, g, b = _PALETTE[2]
-    assert r == 240 and g == 205 and b == 45
 
 
 def _has_truecolor_rgb(ansi: str) -> bool:

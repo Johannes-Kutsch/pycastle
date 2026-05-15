@@ -24,12 +24,17 @@ _PALETTE: list[tuple[int, int, int]] = [
 ]
 
 
-def _agent_palette_color(name: str) -> str | None:
+def _agent_name_style(name: str) -> str:
+    """Return the base Rich style for a caller name's prefix/name-column rendering.
+
+    Agents whose name contains `#N` get a stable color from `_PALETTE`; everything
+    else falls back to plain bold.
+    """
     m = re.search(r"#(\d+)", name)
     if not m:
-        return None
+        return "bold"
     r, g, b = _PALETTE[int(m.group(1)) % len(_PALETTE)]
-    return f"rgb({r},{g},{b})"
+    return f"bold rgb({r},{g},{b})"
 
 
 def _row_priority(name: str, kinds: dict[str, str]) -> int:
@@ -127,8 +132,7 @@ class RichStatusDisplay:
 
         for row in rows:
             name_text = Text()
-            color = _agent_palette_color(row.name)
-            base_style = f"bold {color}" if color else "bold"
+            base_style = _agent_name_style(row.name)
             for segment in re.split(r"(\d+)", row.name):
                 if segment:
                     if segment.isdigit():
@@ -241,9 +245,7 @@ class RichStatusDisplay:
         for line in lines:
             if caller:
                 text = Text()
-                color = _agent_palette_color(caller)
-                prefix_style = f"bold {color}" if color else "bold"
-                text.append(f"[{caller}]", style=prefix_style)
+                text.append(f"[{caller}]", style=_agent_name_style(caller))
                 text.append(f" {line}")
             else:
                 text = Text(line)
