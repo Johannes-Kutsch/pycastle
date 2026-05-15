@@ -12,9 +12,11 @@ The orchestrator decides whether the Implementer or Reviewer stage is already do
 
 ## Consequences
 
+> **Amended 2026-05-15 (#692).** The role dir's *contents* shifted from "claude session files placed directly in `<role>/`" to "one or more `<service>/` subdirectories (e.g., `<role>/claude/`)." The stage-done predicate (`is_dir() AND not any(files)`) is unchanged in semantics: `mark_done()` still clears all children of the role dir (including service subdirs), leaving an empty dir that signals "done."
+
 - `IMPLEMENT_COMMIT_PREFIX` / `REVIEW_COMMIT_PREFIX` constants and the `get_branch_commit_subjects` call in `iteration/implement.py` are removed. The branch's git history no longer carries an orchestrator-readable stage marker.
-- The skip decision in `run_issue` reads `<wt>/.pycastle-session/implementer/` and `<wt>/.pycastle-session/reviewer/`. `implement_done := implementer_dir.is_dir() and not has_resumable_session(implementer_dir)`; `review_done` likewise.
-- The success-path `shutil.rmtree(<wt>/.pycastle-session/<role>)` calls are replaced by content-clearing: the dir survives but its contents (session JSONL files) are wiped so `has_resumable_session` returns false and the next iteration sees "stage done."
+- The skip decision in `run_issue` reads `<wt>/.pycastle-session/implementer/` and `<wt>/.pycastle-session/reviewer/`. `implement_done := implementer_dir.is_dir() and not has_resumable_session(implementer_dir)`; `review_done` likewise. Service state lives in `<role>/<service>/` subdirs; the predicate checks the role dir recursively.
+- The success-path `shutil.rmtree(<wt>/.pycastle-session/<role>)` calls are replaced by content-clearing: the dir survives but its contents (service subdirs and any files) are wiped so `has_resumable_session` returns false and the next iteration sees "stage done."
 - `<commit_message>` becomes optional. `process_stream` returns `CommitMessageOutput(message=None)` when absent — `CommitMessageParseError` is deleted. The host commit body is the agent message if set, otherwise a synthetic `f"Implement #{issue_number} - {issue_title}"` / `f"Review #{issue_number} - {issue_title}"`.
 - Host-side commit timing is "on clean agent exit" — decoupled from tag-presence check.
 - The `CommitMessageParseError` entry in the fail-soft allowlist (`agent_runner.py`) is removed.

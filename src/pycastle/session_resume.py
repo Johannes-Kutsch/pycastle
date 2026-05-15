@@ -37,11 +37,6 @@ class RoleSession:
         base = self._worktree / SESSION_DIR_NAME / self._role.value
         return base / self._namespace if self._namespace else base
 
-    def claude_config_dir_relpath(self) -> str:
-        if self._namespace:
-            return f"{SESSION_DIR_NAME}/{self._role.value}/{self._namespace}/"
-        return f"{SESSION_DIR_NAME}/{self._role.value}/"
-
     def session_uuid(self) -> str:
         role_key = (
             f"pycastle.{self._role.value}.{self._namespace}"

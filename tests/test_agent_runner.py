@@ -994,7 +994,9 @@ def test_agent_runner_injects_claude_config_dir_for_implementer(tmp_path):
     )
 
     assert "CLAUDE_CONFIG_DIR" in captured_env
-    assert captured_env["CLAUDE_CONFIG_DIR"].endswith("/.pycastle-session/implementer/")
+    assert captured_env["CLAUDE_CONFIG_DIR"].endswith(
+        "/.pycastle-session/implementer/claude/"
+    )
 
 
 # ── AgentRunner: namespaced session dir ───────────────────────────────────────
@@ -1046,14 +1048,14 @@ def test_agent_runner_injects_namespaced_claude_config_dir_when_session_namespac
 
     assert "CLAUDE_CONFIG_DIR" in captured_env
     assert captured_env["CLAUDE_CONFIG_DIR"].endswith(
-        "/.pycastle-session/implementer/main/"
+        "/.pycastle-session/implementer/main/claude/"
     )
 
 
 def test_agent_runner_uses_namespace_subdir_for_resume_check(tmp_path):
-    """When session_namespace is set, Fresh/Resume decision uses the namespaced subdir."""
-    # Seed the namespaced session dir (not the role-level dir)
-    namespace_dir = tmp_path / ".pycastle-session" / "implementer" / "main"
+    """When session_namespace is set, Fresh/Resume decision uses the namespaced service subdir."""
+    # Seed the namespaced claude service dir (not the role-level dir)
+    namespace_dir = tmp_path / ".pycastle-session" / "implementer" / "main" / "claude"
     namespace_dir.mkdir(parents=True)
     (namespace_dir / "session.jsonl").write_text("{}")
 
@@ -1102,8 +1104,8 @@ def test_agent_runner_uses_fresh_for_different_namespace_when_other_namespace_ha
     tmp_path,
 ):
     """When the 'issues' namespace has a session, a 'main' namespace run must still be Fresh."""
-    # Seed the 'issues' namespace dir only
-    issues_dir = tmp_path / ".pycastle-session" / "implementer" / "issues"
+    # Seed the 'issues' namespace claude service dir only
+    issues_dir = tmp_path / ".pycastle-session" / "implementer" / "issues" / "claude"
     issues_dir.mkdir(parents=True)
     (issues_dir / "session.jsonl").write_text("{}")
 
@@ -1194,10 +1196,10 @@ def test_agent_runner_passes_session_id_flag_to_claude_on_fresh_run(tmp_path):
 
 
 def _seed_implementer_session(tmp_path: Path) -> None:
-    """Seed an implementer session dir so has_resumable_session returns True."""
-    role_dir = tmp_path / ".pycastle-session" / "implementer"
-    role_dir.mkdir(parents=True)
-    (role_dir / "session.json").write_text("{}")
+    """Seed the claude service state dir so ClaudeService.is_resumable returns True."""
+    claude_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "session.json").write_text("{}")
 
 
 def test_agent_runner_passes_resume_flag_to_claude_when_session_exists(tmp_path):
@@ -1332,7 +1334,9 @@ def test_resume_run_consecutive_non_typed_exceptions_raise_agent_failed_error(tm
 def test_resume_run_non_typed_exception_does_not_wipe_session(tmp_path):
     """On consecutive non-typed exceptions during a Resume run, start_fresh is not called — session dir is preserved."""
     _seed_implementer_session(tmp_path)
-    session_file = tmp_path / ".pycastle-session" / "implementer" / "session.json"
+    session_file = (
+        tmp_path / ".pycastle-session" / "implementer" / "claude" / "session.json"
+    )
     assert session_file.exists()
 
     mock_client = _make_docker_client_with_controlled_streams(
@@ -1391,10 +1395,10 @@ def test_fresh_run_non_typed_exception_propagates(tmp_path):
 
 
 def _seed_reviewer_session(tmp_path: Path) -> None:
-    """Seed a reviewer session dir so has_resumable_session returns True."""
-    role_dir = tmp_path / ".pycastle-session" / "reviewer"
-    role_dir.mkdir(parents=True)
-    (role_dir / "session.json").write_text("{}")
+    """Seed the reviewer claude service state dir so ClaudeService.is_resumable returns True."""
+    claude_dir = tmp_path / ".pycastle-session" / "reviewer" / "claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "session.json").write_text("{}")
 
 
 def test_agent_runner_injects_claude_config_dir_for_reviewer(tmp_path):
@@ -1441,7 +1445,9 @@ def test_agent_runner_injects_claude_config_dir_for_reviewer(tmp_path):
     )
 
     assert "CLAUDE_CONFIG_DIR" in captured_env
-    assert captured_env["CLAUDE_CONFIG_DIR"].endswith("/.pycastle-session/reviewer/")
+    assert captured_env["CLAUDE_CONFIG_DIR"].endswith(
+        "/.pycastle-session/reviewer/claude/"
+    )
 
 
 def test_agent_runner_passes_resume_flag_to_claude_when_reviewer_session_exists(
@@ -1496,10 +1502,10 @@ def test_agent_runner_passes_resume_flag_to_claude_when_reviewer_session_exists(
 
 
 def _seed_merger_session(tmp_path: Path) -> None:
-    """Seed a merger session dir so has_resumable_session returns True."""
-    role_dir = tmp_path / ".pycastle-session" / "merger"
-    role_dir.mkdir(parents=True)
-    (role_dir / "session.json").write_text("{}")
+    """Seed the merger claude service state dir so ClaudeService.is_resumable returns True."""
+    claude_dir = tmp_path / ".pycastle-session" / "merger" / "claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "session.json").write_text("{}")
 
 
 def test_agent_runner_passes_resume_flag_to_claude_when_merger_session_exists(tmp_path):
