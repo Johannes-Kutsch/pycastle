@@ -43,42 +43,31 @@ def branch_for(issue_number: int) -> str:
     return f"pycastle/issue-{issue_number}"
 
 
-def _slice_map(cfg: Config) -> dict[str, tuple[str, PromptTemplate]]:
-    return {
+def _resolve_slice(issue: dict, cfg: Config) -> tuple[str, PromptTemplate]:
+    slice_map: dict[str, tuple[str, PromptTemplate]] = {
         cfg.refactor_slice_label: ("refactor", PromptTemplate.IMPLEMENT_REFACTOR),
         cfg.behavior_slice_label: ("behavior", PromptTemplate.IMPLEMENT_BEHAVIOR),
         cfg.docs_slice_label: ("docs", PromptTemplate.IMPLEMENT_DOCS),
     }
+    issue_labels: list[str] = issue.get("labels", [])
+    matches = [label for label in slice_map if label in issue_labels]
+    if len(matches) == 1:
+        return slice_map[matches[0]]
+    if not matches:
+        detail = f"expected one of {list(slice_map)}, got labels={issue_labels}"
+    else:
+        detail = f"multiple slice-mode labels found: {matches}"
+    raise InvalidSliceLabelError(
+        f"Issue #{issue['number']}: invalid slice-mode label — {detail}"
+    )
 
 
 def pick_implement_template(issue: dict, cfg: Config) -> PromptTemplate:
-    sm = _slice_map(cfg)
-    issue_labels: list[str] = issue.get("labels", [])
-    matches = [label for label in sm if label in issue_labels]
-    if len(matches) == 1:
-        return sm[matches[0]][1]
-    if not matches:
-        detail = f"expected one of {list(sm)}, got labels={issue_labels}"
-    else:
-        detail = f"multiple slice-mode labels found: {matches}"
-    raise InvalidSliceLabelError(
-        f"Issue #{issue['number']}: invalid slice-mode label — {detail}"
-    )
+    return _resolve_slice(issue, cfg)[1]
 
 
 def pick_slice_mode(issue: dict, cfg: Config) -> str:
-    sm = _slice_map(cfg)
-    issue_labels: list[str] = issue.get("labels", [])
-    matches = [label for label in sm if label in issue_labels]
-    if len(matches) == 1:
-        return sm[matches[0]][0]
-    if not matches:
-        detail = f"expected one of {list(sm)}, got labels={issue_labels}"
-    else:
-        detail = f"multiple slice-mode labels found: {matches}"
-    raise InvalidSliceLabelError(
-        f"Issue #{issue['number']}: invalid slice-mode label — {detail}"
-    )
+    return _resolve_slice(issue, cfg)[0]
 
 
 @dataclasses.dataclass
@@ -145,10 +134,9 @@ async def run_issue(
         if review_done:
             return issue
 
-        _slice_mode = pick_slice_mode(issue, deps.cfg)
+        _slice_mode, _impl_template = _resolve_slice(issue, deps.cfg)
 
         if not implement_done:
-            _impl_template = pick_implement_template(issue, deps.cfg)
             async with managed_worktree(
                 _wt_name,
                 branch=_branch,
