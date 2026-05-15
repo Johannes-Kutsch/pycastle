@@ -22,8 +22,6 @@ from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
 
 IMPROVE_SANDBOX = "pycastle/improve-sandbox"
-_PHASE_PROGRESS_FILE = "_phase_progress"
-_PHASE_IN_FLIGHT_FILE = "_phase_in_flight"
 
 
 @dataclass(frozen=True)
@@ -60,9 +58,54 @@ _PHASES: dict[str, _PhaseConfig] = {
         display_body="filing no-candidate report",
     ),
 }
-_VALID_PHASE_IDS = frozenset(
-    {"01-scan:picked", "01-scan:no-candidate", "02-prd", "03-issues", "04-report"}
-)
+
+
+class _PhaseTracker:
+    _PROGRESS_FILE = "_phase_progress"
+    _IN_FLIGHT_FILE = "_phase_in_flight"
+    _VALID_PHASE_IDS = frozenset(
+        {"01-scan:picked", "01-scan:no-candidate", "02-prd", "03-issues", "04-report"}
+    )
+
+    def __init__(self, role_session_dir: Path) -> None:
+        self._dir = role_session_dir
+        self._progress_file = role_session_dir / self._PROGRESS_FILE
+        self._in_flight_file = role_session_dir / self._IN_FLIGHT_FILE
+
+    def load(self) -> tuple[str | None, str | None]:
+        """Load phase cursor. Returns (last_completed_id, in_flight_id)."""
+        try:
+            value = self._progress_file.read_text(encoding="utf-8").strip()
+            last_id: str | None = value if value in self._VALID_PHASE_IDS else None
+        except OSError:
+            last_id = None
+
+        in_flight_id: str | None = (
+            self._in_flight_file.read_text(encoding="utf-8").strip()
+            if self._in_flight_file.is_file()
+            else None
+        )
+
+        # Orphan-reset: process restarted after phase 02 wrote progress but
+        # before phase 03 recorded its in-flight marker.  The in-memory
+        # prd_number is gone; there is no recovery path.  Clear progress and
+        # restart from phase 01 (leaves a dead PRD on GitHub with no label).
+        if last_id == "02-prd" and in_flight_id != "03-issues":
+            self._progress_file.unlink(missing_ok=True)
+            return None, None
+
+        return last_id, in_flight_id
+
+    def record_in_flight(self, phase_key: str) -> None:
+        """Write the in-flight marker before running a phase."""
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._in_flight_file.write_text(phase_key, encoding="utf-8")
+
+    def record_completed(self, completed_id: str) -> None:
+        """Write the completed phase id and remove the in-flight marker."""
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._progress_file.write_text(completed_id, encoding="utf-8")
+        self._in_flight_file.unlink(missing_ok=True)
 
 
 def next_prompt(
@@ -93,14 +136,6 @@ def _phase_id(prompt_name: str, output: AgentOutput) -> str:
         "03-issues.md": "03-issues",
         "04-no-candidate-report.md": "04-report",
     }.get(prompt_name, prompt_name)
-
-
-def _read_progress(progress_file: Path) -> str | None:
-    try:
-        value = progress_file.read_text(encoding="utf-8").strip()
-        return value if value in _VALID_PHASE_IDS else None
-    except OSError:
-        return None
 
 
 @dataclass(frozen=True)
@@ -169,24 +204,9 @@ async def improve_phase(
             role_session = RoleSession(sandbox_path, AgentRole.IMPROVE)
             short_sid = role_session.session_uuid().split("-")[0]
             role_session_dir = role_session.path
-            progress_file = role_session_dir / _PHASE_PROGRESS_FILE
-            in_flight_file = role_session_dir / _PHASE_IN_FLIGHT_FILE
+            tracker = _PhaseTracker(role_session_dir)
 
-            last_id = _read_progress(progress_file)
-            in_flight_id = (
-                in_flight_file.read_text(encoding="utf-8").strip()
-                if in_flight_file.is_file()
-                else None
-            )
-
-            # Orphan-reset: process restarted after phase 02 wrote progress but
-            # before phase 03 recorded its in-flight marker.  The in-memory
-            # prd_number is gone; there is no recovery path.  Clear progress and
-            # restart from phase 01 (leaves a dead PRD on GitHub with no label).
-            if last_id == "02-prd" and in_flight_id != "03-issues":
-                progress_file.unlink(missing_ok=True)
-                last_id = None
-                in_flight_id = None
+            last_id, in_flight_id = tracker.load()
 
             prd_number: int | None = None
             prompt_name = next_prompt(
@@ -206,8 +226,7 @@ async def improve_phase(
                     scope_args = {}
                 phase_key = prompt_name.removesuffix(".md")
                 is_mid_phase_retry = in_flight_id == phase_key
-                role_session_dir.mkdir(parents=True, exist_ok=True)
-                in_flight_file.write_text(phase_key, encoding="utf-8")
+                tracker.record_in_flight(phase_key)
                 output = await deps.agent_runner.run(
                     RunRequest(
                         name=phase.display_name,
@@ -229,9 +248,7 @@ async def improve_phase(
                 if prompt_name == "02-prd.md" and isinstance(output, IssueOutput):
                     prd_number = output.number
                 completed_id = _phase_id(prompt_name, output)
-                role_session_dir.mkdir(parents=True, exist_ok=True)
-                progress_file.write_text(completed_id, encoding="utf-8")
-                in_flight_file.unlink(missing_ok=True)
+                tracker.record_completed(completed_id)
                 last_id = completed_id
                 in_flight_id = None
 
