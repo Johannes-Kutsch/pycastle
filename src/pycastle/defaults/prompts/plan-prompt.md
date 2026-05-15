@@ -57,7 +57,7 @@ The JSON must have two fields:
 - `blocked`: {{READY_FOR_AGENT_LABEL}} issues held back because of a blocker. Each entry must have:
   - `number`: the blocked issue's number
   - `blocked_by`: the issue number that is blocking it
-  - `reason`: the offending label string (e.g., `"{{READY_FOR_AGENT_LABEL}}"`, `"{{NEEDS_INFO_LABEL}}"`, `"{{NEEDS_TRIAGE_LABEL}}"`)
+  - `reason`: the offending label string (e.g., `"{{READY_FOR_HUMAN_LABEL}}"`, `"{{NEEDS_INFO_LABEL}}"`, `"{{NEEDS_TRIAGE_LABEL}}"`)
 
 Example — some unblocked, some blocked:
 
