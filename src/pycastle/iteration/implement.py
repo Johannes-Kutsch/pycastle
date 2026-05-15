@@ -50,15 +50,13 @@ def pick_implement_template(issue: dict, cfg: Config) -> PromptTemplate:
         cfg.docs_slice_label: PromptTemplate.IMPLEMENT_DOCS,
     }
     issue_labels: list[str] = issue.get("labels", [])
-    matches = [
-        (label, tmpl) for label, tmpl in slice_map.items() if label in issue_labels
-    ]
+    matches = [label for label in slice_map if label in issue_labels]
     if len(matches) == 1:
-        return matches[0][1]
-    if len(matches) == 0:
+        return slice_map[matches[0]]
+    if not matches:
         detail = f"expected one of {list(slice_map)}, got labels={issue_labels}"
     else:
-        detail = f"multiple slice-mode labels found: {[m[0] for m in matches]}"
+        detail = f"multiple slice-mode labels found: {matches}"
     raise InvalidSliceLabelError(
         f"Issue #{issue['number']}: invalid slice-mode label — {detail}"
     )
