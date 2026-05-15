@@ -17,6 +17,7 @@ from ..errors import (
     UsageLimitError,
 )
 from ..prompt_pipeline import PromptTemplate, build_issue_scope_args, build_wip_clause
+from ..slice_classifier import WellFormed, classify_slice
 from ..session_resume import RoleSession, is_stage_done_for
 from ..status_display import StatusDisplay
 from ..services import GitService, GithubService
@@ -44,17 +45,18 @@ def branch_for(issue_number: int) -> str:
 
 
 def _resolve_slice(issue: dict, cfg: Config) -> tuple[str, PromptTemplate]:
-    slice_map: dict[str, tuple[str, PromptTemplate]] = {
-        cfg.refactor_slice_label: ("refactor", PromptTemplate.IMPLEMENT_REFACTOR),
-        cfg.behavior_slice_label: ("behavior", PromptTemplate.IMPLEMENT_BEHAVIOR),
-        cfg.docs_slice_label: ("docs", PromptTemplate.IMPLEMENT_DOCS),
-    }
+    result = classify_slice(issue, cfg)
+    if isinstance(result, WellFormed):
+        return result.mode.display_name, result.mode.template
+    slice_map_keys = [
+        cfg.refactor_slice_label,
+        cfg.behavior_slice_label,
+        cfg.docs_slice_label,
+    ]
     issue_labels: list[str] = issue.get("labels", [])
-    matches = [label for label in slice_map if label in issue_labels]
-    if len(matches) == 1:
-        return slice_map[matches[0]]
+    matches = result.found
     if not matches:
-        detail = f"expected one of {list(slice_map)}, got labels={issue_labels}"
+        detail = f"expected one of {slice_map_keys}, got labels={issue_labels}"
     else:
         detail = f"multiple slice-mode labels found: {matches}"
     raise InvalidSliceLabelError(

@@ -14,6 +14,7 @@ from ..prompt_pipeline import PromptTemplate
 from ..services import GitService
 from ..services.github_service import GithubService
 from ..status_display import StatusDisplay
+from ..slice_classifier import Malformed, WellFormed, classify_slice
 from ..worktree import transient_worktree
 from ._rows import phase_row
 from .implement import branch_for
@@ -68,17 +69,10 @@ def partition_by_slice_label(
     issues: list[dict], cfg: "Config"
 ) -> tuple[list[dict], list[dict]]:
     """Split issues into (well_formed, malformed) by slice-mode label count."""
-    slice_labels = {
-        cfg.refactor_slice_label,
-        cfg.behavior_slice_label,
-        cfg.docs_slice_label,
-    }
     well_formed: list[dict] = []
     malformed: list[dict] = []
     for issue in issues:
-        labels: list[str] = issue.get("labels") or []
-        matches = [lbl for lbl in labels if lbl in slice_labels]
-        if len(matches) == 1:
+        if isinstance(classify_slice(issue, cfg), WellFormed):
             well_formed.append(issue)
         else:
             malformed.append(issue)
@@ -103,11 +97,6 @@ def _sync_needs_slice_type(
     cfg: "Config",
     github_svc: "GithubService",
 ) -> None:
-    slice_labels = {
-        cfg.refactor_slice_label,
-        cfg.behavior_slice_label,
-        cfg.docs_slice_label,
-    }
     flag = cfg.needs_slice_type_label
 
     for issue in malformed:
@@ -115,7 +104,8 @@ def _sync_needs_slice_type(
         if flag in labels:
             continue
         github_svc.add_label_to_issue(issue["number"], flag)
-        current = [lbl for lbl in labels if lbl in slice_labels]
+        result = classify_slice(issue, cfg)
+        current = result.found if isinstance(result, Malformed) else []
         current_slice = ", ".join(f"`{lbl}`" for lbl in current) or "none"
         github_svc.post_comment(
             issue["number"], _MALFORMED_COMMENT.format(current_slice=current_slice)
