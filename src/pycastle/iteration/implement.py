@@ -118,7 +118,7 @@ async def run_issue(
                     result = await _bounded_run_agent(
                         RunRequest(
                             name=f"Implement Agent #{issue['number']}",
-                            template=PromptTemplate.IMPLEMENT,
+                            template=PromptTemplate.IMPLEMENT_BEHAVIOR,
                             mount_path=impl_mount_path,
                             role=AgentRole.IMPLEMENTER,
                             scope_args=_impl_scope_args,

@@ -42,12 +42,14 @@ def cfg(prompts_dir: Path) -> Config:
 
 
 def test_renderer_renders_global_placeholder(cfg, prompts_dir):
-    (prompts_dir / "implement-prompt.md").write_text("Label: {{READY_FOR_AGENT_LABEL}}")
+    (prompts_dir / "behavior-implement.md").write_text(
+        "Label: {{READY_FOR_AGENT_LABEL}}"
+    )
     renderer = PromptRenderer(cfg)
 
     result = _run(
         renderer.render(
-            PromptTemplate.IMPLEMENT,
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
             {
                 "ISSUE_NUMBER": "1",
                 "ISSUE_TITLE": "title",
@@ -129,9 +131,9 @@ def test_scopes_are_distinct_members():
 # ── PromptTemplate enum has correct filename and scope ────────────────────────
 
 
-def test_template_implement_has_correct_filename_and_scope():
-    assert PromptTemplate.IMPLEMENT.filename == "implement-prompt.md"
-    assert PromptTemplate.IMPLEMENT.scope == Scope.PER_ISSUE
+def test_template_implement_behavior_has_correct_filename_and_scope():
+    assert PromptTemplate.IMPLEMENT_BEHAVIOR.filename == "behavior-implement.md"
+    assert PromptTemplate.IMPLEMENT_BEHAVIOR.scope == Scope.PER_ISSUE
 
 
 def test_template_review_has_per_issue_scope():
@@ -169,8 +171,8 @@ def test_template_resume_has_correct_scope():
     assert PromptTemplate.RESUME.scope == Scope.RESUME
 
 
-def test_template_enum_has_eleven_variants():
-    assert len(list(PromptTemplate)) == 11
+def test_template_enum_has_thirteen_variants():
+    assert len(list(PromptTemplate)) == 13
 
 
 # ── Ctor validates: unknown token raises ─────────────────────────────────────
@@ -373,7 +375,7 @@ def test_render_design_standards_available_in_improve_prd(cfg, prompts_dir):
 
 
 def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
-    (prompts_dir / "implement-prompt.md").write_text("Diff:\n{{ISSUE_BODY}}\n")
+    (prompts_dir / "behavior-implement.md").write_text("Diff:\n{{ISSUE_BODY}}\n")
     renderer = PromptRenderer(cfg)
 
     calls: list[str] = []
@@ -384,7 +386,7 @@ def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
 
     _run(
         renderer.render(
-            PromptTemplate.IMPLEMENT,
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
             {
                 "ISSUE_NUMBER": "1",
                 "ISSUE_TITLE": "t",
@@ -400,7 +402,7 @@ def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
     assert calls == []
     assert "!`shell`" in _run(
         renderer.render(
-            PromptTemplate.IMPLEMENT,
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
             {
                 "ISSUE_NUMBER": "1",
                 "ISSUE_TITLE": "t",
@@ -491,7 +493,7 @@ def test_no_legacy_standards_placeholder_in_defaults_prompts():
 
 
 def test_template_shell_expr_runs_arg_shell_token_stays_inert(cfg, prompts_dir):
-    (prompts_dir / "implement-prompt.md").write_text(
+    (prompts_dir / "behavior-implement.md").write_text(
         "Header: !`echo hi`\nBody: {{ISSUE_BODY}}\n"
     )
     renderer = PromptRenderer(cfg)
@@ -504,7 +506,7 @@ def test_template_shell_expr_runs_arg_shell_token_stays_inert(cfg, prompts_dir):
 
     result = _run(
         renderer.render(
-            PromptTemplate.IMPLEMENT,
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
             {
                 "ISSUE_NUMBER": "1",
                 "ISSUE_TITLE": "t",
@@ -775,7 +777,7 @@ def test_wip_clause_filters_by_issue_number():
 
 
 def test_render_includes_wip_clause_when_wip_commits_non_empty(cfg, prompts_dir):
-    (prompts_dir / "implement-prompt.md").write_text("Context:{{WIP_COMMITS}}Done")
+    (prompts_dir / "behavior-implement.md").write_text("Context:{{WIP_COMMITS}}Done")
     renderer = PromptRenderer(cfg)
     wip = build_wip_clause(
         ["WIP: implementer #1 - interrupted"], False, role="implementer", issue_number=1
@@ -783,7 +785,7 @@ def test_render_includes_wip_clause_when_wip_commits_non_empty(cfg, prompts_dir)
 
     result = _run(
         renderer.render(
-            PromptTemplate.IMPLEMENT,
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
             {**_PER_ISSUE_BASE, "ISSUE_NUMBER": "1", "WIP_COMMITS": wip},
             _noop_exec,
         )
@@ -793,12 +795,12 @@ def test_render_includes_wip_clause_when_wip_commits_non_empty(cfg, prompts_dir)
 
 
 def test_render_omits_wip_clause_when_wip_commits_empty(cfg, prompts_dir):
-    (prompts_dir / "implement-prompt.md").write_text("Context:{{WIP_COMMITS}}Done")
+    (prompts_dir / "behavior-implement.md").write_text("Context:{{WIP_COMMITS}}Done")
     renderer = PromptRenderer(cfg)
 
     result = _run(
         renderer.render(
-            PromptTemplate.IMPLEMENT,
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
             {**_PER_ISSUE_BASE, "WIP_COMMITS": ""},
             _noop_exec,
         )
