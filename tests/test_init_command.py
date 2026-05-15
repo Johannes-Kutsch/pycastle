@@ -28,7 +28,7 @@ def test_init_creates_all_scaffold_files(tmp_path, monkeypatch):
     assert (scaffold / "setup" / "cron-install.sh").exists()
     assert (scaffold / "setup" / "cron-uninstall.sh").exists()
     assert (scaffold / "prompts" / "plan-prompt.md").exists()
-    assert (scaffold / "prompts" / "implement-prompt.md").exists()
+    assert (scaffold / "prompts" / "behavior-implement.md").exists()
     assert (scaffold / "prompts" / "review-prompt.md").exists()
     assert (scaffold / "prompts" / "merge-prompt.md").exists()
 
