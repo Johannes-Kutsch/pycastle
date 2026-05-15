@@ -75,6 +75,21 @@ def create_labels_interactive(
             "description": "Will not be actioned",
             "color": "ffffff",
         },
+        {
+            "name": _cfg.refactor_slice_label,
+            "description": "Implementation scope: structural refactor only",
+            "color": "f9d0c4",
+        },
+        {
+            "name": _cfg.behavior_slice_label,
+            "description": "Implementation scope: observable behavior change",
+            "color": "c5def5",
+        },
+        {
+            "name": _cfg.docs_slice_label,
+            "description": "Implementation scope: documentation only",
+            "color": "bfd4f2",
+        },
     ]
 
     resolved = _resolve_repo(git_service, _cfg)

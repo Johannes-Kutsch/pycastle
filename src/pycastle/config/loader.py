@@ -54,6 +54,9 @@ class Config:
     needs_triage_label: str = "needs-triage"
     needs_info_label: str = "needs-info"
     wontfix_label: str = "wontfix"
+    refactor_slice_label: str = "refactor-slice"
+    behavior_slice_label: str = "behavior-slice"
+    docs_slice_label: str = "docs-slice"
     pycastle_dir: Path = dataclasses.field(default_factory=lambda: Path("pycastle"))
     prompts_dir: Path = dataclasses.field(
         default_factory=lambda: Path("pycastle/prompts")
