@@ -476,7 +476,7 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
 
     async def _fake_agent(request: RunRequest):
         if "Pre-Flight Reporter" in request.name:
-            return IssueOutput(number=55, labels=["ready-for-agent"])
+            return IssueOutput(number=55, labels=["ready-for-agent", "behavior-slice"])
         return CompletionOutput()
 
     deps = _make_deps(

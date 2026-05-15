@@ -81,8 +81,16 @@ EOF
 
 Apply `{{BUG_LABEL}}` and either `{{READY_FOR_AGENT_LABEL}}` or `{{READY_FOR_HUMAN_LABEL}}`. Do **not** apply `needs-triage`.
 
+If you applied `{{READY_FOR_AGENT_LABEL}}`, also apply exactly one slice-mode label:
+
+- `{{BEHAVIOR_SLICE_LABEL}}` — if the fix introduces or changes observable behavior that a new test can verify.
+- `{{REFACTOR_SLICE_LABEL}}` — if the fix cannot be verified by a new test of observable behavior (e.g. symbol moves, renames, import rewires, dead-code removal).
+
+**Never apply `{{DOCS_SLICE_LABEL}}`** to a preflight-filed issue.
+If you applied `{{READY_FOR_HUMAN_LABEL}}`, do **not** apply any slice-mode label.
+
 ```
-gh issue edit <number> --add-label "{{BUG_LABEL}}" --add-label "<{{READY_FOR_AGENT_LABEL}} or {{READY_FOR_HUMAN_LABEL}}>"
+gh issue edit <number> --add-label "{{BUG_LABEL}}" --add-label "<{{READY_FOR_AGENT_LABEL}} or {{READY_FOR_HUMAN_LABEL}}>" [--add-label "<{{BEHAVIOR_SLICE_LABEL}} or {{REFACTOR_SLICE_LABEL}}>"]
 ```
 
 ### 5. Output the issue number and labels

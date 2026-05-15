@@ -92,7 +92,7 @@ def test_get_safe_sha_returns_afk_when_checks_fail_with_afk_label(
     tmp_path, git_svc, github_svc
 ):
     fake = FakeAgentRunner(
-        [IssueOutput(number=42, labels=["bug", "ready-for-agent"])],
+        [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -129,7 +129,7 @@ def test_get_safe_sha_failure_cached_on_second_call_at_same_sha(
     """Cache miss + checks fail dispatches preflight-issue once; second call at same
     SHA reuses the cached AFK verdict without re-running checks or re-filing."""
     fake = FakeAgentRunner(
-        [IssueOutput(number=99, labels=["ready-for-agent"])],
+        [IssueOutput(number=99, labels=["ready-for-agent", "refactor-slice"])],
         preflight_responses=[[("mypy", "mypy .", "error")]],
     )
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -247,3 +247,55 @@ def test_get_safe_sha_parallel_callers_run_preflight_once(
     assert all(isinstance(r, PreflightReady) for r in results)
     assert results[0] is results[1]
     assert len(fake.preflight_calls) == 1
+
+
+# ── handle_preflight_failure: AFK slice-mode label validation ─────────────────
+
+
+def test_get_safe_sha_raises_when_afk_issue_missing_slice_mode_label(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=42, labels=["bug", "ready-for-agent"])],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(RuntimeError, match="Pre-Flight Reporter"):
+        asyncio.run(cache.get_safe_sha(deps))
+
+
+def test_get_safe_sha_does_not_validate_slice_label_on_hitl_branch(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=7, labels=["bug", "ready-for-human"])],
+        preflight_responses=[[("mypy", "mypy .", "error")]],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightHITL)
+    assert result.issue_number == 7
+
+
+def test_get_safe_sha_raises_when_afk_issue_has_multiple_slice_mode_labels(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [
+            IssueOutput(
+                number=13,
+                labels=["ready-for-agent", "behavior-slice", "refactor-slice"],
+            )
+        ],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(RuntimeError, match="Pre-Flight Reporter"):
+        asyncio.run(cache.get_safe_sha(deps))
