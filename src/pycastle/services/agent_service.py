@@ -3,8 +3,10 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Iterable, Iterator
 from datetime import datetime
+from pathlib import Path
 from typing import Protocol
 
+from ..agent_output_protocol import AgentRole
 from ..session_resume import RunKind
 
 
@@ -56,3 +58,7 @@ class AgentService(Protocol):
     def next_wake_time(self) -> datetime: ...
 
     def mark_exhausted(self, reset_time: datetime | None) -> None: ...
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None: ...
+
+    def is_resumable(self, state_dir: Path) -> bool: ...

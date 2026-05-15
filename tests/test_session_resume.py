@@ -111,14 +111,6 @@ def test_start_fresh_on_populated_dir_makes_not_resumable(rs):
     assert rs.is_resumable() is False
 
 
-# ── claude_config_dir_relpath ─────────────────────────────────────────────────
-
-
-def test_claude_config_dir_relpath_trailing_slash(worktree):
-    result = RoleSession(worktree, AgentRole.IMPLEMENTER).claude_config_dir_relpath()
-    assert result == ".pycastle-session/implementer/"
-
-
 # ── any_role_dir_present ──────────────────────────────────────────────────────
 
 

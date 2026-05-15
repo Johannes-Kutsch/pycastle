@@ -101,13 +101,8 @@ class AgentFailedError(PycastleError):
 
     @property
     def session_dir(self) -> str:
-        from .agent_output_protocol import (
-            AgentRole,
-        )  # deferred to break circular import
-        from .session_resume import RoleSession
+        from .session_resume import SESSION_DIR_NAME
 
-        return (
-            RoleSession(self.worktree_path, AgentRole(self.role_value), self.namespace)
-            .claude_config_dir_relpath()
-            .rstrip("/")
-        )
+        if self.namespace:
+            return f"{SESSION_DIR_NAME}/{self.role_value}/{self.namespace}/claude"
+        return f"{SESSION_DIR_NAME}/{self.role_value}/claude"

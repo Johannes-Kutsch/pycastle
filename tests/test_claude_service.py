@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from pycastle.agent_output_protocol import AgentRole
 from pycastle.errors import (
     ClaudeCliNotFoundError,
     ClaudeCommandError,
@@ -127,6 +128,59 @@ def test_list_models_cache_is_shared_across_instances():
 
 def test_claude_service_name_is_claude():
     assert ClaudeService().name == "claude"
+
+
+# ── ClaudeService.state_dir_relpath ──────────────────────────────────────────
+
+
+def test_state_dir_relpath_without_namespace():
+    result = ClaudeService().state_dir_relpath(AgentRole.IMPLEMENTER)
+    assert result == ".pycastle-session/implementer/claude/"
+
+
+def test_state_dir_relpath_with_namespace():
+    result = ClaudeService().state_dir_relpath(AgentRole.IMPROVE, "main")
+    assert result == ".pycastle-session/improve/main/claude/"
+
+
+def test_state_dir_relpath_empty_namespace_same_as_no_namespace():
+    assert ClaudeService().state_dir_relpath(
+        AgentRole.IMPLEMENTER, ""
+    ) == ClaudeService().state_dir_relpath(AgentRole.IMPLEMENTER)
+
+
+def test_state_dir_relpath_has_trailing_slash():
+    result = ClaudeService().state_dir_relpath(AgentRole.IMPLEMENTER)
+    assert result.endswith("/")
+
+
+# ── ClaudeService.is_resumable ────────────────────────────────────────────────
+
+
+def test_is_resumable_false_when_dir_absent(tmp_path):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    assert ClaudeService().is_resumable(state_dir) is False
+
+
+def test_is_resumable_false_when_dir_empty(tmp_path):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    state_dir.mkdir(parents=True)
+    assert ClaudeService().is_resumable(state_dir) is False
+
+
+def test_is_resumable_true_when_dir_has_files(tmp_path):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n")
+    assert ClaudeService().is_resumable(state_dir) is True
+
+
+def test_is_resumable_true_for_nested_files(tmp_path):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    subdir = state_dir / "projects"
+    subdir.mkdir(parents=True)
+    (subdir / "session.jsonl").write_text("{}\n")
+    assert ClaudeService().is_resumable(state_dir) is True
 
 
 # ── ClaudeService.build_command ───────────────────────────────────────────────

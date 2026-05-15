@@ -20,7 +20,9 @@ When an agent is interrupted mid-task the orchestrator preserves the worktree an
 
 ## Consequences
 
-- Every agent container run launches with `CLAUDE_CONFIG_DIR=/home/agent/workspace/.pycastle-session/<role>/` and `--session-id <SESSION_UUID>` (Fresh) or `--resume <SESSION_UUID>` (Resume).
+> **Amended 2026-05-15 (#692).** Claude session files moved from `.pycastle-session/<role>/` into `.pycastle-session/<role>/[<namespace>/]claude/`. `CLAUDE_CONFIG_DIR` and `--resume`/`--session-id` flags are now claude-private: `ClaudeService.state_dir_relpath(role, namespace)` returns the per-service subdirectory path and `ClaudeService.is_resumable(state_dir)` is the per-service resume predicate. The stage-done predicate (empty role dir) is unchanged.
+
+- Every agent container run launches with `CLAUDE_CONFIG_DIR=/home/agent/workspace/.pycastle-session/<role>/[<namespace>/]claude/` and `--session-id <SESSION_UUID>` (Fresh) or `--resume <SESSION_UUID>` (Resume). These are managed by `ClaudeService` via `state_dir_relpath` and `build_env`; the orchestrator learns the path through `AgentService.state_dir_relpath(role, namespace)`.
 - `decide_agent_run_kind(role, session_dir_present) → Resume | Fresh` is a pure function. The `Skip` path stays inline in `run_issue` (commit-prefix branching); the dispatch function is only invoked when the agent would otherwise spawn.
 - Prompt-shape contract: **Fresh** — `/tmp/.pycastle_prompt` contains only the role prompt. **Resume** — `/tmp/.pycastle_prompt` contains only the continuation prompt (role prompt is in resumed conversation history).
 - The worktree-preservation rule broadens to `dirty OR usage_limit OR session_resumable`. The `session_resumable` predicate is `role_dir.is_dir() AND any(role_dir.rglob("*"))`.

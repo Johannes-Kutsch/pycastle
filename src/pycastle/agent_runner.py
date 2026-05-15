@@ -79,15 +79,13 @@ class AgentRunner:
     def _build_session(
         self,
         mount_path: Path,
-        role_session: RoleSession | None = None,
+        state_dir_relpath: str | None = None,
     ) -> DockerSession:
         volumes, auto_overlay = build_volume_spec(mount_path)
         container_env = dict(self._env)
         state_dir: str | None = None
-        if role_session is not None:
-            state_dir = (
-                f"{_CONTAINER_WORKSPACE}/{role_session.claude_config_dir_relpath()}"
-            )
+        if state_dir_relpath is not None:
+            state_dir = f"{_CONTAINER_WORKSPACE}/{state_dir_relpath}"
         container_env.update(self._service.build_env(state_dir))
         return DockerSession(
             volumes=volumes,
@@ -152,13 +150,19 @@ class AgentRunner:
 
         session_namespace = request.session_namespace
         role_session = RoleSession(mount_path, role, session_namespace)
-        run_kind = role_session.run_kind()
         session_uuid = role_session.session_uuid()
+        svc_state_relpath = self._service.state_dir_relpath(role, session_namespace)
+        run_kind = (
+            RunKind.RESUME
+            if svc_state_relpath
+            and self._service.is_resumable(mount_path / svc_state_relpath)
+            else RunKind.FRESH
+        )
 
         non_typed_retry_done = False
 
         async with agent_row(status_display, name, work_body):
-            session = self._build_session(mount_path, role_session)
+            session = self._build_session(mount_path, svc_state_relpath)
             runner = ContainerRunner(
                 name,
                 session,

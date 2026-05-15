@@ -8,11 +8,13 @@ import shutil
 from collections.abc import Iterable, Iterator
 from datetime import datetime, time, timedelta, timezone
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from .. import agent_output_protocol as _proto
+from ..agent_output_protocol import AgentRole
 from ..errors import ClaudeCliNotFoundError
-from ..session_resume import RunKind
+from ..session_resume import SESSION_DIR_NAME, RunKind
 from .agent_service import AssistantTurn, ParsedTurn, Result, Tokens, UsageLimit
 
 
@@ -242,6 +244,14 @@ class ClaudeService:
     ) -> None:
         if self._pool is not None and self._current_token is not None:
             self._pool.mark_exhausted(self._current_token, reset_time, now=_now)
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        if namespace:
+            return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/claude/"
+        return f"{SESSION_DIR_NAME}/{role.value}/claude/"
+
+    def is_resumable(self, state_dir: Path) -> bool:
+        return state_dir.is_dir() and any(f.is_file() for f in state_dir.rglob("*"))
 
     def account_names(self) -> list[str]:
         if self._pool is None:
