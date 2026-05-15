@@ -58,6 +58,7 @@ def hydrate_planned_issues(
                 **issue,
                 "body": source.get("body") or "",
                 "comments": source.get("comments") or [],
+                "labels": source.get("labels") or [],
             }
         )
     return PlanReady(issues=hydrated, sha=plan_result.sha)

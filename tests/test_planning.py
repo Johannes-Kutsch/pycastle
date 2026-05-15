@@ -261,14 +261,14 @@ def test_hydrate_planned_issues_merges_body_and_comments_from_open_issues():
             "title": "A",
             "body": "body of A",
             "comments": [{"author": "x", "created_at": "t", "body": "hi"}],
-            "labels": [],
+            "labels": ["ready-for-agent", "docs-slice"],
         },
         {
             "number": 2,
             "title": "B",
             "body": "body of B",
             "comments": [],
-            "labels": [],
+            "labels": ["ready-for-agent", "refactor-slice"],
         },
     ]
 
@@ -279,9 +279,11 @@ def test_hydrate_planned_issues_merges_body_and_comments_from_open_issues():
     assert result.issues[0]["comments"] == [
         {"author": "x", "created_at": "t", "body": "hi"}
     ]
+    assert result.issues[0]["labels"] == ["ready-for-agent", "docs-slice"]
     assert result.issues[1]["number"] == 2
     assert result.issues[1]["body"] == "body of B"
     assert result.issues[1]["comments"] == []
+    assert result.issues[1]["labels"] == ["ready-for-agent", "refactor-slice"]
 
 
 def test_hydrate_planned_issues_raises_when_planned_number_not_in_open_issues():
