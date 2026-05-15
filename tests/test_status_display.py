@@ -1484,3 +1484,177 @@ def test_rich_print_unregistered_caller_blanks(capsys) -> None:
     out = _strip_ansi(capsys.readouterr().out)
     assert "[Plan] started\n\n[Stranger] hi" in out
     d.stop()
+
+
+# ── Agent palette coloring ────────────────────────────────────────────────────
+
+
+def _truecolor_print_output(caller: str, message: str) -> str:
+    """Capture a single .print() call on a fresh display with truecolor ANSI."""
+    buf = io.StringIO()
+    console = Console(
+        file=buf, width=200, force_terminal=True, color_system="truecolor"
+    )
+    d = RichStatusDisplay(console=console)
+    d.register(caller, "agent")
+    buf.seek(0)
+    buf.truncate(0)
+    d.print(caller, message)
+    d.stop()
+    return buf.getvalue()
+
+
+def test_rich_agent_with_issue_number_prefix_renders_in_palette_color() -> None:
+    """[Caller] prefix for an agent with #N uses palette[N % 9] truecolor."""
+    # N=9 → 9%9=0 → palette[0] deep purple
+    ansi = _truecolor_print_output("Implement Agent #9", "hello")
+
+    bracket_idx = ansi.find("[Implement Agent #9]")
+    assert bracket_idx >= 0, "bracketed prefix not found in output"
+    # palette[0] is deeply-saturated purple: rgb(149, 97, 226)
+    assert "149;97;226" in ansi[:bracket_idx], "palette color not found before prefix"
+
+
+def test_rich_agent_name_column_in_table_renders_in_palette_color() -> None:
+    """Name column in live table for agent with #N uses palette[N % 9] truecolor."""
+    d = RichStatusDisplay()
+    d.register("Implement Agent #9", "agent")  # N=9 → 9%9=0 → palette[0] deep purple
+
+    buf = io.StringIO()
+    console = Console(
+        file=buf, width=200, force_terminal=True, color_system="truecolor"
+    )
+    console.print(d)
+    ansi = buf.getvalue()
+    d.stop()
+
+    name_idx = ansi.find("Implement Agent #")
+    assert name_idx >= 0
+    before_name = ansi[:name_idx]
+    assert "149;97;226" in before_name, "palette color not found before name in table"
+
+
+def test_rich_same_issue_number_gives_same_prefix_color() -> None:
+    """Implement Agent #715 and Review Agent #715 get the same [Caller] color."""
+    impl_ansi = _truecolor_print_output("Implement Agent #715", "hello")
+    review_ansi = _truecolor_print_output("Review Agent #715", "hello")
+
+    def color_before_bracket(ansi: str, bracket_text: str) -> str:
+        idx = ansi.find(bracket_text)
+        assert idx >= 0
+        return ansi[:idx]
+
+    impl_before = color_before_bracket(impl_ansi, "[Implement Agent #715]")
+    review_before = color_before_bracket(review_ansi, "[Review Agent #715]")
+    # Both must contain the same RGB triple (palette[715 % 9])
+    rgb_pattern = re.compile(r"(\d+;\d+;\d+)")
+    impl_rgb = rgb_pattern.search(impl_before)
+    review_rgb = rgb_pattern.search(review_before)
+    assert impl_rgb and review_rgb
+    assert impl_rgb.group(1) == review_rgb.group(1)
+
+
+def test_rich_consecutive_issue_numbers_land_on_different_hue_families() -> None:
+    """#N and #(N+1) must not share the same hue family (purple/orange/yellow)."""
+    from pycastle.rich_status_display import _PALETTE
+
+    def hue_family(n: int) -> int:
+        return (n % len(_PALETTE)) % 3  # 0=purple, 1=orange, 2=yellow
+
+    for n in range(18):  # test two full palette cycles
+        assert hue_family(n) != hue_family(n + 1), (
+            f"#{n} and #{n + 1} share hue family {hue_family(n)}"
+        )
+
+
+def test_rich_palette_index_0_is_deeply_saturated_purple() -> None:
+    """palette[0] is deeply-saturated purple: rgb(149, 97, 226)."""
+    from pycastle.rich_status_display import _PALETTE
+
+    r, g, b = _PALETTE[0]
+    assert r == 149 and g == 97 and b == 226
+
+
+def test_rich_palette_index_1_is_deeply_saturated_orange() -> None:
+    """palette[1] is deeply-saturated orange: rgb(255, 140, 50)."""
+    from pycastle.rich_status_display import _PALETTE
+
+    r, g, b = _PALETTE[1]
+    assert r == 255 and g == 140 and b == 50
+
+
+def test_rich_palette_index_2_is_deeply_saturated_yellow() -> None:
+    """palette[2] is deeply-saturated yellow: rgb(240, 205, 45)."""
+    from pycastle.rich_status_display import _PALETTE
+
+    r, g, b = _PALETTE[2]
+    assert r == 240 and g == 205 and b == 45
+
+
+def _has_truecolor_rgb(ansi: str) -> bool:
+    """Return True if the string contains any truecolor RGB escape (38;2;R;G;B)."""
+    return bool(re.search(r"\x1b\[(?:\d+;)*38;2;\d+;\d+;\d+m", ansi))
+
+
+def test_rich_phase_caller_prefix_has_no_palette_color() -> None:
+    """Phase callers (no #N) render [Caller] in bold only — no truecolor."""
+    ansi = _truecolor_print_output("Implement", "doing work")
+
+    bracket_idx = ansi.find("[Implement]")
+    assert bracket_idx >= 0
+    assert not _has_truecolor_rgb(ansi[:bracket_idx]), (
+        "unexpected palette color on phase prefix"
+    )
+
+
+def test_rich_agent_without_issue_number_prefix_has_no_palette_color() -> None:
+    """Agents without #N (e.g. Plan Agent) render [Caller] in bold only."""
+    ansi = _truecolor_print_output("Plan Agent", "planning")
+
+    bracket_idx = ansi.find("[Plan Agent]")
+    assert bracket_idx >= 0
+    assert not _has_truecolor_rgb(ansi[:bracket_idx]), (
+        "unexpected palette color on Plan Agent prefix"
+    )
+
+
+def test_rich_agent_with_issue_number_shutdown_style_still_applies() -> None:
+    """success/error style on body is not suppressed by agent palette coloring."""
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.remove("Implement Agent #9", shutdown_message="done", shutdown_style="success")
+    ansi = buf.getvalue()
+
+    bracket_idx = ansi.find("[Implement Agent #9]")
+    assert bracket_idx >= 0
+    # Green (32) must appear before the bracket (stylize applies to whole text)
+    assert _has_code(ansi[:bracket_idx], 32), "success green not applied to prefix"
+
+
+def test_rich_agent_table_digit_segments_retain_cyan_alongside_palette_color() -> None:
+    """Digit segments in table name column are still cyan even with palette color active."""
+    d = RichStatusDisplay()
+    d.register("Implement Agent #9", "agent")
+
+    buf = io.StringIO()
+    console = Console(file=buf, width=200, force_terminal=True, color_system="256")
+    console.print(d)
+    ansi = buf.getvalue()
+    d.stop()
+
+    name_idx = ansi.find("Implement Agent #")
+    assert name_idx >= 0
+    after_name_start = ansi[name_idx:]
+    # cyan (36) should appear in the segment containing the digits
+    assert _has_code(after_name_start, 36), "cyan not present in digit segment"
+
+
+def test_plain_status_display_agent_with_issue_number_emits_no_ansi(capsys) -> None:
+    """PlainStatusDisplay never emits ANSI codes, even for agents with #N."""
+    d = PlainStatusDisplay()
+    d.register("Implement Agent #9", "agent")
+    d.print("Implement Agent #9", "hello")
+    d.remove("Implement Agent #9", shutdown_message="done")
+    out = capsys.readouterr().out
+
+    assert "\x1b[" not in out, "ANSI escape found in PlainStatusDisplay output"

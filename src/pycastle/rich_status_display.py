@@ -11,6 +11,27 @@ from rich.table import Table
 from rich.text import Text
 
 
+_PALETTE: list[tuple[int, int, int]] = [
+    (149, 97, 226),  # 0 deep purple
+    (255, 140, 50),  # 1 deep orange
+    (240, 205, 45),  # 2 deep yellow
+    (185, 154, 235),  # 3 mid purple
+    (255, 185, 120),  # 4 mid orange
+    (248, 228, 130),  # 5 mid yellow
+    (215, 198, 248),  # 6 pale purple
+    (255, 215, 185),  # 7 pale orange
+    (253, 244, 195),  # 8 pale yellow
+]
+
+
+def _agent_palette_color(name: str) -> str | None:
+    m = re.search(r"#(\d+)", name)
+    if not m:
+        return None
+    r, g, b = _PALETTE[int(m.group(1)) % len(_PALETTE)]
+    return f"rgb({r},{g},{b})"
+
+
 def _row_priority(name: str, kinds: dict[str, str]) -> int:
     if kinds.get(name) == "phase":
         return -1
@@ -106,12 +127,14 @@ class RichStatusDisplay:
 
         for row in rows:
             name_text = Text()
+            color = _agent_palette_color(row.name)
+            base_style = f"bold {color}" if color else "bold"
             for segment in re.split(r"(\d+)", row.name):
                 if segment:
                     if segment.isdigit():
-                        name_text.append(segment, style="bold cyan")
+                        name_text.append(segment, style=f"{base_style} cyan")
                     else:
-                        name_text.append(segment, style="bold")
+                        name_text.append(segment, style=base_style)
 
             body = row.work_body if row.phase == "Work" else row.phase
 
@@ -218,7 +241,9 @@ class RichStatusDisplay:
         for line in lines:
             if caller:
                 text = Text()
-                text.append(f"[{caller}]", style="bold")
+                color = _agent_palette_color(caller)
+                prefix_style = f"bold {color}" if color else "bold"
+                text.append(f"[{caller}]", style=prefix_style)
                 text.append(f" {line}")
             else:
                 text = Text(line)
