@@ -30,9 +30,15 @@ Immediately after each implementer completes, a reviewer agent inspects the same
 ### Merge 
 Once all implementer/reviewer pairs have finished, pycastle merges each completed branch into the default branch and closes the corresponding GitHub issue. When branches conflict, a merger agent resolves them before committing. The merge phase exists as a dedicated integration step so that conflict resolution is handled consistently and issues are only closed after code is confirmed on the main branch.
 
+## Improve
+
+Improve is a separate, opt-in mode that is off by default; it can be enabled via `docs/usage.md` and set to run `until_sleep` or `endless`. When active, Improve scans the codebase, produces a lightweight PRD of potential improvements, and files structured GitHub issues automatically. The differentiator that makes unattended operation safe is the **AFK-safety filter**: it allows only changes that are entirely internal — refactors, dead-code removal, and type tightening — and explicitly forbids anything touching CLI interfaces, configuration, ADRs, UX, or issue contracts. Because every issue Improve files already carries `ready-for-agent`, it bypasses the manual triage step; the AFK-safety filter is the substitute for the human-in-the-loop gate that the rest of the pipeline relies on.
+
 ## Labels
 
 `ready-for-agent` is the entry point into automation. Labelling an issue `ready-for-agent` is a deliberate act: it means the issue is fully specified, has clear acceptance criteria, and needs no further clarification before an agent can work on it. The planner only considers issues carrying this label — everything else is invisible to the pipeline. If preflight checks fail in a way that requires human attention, the auto-filed issue is labelled `ready-for-human` instead, and the pipeline pauses until a person re-routes it.
+
+Every `ready-for-agent` issue that touches code or documentation must carry exactly one slice-mode label: `behavior-slice` for changes that add or alter observable behaviour, `refactor-slice` for internal restructuring with no behaviour change, and `docs-slice` for documentation-only updates. pycastle dispatches a different implement prompt for each label, so agents receive instructions tuned to the kind of work involved. The `behavior-slice` prompt enforces a red/green TDD gate — tests must fail before the fix and pass after.
 
 ## Getting started
 
