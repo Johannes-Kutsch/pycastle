@@ -20,7 +20,7 @@ Prompt templates use a two-tier placeholder model: *global* placeholders are ava
 
 ## Scope: PER_ISSUE
 
-Used by: behavior-implement.md, refactor-implement.md, docs-implement.md, review-prompt.md
+Used by: implement/behavior.md, implement/refactor.md, implement/docs.md, review-prompt.md
 
 - `{{ISSUE_NUMBER}}` — The GitHub issue number.
 - `{{ISSUE_TITLE}}` — The issue title.
