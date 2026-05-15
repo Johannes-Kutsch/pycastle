@@ -80,7 +80,7 @@ logs_dir = Path.home() / "Syncthing" / "pycastle-cron-logs" / "<project-name>"
 
 Re-run `bash pycastle/setup/cron-install.sh` after changing `logs_dir` so the new path is baked into the crontab line.
 
-For a step-by-step setup on a fresh Raspberry Pi (or any Debian host), see [`pi-setup.md`](src/pycastle/defaults/setup/pi-setup.md).
+For a step-by-step cron setup, see [`docs/cron-setup.md`](docs/cron-setup.md).
 
 ### Upgrading pycastle on a deployed host
 
