@@ -20,28 +20,71 @@ Only work on the issue specified. Work on branch {{BRANCH}}.
 {{WIP_COMMITS}}
 # WORKFLOW
 
-## 1. Explore
+---
+
+## Phase A — Explore + First Failing Test
+
+**You must complete Phase A and emit both required tags before writing any non-test production code.**
+
+### A1. Explore
 
 Explore only the files mentioned in the issue and the test files that directly touch those files. Do not survey the full repository.
 
 Use the domain glossary in `CONTEXT.md` so that test names and interface vocabulary match the project's language. Consult `docs/adr/README.md` if present, then read any ADRs that touch the area you're changing.
 
-## 2. Behaviors
+### A2. Behaviors
 
 From the issue, derive a prioritized list of behaviors to test. Most critical paths first, edge cases last.
 
-{{IMPLEMENTATION_STANDARDS}}
+### A3. Tracer Bullet — First Failing Test
 
-## 3. Tracer Bullet
-
-Take the first behavior from your list. Write ONE test that confirms it works end-to-end:
+Name the first behavior from the acceptance criteria. Write **one** failing test that confirms it works end-to-end:
 
 ```
-RED:   Write test for first behavior → test fails
-GREEN: Write minimal code to pass → test passes
+RED: Write test for first behavior → run {{FEEDBACK_COMMANDS}} → test fails
 ```
 
-## 4. Incremental Loop
+**Gate rule — forbidden until both Phase A tags are emitted:**
+- `Edit` or `Write` on any non-test file is forbidden.
+- Do not touch production source files until `<first_behavior>` and `<failing_test>` have both been emitted.
+
+### A4. Phase A Output (required)
+
+Emit both tags before proceeding to Phase B:
+
+`<first_behavior>` — the behavior name and its observable surface (what a caller observes when the behavior works correctly).
+
+`<failing_test>` — the real pytest output showing the test red (copy the actual terminal output from running `{{FEEDBACK_COMMANDS}}`).
+
+Example shape:
+
+```
+<first_behavior>
+Behavior name: <name from acceptance criteria>
+Observable surface: <what the caller/test observes when the behavior is working>
+</first_behavior>
+
+<failing_test>
+FAILED tests/test_foo.py::test_bar - AssertionError: ...
+[paste real pytest output here]
+</failing_test>
+```
+
+---
+
+## Phase B — Implement-to-Green Loop
+
+Begin Phase B only after both `<first_behavior>` and `<failing_test>` have been emitted.
+
+### B1. Green — First Behavior
+
+Write the minimal production code to make the first failing test pass:
+
+```
+GREEN: Write minimal code to pass → run {{FEEDBACK_COMMANDS}} → test passes
+```
+
+### B2. Incremental Loop
 
 For each remaining behavior:
 
@@ -58,7 +101,7 @@ Rules:
 - Keep tests focused on observable behavior
 - Run `{{FEEDBACK_COMMANDS}}` after each GREEN
 
-## 5. Refactor
+### B3. Refactor
 
 After all tests pass, look for refactor candidates:
 
@@ -67,7 +110,9 @@ After all tests pass, look for refactor candidates:
 
 **Never refactor while RED.** Get to GREEN first.
 
-## 6. Output
+{{IMPLEMENTATION_STANDARDS}}
+
+### B4. Output
 
 Before finishing, run `{{FEEDBACK_COMMANDS}}` to ensure all tests pass.
 
