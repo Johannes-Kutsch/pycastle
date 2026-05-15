@@ -3019,7 +3019,7 @@ def test_preflight_afk_from_planning_routes_to_implement_same_iteration(tmp_path
     async def _fake_run_agent(request: RunRequest):
         agent_names.append(request.name)
         if "Pre-Flight Reporter" in request.name:
-            return IssueOutput(number=42, labels=["ready-for-agent"])
+            return IssueOutput(number=42, labels=["ready-for-agent", "behavior-slice"])
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return CompletionOutput()
