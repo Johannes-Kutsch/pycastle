@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .account_pool import AccountPool
 from .agent_runner import AgentRunner, AgentRunnerProtocol, RunRequest
 from .config import Config, load_config
 from .iteration import (
@@ -29,6 +28,7 @@ from .services import (
     GithubService,
     GitService,
 )
+from .services.agent_service import AgentService
 from .session_resume import SESSION_DIR_NAME
 from .status_display import StatusDisplay
 from .worktree import remove_worktrees_dir_if_empty
@@ -112,7 +112,7 @@ async def run(
     git_service: GitService | None = None,
     github_service: GithubService | None = None,
     status_display: StatusDisplay | None = None,
-    account_pool: AccountPool | None = None,
+    service_registry: dict[str, AgentService] | None = None,
     improve_mode: ImproveMode = None,
 ) -> None:
     cfg = load_config(repo_root=repo_root)
@@ -166,14 +166,19 @@ async def run(
 
     status_display.print("", f"Authenticated as @{login}")  # type: ignore[union-attr]
 
-    if account_pool is not None:
-        names = account_pool.names()
-        if len(names) == 1:
-            summary = f"Claude accounts: {names[0]} (active)"
-        else:
-            parts = [f"{names[0]} (active)"] + [f"{n} (standby)" for n in names[1:]]
-            summary = "Claude accounts: " + ", ".join(parts)
-        status_display.print("", summary)  # type: ignore[union-attr]
+    if service_registry:
+        for svc in service_registry.values():
+            if hasattr(svc, "account_names"):
+                names = svc.account_names()  # type: ignore[attr-defined]
+                if names:
+                    if len(names) == 1:
+                        summary = f"Claude accounts: {names[0]} (active)"
+                    else:
+                        parts = [f"{names[0]} (active)"] + [
+                            f"{n} (standby)" for n in names[1:]
+                        ]
+                        summary = "Claude accounts: " + ", ".join(parts)
+                    status_display.print("", summary)  # type: ignore[union-attr]
 
     slept_once = False
     improve_dispatched_count = 0
@@ -191,11 +196,12 @@ async def run(
             elif run_agent is not None:
                 _agent_runner = _CallableAgentRunner(run_agent)
             else:
+                _svc = service_registry.get("claude") if service_registry else None
                 _agent_runner = AgentRunner(
                     env=env,
                     cfg=cfg,
                     git_service=git_svc,
-                    account_pool=account_pool,
+                    service=_svc,
                 )
 
             deps = IterationDeps(
@@ -237,17 +243,26 @@ async def run(
                     sys.exit(1)
                 case AbortedUsageLimit(reset_time=reset_time):
                     now = datetime.now()
-                    if account_pool is not None and account_pool.has_available(now=now):
-                        next_name, _ = account_pool.pick(now=now)
-                        wake = account_pool.earliest_wake_time()
-                        status_display.print(  # type: ignore[union-attr]
-                            "",
-                            f"Account exhausted until {_fmt_wake(wake, now)}, "
-                            f"switching to '{next_name}'.",
+                    involved = list((service_registry or {}).values())
+                    if involved and any(svc.is_available(now=now) for svc in involved):
+                        wake = (
+                            min(
+                                svc.next_wake_time()
+                                for svc in involved
+                                if not svc.is_available(now=now)
+                            )
+                            if any(not svc.is_available(now=now) for svc in involved)
+                            else now
                         )
+                        if any(not svc.is_available(now=now) for svc in involved):
+                            status_display.print(  # type: ignore[union-attr]
+                                "",
+                                f"Account exhausted until {_fmt_wake(wake, now)}, "
+                                "switching to next available.",
+                            )
                         continue
-                    if account_pool is not None:
-                        wake_time = account_pool.earliest_wake_time()
+                    if involved:
+                        wake_time = min(svc.next_wake_time() for svc in involved)
                         suffix = ""
                     elif reset_time is not None:
                         wake_time = reset_time + timedelta(minutes=2)
