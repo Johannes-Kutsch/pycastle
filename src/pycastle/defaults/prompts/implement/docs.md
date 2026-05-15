@@ -1,10 +1,12 @@
-# TASK
+<task>
 
 Fix issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
 Only work on the issue specified. Work on branch {{BRANCH}}.
 
-# CONTEXT
+</task>
+
+<context>
 
 <issue>
 
@@ -18,7 +20,9 @@ Only work on the issue specified. Work on branch {{BRANCH}}.
 
 </comments>
 {{WIP_COMMITS}}
-# WORKFLOW
+</context>
+
+<workflow>
 
 ## 1. Explore
 
@@ -39,4 +43,6 @@ Rules:
 ## 3. Output
 
 {{IMPLEMENT_OUTPUT_RULES}}
+
+</workflow>
 

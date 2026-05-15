@@ -1,10 +1,12 @@
-# TASK
+<task>
 
 Fix issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
 Only work on the issue specified. Work on branch {{BRANCH}}.
 
-# CONTEXT
+</task>
+
+<context>
 
 <issue>
 
@@ -18,7 +20,9 @@ Only work on the issue specified. Work on branch {{BRANCH}}.
 
 </comments>
 {{WIP_COMMITS}}
-# WORKFLOW
+</context>
+
+<workflow>
 
 ---
 
@@ -117,3 +121,5 @@ After all tests pass, look for refactor candidates:
 Before finishing, run `{{FEEDBACK_COMMANDS}}` to ensure all tests pass.
 
 {{IMPLEMENT_OUTPUT_RULES}}
+
+</workflow>
