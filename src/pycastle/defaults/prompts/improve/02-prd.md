@@ -1,4 +1,4 @@
-# TASK
+<task>
 
 You are the Improve Agent — Phase 2: PRD.
 
@@ -86,3 +86,5 @@ _Filed by improve session_
 Output the filed issue as `<issue>{"number": N, "labels": []}</issue>` (JSON-form, with an empty labels array — PRDs carry no triage label).
 
 Then emit `<promise>COMPLETE</promise>`.
+
+</task>

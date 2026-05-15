@@ -1,10 +1,12 @@
-# TASK
+<task>
 
 You are the Improve Agent — Phase 3: Sub-issues.
 
 Break the PRD filed in phase 2 (#{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}) into independently-grabbable issues using vertical slices (tracer bullets).
 
-# CONTEXT
+</task>
+
+<context>
 
 <issue>
 
@@ -18,7 +20,9 @@ Break the PRD filed in phase 2 (#{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}) into indepen
 
 </comments>
 
-# PROCESS
+</context>
+
+<workflow>
 
 ## Safety net
 
@@ -184,3 +188,5 @@ Do NOT close or modify the parent PRD issue.
 Output each filed issue number as `<issue>N</issue>`.
 
 Then emit `<promise>COMPLETE</promise>`.
+
+</workflow>

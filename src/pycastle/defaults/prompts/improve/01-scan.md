@@ -1,4 +1,4 @@
-# TASK
+<task>
 
 You are the Improve Agent — Phase 1: Scan and Pick.
 
@@ -75,3 +75,5 @@ After grilling, answer the following four questions explicitly:
 4. What is the strongest argument *against* the pick?
 
 Emit `<promise>COMPLETE</promise>` when your pick is finalised.
+
+</task>
