@@ -22,9 +22,6 @@ mkdir -p "$PYCASTLE_HOME"
     .venv/bin/python -m pip install --upgrade pycastle
     .venv/bin/python -m pip install --upgrade pycastle
 
-    # Install consuming project dependencies (ADR 0001 fallback chain)
-    .venv/bin/python -m pip install -e ".[dev]" || .venv/bin/python -m pip install -r requirements.txt
-
     .venv/bin/pycastle init --refresh
     .venv/bin/pycastle build
     .venv/bin/pycastle run
