@@ -13,6 +13,7 @@ from ..agent_runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
+from ..slice_classifier import WellFormed, classify_slice, slice_labels
 from ..status_display import StatusDisplay
 from ._utils import _wait_for_clean_working_tree
 
@@ -92,13 +93,13 @@ async def handle_preflight_failure(
         )
     if deps.cfg.hitl_label in agent_result.labels:
         return "hitl", agent_result.number
-    slice_labels = {deps.cfg.behavior_slice_label, deps.cfg.refactor_slice_label}
-    found = [lbl for lbl in agent_result.labels if lbl in slice_labels]
-    if len(found) != 1:
+    result = classify_slice({"labels": list(agent_result.labels)}, deps.cfg)
+    if not isinstance(result, WellFormed):
+        expected = slice_labels(deps.cfg)
         raise RuntimeError(
             f"Pre-Flight Reporter filed issue #{agent_result.number} on the AFK branch "
             f"without exactly one slice-mode label — got labels={agent_result.labels!r}. "
-            f"Expected exactly one of {sorted(slice_labels)!r}."
+            f"Expected exactly one of {sorted(expected)!r}."
         )
     return "afk", agent_result.number
 
