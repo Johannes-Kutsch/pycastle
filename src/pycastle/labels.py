@@ -90,6 +90,11 @@ def create_labels_interactive(
             "description": "Implementation scope: documentation only",
             "color": "0be348",
         },
+        {
+            "name": _cfg.needs_slice_type_label,
+            "description": "ready-for-agent issue missing exactly one slice-mode label",
+            "color": "d73a4a",
+        },
     ]
 
     resolved = _resolve_repo(git_service, _cfg)
