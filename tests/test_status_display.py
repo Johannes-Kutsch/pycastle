@@ -899,13 +899,13 @@ def test_rich_multiple_registers_use_single_live(capsys) -> None:
     assert "[B] started" in out
 
 
-def test_rich_register_inserts_blank_line_when_caller_changes(capsys) -> None:
+def test_rich_register_agent_to_agent_no_blank(capsys) -> None:
     d = RichStatusDisplay()
     d.register("X", "agent")
     d.register("Y", "agent")
     d.stop()
     out = capsys.readouterr().out
-    assert "[X] started\n\n[Y] started" in out
+    assert "[X] started\n[Y] started" in out
 
 
 def test_rich_register_blank_line_before_first_output(capsys) -> None:
@@ -1226,12 +1226,12 @@ def test_plain_remove_with_empty_caller_prints_message_only(capsys) -> None:
     assert capsys.readouterr().out == "\ndone\n"
 
 
-def test_plain_register_inserts_blank_line_when_caller_changes(capsys) -> None:
+def test_plain_register_agent_to_agent_no_blank(capsys) -> None:
     d = PlainStatusDisplay()
     d.register("X", "agent")
     d.register("Y", "agent")
     out = capsys.readouterr().out
-    assert out == "\n[X] started\n\n[Y] started\n"
+    assert out == "\n[X] started\n[Y] started\n"
 
 
 def test_plain_register_blank_line_before_first_output(capsys) -> None:
@@ -1438,12 +1438,12 @@ def test_rich_phase_to_different_phase_blank(capsys) -> None:
     d.stop()
 
 
-def test_rich_agent_to_different_agent_blank(capsys) -> None:
+def test_rich_agent_to_different_agent_no_blank(capsys) -> None:
     d = RichStatusDisplay()
     d.register("Implement Agent #1", "agent")
     d.register("Implement Agent #2", "agent")
     out = _strip_ansi(capsys.readouterr().out)
-    assert "[Implement Agent #1] started\n\n[Implement Agent #2] started" in out
+    assert "[Implement Agent #1] started\n[Implement Agent #2] started" in out
     d.stop()
 
 
