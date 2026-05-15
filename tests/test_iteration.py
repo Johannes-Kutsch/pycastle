@@ -909,6 +909,33 @@ def test_run_iteration_improve_chains_into_planning_on_success(
 # ── work_body ─────────────────────────────────────────────────────────────────
 
 
+def test_implementer_work_body_includes_slice_mode_for_behavior_slice(
+    tmp_path, git_svc, github_svc, logger
+):
+    issue_title = "Fix auth bug"
+    github_svc.get_open_issues.return_value = [
+        {"number": 3, "title": issue_title, "labels": ["behavior-slice"]}
+    ]
+    recording_runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
+    )
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path, None, git_svc=git_svc, github_svc=github_svc, logger=logger
+        ),
+        agent_runner=recording_runner,
+    )
+
+    asyncio.run(run_iteration(deps))
+
+    implementer_calls = [
+        c for c in recording_runner.calls if "Implement Agent" in c.name
+    ]
+    assert len(implementer_calls) == 1
+    assert implementer_calls[0].work_body == f'implementing behavior "{issue_title}"'
+
+
 def test_implementer_and_reviewer_run_calls_pass_work_body_with_issue_title(
     tmp_path, git_svc, github_svc, logger
 ):
@@ -938,9 +965,46 @@ def test_implementer_and_reviewer_run_calls_pass_work_body_with_issue_title(
     ]
     reviewer_calls = [c for c in recording_runner.calls if "Review Agent" in c.name]
     assert len(implementer_calls) == 1
-    assert implementer_calls[0].work_body == f'implementing "{issue_title}"'
+    assert implementer_calls[0].work_body == f'implementing behavior "{issue_title}"'
     assert len(reviewer_calls) == 1
-    assert reviewer_calls[0].work_body == f'reviewing "{issue_title}"'
+    assert reviewer_calls[0].work_body == f'reviewing behavior "{issue_title}"'
+
+
+@pytest.mark.parametrize(
+    "label,mode",
+    [
+        ("refactor-slice", "refactor"),
+        ("docs-slice", "docs"),
+    ],
+)
+def test_implementer_and_reviewer_work_body_includes_slice_mode(
+    tmp_path, git_svc, github_svc, logger, label, mode
+):
+    issue_title = "Some task"
+    github_svc.get_open_issues.return_value = [
+        {"number": 5, "title": issue_title, "labels": [label]}
+    ]
+    recording_runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
+    )
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path, None, git_svc=git_svc, github_svc=github_svc, logger=logger
+        ),
+        agent_runner=recording_runner,
+    )
+
+    asyncio.run(run_iteration(deps))
+
+    implementer_calls = [
+        c for c in recording_runner.calls if "Implement Agent" in c.name
+    ]
+    reviewer_calls = [c for c in recording_runner.calls if "Review Agent" in c.name]
+    assert len(implementer_calls) == 1
+    assert implementer_calls[0].work_body == f'implementing {mode} "{issue_title}"'
+    assert len(reviewer_calls) == 1
+    assert reviewer_calls[0].work_body == f'reviewing {mode} "{issue_title}"'
 
 
 def test_planner_run_call_passes_work_body_with_issue_count(
