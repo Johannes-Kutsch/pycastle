@@ -1,10 +1,12 @@
-# TASK
+<task>
 
 Fix issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
 Only work on the issue specified. Work on branch {{BRANCH}}.
 
-# CONTEXT
+</task>
+
+<context>
 
 <issue>
 
@@ -18,7 +20,9 @@ Only work on the issue specified. Work on branch {{BRANCH}}.
 
 </comments>
 {{WIP_COMMITS}}
-# WORKFLOW
+</context>
+
+<workflow>
 
 ## 1. Explore
 
@@ -49,3 +53,5 @@ Do not stage files or run `git commit` — the orchestrator handles commits.
 Emit a `<commit_message>` tag with a plain description of the changes. Keep it concise — structural change made, files changed, and any follow-up behavior-slice issues filed.
 
 Example: `<commit_message>task completed + PRD reference; key decisions; files changed; Blockers or notes for next iteration</commit_message>`
+
+</workflow>
