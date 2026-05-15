@@ -31,12 +31,12 @@ def label_setup(monkeypatch):
 # ── Labels built from config ───────────────────────────────────────────────────
 
 
-def test_create_labels_interactive_posts_exactly_seven_labels(label_setup):
+def test_create_labels_interactive_posts_exactly_ten_labels(label_setup):
     git_svc, github_svc, posted = label_setup
     create_labels_interactive(
         "tok", git_service=git_svc, cfg=Config(), github_service=github_svc
     )
-    assert len(posted) == 7
+    assert len(posted) == 10
 
 
 def test_create_labels_interactive_posts_all_canonical_label_names(label_setup):
@@ -53,6 +53,9 @@ def test_create_labels_interactive_posts_all_canonical_label_names(label_setup):
     assert cfg.issue_label in names
     assert cfg.hitl_label in names
     assert cfg.wontfix_label in names
+    assert cfg.refactor_slice_label in names
+    assert cfg.behavior_slice_label in names
+    assert cfg.docs_slice_label in names
 
 
 def test_create_labels_interactive_posts_entries_with_required_github_api_keys(
