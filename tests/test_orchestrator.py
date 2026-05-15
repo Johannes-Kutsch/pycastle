@@ -2191,10 +2191,15 @@ def test_planner_receives_ready_for_agent_issues_json_not_issue_label(tmp_path):
             "number": 1,
             "title": "Fix thing",
             "body": "Blocked by #99\nDo the work.",
-            "labels": [],
+            "labels": ["behavior-slice"],
             "comments": [],
         },
-        {"number": 2, "title": "Another issue", "body": ""},
+        {
+            "number": 2,
+            "title": "Another issue",
+            "body": "",
+            "labels": ["behavior-slice"],
+        },
     ]
 
     _run(
@@ -3072,7 +3077,13 @@ def test_improve_and_plan_share_preflight_cache(tmp_path):
     mock_github.get_open_issues.side_effect = [
         [],  # first call → triggers improve path
         [
-            {"number": 7, "title": "Filed issue", "body": "", "comments": []}
+            {
+                "number": 7,
+                "title": "Filed issue",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
         ],  # after improve
     ]
     mock_github.get_all_open_issues_lightweight.return_value = []

@@ -344,6 +344,30 @@ class GithubService:
     def delete_label(self, name: str) -> None:
         self._request("DELETE", f"/repos/{self.repo}/labels/{quote(name, safe='')}")
 
+    def add_label_to_issue(self, issue_number: int, label: str) -> None:
+        self._request(
+            "POST",
+            f"/repos/{self.repo}/issues/{issue_number}/labels",
+            data={"labels": [label]},
+        )
+
+    def remove_label_from_issue(self, issue_number: int, label: str) -> None:
+        try:
+            self._request(
+                "DELETE",
+                f"/repos/{self.repo}/issues/{issue_number}/labels/{quote(label, safe='')}",
+            )
+        except GithubAPIError as exc:
+            if exc.status not in (404, 410):
+                raise
+
+    def post_comment(self, issue_number: int, body: str) -> None:
+        self._request(
+            "POST",
+            f"/repos/{self.repo}/issues/{issue_number}/comments",
+            data={"body": body},
+        )
+
     def create_issue_in(
         self, owner_repo: str, title: str, body: str, labels: list[str]
     ) -> int:

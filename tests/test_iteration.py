@@ -872,6 +872,7 @@ def test_run_iteration_improve_chains_into_planning_on_success(
         "title": "Improve: refactor X",
         "body": "",
         "comments": [],
+        "labels": ["refactor-slice"],
     }
 
     github_svc = MagicMock(spec=GithubService)
