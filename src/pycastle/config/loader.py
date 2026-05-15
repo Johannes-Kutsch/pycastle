@@ -57,6 +57,7 @@ class Config:
     refactor_slice_label: str = "refactor-slice"
     behavior_slice_label: str = "behavior-slice"
     docs_slice_label: str = "docs-slice"
+    needs_slice_type_label: str = "needs-slice-type"
     pycastle_dir: Path = dataclasses.field(default_factory=lambda: Path("pycastle"))
     prompts_dir: Path = dataclasses.field(
         default_factory=lambda: Path("pycastle/prompts")
