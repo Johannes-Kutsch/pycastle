@@ -58,7 +58,18 @@ async def run_issue(
 ) -> dict:
     _branch = branch_for(issue["number"])
     _token = token if token is not None else CancellationToken()
-    _base_extra: dict[str, str] = {"BRANCH": _branch}
+
+    def _scope_args_for(mount_path: Path, role: AgentRole) -> dict[str, str]:
+        wip = build_wip_clause(
+            deps.git_svc.get_branch_commit_subjects(_branch, deps.repo_root),
+            RoleSession(mount_path, role).is_resumable(),
+            role=role.value,
+            issue_number=issue["number"],
+        )
+        return build_issue_scope_args(
+            issue,
+            extra_scope_args={"BRANCH": _branch, "WIP_COMMITS": wip},
+        )
 
     _started_fired = False
 
@@ -100,18 +111,8 @@ async def run_issue(
                 deps=deps,
             ) as impl_mount_path:
                 _impl_overlay = patch_gitdir_for_container(impl_mount_path)
-                _impl_wip_subjects = deps.git_svc.get_branch_commit_subjects(
-                    _branch, deps.repo_root
-                )
-                _impl_wip = build_wip_clause(
-                    _impl_wip_subjects,
-                    RoleSession(impl_mount_path, AgentRole.IMPLEMENTER).is_resumable(),
-                    role=AgentRole.IMPLEMENTER.value,
-                    issue_number=issue["number"],
-                )
-                _impl_scope_args = build_issue_scope_args(
-                    issue,
-                    extra_scope_args={**_base_extra, "WIP_COMMITS": _impl_wip},
+                _impl_scope_args = _scope_args_for(
+                    impl_mount_path, AgentRole.IMPLEMENTER
                 )
                 try:
                     result = await _bounded_run_agent(
@@ -150,19 +151,7 @@ async def run_issue(
             deps=deps,
         ) as review_mount_path:
             _review_overlay = patch_gitdir_for_container(review_mount_path)
-            _review_wip_subjects = deps.git_svc.get_branch_commit_subjects(
-                _branch, deps.repo_root
-            )
-            _review_wip = build_wip_clause(
-                _review_wip_subjects,
-                RoleSession(review_mount_path, AgentRole.REVIEWER).is_resumable(),
-                role=AgentRole.REVIEWER.value,
-                issue_number=issue["number"],
-            )
-            _review_scope_args = build_issue_scope_args(
-                issue,
-                extra_scope_args={**_base_extra, "WIP_COMMITS": _review_wip},
-            )
+            _review_scope_args = _scope_args_for(review_mount_path, AgentRole.REVIEWER)
             try:
                 review_result = await _bounded_run_agent(
                     RunRequest(
