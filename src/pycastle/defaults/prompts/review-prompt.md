@@ -1,10 +1,12 @@
-# TASK
+<task>
 
 Review the code changes on branch {{BRANCH}} for issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
 **Constraint**: Never change what the code does — only how it does it. All original features, outputs, and behaviors must remain intact.
 
-# CONTEXT
+</task>
+
+<context>
 
 <issue>
 
@@ -18,7 +20,9 @@ Review the code changes on branch {{BRANCH}} for issue #{{ISSUE_NUMBER}}: {{ISSU
 
 </comments>
 {{WIP_COMMITS}}
-# WORKFLOW
+</context>
+
+<workflow>
 
 ## 1. Confirm baseline
 
@@ -66,3 +70,5 @@ Run `{{FEEDBACK_COMMANDS}}` to ensure nothing is broken.
 Emit a `<commit_message>` tag with a plain description of the refinements. Keep it concise.
 
 Example: `<commit_message>Description of revinements</commit_message>`
+
+</workflow>

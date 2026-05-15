@@ -1,6 +1,10 @@
-# Failure Analysis
+<task>
 
 An agent (`{{FAILED_ROLE}}`) failed irrecoverably. File a triage issue so a human can investigate.
+
+</task>
+
+<context>
 
 ## What failed
 
@@ -9,6 +13,10 @@ Role: **`{{FAILED_ROLE}}`**
 Session transcript: `{{SESSION_DIR}}/`
 
 Failure class: `{{FAILURE_CLASS}}`
+
+</context>
+
+<workflow>
 
 ## Your task
 
@@ -37,3 +45,5 @@ rm -rf <SESSION_DIR>
 
 Apply this only if transcript corruption is suspected — it cannot be undone.
 {{/if}}
+
+</workflow>

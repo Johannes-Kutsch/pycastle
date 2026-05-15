@@ -1,4 +1,4 @@
-# TASK
+<task>
 
 Merge the following branches into the current branch:
 
@@ -13,6 +13,10 @@ For each branch:
 
 After all branches are merged, make a single commit summarizing the merge.
 
-# OUTPUT
+</task>
+
+<output>
 
 Once you've merged everything you can, output <promise>COMPLETE</promise>.
+
+</output>

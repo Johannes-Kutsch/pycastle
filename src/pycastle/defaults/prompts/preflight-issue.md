@@ -1,6 +1,10 @@
-# Preflight failure — investigate and file issue
+<task>
 
 A preflight check has failed. Investigate the root cause, determine whether human judgment is required, and file a well-structured GitHub issue.
+
+</task>
+
+<context>
 
 ## Failing check
 
@@ -13,6 +17,10 @@ A preflight check has failed. Investigate the root cause, determine whether huma
 ```
 {{OUTPUT}}
 ```
+
+</context>
+
+<workflow>
 
 ## Steps
 
@@ -100,3 +108,5 @@ gh issue edit <number> --add-label "{{BUG_LABEL}}" --add-label "<{{READY_FOR_AGE
 {"number": NUMBER, "labels": ["LABEL 1", "LABEL 2"]}
 </issue>
 ```
+
+</workflow>
