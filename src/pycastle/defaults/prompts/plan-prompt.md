@@ -1,4 +1,4 @@
-# ALL OPEN ISSUES
+<context>
 
 Here are all open issues in the repo (any label), for blocker visibility:
 
@@ -8,8 +8,6 @@ Here are all open issues in the repo (any label), for blocker visibility:
 
 </all-open-issues-json>
 
-# READY-FOR-AGENT ISSUES
-
 Here are the open issues labeled {{READY_FOR_AGENT_LABEL}} — your candidate set to pick from:
 
 <ready-for-agent-issues-json>
@@ -18,7 +16,9 @@ Here are the open issues labeled {{READY_FOR_AGENT_LABEL}} — your candidate se
 
 </ready-for-agent-issues-json>
 
-# TASK
+</context>
+
+<task>
 
 Analyze the open issues and build a dependency graph. For each issue in the {{READY_FOR_AGENT_LABEL}} list, determine whether it is **blocked** by any other open issue.
 
@@ -45,7 +45,9 @@ Issues absent from both lists have already been completed. Do not treat absent i
 
 If multiple unblocked issues work on the same part of the codebase, only include the highest-priority one to prevent merge conflicts. When priority is unclear, choose the lowest issue number.
 
-# OUTPUT
+</task>
+
+<output>
 
 Output your plan as a JSON object wrapped in `<plan>` tags.
 
@@ -55,7 +57,7 @@ The JSON must have two fields:
 - `blocked`: {{READY_FOR_AGENT_LABEL}} issues held back because of a blocker. Each entry must have:
   - `number`: the blocked issue's number
   - `blocked_by`: the issue number that is blocking it
-  - `reason`: the offending label string (e.g., `"{{READY_FOR_HUMAN_LABEL}}"`, `"{{NEEDS_INFO_LABEL}}"`, `"{{NEEDS_TRIAGE_LABEL}}"`)
+  - `reason`: the offending label string (e.g., `"{{READY_FOR_AGENT_LABEL}}"`, `"{{NEEDS_INFO_LABEL}}"`, `"{{NEEDS_TRIAGE_LABEL}}"`)
 
 Example — some unblocked, some blocked:
 
@@ -68,3 +70,5 @@ Example — all issues are blocked:
 <plan>
 {"issues": [], "blocked": [{"number": 5, "blocked_by": 3, "reason": "{{READY_FOR_HUMAN_LABEL}}"}]}
 </plan>
+
+</output>
