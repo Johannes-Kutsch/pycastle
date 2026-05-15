@@ -276,12 +276,9 @@ def test_full_lifecycle_interleaved_callers(capsys: pytest.CaptureFixture[str]) 
         "\n"
         "[Alice] started\n"
         "[Alice] working\n"
-        "\n"
         "[Bob] started\n"
         "[Bob] running\n"
-        "\n"
         "[Alice] finished\n"
-        "\n"
         "[Bob] finished\n"
     )
 
@@ -377,12 +374,12 @@ def test_phase_to_different_phase_blank(capsys: pytest.CaptureFixture[str]) -> N
     assert out == "\n[Plan] started\n\n[Implement] started\n"
 
 
-def test_agent_to_different_agent_blank(capsys: pytest.CaptureFixture[str]) -> None:
+def test_agent_to_different_agent_no_blank(capsys: pytest.CaptureFixture[str]) -> None:
     d = PlainStatusDisplay()
     d.register("Implement Agent #1", "agent")
     d.register("Implement Agent #2", "agent")
     out = capsys.readouterr().out
-    assert out == "\n[Implement Agent #1] started\n\n[Implement Agent #2] started\n"
+    assert out == "\n[Implement Agent #1] started\n[Implement Agent #2] started\n"
 
 
 def test_plan_lifecycle_end_to_end(capsys: pytest.CaptureFixture[str]) -> None:

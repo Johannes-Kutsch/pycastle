@@ -150,6 +150,8 @@ class RichStatusDisplay:
         cur_kind = self._kinds.get(caller)
         if {self._last_kind, cur_kind} == {"phase", "agent"}:
             return False
+        if self._last_kind == "agent" and cur_kind == "agent":
+            return False
         return True
 
     def register(
