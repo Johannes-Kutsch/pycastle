@@ -60,20 +60,38 @@ _PHASES: dict[str, _PhaseConfig] = {
 }
 
 
-class _PhaseTracker:
+@dataclass(frozen=True)
+class Step:
+    prompt_key: str
+    cfg: _PhaseConfig
+    send_role_prompt_on_resume: bool
+    scope_args: dict[str, str]
+
+
+class ImprovePhaseDriver:
+    """State machine for the improve pipeline phases.
+
+    Construction is side-effect-free; start() performs the first disk read.
+    """
+
     _PROGRESS_FILE = "_phase_progress"
     _IN_FLIGHT_FILE = "_phase_in_flight"
     _VALID_PHASE_IDS = frozenset(
         {"01-scan:picked", "01-scan:no-candidate", "02-prd", "03-issues", "04-report"}
     )
 
-    def __init__(self, role_session_dir: Path) -> None:
+    def __init__(
+        self, role_session_dir: Path, short_sid: str, no_candidate_report: bool
+    ) -> None:
         self._dir = role_session_dir
         self._progress_file = role_session_dir / self._PROGRESS_FILE
         self._in_flight_file = role_session_dir / self._IN_FLIGHT_FILE
+        self._short_sid = short_sid
+        self._no_candidate_report = no_candidate_report
+        self._last_id: str | None = None
+        self._prd_number: int | None = None
 
-    def load(self) -> tuple[str | None, str | None]:
-        """Load phase cursor. Returns (last_completed_id, in_flight_id)."""
+    def _load(self) -> tuple[str | None, str | None]:
         try:
             value = self._progress_file.read_text(encoding="utf-8").strip()
             last_id: str | None = value if value in self._VALID_PHASE_IDS else None
@@ -96,46 +114,91 @@ class _PhaseTracker:
 
         return last_id, in_flight_id
 
-    def record_in_flight(self, phase_key: str) -> None:
-        """Write the in-flight marker before running a phase."""
-        self._dir.mkdir(parents=True, exist_ok=True)
-        self._in_flight_file.write_text(phase_key, encoding="utf-8")
+    def _next_prompt_key(self, last_id: str | None) -> str | None:
+        if last_id is None:
+            return "01-scan.md"
+        if last_id == "01-scan:picked":
+            return "02-prd.md"
+        if last_id == "01-scan:no-candidate":
+            return "04-no-candidate-report.md" if self._no_candidate_report else None
+        if last_id == "02-prd":
+            return "03-issues.md"
+        return None
 
-    def record_completed(self, completed_id: str) -> None:
-        """Write the completed phase id and remove the in-flight marker."""
+    def _compute_phase_id(self, prompt_key: str, output: AgentOutput) -> str:
+        if prompt_key == "01-scan.md":
+            return (
+                "01-scan:no-candidate"
+                if isinstance(output, NoCandidateOutput)
+                else "01-scan:picked"
+            )
+        return {
+            "02-prd.md": "02-prd",
+            "03-issues.md": "03-issues",
+            "04-no-candidate-report.md": "04-report",
+        }.get(prompt_key, prompt_key)
+
+    def _make_step(
+        self, prompt_key: str, last_id: str | None, in_flight_id: str | None
+    ) -> Step:
+        phase = _PHASES[prompt_key]
+        phase_key = prompt_key.removesuffix(".md")
+        is_mid_phase_retry = in_flight_id == phase_key
+        send_role_prompt_on_resume = last_id is not None and not is_mid_phase_retry
+
+        if phase.template.scope in (Scope.IMPROVE_SESSION, Scope.IMPROVE_ISSUES):
+            partial_scope_args: dict[str, str] = {"IMPROVE_SHORT_SID": self._short_sid}
+        else:
+            partial_scope_args = {}
+
+        return Step(
+            prompt_key=prompt_key,
+            cfg=phase,
+            send_role_prompt_on_resume=send_role_prompt_on_resume,
+            scope_args=partial_scope_args,
+        )
+
+    def _write_in_flight(self, prompt_key: str) -> None:
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._in_flight_file.write_text(
+            prompt_key.removesuffix(".md"), encoding="utf-8"
+        )
+
+    def start(self) -> "Step | None":
+        last_id, in_flight_id = self._load()
+        self._last_id = last_id
+        prompt_key = self._next_prompt_key(last_id)
+        if prompt_key is None:
+            return None
+        step = self._make_step(prompt_key, last_id, in_flight_id)
+        self._write_in_flight(prompt_key)
+        return step
+
+    def next(self) -> "Step | None":
+        prompt_key = self._next_prompt_key(self._last_id)
+        if prompt_key is None:
+            return None
+        step = self._make_step(prompt_key, self._last_id, None)
+        self._write_in_flight(prompt_key)
+        return step
+
+    def record_outcome(self, step: "Step", output: AgentOutput) -> None:
+        completed_id = self._compute_phase_id(step.prompt_key, output)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._progress_file.write_text(completed_id, encoding="utf-8")
         self._in_flight_file.unlink(missing_ok=True)
+        self._last_id = completed_id
 
+        if step.prompt_key == "02-prd.md" and isinstance(output, IssueOutput):
+            self._prd_number = output.number
 
-def next_prompt(
-    last_completed_id: str | None, *, no_candidate_report: bool
-) -> str | None:
-    """Pure transition function: last completed phase ID → next prompt filename."""
-    if last_completed_id is None:
-        return "01-scan.md"
-    if last_completed_id == "01-scan:picked":
-        return "02-prd.md"
-    if last_completed_id == "01-scan:no-candidate":
-        return "04-no-candidate-report.md" if no_candidate_report else None
-    if last_completed_id == "02-prd":
-        return "03-issues.md"
-    # 03-issues, 04-report, or unrecognised → terminal
-    return None
+    @property
+    def prd_number(self) -> int | None:
+        return self._prd_number
 
-
-def _phase_id(prompt_name: str, output: AgentOutput) -> str:
-    if prompt_name == "01-scan.md":
-        return (
-            "01-scan:no-candidate"
-            if isinstance(output, NoCandidateOutput)
-            else "01-scan:picked"
-        )
-    return {
-        "02-prd.md": "02-prd",
-        "03-issues.md": "03-issues",
-        "04-no-candidate-report.md": "04-report",
-    }.get(prompt_name, prompt_name)
+    @property
+    def last_id(self) -> str | None:
+        return self._last_id
 
 
 @dataclass(frozen=True)
@@ -204,33 +267,22 @@ async def improve_phase(
             role_session = RoleSession(sandbox_path, AgentRole.IMPROVE)
             short_sid = role_session.session_uuid().split("-")[0]
             role_session_dir = role_session.path
-            tracker = _PhaseTracker(role_session_dir)
-
-            last_id, in_flight_id = tracker.load()
-
-            prd_number: int | None = None
-            prompt_name = next_prompt(
-                last_id,
-                no_candidate_report=deps.cfg.diagnose_on_failure,
+            driver = ImprovePhaseDriver(
+                role_session_dir, short_sid, deps.cfg.diagnose_on_failure
             )
-            while prompt_name is not None:
-                phase = _PHASES[prompt_name]
-                template = phase.template
-                if template.scope is Scope.IMPROVE_SESSION:
-                    scope_args: dict[str, str] = {"IMPROVE_SHORT_SID": short_sid}
-                elif template.scope is Scope.IMPROVE_ISSUES:
+
+            step = driver.start()
+            while step is not None:
+                if step.cfg.template.scope is Scope.IMPROVE_ISSUES:
                     scope_args = _build_issues_scope_args(
-                        short_sid, prd_number, deps.github_svc
+                        short_sid, driver.prd_number, deps.github_svc
                     )
                 else:
-                    scope_args = {}
-                phase_key = prompt_name.removesuffix(".md")
-                is_mid_phase_retry = in_flight_id == phase_key
-                tracker.record_in_flight(phase_key)
+                    scope_args = {**step.scope_args}
                 output = await deps.agent_runner.run(
                     RunRequest(
-                        name=phase.display_name,
-                        template=template,
+                        name=step.cfg.display_name,
+                        template=step.cfg.template,
                         mount_path=sandbox_path,
                         role=AgentRole.IMPROVE,
                         scope_args=scope_args,
@@ -238,26 +290,15 @@ async def improve_phase(
                         effort=deps.cfg.improve_override.effort,
                         stage="improve-sandbox",
                         status_display=deps.status_display,
-                        work_body=phase.display_body,
-                        send_role_prompt_on_resume=last_id is not None
-                        and not is_mid_phase_retry,
-                        session_namespace=phase.namespace,
+                        work_body=step.cfg.display_body,
+                        send_role_prompt_on_resume=step.send_role_prompt_on_resume,
+                        session_namespace=step.cfg.namespace,
                     )
                 )
+                driver.record_outcome(step, output)
+                step = driver.next()
 
-                if prompt_name == "02-prd.md" and isinstance(output, IssueOutput):
-                    prd_number = output.number
-                completed_id = _phase_id(prompt_name, output)
-                tracker.record_completed(completed_id)
-                last_id = completed_id
-                in_flight_id = None
-
-                prompt_name = next_prompt(
-                    completed_id,
-                    no_candidate_report=deps.cfg.diagnose_on_failure,
-                )
-
-            no_candidate = last_id in {"01-scan:no-candidate", "04-report"}
+            no_candidate = driver.last_id in {"01-scan:no-candidate", "04-report"}
             shutil.rmtree(role_session_dir, ignore_errors=True)
 
         row.close("finished")
