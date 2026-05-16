@@ -134,7 +134,7 @@ Before filing, answer:
 
 ## 6. File the issues
 
-For each approved slice, publish a new issue. **Always write the body to a temp file and use `gh issue create --body-file`.** Each title must start with `[improve-SLICE]`. Apply two labels:
+For each approved slice, publish a new issue. **Always write the body to a file and use `gh issue create --body-file`.** Before writing the first body, run `mkdir -p .pycastle-session/improve/drafts` so the directory exists on a fresh worktree. Write each body to `.pycastle-session/improve/drafts/sliceN.md` (where N is the slice sequence number, e.g. `slice1.md`, `slice2.md`), then pass that path to `--body-file`. Each title must start with `[improve-SLICE]`. Apply two labels:
 
 - `{{READY_FOR_AGENT_LABEL}}` (state)
 - One of `{{REFACTOR_SLICE_LABEL}}`, `{{BEHAVIOR_SLICE_LABEL}}`, `{{DOCS_SLICE_LABEL}}` (mode)
