@@ -34,7 +34,7 @@ PRDs are **peer-level** — no parent/child relationships, no sub-issue registra
 
 - Title prefix: `[improve-{{IMPROVE_SHORT_SID}}]`
 - Label: `{{READY_FOR_HUMAN_LABEL}}`
-- **Always write the body to a temp file and use `gh issue create --body-file`.**
+- **Always write the body to a file and use `gh issue create --body-file`.** Before writing, run `mkdir -p .pycastle-session/improve/drafts` so the directory exists on a fresh worktree. Write the body to `.pycastle-session/improve/drafts/no-candidate.md`, then pass that path to `--body-file`.
 
 ### Issue body template
 
