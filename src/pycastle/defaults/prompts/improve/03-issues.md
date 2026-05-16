@@ -60,12 +60,7 @@ Rules:
 
 ### Granularity check
 
-Before approving each slice:
-
-1. **Layer count** — Does the slice touch more than one independently-shippable layer? If yes, sequence as separate slices unless genuinely indivisible.
-2. **Read-budget** — Would a fresh agent need to read more than ~5 files outside those being modified? If yes, the slice bundles unrelated context — split it.
-
-Each issue must fit in one usage window of an AFK agent; over-scoping is wasteful.
+Each issue must fit in one usage window of an AFK agent; over-scoping is wasteful. Apply the "Smells that demand a split" checklist in step 3a/b below to every candidate slice before approving it.
 
 ## 3a. Classify each slice by mode
 
@@ -81,11 +76,25 @@ Every slice is exactly one of three **slice modes**. The mode determines which i
 
 **If a step cannot be verified by a new test of observable behavior, file it as its own `refactor-slice`. Refactor steps never ride along inside a `behavior-slice`.**
 
-Multiple refactor steps may be bundled into one `refactor-slice` — one slice can rename five functions, extract two modules, and rewire three imports. Bundling avoids issue-count explosion; what's *not* allowed is mixing refactor and behavior in the same slice.
+By default, each refactor step is its own slice. Multiple refactor steps bundle into one `refactor-slice` only when they form a single atomic ripple — e.g., a rename propagating through call sites — that cannot land independently without leaving the tree inconsistent. Mixing refactor and behavior in the same slice is never allowed.
 
 Refactor slices land first. The dependent behavior slice lists the refactor in `Blocked by`.
 
 **Canonical extract-it-as-a-refactor-slice cases:** extract a symbol to a new module, rename a public name used across modules, introduce a protocol/interface used by call sites outside the behavior slice, rewire imports across packages.
+
+### Smells that demand a split
+
+If any of these fire on a candidate slice, split it. They are the operational signals behind the inverted default above — bundling needs a single-atomic-ripple justification, and any of these means you don't have one.
+
+1. **"And" joining distinct outcomes.** The slice description joins a refactor + a behavior, or two independent behaviors, with "and". ("Rename and update callers" is fine — same outcome. "Externalize profile and hardcode protocol prompts" is two outcomes.)
+2. **Refactor + behavior in the same slice.** The hard rule from above, re-stated as a smell because it is the most common bundling failure.
+3. **More than two public surfaces of existing code change.** New exports don't count. Changing the signature of three already-public functions does.
+4. **Extract-and-rewire in one slice.** Introducing a new module *and* migrating call sites to use it. Extract first as a refactor; rewire as the next slice.
+5. **Delete a module + change behavior elsewhere.** Deletion is its own refactor slice.
+6. **Covers more than three user stories** from the PRD. Two or three related stories cohere; four signals a bundle.
+7. **Touches more than ~5 files outside the area being modified.** A fresh agent shouldn't need that much surrounding context.
+
+A separate signal that the candidate is too big for any single slice is **layer count** — touching more than one independently-shippable architectural layer (identify layers from `CONTEXT.md` and the module structure). In that case the work must be sequenced as multiple slices regardless of the smells above.
 
 ## 4. Acceptance criteria shape per slice mode
 
@@ -126,6 +135,7 @@ Phrase verification as the system's observable behavior, not as test-code struct
 Before filing, answer:
 
 - Is the granularity right? (too coarse / too fine)
+- Did any of the seven split smells fire on a slice you left bundled?
 - Are the dependency relationships correct?
 - Should any slices be merged or split further?
 - Is every slice genuinely AFK-implementable?
