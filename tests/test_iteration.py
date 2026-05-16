@@ -3136,3 +3136,127 @@ def test_run_iteration_preflight_fix_uses_planner_sha_not_second_call(
     assert implementer_sha == "sha-x1", (
         "implementer worktree must be pinned to planning's SHA"
     )
+
+
+# ── improve_max slot consumption on abort ────────────────────────────────────
+
+
+def test_usage_limit_abort_does_not_consume_improve_slot(tmp_path, git_svc, logger):
+    """When improve_phase raises UsageLimitError, improve_dispatched_count must not
+    be incremented — the slot is only consumed by returned (completed) outcomes."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+
+    async def _fake_agent(request: RunRequest):
+        raise UsageLimitError(reset_time=None)
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(improve_max=1),
+        ),
+        improve_mode="endless",
+        improve_dispatched_count=0,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedUsageLimit)
+    assert deps.improve_dispatched_count == 0, (
+        "UsageLimitError abort must not consume an improve_max slot"
+    )
+
+
+def test_timeout_abort_does_not_consume_improve_slot(tmp_path, git_svc, logger):
+    """When improve_phase raises AgentTimeoutError, improve_dispatched_count must not
+    be incremented."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+
+    async def _fake_agent(request: RunRequest):
+        raise AgentTimeoutError("improve")
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(improve_max=1),
+        ),
+        improve_mode="endless",
+        improve_dispatched_count=0,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedTimeout)
+    assert deps.improve_dispatched_count == 0, (
+        "AgentTimeoutError abort must not consume an improve_max slot"
+    )
+
+
+def test_no_candidate_outcome_consumes_improve_slot(tmp_path, git_svc, logger):
+    """When improve_phase returns ImproveNoCandidate, improve_dispatched_count is
+    incremented by 1 — NO-CANDIDATE is a returned outcome, not a raised abort."""
+    deps = _make_improve_deps(
+        tmp_path,
+        git_svc,
+        logger,
+        improve_mode="endless",
+        slept_once=False,
+        agent_responses=[NoCandidateOutput(), CompletionOutput()],
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, NoCandidate)
+    assert deps.improve_dispatched_count == 1, (
+        "ImproveNoCandidate must consume one improve_max slot"
+    )
+
+
+def test_improve_max_cap_counts_only_returned_outcomes_not_raised_aborts(
+    tmp_path, git_svc, logger
+):
+    """improve_max=1: a UsageLimitError abort on the first attempt must not trigger the
+    cap — the next call must still dispatch improve (cap fires only after 1 *returned*
+    outcome)."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+
+    call_count = 0
+
+    async def _fake_agent(request: RunRequest):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise UsageLimitError(reset_time=None)
+        return NoCandidateOutput()
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(improve_max=1),
+            preflight_responses=[[], []],
+        ),
+        improve_mode="endless",
+        improve_dispatched_count=0,
+    )
+    # First run: UsageLimitError → AbortedUsageLimit, count stays 0
+    result1 = asyncio.run(run_iteration(deps))
+    assert isinstance(result1, AbortedUsageLimit)
+    assert deps.improve_dispatched_count == 0
+
+    # Second run: NoCandidateOutput → NoCandidate, count increments to 1
+    result2 = asyncio.run(run_iteration(deps))
+    assert isinstance(result2, NoCandidate)
+    assert deps.improve_dispatched_count == 1, (
+        "improve_max cap must fire only after returned outcomes, not raised aborts"
+    )
