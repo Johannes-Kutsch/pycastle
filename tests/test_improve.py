@@ -20,7 +20,6 @@ from pycastle.iteration.improve import (
     ImproveContinue,
     ImproveNoCandidate,
     improve_phase,
-    next_prompt,
 )
 from pycastle.prompt_pipeline import PromptTemplate
 from pycastle.services import GitService
@@ -59,57 +58,6 @@ def deps(tmp_path, git_svc, agent_runner):
 
 def _run(deps):
     return asyncio.run(improve_phase(deps))
-
-
-# ── next_prompt: pure transition function ────────────────────────────────────
-
-
-def test_next_prompt_returns_scan_on_fresh_start():
-    """Fresh run (no progress) starts at 01-scan."""
-    assert next_prompt(None, no_candidate_report=True) == "01-scan.md"
-
-
-def test_next_prompt_returns_scan_on_fresh_start_report_disabled():
-    """No-candidate-report setting does not affect fresh start."""
-    assert next_prompt(None, no_candidate_report=False) == "01-scan.md"
-
-
-def test_next_prompt_returns_prd_after_picked():
-    """Picked candidate routes to phase 2 PRD."""
-    assert next_prompt("01-scan:picked", no_candidate_report=True) == "02-prd.md"
-
-
-def test_next_prompt_returns_issues_after_prd():
-    """Completed PRD routes to phase 3 sub-issues."""
-    assert next_prompt("02-prd", no_candidate_report=True) == "03-issues.md"
-
-
-def test_next_prompt_returns_none_after_issues():
-    """Completed sub-issues phase is terminal."""
-    assert next_prompt("03-issues", no_candidate_report=True) is None
-
-
-def test_next_prompt_returns_report_after_no_candidate_when_enabled():
-    """NO-CANDIDATE with report enabled routes to phase 4 report."""
-    assert (
-        next_prompt("01-scan:no-candidate", no_candidate_report=True)
-        == "04-no-candidate-report.md"
-    )
-
-
-def test_next_prompt_returns_none_after_no_candidate_when_disabled():
-    """NO-CANDIDATE with report disabled is terminal."""
-    assert next_prompt("01-scan:no-candidate", no_candidate_report=False) is None
-
-
-def test_next_prompt_returns_none_after_report():
-    """Completed no-candidate report is terminal."""
-    assert next_prompt("04-report", no_candidate_report=True) is None
-
-
-def test_next_prompt_returns_none_for_unknown_id():
-    """Unrecognised phase ID maps to terminal (fail-soft)."""
-    assert next_prompt("bogus-phase", no_candidate_report=True) is None
 
 
 # ── improve_phase: integration behavior ──────────────────────────────────────
