@@ -37,6 +37,19 @@ def _agent_name_style(name: str) -> str:
     return f"bold rgb({r},{g},{b})"
 
 
+def _styled_with_issue_overlay(text: str, base_style: str) -> Text:
+    """Render `text` in `base_style`, overlaying bold cyan on any `#N` segments."""
+    rendered = Text()
+    for segment in re.split(r"(#\d+)", text):
+        if not segment:
+            continue
+        style = (
+            f"{base_style} bold cyan" if re.fullmatch(r"#\d+", segment) else base_style
+        )
+        rendered.append(segment, style=style)
+    return rendered
+
+
 def _row_priority(name: str, kinds: dict[str, str]) -> int:
     if kinds.get(name) == "phase":
         return -1
@@ -131,14 +144,9 @@ class RichStatusDisplay:
         table.add_column()  # body
 
         for row in rows:
-            name_text = Text()
-            base_style = _agent_name_style(row.name)
-            for segment in re.split(r"(#\d+)", row.name):
-                if segment:
-                    if re.fullmatch(r"#\d+", segment):
-                        name_text.append(segment, style=f"{base_style} bold cyan")
-                    else:
-                        name_text.append(segment, style=base_style)
+            name_text = _styled_with_issue_overlay(
+                row.name, _agent_name_style(row.name)
+            )
 
             body = row.work_body if row.phase == "Work" else row.phase
 
@@ -249,34 +257,21 @@ class RichStatusDisplay:
             self._last_kind = self._kinds.get(caller)
         if prepend_blank:
             self._console.print()
-        has_issue_number = bool(re.search(r"#\d+", caller)) if caller else False
+        has_issue_number = bool(re.search(r"#\d+", caller))
         for line in lines:
-            text = Text()
             if caller:
-                base_style = _agent_name_style(caller)
-                if has_issue_number:
-                    # Split prefix on #N so that segment gets bold cyan overlay.
-                    prefix = f"[{caller}]"
-                    for seg in re.split(r"(#\d+)", prefix):
-                        if not seg:
-                            continue
-                        if re.fullmatch(r"#\d+", seg):
-                            text.append(seg, style=f"{base_style} bold cyan")
-                        else:
-                            text.append(seg, style=base_style)
-                else:
-                    text.append(f"[{caller}]", style=base_style)
+                text = _styled_with_issue_overlay(
+                    f"[{caller}]", _agent_name_style(caller)
+                )
                 body_start = len(text)
                 text.append(f" {line}")
             else:
                 body_start = 0
-                text.append(line)
+                text = Text(line)
             if rich_style:
-                if has_issue_number and caller:
-                    # Style only the body span, preserving the palette-colored prefix.
-                    text.stylize(rich_style, start=body_start)
-                else:
-                    text.stylize(rich_style)
+                # For #N callers, preserve the palette-colored prefix by styling body only.
+                start = body_start if has_issue_number else 0
+                text.stylize(rich_style, start=start)
             self._console.print(text)
 
     def stop(self) -> None:
