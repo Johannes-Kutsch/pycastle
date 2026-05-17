@@ -109,10 +109,10 @@ class DockerService:
 
             if not rebuild_signaled and on_rebuild_start is not None:
                 stripped = line.strip()
-                if re.match(r"^#\d+\s+DONE\s+", stripped):
+                if re.match(r"#\d+\s+DONE\s+", stripped):
                     on_rebuild_start()
                     rebuild_signaled = True
-                elif re.match(r"^Step \d+/\d+ :", stripped):
+                elif re.match(r"Step \d+/\d+ :", stripped):
                     pending_classic_step = True
                 elif pending_classic_step:
                     if "---> Using cache" not in stripped and stripped:
