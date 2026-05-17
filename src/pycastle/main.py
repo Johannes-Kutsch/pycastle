@@ -9,7 +9,12 @@ import click
 
 from .config import Config, load_config, load_env, resolve_global_dir
 from .config.loader import describe_config_layers
-from .errors import ClaudeCliNotFoundError, ConfigValidationError, DockerServiceError
+from .errors import (
+    ClaudeCliNotFoundError,
+    ConfigValidationError,
+    DockerBuildError,
+    DockerServiceError,
+)
 from .status_display import PlainStatusDisplay
 
 _ENV_KEYS = (
@@ -171,6 +176,7 @@ def build_cmd(no_cache: bool) -> None:
 def run_cmd(improve_mode: str | None) -> None:
     from typing import cast
 
+    from .build_command import main as _build
     from .iteration.dispatcher import ImproveMode
     from .orchestrator import run
     from .services.agent_service import AgentService
@@ -186,6 +192,12 @@ def run_cmd(improve_mode: str | None) -> None:
             "Run `claude setup-token` to generate a token, then add it to your .env file.",
             err=True,
         )
+        sys.exit(1)
+
+    try:
+        _build(stream=True, cfg=cfg)
+    except (ConfigValidationError, DockerServiceError, DockerBuildError) as exc:
+        click.echo(str(exc), err=True)
         sys.exit(1)
     accounts: list[tuple[str, str]] = []
     secondary = env.get("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY")
