@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from .config import Config, load_config
@@ -13,6 +14,7 @@ def main(
     stream: bool = False,
     docker_service: DockerService | None = None,
     cfg: Config | None = None,
+    on_rebuild_start: Callable[[], None] | None = None,
 ) -> None:
     if cfg is None:
         cfg = load_config()
@@ -38,6 +40,7 @@ def main(
         no_cache=no_cache,
         stream=stream,
         python_version=python_version,
+        on_rebuild_start=on_rebuild_start,
     )
 
     if not stream:
