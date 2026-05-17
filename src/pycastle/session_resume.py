@@ -68,3 +68,6 @@ class RoleSession:
                 child.unlink(missing_ok=True)
             elif child.is_dir():
                 shutil.rmtree(child, ignore_errors=True)
+
+    def discard(self) -> None:
+        shutil.rmtree(self.path, ignore_errors=True)

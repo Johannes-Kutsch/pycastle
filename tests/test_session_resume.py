@@ -143,3 +143,52 @@ def test_is_stage_done_for_true_after_mark_done(worktree):
     (rs.path / "session.jsonl").write_text("{}\n")
     rs.mark_done()
     assert is_stage_done_for(worktree, AgentRole.IMPLEMENTER) is True
+
+
+# ── RoleSession.discard() ─────────────────────────────────────────────────────
+
+
+def test_discard_after_start_fresh_removes_role_dir(rs, worktree):
+    rs.start_fresh()
+    rs.discard()
+
+    assert rs.is_resumable() is False
+    assert rs.is_done() is False
+    assert any_role_dir_present(worktree) is False
+
+
+def test_discard_removes_nested_contents(rs, worktree):
+    rs.start_fresh()
+    nested = rs.path / "subdir"
+    nested.mkdir()
+    (nested / "file.txt").write_text("data")
+    rs.discard()
+
+    assert rs.is_resumable() is False
+    assert rs.is_done() is False
+
+
+def test_discard_on_nonexistent_dir_is_noop(rs):
+    rs.discard()  # no start_fresh — dir never created
+
+
+def test_discard_is_idempotent(rs, worktree):
+    rs.start_fresh()
+    rs.discard()
+    rs.discard()
+
+    assert rs.is_resumable() is False
+    assert rs.is_done() is False
+
+
+def test_discard_sibling_safe(worktree):
+    rs_impl = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    rs_review = RoleSession(worktree, AgentRole.REVIEWER)
+    rs_impl.start_fresh()
+    rs_review.start_fresh()
+
+    rs_impl.discard()
+
+    assert any_role_dir_present(worktree) is True
+    assert rs_review.is_resumable() is False
+    assert rs_review.is_done() is True
