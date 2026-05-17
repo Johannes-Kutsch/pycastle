@@ -5,10 +5,12 @@ from pathlib import Path
 from .config import Config, load_config
 from .errors import ConfigValidationError
 from .services import DockerService
+from .services.docker_service import BuildOutcome
 
 
 def main(
     no_cache: bool = False,
+    stream: bool = False,
     docker_service: DockerService | None = None,
     cfg: Config | None = None,
 ) -> None:
@@ -29,12 +31,17 @@ def main(
         parts = version.split(".")
         python_version = ".".join(parts[:2]) if len(parts) >= 2 else version
 
-    docker_service.build_image(
+    outcome = docker_service.build_image(
         cfg.docker_image_name,
         cfg.dockerfile,
         Path("."),
         no_cache=no_cache,
+        stream=stream,
         python_version=python_version,
     )
 
-    print("Build complete.")
+    if stream:
+        if outcome == BuildOutcome.FULL_CACHE_HIT:
+            print("Image up to date.")
+    else:
+        print("Build complete.")

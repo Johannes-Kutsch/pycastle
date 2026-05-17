@@ -439,12 +439,17 @@ def test_run_cmd_seeds_pool_with_primary_only_when_secondary_absent(
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
 
     captured: dict = {}
+    fake_svc = MagicMock()
+    fake_svc.build_image.return_value = None
 
     async def _fake_run(env, repo_root, **kwargs):
         captured["env"] = env
         captured["registry"] = kwargs.get("service_registry")
 
-    with patch("pycastle.orchestrator.run", _fake_run):
+    with (
+        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.orchestrator.run", _fake_run),
+    ):
         result = CliRunner().invoke(cli, ["run"])
 
     assert result.exit_code == 0, result.output
@@ -466,12 +471,17 @@ def test_run_cmd_seeds_pool_with_secondary_first_when_present(tmp_path, monkeypa
     monkeypatch.setenv("GH_TOKEN", "gh")
 
     captured: dict = {}
+    fake_svc = MagicMock()
+    fake_svc.build_image.return_value = None
 
     async def _fake_run(env, repo_root, **kwargs):
         captured["env"] = env
         captured["registry"] = kwargs.get("service_registry")
 
-    with patch("pycastle.orchestrator.run", _fake_run):
+    with (
+        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.orchestrator.run", _fake_run),
+    ):
         result = CliRunner().invoke(cli, ["run"])
 
     assert result.exit_code == 0, result.output
@@ -505,6 +515,8 @@ def _run_cmd_capturing_improve_mode(
     tmp_path, monkeypatch, cli_args: list[str], cfg: Config
 ):
     """Helper: invoke run_cmd and return the improve_mode passed to orchestrator.run."""
+    import dataclasses
+
     from pycastle.main import main as cli
 
     monkeypatch.chdir(tmp_path)
@@ -513,13 +525,19 @@ def _run_cmd_capturing_improve_mode(
     monkeypatch.setenv("GH_TOKEN", "gh")
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
 
+    if not cfg.docker_image_name:
+        cfg = dataclasses.replace(cfg, docker_image_name="img")
+
     captured: dict = {}
+    fake_svc = MagicMock()
+    fake_svc.build_image.return_value = None
 
     async def _fake_run(env, repo_root, **kwargs):
         captured["improve_mode"] = kwargs.get("improve_mode")
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.build_command.DockerService", return_value=fake_svc),
         patch("pycastle.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"] + cli_args)
@@ -562,3 +580,235 @@ def test_run_cmd_improve_mode_bare_flag_defaults_to_until_sleep(tmp_path, monkey
         tmp_path, monkeypatch, ["--improve"], Config()
     )
     assert mode == "until_sleep"
+
+
+# ── Issue 759: pycastle run triggers build before orchestrator ────────────────
+
+
+def _run_cmd_with_build_outcome(tmp_path, monkeypatch, outcome):
+    """Invoke run_cmd with a fake build_image returning outcome; return CliRunner result."""
+
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(docker_image_name="myimage")
+    fake_svc = MagicMock()
+    fake_svc.build_image.return_value = outcome
+
+    async def _fake_run(*args, **kwargs):
+        pass
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.orchestrator.run", _fake_run),
+    ):
+        return CliRunner().invoke(cli, ["run"])
+
+
+def test_run_cmd_triggers_docker_build_before_orchestrator(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(docker_image_name="myimage")
+    call_order: list[str] = []
+
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: call_order.append("build")
+
+    async def _fake_run(*args, **kwargs):
+        call_order.append("orchestrator")
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.orchestrator.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    assert "build" in call_order
+    assert "orchestrator" in call_order
+    assert call_order.index("build") < call_order.index("orchestrator")
+
+
+def test_run_cmd_prints_image_up_to_date_on_full_cache_hit(tmp_path, monkeypatch):
+    from pycastle.services.docker_service import BuildOutcome
+
+    result = _run_cmd_with_build_outcome(
+        tmp_path, monkeypatch, BuildOutcome.FULL_CACHE_HIT
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Image up to date" in result.output
+
+
+def test_run_cmd_no_build_output_on_full_cache_hit(tmp_path, monkeypatch):
+    from pycastle.services.docker_service import BuildOutcome
+
+    result = _run_cmd_with_build_outcome(
+        tmp_path, monkeypatch, BuildOutcome.FULL_CACHE_HIT
+    )
+
+    assert "Build complete" not in result.output
+
+
+def test_run_cmd_exits_one_when_build_fails(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(docker_image_name="myimage")
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = DockerBuildError("build failed: exit 1")
+
+    orchestrator_called = []
+
+    async def _fake_run(*args, **kwargs):
+        orchestrator_called.append(True)
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.orchestrator.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "build failed" in result.output
+    assert not orchestrator_called
+
+
+def test_run_cmd_exits_one_when_docker_image_name_is_empty(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(docker_image_name="")
+
+    with patch("pycastle.main.load_config", return_value=cfg):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "docker_image_name" in result.output
+    assert "pycastle init" in result.output
+
+
+def test_run_cmd_does_not_invoke_docker_when_image_name_empty(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(docker_image_name="")
+    fake_svc = MagicMock()
+    orchestrator_called = []
+
+    async def _fake_run(*args, **kwargs):
+        orchestrator_called.append(True)
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.orchestrator.run", _fake_run),
+    ):
+        CliRunner().invoke(cli, ["run"])
+
+    fake_svc.build_image.assert_not_called()
+    assert not orchestrator_called
+
+
+def test_run_cmd_passes_python_version_from_file_to_build(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+    (tmp_path / ".python-version").write_text("3.12.1\n")
+
+    cfg = Config(docker_image_name="myimage")
+    fake_svc = MagicMock()
+    fake_svc.build_image.return_value = None
+
+    async def _fake_run(*args, **kwargs):
+        pass
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.orchestrator.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    call_kwargs = fake_svc.build_image.call_args
+    assert call_kwargs.kwargs.get("python_version") == "3.12"
+
+
+def test_run_cmd_build_uses_streaming_mode(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(docker_image_name="myimage")
+    fake_svc = MagicMock()
+    fake_svc.build_image.return_value = None
+
+    async def _fake_run(*args, **kwargs):
+        pass
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.orchestrator.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    call_kwargs = fake_svc.build_image.call_args
+    assert call_kwargs.kwargs.get("stream") is True
+
+
+def test_run_cmd_rejects_no_cache_flag(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(cli, ["run", "--no-cache"])
+
+    assert result.exit_code != 0
+
+
+def test_run_cmd_rejects_no_build_flag(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(cli, ["run", "--no-build"])
+
+    assert result.exit_code != 0
