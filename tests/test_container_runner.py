@@ -3,8 +3,10 @@
 import asyncio
 import json
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
+from unittest.mock import patch
 
 import pytest
 
@@ -119,6 +121,37 @@ def test_container_runner_does_not_expose_exec_simple_or_write_file(tmp_path):
     runner, _ = _make_runner(tmp_path=tmp_path)
     assert not hasattr(runner, "exec_simple")
     assert not hasattr(runner, "write_file")
+
+
+def test_log_filename_includes_utc_timestamp_suffix(tmp_path):
+    fixed_dt = datetime(2026, 5, 17, 14, 30, tzinfo=UTC)
+    with patch("pycastle.container_runner.datetime") as mock_dt:
+        mock_dt.now.return_value = fixed_dt
+        runner, _ = _make_runner(name="plan", tmp_path=tmp_path)
+    assert runner.log_path.name == "plan-20260517T1430.log"
+    assert runner.log_path.parent == tmp_path
+
+
+def test_two_runners_at_different_minutes_produce_distinct_log_files(tmp_path):
+    dt1 = datetime(2026, 5, 17, 14, 30, tzinfo=UTC)
+    dt2 = datetime(2026, 5, 17, 14, 31, tzinfo=UTC)
+    with patch("pycastle.container_runner.datetime") as mock_dt:
+        mock_dt.now.return_value = dt1
+        runner1, _ = _make_runner(name="merge", tmp_path=tmp_path)
+    with patch("pycastle.container_runner.datetime") as mock_dt:
+        mock_dt.now.return_value = dt2
+        runner2, _ = _make_runner(name="merge", tmp_path=tmp_path)
+    assert runner1.log_path != runner2.log_path
+
+
+def test_timestamp_is_fixed_at_construction_not_recomputed_per_write(tmp_path):
+    fixed_dt = datetime(2026, 5, 17, 9, 5, tzinfo=UTC)
+    with patch("pycastle.container_runner.datetime") as mock_dt:
+        mock_dt.now.return_value = fixed_dt
+        runner, _ = _make_runner(name="scan", tmp_path=tmp_path)
+    expected = "scan-20260517T0905.log"
+    assert runner.log_path.name == expected
+    assert runner.log_path.name == expected  # calling again returns same value
 
 
 # ── setup() ──────────────────────────────────────────────────────────────────
