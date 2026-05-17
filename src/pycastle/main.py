@@ -9,7 +9,7 @@ import click
 
 from .config import Config, load_config, load_env, resolve_global_dir
 from .config.loader import describe_config_layers
-from .errors import ClaudeCliNotFoundError, ConfigValidationError
+from .errors import ClaudeCliNotFoundError, ConfigValidationError, DockerServiceError
 from .status_display import PlainStatusDisplay
 
 _ENV_KEYS = (
@@ -147,7 +147,11 @@ def build_cmd(no_cache: bool) -> None:
 
     _print_layer_summary()
     cfg = _load_config_or_exit()
-    _build(no_cache, cfg=cfg)
+    try:
+        _build(no_cache, cfg=cfg)
+    except (ConfigValidationError, DockerServiceError) as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
 
 
 @main.command("run")

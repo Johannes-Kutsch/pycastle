@@ -3,7 +3,12 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from pycastle.config import Config
-from pycastle.errors import ClaudeCliNotFoundError, ConfigValidationError
+from pycastle.errors import (
+    ClaudeCliNotFoundError,
+    ConfigValidationError,
+    DockerBuildError,
+    DockerServiceError,
+)
 
 
 # ── Issue 203: cfg injection into _load_env ───────────────────────────────────
@@ -160,6 +165,71 @@ def test_build_cmd_uses_config_docker_image_name(tmp_path, monkeypatch):
             CliRunner().invoke(cli, ["build"])
 
     assert fake_svc.build_image.call_args[0][0] == "custom-img"
+
+
+# ── Issue 757: CLI shim translates build_command outcomes to exit codes ──────
+
+
+def test_build_cmd_exits_zero_on_success(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(docker_image_name="img")
+    fake_svc = MagicMock()
+    fake_svc.build_image.return_value = None
+
+    with patch("pycastle.main.load_config", return_value=cfg):
+        with patch("pycastle.build_command.DockerService", return_value=fake_svc):
+            result = CliRunner().invoke(cli, ["build"])
+
+    assert result.exit_code == 0
+    assert "Build complete" in result.output
+
+
+def test_build_cmd_exits_one_on_docker_service_error(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(docker_image_name="img")
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = DockerServiceError("docker not found")
+
+    with patch("pycastle.main.load_config", return_value=cfg):
+        with patch("pycastle.build_command.DockerService", return_value=fake_svc):
+            result = CliRunner().invoke(cli, ["build"])
+
+    assert result.exit_code == 1
+    assert "docker not found" in result.output
+
+
+def test_build_cmd_exits_one_on_docker_build_error(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(docker_image_name="img")
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = DockerBuildError("build failed")
+
+    with patch("pycastle.main.load_config", return_value=cfg):
+        with patch("pycastle.build_command.DockerService", return_value=fake_svc):
+            result = CliRunner().invoke(cli, ["build"])
+
+    assert result.exit_code == 1
+    assert "build failed" in result.output
+
+
+def test_build_cmd_exits_one_when_docker_image_name_is_empty(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(docker_image_name="")
+
+    with patch("pycastle.main.load_config", return_value=cfg):
+        result = CliRunner().invoke(cli, ["build"])
+
+    assert result.exit_code == 1
+    assert "docker_image_name" in result.output
+    assert "pycastle init" in result.output
 
 
 # ── Issue 329: --version flag ─────────────────────────────────────────────────
