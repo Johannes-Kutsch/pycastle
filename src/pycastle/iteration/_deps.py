@@ -4,10 +4,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..agent_output_protocol import AgentOutput, AgentSuccessOutput, FailedOutput
-from ..agent_runner import AgentRunnerProtocol, RunRequest
+from ..agent_output_protocol import AgentOutput, AgentSuccessOutput
+from ..agent_runner import AgentRunnerProtocol, RunRequest, translate_run_outcome
 from ..config import Config
-from ..errors import AgentFailedError, AgentTimeoutError
 from ..services import GitService
 from ..services import GithubService
 from ..status_display import StatusDisplay
@@ -87,21 +86,7 @@ class FakeAgentRunner:
         self.preflight_calls: list[dict] = []
 
     async def run(self, request: RunRequest) -> AgentSuccessOutput:
-        try:
-            output = await self._run(request)
-            if isinstance(output, FailedOutput):
-                raise AgentFailedError(
-                    role_value=request.role.value,
-                    worktree_path=request.mount_path,
-                    namespace=request.session_namespace,
-                    failure_class=output.failure_class,
-                )
-            return output
-        except AgentTimeoutError as err:
-            if not err.role_value:
-                err.role_value = request.role.value
-                err.worktree_path = request.mount_path
-            raise
+        return await translate_run_outcome(self._run(request), request)
 
     async def _run(self, request: RunRequest) -> AgentOutput:
         self.calls.append(request)
