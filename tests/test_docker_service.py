@@ -24,16 +24,12 @@ def test_docker_build_error_is_docker_service_error():
 def _ok_result():
     r = MagicMock()
     r.returncode = 0
-    r.stdout = ""
-    r.stderr = ""
     return r
 
 
-def _fail_result(returncode: int = 1, stderr: str = "build failed"):
+def _fail_result(returncode: int = 1):
     r = MagicMock()
     r.returncode = returncode
-    r.stdout = ""
-    r.stderr = stderr
     return r
 
 
