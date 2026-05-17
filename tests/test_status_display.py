@@ -1509,7 +1509,8 @@ def test_rich_agent_with_issue_number_prefix_renders_in_palette_color() -> None:
     # N=9 → 9%9=0 → palette[0] deep purple
     ansi = _truecolor_print_output("Implement Agent #9", "hello")
 
-    bracket_idx = ansi.find("[Implement Agent #9]")
+    # Prefix is split into multiple styled spans; search for the literal opening segment.
+    bracket_idx = ansi.find("[Implement Agent ")
     assert bracket_idx >= 0, "bracketed prefix not found in output"
     # palette[0] is deeply-saturated purple: rgb(149, 97, 226)
     assert "149;97;226" in ansi[:bracket_idx], "palette color not found before prefix"
@@ -1528,7 +1529,8 @@ def test_rich_agent_name_column_in_table_renders_in_palette_color() -> None:
     ansi = buf.getvalue()
     d.stop()
 
-    name_idx = ansi.find("Implement Agent #")
+    # Table splits on #N; "Implement Agent " is the literal text of the first span.
+    name_idx = ansi.find("Implement Agent ")
     assert name_idx >= 0
     before_name = ansi[:name_idx]
     assert "149;97;226" in before_name, "palette color not found before name in table"
@@ -1539,13 +1541,14 @@ def test_rich_same_issue_number_gives_same_prefix_color() -> None:
     impl_ansi = _truecolor_print_output("Implement Agent #715", "hello")
     review_ansi = _truecolor_print_output("Review Agent #715", "hello")
 
-    def color_before_bracket(ansi: str, bracket_text: str) -> str:
-        idx = ansi.find(bracket_text)
+    def color_before_bracket(ansi: str, bracket_literal: str) -> str:
+        # Prefix is split into spans; search for the literal text that opens the prefix.
+        idx = ansi.find(bracket_literal)
         assert idx >= 0
         return ansi[:idx]
 
-    impl_before = color_before_bracket(impl_ansi, "[Implement Agent #715]")
-    review_before = color_before_bracket(review_ansi, "[Review Agent #715]")
+    impl_before = color_before_bracket(impl_ansi, "[Implement Agent ")
+    review_before = color_before_bracket(review_ansi, "[Review Agent ")
     # Both must contain the same RGB triple (palette[715 % 9])
     rgb_pattern = re.compile(r"(\d+;\d+;\d+)")
     impl_rgb = rgb_pattern.search(impl_before)
@@ -1555,18 +1558,29 @@ def test_rich_same_issue_number_gives_same_prefix_color() -> None:
 
 
 def _prefix_ansi_style(caller: str, message: str) -> str:
-    """Capture the raw ANSI escape sequence applied to the [caller] prefix."""
+    """Capture the ANSI escape sequence applied to the opening '[' of the [caller] prefix.
+
+    For #N callers the prefix is rendered in multiple spans; we match the style
+    applied to the very first character ('[') which carries the palette color.
+    """
     ansi = _truecolor_print_output(caller, message)
-    m = re.search(rf"(\x1b\[[\d;]*m)\[{re.escape(caller)}\]", ansi)
-    assert m, f"could not find styled prefix for {caller!r} in {ansi!r}"
+    # Find the opening '[' of the prefix.  For '#N' callers the literal text
+    # after '[' is everything up to '#'; for plain callers it is the full name.
+    opening = f"[{caller.split('#')[0]}" if "#" in caller else f"[{caller}]"
+    idx = ansi.find(opening)
+    assert idx >= 0, f"could not find prefix opening {opening!r} in {ansi!r}"
+    m = re.search(r"(\x1b\[[\d;]*m)$", ansi[:idx])
+    assert m, f"no ANSI code immediately before prefix in {ansi!r}"
     return m.group(1)
 
 
 def _prefix_rgb(caller: str) -> tuple[int, int, int]:
     """Parse the truecolor RGB used for the [caller] prefix from rendered output."""
     ansi = _truecolor_print_output(caller, "hello")
-    idx = ansi.find(f"[{caller}]")
-    assert idx >= 0
+    # For #N callers the prefix literal '[name ' is the first styled span.
+    opening = f"[{caller.split('#')[0]}" if "#" in caller else f"[{caller}]"
+    idx = ansi.find(opening)
+    assert idx >= 0, f"could not find prefix opening in {ansi!r}"
     m = re.search(r"38;2;(\d+);(\d+);(\d+)", ansi[:idx])
     assert m, f"no truecolor RGB found before prefix in {ansi!r}"
     return int(m.group(1)), int(m.group(2)), int(m.group(3))
@@ -1625,20 +1639,27 @@ def test_rich_agent_without_issue_number_prefix_has_no_palette_color() -> None:
 
 
 def test_rich_agent_with_issue_number_shutdown_style_still_applies() -> None:
-    """success/error style on body is not suppressed by agent palette coloring."""
+    """success style on body is applied even when prefix has agent palette color."""
     buf, console = _make_ansi_console()
     d = RichStatusDisplay(console=console)
     d.remove("Implement Agent #9", shutdown_message="done", shutdown_style="success")
     ansi = buf.getvalue()
 
-    bracket_idx = ansi.find("[Implement Agent #9]")
-    assert bracket_idx >= 0
-    # Green (32) must appear before the bracket (stylize applies to whole text)
-    assert _has_code(ansi[:bracket_idx], 32), "success green not applied to prefix"
+    # Prefix is split into spans; find the literal opening segment.
+    prefix_start = ansi.find("[Implement Agent ")
+    assert prefix_start >= 0, "prefix literal not found in output"
+    bracket_close = ansi.find("]", prefix_start)
+    assert bracket_close >= 0
+    # Green (32) must NOT appear before the closing bracket — prefix retains palette color.
+    assert not _has_code(ansi[:bracket_close], 32), (
+        "success green must not apply to prefix for #N callers"
+    )
+    # Green (32) must appear after the closing bracket — body is styled green.
+    assert _has_code(ansi[bracket_close:], 32), "success green must apply to body"
 
 
 def test_rich_agent_table_digit_segments_retain_cyan_alongside_palette_color() -> None:
-    """Digit segments in table name column are still cyan even with palette color active."""
+    """#N segment in table name column is rendered in bold cyan alongside palette color."""
     d = RichStatusDisplay()
     d.register("Implement Agent #9", "agent")
 
@@ -1648,11 +1669,107 @@ def test_rich_agent_table_digit_segments_retain_cyan_alongside_palette_color() -
     ansi = buf.getvalue()
     d.stop()
 
-    name_idx = ansi.find("Implement Agent #")
+    # Table splits on #N; search from "Implement Agent " (the first span literal).
+    name_idx = ansi.find("Implement Agent ")
     assert name_idx >= 0
     after_name_start = ansi[name_idx:]
-    # cyan (36) should appear in the segment containing the digits
-    assert _has_code(after_name_start, 36), "cyan not present in digit segment"
+    # cyan (36) should appear in the #N span that follows "Implement Agent "
+    assert _has_code(after_name_start, 36), "cyan not present in #N segment"
+
+
+def test_rich_print_hash_digit_segment_in_numbered_caller_prefix_is_cyan() -> None:
+    """The '#N' segment (# and digits) in the printed [Caller] prefix is bold cyan."""
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.register("Implement Agent #5", "agent")
+    buf.seek(0)
+    buf.truncate(0)
+    d.print("Implement Agent #5", "hello")
+    d.stop()
+    ansi = buf.getvalue()
+
+    # Find '#5' in the raw ANSI output.
+    hash_idx = ansi.find("#5")
+    assert hash_idx >= 0, "#5 literal not found in output"
+    # Cyan (36) must be active immediately before '#5'.
+    before_hash = ansi[:hash_idx]
+    assert _has_code(before_hash, 36), "cyan not present before '#5' in prefix"
+
+
+def test_rich_print_plain_caller_error_style_applies_to_whole_line() -> None:
+    """For callers without #N, error style still applies to the whole line."""
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.print("Plan Agent", "failed", style="error")
+    ansi = buf.getvalue()
+
+    caller_idx = ansi.find("[Plan Agent]")
+    assert caller_idx >= 0
+    # Red (31) must appear before [Plan Agent] — whole line is styled.
+    assert _has_code(ansi[:caller_idx], 31), (
+        "error red must apply to whole line for plain callers"
+    )
+
+
+def test_rich_print_success_style_on_numbered_caller_applies_only_to_body() -> None:
+    """For #N callers, success (green) applies to body only."""
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.register("Implement Agent #3", "agent")
+    buf.seek(0)
+    buf.truncate(0)
+    d.print("Implement Agent #3", "done", style="success")
+    d.stop()
+    ansi = buf.getvalue()
+
+    prefix_start = ansi.find("[Implement Agent ")
+    assert prefix_start >= 0
+    bracket_close = ansi.find("]", prefix_start)
+    assert bracket_close >= 0
+    assert not _has_code(ansi[:bracket_close], 32), (
+        "success green must not apply to prefix for #N callers"
+    )
+    assert _has_code(ansi[bracket_close:], 32), "success green must apply to body"
+
+
+def test_rich_print_warning_style_on_numbered_caller_applies_only_to_body() -> None:
+    """For #N callers, warning (yellow) applies to body only."""
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.register("Implement Agent #3", "agent")
+    buf.seek(0)
+    buf.truncate(0)
+    d.print("Implement Agent #3", "caution", style="warning")
+    d.stop()
+    ansi = buf.getvalue()
+
+    prefix_start = ansi.find("[Implement Agent ")
+    assert prefix_start >= 0
+    bracket_close = ansi.find("]", prefix_start)
+    assert bracket_close >= 0
+    assert not _has_code(ansi[:bracket_close], 33), (
+        "warning yellow must not apply to prefix for #N callers"
+    )
+    assert _has_code(ansi[bracket_close:], 33), "warning yellow must apply to body"
+
+
+def test_rich_table_hash_segment_in_name_column_is_cyan() -> None:
+    """'#N' (both '#' and digits) in the table name column is bold cyan."""
+    d = RichStatusDisplay()
+    d.register("Implement Agent #5", "agent")
+
+    buf = io.StringIO()
+    console = Console(file=buf, width=200, force_terminal=True, color_system="256")
+    console.print(d)
+    ansi = buf.getvalue()
+    d.stop()
+
+    hash_idx = ansi.find("#5")
+    assert hash_idx >= 0, "#5 literal not found in table output"
+    before_hash = ansi[:hash_idx]
+    assert _has_code(before_hash, 36), (
+        "cyan not active before '#5' in table name column"
+    )
 
 
 def test_plain_status_display_agent_with_issue_number_emits_no_ansi(capsys) -> None:
@@ -1664,3 +1781,32 @@ def test_plain_status_display_agent_with_issue_number_emits_no_ansi(capsys) -> N
     out = capsys.readouterr().out
 
     assert "\x1b[" not in out, "ANSI escape found in PlainStatusDisplay output"
+
+
+# ── Issue #747: prefix-preservation and #N cyan overlay ──────────────────────
+
+
+def test_rich_print_error_style_on_numbered_caller_applies_only_to_body() -> None:
+    """For #N callers, error style (red) applies to body only, not the prefix."""
+    buf, console = _make_ansi_console()
+    d = RichStatusDisplay(console=console)
+    d.register("Implement Agent #5", "agent")
+    buf.seek(0)
+    buf.truncate(0)
+    d.print("Implement Agent #5", "failed", style="error")
+    d.stop()
+    ansi = buf.getvalue()
+
+    # The prefix starts with the literal text "[Implement Agent ".
+    # Find it, then find the closing "]" that ends the prefix.
+    prefix_start = ansi.find("[Implement Agent ")
+    assert prefix_start >= 0, "prefix literal not found in ANSI output"
+    bracket_close = ansi.find("]", prefix_start)
+    assert bracket_close >= 0, "closing bracket not found in ANSI output"
+
+    # Red (31) must NOT appear before the closing bracket (prefix retains palette color).
+    assert not _has_code(ansi[:bracket_close], 31), (
+        "error red should not apply to prefix for #N callers"
+    )
+    # Red (31) must appear after the closing bracket (body is styled red).
+    assert _has_code(ansi[bracket_close:], 31), "error red must apply to body"
