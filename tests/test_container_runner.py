@@ -145,13 +145,13 @@ def test_two_runners_at_different_minutes_produce_distinct_log_files(tmp_path):
 
 
 def test_timestamp_is_fixed_at_construction_not_recomputed_per_write(tmp_path):
-    fixed_dt = datetime(2026, 5, 17, 9, 5, tzinfo=UTC)
+    construct_dt = datetime(2026, 5, 17, 9, 5, tzinfo=UTC)
+    later_dt = datetime(2026, 5, 17, 9, 10, tzinfo=UTC)
     with patch("pycastle.container_runner.datetime") as mock_dt:
-        mock_dt.now.return_value = fixed_dt
+        mock_dt.now.return_value = construct_dt
         runner, _ = _make_runner(name="scan", tmp_path=tmp_path)
-    expected = "scan-20260517T0905.log"
-    assert runner.log_path.name == expected
-    assert runner.log_path.name == expected  # calling again returns same value
+        mock_dt.now.return_value = later_dt
+        assert runner.log_path.name == "scan-20260517T0905.log"
 
 
 # ── setup() ──────────────────────────────────────────────────────────────────
