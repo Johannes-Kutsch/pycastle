@@ -1,4 +1,3 @@
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -299,7 +298,7 @@ async def improve_phase(
                 step = driver.next()
 
             no_candidate = driver.last_id in {"01-scan:no-candidate", "04-report"}
-            shutil.rmtree(role_session_dir, ignore_errors=True)
+            role_session.discard()
 
         row.close("finished")
     return ImproveNoCandidate() if no_candidate else ImproveContinue()
