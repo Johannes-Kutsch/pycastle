@@ -40,8 +40,7 @@ def main(
         python_version=python_version,
     )
 
-    if stream:
-        if outcome == BuildOutcome.FULL_CACHE_HIT:
-            print("Image up to date.")
-    else:
+    if not stream:
         print("Build complete.")
+    elif outcome == BuildOutcome.FULL_CACHE_HIT:
+        print("Image up to date.")

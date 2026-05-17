@@ -12,7 +12,6 @@ from .config.loader import describe_config_layers
 from .errors import (
     ClaudeCliNotFoundError,
     ConfigValidationError,
-    DockerBuildError,
     DockerServiceError,
 )
 from .status_display import PlainStatusDisplay
@@ -196,7 +195,7 @@ def run_cmd(improve_mode: str | None) -> None:
 
     try:
         _build(stream=True, cfg=cfg)
-    except (ConfigValidationError, DockerServiceError, DockerBuildError) as exc:
+    except (ConfigValidationError, DockerServiceError) as exc:
         click.echo(str(exc), err=True)
         sys.exit(1)
     accounts: list[tuple[str, str]] = []
