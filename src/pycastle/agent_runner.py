@@ -44,6 +44,26 @@ class RunRequest:
     session_namespace: str = ""
 
 
+async def translate_run_outcome(
+    inner: Coroutine[Any, Any, AgentOutput], request: RunRequest
+) -> AgentSuccessOutput:
+    try:
+        output = await inner
+        if isinstance(output, FailedOutput):
+            raise AgentFailedError(
+                role_value=request.role.value,
+                worktree_path=request.mount_path,
+                namespace=request.session_namespace,
+                failure_class=output.failure_class,
+            )
+        return output
+    except AgentTimeoutError as err:
+        if not err.role_value:
+            err.role_value = request.role.value
+            err.worktree_path = request.mount_path
+        raise
+
+
 class AgentRunnerProtocol(Protocol):
     async def run(self, request: RunRequest) -> AgentSuccessOutput: ...
 
@@ -111,21 +131,7 @@ class AgentRunner:
         return await self._renderer.render(template, scope_args, container_exec)
 
     async def run(self, request: RunRequest) -> AgentSuccessOutput:
-        try:
-            output = await self._run(request)
-            if isinstance(output, FailedOutput):
-                raise AgentFailedError(
-                    role_value=request.role.value,
-                    worktree_path=request.mount_path,
-                    namespace=request.session_namespace,
-                    failure_class=output.failure_class,
-                )
-            return output
-        except AgentTimeoutError as err:
-            if not err.role_value:
-                err.role_value = request.role.value
-                err.worktree_path = request.mount_path
-            raise
+        return await translate_run_outcome(self._run(request), request)
 
     async def _run(self, request: RunRequest) -> AgentOutput:
         from .iteration._rows import agent_row
