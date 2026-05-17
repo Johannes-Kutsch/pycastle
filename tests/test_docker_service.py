@@ -24,17 +24,28 @@ def test_docker_build_error_is_docker_service_error():
 def _ok_result():
     r = MagicMock()
     r.returncode = 0
-    r.stdout = ""
-    r.stderr = ""
     return r
 
 
-def _fail_result(returncode: int = 1, stderr: str = "build failed"):
+def _fail_result(returncode: int = 1):
     r = MagicMock()
     r.returncode = returncode
-    r.stdout = ""
-    r.stderr = stderr
     return r
+
+
+# ── build_image: output streaming ────────────────────────────────────────────
+
+
+def test_build_image_streams_output_to_terminal(tmp_path):
+    """build_image must not capture docker output — stdout/stderr must inherit the terminal."""
+    with patch(
+        "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
+    ) as mock_run:
+        DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
+    _, kwargs = mock_run.call_args
+    assert not kwargs.get("capture_output", False)
+    assert kwargs.get("stdout") is None
+    assert kwargs.get("stderr") is None
 
 
 # ── build_image: success path ─────────────────────────────────────────────────
@@ -150,14 +161,14 @@ def test_build_image_raises_docker_build_error_on_nonzero_exit(tmp_path):
             DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
 
 
-def test_build_image_error_includes_stderr(tmp_path):
+def test_build_image_error_includes_exit_code(tmp_path):
     with patch(
         "pycastle.services.docker_service.subprocess.run",
-        return_value=_fail_result(stderr="no space left"),
+        return_value=_fail_result(returncode=2),
     ):
         with pytest.raises(DockerBuildError) as exc_info:
             DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
-    assert "no space left" in str(exc_info.value)
+    assert "2" in str(exc_info.value)
 
 
 def test_build_image_raises_docker_service_error_when_docker_not_found(tmp_path):
