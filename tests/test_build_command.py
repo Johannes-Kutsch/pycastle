@@ -113,44 +113,33 @@ def test_main_no_python_version_when_file_absent(tmp_path, monkeypatch):
     assert "--build-arg" not in cmd
 
 
-# ── exit codes ────────────────────────────────────────────────────────────────
+# ── success / failure outcomes ────────────────────────────────────────────────
 
 
-def test_main_exits_zero_on_success(tmp_path, monkeypatch):
+def test_main_returns_normally_on_success(tmp_path, monkeypatch):
     from pycastle.build_command import main
 
     monkeypatch.chdir(tmp_path)
     svc = _make_docker_service()
-    result = main(docker_service=svc, cfg=_cfg)
-    assert result is None
+    main(docker_service=svc, cfg=_cfg)
 
 
-def test_main_exits_one_on_docker_service_error(tmp_path, monkeypatch):
+def test_main_propagates_docker_service_error(tmp_path, monkeypatch):
     from pycastle.build_command import main
 
     monkeypatch.chdir(tmp_path)
     svc = _make_docker_service(side_effect=DockerServiceError("docker not found"))
-    with pytest.raises(DockerServiceError):
+    with pytest.raises(DockerServiceError, match="docker not found"):
         main(docker_service=svc, cfg=_cfg)
 
 
-def test_main_exits_one_on_docker_build_error(tmp_path, monkeypatch):
+def test_main_propagates_docker_build_error(tmp_path, monkeypatch):
     from pycastle.build_command import main
 
     monkeypatch.chdir(tmp_path)
     svc = _make_docker_service(side_effect=DockerBuildError("build failed"))
-    with pytest.raises(DockerBuildError):
+    with pytest.raises(DockerBuildError, match="build failed"):
         main(docker_service=svc, cfg=_cfg)
-
-
-def test_main_prints_error_message_to_stderr(tmp_path, monkeypatch):
-    from pycastle.build_command import main
-
-    monkeypatch.chdir(tmp_path)
-    svc = _make_docker_service(side_effect=DockerServiceError("docker not found"))
-    with pytest.raises(DockerServiceError) as exc_info:
-        main(docker_service=svc, cfg=_cfg)
-    assert "docker not found" in str(exc_info.value)
 
 
 # ── default DockerService is created when none provided ──────────────────────
@@ -206,7 +195,7 @@ def test_build_command_uses_dockerfile_from_cfg(tmp_path, monkeypatch):
 # ── Issue 222: empty docker_image_name guard ──────────────────────────────────
 
 
-def test_build_command_exits_one_when_docker_image_name_is_empty(tmp_path, monkeypatch):
+def test_build_command_raises_when_docker_image_name_is_empty(tmp_path, monkeypatch):
     from pycastle.build_command import main
 
     monkeypatch.chdir(tmp_path)
