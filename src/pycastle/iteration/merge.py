@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
@@ -221,9 +220,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 deps.git_svc.fast_forward_branch(
                     deps.repo_root, target_branch, MERGE_SANDBOX
                 )
-                shutil.rmtree(
-                    RoleSession(sandbox_path, AgentRole.MERGER).path, ignore_errors=True
-                )
+                RoleSession(sandbox_path, AgentRole.MERGER).discard()
             conflict_deleted = await _delete_merged_branches(
                 [branch_for(i["number"]) for i in conflict_issues],
                 deps,
