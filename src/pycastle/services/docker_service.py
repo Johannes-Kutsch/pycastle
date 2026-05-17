@@ -4,6 +4,7 @@ import enum
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from ..errors import DockerBuildError, DockerServiceError
@@ -50,6 +51,7 @@ class DockerService:
         python_version: str | None = None,
         timeout: float | None = None,
         stream: bool = False,
+        on_rebuild_start: Callable[[], None] | None = None,
     ) -> BuildOutcome | None:
         if not image_name:
             raise ValueError("image_name must not be empty")
@@ -62,7 +64,7 @@ class DockerService:
         cmd.append(str(context_dir))
 
         if stream:
-            return self._build_streaming(cmd, timeout)
+            return self._build_streaming(cmd, timeout, on_rebuild_start)
 
         try:
             result = subprocess.run(cmd, timeout=timeout)
@@ -78,7 +80,12 @@ class DockerService:
 
         return None
 
-    def _build_streaming(self, cmd: list[str], timeout: float | None) -> BuildOutcome:
+    def _build_streaming(
+        self,
+        cmd: list[str],
+        timeout: float | None,
+        on_rebuild_start: Callable[[], None] | None = None,
+    ) -> BuildOutcome:
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -93,10 +100,25 @@ class DockerService:
 
         assert proc.stdout is not None
         lines: list[str] = []
+        rebuild_signaled = False
+        pending_classic_step = False
         for line in proc.stdout:
             sys.stdout.write(line)
             sys.stdout.flush()
             lines.append(line)
+
+            if not rebuild_signaled and on_rebuild_start is not None:
+                stripped = line.strip()
+                if re.match(r"^#\d+\s+DONE\s+", stripped):
+                    on_rebuild_start()
+                    rebuild_signaled = True
+                elif re.match(r"^Step \d+/\d+ :", stripped):
+                    pending_classic_step = True
+                elif pending_classic_step:
+                    if "---> Using cache" not in stripped and stripped:
+                        on_rebuild_start()
+                        rebuild_signaled = True
+                    pending_classic_step = False
 
         try:
             returncode = proc.wait(timeout=timeout)

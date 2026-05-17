@@ -812,3 +812,57 @@ def test_run_cmd_rejects_no_build_flag(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli, ["run", "--no-build"])
 
     assert result.exit_code != 0
+
+
+# ── Issue 760: rebuild status display ────────────────────────────────────────
+
+
+def _run_cmd_simulating_rebuild(tmp_path, monkeypatch):
+    """Invoke run_cmd with a DockerService that signals a rebuild via on_rebuild_start."""
+    from pycastle.main import main as cli
+    from pycastle.services.docker_service import BuildOutcome
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(docker_image_name="myimage")
+    fake_svc = MagicMock()
+
+    def _build_with_rebuild(*args, **kwargs):
+        cb = kwargs.get("on_rebuild_start")
+        if cb:
+            cb()
+        return BuildOutcome.REBUILT
+
+    fake_svc.build_image.side_effect = _build_with_rebuild
+
+    async def _fake_run(*args, **kwargs):
+        pass
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.orchestrator.run", _fake_run),
+    ):
+        return CliRunner().invoke(cli, ["run"])
+
+
+def test_run_cmd_prints_rebuilding_message_on_cache_miss(tmp_path, monkeypatch):
+    result = _run_cmd_simulating_rebuild(tmp_path, monkeypatch)
+
+    assert result.exit_code == 0, result.output
+    assert "Rebuilding image" in result.output
+
+
+def test_run_cmd_no_rebuilding_message_on_full_cache_hit(tmp_path, monkeypatch):
+    from pycastle.services.docker_service import BuildOutcome
+
+    result = _run_cmd_with_build_outcome(
+        tmp_path, monkeypatch, BuildOutcome.FULL_CACHE_HIT
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Rebuilding image" not in result.output

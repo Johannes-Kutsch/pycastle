@@ -9,6 +9,28 @@ from pycastle.errors import ConfigValidationError, DockerBuildError, DockerServi
 
 _cfg = Config(docker_image_name="test-image")
 
+_BUILDKIT_WITH_REBUILD = [
+    "#1 [1/2] FROM python:3.12\n",
+    "#1 CACHED\n",
+    "#2 [2/2] COPY . .\n",
+    "#2 DONE 2.5s\n",
+]
+
+_BUILDKIT_ALL_CACHED = [
+    "#1 [1/2] FROM python:3.12\n",
+    "#1 CACHED\n",
+    "#2 [2/2] RUN pip install requests\n",
+    "#2 CACHED\n",
+]
+
+
+def _mock_popen(output_lines: list[str], returncode: int = 0) -> MagicMock:
+    mock_proc = MagicMock()
+    mock_proc.stdout = iter(output_lines)
+    mock_proc.wait.return_value = returncode
+    mock_proc.returncode = returncode
+    return mock_proc
+
 
 def _make_docker_service(side_effect=None):
     svc = MagicMock()
@@ -278,3 +300,108 @@ def test_main_success_message_not_on_stderr(tmp_path, monkeypatch, capsys):
     main(docker_service=svc, cfg=_cfg)
     err = capsys.readouterr().err
     assert "Build complete" not in err
+
+
+# ── Issue 760: on_rebuild_start callback ─────────────────────────────────────
+
+
+def test_on_rebuild_start_fires_on_buildkit_cache_miss(tmp_path, monkeypatch):
+    """on_rebuild_start is called once when streaming detects a rebuilt BuildKit step."""
+    from pycastle.build_command import main
+
+    monkeypatch.chdir(tmp_path)
+    fired: list[bool] = []
+
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(_BUILDKIT_WITH_REBUILD),
+    ):
+        main(
+            stream=True,
+            on_rebuild_start=lambda: fired.append(True),
+            cfg=_cfg,
+        )
+
+    assert len(fired) == 1
+
+
+_CLASSIC_ALL_CACHED = [
+    "Step 1/2 : FROM python:3.12\n",
+    " ---> Using cache\n",
+    " ---> abc123\n",
+    "Step 2/2 : RUN pip install requests\n",
+    " ---> Using cache\n",
+    " ---> def456\n",
+    "Successfully built def456\n",
+]
+
+_CLASSIC_WITH_REBUILD = [
+    "Step 1/2 : FROM python:3.12\n",
+    " ---> Using cache\n",
+    " ---> abc123\n",
+    "Step 2/2 : COPY . .\n",
+    " ---> Running in 789abc\n",
+    "Successfully built 789abc\n",
+]
+
+
+def test_on_rebuild_start_fires_on_classic_cache_miss(tmp_path, monkeypatch):
+    """on_rebuild_start fires when classic builder detects a non-cached step."""
+    from pycastle.build_command import main
+
+    monkeypatch.chdir(tmp_path)
+    fired: list[bool] = []
+
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(_CLASSIC_WITH_REBUILD),
+    ):
+        main(
+            stream=True,
+            on_rebuild_start=lambda: fired.append(True),
+            cfg=_cfg,
+        )
+
+    assert len(fired) == 1
+
+
+def test_on_rebuild_start_does_not_fire_on_classic_full_cache_hit(
+    tmp_path, monkeypatch
+):
+    """on_rebuild_start is NOT called when classic builder shows all steps cached."""
+    from pycastle.build_command import main
+
+    monkeypatch.chdir(tmp_path)
+    fired: list[bool] = []
+
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(_CLASSIC_ALL_CACHED),
+    ):
+        main(
+            stream=True,
+            on_rebuild_start=lambda: fired.append(True),
+            cfg=_cfg,
+        )
+
+    assert fired == []
+
+
+def test_on_rebuild_start_does_not_fire_on_full_cache_hit(tmp_path, monkeypatch):
+    """on_rebuild_start is NOT called when all steps are cached (BuildKit full cache hit)."""
+    from pycastle.build_command import main
+
+    monkeypatch.chdir(tmp_path)
+    fired: list[bool] = []
+
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(_BUILDKIT_ALL_CACHED),
+    ):
+        main(
+            stream=True,
+            on_rebuild_start=lambda: fired.append(True),
+            cfg=_cfg,
+        )
+
+    assert fired == []
