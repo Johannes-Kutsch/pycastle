@@ -23,6 +23,25 @@ _BUILDKIT_ALL_CACHED = [
     "#2 CACHED\n",
 ]
 
+_CLASSIC_ALL_CACHED = [
+    "Step 1/2 : FROM python:3.12\n",
+    " ---> Using cache\n",
+    " ---> abc123\n",
+    "Step 2/2 : RUN pip install requests\n",
+    " ---> Using cache\n",
+    " ---> def456\n",
+    "Successfully built def456\n",
+]
+
+_CLASSIC_WITH_REBUILD = [
+    "Step 1/2 : FROM python:3.12\n",
+    " ---> Using cache\n",
+    " ---> abc123\n",
+    "Step 2/2 : COPY . .\n",
+    " ---> Running in 789abc\n",
+    "Successfully built 789abc\n",
+]
+
 
 def _mock_popen(output_lines: list[str], returncode: int = 0) -> MagicMock:
     mock_proc = MagicMock()
@@ -323,26 +342,6 @@ def test_on_rebuild_start_fires_on_buildkit_cache_miss(tmp_path, monkeypatch):
         )
 
     assert len(fired) == 1
-
-
-_CLASSIC_ALL_CACHED = [
-    "Step 1/2 : FROM python:3.12\n",
-    " ---> Using cache\n",
-    " ---> abc123\n",
-    "Step 2/2 : RUN pip install requests\n",
-    " ---> Using cache\n",
-    " ---> def456\n",
-    "Successfully built def456\n",
-]
-
-_CLASSIC_WITH_REBUILD = [
-    "Step 1/2 : FROM python:3.12\n",
-    " ---> Using cache\n",
-    " ---> abc123\n",
-    "Step 2/2 : COPY . .\n",
-    " ---> Running in 789abc\n",
-    "Successfully built 789abc\n",
-]
 
 
 def test_on_rebuild_start_fires_on_classic_cache_miss(tmp_path, monkeypatch):
