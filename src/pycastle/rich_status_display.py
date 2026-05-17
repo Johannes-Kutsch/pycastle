@@ -133,10 +133,10 @@ class RichStatusDisplay:
         for row in rows:
             name_text = Text()
             base_style = _agent_name_style(row.name)
-            for segment in re.split(r"(\d+)", row.name):
+            for segment in re.split(r"(#\d+)", row.name):
                 if segment:
-                    if segment.isdigit():
-                        name_text.append(segment, style=f"{base_style} cyan")
+                    if re.fullmatch(r"#\d+", segment):
+                        name_text.append(segment, style=f"{base_style} bold cyan")
                     else:
                         name_text.append(segment, style=base_style)
 
@@ -235,6 +235,13 @@ class RichStatusDisplay:
         message: object,
         style: str | None = None,
     ) -> None:
+        style_map = {
+            "error": "red",
+            "success": "green",
+            "warning": "yellow",
+            "interrupted": "cyan",
+        }
+        rich_style = style_map.get(style or "")
         lines = str(message).split("\n")
         with self._lock:
             prepend_blank = self._blank_before(caller)
@@ -242,21 +249,34 @@ class RichStatusDisplay:
             self._last_kind = self._kinds.get(caller)
         if prepend_blank:
             self._console.print()
+        has_issue_number = bool(re.search(r"#\d+", caller)) if caller else False
         for line in lines:
+            text = Text()
             if caller:
-                text = Text()
-                text.append(f"[{caller}]", style=_agent_name_style(caller))
+                base_style = _agent_name_style(caller)
+                if has_issue_number:
+                    # Split prefix on #N so that segment gets bold cyan overlay.
+                    prefix = f"[{caller}]"
+                    for seg in re.split(r"(#\d+)", prefix):
+                        if not seg:
+                            continue
+                        if re.fullmatch(r"#\d+", seg):
+                            text.append(seg, style=f"{base_style} bold cyan")
+                        else:
+                            text.append(seg, style=base_style)
+                else:
+                    text.append(f"[{caller}]", style=base_style)
+                body_start = len(text)
                 text.append(f" {line}")
             else:
-                text = Text(line)
-            if style == "error":
-                text.stylize("red")
-            elif style == "success":
-                text.stylize("green")
-            elif style == "warning":
-                text.stylize("yellow")
-            elif style == "interrupted":
-                text.stylize("cyan")
+                body_start = 0
+                text.append(line)
+            if rich_style:
+                if has_issue_number and caller:
+                    # Style only the body span, preserving the palette-colored prefix.
+                    text.stylize(rich_style, start=body_start)
+                else:
+                    text.stylize(rich_style)
             self._console.print(text)
 
     def stop(self) -> None:
