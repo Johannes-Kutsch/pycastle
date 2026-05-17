@@ -5,6 +5,7 @@ import re
 import shlex
 import threading
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .agent_output_protocol import AgentOutput, AgentRole, process_stream_from_events
@@ -38,7 +39,8 @@ class ContainerRunner:
             status_display if status_display is not None else PlainStatusDisplay()
         )
         slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-        self._log_path = self._cfg.logs_dir / f"{slug}.log"
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M")
+        self._log_path = self._cfg.logs_dir / f"{slug}-{ts}.log"
 
     @property
     def log_path(self) -> Path:
