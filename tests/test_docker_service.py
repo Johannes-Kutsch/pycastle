@@ -323,7 +323,7 @@ def test_streaming_classic_mixed_returns_rebuilt(tmp_path):
     assert result == BuildOutcome.REBUILT
 
 
-def test_streaming_default_path_returns_none(tmp_path):
+def test_default_non_streaming_path_returns_none(tmp_path):
     with patch(
         "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ):
