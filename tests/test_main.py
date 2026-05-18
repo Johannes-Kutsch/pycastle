@@ -876,3 +876,127 @@ def test_run_cmd_no_rebuilding_message_on_full_cache_hit(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "Rebuilding image" not in result.output
+
+
+# ── Issue 787: fail-fast service+effort validation ────────────────────────────
+
+
+def test_run_cmd_exits_nonzero_on_unknown_service_before_docker_build(
+    tmp_path, monkeypatch
+):
+    from pycastle.config.types import StageOverride
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=StageOverride(service="codez"),
+    )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "codez" in result.output
+    assert "plan" in result.output
+    assert not build_called
+
+
+def test_run_cmd_exits_nonzero_on_invalid_effort_for_codex_stage(tmp_path, monkeypatch):
+    from pycastle.config.types import StageOverride
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(
+        docker_image_name="img",
+        implement_override=StageOverride(service="codex", effort="max"),
+    )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "implement" in result.output
+    assert "max" in result.output
+    assert "codex" in result.output
+    assert not build_called
+
+
+def test_run_cmd_reports_all_violations_in_single_message(tmp_path, monkeypatch):
+    from pycastle.config.types import StageOverride
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=StageOverride(service="codez"),
+        implement_override=StageOverride(service="codex", effort="max"),
+    )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "codez" in result.output
+    assert "max" in result.output
+    assert not build_called
+
+
+def test_run_cmd_valid_config_passes_validation_silently(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(docker_image_name="img")
+    fake_svc = MagicMock()
+    fake_svc.build_image.return_value = None
+
+    async def _fake_run(*args, **kwargs):
+        pass
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    assert "Config validation" not in result.output

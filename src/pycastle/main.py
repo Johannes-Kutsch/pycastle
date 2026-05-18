@@ -16,6 +16,8 @@ from .errors import (
 )
 from .display.status_display import PlainStatusDisplay
 
+_KNOWN_SERVICES: frozenset[str] = frozenset({"claude", "codex"})
+
 _ENV_KEYS = (
     "CLAUDE_CODE_OAUTH_TOKEN",
     "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY",
@@ -195,14 +197,6 @@ def run_cmd(improve_mode: str | None) -> None:
         )
         sys.exit(1)
 
-    def _on_rebuild_start() -> None:
-        click.echo("Rebuilding image…")
-
-    try:
-        _build(stream=True, cfg=cfg, on_rebuild_start=_on_rebuild_start)
-    except (ConfigValidationError, DockerServiceError) as exc:
-        click.echo(str(exc), err=True)
-        sys.exit(1)
     accounts: list[tuple[str, str]] = []
     secondary = env.get("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY")
     if secondary:
@@ -232,6 +226,50 @@ def run_cmd(improve_mode: str | None) -> None:
         service_registry["claude"] = ClaudeService(accounts=accounts)
     if "codex" in referenced:
         service_registry["codex"] = CodexService()
+
+    _stage_overrides = [
+        ("plan", cfg.plan_override),
+        ("implement", cfg.implement_override),
+        ("review", cfg.review_override),
+        ("merge", cfg.merge_override),
+        ("preflight_issue", cfg.preflight_issue_override),
+        ("improve", cfg.improve_override),
+    ]
+    violations: list[str] = []
+    for stage_name, override in _stage_overrides:
+        node: StageOverride | None = override
+        while node is not None:
+            svc_name = node.service or cfg.default_service
+            if svc_name not in service_registry:
+                violations.append(
+                    f"  stage={stage_name!r}: service={svc_name!r} is not a known service"
+                    f" (known: {sorted(_KNOWN_SERVICES)})"
+                )
+            elif (
+                node.effort
+                and node.effort not in service_registry[svc_name].valid_efforts()
+            ):
+                valid = sorted(service_registry[svc_name].valid_efforts())
+                violations.append(
+                    f"  stage={stage_name!r}: effort={node.effort!r} is invalid"
+                    f" for service={svc_name!r} (valid: {valid})"
+                )
+            node = node.fallback
+    if violations:
+        click.echo(
+            "Config validation errors:\n" + "\n".join(violations),
+            err=True,
+        )
+        sys.exit(1)
+
+    def _on_rebuild_start() -> None:
+        click.echo("Rebuilding image…")
+
+    try:
+        _build(stream=True, cfg=cfg, on_rebuild_start=_on_rebuild_start)
+    except (ConfigValidationError, DockerServiceError) as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
     # Strip the secondary token from container env; ClaudeService picks the
     # active token from its internal pool per session.
     container_env = {
