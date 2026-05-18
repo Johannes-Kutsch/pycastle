@@ -10,7 +10,7 @@ from pycastle.agents.output_protocol import (
     PlanParseError,
     PromiseParseError,
 )
-from pycastle.reprompt_loop import run_with_reprompt
+from pycastle.iteration.reprompt_loop import run_with_reprompt
 
 
 def _sequence(*items):

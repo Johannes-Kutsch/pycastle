@@ -6,9 +6,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .agents.runner import AgentRunner, AgentRunnerProtocol, RunRequest
-from .config import Config, load_config
-from .iteration import (
+from ..agents.runner import AgentRunner, AgentRunnerProtocol, RunRequest
+from ..config import Config, load_config
+from . import (
     AbortedAgentFailure,
     AbortedHITL,
     AbortedTimeout,
@@ -18,20 +18,20 @@ from .iteration import (
     NoCandidate,
     run_iteration,
 )
-from .iteration._deps import Deps as IterationDeps
-from .iteration.dispatcher import ImproveMode
-from .iteration.preflight import PreflightCache
-from .rich_status_display import RichStatusDisplay
-from .services import (
+from ._deps import Deps as IterationDeps
+from .dispatcher import ImproveMode
+from .preflight import PreflightCache
+from ..rich_status_display import RichStatusDisplay
+from ..services import (
     GitCommandError,
     GithubAuthError,
     GithubService,
     GitService,
 )
-from .services.agent_service import AgentService
-from .session_resume import SESSION_DIR_NAME
-from .status_display import StatusDisplay
-from .worktree import remove_worktrees_dir_if_empty
+from ..services.agent_service import AgentService
+from ..session_resume import SESSION_DIR_NAME
+from ..status_display import StatusDisplay
+from ..worktree import remove_worktrees_dir_if_empty
 
 
 class FileLogger:

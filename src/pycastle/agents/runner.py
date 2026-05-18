@@ -16,7 +16,6 @@ from ..container_runner import ContainerRunner
 from ..docker_session import DockerSession, build_volume_spec
 from ..errors import AgentFailedError, AgentTimeoutError, UsageLimitError
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
-from ..reprompt_loop import REPROMPT_MESSAGE, run_with_reprompt
 from ..session_resume import RoleSession, RunKind
 from ..services import GitService
 from ..services.agent_service import AgentService
@@ -216,6 +215,11 @@ class AgentRunner:
                                 run_kind=RunKind.RESUME,
                                 session_uuid=session_uuid,
                             )
+
+                        from ..iteration.reprompt_loop import (
+                            REPROMPT_MESSAGE,
+                            run_with_reprompt,
+                        )
 
                         return await run_with_reprompt(
                             _work_factory, reprompt_message=REPROMPT_MESSAGE
