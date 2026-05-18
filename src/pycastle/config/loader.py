@@ -103,6 +103,25 @@ class Config:
     default_service: str = "claude"
 
 
+def referenced_services(cfg: Config) -> set[str]:
+    """Return the set of service names the resolved config references."""
+    names: set[str] = {cfg.default_service}
+    for override in (
+        cfg.plan_override,
+        cfg.implement_override,
+        cfg.review_override,
+        cfg.merge_override,
+        cfg.preflight_issue_override,
+        cfg.improve_override,
+    ):
+        node: StageOverride | None = override
+        while node is not None:
+            if node.service:
+                names.add(node.service)
+            node = node.fallback
+    return names
+
+
 def resolve_global_dir(explicit: Path | None, env: Mapping[str, str]) -> Path:
     if explicit is not None:
         return explicit
