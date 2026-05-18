@@ -147,17 +147,20 @@ class CodexService:
         session_uuid: str | None = None,
     ) -> str:
         if run_kind == RunKind.RESUME and session_uuid:
-            base = f"codex exec resume {session_uuid}"
+            parts = [f"codex exec resume {session_uuid}"]
         else:
-            base = "codex exec"
-
-        flags = "-c approval_policy=never --sandbox danger-full-access --json"
+            parts = ["codex exec"]
         if model:
-            flags = f"-m {model} {flags}"
+            parts.append(f"-m {model}")
         if effort:
-            flags = f"{flags} -c model_reasoning_effort={effort}"
-
-        return f"{base} {flags} < /tmp/.pycastle_prompt"
+            parts.append(f"-c model_reasoning_effort={effort}")
+        parts += [
+            "-c approval_policy=never",
+            "--sandbox danger-full-access",
+            "--json",
+            "< /tmp/.pycastle_prompt",
+        ]
+        return " ".join(parts)
 
     def build_env(
         self,
