@@ -31,7 +31,7 @@ from ..services import (
 from ..services.agent_service import AgentService
 from ..session_resume import SESSION_DIR_NAME
 from ..status_display import StatusDisplay
-from ..worktree import remove_worktrees_dir_if_empty
+from ..infrastructure.worktree import remove_worktrees_dir_if_empty
 
 
 class FileLogger:

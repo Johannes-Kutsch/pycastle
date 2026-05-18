@@ -8,13 +8,13 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .agents.output_protocol import AgentOutput, AgentRole, process_stream_from_events
-from .config import Config
+from ..agents.output_protocol import AgentOutput, AgentRole, process_stream_from_events
+from ..config import Config
 from .docker_session import DockerSession
-from .errors import AgentTimeoutError, DockerError
-from .services.agent_service import AgentService
-from .session_resume import RunKind
-from .status_display import PlainStatusDisplay
+from ..errors import AgentTimeoutError, DockerError
+from ..services.agent_service import AgentService
+from ..session_resume import RunKind
+from ..status_display import PlainStatusDisplay
 
 
 class ContainerRunner:

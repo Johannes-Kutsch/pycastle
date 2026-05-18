@@ -116,7 +116,7 @@ class PreflightCache:
         self._lock: asyncio.Lock = asyncio.Lock()
 
     async def get_safe_sha(self, deps: _PreflightDeps) -> PreflightResult:
-        from ..worktree import transient_worktree
+        from ..infrastructure.worktree import transient_worktree
 
         async with self._lock:
             await _wait_for_clean_working_tree(deps, "Preflight")

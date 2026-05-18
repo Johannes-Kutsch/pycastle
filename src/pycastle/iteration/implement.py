@@ -21,7 +21,7 @@ from ..agents.classifier import WellFormed, classify_slice
 from ..session_resume import RoleSession, is_stage_done_for
 from ..status_display import StatusDisplay
 from ..services import GitService, GithubService
-from ..worktree import (
+from ..infrastructure.worktree import (
     managed_worktree,
     patch_gitdir_for_container,
     worktree_name_for_branch,

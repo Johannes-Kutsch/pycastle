@@ -6,9 +6,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.config import Config
-from pycastle.docker_session import DockerSession, build_volume_spec
+from pycastle.infrastructure.docker_session import DockerSession, build_volume_spec
 from pycastle.errors import DockerError, DockerTimeoutError
-from pycastle.worktree import CONTAINER_PARENT_GIT
+from pycastle.infrastructure.worktree import CONTAINER_PARENT_GIT
 
 
 # ── Plain repo case ───────────────────────────────────────────────────────────
@@ -265,7 +265,8 @@ def test_git_file_without_worktree_path_cleans_up_overlay(tmp_path):
     fake_overlay.touch()
 
     with patch(
-        "pycastle.docker_session.patch_gitdir_for_container", return_value=fake_overlay
+        "pycastle.infrastructure.docker_session.patch_gitdir_for_container",
+        return_value=fake_overlay,
     ):
         build_volume_spec(tmp_path)
 
@@ -298,7 +299,8 @@ def test_git_file_with_missing_parent_git_cleans_up_overlay(tmp_path):
     fake_overlay.touch()
 
     with patch(
-        "pycastle.docker_session.patch_gitdir_for_container", return_value=fake_overlay
+        "pycastle.infrastructure.docker_session.patch_gitdir_for_container",
+        return_value=fake_overlay,
     ):
         build_volume_spec(tmp_path)
 
@@ -569,7 +571,7 @@ def test_docker_session_write_file_splits_container_path_as_posix_on_windows_hos
     )
     session.__enter__()
 
-    with patch("pycastle.docker_session.Path", PureWindowsPath):
+    with patch("pycastle.infrastructure.docker_session.Path", PureWindowsPath):
         session.write_file("token", "/home/agent/.claude.json")
 
     mock_container = mock_client.containers.run.return_value
