@@ -6,13 +6,13 @@ Phase 1 found no candidate that survives the AFK-safety filter. Convert the most
 
 ## Safety net
 
-You must NOT modify any files in the worktree. Your only outputs are GitHub issues via `gh` and the `<promise>` tag.
+You must NOT modify any files in the worktree. Your only outputs are GitHub issues and the `<promise>` tag.
 
 ## Dedup check
 
-Before filing, run:
-`gh issue list --search "[improve-{{IMPROVE_SHORT_SID}}] in:title" --state all --json number,title,labels`
-Skip any PRDs already filed for this session. If every candidate already has a PRD, emit `<promise>COMPLETE</promise>` immediately.
+Before filing, search for existing PRDs for this session with `[improve-{{IMPROVE_SHORT_SID}}] in:title` and skip any already filed. If every candidate already has a PRD, emit `<promise>COMPLETE</promise>` immediately.
+
+{{ISSUE_TRACKER}}
 
 ## Process
 
@@ -34,7 +34,7 @@ PRDs are **peer-level** — no parent/child relationships, no sub-issue registra
 
 - Title prefix: `[improve-{{IMPROVE_SHORT_SID}}]`
 - Label: `{{READY_FOR_HUMAN_LABEL}}`
-- **Always write the body to a file and use `gh issue create --body-file`.** Before writing, run `mkdir -p .pycastle-session/improve/drafts` so the directory exists on a fresh worktree. Write the body to `.pycastle-session/improve/drafts/no-candidate.md`, then pass that path to `--body-file`.
+{{ISSUE_TRACKER}}
 
 ### Issue body template
 

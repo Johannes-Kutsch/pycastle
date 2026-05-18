@@ -76,14 +76,7 @@ Create a GitHub issue with:
 \`\`\`
 ```
 
-Use this command to create the issue:
-
-```
-gh issue create --title "{{CHECK_NAME}} preflight check failed" --body "$(cat <<'EOF'
-<your structured body here>
-EOF
-)"
-```
+{{ISSUE_TRACKER}}
 
 ### 4. Apply labels
 
@@ -97,9 +90,7 @@ If you applied `{{READY_FOR_AGENT_LABEL}}`, also apply exactly one slice-mode la
 **Never apply `{{DOCS_SLICE_LABEL}}`** to a preflight-filed issue.
 If you applied `{{READY_FOR_HUMAN_LABEL}}`, do **not** apply any slice-mode label.
 
-```
-gh issue edit <number> --add-label "{{BUG_LABEL}}" --add-label "<{{READY_FOR_AGENT_LABEL}} or {{READY_FOR_HUMAN_LABEL}}>" [--add-label "<{{BEHAVIOR_SLICE_LABEL}} or {{REFACTOR_SLICE_LABEL}}>"]
-```
+{{ISSUE_TRACKER}}
 
 ### 5. Output the issue number and labels
 

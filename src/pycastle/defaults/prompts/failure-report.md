@@ -27,6 +27,8 @@ Failure class: `{{FAILURE_CLASS}}`
    - A title that names the failed role and concisely describes the failure
    - A body that captures: which role failed, the last meaningful output or error, worktree state, and enough context to reproduce or understand the failure
 
+{{ISSUE_TRACKER}}
+
 4. Once the issue is filed, output its number:
 
 ```
