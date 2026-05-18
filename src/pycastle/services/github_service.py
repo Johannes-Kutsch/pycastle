@@ -172,7 +172,7 @@ class GithubService:
             )
         self._recently_closed.add(number)
 
-    def get_issue(self, issue_number: int) -> dict[str, str | int | list]:
+    def get_issue(self, issue_number: int) -> dict[str, Any]:
         path = f"/repos/{self.repo}/issues/{issue_number}"
         payload, _ = self._request("GET", path)
         if not isinstance(payload, dict) or "title" not in payload:
@@ -183,17 +183,11 @@ class GithubService:
                 method="GET",
                 path=path,
             )
-        raw_labels = payload.get("labels") or []
-        labels = [
-            str(lbl["name"])
-            for lbl in raw_labels
-            if isinstance(lbl, dict) and "name" in lbl
-        ]
         return {
             "number": issue_number,
             "title": str(payload.get("title") or ""),
             "body": str(payload.get("body") or ""),
-            "labels": labels,
+            "labels": self._extract_label_names(payload),
             "comments": self.get_issue_comments(issue_number),
         }
 
