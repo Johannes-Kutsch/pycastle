@@ -45,6 +45,10 @@ def test_init_service_selection_copies_matching_dockerfile(
 
     from pycastle.commands.init import main
 
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_bytes(b"{}")
+    monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.chdir(tmp_path)
     with (
         patch("click.prompt", side_effect=[service, "", ""]),
@@ -705,3 +709,245 @@ def test_init_refresh_cli_prints_layer_summary(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["init", "--refresh"])
     assert result.exit_code == 0, result.output
     assert "config:" in result.output.lower() or "layer" in result.output.lower()
+
+
+# ── Issue #788: codex credential verification and per-role auth.json seeding ──
+
+
+def test_init_codex_exits_with_message_when_auth_json_absent(
+    tmp_path, monkeypatch, capsys
+):
+    """init with codex selected prints actionable message and exits non-zero when ~/.codex/auth.json is absent."""
+    from pycastle.commands.init import main
+
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=["codex", "", ""]),
+        patch("click.confirm", return_value=False),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main(scope="local")
+
+    assert exc_info.value.code != 0
+    captured = capsys.readouterr()
+    assert "No codex credentials found at ~/.codex/auth.json" in captured.out
+    assert "codex login" in captured.out
+
+
+def test_init_codex_seeds_auth_json_for_all_roles_when_present(tmp_path, monkeypatch):
+    """init with codex seeds byte-identical auth.json into every role × namespace state dir."""
+    from pycastle.agents.output_protocol import AgentRole
+    from pycastle.commands.init import main
+    from pycastle.session.resume import SESSION_DIR_NAME
+
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".codex").mkdir(parents=True)
+    host_auth = fake_home / ".codex" / "auth.json"
+    host_auth.write_bytes(b'{"access_token": "test-token"}')
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=["codex", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    expected_bytes = host_auth.read_bytes()
+    for role in AgentRole:
+        namespaces = ["main", "issues"] if role == AgentRole.IMPROVE else [""]
+        for namespace in namespaces:
+            base = tmp_path / SESSION_DIR_NAME / role.value
+            role_state_dir = base / namespace if namespace else base
+            auth_file = role_state_dir / "codex" / "auth.json"
+            assert auth_file.exists(), f"Missing auth.json for {role.value}/{namespace}"
+            assert auth_file.read_bytes() == expected_bytes, (
+                f"auth.json content mismatch for {role.value}/{namespace}"
+            )
+
+
+def test_init_codex_seeds_only_auth_json_not_other_files(tmp_path, monkeypatch):
+    """init with codex copies only auth.json into role codex dirs, not config.toml or sessions/."""
+    from pycastle.agents.output_protocol import AgentRole
+    from pycastle.commands.init import main
+    from pycastle.session.resume import SESSION_DIR_NAME
+
+    fake_home = tmp_path / "fakehome"
+    codex_dir = fake_home / ".codex"
+    codex_dir.mkdir(parents=True)
+    (codex_dir / "auth.json").write_bytes(b'{"access_token": "tok"}')
+    (codex_dir / "config.toml").write_text('[model]\nname = "o3"\n')
+    (codex_dir / "sessions").mkdir()
+    (codex_dir / "sessions" / "rollout-abc.jsonl").write_text("{}\n")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=["codex", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    for role in AgentRole:
+        namespaces = ["main", "issues"] if role == AgentRole.IMPROVE else [""]
+        for namespace in namespaces:
+            base = tmp_path / SESSION_DIR_NAME / role.value
+            role_state_dir = base / namespace if namespace else base
+            codex_state = role_state_dir / "codex"
+            assert not (codex_state / "config.toml").exists(), (
+                f"config.toml should not be copied for {role.value}/{namespace}"
+            )
+            assert not (codex_state / "sessions").exists(), (
+                f"sessions/ should not be copied for {role.value}/{namespace}"
+            )
+
+
+def test_init_codex_rerun_does_not_overwrite_existing_role_auth_json(
+    tmp_path, monkeypatch
+):
+    """Re-running pycastle init leaves existing role codex/auth.json untouched (mtime and content unchanged)."""
+    from pycastle.agents.output_protocol import AgentRole
+    from pycastle.commands.init import main
+    from pycastle.session.resume import SESSION_DIR_NAME
+
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "first"}')
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=["codex", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    # Record mtimes after first init
+    impl_auth = (
+        tmp_path
+        / SESSION_DIR_NAME
+        / AgentRole.IMPLEMENTER.value
+        / "codex"
+        / "auth.json"
+    )
+    mtime_before = impl_auth.stat().st_mtime
+
+    # Update host auth.json and re-run
+    (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "second"}')
+    with (
+        patch("click.prompt", side_effect=["codex", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert impl_auth.stat().st_mtime == mtime_before
+    assert impl_auth.read_bytes() == b'{"access_token": "first"}'
+
+
+def test_init_both_rerun_seeds_codex_without_disturbing_existing_env(
+    tmp_path, monkeypatch
+):
+    """Re-running init with both after claude-only init seeds codex auth without touching existing .env."""
+    from pycastle.agents.output_protocol import AgentRole
+    from pycastle.commands.init import main
+    from pycastle.session.resume import SESSION_DIR_NAME
+
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "tok"}')
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    # First init: claude-only
+    with (
+        patch("click.prompt", side_effect=["claude", "my-gh-token", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    env_content = (tmp_path / "pycastle" / ".env").read_text()
+    assert "GH_TOKEN=my-gh-token" in env_content
+
+    # Second init: both — .env should stay unchanged, codex auth should be seeded
+    with (
+        patch("click.prompt", side_effect=["both", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert (tmp_path / "pycastle" / ".env").read_text() == env_content
+
+    impl_auth = (
+        tmp_path
+        / SESSION_DIR_NAME
+        / AgentRole.IMPLEMENTER.value
+        / "codex"
+        / "auth.json"
+    )
+    assert impl_auth.exists()
+    assert impl_auth.read_bytes() == b'{"access_token": "tok"}'
+
+
+def test_init_both_absent_codex_creds_exits_without_rolling_back_env(
+    tmp_path, monkeypatch, capsys
+):
+    """init with both selected and missing codex creds exits non-zero but keeps any .env written by the claude branch."""
+    from pycastle.commands.init import main
+
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    # No .codex/auth.json
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=["both", "my-gh-token", ""]),
+        patch("click.confirm", return_value=False),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main(scope="local")
+
+    assert exc_info.value.code != 0
+    captured = capsys.readouterr()
+    assert "codex login" in captured.out
+
+    env_file = tmp_path / "pycastle" / ".env"
+    assert env_file.exists()
+    assert "GH_TOKEN=my-gh-token" in env_file.read_text()
+
+
+def test_init_both_absent_codex_creds_on_rerun_keeps_existing_env(
+    tmp_path, monkeypatch, capsys
+):
+    """Re-running init with both when codex creds missing exits non-zero without rolling back a prior .env write."""
+    from pycastle.commands.init import main
+
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    # First run: claude-only succeeds, .env written
+    with (
+        patch("click.prompt", side_effect=["claude", "prior-token", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    env_file = tmp_path / "pycastle" / ".env"
+    assert "GH_TOKEN=prior-token" in env_file.read_text()
+
+    # Second run: both, but no codex creds
+    with (
+        patch("click.prompt", side_effect=["both", "", ""]),
+        patch("click.confirm", return_value=False),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main(scope="local")
+
+    assert exc_info.value.code != 0
+    assert "GH_TOKEN=prior-token" in env_file.read_text()
