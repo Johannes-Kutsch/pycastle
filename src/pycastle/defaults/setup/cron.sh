@@ -38,12 +38,13 @@ base = p if p.is_absolute() else (Path.cwd() / p).resolve()
 print(base / 'cron.log')
 " 2>/dev/null) || LOG_FILE=""
 
-if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
-    trimmed=$(tail -n 10000 "$LOG_FILE" 2>/dev/null) || trimmed=""
-    printf '%s\n' "$trimmed" > "$LOG_FILE"
-fi
-
-LOGS_BASE=$(dirname "$LOG_FILE")
-if [ -n "$LOG_FILE" ] && [ -d "$LOGS_BASE" ]; then
-    find "$LOGS_BASE" -maxdepth 1 -name "*.log" -mtime +"$LOG_RETENTION_DAYS" -delete
+if [ -n "$LOG_FILE" ]; then
+    if [ -f "$LOG_FILE" ]; then
+        trimmed=$(tail -n 10000 "$LOG_FILE" 2>/dev/null) || trimmed=""
+        printf '%s\n' "$trimmed" > "$LOG_FILE"
+    fi
+    LOGS_BASE=$(dirname "$LOG_FILE")
+    if [ -d "$LOGS_BASE" ]; then
+        find "$LOGS_BASE" -maxdepth 1 -name "*.log" -mtime +"$LOG_RETENTION_DAYS" -delete
+    fi
 fi
