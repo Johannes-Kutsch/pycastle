@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 from pycastle.config import Config
 from pycastle.services import GithubAPIError, GithubService, GitService
-from pycastle.labels import _resolve_repo, create_labels_interactive
+from pycastle.commands.labels import _resolve_repo, create_labels_interactive
 
 
 # ── Shared fixture ─────────────────────────────────────────────────────────────
@@ -17,7 +17,7 @@ def label_setup(monkeypatch):
 
     # "Target repo owner/repo?" → True; "Delete all existing labels first?" → False
     monkeypatch.setattr(
-        "pycastle.labels.click.confirm",
+        "pycastle.commands.labels.click.confirm",
         lambda msg, **kw: "Target repo" in msg,
     )
 
@@ -97,7 +97,9 @@ def test_create_labels_interactive_calls_check_auth(label_setup):
 def test_create_labels_interactive_returns_early_when_repo_not_resolved(monkeypatch):
     git_svc = MagicMock(spec=GitService)
     git_svc.get_github_remote_repo.return_value = None
-    monkeypatch.setattr("pycastle.labels.click.prompt", lambda *a, **kw: "invalid")
+    monkeypatch.setattr(
+        "pycastle.commands.labels.click.prompt", lambda *a, **kw: "invalid"
+    )
     github_svc = MagicMock(spec=GithubService)
     create_labels_interactive(
         "tok", git_service=git_svc, cfg=Config(), github_service=github_svc
@@ -109,7 +111,7 @@ def test_create_labels_interactive_skips_label_on_422(monkeypatch):
     git_svc = MagicMock(spec=GitService)
     git_svc.get_github_remote_repo.return_value = ("owner", "repo")
     monkeypatch.setattr(
-        "pycastle.labels.click.confirm",
+        "pycastle.commands.labels.click.confirm",
         lambda msg, **kw: "Target repo" in msg,
     )
     github_svc = MagicMock(spec=GithubService)
@@ -126,7 +128,9 @@ def test_create_labels_interactive_resets_existing_labels_when_confirmed(monkeyp
     git_svc = MagicMock(spec=GitService)
     git_svc.get_github_remote_repo.return_value = ("owner", "repo")
     # both confirm prompts → True
-    monkeypatch.setattr("pycastle.labels.click.confirm", lambda msg, **kw: True)
+    monkeypatch.setattr(
+        "pycastle.commands.labels.click.confirm", lambda msg, **kw: True
+    )
 
     github_svc = MagicMock(spec=GithubService)
     github_svc.list_labels.return_value = [{"name": "old"}, {"name": "ancient"}]
@@ -143,21 +147,25 @@ def test_create_labels_interactive_resets_existing_labels_when_confirmed(monkeyp
 def test_resolve_repo_uses_git_service_for_auto_detect(monkeypatch):
     git_svc = MagicMock(spec=GitService)
     git_svc.get_github_remote_repo.return_value = ("owner", "repo")
-    monkeypatch.setattr("pycastle.labels.click.confirm", lambda msg, **kw: True)
+    monkeypatch.setattr(
+        "pycastle.commands.labels.click.confirm", lambda msg, **kw: True
+    )
     assert _resolve_repo(git_service=git_svc, cfg=Config()) == ("owner", "repo")
 
 
 def test_resolve_repo_falls_back_to_slug_when_no_remote(monkeypatch):
     git_svc = MagicMock(spec=GitService)
     git_svc.get_github_remote_repo.return_value = None
-    monkeypatch.setattr("pycastle.labels.click.prompt", lambda *a, **kw: "x/y")
+    monkeypatch.setattr("pycastle.commands.labels.click.prompt", lambda *a, **kw: "x/y")
     assert _resolve_repo(git_service=git_svc, cfg=Config()) == ("x", "y")
 
 
 def test_resolve_repo_returns_none_for_invalid_slug(monkeypatch):
     git_svc = MagicMock(spec=GitService)
     git_svc.get_github_remote_repo.return_value = None
-    monkeypatch.setattr("pycastle.labels.click.prompt", lambda *a, **kw: "invalid")
+    monkeypatch.setattr(
+        "pycastle.commands.labels.click.prompt", lambda *a, **kw: "invalid"
+    )
     assert _resolve_repo(git_service=git_svc, cfg=Config()) is None
 
 
@@ -165,7 +173,7 @@ def test_resolve_repo_returns_none_for_invalid_slug(monkeypatch):
 
 
 def test_main_reads_gh_token_from_config_env_file(monkeypatch, tmp_path):
-    import pycastle.labels as labels_mod
+    import pycastle.commands.labels as labels_mod
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / "pycastle").mkdir()

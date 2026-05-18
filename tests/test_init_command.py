@@ -10,7 +10,7 @@ from click.testing import CliRunner
 
 def test_init_creates_all_scaffold_files(tmp_path, monkeypatch):
     """init must copy every template file into pycastle/ without error."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -41,7 +41,7 @@ def test_init_cron_sh_is_executable(tmp_path, monkeypatch):
     """cron.sh must be executable after init scaffolds it."""
     import stat
 
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -60,7 +60,7 @@ def test_init_cron_sh_is_executable(tmp_path, monkeypatch):
 
 def test_init_writes_commented_docker_image_name_hint_from_cwd(tmp_path, monkeypatch):
     """init must write a commented-out docker_image_name hint pre-filled from CWD."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     project_dir = tmp_path / "My Cool Project"
     project_dir.mkdir()
@@ -86,7 +86,7 @@ def test_init_writes_commented_docker_image_name_hint_from_cwd(tmp_path, monkeyp
 
 def test_init_config_contains_stage_override_import_and_defaults(tmp_path, monkeypatch):
     """Scaffolded config.py must import StageOverride and define all four stage overrides."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -113,7 +113,7 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
 ):
     """load_config on a freshly scaffolded project must return the expected StageOverride values."""
     from pycastle.config import StageOverride, load_config
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -137,7 +137,7 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
 
 def test_init_scaffolds_consolidated_standards_files(tmp_path, monkeypatch):
     """init must copy the consolidated standards files into pycastle/prompts/coding-standards/."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -153,7 +153,7 @@ def test_init_scaffolds_consolidated_standards_files(tmp_path, monkeypatch):
 
 def test_init_does_not_scaffold_coding_standards(tmp_path, monkeypatch):
     """init must not scaffold the deleted CODING_STANDARDS.md."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -170,7 +170,7 @@ def test_init_does_not_scaffold_coding_standards(tmp_path, monkeypatch):
 
 def test_init_does_not_overwrite_existing_non_config_file(tmp_path, monkeypatch):
     """init must not overwrite files other than config.py that already exist."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -196,7 +196,7 @@ def test_init_does_not_overwrite_existing_non_config_file(tmp_path, monkeypatch)
 
 def test_init_global_writes_config_and_env_to_pycastle_home(tmp_path, monkeypatch):
     """With --global, config.py and .env are written to PYCASTLE_HOME, not local."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     home = tmp_path / "home"
     home.mkdir()
@@ -216,7 +216,7 @@ def test_init_global_writes_config_and_env_to_pycastle_home(tmp_path, monkeypatc
 
 def test_init_global_keeps_project_shaped_files_local(tmp_path, monkeypatch):
     """With --global, Dockerfile/prompts/.gitignore stay in local pycastle dir."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     home = tmp_path / "home"
     home.mkdir()
@@ -236,7 +236,7 @@ def test_init_global_keeps_project_shaped_files_local(tmp_path, monkeypatch):
 
 def test_init_global_skip_existing_config_with_message(tmp_path, monkeypatch, capsys):
     """Existing global config.py is left untouched and a clear message is printed."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     home = tmp_path / "home"
     home.mkdir()
@@ -257,7 +257,7 @@ def test_init_global_skip_existing_config_with_message(tmp_path, monkeypatch, ca
 
 def test_init_global_skip_existing_env_with_message(tmp_path, monkeypatch, capsys):
     """Existing global .env is left untouched and a clear message is printed."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     home = tmp_path / "home"
     home.mkdir()
@@ -279,7 +279,7 @@ def test_init_global_skips_credential_prompts_when_present_in_global_env(
     tmp_path, monkeypatch
 ):
     """With --global and credentials already in global .env, no prompt is issued."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     home = tmp_path / "home"
     home.mkdir()
@@ -304,7 +304,7 @@ def test_init_global_prompts_when_credential_missing_in_global_env(
     tmp_path, monkeypatch
 ):
     """With --global, missing credentials trigger a prompt and write to global .env."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     home = tmp_path / "home"
     home.mkdir()
@@ -324,7 +324,7 @@ def test_init_global_prompts_when_credential_missing_in_global_env(
 
 def test_init_local_always_prompts_for_credentials(tmp_path, monkeypatch):
     """With --local, credential prompts run even if global .env already has them."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     home = tmp_path / "home"
     home.mkdir()
@@ -350,7 +350,7 @@ def test_init_local_always_prompts_for_credentials(tmp_path, monkeypatch):
 
 def test_init_no_flag_prompts_for_scope(tmp_path, monkeypatch):
     """Without scope arg, init asks the user; confirming yes scaffolds globally."""
-    from pycastle.init_command import main
+    from pycastle.commands.init import main
 
     home = tmp_path / "home"
     home.mkdir()
@@ -424,7 +424,7 @@ def test_init_cli_global_flag_skips_scope_prompt(tmp_path, monkeypatch):
 
 def test_init_refresh_overwrites_stale_prompt_file(tmp_path, monkeypatch):
     """`pycastle init --refresh` rewrites the bundled project-shaped files."""
-    from pycastle.init_command import main, refresh
+    from pycastle.commands.init import main, refresh
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -444,7 +444,7 @@ def test_init_refresh_overwrites_stale_prompt_file(tmp_path, monkeypatch):
 
 def test_init_refresh_copies_cron_sh(tmp_path, monkeypatch):
     """`pycastle init --refresh` copies cron.sh into the consuming project."""
-    from pycastle.init_command import main, refresh
+    from pycastle.commands.init import main, refresh
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -463,7 +463,7 @@ def test_init_refresh_copies_cron_sh(tmp_path, monkeypatch):
 
 def test_init_refresh_copies_cron_install_sh(tmp_path, monkeypatch):
     """`pycastle init --refresh` copies cron-install.sh into the consuming project."""
-    from pycastle.init_command import main, refresh
+    from pycastle.commands.init import main, refresh
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -482,7 +482,7 @@ def test_init_refresh_copies_cron_install_sh(tmp_path, monkeypatch):
 
 def test_init_refresh_copies_cron_uninstall_sh(tmp_path, monkeypatch):
     """`pycastle init --refresh` copies cron-uninstall.sh into the consuming project."""
-    from pycastle.init_command import main, refresh
+    from pycastle.commands.init import main, refresh
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -501,7 +501,7 @@ def test_init_refresh_copies_cron_uninstall_sh(tmp_path, monkeypatch):
 
 def test_init_refresh_leaves_local_config_unchanged(tmp_path, monkeypatch):
     """`pycastle init --refresh` does not touch local config.py."""
-    from pycastle.init_command import main, refresh
+    from pycastle.commands.init import main, refresh
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -520,7 +520,7 @@ def test_init_refresh_leaves_local_config_unchanged(tmp_path, monkeypatch):
 
 def test_init_refresh_leaves_local_env_unchanged(tmp_path, monkeypatch):
     """`pycastle init --refresh` does not touch local .env."""
-    from pycastle.init_command import main, refresh
+    from pycastle.commands.init import main, refresh
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -577,7 +577,7 @@ def test_init_refresh_does_not_invoke_credential_or_labels_prompts(
     tmp_path, monkeypatch
 ):
     """`pycastle init --refresh` skips the credential wizard and labels prompt."""
-    from pycastle.init_command import main, refresh
+    from pycastle.commands.init import main, refresh
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -605,7 +605,7 @@ def test_init_refresh_cli_prints_layer_summary(tmp_path, monkeypatch):
         patch("click.prompt", return_value=""),
         patch("click.confirm", return_value=False),
     ):
-        from pycastle.init_command import main
+        from pycastle.commands.init import main
 
         main(scope="local")
 

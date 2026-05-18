@@ -11,7 +11,7 @@ from typing import Literal
 
 import click
 
-from .config.loader import derive_docker_image_name, resolve_global_dir
+from ..config.loader import derive_docker_image_name, resolve_global_dir
 
 _SCOPED_FILES = {"config.py", ".env"}
 
