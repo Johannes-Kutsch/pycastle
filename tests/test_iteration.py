@@ -3049,7 +3049,7 @@ def test_run_iteration_aborted_timeout_preserves_worktree_when_session_populated
     """When AbortedTimeout is returned for the improve phase, the role session worktree
     is preserved because any_role_dir_present fires on the populated session dir."""
     from pycastle.agents.output_protocol import AgentRole
-    from pycastle.session_resume import RoleSession
+    from pycastle.session import RoleSession
 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = []

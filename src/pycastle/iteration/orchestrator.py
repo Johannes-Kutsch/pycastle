@@ -29,7 +29,7 @@ from ..services import (
     GitService,
 )
 from ..services.agent_service import AgentService
-from ..session_resume import SESSION_DIR_NAME
+from ..session import SESSION_DIR_NAME
 from ..status_display import StatusDisplay
 from ..infrastructure.worktree import remove_worktrees_dir_if_empty
 

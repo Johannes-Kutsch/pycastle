@@ -18,7 +18,7 @@ from ..errors import (
 )
 from ..prompts.pipeline import PromptTemplate, build_issue_scope_args, build_wip_clause
 from ..agents.classifier import WellFormed, classify_slice
-from ..session_resume import RoleSession, is_stage_done_for
+from ..session import RoleSession, is_stage_done_for
 from ..status_display import StatusDisplay
 from ..services import GitService, GithubService
 from ..infrastructure.worktree import (

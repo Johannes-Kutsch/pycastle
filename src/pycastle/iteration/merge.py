@@ -9,7 +9,7 @@ from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompts.pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
-from ..session_resume import RoleSession
+from ..session import RoleSession
 from ..status_display import StatusDisplay
 from ..infrastructure.worktree import (
     managed_worktree,
