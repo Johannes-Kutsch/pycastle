@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Protocol
 
 from ..services import GitService
-from ..status_display import StatusDisplay
+from ..display.status_display import StatusDisplay
 
 
 class _UtilDeps(Protocol):

@@ -20,7 +20,7 @@ from ..session import RoleSession, RunKind
 from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
-from ..status_display import PlainStatusDisplay
+from ..display.status_display import PlainStatusDisplay
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
 

@@ -9,7 +9,7 @@ from ..agents.runner import AgentRunnerProtocol, RunRequest, translate_run_outco
 from ..config import Config
 from ..services import GitService
 from ..services import GithubService
-from ..status_display import StatusDisplay
+from ..display.status_display import StatusDisplay
 from .dispatcher import ImproveMode
 from .preflight import PreflightCache, PreflightReady, PreflightResult
 
