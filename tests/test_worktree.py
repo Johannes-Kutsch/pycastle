@@ -11,7 +11,7 @@ from pycastle.config import Config
 from pycastle.errors import WorktreeError, WorktreeTimeoutError
 from pycastle.services import GitCommandError, GitService, GitTimeoutError
 from pycastle.errors import UsageLimitError
-from pycastle.worktree import (
+from pycastle.infrastructure.worktree import (
     transient_worktree,
     managed_worktree,
     patch_gitdir_for_container,
