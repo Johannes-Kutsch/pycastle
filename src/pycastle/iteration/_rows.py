@@ -2,7 +2,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from ..errors import AgentTimeoutError, UsageLimitError
-from ..status_display import StatusDisplay
+from ..display.status_display import StatusDisplay
 
 
 class PhaseRow:

@@ -4,8 +4,8 @@ import re
 from rich.console import Console
 
 from pycastle.iteration._deps import RecordingStatusDisplay
-from pycastle.status_display import PlainStatusDisplay, StatusDisplay
-from pycastle.rich_status_display import RichStatusDisplay
+from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
+from pycastle.display.rich_status_display import RichStatusDisplay
 
 
 # ── RichStatusDisplay behaviour ───────────────────────────────────────────────
@@ -174,7 +174,7 @@ def test_rich_elapsed_format_shows_seconds_under_one_minute() -> None:
 
 
 def test_rich_elapsed_format_shows_minutes_and_seconds(monkeypatch) -> None:
-    import pycastle.rich_status_display as mod
+    import pycastle.display.rich_status_display as mod
 
     times = iter([0.0, 312.0, 42.0])
     monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
@@ -205,7 +205,7 @@ def test_rich_phase_appears_in_output() -> None:
 
 
 def test_rich_agent_names_are_right_aligned_by_elapsed_column(monkeypatch) -> None:
-    import pycastle.rich_status_display as mod
+    import pycastle.display.rich_status_display as mod
 
     # #7 started at t=0, #42 started at t=270; render at t=312
     # elapsed #7 = 5m 12s, elapsed #42 = 42s — different widths.
@@ -229,7 +229,7 @@ def test_rich_agent_names_are_right_aligned_by_elapsed_column(monkeypatch) -> No
 
 
 def test_rich_elapsed_format_at_exactly_one_minute(monkeypatch) -> None:
-    import pycastle.rich_status_display as mod
+    import pycastle.display.rich_status_display as mod
 
     times = iter([0.0, 60.0, 60.0])
     monkeypatch.setattr(mod.time, "monotonic", lambda: next(times))
@@ -246,7 +246,7 @@ def test_rich_elapsed_format_at_exactly_one_minute(monkeypatch) -> None:
 
 
 def test_rich_reset_idle_timer_resets_idle_time(monkeypatch) -> None:
-    import pycastle.rich_status_display as mod
+    import pycastle.display.rich_status_display as mod
 
     # started_at=0, reset at t=100, render at t=150
     # idle = 150-100 = 50s  (not 150-0=150s)

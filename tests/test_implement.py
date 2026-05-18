@@ -20,7 +20,7 @@ from pycastle.iteration._deps import (
     RecordingStatusDisplay,
 )
 from pycastle.services import GithubService
-from pycastle.status_display import PlainStatusDisplay, StatusDisplay
+from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.errors import InvalidSliceLabelError
 from pycastle.iteration.implement import (
     ImplementResult,

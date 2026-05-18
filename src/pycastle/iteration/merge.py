@@ -10,7 +10,7 @@ from ..config import Config
 from ..prompts.pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..session import RoleSession
-from ..status_display import StatusDisplay
+from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import (
     managed_worktree,
     teardown_worktree,

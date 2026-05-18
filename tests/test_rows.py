@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from pycastle.iteration import agent_row, phase_row
-from pycastle.status_display import PlainStatusDisplay
+from pycastle.display.status_display import PlainStatusDisplay
 
 
 def test_phase_row_success_path_register_and_close(

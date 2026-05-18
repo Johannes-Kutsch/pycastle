@@ -21,7 +21,7 @@ from . import (
 from ._deps import Deps as IterationDeps
 from .dispatcher import ImproveMode
 from .preflight import PreflightCache
-from ..rich_status_display import RichStatusDisplay
+from ..display.rich_status_display import RichStatusDisplay
 from ..services import (
     GitCommandError,
     GithubAuthError,
@@ -30,7 +30,7 @@ from ..services import (
 )
 from ..services.agent_service import AgentService
 from ..session import SESSION_DIR_NAME
-from ..status_display import StatusDisplay
+from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import remove_worktrees_dir_if_empty
 
 

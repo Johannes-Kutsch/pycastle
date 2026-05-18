@@ -14,7 +14,7 @@ from .errors import (
     ConfigValidationError,
     DockerServiceError,
 )
-from .status_display import PlainStatusDisplay
+from .display.status_display import PlainStatusDisplay
 
 _ENV_KEYS = (
     "CLAUDE_CODE_OAUTH_TOKEN",
