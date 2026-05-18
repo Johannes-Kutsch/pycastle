@@ -15,7 +15,7 @@ from pycastle.errors import (
 )
 from pycastle.services import ClaudeService
 from pycastle.services.agent_service import AssistantTurn, Result, Tokens, UsageLimit
-from pycastle.session_resume import RunKind
+from pycastle.session import RunKind
 
 
 # ── Exception hierarchy ───────────────────────────────────────────────────────
