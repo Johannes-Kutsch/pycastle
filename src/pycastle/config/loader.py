@@ -100,6 +100,7 @@ class Config:
     improve_max: int | None = None
     improve_mode: Literal["until_sleep", "endless"] | None = None
     diagnose_on_failure: bool = True
+    default_service: str = "claude"
 
 
 def resolve_global_dir(explicit: Path | None, env: Mapping[str, str]) -> Path:
