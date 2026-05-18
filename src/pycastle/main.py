@@ -176,6 +176,7 @@ def run_cmd(improve_mode: str | None) -> None:
     from typing import cast
 
     from .commands.build import main as _build
+    from .config.types import StageOverride
     from .iteration.dispatcher import ImproveMode
     from .iteration.orchestrator import run
     from .services.agent_service import AgentService
@@ -206,8 +207,31 @@ def run_cmd(improve_mode: str | None) -> None:
     if secondary:
         accounts.append(("secondary", secondary))
     accounts.append(("primary", primary))
+
+    def _collect_service_names() -> set[str]:
+        names: set[str] = {cfg.default_service}
+        for override in (
+            cfg.plan_override,
+            cfg.implement_override,
+            cfg.review_override,
+            cfg.merge_override,
+            cfg.preflight_issue_override,
+            cfg.improve_override,
+        ):
+            node: StageOverride | None = override
+            while node is not None:
+                if node.service:
+                    names.add(node.service)
+                node = node.fallback
+        return names
+
+    _service_factories: dict[str, Any] = {
+        "claude": lambda: ClaudeService(accounts=accounts),
+    }
     service_registry: dict[str, AgentService] = {
-        "claude": ClaudeService(accounts=accounts)
+        name: _service_factories[name]()
+        for name in _collect_service_names()
+        if name in _service_factories
     }
     # Strip the secondary token from container env; ClaudeService picks the
     # active token from its internal pool per session.
