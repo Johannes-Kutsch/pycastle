@@ -592,6 +592,43 @@ def test_run_cmd_improve_mode_bare_flag_defaults_to_until_sleep(tmp_path, monkey
     assert mode == "until_sleep"
 
 
+# ── Issue 796: --no-improve flag ──────────────────────────────────────────────
+
+
+def test_run_cmd_no_improve_overrides_config(tmp_path, monkeypatch):
+    mode = _run_cmd_capturing_improve_mode(
+        tmp_path,
+        monkeypatch,
+        ["--no-improve"],
+        Config(improve_mode="until_sleep"),
+    )
+    assert mode is None
+
+
+def test_run_cmd_improve_and_no_improve_are_mutually_exclusive(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+
+    cfg = Config(docker_image_name="img")
+
+    async def _fake_run(*args, **kwargs):
+        pass
+
+    fake_svc = MagicMock()
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run", "--improve", "--no-improve"])
+
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.output
+
+
 # ── Issue 759: pycastle run triggers build before orchestrator ────────────────
 
 
