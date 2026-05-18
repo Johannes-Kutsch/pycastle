@@ -190,6 +190,12 @@ def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
     from .services.claude_service import ClaudeService
     from .services.codex_service import CodexService
 
+    if improve_mode is not None and no_improve:
+        click.echo(
+            "Error: --improve and --no-improve are mutually exclusive.", err=True
+        )
+        sys.exit(1)
+
     _print_layer_summary()
     cfg = _load_config_or_exit()
     env = _load_env(cfg=cfg)
@@ -244,17 +250,12 @@ def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
     container_env = {
         k: v for k, v in env.items() if k != "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY"
     }
-    if improve_mode is not None and no_improve:
-        click.echo(
-            "Error: --improve and --no-improve are mutually exclusive.", err=True
-        )
-        sys.exit(1)
     if no_improve:
         effective_improve_mode = None
+    elif improve_mode is not None:
+        effective_improve_mode = improve_mode
     else:
-        effective_improve_mode = (
-            improve_mode if improve_mode is not None else cfg.improve_mode
-        )
+        effective_improve_mode = cfg.improve_mode
     asyncio.run(
         run(
             container_env,
