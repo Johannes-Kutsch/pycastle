@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import dataclasses
 
 
@@ -5,3 +7,5 @@ import dataclasses
 class StageOverride:
     model: str = ""
     effort: str = ""
+    service: str = ""
+    fallback: StageOverride | None = None
