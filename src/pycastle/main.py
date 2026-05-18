@@ -172,7 +172,14 @@ def build_cmd(no_cache: bool) -> None:
         "'endless' keeps generating until Ctrl-C."
     ),
 )
-def run_cmd(improve_mode: str | None) -> None:
+@click.option(
+    "--no-improve",
+    "no_improve",
+    is_flag=True,
+    default=False,
+    help="Disable improve-agent dispatch for this run, overriding any improve_mode in config.",
+)
+def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
     from typing import cast
 
     from .commands.build import main as _build
@@ -237,9 +244,17 @@ def run_cmd(improve_mode: str | None) -> None:
     container_env = {
         k: v for k, v in env.items() if k != "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY"
     }
-    effective_improve_mode = (
-        improve_mode if improve_mode is not None else cfg.improve_mode
-    )
+    if improve_mode is not None and no_improve:
+        click.echo(
+            "Error: --improve and --no-improve are mutually exclusive.", err=True
+        )
+        sys.exit(1)
+    if no_improve:
+        effective_improve_mode = None
+    else:
+        effective_improve_mode = (
+            improve_mode if improve_mode is not None else cfg.improve_mode
+        )
     asyncio.run(
         run(
             container_env,
