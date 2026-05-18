@@ -29,59 +29,31 @@ def test_dockerfile_claude_codex_template_exists_with_node_and_codex():
     assert "@openai/codex" in content
 
 
-def test_init_claude_service_copies_claude_dockerfile(tmp_path, monkeypatch):
-    """Choosing 'claude' copies Dockerfile.claude content to pycastle/Dockerfile."""
+@pytest.mark.parametrize(
+    ("service", "expected_template"),
+    [
+        ("claude", "Dockerfile.claude"),
+        ("codex", "Dockerfile.claude-codex"),
+        ("both", "Dockerfile.claude-codex"),
+    ],
+)
+def test_init_service_selection_copies_matching_dockerfile(
+    tmp_path, monkeypatch, service, expected_template
+):
+    """Service answer determines which bundled Dockerfile is copied to pycastle/Dockerfile."""
     from importlib.resources import files
 
     from pycastle.commands.init import main
 
     monkeypatch.chdir(tmp_path)
     with (
-        patch("click.prompt", side_effect=["claude", "", ""]),
+        patch("click.prompt", side_effect=[service, "", ""]),
         patch("click.confirm", return_value=False),
     ):
         main(scope="local")
 
     pkg = files("pycastle").joinpath("defaults")
-    expected = (pkg / "Dockerfile.claude").read_bytes()
-    actual = (tmp_path / "pycastle" / "Dockerfile").read_bytes()
-    assert actual == expected
-
-
-def test_init_codex_service_copies_claude_codex_dockerfile(tmp_path, monkeypatch):
-    """Choosing 'codex' copies Dockerfile.claude-codex content to pycastle/Dockerfile."""
-    from importlib.resources import files
-
-    from pycastle.commands.init import main
-
-    monkeypatch.chdir(tmp_path)
-    with (
-        patch("click.prompt", side_effect=["codex", "", ""]),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    pkg = files("pycastle").joinpath("defaults")
-    expected = (pkg / "Dockerfile.claude-codex").read_bytes()
-    actual = (tmp_path / "pycastle" / "Dockerfile").read_bytes()
-    assert actual == expected
-
-
-def test_init_both_service_copies_claude_codex_dockerfile(tmp_path, monkeypatch):
-    """Choosing 'both' copies Dockerfile.claude-codex content to pycastle/Dockerfile."""
-    from importlib.resources import files
-
-    from pycastle.commands.init import main
-
-    monkeypatch.chdir(tmp_path)
-    with (
-        patch("click.prompt", side_effect=["both", "", ""]),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    pkg = files("pycastle").joinpath("defaults")
-    expected = (pkg / "Dockerfile.claude-codex").read_bytes()
+    expected = (pkg / expected_template).read_bytes()
     actual = (tmp_path / "pycastle" / "Dockerfile").read_bytes()
     assert actual == expected
 
