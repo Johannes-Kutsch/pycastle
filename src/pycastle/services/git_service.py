@@ -352,13 +352,12 @@ class GitService(_SubprocessService):
                 return
 
             stderr = self._decode(result.stderr)
-
-            if any(p in stderr.lower() for p in _PERMANENT_FAILURE_PATTERNS):
+            is_permanent = any(p in stderr.lower() for p in _PERMANENT_FAILURE_PATTERNS)
+            is_last = attempt == _MAX_ATTEMPTS
+            if is_permanent or is_last:
                 raise GitCommandError("git push failed", result.returncode, stderr)
 
             if any(p in stderr for p in _NFF_PUSH_PATTERNS):
-                if attempt == _MAX_ATTEMPTS:
-                    raise GitCommandError("git push failed", result.returncode, stderr)
                 logger.warning(
                     "git push rejected non-fast-forward (attempt %d/%d), fetching and rebasing",
                     attempt,
@@ -376,8 +375,6 @@ class GitService(_SubprocessService):
                     raise
                 continue
 
-            if attempt == _MAX_ATTEMPTS:
-                raise GitCommandError("git push failed", result.returncode, stderr)
             delay = _RETRY_DELAYS[attempt - 1]
             logger.warning(
                 "git push failed (attempt %d/%d), retrying in %ds: %s",
