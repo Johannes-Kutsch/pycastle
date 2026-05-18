@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 import click
 
-from .config import Config, load_config, load_env, resolve_global_dir
+from .config import Config, StageOverride, load_config, load_env, resolve_global_dir
 from .config.loader import describe_config_layers
 from .errors import (
     ClaudeCliNotFoundError,
@@ -17,6 +17,41 @@ from .errors import (
 from .display.status_display import PlainStatusDisplay
 
 _KNOWN_SERVICES: frozenset[str] = frozenset({"claude", "codex"})
+
+
+def _stage_overrides(cfg: Config) -> list[tuple[str, StageOverride]]:
+    return [
+        ("plan", cfg.plan_override),
+        ("implement", cfg.implement_override),
+        ("review", cfg.review_override),
+        ("merge", cfg.merge_override),
+        ("preflight_issue", cfg.preflight_issue_override),
+        ("improve", cfg.improve_override),
+    ]
+
+
+def _validate_stage_services_and_efforts(
+    cfg: Config, valid_efforts_by_service: dict[str, frozenset[str]]
+) -> list[str]:
+    violations: list[str] = []
+    for stage_name, override in _stage_overrides(cfg):
+        node: StageOverride | None = override
+        while node is not None:
+            svc_name = node.service or cfg.default_service
+            valid_efforts = valid_efforts_by_service.get(svc_name)
+            if valid_efforts is None:
+                violations.append(
+                    f"  stage={stage_name!r}: service={svc_name!r} is not a known service"
+                    f" (known: {sorted(_KNOWN_SERVICES)})"
+                )
+            elif node.effort and node.effort not in valid_efforts:
+                violations.append(
+                    f"  stage={stage_name!r}: effort={node.effort!r} is invalid"
+                    f" for service={svc_name!r} (valid: {sorted(valid_efforts)})"
+                )
+            node = node.fallback
+    return violations
+
 
 _ENV_KEYS = (
     "CLAUDE_CODE_OAUTH_TOKEN",
@@ -178,7 +213,6 @@ def run_cmd(improve_mode: str | None) -> None:
     from typing import cast
 
     from .commands.build import main as _build
-    from .config.types import StageOverride
     from .iteration.dispatcher import ImproveMode
     from .iteration.orchestrator import run
     from .services.agent_service import AgentService
@@ -203,58 +237,24 @@ def run_cmd(improve_mode: str | None) -> None:
         accounts.append(("secondary", secondary))
     accounts.append(("primary", primary))
 
-    def _referenced_services() -> set[str]:
-        names: set[str] = {cfg.default_service}
-        for override in (
-            cfg.plan_override,
-            cfg.implement_override,
-            cfg.review_override,
-            cfg.merge_override,
-            cfg.preflight_issue_override,
-            cfg.improve_override,
-        ):
-            node: StageOverride | None = override
-            while node is not None:
-                if node.service:
-                    names.add(node.service)
-                node = node.fallback
-        return names
+    referenced: set[str] = {cfg.default_service}
+    for _, override in _stage_overrides(cfg):
+        node: StageOverride | None = override
+        while node is not None:
+            if node.service:
+                referenced.add(node.service)
+            node = node.fallback
 
-    referenced = _referenced_services()
     service_registry: dict[str, AgentService] = {}
     if "claude" in referenced:
         service_registry["claude"] = ClaudeService(accounts=accounts)
     if "codex" in referenced:
         service_registry["codex"] = CodexService()
 
-    _stage_overrides = [
-        ("plan", cfg.plan_override),
-        ("implement", cfg.implement_override),
-        ("review", cfg.review_override),
-        ("merge", cfg.merge_override),
-        ("preflight_issue", cfg.preflight_issue_override),
-        ("improve", cfg.improve_override),
-    ]
-    violations: list[str] = []
-    for stage_name, override in _stage_overrides:
-        node: StageOverride | None = override
-        while node is not None:
-            svc_name = node.service or cfg.default_service
-            if svc_name not in service_registry:
-                violations.append(
-                    f"  stage={stage_name!r}: service={svc_name!r} is not a known service"
-                    f" (known: {sorted(_KNOWN_SERVICES)})"
-                )
-            elif (
-                node.effort
-                and node.effort not in service_registry[svc_name].valid_efforts()
-            ):
-                valid = sorted(service_registry[svc_name].valid_efforts())
-                violations.append(
-                    f"  stage={stage_name!r}: effort={node.effort!r} is invalid"
-                    f" for service={svc_name!r} (valid: {valid})"
-                )
-            node = node.fallback
+    valid_efforts_by_service = {
+        name: svc.valid_efforts() for name, svc in service_registry.items()
+    }
+    violations = _validate_stage_services_and_efforts(cfg, valid_efforts_by_service)
     if violations:
         click.echo(
             "Config validation errors:\n" + "\n".join(violations),
