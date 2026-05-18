@@ -13,7 +13,7 @@ import click
 
 from ..config.loader import derive_docker_image_name, resolve_global_dir
 
-_SCOPED_FILES = {"config.py", ".env"}
+_SCOPED_FILES = {"config.py", ".env", "Dockerfile.claude", "Dockerfile.claude-codex"}
 
 
 def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
@@ -124,6 +124,11 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     project_dir = Path("pycastle")
     pkg = files("pycastle").joinpath("defaults")
 
+    service = click.prompt(
+        "Which agent services do you want to use? [claude/codex/both]",
+        default="claude",
+    )
+
     if scope is None:
         use_global = click.confirm(
             "Scaffold config.py and .env to global pycastle home? (No = local)",
@@ -134,11 +139,19 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     pycastle_home = resolve_global_dir(None, os.environ)
     scoped_dir = pycastle_home if scope == "global" else project_dir
 
+    dockerfile_template = (
+        "Dockerfile.claude" if service == "claude" else "Dockerfile.claude-codex"
+    )
+    dockerfile_target = project_dir / "Dockerfile"
+
     for rel in _discover_project_shaped_files(pkg):
         target = project_dir / rel
         if target.exists():
             continue
         _copy_template(rel, target, pkg)
+
+    if not dockerfile_target.exists():
+        _copy_template(dockerfile_template, dockerfile_target, pkg)
 
     config_file = scoped_dir / "config.py"
     if config_file.exists():
