@@ -132,8 +132,7 @@ async def _handle_preflight_outcome(
             f"Preflight issue #{result.issue_number} requires human intervention. Exiting.",
         )
         return AbortedHITL(issue_number=result.issue_number)
-    raw = deps.github_svc.get_issue(result.issue_number)
-    afk_issue: dict = {**raw, "body": raw.get("body") or "", "comments": []}
+    afk_issue = deps.github_svc.get_issue(result.issue_number)
     return await _run_implement_and_merge([afk_issue], deps, result.sha)
 
 
