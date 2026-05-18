@@ -265,7 +265,8 @@ def test_git_file_without_worktree_path_cleans_up_overlay(tmp_path):
     fake_overlay.touch()
 
     with patch(
-        "pycastle.infrastructure.docker_session.patch_gitdir_for_container", return_value=fake_overlay
+        "pycastle.infrastructure.docker_session.patch_gitdir_for_container",
+        return_value=fake_overlay,
     ):
         build_volume_spec(tmp_path)
 
@@ -298,7 +299,8 @@ def test_git_file_with_missing_parent_git_cleans_up_overlay(tmp_path):
     fake_overlay.touch()
 
     with patch(
-        "pycastle.infrastructure.docker_session.patch_gitdir_for_container", return_value=fake_overlay
+        "pycastle.infrastructure.docker_session.patch_gitdir_for_container",
+        return_value=fake_overlay,
     ):
         build_volume_spec(tmp_path)
 
