@@ -14,7 +14,7 @@ from ..config import Config
 from ..prompts.pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..agents.classifier import WellFormed, classify_slice, slice_labels
-from ..status_display import StatusDisplay
+from ..display.status_display import StatusDisplay
 from ._utils import _wait_for_clean_working_tree
 
 

@@ -14,7 +14,7 @@ from ..prompts.pipeline import PromptTemplate, Scope, build_issue_scope_args
 from ..services import GitService
 from ..services.github_service import GithubService
 from ..session import RoleSession
-from ..status_display import StatusDisplay
+from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import managed_worktree
 from ._rows import phase_row
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
