@@ -180,7 +180,7 @@ def _write_config(tmp_path: Path, **kwargs) -> None:
     lines = ["from pycastle import StageOverride", "from pathlib import Path"]
     for k, v in kwargs.items():
         if isinstance(v, StageOverride):
-            lines.append(f"{k} = StageOverride(model={v.model!r}, effort={v.effort!r})")
+            lines.append(f"{k} = {v!r}")
         elif isinstance(v, Path):
             lines.append(f"{k} = Path({str(v)!r})")
         else:
@@ -3173,3 +3173,183 @@ def test_orchestrator_aborted_timeout_continues_to_next_iteration_without_sleep(
 
     mock_sleep.assert_not_called()
     assert call_count[0] >= 1
+
+
+# ── Issue-789: per-stage fallback triple consumption ─────────────────────────
+
+
+def test_exhausted_primary_dispatches_with_fallback_triple(tmp_path):
+    """When the stage's primary service is exhausted and the fallback service is
+    available, the dispatch uses the fallback's (service, model, effort) triple."""
+    captured: list[dict] = []
+
+    claude_svc = _FakeService(available=False, wake_time=datetime(2026, 6, 1, 12, 0))
+    codex_svc = _FakeService(available=True)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
+        if "Implement Agent" in request.name:
+            captured.append({"model": request.model, "effort": request.effort})
+            return CompletionOutput()
+        return CompletionOutput()
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        github_service=_make_github_svc(),
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        service_registry={"claude": claude_svc, "codex": codex_svc},
+        implement_override=StageOverride(
+            service="claude",
+            model="primary-model",
+            effort="low",
+            fallback=StageOverride(
+                service="codex", model="fallback-model", effort="high"
+            ),
+        ),
+    )
+
+    assert len(captured) == 1, f"Expected one implement dispatch; got {len(captured)}"
+    assert captured[0]["model"] == "fallback-model", (
+        f"Expected fallback model 'fallback-model'; got {captured[0]['model']!r}"
+    )
+    assert captured[0]["effort"] == "high", (
+        f"Expected fallback effort 'high'; got {captured[0]['effort']!r}"
+    )
+
+
+def test_dual_exhaustion_sleeps_until_earliest_of_primary_and_fallback(tmp_path):
+    """When both primary and fallback services are exhausted, the orchestrator sleeps
+    until min(primary.next_wake_time(), fallback.next_wake_time())."""
+    from datetime import datetime as real_datetime
+
+    fixed_now = real_datetime(2026, 1, 1, 14, 0, 0)
+    primary_wake = real_datetime(2026, 1, 1, 16, 0, 0)
+    fallback_wake = real_datetime(2026, 1, 1, 15, 0, 0)  # earlier
+
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.side_effect = [
+        [
+            {
+                "number": 1,
+                "title": "Fix",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
+        ],
+        [],
+    ]
+
+    claude_svc = _FakeService(available=False, wake_time=primary_wake)
+    codex_svc = _FakeService(available=False, wake_time=fallback_wake)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
+        raise UsageLimitError(reset_time=None)
+
+    with (
+        patch("time.sleep") as mock_sleep,
+        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
+    ):
+        mock_dt.now.return_value = fixed_now
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            service_registry={"claude": claude_svc, "codex": codex_svc},
+            implement_override=StageOverride(
+                service="claude",
+                model="primary-model",
+                effort="low",
+                fallback=StageOverride(
+                    service="codex", model="fallback-model", effort="high"
+                ),
+            ),
+            max_iterations=2,
+        )
+
+    expected_seconds = (fallback_wake - fixed_now).total_seconds()
+    mock_sleep.assert_called_once_with(expected_seconds)
+
+
+def test_primary_takes_precedence_when_both_services_available(tmp_path):
+    """Snap-back is automatic: when the primary service is available, dispatch uses
+    the primary's (service, model, effort) even if the fallback is also available."""
+    captured: list[dict] = []
+
+    claude_svc = _FakeService(available=True)
+    codex_svc = _FakeService(available=True)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
+        if "Implement Agent" in request.name:
+            captured.append({"model": request.model, "effort": request.effort})
+            return CompletionOutput()
+        return CompletionOutput()
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        github_service=_make_github_svc(),
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        service_registry={"claude": claude_svc, "codex": codex_svc},
+        implement_override=StageOverride(
+            service="claude",
+            model="primary-model",
+            effort="low",
+            fallback=StageOverride(
+                service="codex", model="fallback-model", effort="high"
+            ),
+        ),
+    )
+
+    assert len(captured) == 1
+    assert captured[0]["model"] == "primary-model", (
+        "Primary available: dispatch must use primary model, not fallback"
+    )
+    assert captured[0]["effort"] == "low", (
+        "Primary available: dispatch must use primary effort, not fallback"
+    )
+
+
+def test_stage_with_no_fallback_behaves_as_before(tmp_path):
+    """A stage with no fallback configured uses its primary model and effort
+    regardless of other services in the registry."""
+    captured: list[dict] = []
+
+    claude_svc = _FakeService(available=True)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
+        if "Implement Agent" in request.name:
+            captured.append({"model": request.model, "effort": request.effort})
+            return CompletionOutput()
+        return CompletionOutput()
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        github_service=_make_github_svc(),
+        git_service=_make_git_svc(try_merge_side_effect=[True]),
+        service_registry={"claude": claude_svc},
+        implement_override=StageOverride(
+            service="claude", model="my-model", effort="medium"
+        ),
+    )
+
+    assert len(captured) == 1
+    assert captured[0]["model"] == "my-model"
+    assert captured[0]["effort"] == "medium"
