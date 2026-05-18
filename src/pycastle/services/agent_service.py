@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Protocol
 
 from ..agents.output_protocol import AgentRole
-from ..session_resume import RunKind
+from ..session import RunKind
 
 
 @dataclasses.dataclass

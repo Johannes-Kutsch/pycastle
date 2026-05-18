@@ -16,7 +16,7 @@ from ..infrastructure.container_runner import ContainerRunner
 from ..infrastructure.docker_session import DockerSession, build_volume_spec
 from ..errors import AgentFailedError, AgentTimeoutError, UsageLimitError
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
-from ..session_resume import RoleSession, RunKind
+from ..session import RoleSession, RunKind
 from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService

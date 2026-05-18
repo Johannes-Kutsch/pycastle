@@ -8,7 +8,7 @@ from typing import Protocol
 from ..config import Config
 from ..errors import UsageLimitError, WorktreeError, WorktreeTimeoutError
 from ..services import GitCommandError, GitService, GitTimeoutError
-from ..session_resume import any_role_dir_present
+from ..session import any_role_dir_present
 
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
 
