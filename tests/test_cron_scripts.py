@@ -2,6 +2,7 @@ import os
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -233,3 +234,102 @@ def test_cron_sh_does_not_install_consuming_project_deps():
     content = cron_sh.read_text()
     assert "pip install -e" not in content
     assert "pip install -r requirements.txt" not in content
+
+
+# ── cron.sh log retention ─────────────────────────────────────────────────────
+
+
+@pytest.fixture()
+def cron_sh_env(tmp_path):
+    """Fake project structure that cron.sh can run against without real pycastle."""
+    setup_dir = tmp_path / "pycastle" / "setup"
+    setup_dir.mkdir(parents=True)
+
+    cron_sh_dst = setup_dir / "cron.sh"
+    cron_sh_dst.write_bytes((SETUP_DIR / "cron.sh").read_bytes())
+    cron_sh_dst.chmod(
+        cron_sh_dst.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    logs_dir = tmp_path / "pycastle" / "logs"
+    logs_dir.mkdir(parents=True)
+
+    pycastle_home = tmp_path / "pycastle_home"
+    pycastle_home.mkdir()
+
+    venv_bin = tmp_path / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+
+    cron_log = logs_dir / "cron.log"
+
+    python_shim = venv_bin / "python"
+    python_shim.write_text(
+        "#!/usr/bin/env bash\n"
+        'case "${1:-}" in\n'
+        "    -m) exit 0 ;;\n"
+        f"    -c) echo '{cron_log}' ;;\n"
+        "    *) exit 0 ;;\n"
+        "esac\n"
+    )
+    python_shim.chmod(
+        python_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    pycastle_shim = venv_bin / "pycastle"
+    pycastle_shim.write_text("#!/usr/bin/env bash\nexit 0\n")
+    pycastle_shim.chmod(
+        pycastle_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    env = os.environ.copy()
+    env["PYCASTLE_HOME"] = str(pycastle_home)
+
+    return {
+        "cron_sh": cron_sh_dst,
+        "logs_dir": logs_dir,
+        "env": env,
+    }
+
+
+def _old_mtime() -> float:
+    return time.time() - 31 * 24 * 3600
+
+
+def test_cron_sh_deletes_old_log_files(cron_sh_env):
+    """cron.sh must delete *.log files whose mtime is more than 30 days old."""
+    logs_dir = cron_sh_env["logs_dir"]
+    old_log = logs_dir / "old.log"
+    old_log.write_text("old content")
+    t = _old_mtime()
+    os.utime(old_log, (t, t))
+
+    result = _run(cron_sh_env["cron_sh"], cron_sh_env["env"])
+
+    assert result.returncode == 0, result.stderr
+    assert not old_log.exists()
+
+
+def test_cron_sh_keeps_recent_log_files(cron_sh_env):
+    """cron.sh must not delete *.log files whose mtime is within 30 days."""
+    logs_dir = cron_sh_env["logs_dir"]
+    recent_log = logs_dir / "recent.log"
+    recent_log.write_text("recent content")
+
+    result = _run(cron_sh_env["cron_sh"], cron_sh_env["env"])
+
+    assert result.returncode == 0, result.stderr
+    assert recent_log.exists()
+
+
+def test_cron_sh_cron_log_survives_sweep(cron_sh_env):
+    """cron.log must survive the sweep even if it existed before (mtime refreshed)."""
+    logs_dir = cron_sh_env["logs_dir"]
+    cron_log = logs_dir / "cron.log"
+    cron_log.write_text("existing cron log\n")
+    t = _old_mtime()
+    os.utime(cron_log, (t, t))
+
+    result = _run(cron_sh_env["cron_sh"], cron_sh_env["env"])
+
+    assert result.returncode == 0, result.stderr
+    assert cron_log.exists()

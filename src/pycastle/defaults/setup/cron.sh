@@ -27,8 +27,9 @@ mkdir -p "$PYCASTLE_HOME"
     .venv/bin/pycastle run
 ) 200>"$PYCASTLE_HOME/.cron.lock"
 
-# Trim cron.log to the last 10000 lines so it cannot grow unbounded.
+# Trim cron.log to the last 10000 lines and sweep *.log files older than 30 days.
 # Resolved via the same logs_dir the cron line redirects into.
+LOG_RETENTION_DAYS=30
 LOG_FILE=$(.venv/bin/python -c "
 from pathlib import Path
 from pycastle.config.loader import load_config
@@ -40,4 +41,9 @@ print(base / 'cron.log')
 if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
     trimmed=$(tail -n 10000 "$LOG_FILE" 2>/dev/null) || trimmed=""
     printf '%s\n' "$trimmed" > "$LOG_FILE"
+fi
+
+LOGS_BASE=$(dirname "$LOG_FILE")
+if [ -n "$LOG_FILE" ] && [ -d "$LOGS_BASE" ]; then
+    find "$LOGS_BASE" -maxdepth 1 -name "*.log" -mtime +"$LOG_RETENTION_DAYS" -delete
 fi
