@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from pycastle.config import Config
-from pycastle.prompt_pipeline import (
+from pycastle.prompts.pipeline import (
     PromptRenderError,
     PromptRenderer,
     PromptTemplate,

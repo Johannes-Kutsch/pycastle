@@ -10,7 +10,7 @@ from pycastle.agents.output_protocol import (
     NoCandidateOutput,
 )
 from pycastle.iteration.improve import ImprovePhaseDriver
-from pycastle.prompt_pipeline import PromptTemplate
+from pycastle.prompts.pipeline import PromptTemplate
 
 
 @pytest.fixture
