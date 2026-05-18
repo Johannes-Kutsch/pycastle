@@ -180,6 +180,7 @@ def run_cmd(improve_mode: str | None) -> None:
     from .iteration.orchestrator import run
     from .services.agent_service import AgentService
     from .services.claude_service import ClaudeService
+    from .services.codex_service import CodexService
 
     _print_layer_summary()
     cfg = _load_config_or_exit()
@@ -207,7 +208,8 @@ def run_cmd(improve_mode: str | None) -> None:
         accounts.append(("secondary", secondary))
     accounts.append(("primary", primary))
     service_registry: dict[str, AgentService] = {
-        "claude": ClaudeService(accounts=accounts)
+        "claude": ClaudeService(accounts=accounts),
+        "codex": CodexService(),
     }
     # Strip the secondary token from container env; ClaudeService picks the
     # active token from its internal pool per session.
