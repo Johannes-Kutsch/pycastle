@@ -490,6 +490,25 @@ def test_renderer_returns_all_empty_standards_when_dir_absent(tmp_path):
     assert result == "|"
 
 
+def test_renderer_renders_issue_tracker_fragment(prompts_dir):
+    (prompts_dir / "_issue-tracker.md").write_text("issue-tracker recipes")
+    (prompts_dir / "improve" / "01-scan.md").write_text("{{ISSUE_TRACKER}}")
+    cfg = Config(prompts_dir=prompts_dir)
+    renderer = PromptRenderer(cfg)
+
+    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+
+    assert result == "issue-tracker recipes"
+
+
+def test_renderer_aborts_when_issue_tracker_referenced_but_absent(prompts_dir):
+    (prompts_dir / "improve" / "01-scan.md").write_text("{{ISSUE_TRACKER}}")
+    cfg = Config(prompts_dir=prompts_dir)
+
+    with pytest.raises(PromptRenderError, match="ISSUE_TRACKER"):
+        PromptRenderer(cfg)
+
+
 # ── No legacy standards placeholders in defaults-tree prompts ────────────────
 
 _LEGACY_STANDARDS_NAMES = {
@@ -585,7 +604,9 @@ def _parse_placeholder_info() -> tuple[set[str], dict[str, tuple[set[str], set[s
     return global_tokens, scopes
 
 
-def test_placeholder_info_global_tokens_match_code(cfg):
+def test_placeholder_info_global_tokens_match_code(cfg, prompts_dir):
+    # ISSUE_TRACKER is conditional on its fragment file being present.
+    (prompts_dir / "_issue-tracker.md").write_text("issue-tracker recipes")
     renderer = PromptRenderer(cfg)
     expected = set(renderer._global_args.keys())
 
