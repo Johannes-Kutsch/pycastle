@@ -208,7 +208,7 @@ def run_cmd(improve_mode: str | None) -> None:
         accounts.append(("secondary", secondary))
     accounts.append(("primary", primary))
 
-    def _collect_service_names() -> set[str]:
+    def _referenced_services() -> set[str]:
         names: set[str] = {cfg.default_service}
         for override in (
             cfg.plan_override,
@@ -225,14 +225,10 @@ def run_cmd(improve_mode: str | None) -> None:
                 node = node.fallback
         return names
 
-    _service_factories: dict[str, Any] = {
-        "claude": lambda: ClaudeService(accounts=accounts),
-    }
-    service_registry: dict[str, AgentService] = {
-        name: _service_factories[name]()
-        for name in _collect_service_names()
-        if name in _service_factories
-    }
+    referenced = _referenced_services()
+    service_registry: dict[str, AgentService] = {}
+    if "claude" in referenced:
+        service_registry["claude"] = ClaudeService(accounts=accounts)
     # Strip the secondary token from container env; ClaudeService picks the
     # active token from its internal pool per session.
     container_env = {
