@@ -161,7 +161,7 @@ def test_build_cmd_uses_config_docker_image_name(tmp_path, monkeypatch):
     fake_svc = MagicMock()
 
     with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.build_command.DockerService", return_value=fake_svc):
+        with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
             CliRunner().invoke(cli, ["build"])
 
     assert fake_svc.build_image.call_args[0][0] == "custom-img"
@@ -179,7 +179,7 @@ def test_build_cmd_exits_zero_on_success(tmp_path, monkeypatch):
     fake_svc.build_image.return_value = None
 
     with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.build_command.DockerService", return_value=fake_svc):
+        with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
             result = CliRunner().invoke(cli, ["build"])
 
     assert result.exit_code == 0
@@ -195,7 +195,7 @@ def test_build_cmd_exits_one_on_docker_service_error(tmp_path, monkeypatch):
     fake_svc.build_image.side_effect = DockerServiceError("docker not found")
 
     with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.build_command.DockerService", return_value=fake_svc):
+        with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
             result = CliRunner().invoke(cli, ["build"])
 
     assert result.exit_code == 1
@@ -211,7 +211,7 @@ def test_build_cmd_exits_one_on_docker_build_error(tmp_path, monkeypatch):
     fake_svc.build_image.side_effect = DockerBuildError("build failed")
 
     with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.build_command.DockerService", return_value=fake_svc):
+        with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
             result = CliRunner().invoke(cli, ["build"])
 
     assert result.exit_code == 1
@@ -258,14 +258,18 @@ def test_labels_cmd_creates_labels_with_config_issue_label(tmp_path, monkeypatch
     posted: list = []
 
     monkeypatch.setenv("GH_TOKEN", "test-token")
-    monkeypatch.setattr("pycastle.labels.click.prompt", lambda *a, **kw: "owner/repo")
-    monkeypatch.setattr("pycastle.labels.click.confirm", lambda *a, **kw: False)
+    monkeypatch.setattr(
+        "pycastle.commands.labels.click.prompt", lambda *a, **kw: "owner/repo"
+    )
+    monkeypatch.setattr(
+        "pycastle.commands.labels.click.confirm", lambda *a, **kw: False
+    )
 
     fake_github = MagicMock()
     fake_github.create_label.side_effect = lambda body: posted.append(body)
 
     with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.labels.GithubService", return_value=fake_github):
+        with patch("pycastle.commands.labels.GithubService", return_value=fake_github):
             CliRunner().invoke(cli, ["labels"])
 
     label_names = {entry["name"] for entry in posted}
@@ -374,10 +378,16 @@ def test_labels_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("GH_TOKEN", "test-token")
-    monkeypatch.setattr("pycastle.labels.click.prompt", lambda *a, **kw: "owner/repo")
-    monkeypatch.setattr("pycastle.labels.click.confirm", lambda *a, **kw: False)
+    monkeypatch.setattr(
+        "pycastle.commands.labels.click.prompt", lambda *a, **kw: "owner/repo"
+    )
+    monkeypatch.setattr(
+        "pycastle.commands.labels.click.confirm", lambda *a, **kw: False
+    )
     fake_github = MagicMock()
-    monkeypatch.setattr("pycastle.labels.GithubService", lambda *a, **kw: fake_github)
+    monkeypatch.setattr(
+        "pycastle.commands.labels.GithubService", lambda *a, **kw: fake_github
+    )
 
     result = CliRunner().invoke(cli, ["labels"])
 
@@ -391,7 +401,7 @@ def test_build_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
 
     fake_svc = MagicMock()
-    with patch("pycastle.build_command.DockerService", return_value=fake_svc):
+    with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
         result = CliRunner().invoke(cli, ["build"])
 
     assert "Config: defaults" in result.output
@@ -406,7 +416,7 @@ def test_build_cmd_layer_summary_includes_local_when_present(tmp_path, monkeypat
     (tmp_path / "pycastle" / "config.py").write_text("max_parallel = 2\n")
 
     fake_svc = MagicMock()
-    with patch("pycastle.build_command.DockerService", return_value=fake_svc):
+    with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
         result = CliRunner().invoke(cli, ["build"])
 
     assert "Config: defaults + pycastle/config.py" in result.output
@@ -418,7 +428,7 @@ def test_init_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     fake_init = MagicMock()
-    with patch("pycastle.init_command.main", fake_init):
+    with patch("pycastle.commands.init.main", fake_init):
         result = CliRunner().invoke(cli, ["init", "--local"])
 
     assert "Config: defaults" in result.output
@@ -447,7 +457,7 @@ def test_run_cmd_seeds_pool_with_primary_only_when_secondary_absent(
         captured["registry"] = kwargs.get("service_registry")
 
     with (
-        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
         patch("pycastle.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
@@ -479,7 +489,7 @@ def test_run_cmd_seeds_pool_with_secondary_first_when_present(tmp_path, monkeypa
         captured["registry"] = kwargs.get("service_registry")
 
     with (
-        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
         patch("pycastle.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
@@ -537,7 +547,7 @@ def _run_cmd_capturing_improve_mode(
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
         patch("pycastle.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"] + cli_args)
@@ -605,7 +615,7 @@ def _run_cmd_with_build_outcome(tmp_path, monkeypatch, outcome):
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
         patch("pycastle.orchestrator.run", _fake_run),
     ):
         return CliRunner().invoke(cli, ["run"])
@@ -631,7 +641,7 @@ def test_run_cmd_triggers_docker_build_before_orchestrator(tmp_path, monkeypatch
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
         patch("pycastle.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
@@ -683,7 +693,7 @@ def test_run_cmd_exits_one_when_build_fails(tmp_path, monkeypatch):
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
         patch("pycastle.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
@@ -730,7 +740,7 @@ def test_run_cmd_does_not_invoke_docker_when_image_name_empty(tmp_path, monkeypa
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
         patch("pycastle.orchestrator.run", _fake_run),
     ):
         CliRunner().invoke(cli, ["run"])
@@ -758,7 +768,7 @@ def test_run_cmd_passes_python_version_from_file_to_build(tmp_path, monkeypatch)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
         patch("pycastle.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
@@ -786,7 +796,7 @@ def test_run_cmd_build_uses_streaming_mode(tmp_path, monkeypatch):
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
         patch("pycastle.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
@@ -844,7 +854,7 @@ def _run_cmd_simulating_rebuild(tmp_path, monkeypatch):
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.build_command.DockerService", return_value=fake_svc),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
         patch("pycastle.orchestrator.run", _fake_run),
     ):
         return CliRunner().invoke(cli, ["run"])
