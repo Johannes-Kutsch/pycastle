@@ -183,7 +183,7 @@ def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
     from typing import cast
 
     from .commands.build import main as _build
-    from .config.types import StageOverride
+    from .config.loader import referenced_services
     from .iteration.dispatcher import ImproveMode
     from .iteration.orchestrator import run
     from .services.agent_service import AgentService
@@ -222,24 +222,7 @@ def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
         accounts.append(("secondary", secondary))
     accounts.append(("primary", primary))
 
-    def _referenced_services() -> set[str]:
-        names: set[str] = {cfg.default_service}
-        for override in (
-            cfg.plan_override,
-            cfg.implement_override,
-            cfg.review_override,
-            cfg.merge_override,
-            cfg.preflight_issue_override,
-            cfg.improve_override,
-        ):
-            node: StageOverride | None = override
-            while node is not None:
-                if node.service:
-                    names.add(node.service)
-                node = node.fallback
-        return names
-
-    referenced = _referenced_services()
+    referenced = referenced_services(cfg)
     service_registry: dict[str, AgentService] = {}
     if "claude" in referenced:
         service_registry["claude"] = ClaudeService(accounts=accounts)
