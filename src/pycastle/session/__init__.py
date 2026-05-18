@@ -1,4 +1,4 @@
-from .session_resume import (
+from .resume import (
     SESSION_DIR_NAME,
     RunKind,
     RoleSession,
