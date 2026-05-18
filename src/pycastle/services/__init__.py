@@ -7,6 +7,7 @@ from .agent_service import (
     UsageLimit,
 )
 from .claude_service import ClaudeService
+from .codex_service import CodexService
 from .docker_service import DockerService
 from .git_service import (
     GitCommandError,
@@ -27,6 +28,7 @@ __all__ = [
     "AgentService",
     "AssistantTurn",
     "ClaudeService",
+    "CodexService",
     "DockerService",
     "GitCommandError",
     "GitNotFoundError",
