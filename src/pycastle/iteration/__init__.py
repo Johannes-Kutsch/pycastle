@@ -8,7 +8,7 @@ from ..agents.result import CancellationToken
 from ..agents.runner import RunRequest
 from ..errors import AgentFailedError, AgentTimeoutError, UsageLimitError
 from ..prompts.pipeline import PromptTemplate
-from ..worktree import worktree_name_for_branch, worktree_path
+from ..infrastructure.worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
 from ._rows import PhaseRow as PhaseRow
 from ._rows import agent_row as agent_row

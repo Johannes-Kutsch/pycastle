@@ -10,8 +10,8 @@ from typing import cast
 import docker
 from docker.models.containers import Container as DockerContainer
 
-from .config import Config
-from .errors import DockerError, DockerTimeoutError
+from ..config import Config
+from ..errors import DockerError, DockerTimeoutError
 from .worktree import CONTAINER_PARENT_GIT, patch_gitdir_for_container
 
 
