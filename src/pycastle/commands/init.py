@@ -13,12 +13,13 @@ import click
 
 from ..config.loader import derive_docker_image_name, resolve_global_dir
 
-_SCOPED_FILES = {"config.py", ".env", "Dockerfile.claude", "Dockerfile.claude-codex"}
+_SPECIAL_FILES = {"config.py", ".env", "Dockerfile.claude", "Dockerfile.claude-codex"}
 
 
 def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
     """Walk the bundled defaults/ tree and return every file path relative to it,
-    minus the scope-aware ones (config.py, .env) which init handles separately.
+    minus the files init handles separately (scope-aware config.py/.env and the
+    service-selected Dockerfile templates).
     """
 
     def _walk(node: Traversable, prefix: str) -> list[str]:
@@ -31,7 +32,7 @@ def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
                 out.append(rel)
         return out
 
-    return sorted(p for p in _walk(pkg, "") if p not in _SCOPED_FILES)
+    return sorted(p for p in _walk(pkg, "") if p not in _SPECIAL_FILES)
 
 
 _ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
@@ -139,18 +140,17 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     pycastle_home = resolve_global_dir(None, os.environ)
     scoped_dir = pycastle_home if scope == "global" else project_dir
 
-    dockerfile_template = (
-        "Dockerfile.claude" if service == "claude" else "Dockerfile.claude-codex"
-    )
-    dockerfile_target = project_dir / "Dockerfile"
-
     for rel in _discover_project_shaped_files(pkg):
         target = project_dir / rel
         if target.exists():
             continue
         _copy_template(rel, target, pkg)
 
+    dockerfile_target = project_dir / "Dockerfile"
     if not dockerfile_target.exists():
+        dockerfile_template = (
+            "Dockerfile.claude" if service == "claude" else "Dockerfile.claude-codex"
+        )
         _copy_template(dockerfile_template, dockerfile_target, pkg)
 
     config_file = scoped_dir / "config.py"
