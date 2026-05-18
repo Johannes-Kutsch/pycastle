@@ -5,7 +5,7 @@ import uuid
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.session_resume import (
+from pycastle.session import (
     RoleSession,
     RunKind,
     any_role_dir_present,

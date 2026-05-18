@@ -13,7 +13,7 @@ from .config import Config
 from .docker_session import DockerSession
 from .errors import AgentTimeoutError, DockerError
 from .services.agent_service import AgentService
-from .session_resume import RunKind
+from .session import RunKind
 from .status_display import PlainStatusDisplay
 
 

@@ -13,7 +13,7 @@ from ..config import Config
 from ..prompts.pipeline import PromptTemplate, Scope, build_issue_scope_args
 from ..services import GitService
 from ..services.github_service import GithubService
-from ..session_resume import RoleSession
+from ..session import RoleSession
 from ..status_display import StatusDisplay
 from ..worktree import managed_worktree
 from ._rows import phase_row

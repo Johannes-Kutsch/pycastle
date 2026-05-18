@@ -105,7 +105,7 @@ class AgentFailedError(PycastleError):
 
     @property
     def session_dir(self) -> str:
-        from .session_resume import SESSION_DIR_NAME
+        from .session import SESSION_DIR_NAME
 
         if self.namespace:
             return f"{SESSION_DIR_NAME}/{self.role_value}/{self.namespace}/claude"
