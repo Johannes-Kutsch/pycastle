@@ -1,6 +1,5 @@
-*.idea
-*.claude
-!src/pycastle/defaults/Dockerfile.claude
+.idea/
+.claude/
 /pycastle/
 *.pyc
 .tmp*.md
