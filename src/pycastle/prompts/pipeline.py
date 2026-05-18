@@ -184,6 +184,7 @@ class PromptRenderer:
         "DESIGN_STANDARDS": "design.md",
         "IMPLEMENTATION_STANDARDS": "implementation.md",
         "IMPLEMENT_OUTPUT_RULES": "implement-output-rules.md",
+        "ISSUE_TRACKER": "_issue-tracker.md",
     }
 
     def __init__(self, cfg: Config) -> None:
@@ -195,8 +196,13 @@ class PromptRenderer:
         standards_dir = prompts_dir / "coding-standards"
         result = {}
         for key, filename in self._STANDARDS_FILES.items():
-            path = standards_dir / filename
-            result[key] = path.read_text(encoding="utf-8") if path.exists() else ""
+            if filename.startswith("_"):
+                path = prompts_dir / filename
+                if path.exists():
+                    result[key] = path.read_text(encoding="utf-8")
+            else:
+                path = standards_dir / filename
+                result[key] = path.read_text(encoding="utf-8") if path.exists() else ""
         return result
 
     def _build_global_args(self, cfg: Config) -> dict[str, str]:
