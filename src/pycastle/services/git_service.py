@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 _PERMANENT_FAILURE_PATTERNS = [
     "not possible to fast-forward",
     "need to specify how to reconcile divergent branches",
-    "non-fast-forward",
     "authentication failed",
     "could not read username",
     "permission denied",
@@ -21,6 +20,8 @@ _PERMANENT_FAILURE_PATTERNS = [
     "refusing to merge unrelated histories",
     "conflict",
 ]
+
+_NFF_PUSH_PATTERNS = ["[rejected]"]
 
 _RETRY_DELAYS = [1, 3]
 _MAX_ATTEMPTS = 3
@@ -340,12 +341,52 @@ class GitService(_SubprocessService):
         )
 
     def push(self, repo_path: Path) -> None:
-        self._run_or_raise_with_retry(
-            ["git", "push"],
-            "git push failed",
-            operation="push",
-            cwd=repo_path,
-        )
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            result = self._run(["git", "push"], cwd=repo_path, capture_output=True)
+            if result.returncode == 0:
+                if attempt > 1:
+                    logger.warning(
+                        "git push succeeded on attempt %d after transient failure",
+                        attempt,
+                    )
+                return
+
+            stderr = self._decode(result.stderr)
+
+            if any(p in stderr.lower() for p in _PERMANENT_FAILURE_PATTERNS):
+                raise GitCommandError("git push failed", result.returncode, stderr)
+
+            if any(p in stderr for p in _NFF_PUSH_PATTERNS):
+                if attempt == _MAX_ATTEMPTS:
+                    raise GitCommandError("git push failed", result.returncode, stderr)
+                logger.warning(
+                    "git push rejected non-fast-forward (attempt %d/%d), fetching and rebasing",
+                    attempt,
+                    _MAX_ATTEMPTS,
+                )
+                self._run_or_raise(["git", "fetch"], "git fetch failed", cwd=repo_path)
+                try:
+                    self._run_or_raise(
+                        ["git", "rebase", "@{u}"], "git rebase failed", cwd=repo_path
+                    )
+                except GitCommandError:
+                    self._run(
+                        ["git", "rebase", "--abort"], cwd=repo_path, capture_output=True
+                    )
+                    raise
+                continue
+
+            if attempt == _MAX_ATTEMPTS:
+                raise GitCommandError("git push failed", result.returncode, stderr)
+            delay = _RETRY_DELAYS[attempt - 1]
+            logger.warning(
+                "git push failed (attempt %d/%d), retrying in %ds: %s",
+                attempt,
+                _MAX_ATTEMPTS,
+                delay,
+                stderr,
+            )
+            time.sleep(delay)
 
     def get_branch_commit_subjects(self, branch: str, repo_path: Path) -> list[str]:
         result = self._run(

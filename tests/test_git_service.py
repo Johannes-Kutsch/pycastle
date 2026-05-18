@@ -1390,7 +1390,6 @@ def test_pull_raises_immediately_on_permanent_failure(tmp_path):
     [
         b"fatal: Not possible to fast-forward, aborting.",
         b"hint: Need to specify how to reconcile divergent branches.",
-        b"! [rejected] main -> main (non-fast-forward)",
         b"remote: Authentication failed for 'https://github.com/owner/repo.git'",
         b"fatal: could not read Username for 'https://github.com': No such device or address",
         b"Permission denied (publickey).",
@@ -1521,28 +1520,116 @@ def test_push_retries_on_transient_failure(tmp_path):
     assert mock_sleep.call_count == 1
 
 
-def test_push_raises_immediately_on_non_fast_forward(tmp_path):
+def test_push_raises_after_three_non_fast_forward_rejections(tmp_path):
+    """All 3 push attempts rejected → raises GitCommandError with final stderr."""
     svc = GitService(_cfg)
-    attempts = 0
+    nff_stderr = (
+        b"! [rejected] main -> main (fetch first)\nerror: failed to push some refs"
+    )
+    push_count = 0
 
-    def fake_run(*a, **kw):
-        nonlocal attempts
-        attempts += 1
-        return MagicMock(
-            returncode=1,
-            stdout=b"",
-            stderr=b"! [rejected] main -> main (non-fast-forward)",
-        )
+    def fake_run(cmd, **kwargs):
+        nonlocal push_count
+        if cmd == ["git", "push"]:
+            push_count += 1
+            return MagicMock(returncode=1, stdout=b"", stderr=nff_stderr)
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        with pytest.raises(GitCommandError) as exc_info:
+            svc.push(tmp_path)
+
+    assert push_count == 3
+    assert "[rejected]" in exc_info.value.stderr
+
+
+# ── push() — non-fast-forward recovery ───────────────────────────────────────
+
+
+def test_push_fetches_and_rebases_on_rejection_then_succeeds(tmp_path):
+    """Push rejected non-fast-forward → fetch + rebase → retry push succeeds."""
+    svc = GitService(_cfg)
+    captured: list[list[str]] = []
+    nff_stderr = (
+        b" ! [rejected]        main -> main (fetch first)\n"
+        b"error: failed to push some refs to 'github.com:owner/repo.git'"
+    )
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        push_count = sum(1 for c in captured if c == ["git", "push"])
+        if cmd == ["git", "push"] and push_count == 1:
+            return MagicMock(returncode=1, stdout=b"", stderr=nff_stderr)
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        svc.push(tmp_path)  # must not raise
+
+    push_indices = [i for i, c in enumerate(captured) if c == ["git", "push"]]
+    assert len(push_indices) == 2, f"Expected 2 push calls, got: {captured}"
+    between = captured[push_indices[0] + 1 : push_indices[1]]
+    assert any("fetch" in c for c in between), (
+        f"Expected fetch between pushes, got: {between}"
+    )
+    assert any("rebase" in c for c in between), (
+        f"Expected rebase between pushes, got: {between}"
+    )
+
+
+def test_push_raises_and_aborts_rebase_when_rebase_fails(tmp_path):
+    """If rebase fails after push rejection, raises GitCommandError and aborts the rebase."""
+    svc = GitService(_cfg)
+    nff_stderr = (
+        b"! [rejected] main -> main (fetch first)\nerror: failed to push some refs"
+    )
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        if cmd == ["git", "push"]:
+            return MagicMock(returncode=1, stdout=b"", stderr=nff_stderr)
+        if "rebase" in cmd and "--abort" not in cmd:
+            return MagicMock(
+                returncode=1,
+                stdout=b"",
+                stderr=b"CONFLICT (content): conflict in file.py",
+            )
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        with pytest.raises(GitCommandError):
+            svc.push(tmp_path)
+
+    assert any("--abort" in c for c in captured), (
+        f"Expected rebase --abort to be called, got: {captured}"
+    )
+
+
+def test_push_does_not_fetch_rebase_on_transient_failure(tmp_path):
+    """Transient network failures still use sleep+retry without fetch+rebase."""
+    svc = GitService(_cfg)
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        if (
+            cmd == ["git", "push"]
+            and sum(1 for c in captured if c == ["git", "push"]) == 1
+        ):
+            return MagicMock(
+                returncode=1, stdout=b"", stderr=b"RPC failed; connection reset"
+            )
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
     with (
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep") as mock_sleep,
     ):
-        with pytest.raises(GitCommandError):
-            svc.push(tmp_path)
+        svc.push(tmp_path)  # must not raise
 
-    assert attempts == 1
-    mock_sleep.assert_not_called()
+    assert mock_sleep.call_count == 1
+    assert not any("fetch" in c for c in captured)
+    assert not any("rebase" in c for c in captured)
 
 
 # ── fetch() ───────────────────────────────────────────────────────────────────
