@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 import platformdirs
 
-from pycastle._types import StageOverride
+from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
 
 __all__ = ["Config", "describe_config_layers", "load_config", "resolve_global_dir"]
