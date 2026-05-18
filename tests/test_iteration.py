@@ -26,7 +26,7 @@ from pycastle.iteration._deps import (
     RecordingLogger,
     RecordingStatusDisplay,
 )
-from pycastle.status_display import PlainStatusDisplay
+from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.agents.output_protocol import (
     AgentRole,
     CommitMessageOutput,

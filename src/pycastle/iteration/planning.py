@@ -13,7 +13,7 @@ from ..config import Config
 from ..prompts.pipeline import PromptTemplate
 from ..services import GitService
 from ..services.github_service import GithubService
-from ..status_display import StatusDisplay
+from ..display.status_display import StatusDisplay
 from ..agents.classifier import Malformed, WellFormed, classify_slice
 from ..infrastructure.worktree import transient_worktree
 from ._rows import phase_row

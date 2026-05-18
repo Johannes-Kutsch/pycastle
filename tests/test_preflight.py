@@ -12,7 +12,7 @@ from pycastle.agents.output_protocol import IssueOutput
 from pycastle.config import Config
 from pycastle.services import GitCommandError, GitService, GithubService
 from pycastle.iteration._deps import FakeAgentRunner
-from pycastle.status_display import PlainStatusDisplay
+from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.iteration.preflight import (
     PreflightAFK,
     PreflightCache,
