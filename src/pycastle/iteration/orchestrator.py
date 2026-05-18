@@ -1,3 +1,4 @@
+import dataclasses
 import shutil
 import sys
 import time
@@ -7,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ..agents.runner import AgentRunner, AgentRunnerProtocol, RunRequest
-from ..config import Config, load_config
+from ..config import Config, StageOverride, load_config
 from . import (
     AbortedAgentFailure,
     AbortedHITL,
@@ -60,6 +61,52 @@ def _fmt_wake(wake: datetime, now: datetime) -> str:
     if wake.date() != now.date():
         return f"{wake:%b} {wake.day}, {wake:%H:%M}"
     return wake.strftime("%H:%M")
+
+
+def _effective_override(
+    override: StageOverride,
+    service_registry: "dict[str, Any]",
+    default_service: str,
+    now: datetime,
+) -> StageOverride:
+    primary_name = override.service or default_service
+    primary_svc = service_registry.get(primary_name)
+    if primary_svc is None or primary_svc.is_available(now=now):
+        return override
+    if override.fallback is not None:
+        fallback_name = override.fallback.service or default_service
+        fallback_svc = service_registry.get(fallback_name)
+        if fallback_svc is not None and fallback_svc.is_available(now=now):
+            return override.fallback
+    return override
+
+
+def _effective_cfg(
+    cfg: Config,
+    service_registry: "dict[str, Any]",
+    now: datetime,
+) -> Config:
+    return dataclasses.replace(
+        cfg,
+        plan_override=_effective_override(
+            cfg.plan_override, service_registry, cfg.default_service, now
+        ),
+        implement_override=_effective_override(
+            cfg.implement_override, service_registry, cfg.default_service, now
+        ),
+        review_override=_effective_override(
+            cfg.review_override, service_registry, cfg.default_service, now
+        ),
+        merge_override=_effective_override(
+            cfg.merge_override, service_registry, cfg.default_service, now
+        ),
+        preflight_issue_override=_effective_override(
+            cfg.preflight_issue_override, service_registry, cfg.default_service, now
+        ),
+        improve_override=_effective_override(
+            cfg.improve_override, service_registry, cfg.default_service, now
+        ),
+    )
 
 
 def ensure_session_excludes(repo_root: Path) -> None:
@@ -191,15 +238,21 @@ async def run(
                 f"=== Iteration {iteration}/{cfg.max_iterations} ===",
             )
 
+            _now = datetime.now()
+            _iter_cfg = (
+                _effective_cfg(cfg, service_registry, _now) if service_registry else cfg
+            )
+
             if agent_runner is not None:
                 _agent_runner: AgentRunnerProtocol = agent_runner
             elif run_agent is not None:
                 _agent_runner = _CallableAgentRunner(run_agent)
             else:
-                _svc = service_registry.get("claude") if service_registry else None
+                _svc_name = _iter_cfg.default_service
+                _svc = service_registry.get(_svc_name) if service_registry else None
                 _agent_runner = AgentRunner(
                     env=env,
-                    cfg=cfg,
+                    cfg=_iter_cfg,
                     git_service=git_svc,
                     service=_svc,
                 )
@@ -209,8 +262,8 @@ async def run(
                 git_svc=git_svc,
                 github_svc=github_service,
                 agent_runner=_agent_runner,
-                cfg=cfg,
-                logger=FileLogger(cfg.logs_dir),
+                cfg=_iter_cfg,
+                logger=FileLogger(_iter_cfg.logs_dir),
                 status_display=status_display,  # type: ignore[arg-type]
                 improve_mode=improve_mode,
                 slept_once=slept_once,
