@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from unittest.mock import MagicMock
 
-from pycastle.agent_output_protocol import (
+from pycastle.agents.output_protocol import (
     CompletionOutput,
     PlanParseError,
     PlannerOutput,

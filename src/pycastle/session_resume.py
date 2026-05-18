@@ -3,7 +3,7 @@ import uuid
 from enum import Enum
 from pathlib import Path
 
-from .agent_output_protocol import AgentRole
+from .agents.output_protocol import AgentRole
 
 _NAMESPACE = uuid.NAMESPACE_DNS
 

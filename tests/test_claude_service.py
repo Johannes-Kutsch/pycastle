@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from pycastle.agent_output_protocol import AgentRole
+from pycastle.agents.output_protocol import AgentRole
 from pycastle.errors import (
     ClaudeCliNotFoundError,
     ClaudeCommandError,

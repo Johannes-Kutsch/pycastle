@@ -1,6 +1,6 @@
 from pycastle.config import Config
 from pycastle.prompt_pipeline import PromptTemplate
-from pycastle.slice_classifier import (
+from pycastle.agents.classifier import (
     Malformed,
     SliceMode,
     WellFormed,

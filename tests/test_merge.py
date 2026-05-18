@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pycastle.agent_output_protocol import CompletionOutput, PromiseParseError
-from pycastle.agent_runner import RunRequest
+from pycastle.agents.output_protocol import CompletionOutput, PromiseParseError
+from pycastle.agents.runner import RunRequest
 from pycastle.config import Config
 from pycastle.services import GitCommandError, GitService
 from pycastle.services import GithubAPIError, GithubService

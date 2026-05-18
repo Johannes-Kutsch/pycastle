@@ -19,7 +19,7 @@ from pycastle.iteration import (
     NoCandidate,
     run_iteration,
 )
-from pycastle.agent_runner import RunRequest
+from pycastle.agents.runner import RunRequest
 from pycastle.iteration._deps import (
     Deps,
     FakeAgentRunner,
@@ -27,7 +27,7 @@ from pycastle.iteration._deps import (
     RecordingStatusDisplay,
 )
 from pycastle.status_display import PlainStatusDisplay
-from pycastle.agent_output_protocol import (
+from pycastle.agents.output_protocol import (
     AgentRole,
     CommitMessageOutput,
     CompletionOutput,
@@ -2878,7 +2878,7 @@ def test_run_iteration_returns_aborted_timeout_for_each_single_agent_phase(
 ):
     """run_iteration returns AbortedTimeout for each single-agent phase when it times out.
     Adding a fifth single-agent phase requires one new parameter row."""
-    from pycastle.agent_output_protocol import AgentRole
+    from pycastle.agents.output_protocol import AgentRole
 
     github_svc = MagicMock(spec=GithubService)
 
@@ -3048,7 +3048,7 @@ def test_run_iteration_aborted_timeout_preserves_worktree_when_session_populated
 ):
     """When AbortedTimeout is returned for the improve phase, the role session worktree
     is preserved because any_role_dir_present fires on the populated session dir."""
-    from pycastle.agent_output_protocol import AgentRole
+    from pycastle.agents.output_protocol import AgentRole
     from pycastle.session_resume import RoleSession
 
     github_svc = MagicMock(spec=GithubService)

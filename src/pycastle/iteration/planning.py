@@ -3,18 +3,18 @@ import json
 from pathlib import Path
 from typing import Protocol
 
-from ..agent_output_protocol import (
+from ..agents.output_protocol import (
     AgentOutputProtocolError,
     AgentRole,
     PlannerOutput,
 )
-from ..agent_runner import AgentRunnerProtocol, RunRequest
+from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitService
 from ..services.github_service import GithubService
 from ..status_display import StatusDisplay
-from ..slice_classifier import Malformed, WellFormed, classify_slice
+from ..agents.classifier import Malformed, WellFormed, classify_slice
 from ..worktree import transient_worktree
 from ._rows import phase_row
 from .implement import branch_for

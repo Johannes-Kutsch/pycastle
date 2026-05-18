@@ -4,24 +4,24 @@ from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any, Protocol
 
-from .agent_output_protocol import (
+from .output_protocol import (
     AgentOutput,
     AgentRole,
     AgentSuccessOutput,
     FailedOutput,
 )
-from .agent_result import CancellationToken
-from .config import Config
-from .container_runner import ContainerRunner
-from .docker_session import DockerSession, build_volume_spec
-from .errors import AgentFailedError, AgentTimeoutError, UsageLimitError
-from .prompt_pipeline import PromptRenderer, PromptTemplate
-from .reprompt_loop import REPROMPT_MESSAGE, run_with_reprompt
-from .session_resume import RoleSession, RunKind
-from .services import GitService
-from .services.agent_service import AgentService
-from .services.claude_service import ClaudeService
-from .status_display import PlainStatusDisplay
+from .result import CancellationToken
+from ..config import Config
+from ..container_runner import ContainerRunner
+from ..docker_session import DockerSession, build_volume_spec
+from ..errors import AgentFailedError, AgentTimeoutError, UsageLimitError
+from ..prompt_pipeline import PromptRenderer, PromptTemplate
+from ..reprompt_loop import REPROMPT_MESSAGE, run_with_reprompt
+from ..session_resume import RoleSession, RunKind
+from ..services import GitService
+from ..services.agent_service import AgentService
+from ..services.claude_service import ClaudeService
+from ..status_display import PlainStatusDisplay
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
 
@@ -134,7 +134,7 @@ class AgentRunner:
         return await translate_run_outcome(self._run(request), request)
 
     async def _run(self, request: RunRequest) -> AgentOutput:
-        from .iteration._rows import agent_row
+        from ..iteration._rows import agent_row
 
         name = request.name
         template = request.template
@@ -255,7 +255,7 @@ class AgentRunner:
         status_display=None,
         work_body: str = "",
     ) -> list[tuple[str, str, str]]:
-        from .iteration._rows import agent_row
+        from ..iteration._rows import agent_row
 
         if status_display is None:
             status_display = PlainStatusDisplay()

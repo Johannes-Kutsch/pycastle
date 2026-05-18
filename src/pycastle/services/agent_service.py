@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from ..agent_output_protocol import AgentRole
+from ..agents.output_protocol import AgentRole
 from ..session_resume import RunKind
 
 

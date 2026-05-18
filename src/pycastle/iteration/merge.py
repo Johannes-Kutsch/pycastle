@@ -4,8 +4,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from ..agent_output_protocol import AgentRole
-from ..agent_runner import AgentRunnerProtocol, RunRequest
+from ..agents.output_protocol import AgentRole
+from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService

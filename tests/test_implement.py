@@ -5,12 +5,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.agent_output_protocol import (
+from pycastle.agents.output_protocol import (
     CommitMessageOutput,
     CompletionOutput,
     PromiseParseError,
 )
-from pycastle.agent_runner import RunRequest
+from pycastle.agents.runner import RunRequest
 from pycastle.config import Config
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.services import GitService

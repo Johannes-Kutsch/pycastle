@@ -11,8 +11,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from .. import agent_output_protocol as _proto
-from ..agent_output_protocol import AgentRole
+from ..agents import output_protocol as _proto
+from ..agents.output_protocol import AgentRole
 from ..errors import ClaudeCliNotFoundError
 from ..session_resume import SESSION_DIR_NAME, RunKind
 from .agent_service import AssistantTurn, ParsedTurn, Result, Tokens, UsageLimit

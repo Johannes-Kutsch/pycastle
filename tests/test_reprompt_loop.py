@@ -3,7 +3,7 @@
 import asyncio
 
 
-from pycastle.agent_output_protocol import (
+from pycastle.agents.output_protocol import (
     CommitMessageOutput,
     CompletionOutput,
     FailedOutput,

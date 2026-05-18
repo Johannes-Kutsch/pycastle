@@ -7,14 +7,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.agent_output_protocol import (
+from pycastle.agents.output_protocol import (
     AgentRole,
     CommitMessageOutput,
     CompletionOutput,
     FailedOutput,
 )
-from pycastle.agent_result import CancellationToken
-from pycastle.agent_runner import AgentRunner, RunRequest
+from pycastle.agents.result import CancellationToken
+from pycastle.agents.runner import AgentRunner, RunRequest
 from pycastle.config import Config
 from pycastle.errors import (
     AgentFailedError,
@@ -812,7 +812,7 @@ def test_agent_runner_run_preflight_propagates_git_user_name_error(tmp_path):
 
 
 def test_run_request_stores_required_fields():
-    from pycastle.agent_output_protocol import AgentRole
+    from pycastle.agents.output_protocol import AgentRole
 
     req = RunRequest(
         name="Agent",
@@ -952,7 +952,7 @@ def test_fake_agent_runner_accepts_run_request_and_records_it():
 
 def test_agent_runner_injects_claude_config_dir_for_implementer(tmp_path):
     """AgentRunner.run() must set CLAUDE_CONFIG_DIR to the role session dir inside the worktree."""
-    from pycastle.agent_output_protocol import AgentRole
+    from pycastle.agents.output_protocol import AgentRole
 
     captured_env: dict = {}
     mock_client = MagicMock()
@@ -1204,7 +1204,7 @@ def _seed_implementer_session(tmp_path: Path) -> None:
 
 def test_agent_runner_passes_resume_flag_to_claude_when_session_exists(tmp_path):
     """On a Resume run AgentRunner must invoke claude with --resume <uuid>."""
-    from pycastle.agent_output_protocol import AgentRole
+    from pycastle.agents.output_protocol import AgentRole
 
     _seed_implementer_session(tmp_path)
 
@@ -1403,7 +1403,7 @@ def _seed_reviewer_session(tmp_path: Path) -> None:
 
 def test_agent_runner_injects_claude_config_dir_for_reviewer(tmp_path):
     """AgentRunner.run() must set CLAUDE_CONFIG_DIR to the reviewer session dir."""
-    from pycastle.agent_output_protocol import AgentRole
+    from pycastle.agents.output_protocol import AgentRole
 
     captured_env: dict = {}
     mock_client = MagicMock()
@@ -1454,7 +1454,7 @@ def test_agent_runner_passes_resume_flag_to_claude_when_reviewer_session_exists(
     tmp_path,
 ):
     """On a Reviewer Resume run AgentRunner must invoke claude with --resume <uuid>."""
-    from pycastle.agent_output_protocol import AgentRole
+    from pycastle.agents.output_protocol import AgentRole
 
     _seed_reviewer_session(tmp_path)
 
@@ -1510,7 +1510,7 @@ def _seed_merger_session(tmp_path: Path) -> None:
 
 def test_agent_runner_passes_resume_flag_to_claude_when_merger_session_exists(tmp_path):
     """On a Merger Resume run AgentRunner must invoke claude with --resume <uuid>."""
-    from pycastle.agent_output_protocol import AgentRole
+    from pycastle.agents.output_protocol import AgentRole
 
     _seed_merger_session(tmp_path)
 
