@@ -5,13 +5,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pycastle.agent_output_protocol import (
+from pycastle.agents.output_protocol import (
     CompletionOutput,
     IssueOutput,
     PlannerOutput,
     PromiseParseError,
 )
-from pycastle.agent_runner import RunRequest
+from pycastle.agents.runner import RunRequest
 from pycastle.config import StageOverride
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.services import (

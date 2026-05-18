@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .agent_runner import AgentRunner, AgentRunnerProtocol, RunRequest
+from .agents.runner import AgentRunner, AgentRunnerProtocol, RunRequest
 from .config import Config, load_config
 from .iteration import (
     AbortedAgentFailure,

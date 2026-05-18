@@ -1,6 +1,6 @@
 from collections.abc import Awaitable, Callable
 
-from .agent_output_protocol import AgentOutput, AgentOutputProtocolError, FailedOutput
+from .agents.output_protocol import AgentOutput, AgentOutputProtocolError, FailedOutput
 
 REPROMPT_MESSAGE = (
     "Your last response did not include the required protocol output. "

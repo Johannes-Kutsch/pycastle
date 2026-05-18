@@ -4,16 +4,16 @@ import re
 from pathlib import Path
 from typing import Protocol, TypeAlias
 
-from ..agent_output_protocol import (
+from ..agents.output_protocol import (
     AgentOutputProtocolError,
     AgentRole,
     IssueOutput,
 )
-from ..agent_runner import AgentRunnerProtocol, RunRequest
+from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompt_pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
-from ..slice_classifier import WellFormed, classify_slice, slice_labels
+from ..agents.classifier import WellFormed, classify_slice, slice_labels
 from ..status_display import StatusDisplay
 from ._utils import _wait_for_clean_working_tree
 

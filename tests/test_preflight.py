@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from unittest.mock import MagicMock
 
-from pycastle.agent_output_protocol import IssueOutput
+from pycastle.agents.output_protocol import IssueOutput
 from pycastle.config import Config
 from pycastle.services import GitCommandError, GitService, GithubService
 from pycastle.iteration._deps import FakeAgentRunner

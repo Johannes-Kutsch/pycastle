@@ -1,4 +1,4 @@
-from pycastle.agent_result import CancellationToken
+from pycastle.agents.result import CancellationToken
 
 
 # ── CancellationToken ─────────────────────────────────────────────────────────

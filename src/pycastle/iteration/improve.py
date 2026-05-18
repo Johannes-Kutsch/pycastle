@@ -2,13 +2,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from ..agent_output_protocol import (
+from ..agents.output_protocol import (
     AgentOutput,
     AgentRole,
     IssueOutput,
     NoCandidateOutput,
 )
-from ..agent_runner import AgentRunnerProtocol, RunRequest
+from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompt_pipeline import PromptTemplate, Scope, build_issue_scope_args
 from ..services import GitService

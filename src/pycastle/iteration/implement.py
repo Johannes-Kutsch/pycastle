@@ -6,9 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..agent_output_protocol import AgentRole, CommitMessageOutput
-from ..agent_result import CancellationToken
-from ..agent_runner import AgentRunnerProtocol, RunRequest
+from ..agents.output_protocol import AgentRole, CommitMessageOutput
+from ..agents.result import CancellationToken
+from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import (
     AgentFailedError,
@@ -17,7 +17,7 @@ from ..errors import (
     UsageLimitError,
 )
 from ..prompt_pipeline import PromptTemplate, build_issue_scope_args, build_wip_clause
-from ..slice_classifier import WellFormed, classify_slice
+from ..agents.classifier import WellFormed, classify_slice
 from ..session_resume import RoleSession, is_stage_done_for
 from ..status_display import StatusDisplay
 from ..services import GitService, GithubService

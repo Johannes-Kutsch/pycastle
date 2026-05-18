@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pycastle.agent_output_protocol import (
+from pycastle.agents.output_protocol import (
     CompletionOutput,
     IssueOutput,
     NoCandidateOutput,

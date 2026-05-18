@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.agent_output_protocol import (
+from pycastle.agents.output_protocol import (
     AgentRole,
     CompletionOutput,
     IssueOutput,

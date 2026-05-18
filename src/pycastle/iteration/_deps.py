@@ -4,8 +4,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..agent_output_protocol import AgentOutput, AgentSuccessOutput
-from ..agent_runner import AgentRunnerProtocol, RunRequest, translate_run_outcome
+from ..agents.output_protocol import AgentOutput, AgentSuccessOutput
+from ..agents.runner import AgentRunnerProtocol, RunRequest, translate_run_outcome
 from ..config import Config
 from ..services import GitService
 from ..services import GithubService

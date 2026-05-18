@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from pycastle import agent_output_protocol
-from pycastle.agent_output_protocol import (
+from pycastle.agents import output_protocol as agent_output_protocol
+from pycastle.agents.output_protocol import (
     AgentOutput,
     AgentOutputProtocolError,
     AgentRole,
