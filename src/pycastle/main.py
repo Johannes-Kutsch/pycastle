@@ -177,7 +177,7 @@ def run_cmd(improve_mode: str | None) -> None:
 
     from .build_command import main as _build
     from .iteration.dispatcher import ImproveMode
-    from .orchestrator import run
+    from .iteration.orchestrator import run
     from .services.agent_service import AgentService
     from .services.claude_service import ClaudeService
 

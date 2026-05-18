@@ -21,7 +21,7 @@ from pycastle.services import (
     GitService,
 )
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
-from pycastle.orchestrator import (
+from pycastle.iteration.orchestrator import (
     ensure_session_excludes,
     prune_orphan_worktrees,
     run,
@@ -1470,7 +1470,7 @@ def test_usage_limit_prints_sleep_message_with_wake_time(tmp_path, capsys):
     mock_datetime = MagicMock(wraps=datetime)
     mock_datetime.now.return_value = fixed_now
 
-    with patch("time.sleep"), patch("pycastle.orchestrator.datetime", mock_datetime):
+    with patch("time.sleep"), patch("pycastle.iteration.orchestrator.datetime", mock_datetime):
         _run(
             tmp_path,
             _fake_run_agent,
@@ -1618,7 +1618,7 @@ def test_usage_limit_wake_time_is_next_full_hour_plus_two_minutes(tmp_path, caps
 
     with (
         patch("time.sleep"),
-        patch("pycastle.orchestrator.datetime") as mock_dt,
+        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
     ):
         mock_dt.now.return_value = fixed_now
         _run(
@@ -1670,7 +1670,7 @@ def test_usage_limit_sleep_duration_matches_wake_time(tmp_path):
 
     with (
         patch("time.sleep") as mock_sleep,
-        patch("pycastle.orchestrator.datetime") as mock_dt,
+        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
     ):
         mock_dt.now.return_value = fixed_now
         _run(
@@ -1773,7 +1773,7 @@ def test_usage_limit_with_reset_time_uses_precise_wake_time(tmp_path, capsys):
 
     with (
         patch("time.sleep") as mock_sleep,
-        patch("pycastle.orchestrator.datetime") as mock_dt,
+        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
     ):
         mock_dt.now.return_value = fixed_now
         _run(
@@ -1871,7 +1871,7 @@ def test_usage_limit_sleep_message_same_day_shows_hhmm_only(tmp_path, capsys):
 
     with (
         patch("time.sleep"),
-        patch("pycastle.orchestrator.datetime") as mock_dt,
+        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
     ):
         mock_dt.now.return_value = fixed_now
         _run(
@@ -1923,7 +1923,7 @@ def test_usage_limit_sleep_message_cross_day_shows_date(tmp_path, capsys):
 
     with (
         patch("time.sleep"),
-        patch("pycastle.orchestrator.datetime") as mock_dt,
+        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
     ):
         mock_dt.now.return_value = fixed_now
         _run(
@@ -1979,7 +1979,7 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
 
     with (
         patch("time.sleep"),
-        patch("pycastle.orchestrator.datetime") as mock_dt,
+        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
     ):
         mock_dt.now.return_value = fixed_now
         _run(
@@ -2035,7 +2035,7 @@ def test_usage_limit_pool_switch_message_cross_day_shows_date(tmp_path, capsys):
 
     with (
         patch("time.sleep"),
-        patch("pycastle.orchestrator.datetime") as mock_dt,
+        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
     ):
         mock_dt.now.return_value = fixed_now
         _run(
@@ -2852,7 +2852,7 @@ def test_usage_limit_with_all_services_exhausted_sleeps_until_earliest_wake(tmp_
 
     with (
         patch("time.sleep") as mock_sleep,
-        patch("pycastle.orchestrator.datetime") as mock_dt,
+        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
     ):
         mock_dt.now.return_value = fixed_now
         _run(

@@ -448,7 +448,7 @@ def test_run_cmd_seeds_pool_with_primary_only_when_secondary_absent(
 
     with (
         patch("pycastle.build_command.DockerService", return_value=fake_svc),
-        patch("pycastle.orchestrator.run", _fake_run),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -480,7 +480,7 @@ def test_run_cmd_seeds_pool_with_secondary_first_when_present(tmp_path, monkeypa
 
     with (
         patch("pycastle.build_command.DockerService", return_value=fake_svc),
-        patch("pycastle.orchestrator.run", _fake_run),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -538,7 +538,7 @@ def _run_cmd_capturing_improve_mode(
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.build_command.DockerService", return_value=fake_svc),
-        patch("pycastle.orchestrator.run", _fake_run),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"] + cli_args)
 
@@ -606,7 +606,7 @@ def _run_cmd_with_build_outcome(tmp_path, monkeypatch, outcome):
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.build_command.DockerService", return_value=fake_svc),
-        patch("pycastle.orchestrator.run", _fake_run),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
     ):
         return CliRunner().invoke(cli, ["run"])
 
@@ -632,7 +632,7 @@ def test_run_cmd_triggers_docker_build_before_orchestrator(tmp_path, monkeypatch
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.build_command.DockerService", return_value=fake_svc),
-        patch("pycastle.orchestrator.run", _fake_run),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -684,7 +684,7 @@ def test_run_cmd_exits_one_when_build_fails(tmp_path, monkeypatch):
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.build_command.DockerService", return_value=fake_svc),
-        patch("pycastle.orchestrator.run", _fake_run),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -731,7 +731,7 @@ def test_run_cmd_does_not_invoke_docker_when_image_name_empty(tmp_path, monkeypa
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.build_command.DockerService", return_value=fake_svc),
-        patch("pycastle.orchestrator.run", _fake_run),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
     ):
         CliRunner().invoke(cli, ["run"])
 
@@ -759,7 +759,7 @@ def test_run_cmd_passes_python_version_from_file_to_build(tmp_path, monkeypatch)
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.build_command.DockerService", return_value=fake_svc),
-        patch("pycastle.orchestrator.run", _fake_run),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -787,7 +787,7 @@ def test_run_cmd_build_uses_streaming_mode(tmp_path, monkeypatch):
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.build_command.DockerService", return_value=fake_svc),
-        patch("pycastle.orchestrator.run", _fake_run),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -845,7 +845,7 @@ def _run_cmd_simulating_rebuild(tmp_path, monkeypatch):
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.build_command.DockerService", return_value=fake_svc),
-        patch("pycastle.orchestrator.run", _fake_run),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
     ):
         return CliRunner().invoke(cli, ["run"])
 
