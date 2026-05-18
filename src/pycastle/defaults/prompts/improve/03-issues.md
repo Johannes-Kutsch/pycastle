@@ -144,7 +144,9 @@ Before filing, answer:
 
 ## 6. File the issues
 
-For each approved slice, publish a new issue. **Always write the body to a file and use `gh issue create --body-file`.** Before writing the first body, run `mkdir -p .pycastle-session/improve/drafts` so the directory exists on a fresh worktree. Write each body to `.pycastle-session/improve/drafts/sliceN.md` (where N is the slice sequence number, e.g. `slice1.md`, `slice2.md`), then pass that path to `--body-file`. Each title must start with `[improve-SLICE]`. Apply two labels:
+For each approved slice, publish a new issue. Each title must start with `[improve-SLICE]`. Apply two labels:
+
+{{ISSUE_TRACKER}}
 
 - `{{READY_FOR_AGENT_LABEL}}` (state)
 - One of `{{REFACTOR_SLICE_LABEL}}`, `{{BEHAVIOR_SLICE_LABEL}}`, `{{DOCS_SLICE_LABEL}}` (mode)
@@ -185,11 +187,9 @@ _Filed by improve session_
 
 ## Sub-issue registration
 
-After creating all issues, register each new issue as a sub-issue of the parent PRD:
+After creating all issues, register each new issue as a sub-issue of the parent PRD.
 
-`gh api repos/{owner}/{repo}/issues/{parent_number}/sub_issues --method POST --field sub_issue_id={new_issue_id}`
-
-Use `gh repo view --json nameWithOwner -q .nameWithOwner` to obtain `{owner}/{repo}`. Get each child's integer `id` via `gh api repos/{owner}/{repo}/issues/{number} --jq '.id'` before calling the sub-issue endpoint.
+{{ISSUE_TRACKER}}
 
 Do NOT close or modify the parent PRD issue.
 

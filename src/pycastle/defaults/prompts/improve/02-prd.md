@@ -18,7 +18,9 @@ You must NOT modify any files in the worktree. Your only outputs are the GitHub 
 
 2. Sketch the major modules to build or modify. Look for opportunities to extract deep modules testable in isolation.
 
-3. Write the PRD using the template below, then publish it. **Always write the body to a file and use `gh issue create --body-file` — never pass the body inline, as PRD content breaks shell quoting.** Before writing, run `mkdir -p .pycastle-session/improve/drafts` so the directory exists on a fresh worktree. Write the body to `.pycastle-session/improve/drafts/prd.md`, then pass that path to `--body-file`.
+3. Write the PRD using the template below, then publish it.
+
+{{ISSUE_TRACKER}}
 
 The issue title must start with `[improve-PRD]`. Do NOT apply any triage label — PRDs are parent/tracking issues; only phase 3 sub-issues carry `{{READY_FOR_AGENT_LABEL}}`.
 
