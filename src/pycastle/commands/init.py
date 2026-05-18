@@ -11,7 +11,9 @@ from typing import Literal
 
 import click
 
+from ..agents.output_protocol import AgentRole
 from ..config.loader import derive_docker_image_name, resolve_global_dir
+from ..session.resume import SESSION_DIR_NAME
 
 _SPECIAL_FILES = {"config.py", ".env", "Dockerfile.claude", "Dockerfile.claude-codex"}
 
@@ -121,10 +123,17 @@ def refresh() -> None:
         _copy_template(rel, project_dir / rel, pkg)
 
 
-def _seed_codex_credentials(project_root: Path) -> None:
-    from ..agents.output_protocol import AgentRole
-    from ..session.resume import SESSION_DIR_NAME
+def _role_namespaces() -> list[tuple[AgentRole, str]]:
+    pairs: list[tuple[AgentRole, str]] = []
+    for role in AgentRole:
+        if role == AgentRole.IMPROVE:
+            pairs.extend([(role, "main"), (role, "issues")])
+        else:
+            pairs.append((role, ""))
+    return pairs
 
+
+def _seed_codex_credentials(project_root: Path) -> None:
     host_auth = Path.home() / ".codex" / "auth.json"
     if not host_auth.exists():
         click.echo(
@@ -133,19 +142,10 @@ def _seed_codex_credentials(project_root: Path) -> None:
         )
         sys.exit(1)
 
-    role_namespaces: list[tuple[AgentRole, str]] = []
-    for role in AgentRole:
-        if role == AgentRole.IMPROVE:
-            role_namespaces.append((role, "main"))
-            role_namespaces.append((role, "issues"))
-        else:
-            role_namespaces.append((role, ""))
-
     auth_bytes = host_auth.read_bytes()
-    for role, namespace in role_namespaces:
+    for role, namespace in _role_namespaces():
         base = project_root / SESSION_DIR_NAME / role.value
-        role_state_dir = base / namespace if namespace else base
-        codex_dir = role_state_dir / "codex"
+        codex_dir = (base / namespace if namespace else base) / "codex"
         dest = codex_dir / "auth.json"
         if dest.exists():
             continue
