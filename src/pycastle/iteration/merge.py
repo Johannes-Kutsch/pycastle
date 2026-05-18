@@ -11,7 +11,7 @@ from ..prompts.pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..session_resume import RoleSession
 from ..status_display import StatusDisplay
-from ..worktree import (
+from ..infrastructure.worktree import (
     managed_worktree,
     teardown_worktree,
     worktree_name_for_branch,

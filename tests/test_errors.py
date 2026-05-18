@@ -85,7 +85,7 @@ def test_usage_limit_error_reset_time_defaults_to_none():
 @pytest.fixture
 def fake_session(tmp_path):
     from pycastle.config import Config
-    from pycastle.docker_session import DockerSession
+    from pycastle.infrastructure.docker_session import DockerSession
 
     def _make(exit_code=0, stdout=b"", stderr=b""):
         mock_client = MagicMock()
@@ -131,7 +131,7 @@ def test_branch_worktree_raises_worktree_error_on_git_failure(tmp_path):
 
     from pycastle.config import Config
     from pycastle.services import GitService
-    from pycastle.worktree import managed_worktree
+    from pycastle.infrastructure.worktree import managed_worktree
 
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
     subprocess.run(

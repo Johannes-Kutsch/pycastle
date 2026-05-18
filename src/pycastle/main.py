@@ -75,7 +75,7 @@ class _BugReportingGroup(click.Group):
 @click.group(cls=_BugReportingGroup)
 @click.version_option(package_name="pycastle", prog_name="pycastle")
 def main() -> None:
-    from ._shutdown_hook import install_urllib3_shutdown_hook
+    from .infrastructure.shutdown_hook import install_urllib3_shutdown_hook
 
     install_urllib3_shutdown_hook()
 

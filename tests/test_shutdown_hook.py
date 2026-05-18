@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 import urllib3.response
 
-from pycastle._shutdown_hook import install_urllib3_shutdown_hook
+from pycastle.infrastructure.shutdown_hook import install_urllib3_shutdown_hook
 
 
 @pytest.fixture

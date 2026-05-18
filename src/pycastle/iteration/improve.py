@@ -15,7 +15,7 @@ from ..services import GitService
 from ..services.github_service import GithubService
 from ..session_resume import RoleSession
 from ..status_display import StatusDisplay
-from ..worktree import managed_worktree
+from ..infrastructure.worktree import managed_worktree
 from ._rows import phase_row
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 

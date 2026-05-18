@@ -12,8 +12,8 @@ from .output_protocol import (
 )
 from .result import CancellationToken
 from ..config import Config
-from ..container_runner import ContainerRunner
-from ..docker_session import DockerSession, build_volume_spec
+from ..infrastructure.container_runner import ContainerRunner
+from ..infrastructure.docker_session import DockerSession, build_volume_spec
 from ..errors import AgentFailedError, AgentTimeoutError, UsageLimitError
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session_resume import RoleSession, RunKind

@@ -15,7 +15,7 @@ from ..services import GitService
 from ..services.github_service import GithubService
 from ..status_display import StatusDisplay
 from ..agents.classifier import Malformed, WellFormed, classify_slice
-from ..worktree import transient_worktree
+from ..infrastructure.worktree import transient_worktree
 from ._rows import phase_row
 from .implement import branch_for
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL

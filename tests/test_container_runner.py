@@ -12,8 +12,8 @@ import pytest
 
 from pycastle.agents.output_protocol import AgentRole, CommitMessageOutput
 from pycastle.config import Config
-from pycastle.container_runner import ContainerRunner
-from pycastle.docker_session import DockerSession
+from pycastle.infrastructure.container_runner import ContainerRunner
+from pycastle.infrastructure.docker_session import DockerSession
 from pycastle.errors import AgentTimeoutError, DockerError, UsageLimitError
 from pycastle.iteration._deps import RecordingStatusDisplay
 from pycastle.services.claude_service import ClaudeService
@@ -125,7 +125,7 @@ def test_container_runner_does_not_expose_exec_simple_or_write_file(tmp_path):
 
 def test_log_filename_includes_utc_timestamp_suffix(tmp_path):
     fixed_dt = datetime(2026, 5, 17, 14, 30, tzinfo=UTC)
-    with patch("pycastle.container_runner.datetime") as mock_dt:
+    with patch("pycastle.infrastructure.container_runner.datetime") as mock_dt:
         mock_dt.now.return_value = fixed_dt
         runner, _ = _make_runner(name="plan", tmp_path=tmp_path)
     assert runner.log_path.name == "plan-20260517T1430.log"
@@ -135,10 +135,10 @@ def test_log_filename_includes_utc_timestamp_suffix(tmp_path):
 def test_two_runners_at_different_minutes_produce_distinct_log_files(tmp_path):
     dt1 = datetime(2026, 5, 17, 14, 30, tzinfo=UTC)
     dt2 = datetime(2026, 5, 17, 14, 31, tzinfo=UTC)
-    with patch("pycastle.container_runner.datetime") as mock_dt:
+    with patch("pycastle.infrastructure.container_runner.datetime") as mock_dt:
         mock_dt.now.return_value = dt1
         runner1, _ = _make_runner(name="merge", tmp_path=tmp_path)
-    with patch("pycastle.container_runner.datetime") as mock_dt:
+    with patch("pycastle.infrastructure.container_runner.datetime") as mock_dt:
         mock_dt.now.return_value = dt2
         runner2, _ = _make_runner(name="merge", tmp_path=tmp_path)
     assert runner1.log_path != runner2.log_path
@@ -147,7 +147,7 @@ def test_two_runners_at_different_minutes_produce_distinct_log_files(tmp_path):
 def test_timestamp_is_fixed_at_construction_not_recomputed_per_write(tmp_path):
     construct_dt = datetime(2026, 5, 17, 9, 5, tzinfo=UTC)
     later_dt = datetime(2026, 5, 17, 9, 10, tzinfo=UTC)
-    with patch("pycastle.container_runner.datetime") as mock_dt:
+    with patch("pycastle.infrastructure.container_runner.datetime") as mock_dt:
         mock_dt.now.return_value = construct_dt
         runner, _ = _make_runner(name="scan", tmp_path=tmp_path)
         mock_dt.now.return_value = later_dt
