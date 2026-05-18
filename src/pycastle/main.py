@@ -104,8 +104,8 @@ def main() -> None:
     "into ./pycastle/ without prompts. Leaves config.py and .env untouched.",
 )
 def init_cmd(global_flag: bool, local_flag: bool, refresh_flag: bool) -> None:
-    from .init_command import main as _init
-    from .init_command import refresh as _refresh
+    from .commands.init import main as _init
+    from .commands.init import refresh as _refresh
 
     _print_layer_summary()
     if refresh_flag:
@@ -132,7 +132,7 @@ def init_cmd(global_flag: bool, local_flag: bool, refresh_flag: bool) -> None:
 
 @main.command("labels")
 def labels_cmd() -> None:
-    from .labels import main as _labels
+    from .commands.labels import main as _labels
 
     _print_layer_summary()
     cfg = _load_config_or_exit()
@@ -147,7 +147,7 @@ def labels_cmd() -> None:
     help="Build without using the Docker cache.",
 )
 def build_cmd(no_cache: bool) -> None:
-    from .build_command import main as _build
+    from .commands.build import main as _build
 
     _print_layer_summary()
     cfg = _load_config_or_exit()
@@ -175,7 +175,7 @@ def build_cmd(no_cache: bool) -> None:
 def run_cmd(improve_mode: str | None) -> None:
     from typing import cast
 
-    from .build_command import main as _build
+    from .commands.build import main as _build
     from .iteration.dispatcher import ImproveMode
     from .iteration.orchestrator import run
     from .services.agent_service import AgentService
