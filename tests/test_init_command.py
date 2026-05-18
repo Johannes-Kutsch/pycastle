@@ -5,6 +5,126 @@ import pytest
 from click.testing import CliRunner
 
 
+# ── Issue #784: service-selection prompt and bundled Dockerfile templates ──────
+
+
+def test_dockerfile_claude_template_exists_with_claude_cli():
+    """Dockerfile.claude must exist in bundled defaults and install Claude Code CLI."""
+    from importlib.resources import files
+
+    pkg = files("pycastle").joinpath("defaults")
+    content = (pkg / "Dockerfile.claude").read_text()
+    assert "claude.ai/install.sh" in content
+    assert "npm" not in content
+
+
+def test_dockerfile_claude_codex_template_exists_with_node_and_codex():
+    """Dockerfile.claude-codex must install Claude CLI, Node.js, and @openai/codex."""
+    from importlib.resources import files
+
+    pkg = files("pycastle").joinpath("defaults")
+    content = (pkg / "Dockerfile.claude-codex").read_text()
+    assert "claude.ai/install.sh" in content
+    assert "nodejs" in content
+    assert "@openai/codex" in content
+
+
+def test_init_claude_service_copies_claude_dockerfile(tmp_path, monkeypatch):
+    """Choosing 'claude' copies Dockerfile.claude content to pycastle/Dockerfile."""
+    from importlib.resources import files
+
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", side_effect=["claude", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    pkg = files("pycastle").joinpath("defaults")
+    expected = (pkg / "Dockerfile.claude").read_bytes()
+    actual = (tmp_path / "pycastle" / "Dockerfile").read_bytes()
+    assert actual == expected
+
+
+def test_init_codex_service_copies_claude_codex_dockerfile(tmp_path, monkeypatch):
+    """Choosing 'codex' copies Dockerfile.claude-codex content to pycastle/Dockerfile."""
+    from importlib.resources import files
+
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", side_effect=["codex", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    pkg = files("pycastle").joinpath("defaults")
+    expected = (pkg / "Dockerfile.claude-codex").read_bytes()
+    actual = (tmp_path / "pycastle" / "Dockerfile").read_bytes()
+    assert actual == expected
+
+
+def test_init_both_service_copies_claude_codex_dockerfile(tmp_path, monkeypatch):
+    """Choosing 'both' copies Dockerfile.claude-codex content to pycastle/Dockerfile."""
+    from importlib.resources import files
+
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", side_effect=["both", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    pkg = files("pycastle").joinpath("defaults")
+    expected = (pkg / "Dockerfile.claude-codex").read_bytes()
+    actual = (tmp_path / "pycastle" / "Dockerfile").read_bytes()
+    assert actual == expected
+
+
+def test_init_does_not_overwrite_existing_dockerfile(tmp_path, monkeypatch):
+    """init must not overwrite an existing pycastle/Dockerfile."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    dockerfile = tmp_path / "pycastle" / "Dockerfile"
+    dockerfile.parent.mkdir(parents=True)
+    dockerfile.write_text("# user-owned Dockerfile\n")
+
+    with (
+        patch("click.prompt", side_effect=["claude", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert dockerfile.read_text() == "# user-owned Dockerfile\n"
+
+
+def test_init_asks_service_selection_as_first_prompt(tmp_path, monkeypatch):
+    """init must ask the service-selection prompt before credential prompts."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    prompt_calls: list[str] = []
+
+    def capture_prompt(message: str, *args: object, **kwargs: object) -> str:
+        prompt_calls.append(message)
+        return str(kwargs.get("default", ""))
+
+    with (
+        patch("click.prompt", side_effect=capture_prompt),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert prompt_calls, "No prompts were issued"
+    assert "agent services" in prompt_calls[0].lower()
+
+
 # ── Cycle 1: init scaffolds all expected files ───────────────────────────────
 
 
@@ -312,7 +432,7 @@ def test_init_global_prompts_when_credential_missing_in_global_env(
     monkeypatch.chdir(tmp_path)
 
     with (
-        patch("click.prompt", side_effect=["new-gh", "new-claude"]),
+        patch("click.prompt", side_effect=["claude", "new-gh", "new-claude"]),
         patch("click.confirm", return_value=False),
     ):
         main(scope="global")
