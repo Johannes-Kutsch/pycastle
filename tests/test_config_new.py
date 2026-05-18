@@ -724,3 +724,51 @@ def test_load_config_improve_mode_rejects_invalid(tmp_path, bad):
             global_dir=tmp_path / "no_global",
             overrides={"improve_mode": bad},
         )
+
+
+# ── Issue 783: per-stage service + fallback, top-level default_service ──────
+
+
+def test_config_default_service_defaults_to_claude():
+    assert Config().default_service == "claude"
+
+
+def test_stage_override_service_defaults_to_empty_string():
+    assert StageOverride().service == ""
+
+
+def test_stage_override_fallback_defaults_to_none():
+    assert StageOverride().fallback is None
+
+
+def test_load_config_round_trips_default_service_from_local_file(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text('default_service = "codex"\n')
+    cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
+    assert cfg.default_service == "codex"
+
+
+def test_load_config_round_trips_default_service_from_global_file(tmp_path):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text('default_service = "codex"\n')
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert cfg.default_service == "codex"
+
+
+def test_load_config_round_trips_stage_override_service_and_fallback(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pycastle import StageOverride\n"
+        "plan_override = StageOverride(\n"
+        '    service="claude",\n'
+        '    model="opus",\n'
+        '    effort="high",\n'
+        '    fallback=StageOverride(service="codex", model="gpt-5", effort="medium"),\n'
+        ")\n"
+    )
+    cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
+    assert cfg.plan_override.service == "claude"
+    assert cfg.plan_override.fallback == StageOverride(
+        service="codex", model="gpt-5", effort="medium"
+    )
