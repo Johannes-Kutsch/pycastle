@@ -12,8 +12,11 @@ from typing import Literal
 import click
 
 from ..agents.output_protocol import AgentRole
-from ..config.loader import Config, derive_docker_image_name, resolve_global_dir
-from ..config.types import StageOverride
+from ..config.loader import (
+    derive_docker_image_name,
+    referenced_services,
+    resolve_global_dir,
+)
 from ..session.resume import SESSION_DIR_NAME
 
 _SPECIAL_FILES = {"config.py", ".env", "Dockerfile.claude", "Dockerfile.claude-codex"}
@@ -107,24 +110,6 @@ def _prompt_and_save_credential(env_file: Path, key: str, prompt_text: str) -> s
     return value
 
 
-def _collect_referenced_services(cfg: Config) -> set[str]:
-    names: set[str] = {cfg.default_service}
-    for override in (
-        cfg.plan_override,
-        cfg.implement_override,
-        cfg.review_override,
-        cfg.merge_override,
-        cfg.preflight_issue_override,
-        cfg.improve_override,
-    ):
-        node: StageOverride | None = override
-        while node is not None:
-            if node.service:
-                names.add(node.service)
-            node = node.fallback
-    return names
-
-
 def refresh() -> None:
     from ..config.loader import load_config
 
@@ -143,8 +128,7 @@ def refresh() -> None:
     for rel in _discover_project_shaped_files(pkg):
         _copy_template(rel, project_dir / rel, pkg)
 
-    cfg = load_config()
-    referenced = _collect_referenced_services(cfg)
+    referenced = referenced_services(load_config())
     dockerfile_template = (
         "Dockerfile.claude-codex" if "codex" in referenced else "Dockerfile.claude"
     )
