@@ -3,8 +3,8 @@ import sys
 
 import click
 
-from .config import Config, load_config, load_env, resolve_global_dir
-from .services import (
+from ..config import Config, load_config, load_env, resolve_global_dir
+from ..services import (
     GithubAPIError,
     GithubAuthError,
     GithubService,
