@@ -175,21 +175,12 @@ class _FakeService:
         return iter([])
 
 
-def _so_repr(so: StageOverride) -> str:
-    parts = [f"model={so.model!r}", f"effort={so.effort!r}"]
-    if so.service:
-        parts.append(f"service={so.service!r}")
-    if so.fallback is not None:
-        parts.append(f"fallback={_so_repr(so.fallback)}")
-    return f"StageOverride({', '.join(parts)})"
-
-
 def _write_config(tmp_path: Path, **kwargs) -> None:
     (tmp_path / "pycastle").mkdir(exist_ok=True)
     lines = ["from pycastle import StageOverride", "from pathlib import Path"]
     for k, v in kwargs.items():
         if isinstance(v, StageOverride):
-            lines.append(f"{k} = {_so_repr(v)}")
+            lines.append(f"{k} = {v!r}")
         elif isinstance(v, Path):
             lines.append(f"{k} = Path({str(v)!r})")
         else:
