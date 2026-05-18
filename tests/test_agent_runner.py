@@ -22,7 +22,7 @@ from pycastle.errors import (
     DockerError,
     UsageLimitError,
 )
-from pycastle.prompt_pipeline import PromptTemplate
+from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session_resume import RunKind
 from pycastle.services import GitCommandError, GitService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay

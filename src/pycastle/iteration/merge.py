@@ -7,7 +7,7 @@ from typing import Protocol
 from ..agents.output_protocol import AgentRole
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..prompt_pipeline import PromptTemplate
+from ..prompts.pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..session_resume import RoleSession
 from ..status_display import StatusDisplay

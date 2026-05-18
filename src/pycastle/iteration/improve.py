@@ -10,7 +10,7 @@ from ..agents.output_protocol import (
 )
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..prompt_pipeline import PromptTemplate, Scope, build_issue_scope_args
+from ..prompts.pipeline import PromptTemplate, Scope, build_issue_scope_args
 from ..services import GitService
 from ..services.github_service import GithubService
 from ..session_resume import RoleSession

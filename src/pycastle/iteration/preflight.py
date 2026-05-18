@@ -11,7 +11,7 @@ from ..agents.output_protocol import (
 )
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..prompt_pipeline import PromptTemplate
+from ..prompts.pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..agents.classifier import WellFormed, classify_slice, slice_labels
 from ..status_display import StatusDisplay

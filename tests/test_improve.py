@@ -21,7 +21,7 @@ from pycastle.iteration.improve import (
     ImproveNoCandidate,
     improve_phase,
 )
-from pycastle.prompt_pipeline import PromptTemplate
+from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitService
 
 

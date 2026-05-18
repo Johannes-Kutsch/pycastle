@@ -4,7 +4,7 @@ import dataclasses
 import enum
 from typing import TYPE_CHECKING
 
-from ..prompt_pipeline import PromptTemplate
+from ..prompts.pipeline import PromptTemplate
 
 if TYPE_CHECKING:
     from ..config import Config

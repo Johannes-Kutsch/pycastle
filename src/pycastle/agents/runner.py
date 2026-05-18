@@ -15,7 +15,7 @@ from ..config import Config
 from ..container_runner import ContainerRunner
 from ..docker_session import DockerSession, build_volume_spec
 from ..errors import AgentFailedError, AgentTimeoutError, UsageLimitError
-from ..prompt_pipeline import PromptRenderer, PromptTemplate
+from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..reprompt_loop import REPROMPT_MESSAGE, run_with_reprompt
 from ..session_resume import RoleSession, RunKind
 from ..services import GitService

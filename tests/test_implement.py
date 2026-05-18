@@ -29,7 +29,7 @@ from pycastle.iteration.implement import (
     pick_implement_template,
     run_issue,
 )
-from pycastle.prompt_pipeline import PromptRenderError, build_issue_scope_args
+from pycastle.prompts.pipeline import PromptRenderError, build_issue_scope_args
 
 _cfg = Config()
 
@@ -97,28 +97,28 @@ def test_branch_for_uses_issue_number():
 
 
 def test_pick_implement_template_behavior_slice_resolves_to_behavior_template():
-    from pycastle.prompt_pipeline import PromptTemplate
+    from pycastle.prompts.pipeline import PromptTemplate
 
     issue = {"number": 1, "title": "T", "labels": ["behavior-slice"]}
     assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_BEHAVIOR
 
 
 def test_pick_implement_template_refactor_slice_resolves_to_refactor_template():
-    from pycastle.prompt_pipeline import PromptTemplate
+    from pycastle.prompts.pipeline import PromptTemplate
 
     issue = {"number": 1, "title": "T", "labels": ["refactor-slice"]}
     assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_REFACTOR
 
 
 def test_pick_implement_template_docs_slice_resolves_to_docs_template():
-    from pycastle.prompt_pipeline import PromptTemplate
+    from pycastle.prompts.pipeline import PromptTemplate
 
     issue = {"number": 1, "title": "T", "labels": ["docs-slice"]}
     assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_DOCS
 
 
 def test_pick_implement_template_ignores_unrelated_labels():
-    from pycastle.prompt_pipeline import PromptTemplate
+    from pycastle.prompts.pipeline import PromptTemplate
 
     issue = {
         "number": 1,
