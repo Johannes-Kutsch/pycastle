@@ -411,22 +411,43 @@ def test_close_issue_on_410_marks_issue_as_closed_for_subsequent_listings():
 # ── get_issue ────────────────────────────────────────────────────────────────
 
 
+def _make_get_issue_urlopen(issue_payload: dict[str, Any]) -> Any:
+    issue_body = json.dumps(issue_payload).encode()
+    empty_comments = json.dumps([]).encode()
+
+    def fake_urlopen(req: Any, **_: Any) -> MagicMock:
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        if "/comments" in url:
+            return _make_response(empty_comments)
+        return _make_response(issue_body)
+
+    return fake_urlopen
+
+
 def test_get_issue_returns_title_and_body():
     svc = _make_service()
-    body = json.dumps({"number": 7, "title": "Fix bug", "body": "do it"}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_get_issue_urlopen(
+            {"number": 7, "title": "Fix bug", "body": "do it"}
+        ),
     ):
-        assert svc.get_issue(7) == {"number": 7, "title": "Fix bug", "body": "do it"}
+        result = svc.get_issue(7)
+    assert result["number"] == 7
+    assert result["title"] == "Fix bug"
+    assert result["body"] == "do it"
 
 
 def test_get_issue_returns_empty_string_for_null_body():
     svc = _make_service()
-    body = json.dumps({"number": 7, "title": "Fix bug", "body": None}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_get_issue_urlopen(
+            {"number": 7, "title": "Fix bug", "body": None}
+        ),
     ):
-        assert svc.get_issue(7) == {"number": 7, "title": "Fix bug", "body": ""}
+        result = svc.get_issue(7)
+    assert result["body"] == ""
 
 
 def test_get_issue_raises_when_title_missing():
@@ -439,23 +460,58 @@ def test_get_issue_raises_when_title_missing():
             svc.get_issue(7)
 
 
+def test_get_issue_returns_labels_and_comments():
+    svc = _make_service()
+    issue_body = json.dumps(
+        {
+            "number": 7,
+            "title": "Fix bug",
+            "body": "do it",
+            "labels": [{"name": "bug"}, {"name": "ready-for-agent"}],
+        }
+    ).encode()
+    comments_body = json.dumps(
+        [
+            {
+                "user": {"login": "alice"},
+                "created_at": "2024-01-01T00:00:00Z",
+                "body": "LGTM",
+            }
+        ]
+    ).encode()
+
+    def fake_urlopen(req: Any, **_: Any) -> MagicMock:
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        if "/comments" in url:
+            return _make_response(comments_body, headers={"Link": ""})
+        return _make_response(issue_body)
+
+    with patch("pycastle.services.github_service.urlopen", side_effect=fake_urlopen):
+        result = svc.get_issue(7)
+
+    assert result["labels"] == ["bug", "ready-for-agent"]
+    assert result["comments"] == [
+        {"author": "alice", "created_at": "2024-01-01T00:00:00Z", "body": "LGTM"}
+    ]
+
+
 # ── get_issue_title / get_labels ─────────────────────────────────────────────
 
 
 def test_get_issue_title_returns_title():
     svc = _make_service()
-    body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_get_issue_urlopen({"number": 7, "title": "Fix bug"}),
     ):
         assert svc.get_issue_title(7) == "Fix bug"
 
 
 def test_get_issue_title_returns_title_when_body_key_absent():
     svc = _make_service()
-    body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_get_issue_urlopen({"number": 7, "title": "Fix bug"}),
     ):
         assert svc.get_issue_title(7) == "Fix bug"
 
