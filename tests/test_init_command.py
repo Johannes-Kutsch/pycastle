@@ -951,3 +951,141 @@ def test_init_both_absent_codex_creds_on_rerun_keeps_existing_env(
 
     assert exc_info.value.code != 0
     assert "GH_TOKEN=prior-token" in env_file.read_text()
+
+
+# ── Issue #790: --refresh picks Dockerfile template by config walk ─────────────
+
+
+def test_init_refresh_claude_only_config_writes_dockerfile_claude(
+    tmp_path, monkeypatch
+):
+    """`pycastle init --refresh` on a claude-only config overwrites Dockerfile with Dockerfile.claude."""
+    from importlib.resources import files
+
+    from pycastle.commands.init import main, refresh
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    # Corrupt the Dockerfile so we can detect it was overwritten
+    dockerfile = tmp_path / "pycastle" / "Dockerfile"
+    dockerfile.write_text("STALE DOCKERFILE\n")
+
+    refresh()
+
+    pkg = files("pycastle").joinpath("defaults")
+    expected = (pkg / "Dockerfile.claude").read_bytes()
+    assert dockerfile.read_bytes() == expected
+
+
+@pytest.mark.parametrize(
+    "config_snippet",
+    [
+        'default_service = "codex"',
+        'from pycastle import StageOverride\nplan_override = StageOverride(service="codex")',
+        'from pycastle import StageOverride\nplan_override = StageOverride(fallback=StageOverride(service="codex"))',
+    ],
+    ids=["default_service", "stage_service", "fallback_service"],
+)
+def test_init_refresh_codex_config_writes_dockerfile_claude_codex(
+    tmp_path, monkeypatch, config_snippet
+):
+    """`pycastle init --refresh` on a codex-referencing config writes Dockerfile.claude-codex."""
+    from importlib.resources import files
+
+    from pycastle.commands.init import main, refresh
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    # Inject a codex-referencing config
+    config_file = tmp_path / "pycastle" / "config.py"
+    config_file.write_text(config_snippet + "\n")
+
+    refresh()
+
+    pkg = files("pycastle").joinpath("defaults")
+    expected = (pkg / "Dockerfile.claude-codex").read_bytes()
+    dockerfile = tmp_path / "pycastle" / "Dockerfile"
+    assert dockerfile.read_bytes() == expected
+
+
+def test_init_refresh_leaves_existing_role_codex_dirs_unmodified(tmp_path, monkeypatch):
+    """`pycastle init --refresh` leaves existing per-role codex/auth.json untouched."""
+    from pycastle.agents.output_protocol import AgentRole
+    from pycastle.commands.init import main, refresh
+    from pycastle.session.resume import SESSION_DIR_NAME
+
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "tok"}')
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=["codex", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    # Record mtimes and content for all role codex auth files
+    role_auth_files: list[tuple[object, float, bytes]] = []
+    for role in AgentRole:
+        namespaces = ["main", "issues"] if role == AgentRole.IMPROVE else [""]
+        for namespace in namespaces:
+            base = tmp_path / SESSION_DIR_NAME / role.value
+            role_state_dir = base / namespace if namespace else base
+            auth_file = role_state_dir / "codex" / "auth.json"
+            assert auth_file.exists()
+            role_auth_files.append(
+                (auth_file, auth_file.stat().st_mtime, auth_file.read_bytes())
+            )
+
+    refresh()
+
+    for auth_file, mtime_before, content_before in role_auth_files:
+        assert auth_file.stat().st_mtime == mtime_before, (
+            f"mtime changed for {auth_file}"
+        )
+        assert auth_file.read_bytes() == content_before, (
+            f"content changed for {auth_file}"
+        )
+
+
+def test_init_refresh_codex_config_without_existing_codex_dirs_does_not_create_them(
+    tmp_path, monkeypatch
+):
+    """`pycastle init --refresh` on a codex config with no per-role codex dirs does not create them."""
+    from pycastle.agents.output_protocol import AgentRole
+    from pycastle.commands.init import main, refresh
+    from pycastle.session.resume import SESSION_DIR_NAME
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    # Inject codex into config without having seeded credentials
+    config_file = tmp_path / "pycastle" / "config.py"
+    config_file.write_text('default_service = "codex"\n')
+
+    refresh()
+
+    for role in AgentRole:
+        namespaces = ["main", "issues"] if role == AgentRole.IMPROVE else [""]
+        for namespace in namespaces:
+            base = tmp_path / SESSION_DIR_NAME / role.value
+            role_state_dir = base / namespace if namespace else base
+            assert not (role_state_dir / "codex").exists(), (
+                f"codex/ dir should not exist for {role.value}/{namespace}"
+            )
