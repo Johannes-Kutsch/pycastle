@@ -261,6 +261,9 @@ class ClaudeService:
     def list_models(self) -> tuple[str, ...]:
         return _list_models()
 
+    def valid_efforts(self) -> frozenset[str]:
+        return frozenset({"low", "medium", "high", "xhigh", "max"})
+
     def build_command(
         self,
         model: str = "",
