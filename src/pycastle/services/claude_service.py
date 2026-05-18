@@ -4,16 +4,13 @@ import dataclasses
 import json
 import re
 import shlex
-import shutil
 from collections.abc import Iterable, Iterator
 from datetime import datetime, time, timedelta, timezone
-from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 from ..agents import output_protocol as _proto
 from ..agents.output_protocol import AgentRole
-from ..errors import ClaudeCliNotFoundError
 from ..session import SESSION_DIR_NAME, RunKind
 from .agent_service import AssistantTurn, ParsedTurn, Result, Tokens, UsageLimit
 
@@ -77,13 +74,6 @@ class _AccountPool:
     def names(self) -> list[str]:
         return [a.name for a in self._accounts]
 
-
-# claude CLI does not expose a list-models subcommand; this list is kept in sync manually.
-_KNOWN_MODELS: tuple[str, ...] = (
-    "claude-haiku-4-5-20251001",
-    "claude-sonnet-4-6",
-    "claude-opus-4-7",
-)
 
 _RESET_TIME_RE = re.compile(
     r"resets\s+"
@@ -208,16 +198,6 @@ def _extract_turn(line: str) -> tuple[str | None, int | None]:
     return turn_text, tokens
 
 
-@lru_cache(maxsize=1)
-def _list_models() -> tuple[str, ...]:
-    """Return known Claude model IDs, verifying the CLI is installed. Cached for the process lifetime."""
-    if shutil.which("claude") is None:
-        raise ClaudeCliNotFoundError(
-            "claude CLI not found; ensure it is installed and on PATH"
-        )
-    return _KNOWN_MODELS
-
-
 class ClaudeService:
     def __init__(self, accounts: list[tuple[str, str]] | None = None) -> None:
         self._pool: _AccountPool | None = (
@@ -257,9 +237,6 @@ class ClaudeService:
         if self._pool is None:
             return []
         return self._pool.names()
-
-    def list_models(self) -> tuple[str, ...]:
-        return _list_models()
 
     def valid_efforts(self) -> frozenset[str]:
         return frozenset({"low", "medium", "high", "xhigh", "max"})
