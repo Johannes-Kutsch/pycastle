@@ -38,8 +38,8 @@ def test_config_has_wontfix_label_default():
     assert Config().wontfix_label == "wontfix"
 
 
-def test_config_has_auto_file_bugs_default_true():
-    assert Config().auto_file_bugs is True
+def test_config_has_auto_file_bugs_default_false():
+    assert Config().auto_file_bugs is False
 
 
 def test_config_has_bug_report_repo_default():
