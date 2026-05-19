@@ -236,6 +236,114 @@ def test_cron_sh_does_not_install_consuming_project_deps():
     assert "pip install -r requirements.txt" not in content
 
 
+# ── cron.sh --no-improve flag ─────────────────────────────────────────────────
+
+
+@pytest.fixture()
+def cron_sh_tracking_env(tmp_path):
+    """Like cron_sh_env but the pycastle shim records its invocations to a file."""
+    setup_dir = tmp_path / "pycastle" / "setup"
+    setup_dir.mkdir(parents=True)
+
+    cron_sh_dst = setup_dir / "cron.sh"
+    cron_sh_dst.write_bytes((SETUP_DIR / "cron.sh").read_bytes())
+    cron_sh_dst.chmod(
+        cron_sh_dst.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    logs_dir = tmp_path / "pycastle" / "logs"
+    logs_dir.mkdir(parents=True)
+
+    pycastle_home = tmp_path / "pycastle_home"
+    pycastle_home.mkdir()
+
+    venv_bin = tmp_path / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+
+    cron_log = logs_dir / "cron.log"
+    calls_file = tmp_path / "pycastle_calls.txt"
+
+    python_shim = venv_bin / "python"
+    python_shim.write_text(
+        "#!/usr/bin/env bash\n"
+        'case "${1:-}" in\n'
+        "    -m) exit 0 ;;\n"
+        f"    -c) echo '{cron_log}' ;;\n"
+        "    *) exit 0 ;;\n"
+        "esac\n"
+    )
+    python_shim.chmod(
+        python_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    pycastle_shim = venv_bin / "pycastle"
+    pycastle_shim.write_text(
+        f'#!/usr/bin/env bash\necho "$@" >> "{calls_file}"\nexit 0\n'
+    )
+    pycastle_shim.chmod(
+        pycastle_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    env = os.environ.copy()
+    env["PYCASTLE_HOME"] = str(pycastle_home)
+
+    return {
+        "cron_sh": cron_sh_dst,
+        "logs_dir": logs_dir,
+        "env": env,
+        "calls_file": calls_file,
+    }
+
+
+def test_cron_sh_no_improve_passes_flag_to_run(cron_sh_tracking_env):
+    """cron.sh --no-improve must invoke pycastle run --no-improve."""
+    result = subprocess.run(
+        [_BASH, str(cron_sh_tracking_env["cron_sh"]), "--no-improve"],
+        env=cron_sh_tracking_env["env"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    calls = cron_sh_tracking_env["calls_file"].read_text()
+    assert "run --no-improve" in calls
+
+
+def test_cron_sh_no_flag_runs_without_no_improve(cron_sh_tracking_env):
+    """cron.sh with no arguments must invoke pycastle run without --no-improve."""
+    result = subprocess.run(
+        [_BASH, str(cron_sh_tracking_env["cron_sh"])],
+        env=cron_sh_tracking_env["env"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    calls = cron_sh_tracking_env["calls_file"].read_text()
+    run_lines = [line for line in calls.splitlines() if line.startswith("run")]
+    assert run_lines, "expected at least one 'pycastle run' invocation"
+    assert all("--no-improve" not in line for line in run_lines)
+
+
+def test_cron_sh_unknown_flag_exits_nonzero(cron_sh_tracking_env):
+    """cron.sh with an unknown flag must exit non-zero and print a usage message."""
+    result = subprocess.run(
+        [_BASH, str(cron_sh_tracking_env["cron_sh"]), "--unknown-flag"],
+        env=cron_sh_tracking_env["env"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "usage" in result.stderr.lower() or "unknown" in result.stderr.lower()
+
+
+def test_cron_sh_usage_comment_documents_no_improve():
+    """cron.sh must have a usage comment documenting the --no-improve flag."""
+    content = (SETUP_DIR / "cron.sh").read_text()
+    assert "--no-improve" in content.splitlines()[0:10].__str__()
+
+
 # ── cron.sh log retention ─────────────────────────────────────────────────────
 
 

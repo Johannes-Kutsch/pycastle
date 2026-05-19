@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
 # Crontab usage (cron-install.sh writes this for you):
 #   0 1 * * * /abs/path/to/repo/pycastle/setup/cron.sh >> <logs_dir>/cron.log 2>&1 # pycastle:/abs/path
+# Options:
+#   --no-improve   Pass --no-improve to 'pycastle run', suppressing improve-agent dispatch.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
+
+RUN_EXTRA_ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --no-improve) RUN_EXTRA_ARGS+=(--no-improve) ;;
+        *) echo "Usage: cron.sh [--no-improve]" >&2; exit 1 ;;
+    esac
+done
 
 if [ ! -d ".venv" ]; then
     echo "Error: .venv/ not found. Create it first: python -m venv .venv && .venv/bin/pip install pycastle" >&2
@@ -24,7 +34,7 @@ mkdir -p "$PYCASTLE_HOME"
 
     .venv/bin/pycastle init --refresh
     .venv/bin/pycastle build
-    .venv/bin/pycastle run
+    .venv/bin/pycastle run "${RUN_EXTRA_ARGS[@]+"${RUN_EXTRA_ARGS[@]}"}"
 ) 200>"$PYCASTLE_HOME/.cron.lock"
 
 # Trim cron.log to the last 10000 lines and sweep *.log files older than 30 days.
