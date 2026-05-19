@@ -278,7 +278,8 @@ class ClaudeService:
         for line in lines:
             usage_limit = _check_usage_limit(line)
             if usage_limit is not False:
-                yield UsageLimit(reset_time=usage_limit)
+                raw = line if usage_limit is None else None
+                yield UsageLimit(reset_time=usage_limit, raw_message=raw)
                 return
             turn, tokens = _extract_turn(line)
             if tokens is not None:

@@ -270,3 +270,33 @@ def test_run_skips_non_json_lines_silently():
     lines = ["not json", _result_line("done")]
     events = list(ClaudeService().run(lines))
     assert any(isinstance(e, Result) for e in events)
+
+
+def test_run_usage_limit_carries_raw_message_when_result_is_not_string():
+    line = json.dumps({"api_error_status": 429, "result": 42})
+    events = list(ClaudeService().run([line]))
+    limit = next(e for e in events if isinstance(e, UsageLimit))
+    assert limit.raw_message == line
+
+
+def test_run_usage_limit_carries_raw_message_when_result_has_no_reset_time():
+    line = json.dumps({"api_error_status": 429, "result": "rate limit exceeded"})
+    events = list(ClaudeService().run([line]))
+    limit = next(e for e in events if isinstance(e, UsageLimit))
+    assert limit.raw_message == line
+
+
+def test_run_usage_limit_carries_raw_message_when_reset_time_hour_out_of_range():
+    # hour=13 is out of range for 12-hour clock (1–12)
+    line = json.dumps({"api_error_status": 429, "result": "limit resets 13:00am (UTC)"})
+    events = list(ClaudeService().run([line]))
+    limit = next(e for e in events if isinstance(e, UsageLimit))
+    assert limit.raw_message == line
+
+
+def test_run_usage_limit_has_no_raw_message_when_reset_time_parsed_successfully():
+    line = json.dumps({"api_error_status": 429, "result": "limit resets 3:30pm (UTC)"})
+    events = list(ClaudeService().run([line]))
+    limit = next(e for e in events if isinstance(e, UsageLimit))
+    assert limit.reset_time is not None
+    assert limit.raw_message is None

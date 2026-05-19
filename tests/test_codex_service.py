@@ -506,3 +506,28 @@ def test_service_registry_recognizes_codex():
 
     svc = _CodexService()
     assert svc.name == "codex"
+
+
+# ── UsageLimit raw_message ────────────────────────────────────────────────────
+
+
+def test_run_turn_failed_usage_limit_carries_raw_message_when_reset_time_unparseable():
+    message = "You've hit your usage limit. Contact support."
+    events = list(CodexService().run([_turn_failed(message)]))
+    limit = next(e for e in events if isinstance(e, UsageLimit))
+    assert limit.raw_message == message
+
+
+def test_run_error_event_usage_limit_carries_raw_message_when_reset_time_unparseable():
+    message = "You've hit your usage limit. No reset time available."
+    events = list(CodexService().run([_error_line(message)]))
+    limit = next(e for e in events if isinstance(e, UsageLimit))
+    assert limit.raw_message == message
+
+
+def test_run_turn_failed_usage_limit_has_no_raw_message_when_reset_time_parsed():
+    message = "You've hit your usage limit. Please wait or try again at 3:30 PM"
+    events = list(CodexService().run([_turn_failed(message)]))
+    limit = next(e for e in events if isinstance(e, UsageLimit))
+    assert limit.reset_time is not None
+    assert limit.raw_message is None

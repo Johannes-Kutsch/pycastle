@@ -92,7 +92,9 @@ def _extract_usage_limit(message: str) -> UsageLimit | None:
     """Return a UsageLimit if message contains the usage-limit substring."""
     if _USAGE_LIMIT_SUBSTRING not in message:
         return None
-    return UsageLimit(reset_time=_parse_reset_time(message))
+    reset_time = _parse_reset_time(message)
+    raw = message if reset_time is None else None
+    return UsageLimit(reset_time=reset_time, raw_message=raw)
 
 
 @dataclasses.dataclass

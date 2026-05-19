@@ -28,6 +28,7 @@ class Result:
 @dataclasses.dataclass
 class UsageLimit:
     reset_time: datetime | None
+    raw_message: str | None = None
 
 
 ParsedTurn = AssistantTurn | Tokens | Result | UsageLimit
