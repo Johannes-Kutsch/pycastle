@@ -1461,7 +1461,7 @@ def test_run_iteration_uses_preflight_sha_for_in_flight_issues(
     )
     asyncio.run(run_iteration(deps))
 
-    git_svc.pull.assert_called()
+    git_svc.pull_with_merge_fallback.assert_called()
     implementer_sha = git_svc.create_worktree.call_args_list[0].args[3]
     assert implementer_sha == "preflight-sha", (
         "In-flight implementer worktree must be pinned to the SHA from preflight_cache"

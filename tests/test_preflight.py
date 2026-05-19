@@ -170,7 +170,9 @@ def test_get_safe_sha_reruns_checks_when_head_advances(tmp_path, git_svc, github
 def test_get_safe_sha_propagates_git_command_error_on_pull_failure(
     tmp_path, git_svc, github_svc
 ):
-    git_svc.pull.side_effect = GitCommandError("git pull --ff-only failed")
+    git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
+        "git pull --ff-only failed"
+    )
     fake = FakeAgentRunner([], preflight_responses=[])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
@@ -194,7 +196,7 @@ def test_get_safe_sha_leaves_slot_unchanged_on_pull_failure(
     assert isinstance(result1, PreflightReady)
 
     # Second call: pull fails
-    git_svc.pull.side_effect = GitCommandError("diverged")
+    git_svc.pull_with_merge_fallback.side_effect = GitCommandError("diverged")
     # Different SHA so it would invalidate cache
     git_svc.get_head_sha.return_value = "sha-new"
 
@@ -202,7 +204,7 @@ def test_get_safe_sha_leaves_slot_unchanged_on_pull_failure(
         asyncio.run(cache.get_safe_sha(deps))
 
     # The slot still holds the original verdict
-    git_svc.pull.side_effect = None
+    git_svc.pull_with_merge_fallback.side_effect = None
     git_svc.get_head_sha.return_value = "abc123"
     result3 = asyncio.run(cache.get_safe_sha(deps))
     assert result3 is result1

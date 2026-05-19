@@ -2978,7 +2978,7 @@ def test_idle_iteration_skips_preflight_gate(tmp_path):
 
     _run(tmp_path, github_service=mock_github, git_service=mock_git)
 
-    mock_git.pull.assert_not_called()
+    mock_git.pull_with_merge_fallback.assert_not_called()
 
 
 def test_in_flight_only_iteration_planning_skips_preflight_gate(tmp_path):
@@ -2989,14 +2989,14 @@ def test_in_flight_only_iteration_planning_skips_preflight_gate(tmp_path):
     mock_git = _make_git_svc(try_merge_side_effect=[True])
     mock_git.verify_ref_exists.return_value = True  # branch exists → in-flight
 
-    original_pull = mock_git.pull.side_effect
+    original_pull = mock_git.pull_with_merge_fallback.side_effect
 
     def _tracking_pull(repo_path):
         pull_call_count[0] += 1
         if original_pull is not None:
             return original_pull(repo_path)
 
-    mock_git.pull.side_effect = _tracking_pull
+    mock_git.pull_with_merge_fallback.side_effect = _tracking_pull
     mock_github = _make_github_svc(numbers=[1])
 
     async def _fake_run_agent(request: RunRequest):
@@ -3010,7 +3010,7 @@ def test_in_flight_only_iteration_planning_skips_preflight_gate(tmp_path):
     )
 
     assert pull_call_count[0] >= 1, (
-        "run_issue must call get_safe_sha() which triggers pull even for in-flight issues"
+        "run_issue must call get_safe_sha() which triggers pull_with_merge_fallback even for in-flight issues"
     )
 
 

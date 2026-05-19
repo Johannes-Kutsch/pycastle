@@ -121,11 +121,11 @@ class PreflightCache:
         async with self._lock:
             await _wait_for_clean_working_tree(deps, "Preflight")
             try:
-                deps.git_svc.pull(deps.repo_root)
+                deps.git_svc.pull_with_merge_fallback(deps.repo_root)
             except GitCommandError:
                 deps.status_display.print(
                     "Preflight",
-                    "git pull --ff-only failed — remote branch has diverged or is unreachable. "
+                    "git pull failed — remote branch is unreachable or has irreconcilable conflicts. "
                     "Resolve manually and retry.",
                     style="error",
                 )
