@@ -24,6 +24,7 @@ class AgentRole(enum.Enum):
     MERGER = "merger"
     IMPROVE = "improve"
     FAILURE_REPORT = "failure_report"
+    DIVERGENCE_RESOLVER = "divergence_resolver"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -326,6 +327,8 @@ class _ImproveHandler:
 _commit_message_handler = _CommitMessageHandler()
 _preflight_issue_handler = _PreflightIssueHandler()
 
+_merger_handler = _MergerHandler()
+
 _HANDLERS: dict[AgentRole, _RoleHandler] = {
     AgentRole.IMPLEMENTER: _commit_message_handler,
     AgentRole.REVIEWER: _commit_message_handler,
@@ -333,7 +336,8 @@ _HANDLERS: dict[AgentRole, _RoleHandler] = {
     AgentRole.PREFLIGHT_ISSUE: _preflight_issue_handler,
     AgentRole.FAILURE_REPORT: _preflight_issue_handler,
     AgentRole.IMPROVE: _ImproveHandler(),
-    AgentRole.MERGER: _MergerHandler(),
+    AgentRole.MERGER: _merger_handler,
+    AgentRole.DIVERGENCE_RESOLVER: _merger_handler,
 }
 
 assert len(_HANDLERS) == len(AgentRole)

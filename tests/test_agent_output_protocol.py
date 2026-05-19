@@ -93,6 +93,7 @@ def test_agent_role_has_all_members():
         "MERGER",
         "IMPROVE",
         "FAILURE_REPORT",
+        "DIVERGENCE_RESOLVER",
     }
 
 

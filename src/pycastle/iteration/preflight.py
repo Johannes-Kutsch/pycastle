@@ -13,6 +13,7 @@ from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompts.pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
+from ..session import RoleSession
 from ..agents.classifier import WellFormed, classify_slice, slice_labels
 from ..display.status_display import StatusDisplay
 from ._utils import _wait_for_clean_working_tree
@@ -115,21 +116,53 @@ class PreflightCache:
         self._verdict: PreflightResult | None = None
         self._lock: asyncio.Lock = asyncio.Lock()
 
+    _DIVERGE_SANDBOX = "pycastle/diverge-sandbox"
+
     async def get_safe_sha(self, deps: _PreflightDeps) -> PreflightResult:
-        from ..infrastructure.worktree import transient_worktree
+        from ..infrastructure.worktree import managed_worktree, transient_worktree
 
         async with self._lock:
             await _wait_for_clean_working_tree(deps, "Preflight")
             try:
                 deps.git_svc.pull_with_merge_fallback(deps.repo_root)
-            except GitCommandError:
-                deps.status_display.print(
-                    "Preflight",
-                    "git pull failed — remote branch is unreachable or has irreconcilable conflicts. "
-                    "Resolve manually and retry.",
-                    style="error",
-                )
-                raise
+            except GitCommandError as pull_exc:
+                if "conflict" not in str(pull_exc).lower():
+                    deps.status_display.print(
+                        "Preflight",
+                        "git pull failed — remote branch is unreachable or has irreconcilable conflicts. "
+                        "Resolve manually and retry.",
+                        style="error",
+                    )
+                    raise
+                branch = deps.git_svc.get_current_branch(deps.repo_root)
+                current_sha = deps.git_svc.get_head_sha(deps.repo_root)
+                try:
+                    async with managed_worktree(
+                        "diverge-sandbox",
+                        branch=self._DIVERGE_SANDBOX,
+                        sha=current_sha,
+                        delete_branch_on_teardown=True,
+                        deps=deps,
+                    ) as sandbox_path:
+                        await deps.agent_runner.run(
+                            RunRequest(
+                                name="Divergence Resolver",
+                                template=PromptTemplate.DIVERGENCE_RESOLVE,
+                                mount_path=sandbox_path,
+                                role=AgentRole.DIVERGENCE_RESOLVER,
+                                scope_args={"BRANCH": branch},
+                                status_display=deps.status_display,
+                                work_body="Resolving divergence",
+                            )
+                        )
+                        deps.git_svc.fast_forward_branch(
+                            deps.repo_root, branch, self._DIVERGE_SANDBOX
+                        )
+                        RoleSession(
+                            sandbox_path, AgentRole.DIVERGENCE_RESOLVER
+                        ).discard()
+                except Exception:
+                    raise pull_exc from None
             sha = deps.git_svc.get_head_sha(deps.repo_root)
 
             if self._verdict is not None and self._verdict.sha == sha:

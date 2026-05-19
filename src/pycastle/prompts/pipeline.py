@@ -81,6 +81,7 @@ class Scope(enum.Enum):
             }
         ),
     )
+    DIVERGE = ("DIVERGE", frozenset({"BRANCH"}))
     RESUME = ("RESUME", frozenset[str]())
     FAILURE_REPORT = (
         "FAILURE_REPORT",
@@ -105,6 +106,7 @@ class PromptTemplate(enum.Enum):
     IMPROVE_ISSUES = ("improve/03-issues.md", Scope.IMPROVE_ISSUES)
     IMPROVE_NO_CANDIDATE = ("improve/04-no-candidate-report.md", Scope.IMPROVE_SESSION)
     RESUME = ("_resume-prompt.md", Scope.RESUME)
+    DIVERGENCE_RESOLVE = ("diverge-prompt.md", Scope.DIVERGE)
     FAILURE_REPORT = ("failure-report.md", Scope.FAILURE_REPORT)
 
     @property
