@@ -394,15 +394,10 @@ def test_run_iteration_aborted_usage_limit_does_not_raise_system_exit(
 # ── AbortedUsageLimit: auto-file parse failures ───────────────────────────────
 
 
-def test_run_iteration_files_issue_when_usage_limit_has_raw_message(
-    tmp_path, git_svc, logger
-):
-    """When UsageLimitError.raw_message is non-None, run_iteration calls auto_file_issue
-    with a title scoped to the originating provider and a body containing the raw message."""
-    raw = "You're out of extra usage · no reset info"
-
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [
+@pytest.fixture
+def github_svc_two_issues():
+    svc = MagicMock(spec=GithubService)
+    svc.get_open_issues.return_value = [
         {
             "number": 1,
             "title": "Fix A",
@@ -418,7 +413,24 @@ def test_run_iteration_files_issue_when_usage_limit_has_raw_message(
             "labels": ["behavior-slice"],
         },
     ]
-    github_svc.get_all_open_issues_lightweight.return_value = []
+    svc.get_all_open_issues_lightweight.return_value = []
+    return svc
+
+
+@pytest.fixture(autouse=True)
+def _clear_usage_limit_dedupe(monkeypatch):
+    """Reset the per-process dedupe set so tests start with a clean cache."""
+    import pycastle.iteration as _iter_mod
+
+    monkeypatch.setattr(_iter_mod, "_FILED_USAGE_LIMIT_RAW_MESSAGES", set())
+
+
+def test_run_iteration_files_issue_when_usage_limit_has_raw_message(
+    tmp_path, git_svc, github_svc_two_issues, logger
+):
+    """When UsageLimitError.raw_message is non-None, run_iteration calls auto_file_issue
+    with a title scoped to the originating provider and a body containing the raw message."""
+    raw = "You're out of extra usage · no reset info"
 
     async def _fake_agent(request: RunRequest):
         raise UsageLimitError(reset_time=None, raw_message=raw, provider="claude")
@@ -427,7 +439,7 @@ def test_run_iteration_files_issue_when_usage_limit_has_raw_message(
         tmp_path,
         _fake_agent,
         git_svc=git_svc,
-        github_svc=github_svc,
+        github_svc=github_svc_two_issues,
         logger=logger,
         preflight_responses=[[]],
     )
@@ -443,59 +455,28 @@ def test_run_iteration_files_issue_when_usage_limit_has_raw_message(
     assert raw in body
 
 
-def test_run_iteration_dedupes_auto_file_on_same_raw_message(tmp_path, git_svc, logger):
+def test_run_iteration_dedupes_auto_file_on_same_raw_message(
+    tmp_path, git_svc, github_svc_two_issues, logger
+):
     """Multiple UsageLimitErrors with the same raw_message fire auto_file_issue only once."""
-    import pycastle.iteration as _iter_mod
-
     raw = "You're out of extra usage · same message repeated"
-
-    # Ensure dedupe set is clean for this test
-    _iter_mod._FILED_USAGE_LIMIT_RAW_MESSAGES.discard(raw)
-
-    def _two_issue_github_svc():
-        svc = MagicMock(spec=GithubService)
-        svc.get_open_issues.return_value = [
-            {
-                "number": 1,
-                "title": "Fix A",
-                "body": "",
-                "comments": [],
-                "labels": ["behavior-slice"],
-            },
-            {
-                "number": 2,
-                "title": "Fix B",
-                "body": "",
-                "comments": [],
-                "labels": ["behavior-slice"],
-            },
-        ]
-        svc.get_all_open_issues_lightweight.return_value = []
-        return svc
 
     async def _fake_agent(request: RunRequest):
         raise UsageLimitError(reset_time=None, raw_message=raw, provider="claude")
 
-    with patch("pycastle.iteration.auto_file_issue") as mock_file:
-        deps1 = _make_deps(
+    def _deps():
+        return _make_deps(
             tmp_path,
             _fake_agent,
             git_svc=git_svc,
-            github_svc=_two_issue_github_svc(),
+            github_svc=github_svc_two_issues,
             logger=logger,
             preflight_responses=[[]],
         )
-        asyncio.run(run_iteration(deps1))
 
-        deps2 = _make_deps(
-            tmp_path,
-            _fake_agent,
-            git_svc=git_svc,
-            github_svc=_two_issue_github_svc(),
-            logger=logger,
-            preflight_responses=[[]],
-        )
-        asyncio.run(run_iteration(deps2))
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        asyncio.run(run_iteration(_deps()))
+        asyncio.run(run_iteration(_deps()))
 
     assert mock_file.call_count == 1
 
@@ -531,28 +512,11 @@ def test_run_iteration_does_not_file_issue_when_raw_message_is_none(
     mock_file.assert_not_called()
 
 
-def test_run_iteration_files_issue_with_codex_provider(tmp_path, git_svc, logger):
+def test_run_iteration_files_issue_with_codex_provider(
+    tmp_path, git_svc, github_svc_two_issues, logger
+):
     """Provider identity is reflected in the title: (codex) when provider='codex'."""
     raw = "You've hit your usage limit, try again later"
-
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [
-        {
-            "number": 1,
-            "title": "Fix A",
-            "body": "",
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-        {
-            "number": 2,
-            "title": "Fix B",
-            "body": "",
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-    ]
-    github_svc.get_all_open_issues_lightweight.return_value = []
 
     async def _fake_agent(request: RunRequest):
         raise UsageLimitError(reset_time=None, raw_message=raw, provider="codex")
@@ -561,7 +525,7 @@ def test_run_iteration_files_issue_with_codex_provider(tmp_path, git_svc, logger
         tmp_path,
         _fake_agent,
         git_svc=git_svc,
-        github_svc=github_svc,
+        github_svc=github_svc_two_issues,
         logger=logger,
         preflight_responses=[[]],
     )
@@ -575,30 +539,10 @@ def test_run_iteration_files_issue_with_codex_provider(tmp_path, git_svc, logger
 
 
 def test_run_iteration_still_returns_aborted_usage_limit_after_filing(
-    tmp_path, git_svc, logger
+    tmp_path, git_svc, github_svc_two_issues, logger
 ):
     """run_iteration returns AbortedUsageLimit even when auto_file_issue fires."""
     raw = "Usage limit hit, parse failed"
-
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [
-        {
-            "number": 1,
-            "title": "Fix A",
-            "body": "",
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-        {
-            "number": 2,
-            "title": "Fix B",
-            "body": "",
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-    ]
-    github_svc.get_all_open_issues_lightweight.return_value = []
-
     reset = datetime(2026, 5, 19, 13, 0)
 
     async def _fake_agent(request: RunRequest):
@@ -608,7 +552,7 @@ def test_run_iteration_still_returns_aborted_usage_limit_after_filing(
         tmp_path,
         _fake_agent,
         git_svc=git_svc,
-        github_svc=github_svc,
+        github_svc=github_svc_two_issues,
         logger=logger,
         preflight_responses=[[]],
     )
