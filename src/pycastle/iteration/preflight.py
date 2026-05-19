@@ -112,11 +112,11 @@ class PreflightCache:
     survives iteration reconstruction.  All callers serialise via the internal lock.
     """
 
+    _DIVERGE_SANDBOX = "pycastle/diverge-sandbox"
+
     def __init__(self) -> None:
         self._verdict: PreflightResult | None = None
         self._lock: asyncio.Lock = asyncio.Lock()
-
-    _DIVERGE_SANDBOX = "pycastle/diverge-sandbox"
 
     async def get_safe_sha(self, deps: _PreflightDeps) -> PreflightResult:
         from ..infrastructure.worktree import managed_worktree, transient_worktree
