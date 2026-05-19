@@ -1715,35 +1715,7 @@ def test_fetch_raises_git_timeout_error_on_timeout(tmp_path):
 def _init_repo_with_remote(tmp_path: Path) -> tuple[Path, Path]:
     """Create a remote repo and a clone (local) with one shared initial commit."""
     remote = tmp_path / "remote"
-    remote.mkdir()
-    for cmd in (
-        ["git", "init", "-b", "main", str(remote)],
-        ["git", "config", "user.email", "test@test.com"],
-        ["git", "config", "user.name", "Test"],
-    ):
-        subprocess.run(
-            cmd,
-            cwd=remote if cmd[0] == "git" and cmd[1] != "init" else None,
-            check=True,
-            capture_output=True,
-        )
-    subprocess.run(
-        ["git", "config", "user.email", "test@test.com"],
-        cwd=remote,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test"],
-        cwd=remote,
-        check=True,
-        capture_output=True,
-    )
-    (remote / "base.txt").write_text("base\n")
-    subprocess.run(["git", "add", "."], cwd=remote, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", "init"], cwd=remote, check=True, capture_output=True
-    )
+    _init_repo(remote)
 
     local = tmp_path / "local"
     subprocess.run(
