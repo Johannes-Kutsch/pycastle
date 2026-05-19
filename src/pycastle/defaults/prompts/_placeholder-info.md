@@ -73,6 +73,12 @@ Used by: improve/03-issues.md
 - `{{ISSUE_BODY}}` — The issue body markdown.
 - `{{ISSUE_COMMENTS}}` — Formatted issue comments.
 
+## Scope: DIVERGE
+
+Used by: diverge-prompt.md
+
+- `{{BRANCH}}` — The current branch name (used to identify both the local branch and its `origin/<branch>` counterpart to merge).
+
 ## Scope: RESUME
 
 Used by: _resume-prompt.md

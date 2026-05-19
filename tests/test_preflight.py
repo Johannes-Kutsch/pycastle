@@ -8,7 +8,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from unittest.mock import MagicMock
 
-from pycastle.agents.output_protocol import IssueOutput
+import shutil as _shutil
+
+from pycastle.agents.output_protocol import CompletionOutput, IssueOutput
 from pycastle.config import Config
 from pycastle.services import GitCommandError, GitService, GithubService
 from pycastle.iteration._deps import FakeAgentRunner
@@ -301,3 +303,93 @@ def test_get_safe_sha_raises_when_afk_issue_has_multiple_slice_mode_labels(
 
     with pytest.raises(RuntimeError, match="Pre-Flight Reporter"):
         asyncio.run(cache.get_safe_sha(deps))
+
+
+# ── get_safe_sha: divergence resolution via agent ────────────────────────────
+
+
+def _setup_worktree_mocks(git_svc):
+    """Configure git_svc to support managed_worktree (creates real dirs)."""
+    _registered: list = []
+
+    def _fake_create_worktree(repo, path, branch, sha=None):
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "pyproject.toml").write_text("[project]\n")
+        _registered.append(path)
+
+    def _fake_remove_worktree(repo, path):
+        _shutil.rmtree(path, ignore_errors=True)
+        _registered[:] = [p for p in _registered if p != path]
+
+    git_svc.verify_ref_exists.return_value = False
+    git_svc.list_worktrees.side_effect = lambda repo: list(_registered)
+    git_svc.create_worktree.side_effect = _fake_create_worktree
+    git_svc.remove_worktree.side_effect = _fake_remove_worktree
+
+
+def test_get_safe_sha_resolves_divergence_via_agent_and_returns_ready(
+    tmp_path, git_svc, github_svc
+):
+    """When pull_with_merge_fallback raises a textual-conflict error, get_safe_sha
+    spawns the divergence-resolution agent; on success it fast-forwards main and
+    returns PreflightReady with the post-merge SHA."""
+    _setup_worktree_mocks(git_svc)
+
+    git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
+        "git merge origin/main failed due to conflicts"
+    )
+    git_svc.get_current_branch.return_value = "main"
+    git_svc.get_head_sha.side_effect = ["abc123", "merged-sha"]
+
+    fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightReady)
+    assert result.sha == "merged-sha"
+    git_svc.fast_forward_branch.assert_called_once()
+
+
+def test_get_safe_sha_propagates_pull_error_when_divergence_agent_fails(
+    tmp_path, git_svc, github_svc
+):
+    """When the divergence agent fails (FailedOutput), the original GitCommandError
+    propagates and no PreflightReady is returned."""
+    from pycastle.agents.output_protocol import FailedOutput
+
+    _setup_worktree_mocks(git_svc)
+
+    pull_err = GitCommandError("git merge origin/main failed due to conflicts")
+    git_svc.pull_with_merge_fallback.side_effect = pull_err
+    git_svc.get_current_branch.return_value = "main"
+    git_svc.get_head_sha.return_value = "abc123"
+
+    fake = FakeAgentRunner([FailedOutput()], preflight_responses=[])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(GitCommandError) as exc_info:
+        asyncio.run(cache.get_safe_sha(deps))
+
+    assert exc_info.value is pull_err
+
+
+def test_get_safe_sha_propagates_non_conflict_pull_error_without_spawning_agent(
+    tmp_path, git_svc, github_svc
+):
+    """Auth/unreachable pull errors are propagated immediately without spawning
+    the divergence-resolution agent."""
+    git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
+        "git pull --ff-only failed", stderr="authentication failed"
+    )
+
+    fake = FakeAgentRunner([], preflight_responses=[])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(GitCommandError):
+        asyncio.run(cache.get_safe_sha(deps))
+
+    assert len(fake.calls) == 0
