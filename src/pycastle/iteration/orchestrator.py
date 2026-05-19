@@ -3,7 +3,7 @@ import shutil
 import sys
 import time
 import traceback
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +30,7 @@ from ..services import (
     GitService,
 )
 from ..services.agent_service import AgentService
+from ..services._wake_time import compute_wake_time
 from ..session import SESSION_DIR_NAME
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import remove_worktrees_dir_if_empty
@@ -317,15 +318,9 @@ async def run(
                     if involved:
                         wake_time = min(svc.next_wake_time() for svc in involved)
                         suffix = ""
-                    elif reset_time is not None:
-                        wake_time = reset_time + timedelta(minutes=2)
-                        suffix = ""
                     else:
-                        next_hour = now.replace(
-                            minute=0, second=0, microsecond=0
-                        ) + timedelta(hours=1)
-                        wake_time = next_hour + timedelta(minutes=2)
-                        suffix = " (estimated)"
+                        wake_time, is_estimated = compute_wake_time(reset_time, now)
+                        suffix = " (estimated)" if is_estimated else ""
                     status_display.print(  # type: ignore[union-attr]
                         "",
                         f"Usage limit reached. Sleeping until {_fmt_wake(wake_time, now)}{suffix}."

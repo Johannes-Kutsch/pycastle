@@ -13,6 +13,7 @@ from ..agents import output_protocol as _proto
 from ..agents.output_protocol import AgentRole
 from ..session import SESSION_DIR_NAME, RunKind
 from .agent_service import AssistantTurn, ParsedTurn, Result, Tokens, UsageLimit
+from ._wake_time import compute_wake_time
 
 
 # ── private account pool ──────────────────────────────────────────────────────
@@ -47,13 +48,7 @@ class _AccountPool:
         self, token: str, reset_time: datetime | None, now: datetime | None = None
     ) -> None:
         now = now or datetime.now()
-        if reset_time is not None:
-            wake = reset_time + timedelta(minutes=2)
-        else:
-            next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(
-                hours=1
-            )
-            wake = next_hour + timedelta(minutes=2)
+        wake, _ = compute_wake_time(reset_time, now)
         for acc in self._accounts:
             if acc.token == token:
                 acc.exhausted_until = wake
