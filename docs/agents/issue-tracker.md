@@ -4,12 +4,17 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 
 ## Conventions
 
-- **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
-- **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
-- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
+- **Create an issue**: `gh issue create --title "..." --body-file body.md`. Use a body file for multi-line bodies.
+- **View an issue with comments**: `gh issue view <number> --comments`
+- **List issues by search**: `gh issue list --search "<query>"`
+- **Add a label**: `gh issue edit <number> --add-label "..."`
+- **Remove a label**: `gh issue edit <number> --remove-label "..."`
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
-- **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
-- **Close**: `gh issue close <number> --comment "..."`
+- **Close**: `gh issue close <number>`
+- **Link as sub-issue**: No native `gh` verb exists; use `gh api`:
+  ```bash
+  gh api repos/OWNER/REPO/issues/N/sub_issues --method POST --field sub_issue_id=M
+  ```
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
