@@ -36,6 +36,16 @@ def _pycastle_version() -> str:
         return "unknown"
 
 
+def _env_block() -> str:
+    py = sys.version_info
+    return (
+        "## Environment\n"
+        f"- pycastle: {_pycastle_version()}\n"
+        f"- Python: {py.major}.{py.minor}.{py.micro}\n"
+        f"- OS: {platform.platform()}\n"
+    )
+
+
 def _format_title(exc: BaseException) -> str:
     msg = str(exc)
     first_line = msg.splitlines()[0] if msg else ""
@@ -45,47 +55,40 @@ def _format_title(exc: BaseException) -> str:
     return title
 
 
-def _format_body(traceback_text: str) -> str:
-    py = sys.version_info
-    env_block = (
-        "## Environment\n"
-        f"- pycastle: {_pycastle_version()}\n"
-        f"- Python: {py.major}.{py.minor}.{py.micro}\n"
-        f"- OS: {platform.platform()}\n"
-    )
-    return f"{env_block}\n## Traceback\n```\n{traceback_text}\n```\n"
-
-
-def _build_url(title: str, body: str, repo: str) -> str:
+def _build_url(title: str, body: str, labels_str: str, repo: str) -> str:
     return (
         f"https://github.com/{repo}/issues/new"
         f"?title={quote(title)}"
         f"&body={quote(body)}"
-        f"&labels={quote(BUG_REPORT_LABELS)}"
+        f"&labels={quote(labels_str)}"
     )
 
 
-def build_bug_report_url(
-    exc: BaseException,
-    traceback_text: str,
-    repo: str = BUG_REPORT_REPO,
+def _build_bug_report_url(
+    title: str,
+    body: str,
+    labels: list[str],
+    repo: str,
 ) -> str:
-    """Build a prefilled GitHub `issues/new` URL for an unhandled exception.
+    """Build a prefilled GitHub `issues/new` URL.
 
-    Truncates the traceback portion of the body so the final URL stays under
-    GitHub's URL length limit, leaving the env block and a footer line intact
-    so the report still points the maintainer at the terminal stderr.
+    Prepends the env block to `body`. Truncates the body so the final URL
+    stays under GitHub's URL length limit, preserving the env block and
+    appending a truncation footer so the report still points the maintainer
+    at the terminal stderr.
     """
-    title = _format_title(exc)
-    url = _build_url(title, _format_body(traceback_text), repo)
+    env = _env_block()
+    label_str = ",".join(labels)
+    full_body = env + "\n" + body
+    url = _build_url(title, full_body, label_str, repo)
     if len(url) <= _MAX_URL_LENGTH:
         return url
 
-    truncated = traceback_text
+    truncated = body
     while truncated and len(url) > _MAX_URL_LENGTH:
         truncated = truncated[: max(len(truncated) - 200, 0)]
-        body = _format_body(truncated) + _TRUNCATION_FOOTER + "\n"
-        url = _build_url(title, body, repo)
+        full_body = env + "\n" + truncated + _TRUNCATION_FOOTER + "\n"
+        url = _build_url(title, full_body, label_str, repo)
     return url
 
 
@@ -133,35 +136,46 @@ def _try_api_path(
         return None
 
 
+def auto_file_issue(
+    title: str,
+    body: str,
+    labels: list[str],
+    *,
+    cfg: Config | None,
+) -> None:
+    """Gate-check, token-resolve, and file (or print prefilled URL for) a GitHub issue.
+
+    Prepends the pycastle/Python/OS environment block to `body`. Never raises.
+    """
+    if cfg is None:
+        cfg = _safe_load_config()
+    token = _safe_resolve_token(cfg)
+    repo = cfg.bug_report_repo if cfg is not None else BUG_REPORT_REPO
+    full_body = _env_block() + "\n" + body
+
+    if cfg is not None and cfg.auto_file_bugs and token:
+        result = _try_api_path(title, full_body, repo, token, cfg)
+        if result is not None:
+            number, html_url = result
+            print(f"Filed issue #{number}: {html_url}")
+            return
+
+    print(_build_bug_report_url(title, body, labels, repo))
+
+
 def report_and_exit(
     exc: BaseException,
     *,
     cfg: Config | None = None,
-    token: str | None = None,
 ) -> None:
-    """Print stderr traceback, file/print a bug report, then exit 1.
-
-    If `cfg.auto_file_bugs` is True and a `GH_TOKEN` is reachable, try the API
-    path; on any failure fall through silently to the prefilled URL path.
-    """
+    """Print stderr traceback, file/print a bug report, then exit 1."""
     tb_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
     print(tb_text, file=sys.stderr, end="")
 
-    if cfg is None:
-        cfg = _safe_load_config()
-    if token is None:
-        token = _safe_resolve_token(cfg)
-
-    repo = cfg.bug_report_repo if cfg is not None else BUG_REPORT_REPO
-
-    if cfg is not None and cfg.auto_file_bugs and token:
-        title = _format_title(exc)
-        body = _format_body(tb_text)
-        result = _try_api_path(title, body, repo, token, cfg)
-        if result is not None:
-            number, html_url = result
-            print(f"Filed issue #{number}: {html_url}")
-            sys.exit(1)
-
-    print(build_bug_report_url(exc, tb_text, repo))
+    auto_file_issue(
+        title=_format_title(exc),
+        body=f"## Traceback\n```\n{tb_text}\n```\n",
+        labels=BUG_REPORT_LABEL_LIST,
+        cfg=cfg,
+    )
     sys.exit(1)
