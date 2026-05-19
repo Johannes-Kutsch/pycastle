@@ -356,7 +356,9 @@ def process_stream_from_events(
     collected_turns: list[str] = []
     for event in events:
         if isinstance(event, UsageLimit):
-            raise UsageLimitError(reset_time=event.reset_time)
+            raise UsageLimitError(
+                reset_time=event.reset_time, raw_message=event.raw_message
+            )
         elif isinstance(event, Tokens):
             if on_tokens is not None:
                 on_tokens(event.count)

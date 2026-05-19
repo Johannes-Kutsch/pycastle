@@ -1058,6 +1058,15 @@ def test_process_stream_from_events_raises_usage_limit_on_usage_limit_event():
     assert exc_info.value.reset_time is None
 
 
+def test_process_stream_from_events_propagates_raw_message_to_usage_limit_error():
+    events = [UsageLimit(reset_time=None, raw_message="hit usage limit, no reset")]
+    with pytest.raises(UsageLimitError) as exc_info:
+        process_stream_from_events(
+            iter(events), on_turn=lambda t: None, role=AgentRole.IMPLEMENTER
+        )
+    assert exc_info.value.raw_message == "hit usage limit, no reset"
+
+
 def test_process_stream_from_events_calls_on_tokens():
     token_counts: list[int] = []
     events = [
