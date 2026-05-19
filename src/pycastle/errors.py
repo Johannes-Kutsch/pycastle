@@ -78,8 +78,13 @@ class DockerBuildError(DockerServiceError):
 
 
 class UsageLimitError(PycastleError):
-    def __init__(self, reset_time: datetime | None = None) -> None:
+    def __init__(
+        self,
+        reset_time: datetime | None = None,
+        raw_message: str | None = None,
+    ) -> None:
         self.reset_time = reset_time
+        self.raw_message = raw_message
         super().__init__(
             f"Usage limit reached (reset_time={reset_time.isoformat() if reset_time else None})"
         )
