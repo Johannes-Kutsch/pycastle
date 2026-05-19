@@ -312,6 +312,28 @@ class GitService(_SubprocessService):
             cwd=repo_path,
         )
 
+    def pull_with_merge_fallback(self, repo_path: Path) -> None:
+        result = self._run(
+            ["git", "pull", "--ff-only"],
+            cwd=repo_path,
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            return
+        stderr = self._decode(result.stderr)
+        if "not possible to fast-forward" not in stderr.lower():
+            raise GitCommandError(
+                "git pull --ff-only failed", returncode=result.returncode, stderr=stderr
+            )
+        branch = self.get_current_branch(repo_path)
+        merged = self.try_merge(repo_path, f"origin/{branch}")
+        if not merged:
+            raise GitCommandError(
+                f"git merge origin/{branch} failed due to conflicts",
+                returncode=1,
+                stderr=stderr,
+            )
+
     def commit(self, worktree_path: Path, repo_root: Path, message: str) -> bool:
         self._run_or_raise(
             ["git", "-C", str(worktree_path), "add", "-A"],

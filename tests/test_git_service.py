@@ -1707,3 +1707,186 @@ def test_fetch_raises_git_timeout_error_on_timeout(tmp_path):
     ):
         with pytest.raises(GitTimeoutError):
             svc.fetch(tmp_path)
+
+
+# ── pull_with_merge_fallback() ────────────────────────────────────────────────
+
+
+def _init_repo_with_remote(tmp_path: Path) -> tuple[Path, Path]:
+    """Create a remote repo and a clone (local) with one shared initial commit."""
+    remote = tmp_path / "remote"
+    remote.mkdir()
+    for cmd in (
+        ["git", "init", "-b", "main", str(remote)],
+        ["git", "config", "user.email", "test@test.com"],
+        ["git", "config", "user.name", "Test"],
+    ):
+        subprocess.run(
+            cmd,
+            cwd=remote if cmd[0] == "git" and cmd[1] != "init" else None,
+            check=True,
+            capture_output=True,
+        )
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.com"],
+        cwd=remote,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"],
+        cwd=remote,
+        check=True,
+        capture_output=True,
+    )
+    (remote / "base.txt").write_text("base\n")
+    subprocess.run(["git", "add", "."], cwd=remote, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "init"], cwd=remote, check=True, capture_output=True
+    )
+
+    local = tmp_path / "local"
+    subprocess.run(
+        ["git", "clone", str(remote), str(local)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.com"],
+        cwd=local,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"],
+        cwd=local,
+        check=True,
+        capture_output=True,
+    )
+    return local, remote
+
+
+def test_pull_with_merge_fallback_produces_merge_commit_on_non_conflicting_divergence(
+    tmp_path,
+):
+    local, remote = _init_repo_with_remote(tmp_path)
+
+    # remote gets a new commit (someone pushed)
+    (remote / "remote.txt").write_text("remote change\n")
+    subprocess.run(["git", "add", "."], cwd=remote, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "remote commit"],
+        cwd=remote,
+        check=True,
+        capture_output=True,
+    )
+
+    # local has an unpushed commit (diverged)
+    (local / "local.txt").write_text("local change\n")
+    subprocess.run(["git", "add", "."], cwd=local, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "local commit"],
+        cwd=local,
+        check=True,
+        capture_output=True,
+    )
+
+    head_before = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=local, check=True, capture_output=True
+    ).stdout.strip()
+
+    svc = GitService(_cfg)
+    svc.pull_with_merge_fallback(local)  # must not raise
+
+    head_after = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=local, check=True, capture_output=True
+    ).stdout.strip()
+
+    assert head_after != head_before
+
+    # HEAD must be a merge commit (two parents)
+    parents = (
+        subprocess.run(
+            ["git", "log", "--pretty=%P", "-1"],
+            cwd=local,
+            check=True,
+            capture_output=True,
+        )
+        .stdout.decode()
+        .strip()
+        .split()
+    )
+    assert len(parents) == 2
+
+
+def test_pull_with_merge_fallback_fast_forwards_without_merge_commit(tmp_path):
+    local, remote = _init_repo_with_remote(tmp_path)
+
+    # remote gets a new commit; local has no diverging commits
+    (remote / "remote.txt").write_text("remote change\n")
+    subprocess.run(["git", "add", "."], cwd=remote, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "remote commit"],
+        cwd=remote,
+        check=True,
+        capture_output=True,
+    )
+
+    head_before = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=local, check=True, capture_output=True
+    ).stdout.strip()
+
+    svc = GitService(_cfg)
+    svc.pull_with_merge_fallback(local)  # must not raise
+
+    head_after = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=local, check=True, capture_output=True
+    ).stdout.strip()
+
+    assert head_after != head_before
+
+    # HEAD must be a plain commit (one parent), not a merge commit
+    parents = (
+        subprocess.run(
+            ["git", "log", "--pretty=%P", "-1"],
+            cwd=local,
+            check=True,
+            capture_output=True,
+        )
+        .stdout.decode()
+        .strip()
+        .split()
+    )
+    assert len(parents) == 1
+
+
+def test_pull_with_merge_fallback_raises_git_command_error_on_conflict(tmp_path):
+    local, remote = _init_repo_with_remote(tmp_path)
+
+    # remote edits base.txt
+    (remote / "base.txt").write_text("remote change\n")
+    subprocess.run(["git", "add", "."], cwd=remote, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "remote edit"],
+        cwd=remote,
+        check=True,
+        capture_output=True,
+    )
+
+    # local edits the same file with conflicting content
+    (local / "base.txt").write_text("local change\n")
+    subprocess.run(["git", "add", "."], cwd=local, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "local edit"],
+        cwd=local,
+        check=True,
+        capture_output=True,
+    )
+
+    svc = GitService(_cfg)
+    with pytest.raises(GitCommandError):
+        svc.pull_with_merge_fallback(local)
+
+    # working tree must be clean (no merge state, no conflict markers)
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=local, check=True, capture_output=True
+    ).stdout.strip()
+    assert status == b""
