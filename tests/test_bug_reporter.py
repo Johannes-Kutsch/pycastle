@@ -266,9 +266,14 @@ def test_auto_file_bugs_true_with_token_and_200_uses_api_path(monkeypatch):
 
 
 def test_api_path_503_falls_through_to_url(monkeypatch):
+    from pycastle.config import Config
     from pycastle.main import main as cli
 
     monkeypatch.setenv("GH_TOKEN", "tkn")
+    monkeypatch.setattr(
+        "pycastle.bug_reporter._safe_load_config",
+        lambda: Config(auto_file_bugs=True),
+    )
 
     from pycastle.services import GithubAPIError
 
@@ -285,10 +290,15 @@ def test_api_path_503_falls_through_to_url(monkeypatch):
 
 
 def test_api_path_network_error_falls_through_to_url(monkeypatch):
+    from pycastle.config import Config
     from pycastle.main import main as cli
     from pycastle.services import GithubNetworkError
 
     monkeypatch.setenv("GH_TOKEN", "tkn")
+    monkeypatch.setattr(
+        "pycastle.bug_reporter._safe_load_config",
+        lambda: Config(auto_file_bugs=True),
+    )
 
     def _boom_net(self, owner_repo, title, body, labels):
         raise GithubNetworkError("dns fail", cause=OSError("dns"))
