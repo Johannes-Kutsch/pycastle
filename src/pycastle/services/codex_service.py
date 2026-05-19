@@ -11,6 +11,7 @@ from pathlib import Path
 from ..agents.output_protocol import AgentRole
 from ..session import SESSION_DIR_NAME, RunKind
 from .agent_service import AssistantTurn, ParsedTurn, Tokens, UsageLimit
+from ._wake_time import compute_wake_time
 
 _log = logging.getLogger(__name__)
 
@@ -117,13 +118,7 @@ class CodexService:
         self, reset_time: datetime | None, *, _now: datetime | None = None
     ) -> None:
         now = _now or datetime.utcnow()
-        if reset_time is not None:
-            self._exhausted_until = reset_time + timedelta(minutes=2)
-        else:
-            next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(
-                hours=1
-            )
-            self._exhausted_until = next_hour + timedelta(minutes=2)
+        self._exhausted_until, _ = compute_wake_time(reset_time, now)
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         if namespace:
