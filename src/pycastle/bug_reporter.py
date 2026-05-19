@@ -55,10 +55,6 @@ def _format_title(exc: BaseException) -> str:
     return title
 
 
-def _format_body(traceback_text: str) -> str:
-    return f"{_env_block()}\n## Traceback\n```\n{traceback_text}\n```\n"
-
-
 def _build_url(title: str, body: str, labels_str: str, repo: str) -> str:
     return (
         f"https://github.com/{repo}/issues/new"
@@ -171,7 +167,6 @@ def report_and_exit(
     exc: BaseException,
     *,
     cfg: Config | None = None,
-    token: str | None = None,
 ) -> None:
     """Print stderr traceback, file/print a bug report, then exit 1."""
     tb_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
