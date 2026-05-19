@@ -1,6 +1,7 @@
 import logging
 import shutil
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from ..config import Config
@@ -362,7 +363,11 @@ class GitService(_SubprocessService):
             cwd=repo_path,
         )
 
-    def push(self, repo_path: Path) -> None:
+    async def push(
+        self,
+        repo_path: Path,
+        resolver: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         for attempt in range(1, _MAX_ATTEMPTS + 1):
             result = self._run(["git", "push"], cwd=repo_path, capture_output=True)
             if result.returncode == 0:
@@ -381,20 +386,16 @@ class GitService(_SubprocessService):
 
             if any(p in stderr for p in _NFF_PUSH_PATTERNS):
                 logger.warning(
-                    "git push rejected non-fast-forward (attempt %d/%d), fetching and rebasing",
+                    "git push rejected non-fast-forward (attempt %d/%d), pulling with merge fallback",
                     attempt,
                     _MAX_ATTEMPTS,
                 )
-                self._run_or_raise(["git", "fetch"], "git fetch failed", cwd=repo_path)
                 try:
-                    self._run_or_raise(
-                        ["git", "rebase", "@{u}"], "git rebase failed", cwd=repo_path
-                    )
-                except GitCommandError:
-                    self._run(
-                        ["git", "rebase", "--abort"], cwd=repo_path, capture_output=True
-                    )
-                    raise
+                    self.pull_with_merge_fallback(repo_path)
+                except GitCommandError as pull_err:
+                    if resolver is None or "conflict" not in str(pull_err).lower():
+                        raise
+                    await resolver()
                 continue
 
             delay = _RETRY_DELAYS[attempt - 1]

@@ -1,6 +1,6 @@
 import asyncio
 import dataclasses
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -815,14 +815,14 @@ def test_merger_run_call_passes_work_body_with_conflict_count(
 def test_auto_push_calls_push_after_clean_merges(deps, git_svc):
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
-    git_svc.push.assert_called_once_with(deps.repo_root)
+    git_svc.push.assert_called_once_with(deps.repo_root, resolver=ANY)
 
 
 def test_auto_push_calls_push_after_merger_fast_forward(deps, git_svc):
     git_svc.try_merge.return_value = False
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
-    git_svc.push.assert_called_once_with(deps.repo_root)
+    git_svc.push.assert_called_once_with(deps.repo_root, resolver=ANY)
 
 
 def test_auto_push_calls_push_in_preflight_skip_when_clean_issues_exist(
@@ -839,7 +839,7 @@ def test_auto_push_calls_push_in_preflight_skip_when_clean_issues_exist(
     )
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
     _run(issues, local_deps)
-    local_deps.git_svc.push.assert_called_once_with(local_deps.repo_root)
+    local_deps.git_svc.push.assert_called_once_with(local_deps.repo_root, resolver=ANY)
 
 
 def test_auto_push_does_not_call_push_in_preflight_skip_when_no_clean_issues(
