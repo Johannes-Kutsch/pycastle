@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import subprocess
 from pathlib import Path
@@ -1296,7 +1297,7 @@ def test_push_runs_git_push(tmp_path):
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
     with patch("subprocess.run", side_effect=fake_run):
-        svc.push(tmp_path)
+        asyncio.run(svc.push(tmp_path))
 
     assert len(captured) == 1
     cmd, cwd = captured[0]
@@ -1310,7 +1311,7 @@ def test_push_succeeds_on_zero_exit(tmp_path):
         "subprocess.run",
         return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
     ):
-        svc.push(tmp_path)  # must not raise
+        asyncio.run(svc.push(tmp_path))  # must not raise
 
 
 def test_push_raises_git_command_error_on_nonzero_exit(tmp_path):
@@ -1320,7 +1321,7 @@ def test_push_raises_git_command_error_on_nonzero_exit(tmp_path):
         return_value=MagicMock(returncode=1, stdout=b"", stderr=b"rejected"),
     ):
         with pytest.raises(GitCommandError):
-            svc.push(tmp_path)
+            asyncio.run(svc.push(tmp_path))
 
 
 def test_push_raises_git_timeout_error_on_timeout(tmp_path):
@@ -1330,7 +1331,7 @@ def test_push_raises_git_timeout_error_on_timeout(tmp_path):
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
     ):
         with pytest.raises(GitTimeoutError):
-            svc.push(tmp_path)
+            asyncio.run(svc.push(tmp_path))
 
 
 # ── retry behaviour (pull / push / fetch) ─────────────────────────────────────
@@ -1515,7 +1516,7 @@ def test_push_retries_on_transient_failure(tmp_path):
         patch("subprocess.run", side_effect=lambda *a, **kw: next(responses)),
         patch("time.sleep") as mock_sleep,
     ):
-        svc.push(tmp_path)  # must not raise
+        asyncio.run(svc.push(tmp_path))  # must not raise
 
     assert mock_sleep.call_count == 1
 
@@ -1537,7 +1538,7 @@ def test_push_raises_after_three_non_fast_forward_rejections(tmp_path):
 
     with patch("subprocess.run", side_effect=fake_run):
         with pytest.raises(GitCommandError) as exc_info:
-            svc.push(tmp_path)
+            asyncio.run(svc.push(tmp_path))
 
     assert push_count == 3
     assert "[rejected]" in exc_info.value.stderr
@@ -1546,8 +1547,8 @@ def test_push_raises_after_three_non_fast_forward_rejections(tmp_path):
 # ── push() — non-fast-forward recovery ───────────────────────────────────────
 
 
-def test_push_fetches_and_rebases_on_rejection_then_succeeds(tmp_path):
-    """Push rejected non-fast-forward → fetch + rebase → retry push succeeds."""
+def test_push_pulls_with_merge_fallback_on_rejection_then_succeeds(tmp_path):
+    """Push rejected non-fast-forward → pull_with_merge_fallback → retry push succeeds."""
     svc = GitService(_cfg)
     captured: list[list[str]] = []
     nff_stderr = (
@@ -1563,32 +1564,36 @@ def test_push_fetches_and_rebases_on_rejection_then_succeeds(tmp_path):
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
     with patch("subprocess.run", side_effect=fake_run):
-        svc.push(tmp_path)  # must not raise
+        asyncio.run(svc.push(tmp_path))  # must not raise
 
     push_indices = [i for i, c in enumerate(captured) if c == ["git", "push"]]
     assert len(push_indices) == 2, f"Expected 2 push calls, got: {captured}"
     between = captured[push_indices[0] + 1 : push_indices[1]]
-    assert any("fetch" in c for c in between), (
-        f"Expected fetch between pushes, got: {between}"
+    assert any(c == ["git", "pull", "--ff-only"] for c in between), (
+        f"Expected pull --ff-only between pushes, got: {between}"
     )
-    assert any("rebase" in c for c in between), (
-        f"Expected rebase between pushes, got: {between}"
+    assert not any("rebase" in c for c in between), (
+        f"Expected no rebase between pushes, got: {between}"
     )
 
 
-def test_push_raises_and_aborts_rebase_when_rebase_fails(tmp_path):
-    """If rebase fails after push rejection, raises GitCommandError and aborts the rebase."""
+def test_push_raises_when_pull_with_merge_fallback_fails_on_conflict(tmp_path):
+    """If pull_with_merge_fallback raises conflict after push rejection, push raises."""
     svc = GitService(_cfg)
     nff_stderr = (
         b"! [rejected] main -> main (fetch first)\nerror: failed to push some refs"
     )
-    captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
-        captured.append(list(cmd))
         if cmd == ["git", "push"]:
             return MagicMock(returncode=1, stdout=b"", stderr=nff_stderr)
-        if "rebase" in cmd and "--abort" not in cmd:
+        if cmd == ["git", "pull", "--ff-only"]:
+            return MagicMock(
+                returncode=1,
+                stdout=b"",
+                stderr=b"fatal: Not possible to fast-forward, aborting.",
+            )
+        if cmd[:2] == ["git", "merge"]:
             return MagicMock(
                 returncode=1,
                 stdout=b"",
@@ -1598,11 +1603,7 @@ def test_push_raises_and_aborts_rebase_when_rebase_fails(tmp_path):
 
     with patch("subprocess.run", side_effect=fake_run):
         with pytest.raises(GitCommandError):
-            svc.push(tmp_path)
-
-    assert any("--abort" in c for c in captured), (
-        f"Expected rebase --abort to be called, got: {captured}"
-    )
+            asyncio.run(svc.push(tmp_path))
 
 
 def test_push_does_not_fetch_rebase_on_transient_failure(tmp_path):
@@ -1625,11 +1626,184 @@ def test_push_does_not_fetch_rebase_on_transient_failure(tmp_path):
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep") as mock_sleep,
     ):
-        svc.push(tmp_path)  # must not raise
+        asyncio.run(svc.push(tmp_path))  # must not raise
 
     assert mock_sleep.call_count == 1
     assert not any("fetch" in c for c in captured)
     assert not any("rebase" in c for c in captured)
+
+
+def test_push_uses_pull_with_merge_fallback_on_nff_rejection(tmp_path):
+    """On NFF push rejection, push calls pull_with_merge_fallback instead of git rebase."""
+    svc = GitService(_cfg)
+    captured: list[list[str]] = []
+    nff_stderr = (
+        b"! [rejected] main -> main (fetch first)\nerror: failed to push some refs"
+    )
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        push_count = sum(1 for c in captured if c == ["git", "push"])
+        if cmd == ["git", "push"] and push_count == 1:
+            return MagicMock(returncode=1, stdout=b"", stderr=nff_stderr)
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        asyncio.run(svc.push(tmp_path))  # must not raise
+
+    assert not any("rebase" in c for c in captured), "git rebase must not be called"
+    assert any(c == ["git", "pull", "--ff-only"] for c in captured), (
+        "git pull --ff-only must be called"
+    )
+
+
+def test_push_calls_async_resolver_on_textual_conflict_and_retries(tmp_path):
+    """When pull_with_merge_fallback raises a textual conflict, the async resolver is called and push retries."""
+    svc = GitService(_cfg)
+    nff_stderr = (
+        b"! [rejected] main -> main (fetch first)\nerror: failed to push some refs"
+    )
+    resolver_called = False
+    push_attempt = 0
+
+    async def resolver() -> None:
+        nonlocal resolver_called
+        resolver_called = True
+
+    def fake_run(cmd, **kwargs):
+        nonlocal push_attempt
+        if cmd == ["git", "push"]:
+            push_attempt += 1
+            if push_attempt == 1:
+                return MagicMock(returncode=1, stdout=b"", stderr=nff_stderr)
+            return MagicMock(returncode=0, stdout=b"", stderr=b"")
+        if cmd == ["git", "pull", "--ff-only"]:
+            return MagicMock(
+                returncode=1,
+                stdout=b"",
+                stderr=b"fatal: Not possible to fast-forward, aborting.",
+            )
+        if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
+            return MagicMock(returncode=0, stdout=b"main\n", stderr=b"")
+        if len(cmd) >= 4 and cmd[:3] == ["git", "merge", "--no-edit"]:
+            return MagicMock(
+                returncode=1,
+                stdout=b"",
+                stderr=b"CONFLICT (content): Merge conflict in file.py",
+            )
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        asyncio.run(svc.push(tmp_path, resolver=resolver))
+
+    assert resolver_called, "async resolver must be called on textual conflict"
+    assert push_attempt == 2, f"push must be retried after resolver, got {push_attempt}"
+
+
+# ── push() — integration with real git repos ─────────────────────────────────
+
+
+def _clone_with_user(src: Path, dest: Path) -> None:
+    subprocess.run(
+        ["git", "clone", str(src), str(dest)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.com"],
+        cwd=dest,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"],
+        cwd=dest,
+        check=True,
+        capture_output=True,
+    )
+
+
+def _make_push_scenario(tmp_path: Path) -> tuple[Path, Path, str]:
+    """Return (local, bare_remote, merge_sha): local has an unpushed merge commit; bare_remote has diverged."""
+    seed = tmp_path / "seed"
+    _init_repo(seed)
+    bare = tmp_path / "bare.git"
+    subprocess.run(
+        ["git", "clone", "--bare", str(seed), str(bare)],
+        check=True,
+        capture_output=True,
+    )
+
+    local = tmp_path / "local"
+    _clone_with_user(bare, local)
+
+    # local: add a feature branch and merge it (simulating pycastle's merge commit)
+    subprocess.run(
+        ["git", "checkout", "-b", "feature"], cwd=local, check=True, capture_output=True
+    )
+    (local / "feature.txt").write_text("feature\n")
+    subprocess.run(["git", "add", "."], cwd=local, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "feature commit"],
+        cwd=local,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "checkout", "main"], cwd=local, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "merge", "--no-ff", "feature", "-m", "Merge feature"],
+        cwd=local,
+        check=True,
+        capture_output=True,
+    )
+    merge_sha = (
+        subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=local, check=True, capture_output=True
+        )
+        .stdout.strip()
+        .decode()
+    )
+
+    # a second clone pushes a non-conflicting commit to bare → local is now behind
+    second = tmp_path / "second"
+    _clone_with_user(bare, second)
+    (second / "other.txt").write_text("other change\n")
+    subprocess.run(["git", "add", "."], cwd=second, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "remote commit"],
+        cwd=second,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["git", "push"], cwd=second, check=True, capture_output=True)
+
+    return local, bare, merge_sha
+
+
+def test_push_preserves_merge_commits_after_nff_rejection(tmp_path):
+    """Local merge commits must remain in history after push recovers from NFF rejection."""
+    local, remote, merge_sha = _make_push_scenario(tmp_path)
+    svc = GitService(_cfg)
+
+    asyncio.run(svc.push(local))  # must not raise
+
+    # verify the merge commit is present in local main history
+    log = subprocess.run(
+        ["git", "log", "--format=%H", "main"],
+        cwd=local,
+        check=True,
+        capture_output=True,
+    ).stdout.decode()
+    assert merge_sha in log, "merge commit must remain in history after push"
+
+    # verify local main is now present in remote
+    remote_log = subprocess.run(
+        ["git", "log", "--format=%H", "main"],
+        cwd=remote,
+        check=True,
+        capture_output=True,
+    ).stdout.decode()
+    assert merge_sha in remote_log, "merge commit must reach remote after push"
 
 
 # ── fetch() ───────────────────────────────────────────────────────────────────

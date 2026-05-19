@@ -190,7 +190,12 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 )
                 row.close(_build_close_message(clean_deleted))
                 if deps.cfg.auto_push and clean_issues:
-                    deps.git_svc.push(deps.repo_root)
+                    await deps.git_svc.push(
+                        deps.repo_root,
+                        resolver=lambda: deps.preflight_cache.pull_with_resolution(
+                            deps
+                        ),
+                    )
                 return MergeResult(clean=clean_issues, conflicts=conflict_issues)
             async with managed_worktree(
                 "merge-sandbox",
@@ -233,5 +238,8 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             row.close(_build_close_message(clean_deleted + conflict_deleted))
 
         if deps.cfg.auto_push and (clean_issues or conflict_issues):
-            deps.git_svc.push(deps.repo_root)
+            await deps.git_svc.push(
+                deps.repo_root,
+                resolver=lambda: deps.preflight_cache.pull_with_resolution(deps),
+            )
         return MergeResult(clean=clean_issues, conflicts=conflict_issues)
