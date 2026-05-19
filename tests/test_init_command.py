@@ -29,6 +29,29 @@ def test_dockerfile_claude_codex_template_exists_with_node_and_codex():
     assert "@openai/codex" in content
 
 
+# ── Issue #801: gh CLI must be installed in both Dockerfile templates ──────────
+
+
+def test_dockerfile_claude_installs_gh_from_github_apt():
+    """Dockerfile.claude must install gh via the GitHub apt repository."""
+    from importlib.resources import files
+
+    pkg = files("pycastle").joinpath("defaults")
+    content = (pkg / "Dockerfile.claude").read_text()
+    assert "cli.github.com/packages" in content
+    assert "apt-get install" in content and " gh" in content
+
+
+def test_dockerfile_claude_codex_installs_gh_from_github_apt():
+    """Dockerfile.claude-codex must install gh via the GitHub apt repository."""
+    from importlib.resources import files
+
+    pkg = files("pycastle").joinpath("defaults")
+    content = (pkg / "Dockerfile.claude-codex").read_text()
+    assert "cli.github.com/packages" in content
+    assert "apt-get install" in content and " gh" in content
+
+
 @pytest.mark.parametrize(
     ("service", "expected_template"),
     [
