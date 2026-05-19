@@ -239,9 +239,14 @@ def test_auto_file_bugs_true_no_token_uses_url_path(monkeypatch):
 
 def test_auto_file_bugs_true_with_token_and_200_uses_api_path(monkeypatch):
     from pycastle import bug_reporter
+    from pycastle.config import Config
     from pycastle.main import main as cli
 
     monkeypatch.setenv("GH_TOKEN", "tkn")
+    monkeypatch.setattr(
+        "pycastle.bug_reporter._safe_load_config",
+        lambda: Config(auto_file_bugs=True),
+    )
     monkeypatch.setattr(
         bug_reporter,
         "_try_api_path",

@@ -84,7 +84,7 @@ class Config:
         )
     )
     auto_push: bool = True
-    auto_file_bugs: bool = True
+    auto_file_bugs: bool = False
     bug_report_repo: str = "Johannes-Kutsch/pycastle"
     timeout_retries: int = 1
     plan_override: StageOverride = dataclasses.field(default_factory=StageOverride)
