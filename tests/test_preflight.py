@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from unittest.mock import MagicMock
 
-import shutil as _shutil
+import shutil
 
 from pycastle.agents.output_protocol import CompletionOutput, IssueOutput
 from pycastle.config import Config
@@ -318,7 +318,7 @@ def _setup_worktree_mocks(git_svc):
         _registered.append(path)
 
     def _fake_remove_worktree(repo, path):
-        _shutil.rmtree(path, ignore_errors=True)
+        shutil.rmtree(path, ignore_errors=True)
         _registered[:] = [p for p in _registered if p != path]
 
     git_svc.verify_ref_exists.return_value = False
