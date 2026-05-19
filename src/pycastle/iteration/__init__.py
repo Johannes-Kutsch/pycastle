@@ -6,6 +6,7 @@ from typing import TypeAlias
 from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.result import CancellationToken
 from ..agents.runner import RunRequest
+from ..bug_reporter import BUG_REPORT_LABEL_LIST, auto_file_issue
 from ..errors import AgentFailedError, AgentTimeoutError, UsageLimitError
 from ..prompts.pipeline import PromptTemplate
 from ..infrastructure.worktree import worktree_name_for_branch, worktree_path
@@ -29,6 +30,8 @@ from .preflight import (
     PreflightHITL,
     strip_stale_blocker_refs,
 )
+
+_FILED_USAGE_LIMIT_RAW_MESSAGES: set[str] = set()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -214,6 +217,15 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             failed_role=err.role_value, issue_number=issue_number
         )
     except UsageLimitError as err:
+        if (
+            err.raw_message is not None
+            and err.raw_message not in _FILED_USAGE_LIMIT_RAW_MESSAGES
+        ):
+            _FILED_USAGE_LIMIT_RAW_MESSAGES.add(err.raw_message)
+            provider = err.provider or "claude"
+            title = f"[pycastle] failed to parse usage-limit reset time ({provider})"
+            body = f"## Failed message\n\n```\n{err.raw_message}\n```\n\nProvider: {provider}; failure: usage-limit reset time parse failure\n"
+            auto_file_issue(title, body, BUG_REPORT_LABEL_LIST, cfg=deps.cfg)
         return AbortedUsageLimit(reset_time=err.reset_time)
     except AgentTimeoutError as err:
         return AbortedTimeout(

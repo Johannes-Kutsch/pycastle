@@ -348,6 +348,7 @@ def process_stream_from_events(
     on_turn: Callable[[str], None],
     role: AgentRole,
     on_tokens: Callable[[int], None] | None = None,
+    provider: str | None = None,
 ) -> AgentOutput:
     from ..services.agent_service import AssistantTurn, Result, Tokens, UsageLimit
 
@@ -357,7 +358,9 @@ def process_stream_from_events(
     for event in events:
         if isinstance(event, UsageLimit):
             raise UsageLimitError(
-                reset_time=event.reset_time, raw_message=event.raw_message
+                reset_time=event.reset_time,
+                raw_message=event.raw_message,
+                provider=provider,
             )
         elif isinstance(event, Tokens):
             if on_tokens is not None:
@@ -385,5 +388,5 @@ def process_stream(
     from ..services.claude_service import ClaudeService
 
     return process_stream_from_events(
-        ClaudeService().run(lines), on_turn, role, on_tokens
+        ClaudeService().run(lines), on_turn, role, on_tokens, provider="claude"
     )

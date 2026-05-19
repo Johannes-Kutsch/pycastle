@@ -82,9 +82,11 @@ class UsageLimitError(PycastleError):
         self,
         reset_time: datetime | None = None,
         raw_message: str | None = None,
+        provider: str | None = None,
     ) -> None:
         self.reset_time = reset_time
         self.raw_message = raw_message
+        self.provider = provider
         super().__init__(
             f"Usage limit reached (reset_time={reset_time.isoformat() if reset_time else None})"
         )

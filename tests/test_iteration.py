@@ -1,7 +1,8 @@
 import asyncio
 import dataclasses
+from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -388,6 +389,235 @@ def test_run_iteration_aborted_usage_limit_does_not_raise_system_exit(
 
     result = asyncio.run(run_iteration(deps))
     assert isinstance(result, AbortedUsageLimit)
+
+
+# ── AbortedUsageLimit: auto-file parse failures ───────────────────────────────
+
+
+def test_run_iteration_files_issue_when_usage_limit_has_raw_message(
+    tmp_path, git_svc, logger
+):
+    """When UsageLimitError.raw_message is non-None, run_iteration calls auto_file_issue
+    with a title scoped to the originating provider and a body containing the raw message."""
+    raw = "You're out of extra usage · no reset info"
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    async def _fake_agent(request: RunRequest):
+        raise UsageLimitError(reset_time=None, raw_message=raw, provider="claude")
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[[]],
+    )
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedUsageLimit)
+    mock_file.assert_called_once()
+    title = mock_file.call_args[0][0]
+    body = mock_file.call_args[0][1]
+    assert title == "[pycastle] failed to parse usage-limit reset time (claude)"
+    assert raw in body
+
+
+def test_run_iteration_dedupes_auto_file_on_same_raw_message(tmp_path, git_svc, logger):
+    """Multiple UsageLimitErrors with the same raw_message fire auto_file_issue only once."""
+    import pycastle.iteration as _iter_mod
+
+    raw = "You're out of extra usage · same message repeated"
+
+    # Ensure dedupe set is clean for this test
+    _iter_mod._FILED_USAGE_LIMIT_RAW_MESSAGES.discard(raw)
+
+    def _two_issue_github_svc():
+        svc = MagicMock(spec=GithubService)
+        svc.get_open_issues.return_value = [
+            {
+                "number": 1,
+                "title": "Fix A",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Fix B",
+                "body": "",
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+        ]
+        svc.get_all_open_issues_lightweight.return_value = []
+        return svc
+
+    async def _fake_agent(request: RunRequest):
+        raise UsageLimitError(reset_time=None, raw_message=raw, provider="claude")
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        deps1 = _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=_two_issue_github_svc(),
+            logger=logger,
+            preflight_responses=[[]],
+        )
+        asyncio.run(run_iteration(deps1))
+
+        deps2 = _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=_two_issue_github_svc(),
+            logger=logger,
+            preflight_responses=[[]],
+        )
+        asyncio.run(run_iteration(deps2))
+
+    assert mock_file.call_count == 1
+
+
+def test_run_iteration_does_not_file_issue_when_raw_message_is_none(
+    tmp_path, git_svc, github_svc, logger
+):
+    """When UsageLimitError.raw_message is None (successful parse), auto_file_issue is not called."""
+
+    async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [
+                    {
+                        "number": 1,
+                        "title": "Fix bug",
+                        "body": "",
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
+            )
+        raise UsageLimitError(reset_time=None, raw_message=None)
+
+    deps = _make_deps(
+        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedUsageLimit)
+    mock_file.assert_not_called()
+
+
+def test_run_iteration_files_issue_with_codex_provider(tmp_path, git_svc, logger):
+    """Provider identity is reflected in the title: (codex) when provider='codex'."""
+    raw = "You've hit your usage limit, try again later"
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    async def _fake_agent(request: RunRequest):
+        raise UsageLimitError(reset_time=None, raw_message=raw, provider="codex")
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[[]],
+    )
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedUsageLimit)
+    title = mock_file.call_args[0][0]
+    assert title == "[pycastle] failed to parse usage-limit reset time (codex)"
+
+
+def test_run_iteration_still_returns_aborted_usage_limit_after_filing(
+    tmp_path, git_svc, logger
+):
+    """run_iteration returns AbortedUsageLimit even when auto_file_issue fires."""
+    raw = "Usage limit hit, parse failed"
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    reset = datetime(2026, 5, 19, 13, 0)
+
+    async def _fake_agent(request: RunRequest):
+        raise UsageLimitError(reset_time=reset, raw_message=raw, provider="claude")
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[[]],
+    )
+
+    with patch("pycastle.iteration.auto_file_issue"):
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedUsageLimit)
+    assert result.reset_time == reset
 
 
 # ── Continue: normal iteration completion ─────────────────────────────────────

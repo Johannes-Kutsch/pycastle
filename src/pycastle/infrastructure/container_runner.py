@@ -171,7 +171,11 @@ class ContainerRunner:
                             yield line
 
                 return process_stream_from_events(
-                    self._service.run(_lines()), on_turn, role, on_tokens
+                    self._service.run(_lines()),
+                    on_turn,
+                    role,
+                    on_tokens,
+                    provider=self._service.name,
                 )
         finally:
             try:
