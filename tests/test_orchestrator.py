@@ -19,6 +19,7 @@ from pycastle.services import (
     GithubAuthError,
     GithubService,
     GitService,
+    ServiceRegistry,
 )
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 from pycastle.iteration.orchestrator import (
@@ -1989,7 +1990,9 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
             tmp_path,
             _fake_run_agent,
             github_service=mock_github,
-            service_registry={"secondary": svc_exhausted, "primary": svc_available},
+            service_registry=ServiceRegistry(
+                {"secondary": svc_exhausted, "primary": svc_available}, "claude"
+            ),
             max_iterations=2,
         )
 
@@ -2045,7 +2048,9 @@ def test_usage_limit_pool_switch_message_cross_day_shows_date(tmp_path, capsys):
             tmp_path,
             _fake_run_agent,
             github_service=mock_github,
-            service_registry={"secondary": svc_exhausted, "primary": svc_available},
+            service_registry=ServiceRegistry(
+                {"secondary": svc_exhausted, "primary": svc_available}, "claude"
+            ),
             max_iterations=2,
         )
 
@@ -2809,7 +2814,7 @@ def test_usage_limit_with_service_available_does_not_sleep(tmp_path):
             tmp_path,
             _fake_run_agent,
             github_service=mock_github,
-            service_registry={"claude": svc},
+            service_registry=ServiceRegistry({"claude": svc}, "claude"),
             max_iterations=2,
         )
 
@@ -2862,7 +2867,7 @@ def test_usage_limit_with_all_services_exhausted_sleeps_until_earliest_wake(tmp_
             tmp_path,
             _fake_run_agent,
             github_service=mock_github,
-            service_registry={"claude": svc},
+            service_registry=ServiceRegistry({"claude": svc}, "claude"),
             max_iterations=2,
         )
 
@@ -2886,7 +2891,7 @@ def test_pool_summary_printed_at_startup_with_both_accounts(tmp_path):
         tmp_path,
         _fake_run_agent,
         github_service=mock_github,
-        service_registry={"claude": svc},
+        service_registry=ServiceRegistry({"claude": svc}, "claude"),
         status_display=recording,
     )
 
@@ -2912,7 +2917,7 @@ def test_pool_summary_printed_at_startup_with_primary_only(tmp_path):
         tmp_path,
         _fake_run_agent,
         github_service=mock_github,
-        service_registry={"claude": svc},
+        service_registry=ServiceRegistry({"claude": svc}, "claude"),
         status_display=recording,
     )
 
@@ -3201,7 +3206,9 @@ def test_exhausted_primary_dispatches_with_fallback_triple(tmp_path):
         _fake_run_agent,
         github_service=_make_github_svc(),
         git_service=_make_git_svc(try_merge_side_effect=[True]),
-        service_registry={"claude": claude_svc, "codex": codex_svc},
+        service_registry=ServiceRegistry(
+            {"claude": claude_svc, "codex": codex_svc}, "claude"
+        ),
         implement_override=StageOverride(
             service="claude",
             model="primary-model",
@@ -3263,7 +3270,9 @@ def test_dual_exhaustion_sleeps_until_earliest_of_primary_and_fallback(tmp_path)
             tmp_path,
             _fake_run_agent,
             github_service=mock_github,
-            service_registry={"claude": claude_svc, "codex": codex_svc},
+            service_registry=ServiceRegistry(
+                {"claude": claude_svc, "codex": codex_svc}, "claude"
+            ),
             implement_override=StageOverride(
                 service="claude",
                 model="primary-model",
@@ -3302,7 +3311,9 @@ def test_primary_takes_precedence_when_both_services_available(tmp_path):
         _fake_run_agent,
         github_service=_make_github_svc(),
         git_service=_make_git_svc(try_merge_side_effect=[True]),
-        service_registry={"claude": claude_svc, "codex": codex_svc},
+        service_registry=ServiceRegistry(
+            {"claude": claude_svc, "codex": codex_svc}, "claude"
+        ),
         implement_override=StageOverride(
             service="claude",
             model="primary-model",
@@ -3344,7 +3355,7 @@ def test_stage_with_no_fallback_behaves_as_before(tmp_path):
         _fake_run_agent,
         github_service=_make_github_svc(),
         git_service=_make_git_svc(try_merge_side_effect=[True]),
-        service_registry={"claude": claude_svc},
+        service_registry=ServiceRegistry({"claude": claude_svc}, "claude"),
         implement_override=StageOverride(
             service="claude", model="my-model", effort="medium"
         ),

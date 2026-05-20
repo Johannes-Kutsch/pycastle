@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ..agents.runner import AgentRunner, AgentRunnerProtocol, RunRequest
-from ..config import Config, StageOverride, load_config
+from ..config import Config, load_config
 from . import (
     AbortedAgentFailure,
     AbortedHITL,
@@ -28,8 +28,8 @@ from ..services import (
     GithubAuthError,
     GithubService,
     GitService,
+    ServiceRegistry,
 )
-from ..services.agent_service import AgentService
 from ..services._wake_time import compute_wake_time
 from ..session import SESSION_DIR_NAME
 from ..display.status_display import StatusDisplay
@@ -62,52 +62,6 @@ def _fmt_wake(wake: datetime, now: datetime) -> str:
     if wake.date() != now.date():
         return f"{wake:%b} {wake.day}, {wake:%H:%M}"
     return wake.strftime("%H:%M")
-
-
-def _effective_override(
-    override: StageOverride,
-    service_registry: "dict[str, Any]",
-    default_service: str,
-    now: datetime,
-) -> StageOverride:
-    primary_name = override.service or default_service
-    primary_svc = service_registry.get(primary_name)
-    if primary_svc is None or primary_svc.is_available(now=now):
-        return override
-    if override.fallback is not None:
-        fallback_name = override.fallback.service or default_service
-        fallback_svc = service_registry.get(fallback_name)
-        if fallback_svc is not None and fallback_svc.is_available(now=now):
-            return override.fallback
-    return override
-
-
-def _effective_cfg(
-    cfg: Config,
-    service_registry: "dict[str, Any]",
-    now: datetime,
-) -> Config:
-    return dataclasses.replace(
-        cfg,
-        plan_override=_effective_override(
-            cfg.plan_override, service_registry, cfg.default_service, now
-        ),
-        implement_override=_effective_override(
-            cfg.implement_override, service_registry, cfg.default_service, now
-        ),
-        review_override=_effective_override(
-            cfg.review_override, service_registry, cfg.default_service, now
-        ),
-        merge_override=_effective_override(
-            cfg.merge_override, service_registry, cfg.default_service, now
-        ),
-        preflight_issue_override=_effective_override(
-            cfg.preflight_issue_override, service_registry, cfg.default_service, now
-        ),
-        improve_override=_effective_override(
-            cfg.improve_override, service_registry, cfg.default_service, now
-        ),
-    )
 
 
 def ensure_session_excludes(repo_root: Path) -> None:
@@ -160,7 +114,7 @@ async def run(
     git_service: GitService | None = None,
     github_service: GithubService | None = None,
     status_display: StatusDisplay | None = None,
-    service_registry: dict[str, AgentService] | None = None,
+    service_registry: ServiceRegistry | None = None,
     improve_mode: ImproveMode = None,
 ) -> None:
     cfg = load_config(repo_root=repo_root)
@@ -215,18 +169,8 @@ async def run(
     status_display.print("", f"Authenticated as @{login}")  # type: ignore[union-attr]
 
     if service_registry:
-        for svc in service_registry.values():
-            if hasattr(svc, "account_names"):
-                names = svc.account_names()  # type: ignore[attr-defined]
-                if names:
-                    if len(names) == 1:
-                        summary = f"Claude accounts: {names[0]} (active)"
-                    else:
-                        parts = [f"{names[0]} (active)"] + [
-                            f"{n} (standby)" for n in names[1:]
-                        ]
-                        summary = "Claude accounts: " + ", ".join(parts)
-                    status_display.print("", summary)  # type: ignore[union-attr]
+        for line in service_registry.summary_lines():
+            status_display.print("", line)  # type: ignore[union-attr]
 
     slept_once = False
     improve_dispatched_count = 0
@@ -241,7 +185,23 @@ async def run(
 
             _now = datetime.now()
             _iter_cfg = (
-                _effective_cfg(cfg, service_registry, _now) if service_registry else cfg
+                dataclasses.replace(
+                    cfg,
+                    plan_override=service_registry.resolve(cfg.plan_override, _now),
+                    implement_override=service_registry.resolve(
+                        cfg.implement_override, _now
+                    ),
+                    review_override=service_registry.resolve(cfg.review_override, _now),
+                    merge_override=service_registry.resolve(cfg.merge_override, _now),
+                    preflight_issue_override=service_registry.resolve(
+                        cfg.preflight_issue_override, _now
+                    ),
+                    improve_override=service_registry.resolve(
+                        cfg.improve_override, _now
+                    ),
+                )
+                if service_registry
+                else cfg
             )
 
             if agent_runner is not None:
@@ -250,7 +210,7 @@ async def run(
                 _agent_runner = _CallableAgentRunner(run_agent)
             else:
                 _svc_name = _iter_cfg.default_service
-                _svc = service_registry.get(_svc_name) if service_registry else None
+                _svc = service_registry[_svc_name] if service_registry else None
                 _agent_runner = AgentRunner(
                     env=env,
                     cfg=_iter_cfg,
@@ -297,26 +257,24 @@ async def run(
                     sys.exit(1)
                 case AbortedUsageLimit(reset_time=reset_time):
                     now = datetime.now()
-                    involved = list((service_registry or {}).values())
-                    if involved and any(svc.is_available(now=now) for svc in involved):
-                        wake = (
-                            min(
-                                svc.next_wake_time()
-                                for svc in involved
-                                if not svc.is_available(now=now)
-                            )
-                            if any(not svc.is_available(now=now) for svc in involved)
-                            else now
-                        )
-                        if any(not svc.is_available(now=now) for svc in involved):
+                    if service_registry is not None and service_registry.has_available(
+                        now
+                    ):
+                        exhausted_wake = service_registry.next_wake_time(now)
+                        if exhausted_wake is not None:
                             status_display.print(  # type: ignore[union-attr]
                                 "",
-                                f"Account exhausted until {_fmt_wake(wake, now)}, "
+                                f"Account exhausted until {_fmt_wake(exhausted_wake, now)}, "
                                 "switching to next available.",
                             )
                         continue
-                    if involved:
-                        wake_time = min(svc.next_wake_time() for svc in involved)
+                    next_wake = (
+                        service_registry.next_wake_time(now)
+                        if service_registry is not None
+                        else None
+                    )
+                    if next_wake is not None:
+                        wake_time = next_wake
                         suffix = ""
                     else:
                         wake_time, is_estimated = compute_wake_time(reset_time, now)

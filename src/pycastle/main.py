@@ -226,6 +226,7 @@ def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
     from .services.agent_service import AgentService
     from .services.claude_service import ClaudeService
     from .services.codex_service import CodexService
+    from .services.service_registry import ServiceRegistry
 
     if improve_mode is not None and no_improve:
         click.echo(
@@ -288,11 +289,12 @@ def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
         effective_improve_mode = improve_mode
     else:
         effective_improve_mode = cfg.improve_mode
+    registry = ServiceRegistry(service_registry, cfg.default_service)
     asyncio.run(
         run(
             container_env,
             Path(".").resolve(),
-            service_registry=service_registry,
+            service_registry=registry,
             improve_mode=cast(ImproveMode, effective_improve_mode),
         )
     )
