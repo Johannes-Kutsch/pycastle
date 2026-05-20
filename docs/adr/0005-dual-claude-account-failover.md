@@ -1,22 +1,22 @@
 # Dual Claude account failover via OAuth token pool
 
-Pycastle previously supported three Claude authentication paths in parallel: `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, and `CLAUDE_ACCOUNT_JSON`. When a Pro/Max subscription hit its rate limit the orchestrator slept until the reported `reset_time + 2 min`, even when a second subscription was available. All Claude auth collapses onto OAuth tokens (`claude setup-token`-generated), supporting a primary plus optional secondary account. An in-memory `AccountPool` picks a non-exhausted token at each agent spawn and only sleeps when every account is exhausted, until the earliest pool wake-time.
+All Claude auth collapses onto OAuth tokens (`claude setup-token`-generated): primary plus optional secondary. An in-memory pool picks a non-exhausted token per agent spawn and sleeps only when every account is exhausted, until the earliest wake-time. Drops `ANTHROPIC_API_KEY` and `CLAUDE_ACCOUNT_JSON`. Previously, a Pro/Max rate-limit slept until `reset_time + 2 min` even with a second subscription available.
 
 ## Considered Options
 
-- **Status quo (single account, sleep on limit).** Rejected: leaves a second paid subscription idle for hours per day.
-- **Two `~/.claude.json` files on disk, secondary path configurable.** Rejected after verification that `setup-token` produces valid long-lived OAuth tokens for Pro accounts. Env-only auth keeps secrets in one place (`.env`), removes the Windows path bug surface (#467), and lets the AccountPool work over uniform `(name, token)` tuples.
-- **N-token list (`CLAUDE_CODE_OAUTH_TOKEN_1..N`).** Rejected: the concrete use case is exactly two accounts, numbered keys hide priority semantics, and migration churns existing users. Two named keys (primary unchanged, secondary additive) preserves the existing `.env` exactly.
-- **Mid-flight container token swap.** Rejected: Docker doesn't support mutating `container_env` of a running container. The existing worktree preservation + restart mechanism is cleaner.
-- **Keep `ANTHROPIC_API_KEY` as an orthogonal third path.** Rejected: API-key auth has no usage-limit semantics (pay-per-token), so it doesn't fit the pool model, and supporting it forces a carve-out branch in every credential code path.
+- **Single account, sleep on limit.** Rejected: leaves a paid subscription idle for hours/day.
+- **Two `~/.claude.json` files on disk.** Rejected: `setup-token` produces valid long-lived tokens for Pro accounts; env-only keeps secrets in `.env`, removes Windows path bugs (#467), uniform `(name, token)` tuples.
+- **N-token list `CLAUDE_CODE_OAUTH_TOKEN_1..N`.** Rejected: concrete use case is two accounts; numbered keys hide priority; churns existing `.env`.
+- **Mid-flight container token swap.** Rejected: Docker can't mutate `container_env` on a running container; worktree preserve + restart is cleaner.
+- **Keep `ANTHROPIC_API_KEY` as third path.** Rejected: API-key has no usage-limit semantics (pay-per-token); doesn't fit pool model; forces carve-out branches everywhere.
 
 ## Consequences
 
-- `~/.claude.json` is no longer read by pycastle; users who authenticated only via `claude login` must run `claude setup-token` once and paste the result into `.env`. One-time migration step.
-- `ANTHROPIC_API_KEY` is removed from `_ENV_KEYS`, the init template, and all credential plumbing. Pycastle is committed to subscription auth only.
-- **Amended by issue #691**: `AccountPool` is no longer a public orchestrator-level construct. Its logic lives inside `ClaudeService` as a private `_AccountPool` detail. `main.py` constructs a `dict[str, AgentService]` service registry (currently `{"claude": ClaudeService(accounts=...)}`) and passes it to `orchestrator.run()` instead of an `AccountPool`. `AgentRunner` receives the `ClaudeService` via the `service` parameter; token pick and exhaustion are entirely internal to the service.
-- `AgentService` protocol gains `is_available(now)`, `next_wake_time()`, and `mark_exhausted(reset_time)` methods. The orchestrator's `AbortedUsageLimit` arm consults `service.is_available(now)` across registry values; it sleeps until `min(next_wake_time())` only when all services are unavailable.
-- The existing `UsageLimitError` → `AbortedUsageLimit` plumbing is reused unchanged. Single-token users see no change.
-- Failover is per-agent-run granularity. Each parallel agent that 429s calls `service.mark_exhausted(reset_time)` and unwinds via the standard preserve-and-restart flow.
-- `_inject_claude_credentials` and the `CLAUDE_ACCOUNT_JSON` env-filter in `_build_session` are deleted.
-- `pycastle init` still prompts for a single OAuth token. The secondary is documented as an optional `.env` addition.
+- `~/.claude.json` no longer read; one-time migration: run `claude setup-token`, paste into `.env`.
+- `ANTHROPIC_API_KEY` removed from `_ENV_KEYS`, init template, credential plumbing. Subscription auth only.
+- **Amended by #691** (per ADR 0015): `AccountPool` is no longer orchestrator-level; logic lives inside `ClaudeService` as private `_AccountPool`. `main.py` builds `dict[str, AgentService]` service registry passed to `orchestrator.run()`. `AgentRunner` receives `ClaudeService` via `service` parameter; token pick/exhaustion are internal.
+- `AgentService` protocol gains `is_available(now)`, `next_wake_time()`, `mark_exhausted(reset_time)`. `AbortedUsageLimit` arm consults `service.is_available(now)`; sleeps to `min(next_wake_time())` only when all services unavailable.
+- `UsageLimitError → AbortedUsageLimit` plumbing reused unchanged. Single-token users see no change.
+- Failover at per-agent-run granularity; 429 → `mark_exhausted(reset_time)` + standard preserve-and-restart.
+- `_inject_claude_credentials` and the `CLAUDE_ACCOUNT_JSON` env-filter deleted.
+- `pycastle init` prompts for one OAuth token; secondary is a documented optional `.env` addition.

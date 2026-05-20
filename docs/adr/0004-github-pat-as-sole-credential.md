@@ -1,17 +1,18 @@
 # GitHub PAT as the sole GitHub credential
 
-Pycastle previously used two parallel GitHub authentication systems: `gh auth login` (browser OAuth, used by `orchestrator.py:_get_repo` and `GithubService` via the `gh` CLI) and `GH_TOKEN` from `.env` (used by `labels.py` via direct `urllib` calls to `api.github.com`, and propagated into agent containers). Either could fail independently — a 401 in one system was invisible in the other, with no diagnostic surfacing in the orchestrator's generic `RuntimeError`. All GitHub access is routed through `GithubService` as an HTTP client authenticated via `GH_TOKEN`. One credential, used identically by host code and agent containers, validated by a `GET /user` startup preflight.
+Pycastle previously had two parallel GitHub auth paths: `gh auth login` (browser OAuth via `gh` CLI) and `GH_TOKEN` (direct `urllib` + agent containers). Either could 401 invisibly to the other. All GitHub access now routes through `GithubService` as an HTTP client authenticated via `GH_TOKEN`. One credential, used identically host-side and in containers, validated by a `GET /user` startup preflight.
+
+Note: ADR 0021 partly reverses the "no `gh` install" sub-claim — agent containers do install `gh` for prompt-driven issue ops, but host code still uses PAT + `urllib`.
 
 ## Considered Options
 
-- **Status quo (dual auth).** Rejected: silent drift between the two credentials produced the original bug and would keep producing it. Adding a `gh auth status` preflight covers half the surface and leaves the other half un-validated.
-- **Unify on `gh` (host) + keep `GH_TOKEN` (containers only).** Rejected: the user still maintains two credentials per machine, the host/container split is surprising, and `gh` becomes a hard runtime dependency for `pycastle labels` that isn't strictly needed.
-- **PAT-only (chosen).** One credential everywhere. Removes the `gh` install requirement. Errors are honest and consistent. Container/host parity means the same token works in both places.
+- **Dual auth (status quo).** Rejected: silent drift between the two creds produced the original bug. `gh auth status` preflight covers only half.
+- **`gh` on host + `GH_TOKEN` in containers.** Rejected: two creds per machine, surprising split, `gh` becomes a hard `pycastle labels` dependency.
+- **PAT-only (chosen).** One cred everywhere, honest errors, container/host parity.
 
 ## Consequences
 
-- The user must manage PAT expiration. Recommended: classic PAT with "no expiration" for personal use; calendar-tracked rotation otherwise.
-- SSO-protected orgs require manual one-click PAT authorization via the GitHub web UI (`gh`'s automatic SSO flow is no longer available).
-- `gh` is no longer a runtime dependency. README and Dockerfile install instructions drop the `gh` step.
-- `GithubService` ceases to inherit from `_SubprocessService`; it owns its own `urllib`-based `_request` and `_paginate` primitives.
-- The exception hierarchy reshapes around HTTP semantics: `GithubAuthError` (401), `GithubAPIError` (other non-2xx), `GithubNetworkError` (transport). The subprocess-shaped `GithubCommandError`, `GithubTimeoutError`, and `GithubNotFoundError` are removed.
+- User manages PAT expiration (recommend "no expiration" classic PAT for personal use).
+- SSO orgs need one-click PAT authorization via web UI (no automatic SSO flow).
+- `GithubService` no longer inherits `_SubprocessService`; owns its own `urllib` `_request` / `_paginate`.
+- Exception hierarchy reshapes around HTTP: `GithubAuthError` (401), `GithubAPIError` (other non-2xx), `GithubNetworkError` (transport). Subprocess-shaped `GithubCommandError` / `GithubTimeoutError` / `GithubNotFoundError` removed.

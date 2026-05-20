@@ -1,17 +1,17 @@
-# CLI-native model shorthand resolution over load-time API call
+# CLI-native model shorthand resolution
 
-**Option B.** Model shorthand resolution is delegated to the Claude CLI at stage execution time. `load_config` is pure (file I/O only); the model string is passed as-is to the CLI.
+Model shorthands (e.g. `sonnet`) pass directly to the Claude CLI at stage execution; `load_config` stays pure (file I/O only) and stores the string as-is.
 
 ## Reasons
 
-- **Hidden interface cost.** Option A makes `load_config` appear to be a pure file-loading operation but introduces a subprocess call as a hidden side effect. Callers — including tests — must know to mock `ClaudeService` to avoid hitting the CLI.
-- **Verified CLI support.** The Claude CLI accepts shorthands directly (`claude --model sonnet` works). There is no need to pre-resolve them.
-- **Locality of validation.** Invalid model strings surface as CLI errors at the point of use, where the context (which stage, which run) is most relevant.
-- **Testability.** A pure `load_config` can be tested with plain `Config` comparisons and no mocks.
+- **Hidden interface cost.** Resolving at load time would turn `load_config` into a subprocess caller — callers and tests must mock `ClaudeService` to avoid hitting the CLI.
+- **CLI supports it.** `claude --model sonnet` works natively.
+- **Locality of validation.** Bad model strings surface as CLI errors at the point of use, with stage/run context.
+- **Testability.** Pure `load_config` tests with plain `Config` comparisons, no mocks.
 
 ## Consequences
 
-- `Config.plan_override.model` (and equivalent fields) may hold a shorthand or a full model ID — callers cannot distinguish between them by type alone.
-- Invalid model strings are not caught at startup. A bad model value surfaces as a CLI error when the relevant stage first runs, not when config is loaded.
-- `validator.py` and its `_fetch_models` / `_resolve_shorthand` machinery are removed. Effort validation (a pure set-membership check) moves inline into `load_config`.
-- `load_config` no longer accepts or instantiates a `claude_service` argument.
+- `Config.<stage>_override.model` may hold a shorthand or full model ID — callers can't distinguish by type.
+- Bad model strings surface at first stage run, not at config load.
+- Effort validation (set-membership) stays inline in `load_config`; `validator.py`'s `_fetch_models` / `_resolve_shorthand` machinery is removed.
+- `load_config` no longer accepts a `claude_service` argument.
