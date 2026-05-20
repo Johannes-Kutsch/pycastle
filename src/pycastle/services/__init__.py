@@ -23,6 +23,7 @@ from .github_service import (
     GithubService,
     GithubServiceError,
 )
+from .service_registry import ServiceRegistry
 
 __all__ = [
     "AgentService",
@@ -42,6 +43,7 @@ __all__ = [
     "GithubServiceError",
     "ParsedTurn",
     "Result",
+    "ServiceRegistry",
     "Tokens",
     "UsageLimit",
 ]
