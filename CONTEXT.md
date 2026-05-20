@@ -218,6 +218,7 @@
 | **WorktreeError** | Error raised when a git worktree operation fails for a non-timeout reason | git error |
 | **WorktreeTimeoutError** | Error raised when a git worktree operation exceeds the worktree timeout | — |
 | **AgentTimeoutError** | Error raised when an agent produces no output for longer than the idle timeout | hung agent error |
+| **build progress line** | Terse single-line UX shown during the implicit image verify on `pycastle run`: `Building Docker Image · preparing…` → `Building Docker Image · Step Y/X` → `Building Docker Image · exporting…` → `up to date` / `completed` / `failed`. TTY redraws in place; non-TTY emits one line per transition. On `failed`, the full captured docker output is dumped below before exit 1. `pycastle build` is unaffected and keeps verbose BuildKit streaming (#832) | quiet docker output, run-path build UX |
 | **urllib3 shutdown hook** | A `sys.unraisablehook` installed once at top of `main()` from `infrastructure/shutdown_hook.py`; suppresses harmless `ValueError: I/O operation on closed file` from `urllib3.response.HTTPResponse.__del__` during shutdown; matches strictly on unraisable `object` being a `urllib3.response.HTTPResponse` plus traceback walking through `urllib3/response.py` and `http/client.py`; non-matching events delegate to whatever hook was previously installed; `DockerSession.__exit__` does no urllib3-specific cleanup (tried in #487 and #496, insufficient) | shutdown noise hook, urllib3 silencer |
 
 ## Service Abstraction & Dependency Injection
