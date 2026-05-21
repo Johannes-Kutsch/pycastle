@@ -12,7 +12,12 @@ from ..agents.output_protocol import (
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompts.pipeline import PromptTemplate
-from ..services import GitCommandError, GitService, GithubService
+from ..services import (
+    GitCommandError,
+    GitService,
+    GithubService,
+    UnrelatedHistoriesError,
+)
 from ..session import RoleSession
 from ..agents.classifier import WellFormed, classify_slice, slice_labels
 from ..display.status_display import StatusDisplay
@@ -124,6 +129,39 @@ class PreflightCache:
 
         try:
             deps.git_svc.pull_with_merge_fallback(deps.repo_root)
+        except UnrelatedHistoriesError:
+            branch = deps.git_svc.get_current_branch(deps.repo_root)
+            remote_ref = f"origin/{branch}"
+            ahead = deps.git_svc.count_commits_ahead(deps.repo_root, remote_ref)
+            if ahead == 0:
+                deps.git_svc.hard_reset_to(deps.repo_root, remote_ref)
+                deps.status_display.print(
+                    "Preflight",
+                    f"Upstream history was rewritten. "
+                    f"Local branch resynced to {remote_ref}.",
+                )
+                return
+            subjects = deps.git_svc.get_local_only_commit_subjects(
+                deps.repo_root, remote_ref
+            )
+            if subjects:
+                commit_list = "\n".join(f"  • {s}" for s in subjects[:10])
+                if len(subjects) > 10:
+                    commit_list += f"\n  … and {len(subjects) - 10} more"
+            else:
+                commit_list = f"  ({ahead} commit(s))"
+            deps.status_display.print(
+                "Preflight",
+                f"Upstream history was rewritten but local branch has {ahead} "
+                f"commit(s) not present on {remote_ref}.\n"
+                f"Pycastle cannot determine whether these are lost work or "
+                f"logically-equivalent pre-rewrite copies.\n"
+                f"Local-only commits:\n{commit_list}\n"
+                f"To recover manually once you have confirmed nothing is lost:\n"
+                f"  git fetch origin && git reset --hard {remote_ref}",
+                style="error",
+            )
+            raise
         except GitCommandError as pull_exc:
             if "conflict" not in str(pull_exc).lower():
                 raise
@@ -162,6 +200,8 @@ class PreflightCache:
             await _wait_for_clean_working_tree(deps, "Preflight")
             try:
                 await self.pull_with_resolution(deps)
+            except UnrelatedHistoriesError:
+                raise
             except GitCommandError as pull_exc:
                 if "conflict" not in str(pull_exc).lower():
                     deps.status_display.print(

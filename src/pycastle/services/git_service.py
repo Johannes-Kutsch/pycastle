@@ -46,6 +46,10 @@ class GitCommandError(GitServiceError):
         return "\n".join(parts)
 
 
+class UnrelatedHistoriesError(GitCommandError):
+    pass
+
+
 class GitTimeoutError(GitServiceError, TimeoutError):
     pass
 
@@ -197,6 +201,13 @@ class GitService(_SubprocessService):
         )
         if result.returncode == 0:
             return True
+        stderr = self._decode(result.stderr)
+        if "refusing to merge unrelated histories" in stderr.lower():
+            raise UnrelatedHistoriesError(
+                f"git merge --no-edit {branch!r} failed",
+                returncode=result.returncode,
+                stderr=stderr,
+            )
         abort = self._run(
             ["git", "merge", "--abort"], cwd=repo_path, capture_output=True
         )
@@ -205,8 +216,37 @@ class GitService(_SubprocessService):
         raise GitCommandError(
             f"git merge --no-edit {branch!r} failed",
             returncode=result.returncode,
-            stderr=self._decode(result.stderr),
+            stderr=stderr,
         )
+
+    def count_commits_ahead(self, repo_path: Path, remote_ref: str) -> int:
+        result = self._run(
+            ["git", "rev-list", "--count", f"{remote_ref}..HEAD"],
+            cwd=repo_path,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            return 0
+        return int(self._decode(result.stdout))
+
+    def hard_reset_to(self, repo_path: Path, ref: str) -> None:
+        self._run_or_raise(
+            ["git", "reset", "--hard", ref],
+            f"git reset --hard {ref!r} failed",
+            cwd=repo_path,
+        )
+
+    def get_local_only_commit_subjects(
+        self, repo_path: Path, remote_ref: str
+    ) -> list[str]:
+        result = self._run(
+            ["git", "log", f"{remote_ref}..HEAD", "--format=%s"],
+            cwd=repo_path,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            return []
+        return [line for line in self._decode(result.stdout).splitlines() if line]
 
     def is_working_tree_clean(self, repo_path: Path) -> bool:
         result = self._run(

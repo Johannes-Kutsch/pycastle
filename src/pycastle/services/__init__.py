@@ -15,6 +15,7 @@ from .git_service import (
     GitService,
     GitServiceError,
     GitTimeoutError,
+    UnrelatedHistoriesError,
 )
 from .github_service import (
     GithubAPIError,
@@ -36,6 +37,7 @@ __all__ = [
     "GitService",
     "GitServiceError",
     "GitTimeoutError",
+    "UnrelatedHistoriesError",
     "GithubAPIError",
     "GithubAuthError",
     "GithubNetworkError",
