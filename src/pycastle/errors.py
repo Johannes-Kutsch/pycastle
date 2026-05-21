@@ -97,26 +97,14 @@ class InvalidSliceLabelError(PycastleError):
 
 
 class TransientAgentError(PycastleError):
-    def __init__(
-        self,
-        message: str = "",
-        status_code: int | None = None,
-        caller: str = "",
-    ) -> None:
+    def __init__(self, message: str = "", status_code: int | None = None) -> None:
         self.status_code = status_code
-        self.caller = caller
         super().__init__(message)
 
 
 class HardAgentError(PycastleError):
-    def __init__(
-        self,
-        message: str = "",
-        status_code: int | None = None,
-        caller: str = "",
-    ) -> None:
+    def __init__(self, message: str = "", status_code: int | None = None) -> None:
         self.status_code = status_code
-        self.caller = caller
         super().__init__(message)
 
 
