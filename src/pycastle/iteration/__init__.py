@@ -249,24 +249,26 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         return Continue()
     except HardAgentError as err:
         raw = err.args[0] if err.args else ""
+        error_text = raw
         try:
-            error_text = json.loads(raw).get("result") or raw
-        except Exception:
-            error_text = raw
-        first_line = (error_text.splitlines()[0] if error_text else raw) or str(err)
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict) and parsed.get("result"):
+                error_text = str(parsed["result"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+        first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"
         title = f"[pycastle] Claude API {err.status_code}: {first_line}"
         body = (
             f"## Raw result envelope\n\n```json\n{raw}\n```\n\n"
             f"Status: {err.status_code}\n"
+            f"Agent: {err.caller or '<unknown>'}\n"
         )
-        url = auto_file_issue(title, body, ["bug", "needs-triage"], cfg=deps.cfg)
+        url = auto_file_issue(title, body, BUG_REPORT_LABEL_LIST, cfg=deps.cfg)
         status_code_str = (
             str(err.status_code) if err.status_code is not None else "no status"
         )
-        url_str = url if url is not None else ""
         deps.status_display.print(
             err.caller,
-            f"hard API error: status {status_code_str}"
-            + (f" — {url_str}" if url_str else ""),
+            f"hard API error: status {status_code_str}" + (f" — {url}" if url else ""),
         )
         return AbortedHardApiError(status_code=err.status_code)
