@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Protocol, TypeAlias
 if TYPE_CHECKING:
     from ..services.agent_service import ParsedTurn
 
-from ..errors import UsageLimitError
+from ..errors import HardAgentError, TransientAgentError, UsageLimitError
 
 
 def _now_utc() -> datetime:
@@ -350,7 +350,14 @@ def process_stream_from_events(
     on_tokens: Callable[[int], None] | None = None,
     provider: str | None = None,
 ) -> AgentOutput:
-    from ..services.agent_service import AssistantTurn, Result, Tokens, UsageLimit
+    from ..services.agent_service import (
+        AssistantTurn,
+        HardError,
+        Result,
+        Tokens,
+        TransientError,
+        UsageLimit,
+    )
 
     handler = _HANDLERS[role]
     result_text: str | None = None
@@ -361,6 +368,16 @@ def process_stream_from_events(
                 reset_time=event.reset_time,
                 raw_message=event.raw_message,
                 provider=provider,
+            )
+        elif isinstance(event, TransientError):
+            raise TransientAgentError(
+                message=event.raw_message,
+                status_code=event.status_code,
+            )
+        elif isinstance(event, HardError):
+            raise HardAgentError(
+                message=event.raw_message,
+                status_code=event.status_code,
             )
         elif isinstance(event, Tokens):
             if on_tokens is not None:

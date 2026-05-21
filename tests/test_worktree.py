@@ -10,7 +10,7 @@ import pytest
 from pycastle.config import Config
 from pycastle.errors import WorktreeError, WorktreeTimeoutError
 from pycastle.services import GitCommandError, GitService, GitTimeoutError
-from pycastle.errors import UsageLimitError
+from pycastle.errors import HardAgentError, TransientAgentError, UsageLimitError
 from pycastle.infrastructure.worktree import (
     transient_worktree,
     managed_worktree,
@@ -1129,3 +1129,43 @@ def test_managed_worktree_preservation_predicate(
         branch_deps.git_svc.remove_worktree.assert_called_once()
     else:
         branch_deps.git_svc.remove_worktree.assert_not_called()
+
+
+def test_managed_worktree_preserves_worktree_on_transient_agent_error(branch_deps):
+    """managed_worktree must not teardown when TransientAgentError propagates from the body."""
+
+    async def _run():
+        with pytest.raises(TransientAgentError):
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha=None,
+                delete_branch_on_teardown=True,
+                deps=branch_deps,
+            ):
+                raise TransientAgentError(status_code=529)
+
+    asyncio.run(_run())
+
+    branch_deps.git_svc.remove_worktree.assert_not_called()
+    branch_deps.git_svc.delete_branch.assert_not_called()
+
+
+def test_managed_worktree_preserves_worktree_on_hard_agent_error(branch_deps):
+    """managed_worktree must not teardown when HardAgentError propagates from the body."""
+
+    async def _run():
+        with pytest.raises(HardAgentError):
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha=None,
+                delete_branch_on_teardown=True,
+                deps=branch_deps,
+            ):
+                raise HardAgentError(status_code=403)
+
+    asyncio.run(_run())
+
+    branch_deps.git_svc.remove_worktree.assert_not_called()
+    branch_deps.git_svc.delete_branch.assert_not_called()

@@ -7,7 +7,12 @@ from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.result import CancellationToken
 from ..agents.runner import RunRequest
 from ..bug_reporter import BUG_REPORT_LABEL_LIST, auto_file_issue
-from ..errors import AgentFailedError, AgentTimeoutError, UsageLimitError
+from ..errors import (
+    AgentFailedError,
+    AgentTimeoutError,
+    TransientAgentError,
+    UsageLimitError,
+)
 from ..prompts.pipeline import PromptTemplate
 from ..infrastructure.worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
@@ -232,3 +237,5 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             failed_role=err.role_value,
             worktree_path=err.worktree_path or deps.repo_root,
         )
+    except TransientAgentError:
+        return Continue()

@@ -31,7 +31,19 @@ class UsageLimit:
     raw_message: str | None = None
 
 
-ParsedTurn = AssistantTurn | Tokens | Result | UsageLimit
+@dataclasses.dataclass
+class TransientError:
+    status_code: int | None
+    raw_message: str
+
+
+@dataclasses.dataclass
+class HardError:
+    status_code: int
+    raw_message: str
+
+
+ParsedTurn = AssistantTurn | Tokens | Result | UsageLimit | TransientError | HardError
 
 
 class AgentService(Protocol):

@@ -12,7 +12,15 @@ from typing import Literal
 from ..agents import output_protocol as _proto
 from ..agents.output_protocol import AgentRole
 from ..session import SESSION_DIR_NAME, RunKind
-from .agent_service import AssistantTurn, ParsedTurn, Result, Tokens, UsageLimit
+from .agent_service import (
+    AssistantTurn,
+    HardError,
+    ParsedTurn,
+    Result,
+    Tokens,
+    TransientError,
+    UsageLimit,
+)
 from ._wake_time import compute_wake_time
 
 
@@ -103,6 +111,33 @@ _MONTHS = {
     "december": 12,
     "dec": 12,
 }
+
+
+def _check_api_error(line: str) -> "TransientError | HardError | Literal[False]":
+    """Classify non-429 is_error: true result envelopes into transient or hard error.
+
+    Returns False for 429 (handled by _check_usage_limit) and for non-error lines.
+    """
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(obj, dict) or not obj.get("is_error"):
+        return False
+    if obj.get("type") != "result":
+        return False
+    status = obj.get("api_error_status")
+    # 429 is handled unchanged by _check_usage_limit
+    if status == 429:
+        return False
+    if status is None or (isinstance(status, int) and status >= 500):
+        return TransientError(
+            status_code=status if isinstance(status, int) else None,
+            raw_message=line,
+        )
+    if isinstance(status, int) and 400 <= status < 500:
+        return HardError(status_code=status, raw_message=line)
+    return False
 
 
 def _check_usage_limit(line: str) -> datetime | None | Literal[False]:
@@ -276,6 +311,10 @@ class ClaudeService:
 
     def run(self, lines: Iterable[str]) -> Iterator[ParsedTurn]:
         for line in lines:
+            api_error = _check_api_error(line)
+            if api_error is not False:
+                yield api_error
+                return
             usage_limit = _check_usage_limit(line)
             if usage_limit is not False:
                 raw = line if usage_limit is None else None

@@ -14,7 +14,13 @@ from .result import CancellationToken
 from ..config import Config
 from ..infrastructure.container_runner import ContainerRunner
 from ..infrastructure.docker_session import DockerSession, build_volume_spec
-from ..errors import AgentFailedError, AgentTimeoutError, UsageLimitError
+from ..errors import (
+    AgentFailedError,
+    AgentTimeoutError,
+    HardAgentError,
+    TransientAgentError,
+    UsageLimitError,
+)
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session import RoleSession, RunKind
 from ..services import GitService
@@ -237,6 +243,18 @@ class AgentRunner:
                     except UsageLimitError as err:
                         self._service.mark_exhausted(err.reset_time)
                         _token.cancel()
+                        raise
+                    except (TransientAgentError, HardAgentError) as err:
+                        _token.cancel()
+                        status_code_str = (
+                            str(err.status_code)
+                            if err.status_code is not None
+                            else "no status"
+                        )
+                        status_display.print(
+                            name,
+                            f"transient API error: status {status_code_str}",
+                        )
                         raise
                     except Exception:
                         if run_kind != RunKind.RESUME:
