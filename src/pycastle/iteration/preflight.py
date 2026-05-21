@@ -123,6 +123,46 @@ class PreflightCache:
         self._verdict: PreflightResult | None = None
         self._lock: asyncio.Lock = asyncio.Lock()
 
+    @staticmethod
+    def _try_recover_unrelated_histories(deps: _PreflightDeps) -> bool:
+        """Resync to origin if local has no commits ahead; otherwise emit guidance.
+
+        Returns True when recovery succeeded and the caller should treat the pull
+        as if it had succeeded. Returns False to signal the caller must re-raise.
+        """
+        branch = deps.git_svc.get_current_branch(deps.repo_root)
+        remote_ref = f"origin/{branch}"
+        ahead = deps.git_svc.count_commits_ahead(deps.repo_root, remote_ref)
+        if ahead == 0:
+            deps.git_svc.hard_reset_to(deps.repo_root, remote_ref)
+            deps.status_display.print(
+                "Preflight",
+                f"Upstream history was rewritten. Local branch resynced to {remote_ref}.",
+            )
+            return True
+        subjects = deps.git_svc.get_local_only_commit_subjects(
+            deps.repo_root, remote_ref
+        )
+        if subjects:
+            shown = subjects[:10]
+            commit_list = "\n".join(f"  • {s}" for s in shown)
+            if len(subjects) > len(shown):
+                commit_list += f"\n  … and {len(subjects) - len(shown)} more"
+        else:
+            commit_list = f"  ({ahead} commit(s))"
+        deps.status_display.print(
+            "Preflight",
+            f"Upstream history was rewritten but local branch has {ahead} "
+            f"commit(s) not present on {remote_ref}.\n"
+            f"Pycastle cannot determine whether these are lost work or "
+            f"logically-equivalent pre-rewrite copies.\n"
+            f"Local-only commits:\n{commit_list}\n"
+            f"To recover manually once you have confirmed nothing is lost:\n"
+            f"  git fetch origin && git reset --hard {remote_ref}",
+            style="error",
+        )
+        return False
+
     async def pull_with_resolution(self, deps: _PreflightDeps) -> None:
         """Pull from origin, escalating to the divergence-resolver agent on textual conflict."""
         from ..infrastructure.worktree import managed_worktree
@@ -130,37 +170,8 @@ class PreflightCache:
         try:
             deps.git_svc.pull_with_merge_fallback(deps.repo_root)
         except UnrelatedHistoriesError:
-            branch = deps.git_svc.get_current_branch(deps.repo_root)
-            remote_ref = f"origin/{branch}"
-            ahead = deps.git_svc.count_commits_ahead(deps.repo_root, remote_ref)
-            if ahead == 0:
-                deps.git_svc.hard_reset_to(deps.repo_root, remote_ref)
-                deps.status_display.print(
-                    "Preflight",
-                    f"Upstream history was rewritten. "
-                    f"Local branch resynced to {remote_ref}.",
-                )
+            if self._try_recover_unrelated_histories(deps):
                 return
-            subjects = deps.git_svc.get_local_only_commit_subjects(
-                deps.repo_root, remote_ref
-            )
-            if subjects:
-                commit_list = "\n".join(f"  • {s}" for s in subjects[:10])
-                if len(subjects) > 10:
-                    commit_list += f"\n  … and {len(subjects) - 10} more"
-            else:
-                commit_list = f"  ({ahead} commit(s))"
-            deps.status_display.print(
-                "Preflight",
-                f"Upstream history was rewritten but local branch has {ahead} "
-                f"commit(s) not present on {remote_ref}.\n"
-                f"Pycastle cannot determine whether these are lost work or "
-                f"logically-equivalent pre-rewrite copies.\n"
-                f"Local-only commits:\n{commit_list}\n"
-                f"To recover manually once you have confirmed nothing is lost:\n"
-                f"  git fetch origin && git reset --hard {remote_ref}",
-                style="error",
-            )
             raise
         except GitCommandError as pull_exc:
             if "conflict" not in str(pull_exc).lower():

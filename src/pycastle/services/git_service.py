@@ -220,13 +220,11 @@ class GitService(_SubprocessService):
         )
 
     def count_commits_ahead(self, repo_path: Path, remote_ref: str) -> int:
-        result = self._run(
+        result = self._run_or_raise(
             ["git", "rev-list", "--count", f"{remote_ref}..HEAD"],
+            f"git rev-list --count {remote_ref}..HEAD failed",
             cwd=repo_path,
-            capture_output=True,
         )
-        if result.returncode != 0:
-            return 0
         return int(self._decode(result.stdout))
 
     def hard_reset_to(self, repo_path: Path, ref: str) -> None:

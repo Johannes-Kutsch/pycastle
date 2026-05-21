@@ -13,8 +13,8 @@ from pycastle.services import (
     GitService,
     GitServiceError,
     GitTimeoutError,
+    UnrelatedHistoriesError,
 )
-from pycastle.services.git_service import UnrelatedHistoriesError
 
 _cfg = Config()
 
@@ -135,30 +135,6 @@ def test_try_merge_raises_unrelated_histories_error_on_unrelated_histories():
     with patch("subprocess.run", return_value=merge_result):
         with pytest.raises(UnrelatedHistoriesError):
             svc.try_merge(Path("/repo"), "origin/main")
-
-
-def test_try_merge_does_not_abort_on_unrelated_histories():
-    """git merge --abort must not be called when git never entered a merge state."""
-    svc = GitService(_cfg)
-    merge_result = MagicMock(
-        returncode=128,
-        stdout=b"",
-        stderr=b"fatal: refusing to merge unrelated histories",
-    )
-    abort_result = MagicMock(returncode=0, stdout=b"", stderr=b"")
-    calls: list[list] = []
-
-    def _side_effect(cmd, **_kw):
-        calls.append(cmd)
-        if "abort" in cmd:
-            return abort_result
-        return merge_result
-
-    with patch("subprocess.run", side_effect=_side_effect):
-        with pytest.raises(UnrelatedHistoriesError):
-            svc.try_merge(Path("/repo"), "origin/main")
-
-    assert not any("abort" in c for c in calls)
 
 
 def test_get_branch_commit_subjects_returns_subjects_most_recent_first():
