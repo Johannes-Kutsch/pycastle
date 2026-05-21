@@ -6,7 +6,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pycastle.errors import AgentFailedError, AgentTimeoutError, UsageLimitError
+from pycastle.errors import (
+    AgentFailedError,
+    AgentTimeoutError,
+    TransientAgentError,
+    UsageLimitError,
+)
 from pycastle.config import Config
 from pycastle.services import GitService
 from pycastle.services import GithubService
@@ -3434,3 +3439,64 @@ def test_improve_max_cap_counts_only_returned_outcomes_not_raised_aborts(
     assert deps.improve_dispatched_count == 1, (
         "improve_max cap must fire only after returned outcomes, not raised aborts"
     )
+
+
+# ── TransientAgentError: iteration boundary continues without sleeping ────────
+
+
+def test_run_iteration_returns_continue_on_transient_agent_error_from_implement_agent(
+    tmp_path, git_svc, github_svc, logger
+):
+    """TransientAgentError from an Implement Agent is re-raised from implement_phase and
+    caught by the top-level run_iteration boundary, returning Continue."""
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "labels": ["behavior-slice"]}]
+            )
+        raise TransientAgentError(status_code=529)
+
+    deps = _make_deps(
+        tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+
+
+def test_run_iteration_returns_continue_on_transient_agent_error_from_plan_agent(
+    tmp_path, git_svc, logger
+):
+    """TransientAgentError from the Plan Agent (single-agent phase) propagates to the
+    top-level run_iteration boundary and returns Continue."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_all_open_issues_lightweight.return_value = []
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            raise TransientAgentError(status_code=503)
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)

@@ -20,6 +20,7 @@ from pycastle.errors import (
     AgentFailedError,
     AgentTimeoutError,
     DockerError,
+    TransientAgentError,
     UsageLimitError,
 )
 from pycastle.prompts.pipeline import PromptTemplate
@@ -893,6 +894,70 @@ def test_agent_runner_injects_picked_token_into_container_env(tmp_path):
     )
 
     assert captured_env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok-secondary"
+
+
+def test_agent_runner_cancels_token_and_raises_on_transient_agent_error(tmp_path):
+    """TransientAgentError from a 5xx result cancels the CancellationToken and re-raises."""
+    mock_client = _make_docker_client(
+        [
+            b'{"type":"result","is_error":true,"api_error_status":529,'
+            b'"result":"API Error: 529 Overloaded"}\n'
+        ]
+    )
+    token = CancellationToken()
+    runner = AgentRunner(
+        {}, _make_cfg(tmp_path), _make_git_service(), docker_client=mock_client
+    )
+
+    with pytest.raises(TransientAgentError):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Implement Agent #42",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    token=token,
+                )
+            )
+        )
+
+    assert token.is_cancelled
+
+
+def test_agent_runner_does_not_call_mark_exhausted_on_transient_agent_error(tmp_path):
+    """TransientAgentError must NOT mark the account exhausted (server-wide, not account-specific)."""
+    from pycastle.services.claude_service import ClaudeService
+
+    mock_client = _make_docker_client(
+        [
+            b'{"type":"result","is_error":true,"api_error_status":529,'
+            b'"result":"API Error: 529 Overloaded"}\n'
+        ]
+    )
+    svc = ClaudeService(accounts=[("primary", "tok-primary")])
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service=svc,
+    )
+
+    with pytest.raises(TransientAgentError):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Test",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                )
+            )
+        )
+
+    # Account must still be available — mark_exhausted was NOT called
+    assert svc.is_available() is True
 
 
 def test_agent_runner_marks_picked_token_exhausted_on_usage_limit(tmp_path):

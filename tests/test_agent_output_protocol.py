@@ -717,7 +717,9 @@ def test_process_stream_does_not_raise_usage_limit_on_plain_text_match():
     assert result.message is None
 
 
-def test_process_stream_does_not_raise_on_non_429_error_result():
+def test_process_stream_raises_transient_agent_error_on_5xx_result():
+    from pycastle.errors import TransientAgentError
+
     error_line = json.dumps(
         {
             "type": "result",
@@ -726,13 +728,12 @@ def test_process_stream_does_not_raise_on_non_429_error_result():
             "result": "overloaded: usage limit exceeded",
         }
     )
-    result = process_stream(
-        [error_line],
-        on_turn=lambda t: None,
-        role=AgentRole.IMPLEMENTER,
-    )
-    assert isinstance(result, CommitMessageOutput)
-    assert result.message is None
+    with pytest.raises(TransientAgentError):
+        process_stream(
+            [error_line],
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+        )
 
 
 def test_process_stream_null_result_in_envelope_falls_back_to_collected_lines():

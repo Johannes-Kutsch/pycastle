@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import Protocol
 
 from ..config import Config
-from ..errors import UsageLimitError, WorktreeError, WorktreeTimeoutError
+from ..errors import (
+    HardAgentError,
+    TransientAgentError,
+    UsageLimitError,
+    WorktreeError,
+    WorktreeTimeoutError,
+)
 from ..services import GitCommandError, GitService, GitTimeoutError
 from ..session import any_role_dir_present
 
@@ -140,18 +146,18 @@ async def managed_worktree(
     path = worktree_path(name, deps)
     if not is_worktree_reusable(path, branch, deps.git_svc):
         _create_worktree(deps.git_svc, deps.repo_root, path, branch, sha)
-    _usage_limit_exc = False
+    _preservation_worthy_exc = False
     try:
         yield path
-    except UsageLimitError:
-        _usage_limit_exc = True
+    except (UsageLimitError, TransientAgentError, HardAgentError):
+        _preservation_worthy_exc = True
         raise
     finally:
         try:
             dirty = not deps.git_svc.is_working_tree_clean(path)
         except Exception:
             dirty = True
-        if not (_usage_limit_exc or dirty or any_role_dir_present(path)):
+        if not (_preservation_worthy_exc or dirty or any_role_dir_present(path)):
             teardown_worktree(deps.git_svc, deps.repo_root, path)
             if delete_branch_on_teardown:
                 deps.git_svc.delete_branch(branch, deps.repo_root)

@@ -14,6 +14,7 @@ from ..errors import (
     AgentFailedError,
     BranchCollisionError,
     InvalidSliceLabelError,
+    TransientAgentError,
     UsageLimitError,
 )
 from ..prompts.pipeline import PromptTemplate, build_issue_scope_args, build_wip_clause
@@ -263,6 +264,9 @@ async def implement_phase(
     )
     for result in results:
         if isinstance(result, AgentFailedError):
+            raise result
+    for result in results:
+        if isinstance(result, TransientAgentError):
             raise result
     usage_limit_errors = [r for r in results if isinstance(r, UsageLimitError)]
     usage_limit_hit = bool(usage_limit_errors)
