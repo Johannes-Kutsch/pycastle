@@ -244,7 +244,7 @@ class AgentRunner:
                         self._service.mark_exhausted(err.reset_time)
                         _token.cancel()
                         raise
-                    except (TransientAgentError, HardAgentError) as err:
+                    except TransientAgentError as err:
                         _token.cancel()
                         status_code_str = (
                             str(err.status_code)
@@ -255,6 +255,10 @@ class AgentRunner:
                             name,
                             f"transient API error: status {status_code_str}",
                         )
+                        raise
+                    except HardAgentError as err:
+                        _token.cancel()
+                        err.caller = name
                         raise
                     except Exception:
                         if run_kind != RunKind.RESUME:

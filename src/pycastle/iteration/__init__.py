@@ -1,4 +1,5 @@
 import dataclasses
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import TypeAlias
@@ -10,6 +11,7 @@ from ..bug_reporter import BUG_REPORT_LABEL_LIST, auto_file_issue
 from ..errors import (
     AgentFailedError,
     AgentTimeoutError,
+    HardAgentError,
     TransientAgentError,
     UsageLimitError,
 )
@@ -71,6 +73,11 @@ class AbortedTimeout:
     worktree_path: Path
 
 
+@dataclasses.dataclass(frozen=True)
+class AbortedHardApiError:
+    status_code: int | None
+
+
 IterationOutcome: TypeAlias = (
     Continue
     | Done
@@ -79,6 +86,7 @@ IterationOutcome: TypeAlias = (
     | NoCandidate
     | AbortedAgentFailure
     | AbortedTimeout
+    | AbortedHardApiError
 )
 
 
@@ -239,3 +247,26 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
     except TransientAgentError:
         return Continue()
+    except HardAgentError as err:
+        raw = err.args[0] if err.args else ""
+        try:
+            error_text = json.loads(raw).get("result") or raw
+        except Exception:
+            error_text = raw
+        first_line = (error_text.splitlines()[0] if error_text else raw) or str(err)
+        title = f"[pycastle] Claude API {err.status_code}: {first_line}"
+        body = (
+            f"## Raw result envelope\n\n```json\n{raw}\n```\n\n"
+            f"Status: {err.status_code}\n"
+        )
+        url = auto_file_issue(title, body, ["bug", "needs-triage"], cfg=deps.cfg)
+        status_code_str = (
+            str(err.status_code) if err.status_code is not None else "no status"
+        )
+        url_str = url if url is not None else ""
+        deps.status_display.print(
+            err.caller,
+            f"hard API error: status {status_code_str}"
+            + (f" — {url_str}" if url_str else ""),
+        )
+        return AbortedHardApiError(status_code=err.status_code)

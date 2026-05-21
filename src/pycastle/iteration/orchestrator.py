@@ -11,6 +11,7 @@ from ..agents.runner import AgentRunner, AgentRunnerProtocol, RunRequest
 from ..config import Config, load_config
 from . import (
     AbortedAgentFailure,
+    AbortedHardApiError,
     AbortedHITL,
     AbortedTimeout,
     AbortedUsageLimit,
@@ -254,6 +255,8 @@ async def run(
                     )
                     break
                 case AbortedHITL():
+                    sys.exit(1)
+                case AbortedHardApiError():
                     sys.exit(1)
                 case AbortedUsageLimit(reset_time=reset_time):
                     now = datetime.now()

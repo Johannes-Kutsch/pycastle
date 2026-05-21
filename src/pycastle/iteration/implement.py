@@ -13,6 +13,7 @@ from ..config import Config
 from ..errors import (
     AgentFailedError,
     BranchCollisionError,
+    HardAgentError,
     InvalidSliceLabelError,
     TransientAgentError,
     UsageLimitError,
@@ -264,6 +265,9 @@ async def implement_phase(
     )
     for result in results:
         if isinstance(result, AgentFailedError):
+            raise result
+    for result in results:
+        if isinstance(result, HardAgentError):
             raise result
     for result in results:
         if isinstance(result, TransientAgentError):

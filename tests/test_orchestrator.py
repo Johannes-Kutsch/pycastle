@@ -3364,3 +3364,33 @@ def test_stage_with_no_fallback_behaves_as_before(tmp_path):
     assert len(captured) == 1
     assert captured[0]["model"] == "my-model"
     assert captured[0]["effort"] == "medium"
+
+
+# ── AbortedHardApiError: orchestrator exits non-zero ─────────────────────────
+
+
+def test_orchestrator_exits_nonzero_on_hard_api_error(tmp_path):
+    """When run_iteration returns AbortedHardApiError the orchestrator must exit non-zero."""
+    from pycastle.errors import HardAgentError
+
+    raw_line = '{"type": "result", "is_error": true, "api_error_status": 400, "result": "Bad request"}'
+
+    async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+            )
+        raise HardAgentError(message=raw_line, status_code=400)
+
+    with patch(
+        "pycastle.iteration.auto_file_issue", return_value="https://example.com/1"
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            _run(
+                tmp_path,
+                _fake_agent,
+                github_service=_make_github_svc(),
+                git_service=_make_git_svc(),
+            )
+
+    assert exc_info.value.code != 0

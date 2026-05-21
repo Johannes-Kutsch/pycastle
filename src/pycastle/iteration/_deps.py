@@ -7,6 +7,7 @@ from typing import Any, Protocol
 from ..agents.output_protocol import AgentOutput, AgentSuccessOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest, translate_run_outcome
 from ..config import Config
+from ..errors import HardAgentError
 from ..services import GitService
 from ..services import GithubService
 from ..display.status_display import StatusDisplay
@@ -90,21 +91,25 @@ class FakeAgentRunner:
 
     async def _run(self, request: RunRequest) -> AgentOutput:
         self.calls.append(request)
-        if self._side_effect is not None:
-            result = self._side_effect(request)
-            if asyncio.iscoroutine(result):
-                result = await result
-            if isinstance(result, BaseException):
-                raise result
-            return result
-        if not self._responses:
-            raise AssertionError(
-                f"FakeAgentRunner queue exhausted — unexpected call for agent {request.name!r}"
-            )
-        response = self._responses.pop(0)
-        if isinstance(response, BaseException):
-            raise response
-        return response
+        try:
+            if self._side_effect is not None:
+                result = self._side_effect(request)
+                if asyncio.iscoroutine(result):
+                    result = await result
+                if isinstance(result, BaseException):
+                    raise result
+                return result
+            if not self._responses:
+                raise AssertionError(
+                    f"FakeAgentRunner queue exhausted — unexpected call for agent {request.name!r}"
+                )
+            response = self._responses.pop(0)
+            if isinstance(response, BaseException):
+                raise response
+            return response
+        except HardAgentError as err:
+            err.caller = request.name
+            raise
 
     async def run_preflight(
         self,

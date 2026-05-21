@@ -65,3 +65,65 @@ def test_process_stream_raises_transient_agent_error_for_all_roles():
     for role in AgentRole:
         with pytest.raises(TransientAgentError):
             process_stream([_5xx_result_line(529)], on_turn=lambda t: None, role=role)
+
+
+# ── 4xx-non-429 result raises HardAgentError ─────────────────────────────────
+
+
+from pycastle.errors import HardAgentError  # noqa: E402
+
+
+def _4xx_result_line(status: int) -> str:
+    return json.dumps(
+        {
+            "type": "result",
+            "is_error": True,
+            "api_error_status": status,
+            "stop_reason": "stop_sequence",
+            "result": f"API Error: {status}",
+        }
+    )
+
+
+def test_process_stream_raises_hard_agent_error_on_400():
+    """400 Bad Request raises HardAgentError."""
+    with pytest.raises(HardAgentError) as exc_info:
+        process_stream(
+            [_4xx_result_line(400)], on_turn=lambda t: None, role=AgentRole.IMPLEMENTER
+        )
+    assert exc_info.value.status_code == 400
+
+
+def test_process_stream_raises_hard_agent_error_for_all_4xx_non_429():
+    """400, 401, 403, 404, 413 all raise HardAgentError (never TransientAgentError)."""
+    for status in [400, 401, 403, 404, 413]:
+        with pytest.raises(HardAgentError) as exc_info:
+            process_stream(
+                [_4xx_result_line(status)],
+                on_turn=lambda t: None,
+                role=AgentRole.REVIEWER,
+            )
+        assert exc_info.value.status_code == status
+
+
+def test_process_stream_raises_hard_agent_error_for_all_roles():
+    """4xx-non-429 raises HardAgentError regardless of AgentRole."""
+    for role in AgentRole:
+        with pytest.raises(HardAgentError):
+            process_stream([_4xx_result_line(401)], on_turn=lambda t: None, role=role)
+
+
+def test_process_stream_does_not_raise_hard_agent_error_on_429():
+    """429 must NOT raise HardAgentError — it goes through the UsageLimitError path."""
+    from pycastle.errors import UsageLimitError
+
+    line = json.dumps(
+        {
+            "type": "result",
+            "is_error": True,
+            "api_error_status": 429,
+            "result": "You've hit your usage limit",
+        }
+    )
+    with pytest.raises(UsageLimitError):
+        process_stream([line], on_turn=lambda t: None, role=AgentRole.IMPLEMENTER)

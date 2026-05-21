@@ -20,6 +20,7 @@ from pycastle.errors import (
     AgentFailedError,
     AgentTimeoutError,
     DockerError,
+    HardAgentError,
     TransientAgentError,
     UsageLimitError,
 )
@@ -1716,3 +1717,70 @@ def test_build_prompt_expands_shell_expressions_via_container_exec(tmp_path):
     )
 
     assert result == "Result: expanded"
+
+
+# ── HardAgentError: runner cancels token and does NOT mark_exhausted ─────────
+
+
+def test_agent_runner_cancels_token_on_hard_agent_error(tmp_path):
+    """HardAgentError from a 4xx result cancels the CancellationToken and re-raises."""
+    mock_client = _make_docker_client(
+        [
+            b'{"type":"result","is_error":true,"api_error_status":401,'
+            b'"result":"API Error: 401 Unauthorized"}\n'
+        ]
+    )
+    token = CancellationToken()
+    runner = AgentRunner(
+        {}, _make_cfg(tmp_path), _make_git_service(), docker_client=mock_client
+    )
+
+    with pytest.raises(HardAgentError):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Implement Agent #42",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    token=token,
+                )
+            )
+        )
+
+    assert token.is_cancelled
+
+
+def test_agent_runner_does_not_call_mark_exhausted_on_hard_agent_error(tmp_path):
+    """HardAgentError must NOT mark the account exhausted (request-specific, not account-specific)."""
+    from pycastle.services.claude_service import ClaudeService
+
+    mock_client = _make_docker_client(
+        [
+            b'{"type":"result","is_error":true,"api_error_status":400,'
+            b'"result":"API Error: 400 Bad Request"}\n'
+        ]
+    )
+    svc = ClaudeService(accounts=[("primary", "tok-primary")])
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service=svc,
+    )
+
+    with pytest.raises(HardAgentError):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Test",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                )
+            )
+        )
+
+    # Account must still be available — mark_exhausted was NOT called
+    assert svc.is_available() is True

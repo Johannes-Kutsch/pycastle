@@ -9,6 +9,7 @@ import pytest
 from pycastle.errors import (
     AgentFailedError,
     AgentTimeoutError,
+    HardAgentError,
     TransientAgentError,
     UsageLimitError,
 )
@@ -17,6 +18,7 @@ from pycastle.services import GitService
 from pycastle.services import GithubService
 from pycastle.iteration import (
     AbortedAgentFailure,
+    AbortedHardApiError,
     AbortedHITL,
     AbortedTimeout,
     AbortedUsageLimit,
@@ -3500,3 +3502,167 @@ def test_run_iteration_returns_continue_on_transient_agent_error_from_plan_agent
     result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, Continue)
+
+
+# ── HardAgentError: iteration boundary returns AbortedHardApiError ────────────
+
+
+def test_run_iteration_returns_aborted_hard_api_error_on_hard_agent_error_from_implement_agent(
+    tmp_path, git_svc, github_svc, logger
+):
+    """HardAgentError from an Implement Agent causes run_iteration to return AbortedHardApiError."""
+    raw_line = '{"type": "result", "is_error": true, "api_error_status": 400, "result": "Bad request: invalid model"}'
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "labels": ["behavior-slice"]}]
+            )
+        raise HardAgentError(message=raw_line, status_code=400)
+
+    with patch("pycastle.iteration.auto_file_issue"):
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedHardApiError)
+
+
+def test_run_iteration_calls_auto_file_issue_with_correct_title_and_labels_on_hard_agent_error(
+    tmp_path, git_svc, github_svc, logger
+):
+    """HardAgentError causes auto_file_issue to be called with [pycastle] Claude API <status>: <first line> title."""
+    raw_line = '{"type": "result", "is_error": true, "api_error_status": 401, "result": "Unauthorized: invalid token"}'
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
+            )
+        raise HardAgentError(message=raw_line, status_code=401)
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        mock_file.return_value = "https://github.com/x/y/issues/99"
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedHardApiError)
+    mock_file.assert_called_once()
+    title, body, labels = mock_file.call_args[0]
+    assert title == "[pycastle] Claude API 401: Unauthorized: invalid token"
+    assert result.status_code == 401
+    assert labels == ["bug", "needs-triage"]
+    assert raw_line in body
+
+
+def test_run_iteration_returns_aborted_hard_api_error_on_hard_agent_error_from_plan_agent(
+    tmp_path, git_svc, github_svc, logger
+):
+    """HardAgentError from the Plan Agent propagates to run_iteration returning AbortedHardApiError."""
+    raw_line = '{"type": "result", "is_error": true, "api_error_status": 403, "result": "Permission denied"}'
+
+    async def agent_fn(req: RunRequest):
+        raise HardAgentError(message=raw_line, status_code=403)
+
+    # two issues so plan agent is NOT skipped
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+
+    with patch("pycastle.iteration.auto_file_issue"):
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedHardApiError)
+    assert result.status_code == 403
+
+
+def test_run_iteration_emits_status_display_print_with_url_on_hard_agent_error(
+    tmp_path, git_svc, github_svc, logger
+):
+    """On HardAgentError, run_iteration emits a status_display.print message that includes the URL."""
+    raw_line = '{"type": "result", "is_error": true, "api_error_status": 404, "result": "Not found"}'
+    issue_url = "https://github.com/Johannes-Kutsch/pycastle/issues/42"
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "labels": ["behavior-slice"]}]
+            )
+        raise HardAgentError(message=raw_line, status_code=404)
+
+    display = RecordingStatusDisplay()
+    with patch("pycastle.iteration.auto_file_issue", return_value=issue_url):
+        deps = _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            status_display=display,
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedHardApiError)
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    hard_error_prints = [c for c in print_calls if "hard API error" in str(c[2])]
+    assert hard_error_prints, "Expected a status_display.print with 'hard API error'"
+    caller, msg = hard_error_prints[-1][1], str(hard_error_prints[-1][2])
+    assert "Implement Agent" in caller, (
+        f"Expected agent name in caller, got: {caller!r}"
+    )
+    assert "404" in msg
+    assert issue_url in msg
+
+
+def test_run_iteration_uses_prefilled_url_when_auto_file_bugs_is_false(
+    tmp_path, git_svc, github_svc, logger
+):
+    """When auto_file_bugs=False, run_iteration emits the prefilled issues/new URL (no API call)."""
+    raw_line = '{"type": "result", "is_error": true, "api_error_status": 413, "result": "Request too large"}'
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "labels": ["behavior-slice"]}]
+            )
+        raise HardAgentError(message=raw_line, status_code=413)
+
+    display = RecordingStatusDisplay()
+    cfg = Config(max_parallel=4, max_iterations=1, auto_file_bugs=False)
+    deps = _make_deps(
+        tmp_path,
+        agent_fn,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=display,
+        cfg=cfg,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedHardApiError)
+    assert result.status_code == 413
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    hard_error_prints = [c for c in print_calls if "hard API error" in str(c[2])]
+    assert hard_error_prints, "Expected a status_display.print with 'hard API error'"
+    msg = str(hard_error_prints[-1][2])
+    assert "github.com" in msg

@@ -142,10 +142,11 @@ def auto_file_issue(
     labels: list[str],
     *,
     cfg: Config | None,
-) -> None:
+) -> str:
     """Gate-check, token-resolve, and file (or print prefilled URL for) a GitHub issue.
 
     Prepends the pycastle/Python/OS environment block to `body`. Never raises.
+    Returns the filed issue URL or the prefilled issues/new URL.
     """
     if cfg is None:
         cfg = _safe_load_config()
@@ -158,9 +159,11 @@ def auto_file_issue(
         if result is not None:
             number, html_url = result
             print(f"Filed issue #{number}: {html_url}")
-            return
+            return html_url
 
-    print(_build_bug_report_url(title, body, labels, repo))
+    url = _build_bug_report_url(title, body, labels, repo)
+    print(url)
+    return url
 
 
 def report_and_exit(
