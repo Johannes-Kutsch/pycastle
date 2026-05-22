@@ -9,8 +9,8 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
-from ..agents import output_protocol as _proto
 from ..agents.output_protocol import AgentRole
+from .. import _time as _time_module
 from ..session import SESSION_DIR_NAME, RunKind
 from .agent_service import (
     AssistantTurn,
@@ -46,7 +46,7 @@ class _AccountPool:
         return acc.exhausted_until is not None and acc.exhausted_until > now
 
     def pick(self, now: datetime | None = None) -> tuple[str, str]:
-        now = now or datetime.now()
+        now = now or _time_module.now_local()
         for acc in self._accounts:
             if not self._is_exhausted(acc, now):
                 return acc.name, acc.token
@@ -55,7 +55,7 @@ class _AccountPool:
     def mark_exhausted(
         self, token: str, reset_time: datetime | None, now: datetime | None = None
     ) -> None:
-        now = now or datetime.now()
+        now = now or _time_module.now_local()
         wake, _ = compute_wake_time(reset_time, now)
         for acc in self._accounts:
             if acc.token == token:
@@ -63,7 +63,7 @@ class _AccountPool:
                 return
 
     def has_available(self, now: datetime | None = None) -> bool:
-        now = now or datetime.now()
+        now = now or _time_module.now_local()
         return any(not self._is_exhausted(a, now) for a in self._accounts)
 
     def earliest_wake_time(self) -> datetime:
@@ -164,10 +164,8 @@ def _check_usage_limit(line: str) -> datetime | None | Literal[False]:
     elif ampm == "am" and hour == 12:
         hour = 0
 
-    # Attribute lookup (not `from ... import _now_utc`) so test monkeypatches of
-    # agent_output_protocol._now_utc take effect.
-    now_utc = _proto._now_utc()
-    now_local = now_utc.astimezone().replace(tzinfo=None)
+    now_l = _time_module.now_local()
+    now_utc = now_l.astimezone(timezone.utc)
 
     month_str = match.group("month")
     if month_str is not None:
@@ -181,18 +179,18 @@ def _check_usage_limit(line: str) -> datetime | None | Literal[False]:
             )
         except ValueError:
             return None
-        local_dt = utc_dt.astimezone().replace(tzinfo=None)
-        if local_dt < now_local - timedelta(days=31):
+        local_dt = utc_dt.astimezone()
+        if local_dt < now_l - timedelta(days=31):
             try:
                 utc_dt = utc_dt.replace(year=utc_dt.year + 1)
             except ValueError:
                 return None
-            local_dt = utc_dt.astimezone().replace(tzinfo=None)
+            local_dt = utc_dt.astimezone()
         return local_dt
 
     utc_dt = datetime.combine(now_utc.date(), time(hour, minute), tzinfo=timezone.utc)
-    local_dt = utc_dt.astimezone().replace(tzinfo=None)
-    if local_dt < now_local - timedelta(minutes=2):
+    local_dt = utc_dt.astimezone()
+    if local_dt < now_l - timedelta(minutes=2):
         local_dt += timedelta(days=1)
     return local_dt
 

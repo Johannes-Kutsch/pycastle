@@ -3,7 +3,7 @@ import shutil
 import sys
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from ..agents.runner import AgentRunner, AgentRunnerProtocol
@@ -34,6 +34,7 @@ from ..services._wake_time import compute_wake_time
 from ..session import SESSION_DIR_NAME
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import remove_worktrees_dir_if_empty
+from .. import _time as _time_module
 
 
 class FileLogger:
@@ -44,7 +45,7 @@ class FileLogger:
         tb = "".join(
             traceback.format_exception(type(error), error, error.__traceback__)
         )
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = _time_module.now_local().isoformat()
         entry = f"--- {timestamp} ---\n{tb}\n"
         print(entry, file=sys.stderr)
         self._logs_dir.mkdir(parents=True, exist_ok=True)
@@ -169,7 +170,7 @@ async def run(
                 f"=== Iteration {iteration}/{cfg.max_iterations} ===",
             )
 
-            _now = datetime.now()
+            _now = _time_module.now_local()
             _iter_cfg = (
                 dataclasses.replace(
                     cfg,
@@ -242,7 +243,7 @@ async def run(
                 case AbortedHardApiError():
                     sys.exit(1)
                 case AbortedUsageLimit(reset_time=reset_time):
-                    now = datetime.now()
+                    now = _time_module.now_local()
                     if service_registry is not None and service_registry.has_available(
                         now
                     ):

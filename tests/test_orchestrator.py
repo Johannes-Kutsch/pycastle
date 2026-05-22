@@ -1588,9 +1588,7 @@ def test_consecutive_usage_limits_sleep_multiple_times(tmp_path):
 
 def test_usage_limit_wake_time_is_next_full_hour_plus_two_minutes(tmp_path, capsys):
     """Wake time must be the next full hour + 2 minutes in local time."""
-    from datetime import datetime as real_datetime
-
-    fixed_now = real_datetime(2026, 1, 1, 14, 30, 0)
+    fixed_now = datetime(2026, 1, 1, 14, 30, 0).astimezone()
     expected_str = "15:02"
 
     mock_github = _make_github_svc()
@@ -1623,9 +1621,8 @@ def test_usage_limit_wake_time_is_next_full_hour_plus_two_minutes(tmp_path, caps
 
     with (
         patch("time.sleep"),
-        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
+        patch("pycastle._time.now_local", return_value=fixed_now),
     ):
-        mock_dt.now.return_value = fixed_now
         _run(
             tmp_path,
             _fake_run_agent,
@@ -1639,9 +1636,7 @@ def test_usage_limit_wake_time_is_next_full_hour_plus_two_minutes(tmp_path, caps
 
 def test_usage_limit_sleep_duration_matches_wake_time(tmp_path):
     """Sleep duration must equal the seconds from now to the next full hour + 2 minutes."""
-    from datetime import datetime as real_datetime
-
-    fixed_now = real_datetime(2026, 1, 1, 14, 30, 0)
+    fixed_now = datetime(2026, 1, 1, 14, 30, 0).astimezone()
     # next hour: 15:00, wake: 15:02 → 32 minutes = 1920 seconds
     expected_seconds = 32 * 60
 
@@ -1675,9 +1670,8 @@ def test_usage_limit_sleep_duration_matches_wake_time(tmp_path):
 
     with (
         patch("time.sleep") as mock_sleep,
-        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
+        patch("pycastle._time.now_local", return_value=fixed_now),
     ):
-        mock_dt.now.return_value = fixed_now
         _run(
             tmp_path,
             _fake_run_agent,
@@ -1741,10 +1735,8 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
 
 def test_usage_limit_with_reset_time_uses_precise_wake_time(tmp_path, capsys):
     """When UsageLimitError carries reset_time, orchestrator sleeps until reset + 2 min."""
-    from datetime import datetime as real_datetime
-
-    fixed_now = real_datetime(2026, 1, 1, 14, 30, 0)
-    fixed_reset = real_datetime(2026, 1, 1, 14, 50, 0)
+    fixed_now = datetime(2026, 1, 1, 14, 30, 0).astimezone()
+    fixed_reset = datetime(2026, 1, 1, 14, 50, 0).astimezone()
     expected_wake_str = "14:52"
     expected_seconds = 22 * 60  # 14:30 → 14:52
 
@@ -1778,9 +1770,8 @@ def test_usage_limit_with_reset_time_uses_precise_wake_time(tmp_path, capsys):
 
     with (
         patch("time.sleep") as mock_sleep,
-        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
+        patch("pycastle._time.now_local", return_value=fixed_now),
     ):
-        mock_dt.now.return_value = fixed_now
         _run(
             tmp_path,
             _fake_run_agent,
@@ -1841,10 +1832,8 @@ def test_usage_limit_without_reset_time_appends_estimated_qualifier(tmp_path, ca
 
 def test_usage_limit_sleep_message_same_day_shows_hhmm_only(tmp_path, capsys):
     """When wake-time is on the same day, message shows only HH:MM."""
-    from datetime import datetime as real_datetime
-
-    fixed_now = real_datetime(2026, 1, 1, 14, 30, 0)
-    fixed_reset = real_datetime(2026, 1, 1, 14, 50, 0)
+    fixed_now = datetime(2026, 1, 1, 14, 30, 0).astimezone()
+    fixed_reset = datetime(2026, 1, 1, 14, 50, 0).astimezone()
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
@@ -1876,9 +1865,8 @@ def test_usage_limit_sleep_message_same_day_shows_hhmm_only(tmp_path, capsys):
 
     with (
         patch("time.sleep"),
-        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
+        patch("pycastle._time.now_local", return_value=fixed_now),
     ):
-        mock_dt.now.return_value = fixed_now
         _run(
             tmp_path,
             _fake_run_agent,
@@ -1893,10 +1881,8 @@ def test_usage_limit_sleep_message_same_day_shows_hhmm_only(tmp_path, capsys):
 
 def test_usage_limit_sleep_message_cross_day_shows_date(tmp_path, capsys):
     """When wake-time is on a different day, message includes the date."""
-    from datetime import datetime as real_datetime
-
-    fixed_now = real_datetime(2026, 1, 1, 23, 30, 0)
-    fixed_reset = real_datetime(2026, 1, 2, 6, 0, 0)  # next day
+    fixed_now = datetime(2026, 1, 1, 23, 30, 0).astimezone()
+    fixed_reset = datetime(2026, 1, 2, 6, 0, 0).astimezone()  # next day
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
@@ -1928,9 +1914,8 @@ def test_usage_limit_sleep_message_cross_day_shows_date(tmp_path, capsys):
 
     with (
         patch("time.sleep"),
-        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
+        patch("pycastle._time.now_local", return_value=fixed_now),
     ):
-        mock_dt.now.return_value = fixed_now
         _run(
             tmp_path,
             _fake_run_agent,
@@ -1945,10 +1930,8 @@ def test_usage_limit_sleep_message_cross_day_shows_date(tmp_path, capsys):
 
 def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, capsys):
     """Account-switch message shows only HH:MM when wake-time is same day."""
-    from datetime import datetime as real_datetime
-
-    fixed_now = real_datetime(2026, 1, 1, 14, 0, 0)
-    wake = real_datetime(2026, 1, 1, 15, 2, 0)  # same day
+    fixed_now = datetime(2026, 1, 1, 14, 0, 0).astimezone()
+    wake = datetime(2026, 1, 1, 15, 2, 0).astimezone()  # same day
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
@@ -1984,9 +1967,8 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
 
     with (
         patch("time.sleep"),
-        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
+        patch("pycastle._time.now_local", return_value=fixed_now),
     ):
-        mock_dt.now.return_value = fixed_now
         _run(
             tmp_path,
             _fake_run_agent,
@@ -2824,10 +2806,8 @@ def test_usage_limit_with_service_available_does_not_sleep(tmp_path):
 
 def test_usage_limit_with_all_services_exhausted_sleeps_until_earliest_wake(tmp_path):
     """When all services are unavailable, orchestrator sleeps until earliest wake."""
-    from datetime import datetime as real_datetime
-
-    fixed_now = real_datetime(2026, 1, 1, 14, 30, 0)
-    early_wake = real_datetime(2026, 1, 1, 14, 42, 0)
+    fixed_now = datetime(2026, 1, 1, 14, 30, 0).astimezone()
+    early_wake = datetime(2026, 1, 1, 14, 42, 0).astimezone()
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
@@ -2861,9 +2841,8 @@ def test_usage_limit_with_all_services_exhausted_sleeps_until_earliest_wake(tmp_
 
     with (
         patch("time.sleep") as mock_sleep,
-        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
+        patch("pycastle._time.now_local", return_value=fixed_now),
     ):
-        mock_dt.now.return_value = fixed_now
         _run(
             tmp_path,
             _fake_run_agent,
@@ -3232,11 +3211,9 @@ def test_exhausted_primary_dispatches_with_fallback_triple(tmp_path):
 def test_dual_exhaustion_sleeps_until_earliest_of_primary_and_fallback(tmp_path):
     """When both primary and fallback services are exhausted, the orchestrator sleeps
     until min(primary.next_wake_time(), fallback.next_wake_time())."""
-    from datetime import datetime as real_datetime
-
-    fixed_now = real_datetime(2026, 1, 1, 14, 0, 0)
-    primary_wake = real_datetime(2026, 1, 1, 16, 0, 0)
-    fallback_wake = real_datetime(2026, 1, 1, 15, 0, 0)  # earlier
+    fixed_now = datetime(2026, 1, 1, 14, 0, 0).astimezone()
+    primary_wake = datetime(2026, 1, 1, 16, 0, 0).astimezone()
+    fallback_wake = datetime(2026, 1, 1, 15, 0, 0).astimezone()  # earlier
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
@@ -3264,9 +3241,8 @@ def test_dual_exhaustion_sleeps_until_earliest_of_primary_and_fallback(tmp_path)
 
     with (
         patch("time.sleep") as mock_sleep,
-        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
+        patch("pycastle._time.now_local", return_value=fixed_now),
     ):
-        mock_dt.now.return_value = fixed_now
         _run(
             tmp_path,
             _fake_run_agent,

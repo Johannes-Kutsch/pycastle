@@ -3,13 +3,13 @@
 import asyncio
 import json
 import threading
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
-from unittest.mock import patch
 
 import pytest
 
+import pycastle._time as _time_module
 from pycastle.agents.output_protocol import AgentRole, CommitMessageOutput
 from pycastle.config import Config
 from pycastle.infrastructure.container_runner import ContainerRunner
@@ -123,35 +123,35 @@ def test_container_runner_does_not_expose_exec_simple_or_write_file(tmp_path):
     assert not hasattr(runner, "write_file")
 
 
-def test_log_filename_includes_utc_timestamp_suffix(tmp_path):
-    fixed_dt = datetime(2026, 5, 17, 14, 30, tzinfo=UTC)
-    with patch("pycastle.infrastructure.container_runner.datetime") as mock_dt:
-        mock_dt.now.return_value = fixed_dt
-        runner, _ = _make_runner(name="plan", tmp_path=tmp_path)
-    assert runner.log_path.name == "plan-20260517T1430.log"
+def test_log_filename_includes_local_timestamp_suffix(tmp_path, monkeypatch):
+    fixed_dt = datetime(2026, 5, 17, 14, 30, tzinfo=timezone.utc).astimezone()
+    monkeypatch.setattr(_time_module, "now_local", lambda: fixed_dt)
+    runner, _ = _make_runner(name="plan", tmp_path=tmp_path)
+    assert runner.log_path.name == f"plan-{fixed_dt.strftime('%Y%m%dT%H%M')}.log"
     assert runner.log_path.parent == tmp_path
 
 
-def test_two_runners_at_different_minutes_produce_distinct_log_files(tmp_path):
-    dt1 = datetime(2026, 5, 17, 14, 30, tzinfo=UTC)
-    dt2 = datetime(2026, 5, 17, 14, 31, tzinfo=UTC)
-    with patch("pycastle.infrastructure.container_runner.datetime") as mock_dt:
-        mock_dt.now.return_value = dt1
-        runner1, _ = _make_runner(name="merge", tmp_path=tmp_path)
-    with patch("pycastle.infrastructure.container_runner.datetime") as mock_dt:
-        mock_dt.now.return_value = dt2
-        runner2, _ = _make_runner(name="merge", tmp_path=tmp_path)
+def test_two_runners_at_different_minutes_produce_distinct_log_files(
+    tmp_path, monkeypatch
+):
+    dt1 = datetime(2026, 5, 17, 14, 30, tzinfo=timezone.utc).astimezone()
+    dt2 = datetime(2026, 5, 17, 14, 31, tzinfo=timezone.utc).astimezone()
+    monkeypatch.setattr(_time_module, "now_local", lambda: dt1)
+    runner1, _ = _make_runner(name="merge", tmp_path=tmp_path)
+    monkeypatch.setattr(_time_module, "now_local", lambda: dt2)
+    runner2, _ = _make_runner(name="merge", tmp_path=tmp_path)
     assert runner1.log_path != runner2.log_path
 
 
-def test_timestamp_is_fixed_at_construction_not_recomputed_per_write(tmp_path):
-    construct_dt = datetime(2026, 5, 17, 9, 5, tzinfo=UTC)
-    later_dt = datetime(2026, 5, 17, 9, 10, tzinfo=UTC)
-    with patch("pycastle.infrastructure.container_runner.datetime") as mock_dt:
-        mock_dt.now.return_value = construct_dt
-        runner, _ = _make_runner(name="scan", tmp_path=tmp_path)
-        mock_dt.now.return_value = later_dt
-        assert runner.log_path.name == "scan-20260517T0905.log"
+def test_timestamp_is_fixed_at_construction_not_recomputed_per_write(
+    tmp_path, monkeypatch
+):
+    construct_dt = datetime(2026, 5, 17, 9, 5, tzinfo=timezone.utc).astimezone()
+    later_dt = datetime(2026, 5, 17, 9, 10, tzinfo=timezone.utc).astimezone()
+    monkeypatch.setattr(_time_module, "now_local", lambda: construct_dt)
+    runner, _ = _make_runner(name="scan", tmp_path=tmp_path)
+    monkeypatch.setattr(_time_module, "now_local", lambda: later_dt)
+    assert runner.log_path.name == f"scan-{construct_dt.strftime('%Y%m%dT%H%M')}.log"
 
 
 # ── setup() ──────────────────────────────────────────────────────────────────

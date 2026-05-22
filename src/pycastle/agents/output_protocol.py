@@ -3,17 +3,12 @@ import enum
 import json
 import re
 from collections.abc import Callable, Iterable
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Protocol, TypeAlias
 
 if TYPE_CHECKING:
     from ..services.agent_service import ParsedTurn
 
 from ..errors import HardAgentError, TransientAgentError, UsageLimitError
-
-
-def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 class AgentRole(enum.Enum):
