@@ -148,6 +148,31 @@ def test_build_command_omits_session_flags_when_no_uuid():
     assert "--resume" not in cmd
 
 
+def test_build_command_includes_disallowed_tools_for_preflight_issue_role():
+    cmd = ClaudeService().build_command(role=AgentRole.PREFLIGHT_ISSUE)
+    assert '--disallowedTools "Edit Write NotebookEdit"' in cmd
+
+
+def test_build_command_includes_disallowed_tools_for_improve_role():
+    cmd = ClaudeService().build_command(role=AgentRole.IMPROVE)
+    assert '--disallowedTools "Edit Write NotebookEdit"' in cmd
+
+
+def test_build_command_excludes_disallowed_tools_for_other_roles():
+    for role in (
+        AgentRole.PLANNER,
+        AgentRole.IMPLEMENTER,
+        AgentRole.REVIEWER,
+        AgentRole.MERGER,
+        AgentRole.FAILURE_REPORT,
+        AgentRole.DIVERGENCE_RESOLVER,
+    ):
+        cmd = ClaudeService().build_command(role=role)
+        assert "--disallowedTools" not in cmd, (
+            f"unexpected --disallowedTools for {role}"
+        )
+
+
 # ── ClaudeService.build_env ───────────────────────────────────────────────────
 
 

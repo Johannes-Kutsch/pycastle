@@ -282,6 +282,8 @@ class ClaudeService:
         flags = (
             "--verbose --dangerously-skip-permissions --output-format stream-json -p -"
         )
+        if _profile.disallowed_tools:
+            flags += f' --disallowedTools "{" ".join(_profile.disallowed_tools)}"'
         if model:
             flags += f" --model {model}"
         if effort:
