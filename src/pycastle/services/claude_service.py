@@ -281,6 +281,7 @@ class ClaudeService:
         _profile = flag_profile_for(role)
         flags = (
             "--verbose --dangerously-skip-permissions --output-format stream-json -p -"
+            " --disable-slash-commands --exclude-dynamic-system-prompt-sections"
         )
         if model:
             flags += f" --model {model}"
