@@ -7,7 +7,6 @@ import shlex
 from collections.abc import Iterable, Iterator
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import Literal
 
 from ..agents.output_protocol import AgentRole
 from .. import _time as _time_module
@@ -114,44 +113,10 @@ _MONTHS = {
 }
 
 
-def _check_api_error(line: str) -> "TransientError | HardError | Literal[False]":
-    """Classify non-429 is_error: true result envelopes into transient or hard error.
-
-    Returns False for 429 (handled by _check_usage_limit) and for non-error lines.
-    """
-    try:
-        obj = json.loads(line)
-    except json.JSONDecodeError:
-        return False
-    if not isinstance(obj, dict) or not obj.get("is_error"):
-        return False
-    if obj.get("type") != "result":
-        return False
-    status = obj.get("api_error_status")
-    # 429 is handled unchanged by _check_usage_limit
-    if status == 429:
-        return False
-    if status is None or (isinstance(status, int) and status >= 500):
-        return TransientError(
-            status_code=status if isinstance(status, int) else None,
-            raw_message=line,
-        )
-    if isinstance(status, int) and 400 <= status < 500:
-        return HardError(status_code=status, raw_message=line)
-    return False
-
-
-def _check_usage_limit(line: str) -> datetime | None | Literal[False]:
-    try:
-        obj = json.loads(line)
-    except json.JSONDecodeError:
-        return False
-    if not isinstance(obj, dict) or obj.get("api_error_status") != 429:
-        return False
-    result_text = obj.get("result")
-    if not isinstance(result_text, str):
+def _parse_reset_time(result: object) -> datetime | None:
+    if not isinstance(result, str):
         return None
-    match = _RESET_TIME_RE.search(result_text)
+    match = _RESET_TIME_RE.search(result)
     if not match:
         return None
 
@@ -196,35 +161,65 @@ def _check_usage_limit(line: str) -> datetime | None | Literal[False]:
     return local_dt
 
 
-def _extract_turn(line: str) -> tuple[str | None, int | None]:
+def _classify_line(line: str) -> list[ParsedTurn]:
     try:
         obj = json.loads(line)
     except json.JSONDecodeError:
-        return None, None
-    if not isinstance(obj, dict) or obj.get("type") != "assistant":
-        return None, None
-    msg = obj.get("message") or {}
-    content = msg.get("content") or []
-    parts: list[str] = []
-    for block in content:
-        if isinstance(block, dict) and block.get("type") == "text":
-            text = (block.get("text") or "").strip()
-            if text:
-                parts.append(text)
-    turn_text = "\n\n".join(parts) if parts else None
+        return []
+    if not isinstance(obj, dict):
+        return []
 
-    usage = msg.get("usage") or {}
-    tokens: int | None = None
-    if usage:
-        total = (
-            (usage.get("input_tokens") or 0)
-            + (usage.get("cache_creation_input_tokens") or 0)
-            + (usage.get("cache_read_input_tokens") or 0)
-        )
-        if total > 0:
-            tokens = total
+    if obj.get("api_error_status") == 429:
+        reset_time = _parse_reset_time(obj.get("result"))
+        raw = line if reset_time is None else None
+        return [UsageLimit(reset_time=reset_time, raw_message=raw)]
 
-    return turn_text, tokens
+    if obj.get("is_error") and obj.get("type") == "result":
+        status = obj.get("api_error_status")
+        if status is None or (isinstance(status, int) and status >= 500):
+            return [TransientError(
+                status_code=status if isinstance(status, int) else None,
+                raw_message=line,
+            )]
+        if isinstance(status, int) and 400 <= status < 500:
+            return [HardError(status_code=status, raw_message=line)]
+        return []
+
+    if obj.get("type") == "assistant":
+        msg = obj.get("message") or {}
+        content = msg.get("content") or []
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = (block.get("text") or "").strip()
+                if text:
+                    parts.append(text)
+        turn_text = "\n\n".join(parts) if parts else None
+
+        usage = msg.get("usage") or {}
+        tokens: int | None = None
+        if usage:
+            total = (
+                (usage.get("input_tokens") or 0)
+                + (usage.get("cache_creation_input_tokens") or 0)
+                + (usage.get("cache_read_input_tokens") or 0)
+            )
+            if total > 0:
+                tokens = total
+
+        events: list[ParsedTurn] = []
+        if tokens is not None:
+            events.append(Tokens(count=tokens))
+        if turn_text is not None:
+            events.append(AssistantTurn(text=turn_text))
+        return events
+
+    if obj.get("type") == "result" and not obj.get("is_error"):
+        r = obj.get("result")
+        if isinstance(r, str):
+            return [Result(text=r)]
+
+    return []
 
 
 class ClaudeService:
@@ -321,26 +316,7 @@ class ClaudeService:
 
     def run(self, lines: Iterable[str]) -> Iterator[ParsedTurn]:
         for line in lines:
-            api_error = _check_api_error(line)
-            if api_error is not False:
-                yield api_error
-                return
-            usage_limit = _check_usage_limit(line)
-            if usage_limit is not False:
-                raw = line if usage_limit is None else None
-                yield UsageLimit(reset_time=usage_limit, raw_message=raw)
-                return
-            turn, tokens = _extract_turn(line)
-            if tokens is not None:
-                yield Tokens(count=tokens)
-            if turn is not None:
-                yield AssistantTurn(text=turn)
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(obj, dict) and obj.get("type") == "result":
-                r = obj.get("result")
-                if isinstance(r, str):
-                    yield Result(text=r)
+            for event in _classify_line(line):
+                yield event
+                if isinstance(event, (Result, UsageLimit, TransientError, HardError)):
                     return
