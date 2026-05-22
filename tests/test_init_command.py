@@ -1112,3 +1112,126 @@ def test_init_refresh_codex_config_without_existing_codex_dirs_does_not_create_t
             assert not (role_state_dir / "codex").exists(), (
                 f"codex/ dir should not exist for {role.value}/{namespace}"
             )
+
+
+# ── Issue #848: per-file status report for pycastle init --refresh ────────────
+
+
+_REPORT_VERBS = ("created ", "unchanged ", "overwrote ", "preserved ")
+
+
+def _run_refresh_capture(tmp_path, monkeypatch, capsys) -> list[str]:
+    """Run refresh() in tmp_path and return the report lines printed to stdout."""
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pycastle").mkdir(exist_ok=True)
+    refresh()
+    return [
+        ln
+        for ln in capsys.readouterr().out.splitlines()
+        if ln.startswith(_REPORT_VERBS)
+    ]
+
+
+def test_refresh_reports_created_for_every_copied_file_when_pycastle_dir_empty(
+    tmp_path, monkeypatch, capsys
+):
+    """When pycastle/ is empty, every file refresh writes is reported as 'created' (no preserved)."""
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+
+    on_disk = sorted(
+        str(p.relative_to(tmp_path / "pycastle"))
+        for p in (tmp_path / "pycastle").rglob("*")
+        if p.is_file()
+    )
+    reported = [ln.split(" ", 1)[1] for ln in report]
+    assert reported == on_disk
+    assert {ln.split(" ", 1)[0] for ln in report} == {"created"}
+    assert "created Dockerfile" in report
+
+
+def test_refresh_reports_unchanged_when_file_byte_equal(tmp_path, monkeypatch, capsys):
+    from importlib.resources import files
+
+    rel = "prompts/plan-prompt.md"
+    target = tmp_path / "pycastle" / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes((files("pycastle").joinpath("defaults") / rel).read_bytes())
+
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    assert f"unchanged {rel}" in report
+
+
+def test_refresh_reports_overwrote_and_replaces_content_when_file_differs(
+    tmp_path, monkeypatch, capsys
+):
+    rel = "prompts/plan-prompt.md"
+    target = tmp_path / "pycastle" / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"STALE CONTENT\n")
+
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    assert f"overwrote {rel}" in report
+    assert target.read_bytes() != b"STALE CONTENT\n"
+
+
+def test_refresh_preserves_existing_config_py(tmp_path, monkeypatch, capsys):
+    config = tmp_path / "pycastle" / "config.py"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text("# my config\n")
+
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    assert "preserved config.py" in report
+    assert config.read_text() == "# my config\n"
+
+
+def test_refresh_preserves_existing_env_file(tmp_path, monkeypatch, capsys):
+    env_file = tmp_path / "pycastle" / ".env"
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    env_file.write_text("GH_TOKEN=secret\n")
+
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    assert "preserved .env" in report
+    assert env_file.read_text() == "GH_TOKEN=secret\n"
+
+
+def test_refresh_omits_config_py_and_env_when_absent(tmp_path, monkeypatch, capsys):
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    assert not any(ln.endswith(" config.py") for ln in report)
+    assert not any(ln.endswith(" .env") for ln in report)
+
+
+def test_refresh_report_lines_sorted_alphabetically_across_verbs(
+    tmp_path, monkeypatch, capsys
+):
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "config.py").write_text("# config\n")
+    (pycastle_dir / ".env").write_text("GH_TOKEN=x\n")
+
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    paths = [ln.split(" ", 1)[1] for ln in report]
+    assert paths == sorted(paths)
+
+
+def test_refresh_omits_user_added_files(tmp_path, monkeypatch, capsys):
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "my-custom-file.md").write_text("user content\n")
+
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    assert not any("my-custom-file.md" in ln for ln in report)
+
+
+def test_refresh_omits_runtime_artifact_dirs(tmp_path, monkeypatch, capsys):
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    for artifact_dir in (".worktrees", "logs", ".pycastle-session"):
+        d = pycastle_dir / artifact_dir
+        d.mkdir()
+        (d / "some-file.txt").write_text("artifact\n")
+
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    for dir_name in (".worktrees", "logs", ".pycastle-session"):
+        assert not any(dir_name in ln for ln in report)
