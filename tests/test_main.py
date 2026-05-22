@@ -689,7 +689,7 @@ def test_run_cmd_triggers_docker_build_before_orchestrator(tmp_path, monkeypatch
     assert call_order.index("build") < call_order.index("orchestrator")
 
 
-def test_run_cmd_prints_image_up_to_date_on_full_cache_hit(tmp_path, monkeypatch):
+def test_run_cmd_succeeds_on_full_cache_hit(tmp_path, monkeypatch):
     from pycastle.services.docker_service import BuildOutcome
 
     result = _run_cmd_with_build_outcome(
@@ -697,7 +697,7 @@ def test_run_cmd_prints_image_up_to_date_on_full_cache_hit(tmp_path, monkeypatch
     )
 
     assert result.exit_code == 0, result.output
-    assert "Image up to date" in result.output
+    assert "Image up to date" not in result.output
 
 
 def test_run_cmd_no_build_output_on_full_cache_hit(tmp_path, monkeypatch):
@@ -865,43 +865,18 @@ def test_run_cmd_rejects_no_build_flag(tmp_path, monkeypatch):
 
 
 def _run_cmd_simulating_rebuild(tmp_path, monkeypatch):
-    """Invoke run_cmd with a DockerService that signals a rebuild via on_rebuild_start."""
-    from pycastle.main import main as cli
+    """Invoke run_cmd with a DockerService that returns REBUILT outcome."""
     from pycastle.services.docker_service import BuildOutcome
 
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
-    monkeypatch.setenv("GH_TOKEN", "gh")
-    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
-
-    cfg = Config(docker_image_name="myimage")
-    fake_svc = MagicMock()
-
-    def _build_with_rebuild(*args, **kwargs):
-        cb = kwargs.get("on_rebuild_start")
-        if cb:
-            cb()
-        return BuildOutcome.REBUILT
-
-    fake_svc.build_image.side_effect = _build_with_rebuild
-
-    async def _fake_run(*args, **kwargs):
-        pass
-
-    with (
-        patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
-    ):
-        return CliRunner().invoke(cli, ["run"])
+    return _run_cmd_with_build_outcome(tmp_path, monkeypatch, BuildOutcome.REBUILT)
 
 
-def test_run_cmd_prints_rebuilding_message_on_cache_miss(tmp_path, monkeypatch):
+def test_run_cmd_no_rebuilding_message_on_rebuild(tmp_path, monkeypatch):
+    """'Rebuilding image…' must not appear — terse progress replaced it."""
     result = _run_cmd_simulating_rebuild(tmp_path, monkeypatch)
 
     assert result.exit_code == 0, result.output
-    assert "Rebuilding image" in result.output
+    assert "Rebuilding image" not in result.output
 
 
 def test_run_cmd_no_rebuilding_message_on_full_cache_hit(tmp_path, monkeypatch):

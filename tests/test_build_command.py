@@ -321,86 +321,42 @@ def test_main_success_message_not_on_stderr(tmp_path, monkeypatch, capsys):
     assert "Build complete" not in err
 
 
-# ── Issue 760: on_rebuild_start callback ─────────────────────────────────────
+# ── terse mode passes terse=True to the service ──────────────────────────────
 
 
-def test_on_rebuild_start_fires_on_buildkit_cache_miss(tmp_path, monkeypatch):
-    """on_rebuild_start is called once when streaming detects a rebuilt BuildKit step."""
+def test_terse_mode_passes_terse_flag_to_service(tmp_path, monkeypatch):
+    """stream=True, terse=True is forwarded to docker_service.build_image."""
     from pycastle.commands.build import main
 
     monkeypatch.chdir(tmp_path)
-    fired: list[bool] = []
-
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_BUILDKIT_WITH_REBUILD),
-    ):
-        main(
-            stream=True,
-            on_rebuild_start=lambda: fired.append(True),
-            cfg=_cfg,
-        )
-
-    assert len(fired) == 1
+    svc = MagicMock()
+    svc.build_image.return_value = None
+    main(stream=True, terse=True, docker_service=svc, cfg=_cfg)
+    _, kwargs = svc.build_image.call_args
+    assert kwargs.get("terse") is True
 
 
-def test_on_rebuild_start_fires_on_classic_cache_miss(tmp_path, monkeypatch):
-    """on_rebuild_start fires when classic builder detects a non-cached step."""
+def test_terse_mode_does_not_print_image_up_to_date(tmp_path, monkeypatch, capsys):
+    """With terse=True the build command doesn't print 'Image up to date'."""
     from pycastle.commands.build import main
+    from pycastle.services.docker_service import BuildOutcome
 
     monkeypatch.chdir(tmp_path)
-    fired: list[bool] = []
-
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_CLASSIC_WITH_REBUILD),
-    ):
-        main(
-            stream=True,
-            on_rebuild_start=lambda: fired.append(True),
-            cfg=_cfg,
-        )
-
-    assert len(fired) == 1
+    svc = MagicMock()
+    svc.build_image.return_value = BuildOutcome.FULL_CACHE_HIT
+    main(stream=True, terse=True, docker_service=svc, cfg=_cfg)
+    out = capsys.readouterr().out
+    assert "Image up to date" not in out
 
 
-def test_on_rebuild_start_does_not_fire_on_classic_full_cache_hit(
-    tmp_path, monkeypatch
-):
-    """on_rebuild_start is NOT called when classic builder shows all steps cached."""
+def test_non_terse_stream_still_prints_image_up_to_date(tmp_path, monkeypatch, capsys):
+    """stream=True without terse still prints 'Image up to date' on full cache hit."""
     from pycastle.commands.build import main
+    from pycastle.services.docker_service import BuildOutcome
 
     monkeypatch.chdir(tmp_path)
-    fired: list[bool] = []
-
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_CLASSIC_ALL_CACHED),
-    ):
-        main(
-            stream=True,
-            on_rebuild_start=lambda: fired.append(True),
-            cfg=_cfg,
-        )
-
-    assert fired == []
-
-
-def test_on_rebuild_start_does_not_fire_on_full_cache_hit(tmp_path, monkeypatch):
-    """on_rebuild_start is NOT called when all steps are cached (BuildKit full cache hit)."""
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    fired: list[bool] = []
-
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_BUILDKIT_ALL_CACHED),
-    ):
-        main(
-            stream=True,
-            on_rebuild_start=lambda: fired.append(True),
-            cfg=_cfg,
-        )
-
-    assert fired == []
+    svc = MagicMock()
+    svc.build_image.return_value = BuildOutcome.FULL_CACHE_HIT
+    main(stream=True, terse=False, docker_service=svc, cfg=_cfg)
+    out = capsys.readouterr().out
+    assert "Image up to date" in out

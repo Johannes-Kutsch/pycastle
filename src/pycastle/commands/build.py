@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 from ..config import Config, load_config
@@ -12,9 +11,9 @@ from ..services.docker_service import BuildOutcome
 def main(
     no_cache: bool = False,
     stream: bool = False,
+    terse: bool = False,
     docker_service: DockerService | None = None,
     cfg: Config | None = None,
-    on_rebuild_start: Callable[[], None] | None = None,
 ) -> None:
     if cfg is None:
         cfg = load_config()
@@ -39,11 +38,11 @@ def main(
         Path("."),
         no_cache=no_cache,
         stream=stream,
+        terse=terse,
         python_version=python_version,
-        on_rebuild_start=on_rebuild_start,
     )
 
     if not stream:
         print("Build complete.")
-    elif outcome == BuildOutcome.FULL_CACHE_HIT:
+    elif outcome == BuildOutcome.FULL_CACHE_HIT and not terse:
         print("Image up to date.")

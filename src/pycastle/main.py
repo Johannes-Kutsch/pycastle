@@ -270,11 +270,8 @@ def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
         )
         sys.exit(1)
 
-    def _on_rebuild_start() -> None:
-        click.echo("Rebuilding image…")
-
     try:
-        _build(stream=True, cfg=cfg, on_rebuild_start=_on_rebuild_start)
+        _build(stream=True, terse=True, cfg=cfg)
     except (ConfigValidationError, DockerServiceError) as exc:
         click.echo(str(exc), err=True)
         sys.exit(1)

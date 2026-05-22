@@ -40,6 +40,43 @@ def _is_full_cache_hit(output: str) -> bool:
     return has_cached and not has_done
 
 
+_PROGRESS_PREFIX = "Building Docker Image · "
+
+
+class _ProgressWriter:
+    """Writes terse build-progress lines to stdout; handles TTY vs non-TTY."""
+
+    def __init__(self, is_tty: bool) -> None:
+        self._is_tty = is_tty
+        self._current: str | None = None
+
+    def update(self, suffix: str) -> None:
+        if suffix == self._current:
+            return
+        self._current = suffix
+        text = _PROGRESS_PREFIX + suffix
+        if self._is_tty:
+            sys.stdout.write(f"\r\x1b[K{text}")
+        else:
+            sys.stdout.write(f"{text}\n")
+        sys.stdout.flush()
+
+    def finish(self, suffix: str) -> None:
+        text = _PROGRESS_PREFIX + suffix
+        if self._is_tty:
+            sys.stdout.write(f"\r\x1b[K{text}\n")
+        else:
+            sys.stdout.write(f"{text}\n")
+        sys.stdout.flush()
+        self._current = None
+
+    def clear(self) -> None:
+        if self._is_tty and self._current is not None:
+            sys.stdout.write("\r\x1b[K")
+            sys.stdout.flush()
+            self._current = None
+
+
 class DockerService:
     def build_image(
         self,
@@ -51,6 +88,7 @@ class DockerService:
         python_version: str | None = None,
         timeout: float | None = None,
         stream: bool = False,
+        terse: bool = False,
         on_rebuild_start: Callable[[], None] | None = None,
     ) -> BuildOutcome | None:
         if not image_name:
@@ -62,6 +100,9 @@ class DockerService:
         if python_version is not None:
             cmd += ["--build-arg", f"PYTHON_VERSION={python_version}"]
         cmd.append(str(context_dir))
+
+        if stream and terse:
+            return self._build_terse(cmd, timeout)
 
         if stream:
             return self._build_streaming(cmd, timeout, on_rebuild_start)
@@ -79,6 +120,85 @@ class DockerService:
             raise DockerBuildError(f"docker build failed (exit {result.returncode})")
 
         return None
+
+    def _build_terse(
+        self,
+        cmd: list[str],
+        timeout: float | None,
+    ) -> BuildOutcome:
+        writer = _ProgressWriter(sys.stdout.isatty())
+        writer.update("preparing…")
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except FileNotFoundError as exc:
+            raise DockerServiceError(
+                "docker not found; ensure it is installed and on PATH"
+            ) from exc
+
+        assert proc.stdout is not None
+        lines: list[str] = []
+        total_steps: int | None = None
+        current_step: int | None = None
+        phase = "preparing"
+
+        for line in proc.stdout:
+            lines.append(line)
+            stripped = line.strip()
+
+            bk_step = re.match(r"^#\d+\s+\[(\d+)/(\d+)\]", stripped)
+            cl_step = re.match(r"^Step (\d+)/(\d+) :", stripped)
+            bk_export = re.match(
+                r"^#\d+\s+(exporting|naming|unpacking|manifest|pushing)", stripped
+            )
+
+            if bk_step:
+                y, x = int(bk_step.group(1)), int(bk_step.group(2))
+                if total_steps is None:
+                    total_steps = x
+                if current_step != y:
+                    current_step = y
+                    writer.update(f"Step {y}/{total_steps}")
+                    phase = "step"
+            elif cl_step:
+                y, x = int(cl_step.group(1)), int(cl_step.group(2))
+                if total_steps is None:
+                    total_steps = x
+                if current_step != y:
+                    current_step = y
+                    writer.update(f"Step {y}/{total_steps}")
+                    phase = "step"
+            elif bk_export and phase == "step":
+                writer.update("exporting…")
+                phase = "exporting"
+
+        try:
+            returncode = proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            proc.kill()
+            raise DockerBuildError(f"docker build timed out: {exc}") from exc
+
+        if returncode != 0:
+            writer.clear()
+            writer.finish("failed")
+            sys.stdout.write("".join(lines))
+            sys.stdout.flush()
+            raise DockerBuildError(f"docker build failed (exit {returncode})")
+
+        output = "".join(lines)
+        if _is_full_cache_hit(output):
+            writer.finish("up to date")
+            return BuildOutcome.FULL_CACHE_HIT
+        else:
+            writer.finish("completed")
+            return BuildOutcome.REBUILT
 
     def _build_streaming(
         self,

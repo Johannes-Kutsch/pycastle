@@ -376,3 +376,294 @@ def test_streaming_pipes_output_to_terminal(tmp_path, capsys):
         )
     captured = capsys.readouterr()
     assert "CACHED" in captured.out
+
+
+# ── build_image: terse mode — full cache hit ──────────────────────────────────
+
+
+def test_terse_full_cache_hit_prints_up_to_date_summary(tmp_path, capsys):
+    """Terse mode: full cache hit produces a single terminal summary line."""
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(_BUILDKIT_ALL_CACHED),
+    ):
+        result = DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
+    captured = capsys.readouterr()
+    assert result == BuildOutcome.FULL_CACHE_HIT
+    assert "Building Docker Image · up to date" in captured.out
+    assert "CACHED" not in captured.out
+    assert "#1" not in captured.out
+
+
+# ── build_image: terse mode — rebuilt ────────────────────────────────────────
+
+_BUILDKIT_WITH_EXPORT = [
+    "#1 [internal] load .dockerignore\n",
+    "#1 DONE 0.1s\n",
+    "#2 [1/3] FROM python:3.12\n",
+    "#2 CACHED\n",
+    "#3 [2/3] RUN apt-get install -y git\n",
+    "#3 DONE 4.2s\n",
+    "#4 [3/3] COPY . .\n",
+    "#4 DONE 0.5s\n",
+    "#5 exporting to image\n",
+    "#5 DONE 0.3s\n",
+]
+
+
+def test_terse_rebuilt_prints_completed_summary(tmp_path, capsys):
+    """Terse mode: rebuild completes with 'completed' summary line."""
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(_BUILDKIT_WITH_EXPORT),
+    ):
+        result = DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
+    captured = capsys.readouterr()
+    assert result == BuildOutcome.REBUILT
+    assert "Building Docker Image · completed" in captured.out
+    assert "DONE" not in captured.out
+
+
+def test_terse_rebuilt_progress_passes_through_phases(tmp_path, capsys):
+    """Terse mode: progress passes through preparing, step, exporting phases."""
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(_BUILDKIT_WITH_EXPORT),
+    ):
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
+    captured = capsys.readouterr()
+    assert "preparing" in captured.out
+    assert "Step" in captured.out
+    assert "exporting" in captured.out
+
+
+def test_terse_step_counter_advances_correctly(tmp_path, capsys):
+    """Step counter advances Y while keeping X fixed from first step line."""
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(_BUILDKIT_WITH_EXPORT),
+    ):
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
+    captured = capsys.readouterr()
+    assert "Step 1/3" in captured.out
+    assert "Step 2/3" in captured.out
+    assert "Step 3/3" in captured.out
+
+
+def test_terse_classic_step_parsing(tmp_path, capsys):
+    """Classic builder step lines advance the step counter."""
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(_CLASSIC_MIXED),
+    ):
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
+    captured = capsys.readouterr()
+    assert "Step 1/2" in captured.out
+    assert "Step 2/2" in captured.out
+    assert "Step 1/2 : FROM" not in captured.out
+
+
+def test_terse_classic_full_cache_hit(tmp_path, capsys):
+    """Classic builder all-cached returns FULL_CACHE_HIT with 'up to date' line."""
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(_CLASSIC_ALL_CACHED),
+    ):
+        result = DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
+    captured = capsys.readouterr()
+    assert result == BuildOutcome.FULL_CACHE_HIT
+    assert "Building Docker Image · up to date" in captured.out
+
+
+# ── build_image: terse mode — non-TTY rendering ───────────────────────────────
+
+
+def test_terse_non_tty_each_state_on_own_line(tmp_path, capsys):
+    """Non-TTY: each state transition produces its own line, no carriage returns."""
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(_BUILDKIT_WITH_EXPORT),
+    ):
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
+    captured = capsys.readouterr()
+    assert "\r" not in captured.out
+    lines = captured.out.splitlines()
+    assert any("preparing" in ln for ln in lines)
+    assert any("completed" in ln for ln in lines)
+
+
+# ── build_image: terse mode — TTY rendering ───────────────────────────────────
+
+
+def test_terse_tty_uses_carriage_return_between_transitions(tmp_path):
+    """TTY: transitions use carriage return to rewrite in place."""
+    import io
+
+    buf = io.StringIO()
+    buf.isatty = lambda: True  # type: ignore[method-assign]
+
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            return_value=_mock_popen(_BUILDKIT_WITH_EXPORT),
+        ),
+        patch("pycastle.services.docker_service.sys.stdout", buf),
+    ):
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
+
+    output = buf.getvalue()
+    assert "\r" in output
+    assert "Building Docker Image · completed" in output
+
+
+def test_terse_tty_final_line_ends_with_newline(tmp_path):
+    """TTY: the final summary line ends with exactly one newline."""
+    import io
+
+    buf = io.StringIO()
+    buf.isatty = lambda: True  # type: ignore[method-assign]
+
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            return_value=_mock_popen(_BUILDKIT_ALL_CACHED),
+        ),
+        patch("pycastle.services.docker_service.sys.stdout", buf),
+    ):
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
+
+    output = buf.getvalue()
+    assert output.endswith("\n")
+    assert output.count("\n") == 1
+
+
+# ── build_image: terse mode — failure ────────────────────────────────────────
+
+
+def test_terse_failure_prints_failed_summary(tmp_path, capsys):
+    """Terse mode: non-zero exit prints 'failed' line then dumps docker output."""
+    docker_output = ["#1 [1/2] FROM python:3.12\n", "#1 DONE 1.0s\n", "ERROR: oops\n"]
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(docker_output, returncode=1),
+    ):
+        with pytest.raises(DockerBuildError):
+            DockerService().build_image(
+                "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+            )
+    captured = capsys.readouterr()
+    assert "Building Docker Image · failed" in captured.out
+    assert "ERROR: oops" in captured.out
+    assert "#1 [1/2]" in captured.out
+
+
+def test_terse_failure_dumps_all_captured_docker_output(tmp_path, capsys):
+    """Failure case: every docker line is dumped verbatim in original order."""
+    docker_output = [f"line{i}\n" for i in range(10)]
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(docker_output, returncode=1),
+    ):
+        with pytest.raises(DockerBuildError):
+            DockerService().build_image(
+                "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+            )
+    captured = capsys.readouterr()
+    for i in range(10):
+        assert f"line{i}" in captured.out
+
+
+def test_terse_tty_failure_clears_progress_before_failed_line(tmp_path):
+    """TTY failure: progress line is cleared before 'failed' line prints."""
+    import io
+
+    buf = io.StringIO()
+    buf.isatty = lambda: True  # type: ignore[method-assign]
+
+    docker_output = ["#1 [1/2] FROM python:3.12\n", "#1 DONE 1.0s\n"]
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            return_value=_mock_popen(docker_output, returncode=1),
+        ),
+        patch("pycastle.services.docker_service.sys.stdout", buf),
+    ):
+        with pytest.raises(DockerBuildError):
+            DockerService().build_image(
+                "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+            )
+
+    output = buf.getvalue()
+    # The clear sequence (\r\x1b[K) must appear before the "failed" line
+    failed_pos = output.find("Building Docker Image · failed")
+    clear_pos = output.rfind("\r\x1b[K", 0, failed_pos)
+    assert clear_pos != -1, "Expected clear sequence before 'failed' line"
+
+
+# ── build_image: terse mode — docker not found ───────────────────────────────
+
+
+def test_terse_raises_docker_service_error_when_docker_not_found(tmp_path):
+    """Terse mode: FileNotFoundError from Popen raises DockerServiceError."""
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        side_effect=FileNotFoundError,
+    ):
+        with pytest.raises(DockerServiceError):
+            DockerService().build_image(
+                "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+            )
+
+
+def test_terse_raises_docker_build_error_on_timeout(tmp_path):
+    """Terse mode: TimeoutExpired from proc.wait raises DockerBuildError."""
+    mock_proc = _mock_popen(_BUILDKIT_ALL_CACHED)
+    mock_proc.wait.side_effect = subprocess.TimeoutExpired(["docker"], 60)
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=mock_proc,
+    ):
+        with pytest.raises(DockerBuildError, match="timed out"):
+            DockerService().build_image(
+                "img",
+                tmp_path / "Dockerfile",
+                tmp_path,
+                stream=True,
+                terse=True,
+                timeout=60.0,
+            )
+
+
+# ── build_image: verbose stream unaffected by terse ──────────────────────────
+
+
+def test_verbose_stream_still_pipes_raw_output(tmp_path, capsys):
+    """stream=True without terse still pipes raw docker output."""
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(_BUILDKIT_ALL_CACHED),
+    ):
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=False
+        )
+    captured = capsys.readouterr()
+    assert "CACHED" in captured.out
+    assert "Building Docker Image" not in captured.out
