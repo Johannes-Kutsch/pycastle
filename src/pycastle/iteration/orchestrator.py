@@ -1,5 +1,4 @@
 import dataclasses
-import shutil
 import sys
 import time
 import traceback
@@ -7,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..agents.runner import AgentRunner, AgentRunnerProtocol
-from ..config import Config, load_config
+from ..config import load_config
 from . import (
     AbortedAgentFailure,
     AbortedHardApiError,
@@ -33,7 +32,7 @@ from ..services import (
 from ..services._wake_time import compute_wake_time
 from ..session import SESSION_DIR_NAME
 from ..display.status_display import StatusDisplay
-from ..infrastructure.worktree import remove_worktrees_dir_if_empty
+from ..infrastructure.worktree import prune_orphan_worktrees
 from .. import _time as _time_module
 
 
@@ -75,22 +74,6 @@ def ensure_session_excludes(repo_root: Path) -> None:
         with open(exclude_file, "a", encoding="utf-8") as f:
             for entry in additions:
                 f.write(f"{entry}\n")
-
-
-def prune_orphan_worktrees(
-    repo_root: Path,
-    git_service: GitService | None = None,
-    cfg: Config | None = None,
-) -> None:
-    worktrees_dir = repo_root / "pycastle" / ".worktrees"
-    if not worktrees_dir.exists():
-        return
-    svc = git_service or GitService(cfg or load_config())
-    active = {str(p) for p in svc.list_worktrees(repo_root)}
-    for child in worktrees_dir.iterdir():
-        if str(child.resolve()) not in active and child.is_dir():
-            shutil.rmtree(child)
-    remove_worktrees_dir_if_empty(worktrees_dir)
 
 
 async def run(

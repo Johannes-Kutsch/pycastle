@@ -1,11 +1,12 @@
 import os
 import re
+import shutil
 import tempfile
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Protocol
 
-from ..config import Config
+from ..config import Config, load_config
 from ..errors import (
     HardAgentError,
     TransientAgentError,
@@ -49,6 +50,23 @@ def _wrap_git_errors():
 def remove_worktrees_dir_if_empty(worktrees_dir: Path) -> None:
     if worktrees_dir.exists() and not any(worktrees_dir.iterdir()):
         worktrees_dir.rmdir()
+
+
+def prune_orphan_worktrees(
+    repo_root: Path,
+    cfg: Config | None = None,
+    git_service: GitService | None = None,
+) -> None:
+    resolved_cfg = cfg or load_config()
+    svc = git_service or GitService(resolved_cfg)
+    worktrees_dir = repo_root / resolved_cfg.pycastle_dir / ".worktrees"
+    if not worktrees_dir.exists():
+        return
+    active = {str(p) for p in svc.list_worktrees(repo_root)}
+    for child in worktrees_dir.iterdir():
+        if str(child.resolve()) not in active and child.is_dir():
+            shutil.rmtree(child)
+    remove_worktrees_dir_if_empty(worktrees_dir)
 
 
 def teardown_worktree(svc: GitService, repo_root: Path, path: Path) -> None:
