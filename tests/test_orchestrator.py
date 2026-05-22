@@ -22,9 +22,9 @@ from pycastle.services import (
     ServiceRegistry,
 )
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
+from pycastle.infrastructure.worktree import prune_orphan_worktrees
 from pycastle.iteration.orchestrator import (
     ensure_session_excludes,
-    prune_orphan_worktrees,
     run,
 )
 

@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import shutil
 import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -1169,3 +1170,82 @@ def test_managed_worktree_preserves_worktree_on_hard_agent_error(branch_deps):
 
     branch_deps.git_svc.remove_worktree.assert_not_called()
     branch_deps.git_svc.delete_branch.assert_not_called()
+
+
+# ── prune_orphan_worktrees ────────────────────────────────────────────────────
+
+
+def _make_prune_git_svc(active_paths: list[Path]) -> GitService:
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.list_worktrees.return_value = active_paths
+    return mock_svc
+
+
+def test_prune_orphan_worktrees_is_importable_from_worktree_module():
+    from pycastle.infrastructure.worktree import prune_orphan_worktrees
+
+    assert callable(prune_orphan_worktrees)
+
+
+def test_prune_orphan_worktrees_respects_custom_pycastle_dir(tmp_path):
+    """With pycastle_dir='my-castle', orphans under my-castle/.worktrees/ are removed."""
+    from pycastle.infrastructure.worktree import prune_orphan_worktrees
+
+    cfg = Config(pycastle_dir="my-castle")
+    worktrees_dir = tmp_path / "my-castle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+    orphan = worktrees_dir / "orphan-branch"
+    orphan.mkdir()
+
+    prune_orphan_worktrees(tmp_path, cfg=cfg, git_service=_make_prune_git_svc([]))
+
+    assert not orphan.exists()
+
+
+def test_prune_orphan_worktrees_default_pycastle_dir_still_works(tmp_path):
+    """With the default pycastle_dir='pycastle', orphans under pycastle/.worktrees/ are removed."""
+    from pycastle.infrastructure.worktree import prune_orphan_worktrees
+
+    cfg = Config(pycastle_dir="pycastle")
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+    orphan = worktrees_dir / "orphan-branch"
+    orphan.mkdir()
+
+    prune_orphan_worktrees(tmp_path, cfg=cfg, git_service=_make_prune_git_svc([]))
+
+    assert not orphan.exists()
+
+
+def test_prune_orphan_worktrees_removes_worktrees_parent_when_empty_custom_dir(
+    tmp_path,
+):
+    """Parent .worktrees dir is removed when empty after orphan sweep, custom pycastle_dir."""
+    from pycastle.infrastructure.worktree import prune_orphan_worktrees
+
+    cfg = Config(pycastle_dir="my-castle")
+    worktrees_dir = tmp_path / "my-castle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+    orphan = worktrees_dir / "orphan-branch"
+    orphan.mkdir()
+
+    prune_orphan_worktrees(tmp_path, cfg=cfg, git_service=_make_prune_git_svc([]))
+
+    assert not worktrees_dir.exists()
+
+
+def test_prune_orphan_worktrees_does_not_look_in_hardcoded_pycastle_dir(tmp_path):
+    """When pycastle_dir='my-castle', orphans under hardcoded 'pycastle/.worktrees' are NOT swept."""
+    from pycastle.infrastructure.worktree import prune_orphan_worktrees
+
+    cfg = Config(pycastle_dir="my-castle")
+    # put an orphan in the old hardcoded location
+    old_worktrees_dir = tmp_path / "pycastle" / ".worktrees"
+    old_worktrees_dir.mkdir(parents=True)
+    orphan_in_old_location = old_worktrees_dir / "orphan"
+    orphan_in_old_location.mkdir()
+
+    prune_orphan_worktrees(tmp_path, cfg=cfg, git_service=_make_prune_git_svc([]))
+
+    # The function with custom dir must not touch the old location
+    assert orphan_in_old_location.exists()
