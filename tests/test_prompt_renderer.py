@@ -860,3 +860,30 @@ def test_render_omits_wip_clause_when_wip_commits_empty(cfg, prompts_dir):
 
     assert "WIP Context" not in result
     assert result == "Context:Done"
+
+
+# ── diverge-prompt.md contract ────────────────────────────────────────────────
+
+_DIVERGE_PROMPT = (_SHIPPED_PROMPTS_DIR / "diverge-prompt.md").read_text()
+
+
+def test_diverge_prompt_does_not_contain_checks_placeholder():
+    assert "{{CHECKS}}" not in _DIVERGE_PROMPT
+
+
+def test_diverge_prompt_instructs_resolver_not_to_run_preflight_checks():
+    assert "preflight" in _DIVERGE_PROMPT.lower()
+
+
+def test_diverge_prompt_defines_complete_as_merge_committed_cleanly():
+    assert "<promise>COMPLETE</promise>" in _DIVERGE_PROMPT
+    complete_idx = _DIVERGE_PROMPT.index("<promise>COMPLETE</promise>")
+    context = _DIVERGE_PROMPT[max(0, complete_idx - 120) : complete_idx + 120].lower()
+    assert "clean" in context
+
+
+def test_diverge_prompt_defines_failed_as_conflicts_cannot_be_resolved_textually():
+    assert "<promise>FAILED</promise>" in _DIVERGE_PROMPT
+    failed_idx = _DIVERGE_PROMPT.index("<promise>FAILED</promise>")
+    context = _DIVERGE_PROMPT[max(0, failed_idx - 120) : failed_idx + 120].lower()
+    assert "textual" in context or "conflict" in context

@@ -282,6 +282,8 @@ class ClaudeService:
         flags = (
             "--verbose --dangerously-skip-permissions --output-format stream-json -p -"
         )
+        if _profile.bare:
+            flags += " --bare"
         if model:
             flags += f" --model {model}"
         if effort:

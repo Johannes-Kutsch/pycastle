@@ -148,6 +148,19 @@ def test_build_command_omits_session_flags_when_no_uuid():
     assert "--resume" not in cmd
 
 
+def test_build_command_includes_bare_for_divergence_resolver():
+    cmd = ClaudeService().build_command(role=AgentRole.DIVERGENCE_RESOLVER)
+    assert "--bare" in cmd
+
+
+def test_build_command_excludes_bare_for_other_roles():
+    for role in AgentRole:
+        if role is AgentRole.DIVERGENCE_RESOLVER:
+            continue
+        cmd = ClaudeService().build_command(role=role)
+        assert "--bare" not in cmd, f"--bare should not appear for role {role}"
+
+
 # ── ClaudeService.build_env ───────────────────────────────────────────────────
 
 
