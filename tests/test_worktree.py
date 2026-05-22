@@ -1181,12 +1181,6 @@ def _make_prune_git_svc(active_paths: list[Path]) -> GitService:
     return mock_svc
 
 
-def test_prune_orphan_worktrees_is_importable_from_worktree_module():
-    from pycastle.infrastructure.worktree import prune_orphan_worktrees
-
-    assert callable(prune_orphan_worktrees)
-
-
 def test_prune_orphan_worktrees_respects_custom_pycastle_dir(tmp_path):
     """With pycastle_dir='my-castle', orphans under my-castle/.worktrees/ are removed."""
     from pycastle.infrastructure.worktree import prune_orphan_worktrees

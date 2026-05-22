@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Protocol
 
-from ..config import Config
+from ..config import Config, load_config
 from ..errors import (
     HardAgentError,
     TransientAgentError,
@@ -57,8 +57,6 @@ def prune_orphan_worktrees(
     cfg: Config | None = None,
     git_service: GitService | None = None,
 ) -> None:
-    from ..config import load_config
-
     resolved_cfg = cfg or load_config()
     svc = git_service or GitService(resolved_cfg)
     worktrees_dir = repo_root / resolved_cfg.pycastle_dir / ".worktrees"
