@@ -382,3 +382,240 @@ def test_cron_sh_cron_log_survives_sweep(cron_sh_env):
 
     assert result.returncode == 0, result.stderr
     assert cron_log.exists()
+
+
+# ── cron.sh pip-upgrade best-effort ──────────────────────────────────────────
+
+
+@pytest.fixture()
+def cron_sh_env_pip_fails(tmp_path):
+    """Like cron_sh_env but the python shim fails on every pip install call."""
+    setup_dir = tmp_path / "pycastle" / "setup"
+    setup_dir.mkdir(parents=True)
+
+    cron_sh_dst = setup_dir / "cron.sh"
+    cron_sh_dst.write_bytes((SETUP_DIR / "cron.sh").read_bytes())
+    cron_sh_dst.chmod(
+        cron_sh_dst.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    logs_dir = tmp_path / "pycastle" / "logs"
+    logs_dir.mkdir(parents=True)
+
+    pycastle_home = tmp_path / "pycastle_home"
+    pycastle_home.mkdir()
+
+    venv_bin = tmp_path / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+
+    cron_log = logs_dir / "cron.log"
+    calls_file = tmp_path / "pycastle_calls.txt"
+
+    # python shim: pip install always fails; -c returns log path
+    python_shim = venv_bin / "python"
+    python_shim.write_text(
+        "#!/usr/bin/env bash\n"
+        'case "${1:-}" in\n'
+        "    -m) echo 'pip upgrade failed (simulated)' >&2; exit 1 ;;\n"
+        f"    -c) echo '{cron_log}' ;;\n"
+        "    *) exit 0 ;;\n"
+        "esac\n"
+    )
+    python_shim.chmod(
+        python_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    pycastle_shim = venv_bin / "pycastle"
+    pycastle_shim.write_text(
+        f'#!/usr/bin/env bash\necho "$@" >> "{calls_file}"\nexit 0\n'
+    )
+    pycastle_shim.chmod(
+        pycastle_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    env = os.environ.copy()
+    env["PYCASTLE_HOME"] = str(pycastle_home)
+
+    return {
+        "cron_sh": cron_sh_dst,
+        "logs_dir": logs_dir,
+        "env": env,
+        "calls_file": calls_file,
+    }
+
+
+def _run_cron_sh_raw(cron_sh_env, *args) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [_BASH, str(cron_sh_env["cron_sh"]), *args],
+        env=cron_sh_env["env"],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_pip_upgrade_failure_warns_and_continues_to_init_build_run(
+    cron_sh_env_pip_fails,
+):
+    """When pip upgrade fails, cron.sh warns on stderr and still runs init/build/run."""
+    result = _run_cron_sh_raw(cron_sh_env_pip_fails)
+
+    assert result.returncode == 0, result.stderr
+    calls = cron_sh_env_pip_fails["calls_file"].read_text()
+    assert "init --refresh" in calls
+    assert "build" in calls
+    assert "run" in calls
+    assert "warn" in result.stderr.lower() or "warning" in result.stderr.lower()
+
+
+def test_pip_upgrade_failure_emits_two_warnings(cron_sh_env_pip_fails):
+    """Each failing pip call must emit its own warning — two warnings total."""
+    result = _run_cron_sh_raw(cron_sh_env_pip_fails)
+
+    warnings = [
+        line for line in result.stderr.splitlines() if "warning" in line.lower()
+    ]
+    assert len(warnings) >= 2, f"expected >=2 warning lines, got: {result.stderr!r}"
+
+
+def test_pip_upgrade_failure_both_calls_are_independent(tmp_path):
+    """Second pip call runs even when first fails (no branching between them)."""
+    setup_dir = tmp_path / "pycastle" / "setup"
+    setup_dir.mkdir(parents=True)
+
+    cron_sh_dst = setup_dir / "cron.sh"
+    cron_sh_dst.write_bytes((SETUP_DIR / "cron.sh").read_bytes())
+    cron_sh_dst.chmod(
+        cron_sh_dst.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    logs_dir = tmp_path / "pycastle" / "logs"
+    logs_dir.mkdir(parents=True)
+    pycastle_home = tmp_path / "pycastle_home"
+    pycastle_home.mkdir()
+    venv_bin = tmp_path / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+
+    cron_log = logs_dir / "cron.log"
+    pip_calls_file = tmp_path / "pip_calls.txt"
+    calls_file = tmp_path / "pycastle_calls.txt"
+
+    # python shim: first pip call fails, second succeeds; count via file
+    python_shim = venv_bin / "python"
+    python_shim.write_text(
+        "#!/usr/bin/env bash\n"
+        f'PIP_CALLS="{pip_calls_file}"\n'
+        'case "${1:-}" in\n'
+        "    -m)\n"
+        f'        echo "pip" >> "$PIP_CALLS"\n'
+        f'        COUNT=$(wc -l < "$PIP_CALLS")\n'
+        '        if [ "$COUNT" -eq 1 ]; then\n'
+        "            echo 'pip upgrade failed (simulated attempt 1)' >&2; exit 1\n"
+        "        fi\n"
+        "        exit 0\n"
+        "        ;;\n"
+        f"    -c) echo '{cron_log}' ;;\n"
+        "    *) exit 0 ;;\n"
+        "esac\n"
+    )
+    python_shim.chmod(
+        python_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+    pip_calls_file.write_text("")
+
+    pycastle_shim = venv_bin / "pycastle"
+    pycastle_shim.write_text(
+        f'#!/usr/bin/env bash\necho "$@" >> "{calls_file}"\nexit 0\n'
+    )
+    pycastle_shim.chmod(
+        pycastle_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    env = os.environ.copy()
+    env["PYCASTLE_HOME"] = str(pycastle_home)
+
+    result = subprocess.run(
+        [_BASH, str(cron_sh_dst)],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    pip_calls = pip_calls_file.read_text().strip().splitlines()
+    assert len(pip_calls) == 2, f"expected 2 pip calls, got {len(pip_calls)}"
+    assert result.returncode == 0, result.stderr
+    # one warning for attempt 1, none for attempt 2
+    warnings = [
+        line for line in result.stderr.splitlines() if "warning" in line.lower()
+    ]
+    assert len(warnings) == 1
+
+
+def test_pip_upgrade_comment_records_rationale():
+    """cron.sh must have an inline comment near the pip calls explaining warn-and-continue."""
+    content = (SETUP_DIR / "cron.sh").read_text()
+    assert (
+        "stale" in content
+        or "prefer" in content
+        or "skipped" in content
+        or "last night" in content
+    )
+
+
+def test_pip_upgrade_failure_does_not_suppress_init_failure(tmp_path):
+    """init --refresh failure must still abort the tick even when pip upgrade fails."""
+    setup_dir = tmp_path / "pycastle" / "setup"
+    setup_dir.mkdir(parents=True)
+
+    cron_sh_dst = setup_dir / "cron.sh"
+    cron_sh_dst.write_bytes((SETUP_DIR / "cron.sh").read_bytes())
+    cron_sh_dst.chmod(
+        cron_sh_dst.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    logs_dir = tmp_path / "pycastle" / "logs"
+    logs_dir.mkdir(parents=True)
+    pycastle_home = tmp_path / "pycastle_home"
+    pycastle_home.mkdir()
+    venv_bin = tmp_path / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+
+    cron_log = logs_dir / "cron.log"
+    calls_file = tmp_path / "pycastle_calls.txt"
+
+    python_shim = venv_bin / "python"
+    python_shim.write_text(
+        "#!/usr/bin/env bash\n"
+        'case "${1:-}" in\n'
+        "    -m) echo 'pip upgrade failed (simulated)' >&2; exit 1 ;;\n"
+        f"    -c) echo '{cron_log}' ;;\n"
+        "    *) exit 0 ;;\n"
+        "esac\n"
+    )
+    python_shim.chmod(
+        python_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    # pycastle shim: init --refresh fails, build/run would succeed
+    pycastle_shim = venv_bin / "pycastle"
+    pycastle_shim.write_text(
+        f'#!/usr/bin/env bash\necho "$@" >> "{calls_file}"\n'
+        'if [ "${1:-}" = "init" ]; then exit 1; fi\n'
+        "exit 0\n"
+    )
+    pycastle_shim.chmod(
+        pycastle_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    env = os.environ.copy()
+    env["PYCASTLE_HOME"] = str(pycastle_home)
+
+    result = subprocess.run(
+        [_BASH, str(cron_sh_dst)],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0, "init failure must abort the tick"
+    calls = calls_file.read_text()
+    assert "build" not in calls, "build must not run after init fails"

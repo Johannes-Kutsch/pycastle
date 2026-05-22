@@ -26,11 +26,15 @@ mkdir -p "$PYCASTLE_HOME"
 (
     flock -w 21600 200
 
-    # Run pip install --upgrade pycastle twice: the first call sometimes reports
-    # "already up to date" because new releases can take time to propagate across
-    # PyPI's CDN; the second call ensures the latest version is installed.
-    .venv/bin/python -m pip install --upgrade pycastle
-    .venv/bin/python -m pip install --upgrade pycastle
+    # Run pip install --upgrade pycastle twice (best-effort): the first call
+    # sometimes reports "already up to date" because new releases can take time
+    # to propagate across PyPI's CDN; the second call ensures the latest version
+    # is installed.  Both calls are best-effort — a failed upgrade does not abort
+    # the tick; we prefer running last night's version to skipping the tick entirely.
+    .venv/bin/python -m pip install --upgrade pycastle \
+        || echo "WARNING: pip upgrade pycastle (attempt 1) failed; continuing with installed version" >&2
+    .venv/bin/python -m pip install --upgrade pycastle \
+        || echo "WARNING: pip upgrade pycastle (attempt 2) failed; continuing with installed version" >&2
 
     .venv/bin/pycastle init --refresh
     .venv/bin/pycastle build
