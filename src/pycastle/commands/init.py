@@ -110,6 +110,16 @@ def _prompt_and_save_credential(env_file: Path, key: str, prompt_text: str) -> s
     return value
 
 
+def _refresh_status(rel: str, target: Path, pkg: Traversable) -> str:
+    """Return the status verb for copying rel to target without writing."""
+    if not target.exists():
+        return "created"
+    src = pkg
+    for part in rel.split("/"):
+        src = src / part
+    return "unchanged" if target.read_bytes() == src.read_bytes() else "overwrote"
+
+
 def refresh() -> None:
     from ..config.loader import load_config
 
@@ -125,14 +135,30 @@ def refresh() -> None:
         )
         sys.exit(1)
     pkg = files("pycastle").joinpath("defaults")
+
+    report: list[tuple[str, str]] = []
+
     for rel in _discover_project_shaped_files(pkg):
-        _copy_template(rel, project_dir / rel, pkg)
+        target = project_dir / rel
+        verb = _refresh_status(rel, target, pkg)
+        _copy_template(rel, target, pkg)
+        report.append((verb, rel))
 
     referenced = referenced_services(load_config())
     dockerfile_template = (
         "Dockerfile.claude-codex" if "codex" in referenced else "Dockerfile.claude"
     )
-    _copy_template(dockerfile_template, project_dir / "Dockerfile", pkg)
+    dockerfile_target = project_dir / "Dockerfile"
+    dockerfile_verb = _refresh_status(dockerfile_template, dockerfile_target, pkg)
+    _copy_template(dockerfile_template, dockerfile_target, pkg)
+    report.append((dockerfile_verb, "Dockerfile"))
+
+    for path in ("config.py", ".env"):
+        if (project_dir / path).exists():
+            report.append(("preserved", path))
+
+    for verb, path in sorted(report, key=lambda x: x[1]):
+        print(f"{verb} {path}")
 
 
 def _role_namespaces() -> list[tuple[AgentRole, str]]:
