@@ -204,11 +204,12 @@ def _run(
     config_kwargs.setdefault("max_parallel", 4)
     config_kwargs.setdefault("max_iterations", 1)
     _write_config(tmp_path, **config_kwargs)
+    if run_agent_fn is not None and agent_runner is None:
+        agent_runner = FakeAgentRunner(side_effect=run_agent_fn)
     asyncio.run(
         run(
             {},
             tmp_path,
-            run_agent=run_agent_fn,
             agent_runner=agent_runner,
             git_service=git_service if git_service is not None else _make_git_svc(),
             github_service=github_service,
@@ -2619,7 +2620,7 @@ def test_run_full_iteration_cold_path(git_repo):
         run(
             {},
             git_repo,
-            run_agent=_fake_run_agent,
+            agent_runner=FakeAgentRunner(side_effect=_fake_run_agent),
             github_service=mock_github,
         )
     )
