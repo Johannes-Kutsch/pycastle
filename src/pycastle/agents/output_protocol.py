@@ -222,6 +222,24 @@ def _parse_issue_body(body: str) -> IssueOutput:
 
 
 _ISSUE_NUMBER_RE = re.compile(r"<issue>(\d+)</issue>")
+_PROMISE_RE = re.compile(r"<promise>([^<]+)</promise>")
+
+
+def extract_promise(text: str, accepted: frozenset[str]) -> str | None:
+    m = _PROMISE_RE.search(text)
+    if m and m.group(1) in accepted:
+        return m.group(1)
+    return None
+
+
+def extract_promise_or_raise(text: str, accepted: frozenset[str], tail: str) -> str:
+    token = extract_promise(text, accepted)
+    if token is not None:
+        return token
+    tags = "".join(f" <promise>{t}</promise> or" for t in sorted(accepted)).rstrip(
+        " or"
+    )
+    raise PromiseParseError(f"Agent produced no{tags} tag.{tail}")
 
 
 def _extract_issue_numbers(text: str) -> tuple[int, ...]:
@@ -283,44 +301,45 @@ class _PreflightIssueHandler:
             raise IssueParseError(f"{exc}{tail}") from exc.__cause__
 
 
+_MERGER_TOKENS: frozenset[str] = frozenset({"COMPLETE", "FAILED"})
+_IMPROVE_TOKENS: frozenset[str] = frozenset({"COMPLETE", "FAILED", "NO-CANDIDATE"})
+
+
 class _MergerHandler:
     def check_turn(self, turn: str) -> AgentOutput | None:
-        if re.search(r"<promise>FAILED</promise>", turn):
+        token = extract_promise(turn, _MERGER_TOKENS)
+        if token == "FAILED":
             return FailedOutput()
-        if re.search(r"<promise>COMPLETE</promise>", turn):
+        if token == "COMPLETE":
             return CompletionOutput()
         return None
 
     def extract_final(self, text: str, tail: str) -> AgentOutput:
-        if re.search(r"<promise>FAILED</promise>", text):
+        if extract_promise(text, frozenset({"FAILED"})) == "FAILED":
             return FailedOutput()
-        if not re.search(r"<promise>COMPLETE</promise>", text):
-            raise PromiseParseError(
-                f"Agent produced no <promise>COMPLETE</promise> tag.{tail}"
-            )
+        extract_promise_or_raise(text, frozenset({"COMPLETE"}), tail)
         return CompletionOutput()
 
 
 class _ImproveHandler:
     def check_turn(self, turn: str) -> AgentOutput | None:
-        if re.search(r"<promise>FAILED</promise>", turn):
+        token = extract_promise(turn, _IMPROVE_TOKENS)
+        if token == "FAILED":
             return FailedOutput()
-        if re.search(r"<promise>NO-CANDIDATE</promise>", turn):
+        if token == "NO-CANDIDATE":
             return NoCandidateOutput()
-        if re.search(r"<promise>COMPLETE</promise>", turn):
+        if token == "COMPLETE":
             return _extract_improve_output(turn)
         return None
 
     def extract_final(self, text: str, tail: str) -> AgentOutput:
-        if re.search(r"<promise>FAILED</promise>", text):
+        if extract_promise(text, frozenset({"FAILED"})) == "FAILED":
             return FailedOutput()
-        if re.search(r"<promise>NO-CANDIDATE</promise>", text):
+        token = extract_promise_or_raise(
+            text, frozenset({"COMPLETE", "NO-CANDIDATE"}), tail
+        )
+        if token == "NO-CANDIDATE":
             return NoCandidateOutput()
-        if not re.search(r"<promise>COMPLETE</promise>", text):
-            raise PromiseParseError(
-                f"Agent produced no <promise>COMPLETE</promise> or"
-                f" <promise>NO-CANDIDATE</promise> tag.{tail}"
-            )
         return _extract_improve_output(text)
 
 
