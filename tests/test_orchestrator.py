@@ -1468,13 +1468,11 @@ def test_usage_limit_prints_sleep_message_with_wake_time(tmp_path, capsys):
             )
         raise UsageLimitError(reset_time=None)
 
-    fixed_now = datetime(2026, 5, 11, 12, 0, 0)
-    mock_datetime = MagicMock(wraps=datetime)
-    mock_datetime.now.return_value = fixed_now
+    fixed_now = datetime(2026, 5, 11, 12, 0, 0).astimezone()
 
     with (
         patch("time.sleep"),
-        patch("pycastle.iteration.orchestrator.datetime", mock_datetime),
+        patch("pycastle._time.now_local", return_value=fixed_now),
     ):
         _run(
             tmp_path,
