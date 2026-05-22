@@ -287,6 +287,8 @@ class ClaudeService:
             flags += " --bare"
         if profile.tools is not None:
             flags += f" --tools {shlex.quote(profile.tools)}"
+        if profile.disallowed_tools:
+            flags += f' --disallowedTools "{" ".join(profile.disallowed_tools)}"'
         if model:
             flags += f" --model {model}"
         if effort:
