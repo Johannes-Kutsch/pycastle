@@ -151,17 +151,11 @@ def test_build_command_omits_session_flags_when_no_uuid():
 
 
 @pytest.mark.parametrize("role", list(AgentRole))
-def test_build_command_includes_disable_slash_commands_for_every_role(role):
-    assert "--disable-slash-commands" in ClaudeService().build_command(role=role)
-
-
-@pytest.mark.parametrize("role", list(AgentRole))
-def test_build_command_includes_exclude_dynamic_system_prompt_sections_for_every_role(
-    role,
-):
-    assert "--exclude-dynamic-system-prompt-sections" in ClaudeService().build_command(
-        role=role
-    )
+@pytest.mark.parametrize(
+    "flag", ["--disable-slash-commands", "--exclude-dynamic-system-prompt-sections"]
+)
+def test_build_command_includes_universal_flag_for_every_role(flag, role):
+    assert flag in ClaudeService().build_command(role=role)
 
 
 # ── ClaudeService.build_env ───────────────────────────────────────────────────
