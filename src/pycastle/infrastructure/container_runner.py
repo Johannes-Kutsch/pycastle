@@ -117,6 +117,7 @@ class ContainerRunner:
     ) -> AgentOutput:
         self._session.write_file(prompt, "/tmp/.pycastle_prompt")
         command = self._service.build_command(
+            role=role,
             model=self.model,
             effort=self.effort,
             run_kind=run_kind,

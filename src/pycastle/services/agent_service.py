@@ -52,6 +52,7 @@ class AgentService(Protocol):
 
     def build_command(
         self,
+        role: AgentRole,
         model: str,
         effort: str,
         run_kind: RunKind,

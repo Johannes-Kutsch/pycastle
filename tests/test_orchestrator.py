@@ -166,7 +166,7 @@ class _FakeService:
     def name(self) -> str:
         return "fake"
 
-    def build_command(self, model, effort, run_kind, session_uuid):
+    def build_command(self, role, model, effort, run_kind, session_uuid):
         return ""
 
     def build_env(self, state_dir_container_path=None, token=None):
