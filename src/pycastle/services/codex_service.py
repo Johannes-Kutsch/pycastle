@@ -138,6 +138,7 @@ class CodexService:
 
     def build_command(
         self,
+        role: AgentRole = AgentRole.IMPLEMENTER,
         model: str = "",
         effort: str = "",
         run_kind: RunKind = RunKind.FRESH,

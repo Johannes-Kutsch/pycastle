@@ -12,6 +12,7 @@ from typing import Literal
 from ..agents.output_protocol import AgentRole
 from .. import _time as _time_module
 from ..session import SESSION_DIR_NAME, RunKind
+from .flag_profiles import flag_profile_for
 from .agent_service import (
     AssistantTurn,
     HardError,
@@ -271,11 +272,13 @@ class ClaudeService:
 
     def build_command(
         self,
+        role: AgentRole = AgentRole.IMPLEMENTER,
         model: str = "",
         effort: str = "",
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
     ) -> str:
+        _profile = flag_profile_for(role)
         flags = (
             "--verbose --dangerously-skip-permissions --output-format stream-json -p -"
         )
