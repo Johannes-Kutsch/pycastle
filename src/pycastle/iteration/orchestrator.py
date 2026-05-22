@@ -5,9 +5,8 @@ import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
-from ..agents.runner import AgentRunner, AgentRunnerProtocol, RunRequest
+from ..agents.runner import AgentRunner, AgentRunnerProtocol
 from ..config import Config, load_config
 from . import (
     AbortedAgentFailure,
@@ -93,24 +92,10 @@ def prune_orphan_worktrees(
     remove_worktrees_dir_if_empty(worktrees_dir)
 
 
-class _CallableAgentRunner:
-    """Wraps a plain async callable as an AgentRunnerProtocol."""
-
-    def __init__(self, fn: Any) -> None:
-        self._fn = fn
-
-    async def run(self, request: RunRequest) -> Any:
-        return await self._fn(request)
-
-    async def run_preflight(self, **kwargs: Any) -> list[tuple[str, str, str]]:
-        return []
-
-
 async def run(
     env: dict[str, str],
     repo_root: Path,
     *,
-    run_agent: Any | None = None,
     agent_runner: AgentRunnerProtocol | None = None,
     git_service: GitService | None = None,
     github_service: GithubService | None = None,
@@ -207,8 +192,6 @@ async def run(
 
             if agent_runner is not None:
                 _agent_runner: AgentRunnerProtocol = agent_runner
-            elif run_agent is not None:
-                _agent_runner = _CallableAgentRunner(run_agent)
             else:
                 _svc_name = _iter_cfg.default_service
                 _svc = service_registry[_svc_name] if service_registry else None

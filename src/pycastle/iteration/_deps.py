@@ -80,6 +80,7 @@ class FakeAgentRunner:
     ) -> None:
         self._responses: list[AgentOutput | BaseException] = list(responses or [])
         self._side_effect = side_effect
+        self._preflight_unlimited = preflight_responses is None
         self._preflight_responses: list[list[tuple[str, str, str]] | BaseException] = (
             list(preflight_responses or [])
         )
@@ -129,6 +130,8 @@ class FakeAgentRunner:
         }
         self.preflight_calls.append(call)
         if not self._preflight_responses:
+            if self._preflight_unlimited:
+                return []
             raise AssertionError(
                 f"FakeAgentRunner preflight queue exhausted — unexpected call for agent {name!r}"
             )
