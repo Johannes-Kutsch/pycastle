@@ -16,4 +16,6 @@ class FlagProfile:
 def flag_profile_for(role: AgentRole) -> FlagProfile:
     if role == AgentRole.PLANNER:
         return FlagProfile(bare=True, tools="Read,Glob")
+    if role is AgentRole.DIVERGENCE_RESOLVER:
+        return FlagProfile(bare=True)
     return FlagProfile()

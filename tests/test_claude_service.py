@@ -174,6 +174,19 @@ def test_build_command_implementer_excludes_bare_and_tools():
     assert "--tools" not in cmd
 
 
+def test_build_command_includes_bare_for_divergence_resolver():
+    cmd = ClaudeService().build_command(role=AgentRole.DIVERGENCE_RESOLVER)
+    assert "--bare" in cmd
+
+
+def test_build_command_excludes_bare_for_other_roles():
+    for role in AgentRole:
+        if role in (AgentRole.DIVERGENCE_RESOLVER, AgentRole.PLANNER):
+            continue
+        cmd = ClaudeService().build_command(role=role)
+        assert "--bare" not in cmd, f"--bare should not appear for role {role}"
+
+
 # ── ClaudeService.build_env ───────────────────────────────────────────────────
 
 
