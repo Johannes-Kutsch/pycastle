@@ -158,6 +158,22 @@ def test_build_command_includes_universal_flag_for_every_role(flag, role):
     assert flag in ClaudeService().build_command(role=role)
 
 
+def test_build_command_planner_includes_bare_flag():
+    cmd = ClaudeService().build_command(role=AgentRole.PLANNER)
+    assert "--bare" in cmd
+
+
+def test_build_command_planner_includes_tools_read_glob():
+    cmd = ClaudeService().build_command(role=AgentRole.PLANNER)
+    assert "--tools Read,Glob" in cmd
+
+
+def test_build_command_implementer_excludes_bare_and_tools():
+    cmd = ClaudeService().build_command(role=AgentRole.IMPLEMENTER)
+    assert "--bare" not in cmd
+    assert "--tools" not in cmd
+
+
 # ── ClaudeService.build_env ───────────────────────────────────────────────────
 
 

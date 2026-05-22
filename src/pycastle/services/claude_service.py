@@ -278,11 +278,15 @@ class ClaudeService:
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
     ) -> str:
-        _profile = flag_profile_for(role)
+        profile = flag_profile_for(role)
         flags = (
             "--verbose --dangerously-skip-permissions --output-format stream-json -p -"
             " --disable-slash-commands --exclude-dynamic-system-prompt-sections"
         )
+        if profile.bare:
+            flags += " --bare"
+        if profile.tools is not None:
+            flags += f" --tools {shlex.quote(profile.tools)}"
         if model:
             flags += f" --model {model}"
         if effort:

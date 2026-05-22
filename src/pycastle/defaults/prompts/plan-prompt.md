@@ -20,6 +20,8 @@ Here are the open issues labeled {{READY_FOR_AGENT_LABEL}} — your candidate se
 
 <task>
 
+When blocker analysis requires architectural context, use `Read` to selectively read `CONTEXT.md` and files under `docs/adr/`.
+
 Analyze the open issues and build a dependency graph. For each issue in the {{READY_FOR_AGENT_LABEL}} list, determine whether it is **blocked** by any other open issue.
 
 An issue B is **blocked by** issue A if:
