@@ -24,5 +24,5 @@ def flag_profile_for(role: AgentRole) -> FlagProfile:
     if role is AgentRole.DIVERGENCE_RESOLVER:
         return FlagProfile(bare=True)
     if role in _READ_ONLY_ROLES:
-        return FlagProfile(disallowed_tools=_READ_ONLY_TOOLS)
-    return FlagProfile()
+        return FlagProfile(disallowed_tools=_READ_ONLY_TOOLS, strict_mcp=True)
+    return FlagProfile(strict_mcp=True)

@@ -212,6 +212,32 @@ def test_build_command_excludes_disallowed_tools_for_other_roles():
         )
 
 
+_NON_BARE_ROLES = [
+    AgentRole.IMPLEMENTER,
+    AgentRole.REVIEWER,
+    AgentRole.MERGER,
+    AgentRole.PREFLIGHT_ISSUE,
+    AgentRole.IMPROVE,
+    AgentRole.FAILURE_REPORT,
+]
+
+_BARE_ROLES = [AgentRole.PLANNER, AgentRole.DIVERGENCE_RESOLVER]
+
+
+@pytest.mark.parametrize("role", _NON_BARE_ROLES)
+def test_build_command_non_bare_role_includes_strict_mcp_config(role):
+    cmd = ClaudeService().build_command(role=role)
+    assert "--strict-mcp-config" in cmd, f"--strict-mcp-config missing for {role}"
+    assert "--mcp-config '{}'" in cmd, f"--mcp-config '{{}}' missing for {role}"
+
+
+@pytest.mark.parametrize("role", _BARE_ROLES)
+def test_build_command_bare_role_excludes_mcp_flags(role):
+    cmd = ClaudeService().build_command(role=role)
+    assert "--strict-mcp-config" not in cmd, f"--strict-mcp-config present for {role}"
+    assert "--mcp-config" not in cmd, f"--mcp-config present for {role}"
+
+
 # ── ClaudeService.build_env ───────────────────────────────────────────────────
 
 

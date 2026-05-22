@@ -289,6 +289,8 @@ class ClaudeService:
             flags += f" --tools {shlex.quote(profile.tools)}"
         if profile.disallowed_tools:
             flags += f' --disallowedTools "{" ".join(profile.disallowed_tools)}"'
+        if profile.strict_mcp:
+            flags += " --strict-mcp-config --mcp-config '{}'"
         if model:
             flags += f" --model {model}"
         if effort:
