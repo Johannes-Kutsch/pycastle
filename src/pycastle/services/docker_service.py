@@ -147,37 +147,25 @@ class DockerService:
         lines: list[str] = []
         total_steps: int | None = None
         current_step: int | None = None
-        phase = "preparing"
 
         for line in proc.stdout:
             lines.append(line)
             stripped = line.strip()
 
-            bk_step = re.match(r"^#\d+\s+\[(\d+)/(\d+)\]", stripped)
-            cl_step = re.match(r"^Step (\d+)/(\d+) :", stripped)
-            bk_export = re.match(
-                r"^#\d+\s+(exporting|naming|unpacking|manifest|pushing)", stripped
+            step = re.match(r"^#\d+\s+\[(\d+)/(\d+)\]", stripped) or re.match(
+                r"^Step (\d+)/(\d+) :", stripped
             )
-
-            if bk_step:
-                y, x = int(bk_step.group(1)), int(bk_step.group(2))
+            if step:
+                y, x = int(step.group(1)), int(step.group(2))
                 if total_steps is None:
                     total_steps = x
                 if current_step != y:
                     current_step = y
                     writer.update(f"Step {y}/{total_steps}")
-                    phase = "step"
-            elif cl_step:
-                y, x = int(cl_step.group(1)), int(cl_step.group(2))
-                if total_steps is None:
-                    total_steps = x
-                if current_step != y:
-                    current_step = y
-                    writer.update(f"Step {y}/{total_steps}")
-                    phase = "step"
-            elif bk_export and phase == "step":
+            elif current_step is not None and re.match(
+                r"^#\d+\s+(exporting|naming|unpacking|manifest|pushing)", stripped
+            ):
                 writer.update("exporting…")
-                phase = "exporting"
 
         try:
             returncode = proc.wait(timeout=timeout)
