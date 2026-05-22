@@ -1117,226 +1117,114 @@ def test_init_refresh_codex_config_without_existing_codex_dirs_does_not_create_t
 # ── Issue #848: per-file status report for pycastle init --refresh ────────────
 
 
-def test_refresh_reports_created_for_all_files_when_pycastle_dir_empty(
-    tmp_path, monkeypatch
+_REPORT_VERBS = ("created ", "unchanged ", "overwrote ", "preserved ")
+
+
+def _run_refresh_capture(tmp_path, monkeypatch, capsys) -> list[str]:
+    """Run refresh() in tmp_path and return the report lines printed to stdout."""
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pycastle").mkdir(exist_ok=True)
+    refresh()
+    return [
+        ln
+        for ln in capsys.readouterr().out.splitlines()
+        if ln.startswith(_REPORT_VERBS)
+    ]
+
+
+def test_refresh_reports_created_for_every_copied_file_when_pycastle_dir_empty(
+    tmp_path, monkeypatch, capsys
 ):
-    """refresh() prints 'created <path>' for every bundled default when pycastle/ is empty."""
-    from importlib.resources import files
+    """When pycastle/ is empty, every file refresh writes is reported as 'created' (no preserved)."""
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
 
-    import pycastle.commands.init as init_mod
-    from pycastle.commands.init import refresh
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "pycastle").mkdir()
-
-    pkg = files("pycastle").joinpath("defaults")
-    expected_paths = sorted(
-        init_mod._discover_project_shaped_files(pkg) + ["Dockerfile"]
+    on_disk = sorted(
+        str(p.relative_to(tmp_path / "pycastle"))
+        for p in (tmp_path / "pycastle").rglob("*")
+        if p.is_file()
     )
-
-    lines = []
-    with patch("builtins.print", side_effect=lambda *a, **kw: lines.append(a[0])):
-        refresh()
-
-    report_lines = [
-        ln
-        for ln in lines
-        if ln.startswith(("created ", "unchanged ", "overwrote ", "preserved "))
-    ]
-    verbs = {ln.split(" ", 1)[0] for ln in report_lines}
-    assert verbs == {"created"}, f"Expected only 'created' verbs, got: {verbs}"
-
-    reported_paths = [ln.split(" ", 1)[1] for ln in report_lines]
-    assert reported_paths == expected_paths
+    reported = [ln.split(" ", 1)[1] for ln in report]
+    assert reported == on_disk
+    assert {ln.split(" ", 1)[0] for ln in report} == {"created"}
+    assert "created Dockerfile" in report
 
 
-def test_refresh_reports_unchanged_when_file_byte_equal(tmp_path, monkeypatch):
-    """refresh() prints 'unchanged <path>' when a default file already has identical bytes."""
+def test_refresh_reports_unchanged_when_file_byte_equal(tmp_path, monkeypatch, capsys):
     from importlib.resources import files
 
-    from pycastle.commands.init import refresh
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "pycastle").mkdir()
-
-    pkg = files("pycastle").joinpath("defaults")
-    plan_prompt_rel = "prompts/plan-prompt.md"
-    target = tmp_path / "pycastle" / plan_prompt_rel
+    rel = "prompts/plan-prompt.md"
+    target = tmp_path / "pycastle" / rel
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes((pkg / "prompts" / "plan-prompt.md").read_bytes())
+    target.write_bytes((files("pycastle").joinpath("defaults") / rel).read_bytes())
 
-    lines: list[str] = []
-    with patch("builtins.print", side_effect=lambda *a, **kw: lines.append(a[0])):
-        refresh()
-
-    report_lines = [
-        ln
-        for ln in lines
-        if ln.startswith(("created ", "unchanged ", "overwrote ", "preserved "))
-    ]
-    unchanged = [ln for ln in report_lines if ln.startswith("unchanged ")]
-    assert f"unchanged {plan_prompt_rel}" in unchanged
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    assert f"unchanged {rel}" in report
 
 
-def test_refresh_reports_overwrote_when_file_differs(tmp_path, monkeypatch):
-    """refresh() prints 'overwrote <path>' when a default file has different content and updates it."""
-    from pycastle.commands.init import refresh
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "pycastle").mkdir()
-
-    plan_prompt_rel = "prompts/plan-prompt.md"
-    target = tmp_path / "pycastle" / plan_prompt_rel
+def test_refresh_reports_overwrote_and_replaces_content_when_file_differs(
+    tmp_path, monkeypatch, capsys
+):
+    rel = "prompts/plan-prompt.md"
+    target = tmp_path / "pycastle" / rel
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(b"STALE CONTENT\n")
 
-    lines: list[str] = []
-    with patch("builtins.print", side_effect=lambda *a, **kw: lines.append(a[0])):
-        refresh()
-
-    report_lines = [
-        ln
-        for ln in lines
-        if ln.startswith(("created ", "unchanged ", "overwrote ", "preserved "))
-    ]
-    overwrote = [ln for ln in report_lines if ln.startswith("overwrote ")]
-    assert f"overwrote {plan_prompt_rel}" in overwrote
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    assert f"overwrote {rel}" in report
     assert target.read_bytes() != b"STALE CONTENT\n"
 
 
-def test_refresh_reports_preserved_config_py_when_present(tmp_path, monkeypatch):
-    """refresh() prints 'preserved config.py' when pycastle/config.py exists."""
-    from pycastle.commands.init import refresh
-
-    monkeypatch.chdir(tmp_path)
+def test_refresh_preserves_existing_config_py(tmp_path, monkeypatch, capsys):
     config = tmp_path / "pycastle" / "config.py"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text("# my config\n")
 
-    lines: list[str] = []
-    with patch("builtins.print", side_effect=lambda *a, **kw: lines.append(a[0])):
-        refresh()
-
-    report_lines = [
-        ln
-        for ln in lines
-        if ln.startswith(("created ", "unchanged ", "overwrote ", "preserved "))
-    ]
-    assert "preserved config.py" in report_lines
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    assert "preserved config.py" in report
     assert config.read_text() == "# my config\n"
 
 
-def test_refresh_reports_preserved_env_when_present(tmp_path, monkeypatch):
-    """refresh() prints 'preserved .env' when pycastle/.env exists."""
-    from pycastle.commands.init import refresh
-
-    monkeypatch.chdir(tmp_path)
+def test_refresh_preserves_existing_env_file(tmp_path, monkeypatch, capsys):
     env_file = tmp_path / "pycastle" / ".env"
     env_file.parent.mkdir(parents=True, exist_ok=True)
     env_file.write_text("GH_TOKEN=secret\n")
 
-    lines: list[str] = []
-    with patch("builtins.print", side_effect=lambda *a, **kw: lines.append(a[0])):
-        refresh()
-
-    report_lines = [
-        ln
-        for ln in lines
-        if ln.startswith(("created ", "unchanged ", "overwrote ", "preserved "))
-    ]
-    assert "preserved .env" in report_lines
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    assert "preserved .env" in report
     assert env_file.read_text() == "GH_TOKEN=secret\n"
 
 
-def test_refresh_no_config_py_line_when_absent(tmp_path, monkeypatch):
-    """refresh() produces no config.py row when pycastle/config.py does not exist."""
-    from pycastle.commands.init import refresh
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "pycastle").mkdir()
-
-    lines: list[str] = []
-    with patch("builtins.print", side_effect=lambda *a, **kw: lines.append(a[0])):
-        refresh()
-
-    report_lines = [
-        ln
-        for ln in lines
-        if ln.startswith(("created ", "unchanged ", "overwrote ", "preserved "))
-    ]
-    assert not any("config.py" in ln for ln in report_lines)
+def test_refresh_omits_config_py_and_env_when_absent(tmp_path, monkeypatch, capsys):
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    assert not any(ln.endswith(" config.py") for ln in report)
+    assert not any(ln.endswith(" .env") for ln in report)
 
 
-def test_refresh_no_env_line_when_absent(tmp_path, monkeypatch):
-    """refresh() produces no .env row when pycastle/.env does not exist."""
-    from pycastle.commands.init import refresh
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "pycastle").mkdir()
-
-    lines: list[str] = []
-    with patch("builtins.print", side_effect=lambda *a, **kw: lines.append(a[0])):
-        refresh()
-
-    report_lines = [
-        ln
-        for ln in lines
-        if ln.startswith(("created ", "unchanged ", "overwrote ", "preserved "))
-    ]
-    assert not any(
-        ln == "preserved .env" or ln.endswith(" .env") for ln in report_lines
-    )
-
-
-def test_refresh_report_lines_sorted_alphabetically(tmp_path, monkeypatch):
-    """refresh() report lines are sorted alphabetically by path across all verbs."""
-    from pycastle.commands.init import refresh
-
-    monkeypatch.chdir(tmp_path)
+def test_refresh_report_lines_sorted_alphabetically_across_verbs(
+    tmp_path, monkeypatch, capsys
+):
     pycastle_dir = tmp_path / "pycastle"
     pycastle_dir.mkdir()
     (pycastle_dir / "config.py").write_text("# config\n")
     (pycastle_dir / ".env").write_text("GH_TOKEN=x\n")
 
-    lines: list[str] = []
-    with patch("builtins.print", side_effect=lambda *a, **kw: lines.append(a[0])):
-        refresh()
-
-    report_lines = [
-        ln
-        for ln in lines
-        if ln.startswith(("created ", "unchanged ", "overwrote ", "preserved "))
-    ]
-    paths = [ln.split(" ", 1)[1] for ln in report_lines]
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    paths = [ln.split(" ", 1)[1] for ln in report]
     assert paths == sorted(paths)
 
 
-def test_refresh_user_added_files_not_in_report(tmp_path, monkeypatch):
-    """refresh() does not include user-added files that are not part of bundled defaults."""
-    from pycastle.commands.init import refresh
-
-    monkeypatch.chdir(tmp_path)
+def test_refresh_omits_user_added_files(tmp_path, monkeypatch, capsys):
     pycastle_dir = tmp_path / "pycastle"
     pycastle_dir.mkdir()
     (pycastle_dir / "my-custom-file.md").write_text("user content\n")
 
-    lines: list[str] = []
-    with patch("builtins.print", side_effect=lambda *a, **kw: lines.append(a[0])):
-        refresh()
-
-    report_lines = [
-        ln
-        for ln in lines
-        if ln.startswith(("created ", "unchanged ", "overwrote ", "preserved "))
-    ]
-    assert not any("my-custom-file.md" in ln for ln in report_lines)
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    assert not any("my-custom-file.md" in ln for ln in report)
 
 
-def test_refresh_runtime_artifact_dirs_not_in_report(tmp_path, monkeypatch):
-    """refresh() does not enumerate .worktrees/, logs/, or .pycastle-session/ contents."""
-    from pycastle.commands.init import refresh
-
-    monkeypatch.chdir(tmp_path)
+def test_refresh_omits_runtime_artifact_dirs(tmp_path, monkeypatch, capsys):
     pycastle_dir = tmp_path / "pycastle"
     pycastle_dir.mkdir()
     for artifact_dir in (".worktrees", "logs", ".pycastle-session"):
@@ -1344,14 +1232,6 @@ def test_refresh_runtime_artifact_dirs_not_in_report(tmp_path, monkeypatch):
         d.mkdir()
         (d / "some-file.txt").write_text("artifact\n")
 
-    lines: list[str] = []
-    with patch("builtins.print", side_effect=lambda *a, **kw: lines.append(a[0])):
-        refresh()
-
-    report_lines = [
-        ln
-        for ln in lines
-        if ln.startswith(("created ", "unchanged ", "overwrote ", "preserved "))
-    ]
+    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
     for dir_name in (".worktrees", "logs", ".pycastle-session"):
-        assert not any(dir_name in ln for ln in report_lines)
+        assert not any(dir_name in ln for ln in report)

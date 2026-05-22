@@ -76,11 +76,16 @@ def _read_env_values(env_file: Path) -> dict[str, str]:
     return out
 
 
-def _copy_template(rel: str, target: Path, pkg: Traversable) -> None:
-    target.parent.mkdir(parents=True, exist_ok=True)
+def _pkg_path(pkg: Traversable, rel: str) -> Traversable:
     src = pkg
     for part in rel.split("/"):
         src = src / part
+    return src
+
+
+def _copy_template(rel: str, target: Path, pkg: Traversable) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    src = _pkg_path(pkg, rel)
     try:
         target.write_bytes(src.read_bytes())
         if target.suffix == ".sh":
@@ -114,10 +119,11 @@ def _refresh_status(rel: str, target: Path, pkg: Traversable) -> str:
     """Return the status verb for copying rel to target without writing."""
     if not target.exists():
         return "created"
-    src = pkg
-    for part in rel.split("/"):
-        src = src / part
-    return "unchanged" if target.read_bytes() == src.read_bytes() else "overwrote"
+    return (
+        "unchanged"
+        if target.read_bytes() == _pkg_path(pkg, rel).read_bytes()
+        else "overwrote"
+    )
 
 
 def refresh() -> None:
