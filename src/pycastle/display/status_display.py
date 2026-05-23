@@ -13,6 +13,7 @@ class StatusDisplay(Protocol):
         startup_message: str = "started",
         work_body: str = "",
         initial_phase: str = "Setup",
+        color_key: int | None = None,
     ) -> None: ...
     def update_phase(self, name: str, phase: str) -> None: ...
     def reset_idle_timer(self, name: str) -> None: ...
@@ -49,6 +50,7 @@ class PlainStatusDisplay:
         startup_message: str = "started",
         work_body: str = "",
         initial_phase: str = "Setup",
+        color_key: int | None = None,
     ) -> None:
         if caller != "":
             self._kinds[caller] = kind

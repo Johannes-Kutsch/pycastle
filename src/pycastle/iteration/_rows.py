@@ -37,6 +37,7 @@ async def status_row(
         startup_message=startup_message,
         work_body=work_body,
         initial_phase=initial_phase,
+        color_key=color_key,
     )
     row = StatusRow(status_display, caller)
     try:

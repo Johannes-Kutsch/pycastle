@@ -43,6 +43,7 @@ class RecordingStatusDisplay:
         startup_message: str = "started",
         work_body: str = "",
         initial_phase: str = "Setup",
+        color_key: int | None = None,
     ) -> None:
         self.calls.append(("register", caller, kind, startup_message, initial_phase))
 

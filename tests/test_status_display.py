@@ -1496,7 +1496,9 @@ def _truecolor_print_output(caller: str, message: str) -> str:
         file=buf, width=200, force_terminal=True, color_system="truecolor"
     )
     d = RichStatusDisplay(console=console)
-    d.register(caller, "agent")
+    m = re.search(r"#(\d+)", caller)
+    color_key = int(m.group(1)) if m else None
+    d.register(caller, "agent", color_key=color_key)
     buf.seek(0)
     buf.truncate(0)
     d.print(caller, message)
@@ -1519,7 +1521,9 @@ def test_rich_agent_with_issue_number_prefix_renders_in_palette_color() -> None:
 def test_rich_agent_name_column_in_table_renders_in_palette_color() -> None:
     """Name column in live table for agent with #N uses palette[N % 9] truecolor."""
     d = RichStatusDisplay()
-    d.register("Implement Agent #9", "agent")  # N=9 → 9%9=0 → palette[0] deep purple
+    d.register(
+        "Implement Agent #9", "agent", color_key=9
+    )  # N=9 → 9%9=0 → palette[0] deep purple
 
     buf = io.StringIO()
     console = Console(
@@ -1642,6 +1646,9 @@ def test_rich_agent_with_issue_number_shutdown_style_still_applies() -> None:
     """success style on body is applied even when prefix has agent palette color."""
     buf, console = _make_ansi_console()
     d = RichStatusDisplay(console=console)
+    d.register("Implement Agent #9", "agent", color_key=9)
+    buf.seek(0)
+    buf.truncate(0)
     d.remove("Implement Agent #9", shutdown_message="done", shutdown_style="success")
     ansi = buf.getvalue()
 
@@ -1715,7 +1722,7 @@ def test_rich_print_success_style_on_numbered_caller_applies_only_to_body() -> N
     """For #N callers, success (green) applies to body only."""
     buf, console = _make_ansi_console()
     d = RichStatusDisplay(console=console)
-    d.register("Implement Agent #3", "agent")
+    d.register("Implement Agent #3", "agent", color_key=3)
     buf.seek(0)
     buf.truncate(0)
     d.print("Implement Agent #3", "done", style="success")
@@ -1736,7 +1743,7 @@ def test_rich_print_warning_style_on_numbered_caller_applies_only_to_body() -> N
     """For #N callers, warning (yellow) applies to body only."""
     buf, console = _make_ansi_console()
     d = RichStatusDisplay(console=console)
-    d.register("Implement Agent #3", "agent")
+    d.register("Implement Agent #3", "agent", color_key=3)
     buf.seek(0)
     buf.truncate(0)
     d.print("Implement Agent #3", "caution", style="warning")
@@ -1790,7 +1797,7 @@ def test_rich_print_error_style_on_numbered_caller_applies_only_to_body() -> Non
     """For #N callers, error style (red) applies to body only, not the prefix."""
     buf, console = _make_ansi_console()
     d = RichStatusDisplay(console=console)
-    d.register("Implement Agent #5", "agent")
+    d.register("Implement Agent #5", "agent", color_key=5)
     buf.seek(0)
     buf.truncate(0)
     d.print("Implement Agent #5", "failed", style="error")

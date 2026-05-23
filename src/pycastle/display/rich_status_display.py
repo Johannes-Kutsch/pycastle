@@ -24,16 +24,11 @@ _PALETTE: list[tuple[int, int, int]] = [
 ]
 
 
-def _agent_name_style(name: str) -> str:
-    """Return the base Rich style for a caller name's prefix/name-column rendering.
-
-    Agents whose name contains `#N` get a stable color from `_PALETTE`; everything
-    else falls back to plain bold.
-    """
-    m = re.search(r"#(\d+)", name)
-    if not m:
+def _agent_name_style(color_key: int | None) -> str:
+    """Return the base Rich style for a caller name's prefix/name-column rendering."""
+    if color_key is None:
         return "bold"
-    r, g, b = _PALETTE[int(m.group(1)) % len(_PALETTE)]
+    r, g, b = _PALETTE[color_key % len(_PALETTE)]
     return f"bold rgb({r},{g},{b})"
 
 
@@ -89,6 +84,7 @@ def _token_text(current: int, peak: int) -> Text:
 class _AgentRow:
     __slots__ = (
         "name",
+        "color_key",
         "phase",
         "work_body",
         "started_at",
@@ -97,8 +93,11 @@ class _AgentRow:
         "peak_tokens",
     )
 
-    def __init__(self, name: str, phase: str, work_body: str = "") -> None:
+    def __init__(
+        self, name: str, phase: str, work_body: str = "", color_key: int | None = None
+    ) -> None:
         self.name = name
+        self.color_key = color_key
         self.phase = phase
         self.work_body = work_body
         now = time.monotonic()
@@ -125,6 +124,7 @@ class RichStatusDisplay:
         self._last_caller: str | None = None
         self._last_kind: str | None = None
         self._kinds: dict[str, str] = {}
+        self._color_keys: dict[str, int | None] = {}
 
     def __rich_console__(
         self, console: Console, options: ConsoleOptions
@@ -145,7 +145,7 @@ class RichStatusDisplay:
 
         for row in rows:
             name_text = _styled_with_issue_overlay(
-                row.name, _agent_name_style(row.name)
+                row.name, _agent_name_style(row.color_key)
             )
 
             body = row.work_body if row.phase == "Work" else row.phase
@@ -194,11 +194,13 @@ class RichStatusDisplay:
         startup_message: str = "started",
         work_body: str = "",
         initial_phase: str = "Setup",
+        color_key: int | None = None,
     ) -> None:
         with self._lock:
-            self._rows[caller] = _AgentRow(caller, initial_phase, work_body)
+            self._rows[caller] = _AgentRow(caller, initial_phase, work_body, color_key)
             if caller != "":
                 self._kinds[caller] = kind
+                self._color_keys[caller] = color_key
             live_to_start = self._acquire_live()
         if live_to_start is not None:
             live_to_start.start()
@@ -236,6 +238,7 @@ class RichStatusDisplay:
         self.print(caller, shutdown_message, style=shutdown_style)
         with self._lock:
             self._kinds.pop(caller, None)
+            self._color_keys.pop(caller, None)
 
     def print(
         self,
@@ -257,11 +260,13 @@ class RichStatusDisplay:
             self._last_kind = self._kinds.get(caller)
         if prepend_blank:
             self._console.print()
-        has_issue_number = bool(re.search(r"#\d+", caller))
+        with self._lock:
+            caller_color_key = self._color_keys.get(caller)
+        has_palette_color = caller_color_key is not None
         for line in lines:
             if caller:
                 text = _styled_with_issue_overlay(
-                    f"[{caller}]", _agent_name_style(caller)
+                    f"[{caller}]", _agent_name_style(caller_color_key)
                 )
                 body_start = len(text)
                 text.append(f" {line}")
@@ -269,8 +274,8 @@ class RichStatusDisplay:
                 body_start = 0
                 text = Text(line)
             if rich_style:
-                # For #N callers, preserve the palette-colored prefix by styling body only.
-                start = body_start if has_issue_number else 0
+                # For palette-colored callers, preserve the prefix by styling body only.
+                start = body_start if has_palette_color else 0
                 text.stylize(rich_style, start=start)
             self._console.print(text)
 

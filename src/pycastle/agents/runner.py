@@ -172,8 +172,19 @@ class AgentRunner:
 
         non_typed_retry_done = False
 
+        color_key: int | None = None
+        if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
+            issue_number_str = scope_args.get("ISSUE_NUMBER", "")
+            if issue_number_str.isdigit():
+                color_key = int(issue_number_str)
+
         async with status_row(
-            status_display, name, kind="agent", must_close=False, work_body=work_body
+            status_display,
+            name,
+            kind="agent",
+            must_close=False,
+            work_body=work_body,
+            color_key=color_key,
         ):
             session = self._build_session(mount_path, svc_state_relpath)
             runner = ContainerRunner(
@@ -291,7 +302,12 @@ class AgentRunner:
         git_name = self._git_service.get_user_name()
         git_email = self._git_service.get_user_email()
         async with status_row(
-            status_display, name, kind="agent", must_close=False, work_body=work_body
+            status_display,
+            name,
+            kind="agent",
+            must_close=False,
+            work_body=work_body,
+            color_key=None,
         ):
             session = self._build_session(mount_path)
             runner = ContainerRunner(
