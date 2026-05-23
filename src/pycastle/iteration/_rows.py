@@ -42,16 +42,10 @@ async def status_row(
     try:
         yield row
     except UsageLimitError:
-        if kind == "phase":
-            row.close("usage limit reached", shutdown_style="interrupted")
-        else:
-            row.close("failed", shutdown_style="error")
+        row.close("usage limit reached", shutdown_style="interrupted")
         raise
     except AgentTimeoutError:
-        if kind == "phase":
-            row.close("timed out", shutdown_style="interrupted")
-        else:
-            row.close("failed", shutdown_style="error")
+        row.close("timed out", shutdown_style="interrupted")
         raise
     except BaseException:
         row.close("failed", shutdown_style="error")
