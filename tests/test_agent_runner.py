@@ -736,7 +736,12 @@ def test_agent_runner_run_preflight_registers_and_removes_status_row_on_success(
         "started",
         "Setup",
     ) in display.calls
-    assert ("remove", "preflight-checks", "finished", "success") in display.calls
+    assert (
+        "remove",
+        "preflight-checks",
+        "finished, all tests green",
+        "success",
+    ) in display.calls
 
 
 def test_agent_runner_run_preflight_updates_phase_for_each_check(tmp_path):
@@ -799,6 +804,26 @@ def test_agent_runner_run_preflight_removes_status_row_when_exception_propagates
         )
 
     assert ("remove", "preflight-checks", "failed", "error") in display.calls
+
+
+def test_agent_runner_run_preflight_renders_all_tests_green_when_checks_pass(tmp_path):
+    mock_client = _make_preflight_docker_client(exit_code=0)
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+    display = RecordingStatusDisplay()
+
+    asyncio.run(
+        runner.run_preflight(
+            name="preflight-checks", mount_path=tmp_path, status_display=display
+        )
+    )
+
+    assert (
+        "remove",
+        "preflight-checks",
+        "finished, all tests green",
+        "success",
+    ) in display.calls
 
 
 def test_agent_runner_run_preflight_propagates_git_user_name_error(tmp_path):
