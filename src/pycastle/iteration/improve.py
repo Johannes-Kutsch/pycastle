@@ -16,7 +16,7 @@ from ..services.github_service import GithubService
 from ..session import RoleSession
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import managed_worktree
-from ._rows import phase_row
+from ._rows import status_row
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
 
@@ -248,8 +248,12 @@ async def improve_phase(
         )
     else:
         phase_label = "Improve"
-    async with phase_row(
-        deps.status_display, phase_label, initial_phase="Running"
+    async with status_row(
+        deps.status_display,
+        phase_label,
+        kind="phase",
+        must_close=True,
+        initial_phase="Running",
     ) as row:
         verdict = await deps.preflight_cache.get_safe_sha(deps)
         if isinstance(verdict, (PreflightHITL, PreflightAFK)):

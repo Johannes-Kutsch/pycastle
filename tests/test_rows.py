@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from pycastle.iteration import agent_row, phase_row
+from pycastle.iteration import StatusRow, status_row
 from pycastle.display.status_display import PlainStatusDisplay
 
 
@@ -12,7 +12,7 @@ def test_phase_row_success_path_register_and_close(
     d = PlainStatusDisplay()
 
     async def run() -> None:
-        async with phase_row(d, "MyPhase") as row:
+        async with status_row(d, "MyPhase", kind="phase", must_close=True) as row:
             row.close("all done")
 
     asyncio.run(run())
@@ -26,7 +26,7 @@ def test_phase_row_exception_path_auto_error_remove(
     d = PlainStatusDisplay()
 
     async def run() -> None:
-        async with phase_row(d, "MyPhase") as _row:
+        async with status_row(d, "MyPhase", kind="phase", must_close=True) as _row:
             raise RuntimeError("boom")
 
     with pytest.raises(RuntimeError):
@@ -41,7 +41,7 @@ def test_phase_row_close_is_idempotent(
     d = PlainStatusDisplay()
 
     async def run() -> None:
-        async with phase_row(d, "MyPhase") as row:
+        async with status_row(d, "MyPhase", kind="phase", must_close=True) as row:
             row.close("done")
             row.close("done again")
 
@@ -56,9 +56,11 @@ def test_phase_row_custom_startup_message_appears_in_output(
     d = PlainStatusDisplay()
 
     async def run() -> None:
-        async with phase_row(
+        async with status_row(
             d,
             "Plan",
+            kind="phase",
+            must_close=True,
             startup_message="started planning for 3 issue(s) labeled ready-for-agent",
         ) as row:
             row.close("done")
@@ -77,7 +79,9 @@ def test_phase_row_custom_startup_message_appears_on_exception_path(
     d = PlainStatusDisplay()
 
     async def run() -> None:
-        async with phase_row(d, "Plan", startup_message="custom message") as _row:
+        async with status_row(
+            d, "Plan", kind="phase", must_close=True, startup_message="custom message"
+        ) as _row:
             raise RuntimeError("boom")
 
     with pytest.raises(RuntimeError):
@@ -92,8 +96,11 @@ def test_agent_row_success_path_registers_and_removes(
     d = PlainStatusDisplay()
 
     async def run() -> None:
-        async with agent_row(d, "Worker", work_body="implementing #1") as ctx:
-            assert ctx is None
+        async with status_row(
+            d, "Worker", kind="agent", must_close=False, work_body="implementing #1"
+        ) as row:
+            assert isinstance(row, StatusRow)
+            assert not row._closed
 
     asyncio.run(run())
     out = capsys.readouterr().out
@@ -106,7 +113,9 @@ def test_agent_row_exception_path_marks_failed_and_propagates(
     d = PlainStatusDisplay()
 
     async def run() -> None:
-        async with agent_row(d, "Worker", work_body="implementing #1"):
+        async with status_row(
+            d, "Worker", kind="agent", must_close=False, work_body="implementing #1"
+        ):
             raise RuntimeError("boom")
 
     with pytest.raises(RuntimeError, match="boom"):
@@ -121,15 +130,21 @@ def test_agent_row_register_uses_agent_kind_and_work_body(
     d = PlainStatusDisplay()
 
     async def run() -> None:
-        async with phase_row(d, "Implement"):
-            async with agent_row(d, "Worker", work_body="implementing #42"):
+        async with status_row(d, "Implement", kind="phase", must_close=True):
+            async with status_row(
+                d,
+                "Worker",
+                kind="agent",
+                must_close=False,
+                work_body="implementing #42",
+            ):
                 pass
 
     asyncio.run(run())
     out = capsys.readouterr().out
     # No blank line between [Implement] started and [Worker] started, because
     # PlainStatusDisplay suppresses the blank between {phase, agent} kinds.
-    # This is observable proof that agent_row registered with kind="agent".
+    # This is observable proof that agent kind was registered correctly.
     assert out == (
         "\n[Implement] started\n"
         "[Worker] started\n"

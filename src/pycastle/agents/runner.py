@@ -139,7 +139,7 @@ class AgentRunner:
         return await translate_run_outcome(self._run(request), request)
 
     async def _run(self, request: RunRequest) -> AgentOutput:
-        from ..iteration._rows import agent_row
+        from ..iteration._rows import status_row
 
         name = request.name
         template = request.template
@@ -172,7 +172,9 @@ class AgentRunner:
 
         non_typed_retry_done = False
 
-        async with agent_row(status_display, name, work_body):
+        async with status_row(
+            status_display, name, kind="agent", must_close=False, work_body=work_body
+        ):
             session = self._build_session(mount_path, svc_state_relpath)
             runner = ContainerRunner(
                 name,
@@ -281,14 +283,16 @@ class AgentRunner:
         status_display=None,
         work_body: str = "",
     ) -> list[tuple[str, str, str]]:
-        from ..iteration._rows import agent_row
+        from ..iteration._rows import status_row
 
         if status_display is None:
             status_display = PlainStatusDisplay()
 
         git_name = self._git_service.get_user_name()
         git_email = self._git_service.get_user_email()
-        async with agent_row(status_display, name, work_body):
+        async with status_row(
+            status_display, name, kind="agent", must_close=False, work_body=work_body
+        ):
             session = self._build_session(mount_path)
             runner = ContainerRunner(
                 name,

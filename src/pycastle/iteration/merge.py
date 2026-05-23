@@ -17,7 +17,7 @@ from ..infrastructure.worktree import (
     worktree_name_for_branch,
     worktree_path,
 )
-from ._rows import phase_row
+from ._rows import status_row
 from ._utils import _wait_for_clean_working_tree
 from .implement import branch_for
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
@@ -134,7 +134,13 @@ async def _close_issues_parallel(
 
 
 async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
-    async with phase_row(deps.status_display, "Merge", initial_phase="Merging") as row:
+    async with status_row(
+        deps.status_display,
+        "Merge",
+        kind="phase",
+        must_close=True,
+        initial_phase="Merging",
+    ) as row:
         await _wait_for_clean_working_tree(deps, "Merge")
 
         clean_issues: list[dict] = []

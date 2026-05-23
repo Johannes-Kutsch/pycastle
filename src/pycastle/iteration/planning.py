@@ -16,7 +16,7 @@ from ..services.github_service import GithubService
 from ..display.status_display import StatusDisplay
 from ..agents.classifier import Malformed, WellFormed, classify_slice
 from ..infrastructure.worktree import transient_worktree
-from ._rows import phase_row
+from ._rows import status_row
 from .implement import branch_for
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
@@ -137,9 +137,11 @@ async def planning_phase(
     else:
         startup_msg = f"started planning for {len(open_issues)} issue(s) labeled {deps.cfg.issue_label}"
 
-    async with phase_row(
+    async with status_row(
         deps.status_display,
         "Plan",
+        kind="phase",
+        must_close=True,
         initial_phase="Planning",
         startup_message=startup_msg,
     ) as row:

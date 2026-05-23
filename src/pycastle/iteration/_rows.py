@@ -1,11 +1,12 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from ..errors import AgentTimeoutError, UsageLimitError
 from ..display.status_display import StatusDisplay
 
 
-class PhaseRow:
+class StatusRow:
     def __init__(self, status_display: StatusDisplay, caller: str) -> None:
         self._status_display = status_display
         self._caller = caller
@@ -19,43 +20,45 @@ class PhaseRow:
 
 
 @asynccontextmanager
-async def phase_row(
+async def status_row(
     status_display: StatusDisplay,
     caller: str,
+    *,
+    kind: Literal["phase", "agent"],
+    must_close: bool,
+    color_key: int | None = None,
+    work_body: str = "",
     initial_phase: str = "Setup",
     startup_message: str = "started",
-) -> AsyncGenerator[PhaseRow, None]:
+) -> AsyncGenerator[StatusRow, None]:
     status_display.register(
-        caller, "phase", startup_message=startup_message, initial_phase=initial_phase
+        caller,
+        kind,
+        startup_message=startup_message,
+        work_body=work_body,
+        initial_phase=initial_phase,
     )
-    row = PhaseRow(status_display, caller)
+    row = StatusRow(status_display, caller)
     try:
         yield row
     except UsageLimitError:
-        row.close("usage limit reached", shutdown_style="interrupted")
+        if kind == "phase":
+            row.close("usage limit reached", shutdown_style="interrupted")
+        else:
+            row.close("failed", shutdown_style="error")
         raise
     except AgentTimeoutError:
-        row.close("timed out", shutdown_style="interrupted")
+        if kind == "phase":
+            row.close("timed out", shutdown_style="interrupted")
+        else:
+            row.close("failed", shutdown_style="error")
         raise
     except BaseException:
         row.close("failed", shutdown_style="error")
         raise
     else:
         if not row._closed:
-            row.close("failed", shutdown_style="error")
-
-
-@asynccontextmanager
-async def agent_row(
-    status_display: StatusDisplay,
-    caller: str,
-    work_body: str,
-) -> AsyncGenerator[None, None]:
-    status_display.register(caller, "agent", work_body=work_body)
-    try:
-        yield None
-    except BaseException:
-        status_display.remove(caller, "failed", shutdown_style="error")
-        raise
-    else:
-        status_display.remove(caller)
+            if must_close:
+                row.close("failed", shutdown_style="error")
+            else:
+                row.close("finished")

@@ -18,9 +18,8 @@ from ..errors import (
 from ..prompts.pipeline import PromptTemplate
 from ..infrastructure.worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
-from ._rows import PhaseRow as PhaseRow
-from ._rows import agent_row as agent_row
-from ._rows import phase_row
+from ._rows import StatusRow as StatusRow
+from ._rows import status_row as status_row
 from .dispatcher import Done as Done
 from .dispatcher import should_dispatch_improve
 from .implement import branch_for, implement_phase
@@ -104,8 +103,12 @@ async def _run_implement_and_merge(
     sha: str,
 ) -> IterationOutcome:
     token = CancellationToken()
-    async with phase_row(
-        deps.status_display, "Implement", initial_phase="Running"
+    async with status_row(
+        deps.status_display,
+        "Implement",
+        kind="phase",
+        must_close=True,
+        initial_phase="Running",
     ) as row:
         impl_result = await implement_phase(issues, deps, sha, token=token)
 
