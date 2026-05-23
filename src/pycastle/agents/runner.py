@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 from .output_protocol import (
     AgentOutput,
+    AgentOutputProtocolError,
     AgentRole,
     AgentSuccessOutput,
     FailedOutput,
@@ -29,6 +30,12 @@ from ..services.claude_service import ClaudeService
 from ..display.status_display import PlainStatusDisplay
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
+
+REPROMPT_MESSAGE = (
+    "Your last response did not include the required protocol output. "
+    "Please review the task requirements and try again, making sure to "
+    "include the required output tag."
+)
 
 
 @dataclasses.dataclass
@@ -220,29 +227,20 @@ class AgentRunner:
                             send_role_prompt_on_resume=request.send_role_prompt_on_resume,
                         )
 
-                        async def _work_factory(reprompt: str | None) -> AgentOutput:
-                            if reprompt is None:
+                        work_prompt = prompt
+                        work_run_kind = run_kind
+                        for _ in range(3):
+                            try:
                                 return await runner.work(
                                     role,
-                                    prompt,
-                                    run_kind=run_kind,
+                                    work_prompt,
+                                    run_kind=work_run_kind,
                                     session_uuid=session_uuid,
                                 )
-                            return await runner.work(
-                                role,
-                                reprompt,
-                                run_kind=RunKind.RESUME,
-                                session_uuid=session_uuid,
-                            )
-
-                        from ..iteration.reprompt_loop import (
-                            REPROMPT_MESSAGE,
-                            run_with_reprompt,
-                        )
-
-                        return await run_with_reprompt(
-                            _work_factory, reprompt_message=REPROMPT_MESSAGE
-                        )
+                            except AgentOutputProtocolError:
+                                work_prompt = REPROMPT_MESSAGE
+                                work_run_kind = RunKind.RESUME
+                        return FailedOutput(failure_class="protocol_error")
                     except AgentTimeoutError:
                         if retries_left <= 0:
                             raise

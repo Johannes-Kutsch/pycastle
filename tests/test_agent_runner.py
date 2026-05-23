@@ -1809,3 +1809,164 @@ def test_agent_runner_does_not_call_mark_exhausted_on_hard_agent_error(tmp_path)
 
     # Account must still be available — mark_exhausted was NOT called
     assert svc.is_available() is True
+
+
+# ── AgentRunner: protocol-error retry semantics ───────────────────────────────
+
+
+def _make_setup_docker_client() -> MagicMock:
+    """Mock docker client that handles container start and non-streaming setup calls."""
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+    mock_container.exec_run.return_value = MagicMock(exit_code=0, output=(b"", b""))
+    return mock_client
+
+
+def test_agent_runner_run_returns_success_after_protocol_error_on_first_attempt(
+    tmp_path,
+):
+    from unittest.mock import patch
+    from pycastle.agents.output_protocol import PlanParseError
+    from pycastle.agents.runner import REPROMPT_MESSAGE
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    success_output = CommitMessageOutput(message="done")
+    work_calls: list[tuple[str, RunKind]] = []
+
+    async def _fake_work(role, prompt, *, run_kind, session_uuid):
+        work_calls.append((prompt, run_kind))
+        if len(work_calls) == 1:
+            raise PlanParseError("no tag")
+        return success_output
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Test",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert len(work_calls) == 2
+    assert work_calls[1][0] == REPROMPT_MESSAGE
+    assert work_calls[1][1] == RunKind.RESUME
+
+
+def test_agent_runner_run_raises_agent_failed_error_after_three_protocol_errors(
+    tmp_path,
+):
+    from unittest.mock import patch
+    from pycastle.agents.output_protocol import PromiseParseError
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    call_count = 0
+
+    async def _fake_work(role, prompt, *, run_kind, session_uuid):
+        nonlocal call_count
+        call_count += 1
+        raise PromiseParseError("no tag")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        with pytest.raises(AgentFailedError) as exc_info:
+            asyncio.run(
+                runner.run(
+                    RunRequest(
+                        name="Test",
+                        template=_PLAN_TEMPLATE,
+                        scope_args=_PLAN_SCOPE_ARGS,
+                        mount_path=tmp_path,
+                    )
+                )
+            )
+
+    assert exc_info.value.failure_class == "protocol_error"
+    assert call_count == 3
+
+
+def test_agent_runner_run_does_not_reprompt_when_work_returns_failed_output(tmp_path):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    call_count = 0
+
+    async def _fake_work(role, prompt, *, run_kind, session_uuid):
+        nonlocal call_count
+        call_count += 1
+        return FailedOutput(failure_class="agent_failed")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        with pytest.raises(AgentFailedError):
+            asyncio.run(
+                runner.run(
+                    RunRequest(
+                        name="Test",
+                        template=_PLAN_TEMPLATE,
+                        scope_args=_PLAN_SCOPE_ARGS,
+                        mount_path=tmp_path,
+                    )
+                )
+            )
+
+    assert call_count == 1
+
+
+def test_agent_runner_run_decrements_timeout_budget_when_protocol_error_precedes_timeout(
+    tmp_path,
+):
+    from unittest.mock import patch
+    from pycastle.agents.output_protocol import PlanParseError
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    call_count = 0
+
+    async def _fake_work(role, prompt, *, run_kind, session_uuid):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise PlanParseError("no tag")
+        raise AgentTimeoutError("timeout")
+
+    cfg = _make_cfg(tmp_path, timeout_retries=0)
+    runner = AgentRunner(
+        {}, cfg, _make_git_service(), docker_client=_make_setup_docker_client()
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        with pytest.raises(AgentTimeoutError):
+            asyncio.run(
+                runner.run(
+                    RunRequest(
+                        name="Test",
+                        template=_PLAN_TEMPLATE,
+                        scope_args=_PLAN_SCOPE_ARGS,
+                        mount_path=tmp_path,
+                    )
+                )
+            )
