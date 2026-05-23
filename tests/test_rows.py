@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.iteration import StatusRow, status_row
 from pycastle.display.status_display import PlainStatusDisplay
 
@@ -122,6 +123,40 @@ def test_agent_row_exception_path_marks_failed_and_propagates(
         asyncio.run(run())
     out = capsys.readouterr().out
     assert out == "\n[Worker] started\n[Worker] failed\n"
+
+
+def test_agent_row_usage_limit_paints_interrupted_and_propagates(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+
+    async def run() -> None:
+        async with status_row(
+            d, "Worker", kind="agent", must_close=False, work_body="implementing #1"
+        ):
+            raise UsageLimitError()
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(run())
+    out = capsys.readouterr().out
+    assert out == "\n[Worker] started\n[Worker] usage limit reached\n"
+
+
+def test_agent_row_timeout_paints_interrupted_and_propagates(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    d = PlainStatusDisplay()
+
+    async def run() -> None:
+        async with status_row(
+            d, "Worker", kind="agent", must_close=False, work_body="implementing #1"
+        ):
+            raise AgentTimeoutError("timed out")
+
+    with pytest.raises(AgentTimeoutError):
+        asyncio.run(run())
+    out = capsys.readouterr().out
+    assert out == "\n[Worker] started\n[Worker] timed out\n"
 
 
 def test_agent_row_register_uses_agent_kind_and_work_body(
