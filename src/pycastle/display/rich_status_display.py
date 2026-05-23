@@ -258,10 +258,9 @@ class RichStatusDisplay:
             prepend_blank = self._blank_before(caller)
             self._last_caller = caller
             self._last_kind = self._kinds.get(caller)
+            caller_color_key = self._color_keys.get(caller)
         if prepend_blank:
             self._console.print()
-        with self._lock:
-            caller_color_key = self._color_keys.get(caller)
         has_palette_color = caller_color_key is not None
         for line in lines:
             if caller:
