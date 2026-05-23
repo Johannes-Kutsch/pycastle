@@ -177,10 +177,12 @@ def _classify_line(line: str) -> list[ParsedTurn]:
     if obj.get("is_error") and obj.get("type") == "result":
         status = obj.get("api_error_status")
         if status is None or (isinstance(status, int) and status >= 500):
-            return [TransientError(
-                status_code=status if isinstance(status, int) else None,
-                raw_message=line,
-            )]
+            return [
+                TransientError(
+                    status_code=status if isinstance(status, int) else None,
+                    raw_message=line,
+                )
+            ]
         if isinstance(status, int) and 400 <= status < 500:
             return [HardError(status_code=status, raw_message=line)]
         return []
