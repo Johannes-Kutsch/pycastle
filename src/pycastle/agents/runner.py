@@ -292,7 +292,7 @@ class AgentRunner:
         git_email = self._git_service.get_user_email()
         async with status_row(
             status_display, name, kind="agent", must_close=False, work_body=work_body
-        ):
+        ) as row:
             session = self._build_session(mount_path)
             runner = ContainerRunner(
                 name,
@@ -303,7 +303,10 @@ class AgentRunner:
             )
             try:
                 await runner.setup(git_name, git_email, work_body)
-                return await runner.preflight(list(self._cfg.preflight_checks))
+                failures = await runner.preflight(list(self._cfg.preflight_checks))
+                if not failures:
+                    row.close("finished, all tests green")
+                return failures
             finally:
                 try:
                     session.__exit__(None, None, None)
