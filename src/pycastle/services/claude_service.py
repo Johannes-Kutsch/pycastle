@@ -287,7 +287,7 @@ class ClaudeService:
         if profile.disallowed_tools:
             flags += f' --disallowedTools "{" ".join(profile.disallowed_tools)}"'
         if profile.strict_mcp:
-            flags += " --strict-mcp-config --mcp-config '{}'"
+            flags += " --strict-mcp-config --mcp-config '{\"mcpServers\":{}}'"
         if model:
             flags += f" --model {model}"
         if effort:

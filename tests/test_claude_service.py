@@ -229,7 +229,7 @@ def test_build_command_strict_mcp_config_matches_role(role, expects_strict_mcp):
     cmd = ClaudeService().build_command(role=role)
     if expects_strict_mcp:
         assert "--strict-mcp-config" in cmd
-        assert "--mcp-config '{}'" in cmd
+        assert "--mcp-config '{\"mcpServers\":{}}'" in cmd
     else:
         assert "--strict-mcp-config" not in cmd
         assert "--mcp-config" not in cmd
