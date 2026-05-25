@@ -1053,6 +1053,36 @@ def test_create_issue_in_uses_owner_repo_arg_not_self_repo():
     assert "/repos/target-owner/target-repo/issues" in req.full_url
 
 
+# ── search_open_issues_by_title ──────────────────────────────────────────────
+
+
+def test_search_open_issues_by_title_returns_numbers_from_search_api():
+    svc = _make_service()
+    body = json.dumps(
+        {
+            "total_count": 2,
+            "items": [{"number": 10}, {"number": 23}],
+        }
+    ).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+    ) as m:
+        result = svc.search_open_issues_by_title("[pycastle] git remote unreachable")
+    req = m.call_args[0][0]
+    assert "search/issues" in req.full_url
+    assert result == [10, 23]
+
+
+def test_search_open_issues_by_title_returns_empty_list_when_no_matches():
+    svc = _make_service()
+    body = json.dumps({"total_count": 0, "items": []}).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+    ):
+        result = svc.search_open_issues_by_title("[pycastle] git remote unreachable")
+    assert result == []
+
+
 # ── No real network ──────────────────────────────────────────────────────────
 
 

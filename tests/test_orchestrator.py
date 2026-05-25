@@ -3369,3 +3369,127 @@ def test_orchestrator_exits_nonzero_on_hard_api_error(tmp_path):
             )
 
     assert exc_info.value.code != 0
+
+
+# ── AbortedOperatorActionable: orchestrator files issue on consuming repo ─────
+
+
+def test_orchestrator_files_issue_on_consuming_repo_when_no_existing_match(tmp_path):
+    """When run_iteration returns AbortedOperatorActionable and the consuming repo has
+    no matching open issue, the orchestrator files exactly one issue with the canonical
+    title prefix and bug+needs-triage labels, then exits non-zero."""
+    from pycastle.services import OperatorActionableGitError
+
+    err = OperatorActionableGitError(
+        "git pull failed",
+        stderr="ssh: connect to host github.com port 22: Connection timed out",
+        op="pull",
+        attempt_count=4,
+    )
+    git_svc = _make_git_svc()
+    git_svc.pull_with_merge_fallback.side_effect = err
+    git_svc.get_github_remote_repo.return_value = ("consuming-owner", "consuming-repo")
+
+    github_svc = _make_github_svc()
+    github_svc.repo = "consuming-owner/consuming-repo"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = 99
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run(tmp_path, git_service=git_svc, github_service=github_svc)
+
+    assert exc_info.value.code != 0
+    github_svc.create_issue_in.assert_called_once()
+    call_args = github_svc.create_issue_in.call_args
+    owner_repo, title, body, labels = call_args[0]
+    assert owner_repo == "consuming-owner/consuming-repo"
+    assert title.startswith("[pycastle] git remote unreachable")
+    assert labels == ["bug", "needs-triage"]
+
+
+def test_orchestrator_skips_filing_when_matching_open_issue_exists(tmp_path):
+    """When the consuming repo already has an open issue matching the title prefix,
+    no new issue is filed, but the orchestrator still exits non-zero."""
+    from pycastle.services import OperatorActionableGitError
+
+    err = OperatorActionableGitError(
+        "git pull failed",
+        stderr="remote: Repository not found",
+        op="pull",
+        attempt_count=1,
+    )
+    git_svc = _make_git_svc()
+    git_svc.pull_with_merge_fallback.side_effect = err
+    git_svc.get_github_remote_repo.return_value = ("consuming-owner", "consuming-repo")
+
+    github_svc = _make_github_svc()
+    github_svc.repo = "consuming-owner/consuming-repo"
+    github_svc.search_open_issues_by_title.return_value = [42]
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run(tmp_path, git_service=git_svc, github_service=github_svc)
+
+    assert exc_info.value.code != 0
+    github_svc.create_issue_in.assert_not_called()
+
+
+def test_orchestrator_filed_issue_body_contains_diagnostic_info(tmp_path):
+    """The filed issue body must contain stderr, attempt count, op name, and host/version info."""
+    from pycastle.services import OperatorActionableGitError
+
+    err = OperatorActionableGitError(
+        "git pull failed",
+        stderr="ssh: connect to host github.com port 22: Connection timed out",
+        op="pull",
+        attempt_count=4,
+    )
+    git_svc = _make_git_svc()
+    git_svc.pull_with_merge_fallback.side_effect = err
+
+    github_svc = _make_github_svc()
+    github_svc.repo = "consuming-owner/consuming-repo"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = 99
+
+    with pytest.raises(SystemExit):
+        _run(tmp_path, git_service=git_svc, github_service=github_svc)
+
+    call_args = github_svc.create_issue_in.call_args
+    _owner_repo, _title, body, _labels = call_args[0]
+    assert "Connection timed out" in body
+    assert "4" in body
+    assert "pull" in body
+    assert "pycastle" in body.lower() or "Python" in body or "OS" in body
+
+
+def test_orchestrator_operator_actionable_never_routes_to_pycastle_upstream(tmp_path):
+    """OperatorActionableGitError must bypass auto_file_issue; pycastle's bug_report_repo
+    must receive nothing."""
+    from pycastle.services import OperatorActionableGitError
+
+    err = OperatorActionableGitError(
+        "git pull failed",
+        stderr="remote: Repository not found",
+        op="pull",
+        attempt_count=1,
+    )
+    git_svc = _make_git_svc()
+    git_svc.pull_with_merge_fallback.side_effect = err
+
+    github_svc = _make_github_svc()
+    github_svc.repo = "consuming-owner/consuming-repo"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = 5
+
+    auto_file_calls: list = []
+
+    with patch(
+        "pycastle.iteration.auto_file_issue",
+        side_effect=lambda *a, **kw: auto_file_calls.append(a),
+    ):
+        with pytest.raises(SystemExit):
+            _run(tmp_path, git_service=git_svc, github_service=github_svc)
+
+    assert auto_file_calls == [], (
+        "auto_file_issue must not be called for operator-actionable git errors"
+    )

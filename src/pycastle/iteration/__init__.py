@@ -15,6 +15,7 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
+from ..services import OperatorActionableGitError
 from ..prompts.pipeline import PromptTemplate
 from ..infrastructure.worktree import worktree_name_for_branch, worktree_path
 from ._deps import Deps
@@ -77,6 +78,13 @@ class AbortedHardApiError:
     status_code: int | None
 
 
+@dataclasses.dataclass(frozen=True)
+class AbortedOperatorActionable:
+    op: str
+    stderr: str
+    attempt_count: int
+
+
 IterationOutcome: TypeAlias = (
     Continue
     | Done
@@ -86,6 +94,7 @@ IterationOutcome: TypeAlias = (
     | AbortedAgentFailure
     | AbortedTimeout
     | AbortedHardApiError
+    | AbortedOperatorActionable
 )
 
 
@@ -247,6 +256,12 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         return AbortedTimeout(
             failed_role=err.role_value,
             worktree_path=err.worktree_path or deps.repo_root,
+        )
+    except OperatorActionableGitError as err:
+        return AbortedOperatorActionable(
+            op=err.op,
+            stderr=err.stderr,
+            attempt_count=err.attempt_count,
         )
     except TransientAgentError:
         return Continue()

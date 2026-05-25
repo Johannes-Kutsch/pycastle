@@ -11,6 +11,7 @@ from . import (
     AbortedAgentFailure,
     AbortedHardApiError,
     AbortedHITL,
+    AbortedOperatorActionable,
     AbortedTimeout,
     AbortedUsageLimit,
     Continue,
@@ -18,6 +19,7 @@ from . import (
     NoCandidate,
     run_iteration,
 )
+from ..bug_reporter import file_operator_actionable_git_issue
 from ._deps import Deps as IterationDeps
 from .dispatcher import ImproveMode
 from .preflight import PreflightCache
@@ -269,6 +271,19 @@ async def run(
                         f"Agent '{role}' timed out. Resuming next iteration.",
                     )
                     continue
+                case AbortedOperatorActionable(op=op, stderr=stderr, attempt_count=cnt):
+                    status_display.print(  # type: ignore[union-attr]
+                        "",
+                        f"git {op} failed after {cnt} attempt(s) — remote unreachable. "
+                        "Check SSH/network and retry.",
+                    )
+                    file_operator_actionable_git_issue(
+                        op=op,
+                        stderr=stderr,
+                        attempt_count=cnt,
+                        github_svc=github_service,
+                    )
+                    sys.exit(1)
                 case Continue():
                     pass
 

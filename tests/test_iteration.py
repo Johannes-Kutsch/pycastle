@@ -3666,3 +3666,80 @@ def test_run_iteration_uses_prefilled_url_when_auto_file_bugs_is_false(
     assert hard_error_prints, "Expected a status_display.print with 'hard API error'"
     msg = str(hard_error_prints[-1][2])
     assert "github.com" in msg
+
+
+# ── AbortedOperatorActionable: OperatorActionableGitError ────────────────────
+
+
+def test_run_iteration_returns_aborted_operator_actionable_on_operator_actionable_git_error(
+    tmp_path, git_svc, github_svc, logger
+):
+    """When OperatorActionableGitError escapes from a git operation, run_iteration
+    returns AbortedOperatorActionable carrying op name, stderr snippet, and attempt count."""
+    from pycastle.services import OperatorActionableGitError
+    from pycastle.iteration import AbortedOperatorActionable
+
+    err = OperatorActionableGitError(
+        "git pull failed after 4 attempts",
+        stderr="ssh: connect to host github.com port 22: Connection timed out",
+        op="pull",
+        attempt_count=4,
+    )
+    git_svc.pull_with_merge_fallback.side_effect = err
+
+    async def _noop_agent(request: RunRequest):
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path, _noop_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedOperatorActionable)
+    assert result.op == "pull"
+    assert result.attempt_count == 4
+    assert "timed out" in result.stderr
+
+
+def test_run_iteration_operator_actionable_does_not_call_auto_file_issue_or_failure_analysis(
+    tmp_path, git_svc, github_svc, logger
+):
+    """OperatorActionableGitError catch arm must not invoke auto_file_issue
+    and must not spawn the Failure-Analysis agent."""
+    from pycastle.services import OperatorActionableGitError
+    from pycastle.iteration import AbortedOperatorActionable
+    import pycastle.bug_reporter as bug_reporter_module
+
+    err = OperatorActionableGitError(
+        "git pull failed",
+        stderr="remote: Repository not found",
+        op="pull",
+        attempt_count=1,
+    )
+    git_svc.pull_with_merge_fallback.side_effect = err
+
+    auto_file_calls: list = []
+    original_auto_file = bug_reporter_module.auto_file_issue
+
+    def _recording_auto_file(title, body, labels, *, cfg):
+        auto_file_calls.append((title, body))
+        return original_auto_file(title, body, labels, cfg=cfg)
+
+    async def _noop_agent(request: RunRequest):
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path, _noop_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+
+    with patch("pycastle.iteration.auto_file_issue", side_effect=_recording_auto_file):
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedOperatorActionable)
+    assert auto_file_calls == [], (
+        "auto_file_issue must not be called for OperatorActionableGitError"
+    )
+    agent_calls = deps.agent_runner.calls
+    assert not any("Failure" in r.name for r in agent_calls), (
+        "Failure-Analysis agent must not be spawned"
+    )

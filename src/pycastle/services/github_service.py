@@ -370,6 +370,14 @@ class GithubService:
             data={"body": body},
         )
 
+    def search_open_issues_by_title(self, prefix: str) -> list[int]:
+        q = quote(f"{prefix} in:title state:open repo:{self.repo}", safe="")
+        payload, _ = self._request("GET", f"/search/issues?q={q}&per_page=100")
+        if not isinstance(payload, dict):
+            return []
+        items = payload.get("items") or []
+        return [int(item["number"]) for item in items if "number" in item]
+
     def create_issue_in(
         self, owner_repo: str, title: str, body: str, labels: list[str]
     ) -> int:

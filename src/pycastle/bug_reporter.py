@@ -16,6 +16,7 @@ import platform
 import sys
 import traceback
 from importlib.metadata import PackageNotFoundError, version
+from typing import Any
 from urllib.parse import quote
 
 from .config import Config
@@ -164,6 +165,53 @@ def auto_file_issue(
     url = _build_bug_report_url(title, body, labels, repo)
     print(url)
     return url
+
+
+_GIT_REMOTE_UNREACHABLE_TITLE_PREFIX = "[pycastle] git remote unreachable"
+_GIT_REMOTE_UNREACHABLE_LABELS = ["bug", "needs-triage"]
+
+
+def file_operator_actionable_git_issue(
+    *,
+    op: str,
+    stderr: str,
+    attempt_count: int,
+    github_svc: "Any",
+) -> None:
+    """File one deduped issue on the consuming project's origin tracker for an
+    OperatorActionableGitError. Never files on bug_report_repo. Never raises."""
+    try:
+        existing = github_svc.search_open_issues_by_title(
+            _GIT_REMOTE_UNREACHABLE_TITLE_PREFIX
+        )
+        if existing:
+            return
+        title = f"{_GIT_REMOTE_UNREACHABLE_TITLE_PREFIX}: {op} failed after {attempt_count} attempt(s)"
+        body = _build_operator_actionable_body(
+            op=op, stderr=stderr, attempt_count=attempt_count
+        )
+        number = github_svc.create_issue_in(
+            github_svc.repo,
+            title,
+            body,
+            _GIT_REMOTE_UNREACHABLE_LABELS,
+        )
+        print(f"Filed issue #{number} on {github_svc.repo}: {title}")
+    except Exception:
+        pass
+
+
+def _build_operator_actionable_body(*, op: str, stderr: str, attempt_count: int) -> str:
+    env = _env_block()
+    return (
+        f"## git remote unreachable: `{op}` failed after {attempt_count} attempt(s)\n\n"
+        f"### Last stderr\n\n```\n{stderr}\n```\n\n"
+        f"### Troubleshooting hints\n\n"
+        f"- Check your SSH key or HTTPS credentials are valid for the remote.\n"
+        f"- Verify the remote URL with `git remote get-url origin`.\n"
+        f"- Confirm network connectivity to the remote host.\n\n"
+        f"{env}"
+    )
 
 
 def report_and_exit(
