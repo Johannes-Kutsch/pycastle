@@ -1248,102 +1248,62 @@ def test_prune_orphan_worktrees_does_not_look_in_hardcoded_pycastle_dir(tmp_path
 # ── prune_orphan_worktrees: git-registered worktrees without role sessions ────
 
 
-def test_prune_orphan_worktrees_tears_down_registered_worktree_with_no_role_session(
-    repo,
-):
-    """A git-registered worktree dir with no role session is torn down and removed from git."""
+@pytest.fixture
+def registered_orphan(repo):
+    """A git-registered worktree on pycastle/issue-99 with no role session."""
     from pycastle.infrastructure.worktree import prune_orphan_worktrees
 
     cfg = Config(pycastle_dir=".pycastle")
     worktrees_dir = repo / ".pycastle" / ".worktrees"
     worktrees_dir.mkdir(parents=True)
-
     wt_path = worktrees_dir / "issue-99"
     subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo),
-            "worktree",
-            "add",
-            "-b",
-            "pycastle/issue-99",
-            str(wt_path),
-            "HEAD",
-        ],
-        check=True,
-        capture_output=True,
+        ["git", "-C", str(repo), "worktree", "add", "-b",
+         "pycastle/issue-99", str(wt_path), "HEAD"],
+        check=True, capture_output=True,
+    )  # fmt: skip
+    return SimpleNamespace(
+        repo=repo,
+        cfg=cfg,
+        svc=GitService(cfg),
+        wt_path=wt_path,
+        branch="pycastle/issue-99",
+        sweep=lambda: prune_orphan_worktrees(
+            repo, cfg=cfg, git_service=GitService(cfg)
+        ),
     )
 
-    svc = GitService(cfg)
-    prune_orphan_worktrees(repo, cfg=cfg, git_service=svc)
 
-    registered = svc.list_worktrees(repo)
-    assert wt_path not in registered
-    assert not wt_path.exists()
-
-
-def test_prune_orphan_worktrees_deletes_empty_branch_after_teardown(repo):
-    """Empty branch left behind by a torn-down crash worktree is deleted."""
-    from pycastle.infrastructure.worktree import prune_orphan_worktrees
-
-    cfg = Config(pycastle_dir=".pycastle")
-    worktrees_dir = repo / ".pycastle" / ".worktrees"
-    worktrees_dir.mkdir(parents=True)
-
-    wt_path = worktrees_dir / "issue-99"
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo),
-            "worktree",
-            "add",
-            "-b",
-            "pycastle/issue-99",
-            str(wt_path),
-            "HEAD",
-        ],
-        check=True,
-        capture_output=True,
-    )
-
-    svc = GitService(cfg)
-    prune_orphan_worktrees(repo, cfg=cfg, git_service=svc)
-
-    branches = subprocess.run(
-        ["git", "-C", str(repo), "branch", "--list", "pycastle/issue-99"],
+def _branch_exists(repo: Path, branch: str) -> bool:
+    out = subprocess.run(
+        ["git", "-C", str(repo), "branch", "--list", branch],
         capture_output=True,
         text=True,
     ).stdout
-    assert "pycastle/issue-99" not in branches
+    return branch in out
 
 
-def test_prune_orphan_worktrees_preserves_branch_with_commits_ahead_of_main(repo):
-    """A branch with commits ahead of main is NOT deleted even when its worktree is torn down."""
-    from pycastle.infrastructure.worktree import prune_orphan_worktrees
+def test_prune_orphan_worktrees_tears_down_registered_worktree_with_no_role_session(
+    registered_orphan,
+):
+    registered_orphan.sweep()
 
-    cfg = Config(pycastle_dir=".pycastle")
-    worktrees_dir = repo / ".pycastle" / ".worktrees"
-    worktrees_dir.mkdir(parents=True)
-
-    wt_path = worktrees_dir / "issue-99"
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo),
-            "worktree",
-            "add",
-            "-b",
-            "pycastle/issue-99",
-            str(wt_path),
-            "HEAD",
-        ],
-        check=True,
-        capture_output=True,
+    assert registered_orphan.wt_path not in registered_orphan.svc.list_worktrees(
+        registered_orphan.repo
     )
-    # Add a commit on the branch
+    assert not registered_orphan.wt_path.exists()
+
+
+def test_prune_orphan_worktrees_deletes_empty_branch_after_teardown(registered_orphan):
+    registered_orphan.sweep()
+
+    assert not _branch_exists(registered_orphan.repo, registered_orphan.branch)
+
+
+def test_prune_orphan_worktrees_preserves_branch_with_commits_ahead_of_main(
+    registered_orphan,
+):
+    wt_path = registered_orphan.wt_path
     (wt_path / "work.txt").write_text("real work")
     subprocess.run(
         ["git", "-C", str(wt_path), "add", "work.txt"], check=True, capture_output=True
@@ -1354,47 +1314,21 @@ def test_prune_orphan_worktrees_preserves_branch_with_commits_ahead_of_main(repo
         capture_output=True,
     )
 
-    svc = GitService(cfg)
-    prune_orphan_worktrees(repo, cfg=cfg, git_service=svc)
+    registered_orphan.sweep()
 
-    branches = subprocess.run(
-        ["git", "-C", str(repo), "branch", "--list", "pycastle/issue-99"],
-        capture_output=True,
-        text=True,
-    ).stdout
-    assert "pycastle/issue-99" in branches
+    assert _branch_exists(registered_orphan.repo, registered_orphan.branch)
 
 
-def test_prune_orphan_worktrees_does_not_tear_down_worktree_with_role_session(repo):
-    """A git-registered worktree that has a role session dir is left untouched."""
-    from pycastle.infrastructure.worktree import prune_orphan_worktrees
-
-    cfg = Config(pycastle_dir=".pycastle")
-    worktrees_dir = repo / ".pycastle" / ".worktrees"
-    worktrees_dir.mkdir(parents=True)
-
-    wt_path = worktrees_dir / "issue-99"
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo),
-            "worktree",
-            "add",
-            "-b",
-            "pycastle/issue-99",
-            str(wt_path),
-            "HEAD",
-        ],
-        check=True,
-        capture_output=True,
+def test_prune_orphan_worktrees_does_not_tear_down_worktree_with_role_session(
+    registered_orphan,
+):
+    (registered_orphan.wt_path / ".pycastle-session" / "implementer").mkdir(
+        parents=True
     )
-    # Create a role session dir (stage-done sentinel or active session)
-    (wt_path / ".pycastle-session" / "implementer").mkdir(parents=True)
 
-    svc = GitService(cfg)
-    prune_orphan_worktrees(repo, cfg=cfg, git_service=svc)
+    registered_orphan.sweep()
 
-    registered = svc.list_worktrees(repo)
-    assert wt_path in registered
-    assert wt_path.exists()
+    assert registered_orphan.wt_path in registered_orphan.svc.list_worktrees(
+        registered_orphan.repo
+    )
+    assert registered_orphan.wt_path.exists()
