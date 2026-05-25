@@ -158,31 +158,23 @@ def test_build_command_includes_universal_flag_for_every_role(flag, role):
     assert flag in ClaudeService().build_command(role=role)
 
 
-def test_build_command_planner_includes_bare_flag():
-    cmd = ClaudeService().build_command(role=AgentRole.PLANNER)
-    assert "--bare" in cmd
-
-
 def test_build_command_planner_includes_tools_read_glob():
     cmd = ClaudeService().build_command(role=AgentRole.PLANNER)
     assert "--tools Read,Glob" in cmd
 
 
-def test_build_command_implementer_excludes_bare_and_tools():
+def test_build_command_divergence_resolver_includes_tools_read_edit_bash():
+    cmd = ClaudeService().build_command(role=AgentRole.DIVERGENCE_RESOLVER)
+    assert "--tools Read,Edit,Bash" in cmd
+
+
+def test_build_command_implementer_excludes_tools():
     cmd = ClaudeService().build_command(role=AgentRole.IMPLEMENTER)
-    assert "--bare" not in cmd
     assert "--tools" not in cmd
 
 
-def test_build_command_includes_bare_for_divergence_resolver():
-    cmd = ClaudeService().build_command(role=AgentRole.DIVERGENCE_RESOLVER)
-    assert "--bare" in cmd
-
-
-def test_build_command_excludes_bare_for_other_roles():
+def test_build_command_never_includes_bare_flag():
     for role in AgentRole:
-        if role in (AgentRole.DIVERGENCE_RESOLVER, AgentRole.PLANNER):
-            continue
         cmd = ClaudeService().build_command(role=role)
         assert "--bare" not in cmd, f"--bare should not appear for role {role}"
 
@@ -221,8 +213,8 @@ def test_build_command_excludes_disallowed_tools_for_other_roles():
         (AgentRole.PREFLIGHT_ISSUE, True),
         (AgentRole.IMPROVE, True),
         (AgentRole.FAILURE_REPORT, True),
-        (AgentRole.PLANNER, False),
-        (AgentRole.DIVERGENCE_RESOLVER, False),
+        (AgentRole.PLANNER, True),
+        (AgentRole.DIVERGENCE_RESOLVER, True),
     ],
 )
 def test_build_command_strict_mcp_config_matches_role(role, expects_strict_mcp):

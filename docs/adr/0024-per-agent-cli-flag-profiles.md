@@ -1,5 +1,7 @@
 # Per-agent Claude CLI flag profiles for token reduction
 
+**Amended by #871**: `--bare` removed from Planner and divergence-resolver. The `--bare` CLI flag refuses OAuth/keychain auth (`claude --help`: "Anthropic auth is strictly `ANTHROPIC_API_KEY` or `apiKeyHelper`"), so the two bare roles could not authenticate in pycastle's OAuth-token deployment (ADR 0005). Both roles now run non-bare with explicit tool restrictions: Planner keeps `--tools "Read,Glob"`; divergence-resolver gains `--tools "Read,Edit,Bash"` to preserve the tool-surface contract `--bare` previously provided. Both roles now also receive `--strict-mcp-config --mcp-config '{"mcpServers":{}}'` explicitly (was implicit under `--bare`). Trade-off: the two roles no longer get `--bare`'s CLAUDE.md auto-discovery suppression — accepted because (a) pycastle's CLAUDE.md is a thin pointer file, (b) no surgical "skip CLAUDE.md only" flag exists, (c) the alternative (drop OAuth, require API keys) has unacceptable blast radius. The `bare` field on `FlagProfile` is removed since no role uses it. The rest of this ADR — universal flags, investigator restriction, MCP suppression, divergence-resolver no-CHECKS contract — is unchanged.
+
 `claude_service.build_command` previously emitted the same flag set for every agent role. The orchestrator now selects a per-role flag profile that strips Claude Code surface the role doesn't use, plus a small set of universal token-savers. The profile is hardcoded per `AgentRole` — not user-tunable — because the flags encode the role's *contract* (Planner emits JSON; Reviewer enforces conventions; divergence-resolver is mechanical) and not a tuning preference.
 
 ## Universal flags (every role)
@@ -7,12 +9,12 @@
 - `--disable-slash-commands` — pycastle agents never invoke slash commands; user-authored skills/commands in the mounted worktree are silent prompt-injection vectors outside the prompt contract.
 - `--exclude-dynamic-system-prompt-sections` — hoists per-machine sections (cwd, env, memory paths) to the first user message so the system prompt is cache-stable across worktrees; a structural win for parallel implement runs on `.pycastle/.worktrees/issue-<N>-<slug>`.
 
-## Bare set: Planner + divergence-resolver
+## Tool-restricted roles: Planner + divergence-resolver
 
-Both run `--bare`, which skips auto-discovery of hooks, skills, plugins, MCP, auto memory, and CLAUDE.md and restricts built-in tools to Bash + Read + Edit.
+Originally these ran `--bare`. Per #871 (see amendment note above), both now run non-bare with explicit `--tools` restrictions that preserve the same tool-surface contract.
 
-- **Planner** — emits `<plan>` JSON over injected issue lists; doesn't grep the codebase. Bare safe; further restricted with `--tools "Read,Glob"` since Bash and Edit are unused. CLAUDE.md auto-discovery skipped, but the plan prompt is updated to instruct the agent to consult `CONTEXT.md` and `docs/adr/` directly via `Read` when blocker analysis needs architectural context.
-- **Divergence-resolver** — bare safe *only after* the no-CHECKS contract change below.
+- **Planner** — emits `<plan>` JSON over injected issue lists; doesn't grep the codebase. Restricted with `--tools "Read,Glob"` since Bash and Edit are unused. The plan prompt instructs the agent to consult `CONTEXT.md` and `docs/adr/` directly via `Read` when blocker analysis needs architectural context.
+- **Divergence-resolver** — restricted with `--tools "Read,Edit,Bash"` (mirrors the Bash+Read+Edit set `--bare` previously enforced). Safe *only after* the no-CHECKS contract change below.
 
 ## Non-bare investigator restriction
 
@@ -22,13 +24,13 @@ Both run `--bare`, which skips auto-discovery of hooks, skills, plugins, MCP, au
 
 Implementer, Reviewer, Merger get no tool restriction. Reviewer is in this group despite emitting `<commit_message>` because `review-prompt.md` instructs the reviewer to write missing tests, refactor red-flag tests, fix bugs found, and reduce complexity (steps 2-6) — i.e. Reviewer actively modifies code.
 
-## MCP suppression on non-bare roles
+## MCP suppression on all roles
 
-All five non-bare roles also get `--strict-mcp-config --mcp-config '{}'` — same logic as `--disable-slash-commands`: MCP servers from the mounted worktree's `.mcp.json` are silent tool-surface expansions outside the prompt contract.
+Every role gets `--strict-mcp-config --mcp-config '{"mcpServers":{}}'` — same logic as `--disable-slash-commands`: MCP servers from the mounted worktree's `.mcp.json` are silent tool-surface expansions outside the prompt contract. (Pre-#871 this applied only to non-bare roles; under `--bare` MCP was implicitly disabled. Now applied uniformly.)
 
 ## Divergence-resolver no-CHECKS contract
 
-Coupled change without which divergence-resolver is *not* bare-safe.
+Independent of the bare/non-bare choice — survives the #871 amendment unchanged.
 
 Previous: `diverge-prompt.md` step 5 instructed the resolver to run `{{CHECKS}}` post-merge and step 6 committed unconditionally. Prompt was silent on what to do if CHECKS failed, giving the agent latitude to fix code inline — latitude that relied on CLAUDE.md and conventions context.
 

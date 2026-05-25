@@ -280,8 +280,6 @@ class ClaudeService:
             "--verbose --dangerously-skip-permissions --output-format stream-json -p -"
             " --disable-slash-commands --exclude-dynamic-system-prompt-sections"
         )
-        if profile.bare:
-            flags += " --bare"
         if profile.tools is not None:
             flags += f" --tools {shlex.quote(profile.tools)}"
         if profile.disallowed_tools:
