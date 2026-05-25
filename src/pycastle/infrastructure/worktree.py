@@ -63,9 +63,28 @@ def prune_orphan_worktrees(
     if not worktrees_dir.exists():
         return
     active = {str(p) for p in svc.list_worktrees(repo_root)}
-    for child in worktrees_dir.iterdir():
-        if str(child.resolve()) not in active and child.is_dir():
+    for child in list(worktrees_dir.iterdir()):
+        if not child.is_dir():
+            continue
+        if str(child.resolve()) not in active:
             shutil.rmtree(child)
+        elif not any_role_dir_present(child):
+            try:
+                branch: str | None = svc.get_current_branch(child)
+            except Exception:
+                branch = None
+            empty_branch = False
+            if branch and branch != "HEAD":
+                try:
+                    empty_branch = not svc.has_commits_ahead_of_main(child)
+                except Exception:
+                    pass
+            teardown_worktree(svc, repo_root, child)
+            if empty_branch and branch:
+                try:
+                    svc.delete_branch(branch, repo_root)
+                except Exception:
+                    pass
     remove_worktrees_dir_if_empty(worktrees_dir)
 
 
