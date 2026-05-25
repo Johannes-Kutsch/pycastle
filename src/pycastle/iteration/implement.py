@@ -14,7 +14,6 @@ from ..errors import (
     AgentFailedError,
     BranchCollisionError,
     HardAgentError,
-    InvalidSliceLabelError,
     TransientAgentError,
     UsageLimitError,
 )
@@ -48,22 +47,8 @@ def branch_for(issue_number: int) -> str:
 
 def _resolve_slice(issue: dict, cfg: Config) -> tuple[str, PromptTemplate]:
     result = classify_slice(issue, cfg)
-    if isinstance(result, WellFormed):
-        return result.mode.display_name, result.mode.template
-    slice_map_keys = [
-        cfg.refactor_slice_label,
-        cfg.behavior_slice_label,
-        cfg.docs_slice_label,
-    ]
-    issue_labels: list[str] = issue.get("labels", [])
-    matches = result.found
-    if not matches:
-        detail = f"expected one of {slice_map_keys}, got labels={issue_labels}"
-    else:
-        detail = f"multiple slice-mode labels found: {matches}"
-    raise InvalidSliceLabelError(
-        f"Issue #{issue['number']}: invalid slice-mode label — {detail}"
-    )
+    assert isinstance(result, WellFormed)
+    return result.mode.display_name, result.mode.template
 
 
 def pick_implement_template(issue: dict, cfg: Config) -> PromptTemplate:

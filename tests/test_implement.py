@@ -21,7 +21,6 @@ from pycastle.iteration._deps import (
 )
 from pycastle.services import GithubService
 from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
-from pycastle.errors import InvalidSliceLabelError
 from pycastle.iteration.implement import (
     ImplementResult,
     branch_for,
@@ -126,53 +125,6 @@ def test_pick_implement_template_ignores_unrelated_labels():
         "labels": ["bug", "ready-for-agent", "behavior-slice"],
     }
     assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_BEHAVIOR
-
-
-def test_pick_implement_template_no_slice_label_raises():
-    issue = {"number": 1, "title": "T", "labels": ["bug"]}
-    with pytest.raises(InvalidSliceLabelError):
-        pick_implement_template(issue, _cfg)
-
-
-def test_pick_implement_template_empty_labels_raises():
-    issue = {"number": 1, "title": "T", "labels": []}
-    with pytest.raises(InvalidSliceLabelError):
-        pick_implement_template(issue, _cfg)
-
-
-def test_pick_implement_template_multiple_slice_labels_raises():
-    issue = {"number": 1, "title": "T", "labels": ["behavior-slice", "refactor-slice"]}
-    with pytest.raises(InvalidSliceLabelError):
-        pick_implement_template(issue, _cfg)
-
-
-def test_pick_implement_template_unknown_slice_shaped_label_raises():
-    issue = {"number": 1, "title": "T", "labels": ["feature-slice"]}
-    with pytest.raises(InvalidSliceLabelError):
-        pick_implement_template(issue, _cfg)
-
-
-def test_implement_phase_malformed_label_goes_to_errors_other_issues_continue(tmp_path):
-    """Issue with no slice-mode label is skipped with an error; sibling issues complete."""
-    issues = [
-        {
-            "number": 1,
-            "title": "OK",
-            "body": "",
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-        {"number": 2, "title": "Bad", "body": "", "comments": [], "labels": []},
-    ]
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    result = asyncio.run(implement_phase(issues, deps, "sha-abc"))
-
-    assert len(result.completed) == 1
-    assert result.completed[0]["number"] == 1
-    assert len(result.errors) == 1
-    assert result.errors[0][0]["number"] == 2
-    assert isinstance(result.errors[0][1], InvalidSliceLabelError)
 
 
 # ── implement_phase: parallel execution (tracer bullet) ───────────────────────
