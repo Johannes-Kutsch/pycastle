@@ -9,6 +9,8 @@ from pycastle.agents.output_protocol import (
     AgentOutput,
     AgentOutputProtocolError,
     AgentRole,
+    BehaviorOutput,
+    BehaviorParseError,
     CommitMessageOutput,
     CompletionOutput,
     IssueOutput,
@@ -1098,3 +1100,155 @@ def test_process_stream_from_events_merger_raises_promise_parse_error_on_empty()
         process_stream_from_events(
             iter([]), on_turn=lambda t: None, role=AgentRole.MERGER
         )
+
+
+# ── <behavior> tag — per-behavior emission ────────────────────────────────────
+
+
+def _behavior_block(
+    name: str = "per-behavior emission",
+    observable_surface: str = "CommitMessageOutput carries N BehaviorOutput values",
+    test_file: str = "tests/test_foo.py",
+    failing_test_output: str = "FAILED tests/test_foo.py::test_thing - AssertionError",
+) -> str:
+    return (
+        f"<behavior>\n"
+        f"Behavior name: {name}\n"
+        f"Observable surface: {observable_surface}\n"
+        f"Test file: {test_file}\n"
+        f"Failing test output:\n{failing_test_output}\n"
+        f"</behavior>"
+    )
+
+
+def test_behavior_parse_error_is_subclass_of_base():
+    assert issubclass(BehaviorParseError, AgentOutputProtocolError)
+
+
+def test_behavior_output_is_frozen():
+    out = BehaviorOutput(
+        name="x",
+        observable_surface="y",
+        test_file="tests/test_x.py",
+        failing_test_output="FAILED",
+    )
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        out.name = "z"  # type: ignore[misc]
+
+
+def test_process_stream_behavior_slice_surfaces_one_behavior_output():
+    text = _behavior_block() + "\n<commit_message>add feature</commit_message>"
+    result = process_stream(
+        [_result_line(text)],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        behavior_slice=True,
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert len(result.behaviors) == 1
+    b = result.behaviors[0]
+    assert b.name == "per-behavior emission"
+    assert "CommitMessageOutput" in b.observable_surface
+    assert b.test_file == "tests/test_foo.py"
+    assert "FAILED" in b.failing_test_output
+
+
+def test_process_stream_behavior_slice_surfaces_n_behavior_outputs():
+    text = (
+        _behavior_block(name="first behavior")
+        + "\n"
+        + _behavior_block(name="second behavior")
+        + "\n<commit_message>add features</commit_message>"
+    )
+    result = process_stream(
+        [_result_line(text)],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        behavior_slice=True,
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert len(result.behaviors) == 2
+    assert result.behaviors[0].name == "first behavior"
+    assert result.behaviors[1].name == "second behavior"
+
+
+def test_process_stream_behavior_slice_raises_when_no_behavior_tags():
+    text = "<commit_message>add feature</commit_message>"
+    with pytest.raises(BehaviorParseError):
+        process_stream(
+            [_result_line(text)],
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+            behavior_slice=True,
+        )
+
+
+def test_process_stream_non_behavior_slice_does_not_raise_when_no_behavior_tags():
+    text = "<commit_message>refactor done</commit_message>"
+    result = process_stream(
+        [_result_line(text)],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        behavior_slice=False,
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert result.behaviors == ()
+
+
+def test_process_stream_behavior_slice_collects_behaviors_from_earlier_turns():
+    result = process_stream(
+        [
+            _assistant_line(_behavior_block(name="first behavior")),
+            _assistant_line(
+                _behavior_block(name="second behavior")
+                + "\n<commit_message>done</commit_message>"
+            ),
+        ],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        behavior_slice=True,
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert len(result.behaviors) == 2
+    assert result.behaviors[0].name == "first behavior"
+    assert result.behaviors[1].name == "second behavior"
+
+
+def test_process_stream_behavior_slice_behaviors_in_result_envelope_only():
+    text = (
+        _behavior_block(name="env behavior") + "\n<commit_message>done</commit_message>"
+    )
+    result = process_stream(
+        [_result_line(text)],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        behavior_slice=True,
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert len(result.behaviors) == 1
+    assert result.behaviors[0].name == "env behavior"
+
+
+def test_process_stream_from_events_behavior_slice_enforces_behavior_tag():
+    events = [
+        AssistantTurn(text="<commit_message>done</commit_message>"),
+    ]
+    with pytest.raises(BehaviorParseError):
+        process_stream_from_events(
+            iter(events),
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+            behavior_slice=True,
+        )
+
+
+def test_process_stream_from_events_non_behavior_slice_no_raise_without_behavior_tags():
+    events = [AssistantTurn(text="<commit_message>done</commit_message>")]
+    result = process_stream_from_events(
+        iter(events),
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        behavior_slice=False,
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert result.behaviors == ()
