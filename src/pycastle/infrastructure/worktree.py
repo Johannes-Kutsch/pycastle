@@ -213,8 +213,12 @@ async def managed_worktree(
         except Exception:
             dirty = True
         if not (_preservation_worthy_exc or dirty or any_role_dir_present(path)):
+            try:
+                _branch_has_commits = deps.git_svc.has_commits_ahead_of_main(path)
+            except Exception:
+                _branch_has_commits = True
             teardown_worktree(deps.git_svc, deps.repo_root, path)
-            if delete_branch_on_teardown:
+            if delete_branch_on_teardown or not _branch_has_commits:
                 deps.git_svc.delete_branch(branch, deps.repo_root)
 
 

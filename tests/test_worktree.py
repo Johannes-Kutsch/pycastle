@@ -323,8 +323,19 @@ def test_managed_worktree_succeeds_after_stale_git_registration(real_branch_deps
             sha=None,
             delete_branch_on_teardown=False,
             deps=real_branch_deps,
-        ):
-            pass
+        ) as wt:
+            # commit so the branch has WIP and is preserved by the empty-branch cleanup rule
+            (wt / "stale.txt").write_text("wip")
+            subprocess.run(
+                ["git", "-C", str(wt), "add", "stale.txt"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(wt), "commit", "-m", "wip"],
+                check=True,
+                capture_output=True,
+            )
 
     asyncio.run(_create_stale())
 
@@ -452,6 +463,13 @@ def test_managed_worktree_does_not_recreate_valid_ancestor_branch(git_repo):
     cfg = Config(pycastle_dir=".pycastle")
     deps = SimpleNamespace(repo_root=git_repo, cfg=cfg, git_svc=GitService(cfg))
 
+    main_tip = subprocess.run(
+        ["git", "-C", str(git_repo), "rev-parse", "main"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
     async def _run():
         async with managed_worktree(
             "issue-3",
@@ -461,6 +479,21 @@ def test_managed_worktree_does_not_recreate_valid_ancestor_branch(git_repo):
             deps=deps,
         ) as path:
             assert (path / "pyproject.toml").exists()
+            assert not (path / "extra.txt").exists(), (
+                "branch must not be recreated from HEAD"
+            )
+            # commit WIP so the branch is preserved after teardown
+            (path / "impl.txt").write_text("impl")
+            subprocess.run(
+                ["git", "-C", str(path), "add", "impl.txt"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(path), "commit", "-m", "impl"],
+                check=True,
+                capture_output=True,
+            )
 
     asyncio.run(_run())
 
@@ -470,8 +503,11 @@ def test_managed_worktree_does_not_recreate_valid_ancestor_branch(git_repo):
         text=True,
         check=True,
     ).stdout.strip()
-    assert branch_tip_before == branch_tip_after, (
-        "branch must not be recreated when project files are present"
+    assert branch_tip_after != main_tip, (
+        "branch must not be recreated from HEAD (tip must diverge from main)"
+    )
+    assert branch_tip_after != branch_tip_before, (
+        "new commit must advance the branch tip"
     )
 
 
@@ -1332,3 +1368,86 @@ def test_prune_orphan_worktrees_does_not_tear_down_worktree_with_role_session(
         registered_orphan.repo
     )
     assert registered_orphan.wt_path.exists()
+
+
+# ── managed_worktree: empty-branch cleanup overrides delete_branch_on_teardown ─
+
+
+def test_managed_worktree_preserves_branch_with_commits_when_delete_branch_on_teardown_false(
+    real_branch_deps,
+):
+    """With delete_branch_on_teardown=False, a branch with at least one commit ahead of
+    main must not be deleted on the teardown path — it represents WIP."""
+
+    async def _run():
+        async with managed_worktree(
+            "issue-wip",
+            branch="pycastle/issue-wip",
+            sha=None,
+            delete_branch_on_teardown=False,
+            deps=real_branch_deps,
+        ) as path:
+            (path / "wip.txt").write_text("work in progress")
+            subprocess.run(
+                ["git", "-C", str(path), "add", "wip.txt"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(path), "commit", "-m", "wip commit"],
+                check=True,
+                capture_output=True,
+            )
+
+    asyncio.run(_run())
+
+    branches = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(real_branch_deps.repo_root),
+            "branch",
+            "--list",
+            "pycastle/issue-wip",
+        ],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "pycastle/issue-wip" in branches
+
+
+def test_managed_worktree_deletes_empty_branch_when_delete_branch_on_teardown_false(
+    real_branch_deps,
+):
+    """With delete_branch_on_teardown=False, an empty branch (zero commits ahead of main)
+    must be deleted on the teardown path — empty branches are not WIP."""
+    worktree_path: Path | None = None
+
+    async def _run():
+        nonlocal worktree_path
+        async with managed_worktree(
+            "issue-empty",
+            branch="pycastle/issue-empty",
+            sha=None,
+            delete_branch_on_teardown=False,
+            deps=real_branch_deps,
+        ) as path:
+            worktree_path = path
+
+    asyncio.run(_run())
+
+    assert worktree_path is not None
+    assert not worktree_path.exists()
+    branches = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(real_branch_deps.repo_root),
+            "branch",
+            "--list",
+            "pycastle/issue-empty",
+        ],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "pycastle/issue-empty" not in branches
