@@ -1513,21 +1513,11 @@ def test_implement_phase_never_opens_more_than_max_parallel_plus_one_worktrees(
 
     open_wts: list[int] = [0]
     peak_wts: list[int] = [0]
-    wt_lock = asyncio.Lock()
 
     git_svc = MagicMock(spec=GitService)
     git_svc.verify_ref_exists.return_value = False
 
     _registered: list[Path] = []
-
-    async def _fake_create(repo, path, branch, sha=None):
-        path.mkdir(parents=True, exist_ok=True)
-        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
-        _registered.append(path)
-        async with wt_lock:
-            open_wts[0] += 1
-            if open_wts[0] > peak_wts[0]:
-                peak_wts[0] = open_wts[0]
 
     def _sync_create(repo, path, branch, sha=None):
         path.mkdir(parents=True, exist_ok=True)
