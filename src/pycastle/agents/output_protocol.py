@@ -49,8 +49,17 @@ class NoCandidateOutput:
 
 
 @dataclasses.dataclass(frozen=True)
+class BehaviorOutput:
+    name: str
+    observable_surface: str
+    test_file: str
+    failing_test_output: str
+
+
+@dataclasses.dataclass(frozen=True)
 class CommitMessageOutput:
     message: str | None
+    behaviors: tuple[BehaviorOutput, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -92,6 +101,10 @@ class PromiseParseError(AgentOutputProtocolError):
     pass
 
 
+class BehaviorParseError(AgentOutputProtocolError):
+    pass
+
+
 def _strip_markdown_fence(s: str) -> str:
     s = s.strip()
     if s.startswith("```"):
@@ -129,6 +142,40 @@ def _last_tag_block(text: str, tag: str) -> str | None:
     for body in _iter_tag_block_candidates(text, tag):
         return body
     return None
+
+
+_BEHAVIOR_TAG_RE = re.compile(r"<behavior>(.*?)</behavior>", re.DOTALL)
+_BEHAVIOR_FIELD_RE = re.compile(
+    r"Behavior name:\s*(.*?)\n"
+    r"Observable surface:\s*(.*?)\n"
+    r"Test file:\s*(.*?)\n"
+    r"Failing test output:\n(.*)",
+    re.DOTALL,
+)
+
+
+def _parse_behavior_body(body: str) -> BehaviorOutput:
+    m = _BEHAVIOR_FIELD_RE.match(body.strip())
+    if m is None:
+        raise BehaviorParseError(
+            f"<behavior> tag body does not match expected format: {body[:200]!r}"
+        )
+    return BehaviorOutput(
+        name=m.group(1).strip(),
+        observable_surface=m.group(2).strip(),
+        test_file=m.group(3).strip(),
+        failing_test_output=m.group(4).strip(),
+    )
+
+
+def _extract_all_behaviors(text: str) -> tuple[BehaviorOutput, ...]:
+    results = []
+    for m in _BEHAVIOR_TAG_RE.finditer(text):
+        try:
+            results.append(_parse_behavior_body(m.group(1)))
+        except BehaviorParseError:
+            pass
+    return tuple(results)
 
 
 def _extract_planner_output(text: str) -> PlannerOutput:
@@ -353,12 +400,28 @@ _HANDLERS: dict[AgentRole, _RoleHandler] = {
 assert len(_HANDLERS) == len(AgentRole)
 
 
+def _inject_behaviors(
+    result: AgentOutput,
+    text: str,
+    behavior_slice: bool,
+) -> AgentOutput:
+    if not isinstance(result, CommitMessageOutput):
+        return result
+    behaviors = _extract_all_behaviors(text)
+    if behavior_slice and not behaviors:
+        raise BehaviorParseError(
+            "Behavior-slice Implementer produced no <behavior> tags."
+        )
+    return CommitMessageOutput(message=result.message, behaviors=behaviors)
+
+
 def process_stream_from_events(
     events: "Iterable[ParsedTurn]",
     on_turn: Callable[[str], None],
     role: AgentRole,
     on_tokens: Callable[[int], None] | None = None,
     provider: str | None = None,
+    behavior_slice: bool = False,
 ) -> AgentOutput:
     from ..services.agent_service import (
         AssistantTurn,
@@ -397,13 +460,15 @@ def process_stream_from_events(
             collected_turns.append(event.text)
             result = handler.check_turn(event.text)
             if result is not None:
-                return result
+                full_text = "\n".join(collected_turns)
+                return _inject_behaviors(result, full_text, behavior_slice)
         elif isinstance(event, Result):
             result_text = event.text
             break
     text = result_text if result_text is not None else "\n".join(collected_turns)
     tail = f"\nOutput tail: {text[-300:]!r}"
-    return handler.extract_final(text, tail)
+    result = handler.extract_final(text, tail)
+    return _inject_behaviors(result, text, behavior_slice)
 
 
 def process_stream(
@@ -411,9 +476,15 @@ def process_stream(
     on_turn: Callable[[str], None],
     role: AgentRole,
     on_tokens: Callable[[int], None] | None = None,
+    behavior_slice: bool = False,
 ) -> AgentOutput:
     from ..services.claude_service import ClaudeService
 
     return process_stream_from_events(
-        ClaudeService().run(lines), on_turn, role, on_tokens, provider="claude"
+        ClaudeService().run(lines),
+        on_turn,
+        role,
+        on_tokens,
+        provider="claude",
+        behavior_slice=behavior_slice,
     )
