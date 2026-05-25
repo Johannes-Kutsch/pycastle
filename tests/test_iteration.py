@@ -3751,3 +3751,133 @@ def test_run_iteration_operator_actionable_does_not_call_auto_file_issue_or_fail
     assert not any("Failure" in r.name for r in agent_calls), (
         "Failure-Analysis agent must not be spawned"
     )
+
+
+# ── Issue 886: drop per-iteration cap; run all planned issues ─────────────────
+
+
+def test_run_iteration_all_planned_issues_complete_when_plan_exceeds_max_parallel(
+    tmp_path, git_svc, logger
+):
+    """With max_parallel=5 and 7 planned issues, all 7 issues complete in one iteration."""
+    issues = [
+        {
+            "number": i,
+            "title": f"Issue {i}",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+        for i in range(1, 8)
+    ]
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = issues
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    async def _agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(issues)
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        cfg=Config(max_parallel=5, max_iterations=1),
+    )
+    asyncio.run(run_iteration(deps))
+
+    # try_merge is called once per completed branch in merge_phase
+    assert git_svc.try_merge.call_count == 7, (
+        f"Expected 7 merges (one per issue), got {git_svc.try_merge.call_count}"
+    )
+
+
+def test_run_iteration_status_denominator_is_planner_output_not_max_parallel(
+    tmp_path, git_svc, logger
+):
+    """Status row denominator Y in 'started Agents for X/Y' equals the planner output count, not max_parallel."""
+    issues = [
+        {
+            "number": i,
+            "title": f"Issue {i}",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+        for i in range(1, 8)
+    ]
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = issues
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    async def _agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(issues)
+        return CompletionOutput()
+
+    sd = RecordingStatusDisplay()
+    deps = _make_deps(
+        tmp_path,
+        _agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        cfg=Config(max_parallel=5, max_iterations=1),
+        status_display=sd,
+    )
+    asyncio.run(run_iteration(deps))
+
+    update_phase_bodies = [
+        c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
+    ]
+    assert any("0/7" in b for b in update_phase_bodies), (
+        f"Expected initial '0/7' in status bodies, got: {update_phase_bodies}"
+    )
+    assert any("7/7" in b for b in update_phase_bodies), (
+        f"Expected terminal '7/7' in status bodies, got: {update_phase_bodies}"
+    )
+    assert not any("/5" in b for b in update_phase_bodies), (
+        f"Denominator must be 7 (planner output), not 5 (max_parallel); got: {update_phase_bodies}"
+    )
+
+
+def test_run_iteration_max_parallel_1_all_issues_in_one_iteration(
+    tmp_path, git_svc, logger
+):
+    """With max_parallel=1 and multiple planned issues, all run in one iteration and one merge phase closes it."""
+    issues = [
+        {
+            "number": i,
+            "title": f"Issue {i}",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+        for i in range(1, 4)
+    ]
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = issues
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    async def _agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(issues)
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        cfg=Config(max_parallel=1, max_iterations=1),
+    )
+    asyncio.run(run_iteration(deps))
+
+    # All 3 issues merged in the single merge phase
+    assert git_svc.try_merge.call_count == 3, (
+        f"Expected 3 merges (all issues), got {git_svc.try_merge.call_count}"
+    )

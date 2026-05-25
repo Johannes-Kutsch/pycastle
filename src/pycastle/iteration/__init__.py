@@ -216,7 +216,6 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         issues: list[dict] = plan_result.issues
 
         # ── Implement ────────────────────────────────────────────────────────
-        issues = issues[: deps.cfg.max_parallel]
         return await _run_implement_and_merge(issues, deps, plan_result.sha)
 
     except AgentFailedError as err:
