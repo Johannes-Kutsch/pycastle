@@ -1447,3 +1447,122 @@ def test_run_issue_clears_reviewer_session_dir_contents_after_commit(tmp_path):
 
     assert rev_session_dir.is_dir()
     assert not any(rev_session_dir.iterdir())
+
+
+# ── Issue 886: concurrency bounds ─────────────────────────────────────────────
+
+
+def test_implement_phase_never_runs_more_than_max_parallel_agents_at_once(tmp_path):
+    """At no moment do more than max_parallel Implementer/Reviewer agents run concurrently."""
+    max_parallel = 3
+    issues = [
+        {
+            "number": i,
+            "title": f"Issue {i}",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+        for i in range(1, 8)
+    ]
+
+    active: list[int] = [0]
+    peak: list[int] = [0]
+    lock = asyncio.Lock()
+
+    async def _agent(request: RunRequest):
+        async with lock:
+            active[0] += 1
+            if active[0] > peak[0]:
+                peak[0] = active[0]
+        await asyncio.sleep(0)
+        async with lock:
+            active[0] -= 1
+        return CompletionOutput()
+
+    fake = FakeAgentRunner(side_effect=_agent)
+    deps = _make_deps(tmp_path, fake, status_display=PlainStatusDisplay())
+    deps = dataclasses.replace(
+        deps, cfg=Config(max_parallel=max_parallel, max_iterations=1)
+    )
+
+    asyncio.run(implement_phase(issues, deps, "sha-abc"))
+
+    assert peak[0] <= max_parallel, (
+        f"Peak concurrent agents {peak[0]} exceeded max_parallel={max_parallel}"
+    )
+
+
+def test_implement_phase_never_opens_more_than_max_parallel_plus_one_worktrees(
+    tmp_path,
+):
+    """At no moment are more than max_parallel + 1 worktrees open concurrently."""
+    import shutil
+
+    max_parallel = 3
+    issues = [
+        {
+            "number": i,
+            "title": f"Issue {i}",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+        for i in range(1, 8)
+    ]
+
+    open_wts: list[int] = [0]
+    peak_wts: list[int] = [0]
+    wt_lock = asyncio.Lock()
+
+    git_svc = MagicMock(spec=GitService)
+    git_svc.verify_ref_exists.return_value = False
+
+    _registered: list[Path] = []
+
+    async def _fake_create(repo, path, branch, sha=None):
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+        _registered.append(path)
+        async with wt_lock:
+            open_wts[0] += 1
+            if open_wts[0] > peak_wts[0]:
+                peak_wts[0] = open_wts[0]
+
+    def _sync_create(repo, path, branch, sha=None):
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+        _registered.append(path)
+        open_wts[0] += 1
+        if open_wts[0] > peak_wts[0]:
+            peak_wts[0] = open_wts[0]
+
+    def _sync_remove(repo, path):
+        shutil.rmtree(path, ignore_errors=True)
+        _registered[:] = [p for p in _registered if p != path]
+        open_wts[0] -= 1
+
+    git_svc.list_worktrees.side_effect = lambda repo: list(_registered)
+    git_svc.create_worktree.side_effect = _sync_create
+    git_svc.remove_worktree.side_effect = _sync_remove
+
+    async def _agent(request: RunRequest):
+        await asyncio.sleep(0)
+        return CompletionOutput()
+
+    fake = FakeAgentRunner(side_effect=_agent)
+    deps = _ImplementStub(
+        repo_root=tmp_path,
+        git_svc=git_svc,
+        github_svc=MagicMock(spec=GithubService),
+        agent_runner=fake,
+        cfg=Config(max_parallel=max_parallel, max_iterations=1),
+        logger=RecordingLogger(),
+        status_display=PlainStatusDisplay(),
+    )
+
+    asyncio.run(implement_phase(issues, deps, "sha-abc"))
+
+    assert peak_wts[0] <= max_parallel + 1, (
+        f"Peak open worktrees {peak_wts[0]} exceeded max_parallel+1={max_parallel + 1}"
+    )
