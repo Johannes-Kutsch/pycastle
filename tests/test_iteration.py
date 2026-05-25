@@ -86,7 +86,7 @@ def github_svc():
         {
             "number": 1,
             "title": "Fix bug",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -166,7 +166,7 @@ def test_run_iteration_fetches_open_issues_and_all_open_issues_before_preflight(
                     {
                         "number": 1,
                         "title": "Fix bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -212,7 +212,7 @@ def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, l
         {
             "number": 1,
             "title": "Fix bug",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -242,7 +242,7 @@ def test_run_iteration_aborted_hitl_carries_issue_number(tmp_path, git_svc, logg
         {
             "number": 1,
             "title": "Fix bug",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -274,7 +274,7 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
         {
             "number": 1,
             "title": "Fix bug",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -311,14 +311,14 @@ def test_run_iteration_returns_aborted_usage_limit_when_planner_hits_limit(
         {
             "number": 1,
             "title": "Fix A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Fix B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -354,7 +354,7 @@ def test_run_iteration_returns_aborted_usage_limit_when_implementer_hits_limit(
                     {
                         "number": 1,
                         "title": "Fix bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -382,7 +382,7 @@ def test_run_iteration_aborted_usage_limit_does_not_raise_system_exit(
                     {
                         "number": 1,
                         "title": "Fix bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -408,14 +408,14 @@ def github_svc_two_issues():
         {
             "number": 1,
             "title": "Fix A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Fix B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -500,7 +500,7 @@ def test_run_iteration_does_not_file_issue_when_raw_message_is_none(
                     {
                         "number": 1,
                         "title": "Fix bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -586,7 +586,7 @@ def test_run_iteration_returns_continue_when_issues_complete_normally(
                     {
                         "number": 1,
                         "title": "Fix bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -614,7 +614,7 @@ def test_run_iteration_returns_continue_when_no_implementers_complete(
                     {
                         "number": 1,
                         "title": "Fix bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -643,7 +643,7 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
         {
             "number": 1,
             "title": "Fix bug",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -651,7 +651,7 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
     github_svc.get_issue.return_value = {
         "number": 55,
         "title": "Preflight fix",
-        "body": "",
+        "body": "x" * 100,
         "labels": ["behavior-slice"],
     }
 
@@ -686,14 +686,14 @@ def test_run_iteration_routes_planning_complete_through_status_display(
         {
             "number": 1,
             "title": "Issue A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Issue B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -706,7 +706,7 @@ def test_run_iteration_routes_planning_complete_through_status_display(
                     {
                         "number": 1,
                         "title": "Issue A",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -744,7 +744,7 @@ def test_run_iteration_execution_complete_uses_consistent_source(
                     {
                         "number": 1,
                         "title": "Fix bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -786,7 +786,7 @@ def test_run_iteration_routes_hitl_abort_message_through_status_display(
         {
             "number": 1,
             "title": "Fix bug",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -824,7 +824,7 @@ def test_run_iteration_routes_no_commits_message_through_status_display(
                     {
                         "number": 1,
                         "title": "Fix bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -862,14 +862,14 @@ def test_run_iteration_calls_planning_phase_with_two_or_more_open_issues(
         {
             "number": 3,
             "title": "Issue A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 7,
             "title": "Issue B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -885,7 +885,7 @@ def test_run_iteration_calls_planning_phase_with_two_or_more_open_issues(
                     {
                         "number": 3,
                         "title": "Issue A",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -919,7 +919,7 @@ def test_run_iteration_single_issue_skips_plan_agent_and_still_implements(
         {
             "number": 7,
             "title": "Single issue",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -958,14 +958,14 @@ def test_run_iteration_returns_done_when_all_issues_blocked(tmp_path, git_svc, l
         {
             "number": 1,
             "title": "Issue A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Issue B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -999,14 +999,14 @@ def test_run_iteration_all_blocked_ends_iteration_without_improve(
         {
             "number": 1,
             "title": "Issue A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Issue B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1051,7 +1051,7 @@ def test_run_iteration_improve_chains_into_planning_on_success(
     filed_issue = {
         "number": 5,
         "title": "Improve: refactor X",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["refactor-slice"],
     }
@@ -1095,7 +1095,12 @@ def test_implementer_work_body_includes_slice_mode_for_behavior_slice(
 ):
     issue_title = "Fix auth bug"
     github_svc.get_open_issues.return_value = [
-        {"number": 3, "title": issue_title, "labels": ["behavior-slice"]}
+        {
+            "number": 3,
+            "title": issue_title,
+            "body": "x" * 100,
+            "labels": ["behavior-slice"],
+        }
     ]
     recording_runner = FakeAgentRunner(
         [CompletionOutput(), CompletionOutput()],
@@ -1123,7 +1128,12 @@ def test_implementer_and_reviewer_run_calls_pass_work_body_with_issue_title(
     issue_title = "Fix auth bug"
     # Single issue: planning skips, so no Plan Agent call. Queue only needs implement+review.
     github_svc.get_open_issues.return_value = [
-        {"number": 3, "title": issue_title, "labels": ["behavior-slice"]}
+        {
+            "number": 3,
+            "title": issue_title,
+            "body": "x" * 100,
+            "labels": ["behavior-slice"],
+        }
     ]
     recording_runner = FakeAgentRunner(
         [
@@ -1163,7 +1173,7 @@ def test_implementer_and_reviewer_work_body_includes_slice_mode(
 ):
     issue_title = "Some task"
     github_svc.get_open_issues.return_value = [
-        {"number": 5, "title": issue_title, "labels": [label]}
+        {"number": 5, "title": issue_title, "body": "x" * 100, "labels": [label]}
     ]
     recording_runner = FakeAgentRunner(
         [CompletionOutput(), CompletionOutput()],
@@ -1195,21 +1205,21 @@ def test_planner_run_call_passes_work_body_with_issue_count(
         {
             "number": 1,
             "title": "Fix A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Fix B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 3,
             "title": "Fix C",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1222,7 +1232,7 @@ def test_planner_run_call_passes_work_body_with_issue_count(
                     {
                         "number": 1,
                         "title": "Fix A",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -1261,14 +1271,14 @@ def test_run_iteration_plan_row_removed_even_if_planning_raises(
         {
             "number": 1,
             "title": "Issue A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Issue B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1305,7 +1315,7 @@ def test_run_iteration_implement_row_removed_on_usage_limit(
                     {
                         "number": 1,
                         "title": "Fix bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -1336,14 +1346,14 @@ def test_run_iteration_registers_plan_row_with_planning_phase(
         {
             "number": 1,
             "title": "Issue A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Issue B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1357,7 +1367,7 @@ def test_run_iteration_registers_plan_row_with_planning_phase(
                     {
                         "number": 1,
                         "title": "Issue A",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -1393,14 +1403,14 @@ def test_run_iteration_plan_row_startup_message_uses_configured_issue_label(
         {
             "number": 1,
             "title": "Issue A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Issue B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1414,7 +1424,7 @@ def test_run_iteration_plan_row_startup_message_uses_configured_issue_label(
                     {
                         "number": 1,
                         "title": "Issue A",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -1455,7 +1465,7 @@ def test_run_iteration_registers_implement_row_with_running_phase(
                     {
                         "number": 1,
                         "title": "Fix bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -1489,14 +1499,14 @@ def test_run_iteration_skips_planning_when_all_issues_have_existing_branches(
         {
             "number": 1,
             "title": "Fix A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Fix B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1533,14 +1543,14 @@ def test_run_iteration_skips_planning_when_all_issues_have_existing_worktrees(
         {
             "number": 3,
             "title": "Fix C",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 4,
             "title": "Fix D",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1576,14 +1586,14 @@ def test_run_iteration_uses_only_in_flight_issues_when_some_have_existing_branch
         {
             "number": 5,
             "title": "In flight",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 6,
             "title": "Deferred",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1621,7 +1631,7 @@ def test_run_iteration_uses_preflight_sha_for_in_flight_issues(
         {
             "number": 7,
             "title": "In flight",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -1660,21 +1670,21 @@ def test_run_iteration_detects_in_flight_via_both_branch_and_worktree_signals(
         {
             "number": 8,
             "title": "Branch only",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 9,
             "title": "Worktree only",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 10,
             "title": "Deferred",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1715,7 +1725,7 @@ def test_run_iteration_plan_row_rendered_for_single_afk_issue(
         {
             "number": 11,
             "title": "Solo",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -1755,14 +1765,14 @@ def test_run_iteration_plan_row_rendered_for_two_afk_issues(tmp_path, git_svc, l
         {
             "number": 3,
             "title": "Issue A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 4,
             "title": "Issue B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1775,7 +1785,7 @@ def test_run_iteration_plan_row_rendered_for_two_afk_issues(tmp_path, git_svc, l
                     {
                         "number": 3,
                         "title": "Issue A",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -1813,7 +1823,7 @@ def test_run_iteration_plan_row_rendered_for_one_in_flight_zero_afk(
         {
             "number": 20,
             "title": "In flight",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -1856,14 +1866,14 @@ def test_run_iteration_plan_row_rendered_for_two_in_flight_branches(
         {
             "number": 30,
             "title": "In flight A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 31,
             "title": "In flight B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1908,14 +1918,14 @@ def test_run_iteration_plan_close_message_contains_issue_details(
         {
             "number": 3,
             "title": "Issue A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 7,
             "title": "Issue B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1928,7 +1938,7 @@ def test_run_iteration_plan_close_message_contains_issue_details(
                     {
                         "number": 3,
                         "title": "Issue A",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -1966,7 +1976,7 @@ def test_run_iteration_implement_close_message_success_format(
                     {
                         "number": 1,
                         "title": "Fix bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -2007,7 +2017,7 @@ def test_run_iteration_no_commits_close_uses_warning_style(
                     {
                         "number": 1,
                         "title": "Fix bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -2047,7 +2057,7 @@ def test_run_iteration_generic_error_uses_implement_caller(
                     {
                         "number": 1,
                         "title": "Fix bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -2081,7 +2091,7 @@ def test_run_iteration_hitl_message_uses_preflight_caller(tmp_path, git_svc, log
         {
             "number": 1,
             "title": "Fix bug",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -2120,14 +2130,14 @@ def test_run_iteration_plan_close_message_when_all_blocked(tmp_path, git_svc, lo
         {
             "number": 1,
             "title": "Issue A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Issue B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -2163,14 +2173,14 @@ def test_run_iteration_implement_success_message_includes_all_branches(
         {
             "number": 5,
             "title": "Issue Five",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 6,
             "title": "Issue Six",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -2183,14 +2193,14 @@ def test_run_iteration_implement_success_message_includes_all_branches(
                     {
                         "number": 5,
                         "title": "Issue Five",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     },
                     {
                         "number": 6,
                         "title": "Issue Six",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     },
@@ -2232,14 +2242,14 @@ def test_run_iteration_success_close_excludes_failed_branches(
         {
             "number": 3,
             "title": "Issue Three",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 4,
             "title": "Issue Four",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -2252,14 +2262,14 @@ def test_run_iteration_success_close_excludes_failed_branches(
                     {
                         "number": 3,
                         "title": "Issue Three",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     },
                     {
                         "number": 4,
                         "title": "Issue Four",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     },
@@ -2562,7 +2572,7 @@ def test_run_iteration_returns_aborted_usage_limit_for_each_single_agent_phase(
             {
                 "number": 1,
                 "title": "Fix",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             }
@@ -2584,14 +2594,14 @@ def test_run_iteration_returns_aborted_usage_limit_for_each_single_agent_phase(
             {
                 "number": 1,
                 "title": "Fix",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Fix B",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -2630,7 +2640,7 @@ def test_run_iteration_returns_aborted_usage_limit_for_each_single_agent_phase(
             {
                 "number": 1,
                 "title": "Fix",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             }
@@ -2644,7 +2654,7 @@ def test_run_iteration_returns_aborted_usage_limit_for_each_single_agent_phase(
                         {
                             "number": 1,
                             "title": "Fix",
-                            "body": "",
+                            "body": "x" * 100,
                             "comments": [],
                             "labels": ["behavior-slice"],
                         }
@@ -2680,14 +2690,14 @@ def test_phase_row_paints_interrupted_style_on_usage_limit(tmp_path, git_svc, lo
         {
             "number": 1,
             "title": "Fix",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Fix B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -2851,14 +2861,14 @@ def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
         {
             "number": 1,
             "title": "Fix A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Fix B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -2911,7 +2921,7 @@ def test_run_iteration_returns_aborted_agent_failure_when_implementer_agent_fail
         {
             "number": 1,
             "title": "Fix A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -2963,7 +2973,7 @@ def test_run_iteration_returns_aborted_agent_failure_when_reviewer_agent_fails(
         {
             "number": 1,
             "title": "Fix A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -3013,14 +3023,14 @@ def test_run_iteration_aborted_agent_failure_without_recovery_when_diagnose_disa
         {
             "number": 1,
             "title": "Fix A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Fix B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -3068,7 +3078,7 @@ def test_run_iteration_returns_aborted_timeout_for_each_single_agent_phase(
             {
                 "number": 1,
                 "title": "Fix",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             }
@@ -3092,14 +3102,14 @@ def test_run_iteration_returns_aborted_timeout_for_each_single_agent_phase(
             {
                 "number": 1,
                 "title": "Fix",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Fix B",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -3142,7 +3152,7 @@ def test_run_iteration_returns_aborted_timeout_for_each_single_agent_phase(
             {
                 "number": 1,
                 "title": "Fix",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             }
@@ -3156,7 +3166,7 @@ def test_run_iteration_returns_aborted_timeout_for_each_single_agent_phase(
                         {
                             "number": 1,
                             "title": "Fix",
-                            "body": "",
+                            "body": "x" * 100,
                             "comments": [],
                             "labels": ["behavior-slice"],
                         }
@@ -3193,14 +3203,14 @@ def test_phase_row_paints_interrupted_style_on_agent_timeout(tmp_path, git_svc, 
         {
             "number": 1,
             "title": "Fix",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Fix B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -3286,7 +3296,7 @@ def test_run_iteration_preflight_fix_uses_planner_sha_not_second_call(
         {
             "number": 1,
             "title": "Fix bug",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -3294,7 +3304,7 @@ def test_run_iteration_preflight_fix_uses_planner_sha_not_second_call(
     github_svc.get_issue.return_value = {
         "number": 181,
         "title": "Fix preflight failure",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["behavior-slice"],
     }
@@ -3478,14 +3488,14 @@ def test_run_iteration_returns_continue_on_transient_agent_error_from_plan_agent
         {
             "number": 1,
             "title": "Fix A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Fix B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -3572,14 +3582,14 @@ def test_run_iteration_returns_aborted_hard_api_error_on_hard_agent_error_from_p
         {
             "number": 1,
             "title": "Fix A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Fix B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },

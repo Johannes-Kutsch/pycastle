@@ -70,7 +70,7 @@ def test_planning_phase_skips_planner_for_single_issue(tmp_path, git_svc):
         {
             "number": 5,
             "title": "Solo",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -91,7 +91,7 @@ def test_planning_phase_skip_single_issue_emits_plan_row(tmp_path, git_svc):
         {
             "number": 42,
             "title": "Solo",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         }
@@ -119,21 +119,21 @@ def test_planning_phase_returns_plan_ready_with_issues_sorted_by_number(
         {
             "number": 3,
             "title": "C",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 1,
             "title": "A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -156,14 +156,14 @@ def test_planning_phase_passes_ready_for_agent_issues_as_json_to_planner(
         {
             "number": 2,
             "title": "B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 1,
             "title": "A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -183,14 +183,14 @@ def test_planning_phase_passes_all_open_issues_as_json_to_planner(tmp_path, git_
         {
             "number": 1,
             "title": "A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -215,14 +215,14 @@ def test_planning_phase_removes_worktree_after_success(tmp_path, git_svc):
         {
             "number": 1,
             "title": "A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -241,14 +241,14 @@ def test_planning_phase_removes_worktree_when_exception_raised(tmp_path, git_svc
         {
             "number": 1,
             "title": "A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -273,14 +273,14 @@ def test_planning_phase_raises_runtime_error_when_planner_output_has_no_plan_tag
         {
             "number": 1,
             "title": "A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -299,14 +299,14 @@ def test_planning_phase_raises_runtime_error_when_planner_returns_wrong_output_t
         {
             "number": 1,
             "title": "A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -328,14 +328,14 @@ def test_planning_phase_returns_all_blocked_when_planner_emits_empty_issues_list
         {
             "number": 1,
             "title": "A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -357,14 +357,14 @@ def test_planning_phase_all_blocked_carries_blocked_list(tmp_path, git_svc):
         {
             "number": 5,
             "title": "X",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 3,
             "title": "Y",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -465,14 +465,14 @@ def test_planning_phase_all_open_issues_json_unaffected_by_partition(tmp_path, g
     well1 = {
         "number": 1,
         "title": "A",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["behavior-slice"],
     }
     well2 = {
         "number": 2,
         "title": "B",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["refactor-slice"],
     }
@@ -500,11 +500,17 @@ def test_planning_phase_adds_label_and_comment_for_malformed_without_flag(
     well = {
         "number": 1,
         "title": "A",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    malformed = {"number": 2, "title": "B", "body": "", "comments": [], "labels": []}
+    malformed = {
+        "number": 2,
+        "title": "B",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
     fake = FakeAgentRunner([_plan_output([well])])
     github_svc = MagicMock(spec=GithubService)
 
@@ -525,14 +531,14 @@ def test_planning_phase_makes_no_calls_for_malformed_already_flagged(tmp_path, g
     well = {
         "number": 1,
         "title": "A",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["behavior-slice"],
     }
     malformed = {
         "number": 2,
         "title": "B",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["needs-slice-type"],
     }
@@ -554,14 +560,14 @@ def test_planning_phase_removes_stale_flag_from_well_formed_issue(tmp_path, git_
     well1 = {
         "number": 1,
         "title": "A",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["behavior-slice", "needs-slice-type"],
     }
     well2 = {
         "number": 2,
         "title": "B",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["refactor-slice"],
     }
@@ -583,14 +589,14 @@ def test_planning_phase_makes_no_calls_for_well_formed_without_flag(tmp_path, gi
     well1 = {
         "number": 1,
         "title": "A",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["behavior-slice"],
     }
     well2 = {
         "number": 2,
         "title": "B",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["refactor-slice"],
     }
@@ -611,21 +617,21 @@ def test_planning_phase_filters_malformed_from_ready_for_agent_json(tmp_path, gi
     well1 = {
         "number": 1,
         "title": "A",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["ready-for-agent", "behavior-slice"],
     }
     well2 = {
         "number": 2,
         "title": "B",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["ready-for-agent", "refactor-slice"],
     }
     malformed = {
         "number": 3,
         "title": "C",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["ready-for-agent"],
     }
@@ -637,3 +643,262 @@ def test_planning_phase_filters_malformed_from_ready_for_agent_json(tmp_path, gi
     assert fake.calls[0].scope_args["READY_FOR_AGENT_ISSUES_JSON"] == json.dumps(
         [well1, well2]
     )
+
+
+# ── is_well_formed_body ──────────────────────────────────────────────────────
+
+
+def test_is_well_formed_body_returns_false_for_short_body():
+    from pycastle.iteration.planning import is_well_formed_body
+
+    assert is_well_formed_body({"body": "x" * 99}) is False
+
+
+def test_is_well_formed_body_returns_true_for_body_at_floor():
+    from pycastle.iteration.planning import is_well_formed_body
+
+    assert is_well_formed_body({"body": "x" * 100}) is True
+
+
+def test_is_well_formed_body_returns_false_for_empty_body():
+    from pycastle.iteration.planning import is_well_formed_body
+
+    assert is_well_formed_body({"body": ""}) is False
+
+
+def test_is_well_formed_body_returns_false_for_whitespace_body():
+    from pycastle.iteration.planning import is_well_formed_body
+
+    assert is_well_formed_body({"body": "   \n  "}) is False
+
+
+def test_is_well_formed_body_returns_false_for_at_dash_body():
+    from pycastle.iteration.planning import is_well_formed_body
+
+    assert is_well_formed_body({"body": "@-"}) is False
+
+
+def test_is_well_formed_body_returns_false_for_none_body():
+    from pycastle.iteration.planning import is_well_formed_body
+
+    assert is_well_formed_body({"body": None}) is False
+
+
+# ── planning_phase: needs-info body lifecycle ────────────────────────────────
+
+
+def test_planning_phase_adds_needs_info_label_and_comment_for_short_body(
+    tmp_path, git_svc
+):
+    from unittest.mock import MagicMock
+    from pycastle.services.github_service import GithubService
+
+    well = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    short_body = {
+        "number": 2,
+        "title": "B",
+        "body": "too short",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    fake = FakeAgentRunner([_plan_output([well])])
+    github_svc = MagicMock(spec=GithubService)
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    asyncio.run(planning_phase(deps, [well, short_body], []))
+
+    github_svc.add_label_to_issue.assert_called_once_with(2, "needs-info")
+    github_svc.post_comment.assert_called_once()
+    comment_body = github_svc.post_comment.call_args[0][1]
+    assert "too short" in comment_body
+    assert "needs-info" in comment_body
+
+
+def test_planning_phase_removes_needs_info_when_body_now_long_enough(tmp_path, git_svc):
+    from unittest.mock import MagicMock
+    from pycastle.services.github_service import GithubService
+
+    well1 = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice", "needs-info"],
+    }
+    well2 = {
+        "number": 2,
+        "title": "B",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["refactor-slice"],
+    }
+    fake = FakeAgentRunner([_plan_output([well1, well2])])
+    github_svc = MagicMock(spec=GithubService)
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    asyncio.run(planning_phase(deps, [well1, well2], []))
+
+    github_svc.remove_label_from_issue.assert_called_once_with(1, "needs-info")
+    github_svc.add_label_to_issue.assert_not_called()
+    github_svc.post_comment.assert_not_called()
+
+
+def test_planning_phase_no_needs_info_calls_when_already_flagged(tmp_path, git_svc):
+    from unittest.mock import MagicMock
+    from pycastle.services.github_service import GithubService
+
+    well = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    short_already_flagged = {
+        "number": 2,
+        "title": "B",
+        "body": "short",
+        "comments": [],
+        "labels": ["behavior-slice", "needs-info"],
+    }
+    fake = FakeAgentRunner([_plan_output([well])])
+    github_svc = MagicMock(spec=GithubService)
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    asyncio.run(planning_phase(deps, [well, short_already_flagged], []))
+
+    github_svc.add_label_to_issue.assert_not_called()
+    github_svc.post_comment.assert_not_called()
+
+
+def test_planning_phase_excludes_short_body_issues_from_candidate_set(
+    tmp_path, git_svc
+):
+    import json
+
+    well1 = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    well2 = {
+        "number": 3,
+        "title": "C",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["refactor-slice"],
+    }
+    short_body = {
+        "number": 2,
+        "title": "B",
+        "body": "short",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    fake = FakeAgentRunner([_plan_output([well1, well2])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    asyncio.run(planning_phase(deps, [well1, short_body, well2], []))
+
+    assert fake.calls[0].scope_args["READY_FOR_AGENT_ISSUES_JSON"] == json.dumps(
+        [well1, well2]
+    )
+
+
+def test_planning_phase_short_body_issue_appears_in_all_open_issues_json(
+    tmp_path, git_svc
+):
+    import json
+
+    well1 = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    well2 = {
+        "number": 3,
+        "title": "C",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["refactor-slice"],
+    }
+    short_body = {
+        "number": 2,
+        "title": "B",
+        "body": "short",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    all_open = [
+        {"number": 1, "title": "A", "labels": ["ready-for-agent", "behavior-slice"]},
+        {"number": 2, "title": "B", "labels": ["ready-for-agent", "behavior-slice"]},
+        {"number": 3, "title": "C", "labels": ["ready-for-agent", "refactor-slice"]},
+    ]
+    fake = FakeAgentRunner([_plan_output([well1, well2])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    asyncio.run(planning_phase(deps, [well1, short_body, well2], all_open))
+
+    assert fake.calls[0].scope_args["ALL_OPEN_ISSUES_JSON"] == json.dumps(all_open)
+
+
+def test_planning_phase_issue_malformed_in_both_dimensions_gets_both_labels(
+    tmp_path, git_svc
+):
+    from unittest.mock import MagicMock
+    from pycastle.services.github_service import GithubService
+
+    well = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    both_bad = {
+        "number": 2,
+        "title": "B",
+        "body": "short",
+        "comments": [],
+        "labels": [],
+    }
+    fake = FakeAgentRunner([_plan_output([well])])
+    github_svc = MagicMock(spec=GithubService)
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    asyncio.run(planning_phase(deps, [well, both_bad], []))
+
+    added_labels = [call[0][1] for call in github_svc.add_label_to_issue.call_args_list]
+    assert "needs-info" in added_labels
+    assert "needs-slice-type" in added_labels
+    assert github_svc.post_comment.call_count == 2
+
+
+def test_planning_phase_single_issue_with_short_body_excluded_from_short_circuit(
+    tmp_path, git_svc
+):
+    from pycastle.agents.output_protocol import PlannerOutput
+
+    short_body = {
+        "number": 1,
+        "title": "A",
+        "body": "too short",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    fake = FakeAgentRunner([PlannerOutput(issues=[], blocked=[])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(planning_phase(deps, [short_body], []))
+
+    assert isinstance(result, AllBlocked)

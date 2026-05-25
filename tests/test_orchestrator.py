@@ -86,14 +86,14 @@ def _make_github_svc(numbers: list[int] | None = None):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -103,7 +103,7 @@ def _make_github_svc(numbers: list[int] | None = None):
             {
                 "number": n,
                 "title": f"Issue {n}",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             }
@@ -119,7 +119,7 @@ def _make_github_svc_afk():
     mock = MagicMock(spec=GithubService)
     mock.get_issue_title.return_value = "Preflight fix title"
     mock.get_open_issues.return_value = [
-        {"number": 1, "title": "Default Issue", "body": "", "comments": []}
+        {"number": 1, "title": "Default Issue", "body": "x" * 100, "comments": []}
     ]
     mock.get_all_open_issues_lightweight.return_value = []
     return mock
@@ -130,7 +130,7 @@ def _make_github_svc_hitl():
     mock = MagicMock(spec=GithubService)
     mock.get_issue_title.return_value = "Preflight fix title"
     mock.get_open_issues.return_value = [
-        {"number": 1, "title": "Default Issue", "body": "", "comments": []}
+        {"number": 1, "title": "Default Issue", "body": "x" * 100, "comments": []}
     ]
     mock.get_all_open_issues_lightweight.return_value = []
     return mock
@@ -234,7 +234,7 @@ def test_run_does_not_crash_when_planner_omits_branch_field(tmp_path):
                     {
                         "number": 193,
                         "title": "Fix branch bug",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -269,7 +269,7 @@ def test_run_computes_branch_from_issue_number_not_planner_slug(tmp_path):
                     {
                         "number": 42,
                         "title": "Fix thing",
-                        "body": "",
+                        "body": "x" * 100,
                         "comments": [],
                         "labels": ["behavior-slice"],
                     }
@@ -411,7 +411,7 @@ def test_failed_agent_appends_traceback_to_errors_log(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix thing", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix thing", "body": "x" * 100, "comments": []}]
             )
         raise boom
 
@@ -435,7 +435,7 @@ def test_failed_agent_errors_log_has_timestamp_separator(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix thing", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix thing", "body": "x" * 100, "comments": []}]
             )
         raise RuntimeError("boom")
 
@@ -456,7 +456,7 @@ def test_failed_agent_prints_traceback_to_stderr(tmp_path, capsys):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix thing", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix thing", "body": "x" * 100, "comments": []}]
             )
         raise RuntimeError("stderr traceback check")
 
@@ -507,7 +507,9 @@ def test_implementer_receives_implement_stage_model_and_effort(tmp_path):
         )
         if "Implement Agent" in request.name:
             return CompletionOutput()
-        return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+        return _plan_output(
+            [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+        )
 
     _run(
         tmp_path,
@@ -532,7 +534,9 @@ def test_reviewer_receives_review_stage_model_and_effort(tmp_path):
         )
         if "Implement Agent" in request.name:
             return CompletionOutput()
-        return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+        return _plan_output(
+            [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+        )
 
     _run(
         tmp_path,
@@ -557,7 +561,9 @@ def test_merger_receives_merge_stage_model_and_effort(tmp_path):
         )
         if "Implement Agent" in request.name:
             return CompletionOutput()
-        return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+        return _plan_output(
+            [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+        )
 
     _run(
         tmp_path,
@@ -603,7 +609,9 @@ def test_stage_overrides_are_independent(tmp_path):
         )
         if "Implement Agent" in request.name:
             return CompletionOutput()
-        return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+        return _plan_output(
+            [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+        )
 
     _run(
         tmp_path,
@@ -639,7 +647,9 @@ def test_each_agent_passes_correct_stage_string(tmp_path):
         captured.append({"name": request.name, "stage": request.stage})
         if "Implement Agent" in request.name:
             return CompletionOutput()
-        return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+        return _plan_output(
+            [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+        )
 
     _run(
         tmp_path,
@@ -780,14 +790,14 @@ def test_clean_merges_skip_merger(tmp_path):
         {
             "number": 1,
             "title": "Fix A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Fix B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -820,14 +830,14 @@ def test_clean_merge_calls_close_issue_per_issue_and_close_completed_parent_issu
         {
             "number": 7,
             "title": "Fix A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 8,
             "title": "Fix B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -861,14 +871,14 @@ def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
         {
             "number": 1,
             "title": "Clean",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Conflict",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -904,14 +914,14 @@ def test_conflict_branch_closed_after_merger_agent(tmp_path):
         {
             "number": 1,
             "title": "Clean",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Conflict",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -939,7 +949,7 @@ def test_conflict_branch_closed_after_merger_agent(tmp_path):
 
 def test_conflict_merge_calls_close_completed_parent_issues(tmp_path):
     """After conflict branches are merged, close_completed_parent_issues must be called once."""
-    issues = [{"number": 5, "title": "Conflict", "body": "", "comments": []}]
+    issues = [{"number": 5, "title": "Conflict", "body": "x" * 100, "comments": []}]
 
     async def _fake_run_agent(request: RunRequest):
         if "Implement Agent" in request.name:
@@ -967,14 +977,14 @@ def test_merger_does_not_receive_issues_prompt_arg(tmp_path):
         {
             "number": 3,
             "title": "Clean issue",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 4,
             "title": "Conflict issue",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1008,21 +1018,21 @@ def test_multiple_conflict_issues_all_closed_after_merger(tmp_path):
         {
             "number": 10,
             "title": "Conflict A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 11,
             "title": "Conflict B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 12,
             "title": "Conflict C",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1094,7 +1104,7 @@ def test_clean_merged_branches_are_deleted_after_try_merge(tmp_path):
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return _plan_output(
-            [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
+            [{"number": 1, "title": "Fix A", "body": "x" * 100, "comments": []}]
         )
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=True)
@@ -1115,7 +1125,7 @@ def test_conflict_branches_are_deleted_after_merger_agent(tmp_path):
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return _plan_output(
-            [{"number": 2, "title": "Conflict", "body": "", "comments": []}]
+            [{"number": 2, "title": "Conflict", "body": "x" * 100, "comments": []}]
         )
 
     mock_git = _make_git_svc(try_merge_side_effect=[False], is_ancestor=True)
@@ -1136,7 +1146,7 @@ def test_non_ancestor_branch_not_deleted(tmp_path):
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return _plan_output(
-            [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
+            [{"number": 1, "title": "Fix A", "body": "x" * 100, "comments": []}]
         )
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=False)
@@ -1157,7 +1167,7 @@ def test_delete_branch_error_does_not_abort_run(tmp_path):
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return _plan_output(
-            [{"number": 1, "title": "Fix A", "body": "", "comments": []}]
+            [{"number": 1, "title": "Fix A", "body": "x" * 100, "comments": []}]
         )
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=True)
@@ -1178,7 +1188,7 @@ def test_run_incomplete_implementers_skip_merge(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise PromiseParseError(
             "no COMPLETE tag"
@@ -1205,7 +1215,7 @@ def test_failed_agent_creates_logs_dir_if_missing(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise RuntimeError("agent failed")
 
@@ -1236,7 +1246,9 @@ def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
     async def _fake_run_agent(request: RunRequest):
         if "Implement Agent" in request.name:
             return CompletionOutput()
-        return _plan_output([{"number": 1, "title": "Fix", "body": "", "comments": []}])
+        return _plan_output(
+            [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+        )
 
     _run(
         tmp_path,
@@ -1287,14 +1299,14 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
         {
             "number": 1,
             "title": "Fix A",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
         {
             "number": 2,
             "title": "Fix B",
-            "body": "",
+            "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
@@ -1404,14 +1416,14 @@ def test_usage_limit_sleeps_instead_of_exiting(tmp_path):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -1422,7 +1434,7 @@ def test_usage_limit_sleeps_instead_of_exiting(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -1446,14 +1458,14 @@ def test_usage_limit_prints_sleep_message_with_wake_time(tmp_path, capsys):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -1464,7 +1476,7 @@ def test_usage_limit_prints_sleep_message_with_wake_time(tmp_path, capsys):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -1494,14 +1506,14 @@ def test_usage_limit_loop_continues_after_sleep(tmp_path):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -1512,7 +1524,7 @@ def test_usage_limit_loop_continues_after_sleep(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -1535,14 +1547,14 @@ def test_consecutive_usage_limits_sleep_multiple_times(tmp_path):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -1551,14 +1563,14 @@ def test_consecutive_usage_limits_sleep_multiple_times(tmp_path):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -1569,7 +1581,7 @@ def test_consecutive_usage_limits_sleep_multiple_times(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -1595,14 +1607,14 @@ def test_usage_limit_wake_time_is_next_full_hour_plus_two_minutes(tmp_path, caps
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -1613,7 +1625,7 @@ def test_usage_limit_wake_time_is_next_full_hour_plus_two_minutes(tmp_path, caps
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -1644,14 +1656,14 @@ def test_usage_limit_sleep_duration_matches_wake_time(tmp_path):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -1662,7 +1674,7 @@ def test_usage_limit_sleep_duration_matches_wake_time(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -1692,14 +1704,14 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -1710,7 +1722,7 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -1744,14 +1756,14 @@ def test_usage_limit_with_reset_time_uses_precise_wake_time(tmp_path, capsys):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -1762,7 +1774,7 @@ def test_usage_limit_with_reset_time_uses_precise_wake_time(tmp_path, capsys):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=fixed_reset)
 
@@ -1791,14 +1803,14 @@ def test_usage_limit_without_reset_time_appends_estimated_qualifier(tmp_path, ca
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -1809,7 +1821,7 @@ def test_usage_limit_without_reset_time_appends_estimated_qualifier(tmp_path, ca
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -1839,14 +1851,14 @@ def test_usage_limit_sleep_message_same_day_shows_hhmm_only(tmp_path, capsys):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -1857,7 +1869,7 @@ def test_usage_limit_sleep_message_same_day_shows_hhmm_only(tmp_path, capsys):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=fixed_reset)
 
@@ -1888,14 +1900,14 @@ def test_usage_limit_sleep_message_cross_day_shows_date(tmp_path, capsys):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -1906,7 +1918,7 @@ def test_usage_limit_sleep_message_cross_day_shows_date(tmp_path, capsys):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=fixed_reset)
 
@@ -1937,14 +1949,14 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -1959,7 +1971,7 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -1995,14 +2007,14 @@ def test_usage_limit_pool_switch_message_cross_day_shows_date(tmp_path, capsys):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -2016,7 +2028,7 @@ def test_usage_limit_pool_switch_message_cross_day_shows_date(tmp_path, capsys):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -2051,14 +2063,14 @@ def test_usage_limit_in_preflight_sleeps_instead_of_crashing(tmp_path):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -2137,7 +2149,7 @@ def test_planner_invoked_when_ready_for_agent_issues_exist(tmp_path):
         agent_names.append(request.name)
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Do thing", "body": "", "comments": []}]
+                [{"number": 1, "title": "Do thing", "body": "x" * 100, "comments": []}]
             )
         if "Implement Agent" in request.name:
             return CompletionOutput()
@@ -2168,7 +2180,7 @@ def test_planner_receives_ready_for_agent_issues_json_not_issue_label(tmp_path):
         if request.name == "Plan Agent":
             captured_planner_args.update(request.scope_args or {})
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         if "Implement Agent" in request.name:
             return CompletionOutput()
@@ -2179,14 +2191,14 @@ def test_planner_receives_ready_for_agent_issues_json_not_issue_label(tmp_path):
         {
             "number": 1,
             "title": "Fix thing",
-            "body": "Blocked by #99\nDo the work.",
+            "body": "Blocked by #99\n" + "Do the work. " + "x" * 90,
             "labels": ["behavior-slice"],
             "comments": [],
         },
         {
             "number": 2,
             "title": "Another issue",
-            "body": "",
+            "body": "x" * 100,
             "labels": ["behavior-slice"],
         },
     ]
@@ -2224,7 +2236,7 @@ def test_run_stops_after_max_iterations_from_cfg(tmp_path):
             planner_calls[0] += 1
             if planner_calls[0] < 2:
                 return _plan_output(
-                    [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                    [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
                 )
             return _plan_output([])
         return CompletionOutput()
@@ -2479,7 +2491,7 @@ def test_worktree_sha_set_at_iteration_start(tmp_path):
         if request.name == "Plan Agent":
             call_order.append("Planner")
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         if "Implement Agent" in request.name:
             return CompletionOutput()
@@ -2522,7 +2534,7 @@ def test_worktree_sha_refreshed_each_iteration(tmp_path):
             call_order.append(f"Planner-{planner_count[0]}")
             if planner_count[0] == 1:
                 return _plan_output(
-                    [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                    [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
                 )
             return _plan_output([])
         if "Implement Agent" in request.name:
@@ -2586,7 +2598,7 @@ def test_run_full_iteration_cold_path(git_repo):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix thing", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix thing", "body": "x" * 100, "comments": []}]
             )
         if "Implement Agent" in request.name:
             return CompletionOutput()
@@ -2766,14 +2778,14 @@ def test_usage_limit_with_service_available_does_not_sleep(tmp_path):
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -2786,7 +2798,7 @@ def test_usage_limit_with_service_available_does_not_sleep(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -2813,14 +2825,14 @@ def test_usage_limit_with_all_services_exhausted_sleeps_until_earliest_wake(tmp_
             {
                 "number": 1,
                 "title": "Default Issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Default Issue 2",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -2833,7 +2845,7 @@ def test_usage_limit_with_all_services_exhausted_sleeps_until_earliest_wake(tmp_
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -3014,7 +3026,7 @@ def test_preflight_afk_from_planning_routes_to_implement_same_iteration(tmp_path
     mock_github.get_issue.return_value = {
         "number": 42,
         "title": "Preflight fix",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["behavior-slice"],
     }
@@ -3066,7 +3078,7 @@ def test_improve_and_plan_share_preflight_cache(tmp_path):
             {
                 "number": 7,
                 "title": "Filed issue",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             }
@@ -3076,7 +3088,7 @@ def test_improve_and_plan_share_preflight_cache(tmp_path):
     mock_github.get_issue.return_value = {
         "number": 5,
         "title": "PRD",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
     }
     mock_github.get_issue_comments.return_value = []
@@ -3131,14 +3143,14 @@ def test_orchestrator_aborted_timeout_continues_to_next_iteration_without_sleep(
             {
                 "number": 1,
                 "title": "Fix",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
             {
                 "number": 2,
                 "title": "Fix B",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             },
@@ -3172,7 +3184,7 @@ def test_exhausted_primary_dispatches_with_fallback_triple(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         if "Implement Agent" in request.name:
             captured.append({"model": request.model, "effort": request.effort})
@@ -3219,7 +3231,7 @@ def test_dual_exhaustion_sleeps_until_earliest_of_primary_and_fallback(tmp_path)
             {
                 "number": 1,
                 "title": "Fix",
-                "body": "",
+                "body": "x" * 100,
                 "comments": [],
                 "labels": ["behavior-slice"],
             }
@@ -3233,7 +3245,7 @@ def test_dual_exhaustion_sleeps_until_earliest_of_primary_and_fallback(tmp_path)
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise UsageLimitError(reset_time=None)
 
@@ -3274,7 +3286,7 @@ def test_primary_takes_precedence_when_both_services_available(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         if "Implement Agent" in request.name:
             captured.append({"model": request.model, "effort": request.effort})
@@ -3318,7 +3330,7 @@ def test_stage_with_no_fallback_behaves_as_before(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         if "Implement Agent" in request.name:
             captured.append({"model": request.model, "effort": request.effort})
@@ -3353,7 +3365,7 @@ def test_orchestrator_exits_nonzero_on_hard_api_error(tmp_path):
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "", "comments": []}]
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         raise HardAgentError(message=raw_line, status_code=400)
 
