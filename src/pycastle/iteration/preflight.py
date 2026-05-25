@@ -20,9 +20,8 @@ from ..services import (
 )
 from ..session import RoleSession
 from ..agents.classifier import WellFormed, classify_slice, slice_labels
-from ._utils import is_well_formed_body
 from ..display.status_display import StatusDisplay
-from ._utils import _wait_for_clean_working_tree
+from ._utils import _wait_for_clean_working_tree, is_well_formed_body
 
 
 @dataclasses.dataclass(frozen=True)
