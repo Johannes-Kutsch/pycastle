@@ -12,20 +12,20 @@ logger = logging.getLogger(__name__)
 _PERMANENT_FAILURE_PATTERNS = [
     "not possible to fast-forward",
     "need to specify how to reconcile divergent branches",
-    "authentication failed",
-    "could not read username",
-    "permission denied",
-    "does not appear to be a git repository",
-    "repository not found",
-    "remote: not found",
     "refusing to merge unrelated histories",
     "conflict",
 ]
 
+_OPERATOR_ACTIONABLE_PATTERNS = [
+    "repository not found",
+    "remote: not found",
+    "does not appear to be a git repository",
+]
+
 _NFF_PUSH_PATTERNS = ["[rejected]"]
 
-_RETRY_DELAYS = [1, 3]
-_MAX_ATTEMPTS = 3
+_RETRY_DELAYS = [10, 60, 300]
+_MAX_ATTEMPTS = 4
 
 
 class GitServiceError(RuntimeError):
@@ -44,6 +44,21 @@ class GitCommandError(GitServiceError):
         if self.stderr:
             parts.append(f"stderr: {self.stderr}")
         return "\n".join(parts)
+
+
+class OperatorActionableGitError(GitServiceError):
+    """Raised when a remote git op fails due to operator-actionable conditions.
+
+    Covers retry exhaustion on transient failures and immediate stable
+    misconfigs (repository not found, does not appear to be a git repository).
+    Mutually exclusive with the divergence/conflict path.
+    """
+
+    def __init__(self, message: str, stderr: str, op: str, attempt_count: int) -> None:
+        self.stderr = stderr
+        self.op = op
+        self.attempt_count = attempt_count
+        super().__init__(message)
 
 
 class UnrelatedHistoriesError(GitCommandError):
@@ -320,10 +335,23 @@ class GitService(_SubprocessService):
             try:
                 self._run_or_raise(cmd, message, cwd=cwd)
             except GitCommandError as exc:
-                if any(p in exc.stderr.lower() for p in _PERMANENT_FAILURE_PATTERNS):
+                stderr_lower = exc.stderr.lower()
+                if any(p in stderr_lower for p in _OPERATOR_ACTIONABLE_PATTERNS):
+                    raise OperatorActionableGitError(
+                        message,
+                        stderr=exc.stderr,
+                        op=operation,
+                        attempt_count=attempt,
+                    ) from exc
+                if any(p in stderr_lower for p in _PERMANENT_FAILURE_PATTERNS):
                     raise
                 if attempt == _MAX_ATTEMPTS:
-                    raise
+                    raise OperatorActionableGitError(
+                        message,
+                        stderr=exc.stderr,
+                        op=operation,
+                        attempt_count=attempt,
+                    ) from exc
                 delay = _RETRY_DELAYS[attempt - 1]
                 logger.warning(
                     "git %s failed (attempt %d/%d), retrying in %ds: %s",
@@ -352,25 +380,24 @@ class GitService(_SubprocessService):
         )
 
     def pull_with_merge_fallback(self, repo_path: Path) -> None:
-        result = self._run(
-            ["git", "pull", "--ff-only"],
-            cwd=repo_path,
-            capture_output=True,
-        )
-        if result.returncode == 0:
-            return
-        stderr = self._decode(result.stderr)
-        if "not possible to fast-forward" not in stderr.lower():
-            raise GitCommandError(
-                "git pull --ff-only failed", returncode=result.returncode, stderr=stderr
+        try:
+            self._run_or_raise_with_retry(
+                ["git", "pull", "--ff-only"],
+                "git pull --ff-only failed",
+                operation="pull",
+                cwd=repo_path,
             )
+            return
+        except GitCommandError as exc:
+            if "not possible to fast-forward" not in exc.stderr.lower():
+                raise
         branch = self.get_current_branch(repo_path)
         merged = self.try_merge(repo_path, f"origin/{branch}")
         if not merged:
             raise GitCommandError(
                 f"git merge origin/{branch} failed due to conflicts",
                 returncode=1,
-                stderr=stderr,
+                stderr="",
             )
 
     def commit(self, worktree_path: Path, repo_root: Path, message: str) -> bool:
@@ -417,12 +444,23 @@ class GitService(_SubprocessService):
                 return
 
             stderr = self._decode(result.stderr)
-            is_permanent = any(p in stderr.lower() for p in _PERMANENT_FAILURE_PATTERNS)
+            stderr_lower = stderr.lower()
             is_last = attempt == _MAX_ATTEMPTS
-            if is_permanent or is_last:
+
+            if any(p in stderr_lower for p in _OPERATOR_ACTIONABLE_PATTERNS):
+                raise OperatorActionableGitError(
+                    "git push failed",
+                    stderr=stderr,
+                    op="push",
+                    attempt_count=attempt,
+                )
+
+            if any(p in stderr_lower for p in _PERMANENT_FAILURE_PATTERNS):
                 raise GitCommandError("git push failed", result.returncode, stderr)
 
             if any(p in stderr for p in _NFF_PUSH_PATTERNS):
+                if is_last:
+                    raise GitCommandError("git push failed", result.returncode, stderr)
                 logger.warning(
                     "git push rejected non-fast-forward (attempt %d/%d), pulling with merge fallback",
                     attempt,
@@ -435,6 +473,14 @@ class GitService(_SubprocessService):
                         raise
                     await resolver()
                 continue
+
+            if is_last:
+                raise OperatorActionableGitError(
+                    "git push failed",
+                    stderr=stderr,
+                    op="push",
+                    attempt_count=attempt,
+                )
 
             delay = _RETRY_DELAYS[attempt - 1]
             logger.warning(
