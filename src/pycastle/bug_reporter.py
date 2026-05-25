@@ -16,10 +16,13 @@ import platform
 import sys
 import traceback
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any
+from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 from .config import Config
+
+if TYPE_CHECKING:
+    from .services import GithubService
 
 BUG_REPORT_REPO = "Johannes-Kutsch/pycastle"
 BUG_REPORT_LABEL_LIST = ["bug", "needs-triage"]
@@ -176,7 +179,7 @@ def file_operator_actionable_git_issue(
     op: str,
     stderr: str,
     attempt_count: int,
-    github_svc: "Any",
+    github_svc: "GithubService",
 ) -> None:
     """File one deduped issue on the consuming project's origin tracker for an
     OperatorActionableGitError. Never files on bug_report_repo. Never raises."""

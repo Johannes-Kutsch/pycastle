@@ -3708,7 +3708,6 @@ def test_run_iteration_operator_actionable_does_not_call_auto_file_issue_or_fail
     and must not spawn the Failure-Analysis agent."""
     from pycastle.services import OperatorActionableGitError
     from pycastle.iteration import AbortedOperatorActionable
-    import pycastle.bug_reporter as bug_reporter_module
 
     err = OperatorActionableGitError(
         "git pull failed",
@@ -3719,11 +3718,10 @@ def test_run_iteration_operator_actionable_does_not_call_auto_file_issue_or_fail
     git_svc.pull_with_merge_fallback.side_effect = err
 
     auto_file_calls: list = []
-    original_auto_file = bug_reporter_module.auto_file_issue
 
     def _recording_auto_file(title, body, labels, *, cfg):
         auto_file_calls.append((title, body))
-        return original_auto_file(title, body, labels, cfg=cfg)
+        return ""
 
     async def _noop_agent(request: RunRequest):
         return CompletionOutput()
