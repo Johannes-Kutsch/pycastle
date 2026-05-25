@@ -245,18 +245,7 @@ class GitService(_SubprocessService):
     def has_commits_ahead_of_main(
         self, repo_path: Path, main_branch: str = "main"
     ) -> bool:
-        merge_base = self._run_or_raise(
-            ["git", "merge-base", "HEAD", main_branch],
-            f"git merge-base HEAD {main_branch!r} failed",
-            cwd=repo_path,
-        )
-        base_sha = self._decode(merge_base.stdout).strip()
-        result = self._run_or_raise(
-            ["git", "rev-list", "--count", f"{base_sha}..HEAD"],
-            f"git rev-list --count {base_sha}..HEAD failed",
-            cwd=repo_path,
-        )
-        return int(self._decode(result.stdout)) > 0
+        return self.count_commits_ahead(repo_path, main_branch) > 0
 
     def hard_reset_to(self, repo_path: Path, ref: str) -> None:
         self._run_or_raise(
