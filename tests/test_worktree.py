@@ -1284,54 +1284,11 @@ def test_prune_orphan_worktrees_does_not_look_in_hardcoded_pycastle_dir(tmp_path
 # ── managed_worktree: empty-branch cleanup overrides delete_branch_on_teardown ─
 
 
-def test_managed_worktree_deletes_empty_branch_mock_when_delete_branch_on_teardown_false(
-    branch_deps,
-):
-    """Mock-level: has_commits_ahead_of_main=False + delete_branch_on_teardown=False → branch deleted."""
-    branch_deps.git_svc.has_commits_ahead_of_main.return_value = False
-
-    async def _run():
-        async with managed_worktree(
-            "issue-42",
-            branch="pycastle/issue-42",
-            sha="abc123",
-            delete_branch_on_teardown=False,
-            deps=branch_deps,
-        ):
-            pass
-
-    asyncio.run(_run())
-    branch_deps.git_svc.delete_branch.assert_called_once_with(
-        "pycastle/issue-42", branch_deps.repo_root
-    )
-
-
-def test_managed_worktree_preserves_branch_with_commits_mock_when_delete_branch_on_teardown_false(
-    branch_deps,
-):
-    """Mock-level: has_commits_ahead_of_main=True + delete_branch_on_teardown=False → branch kept."""
-    branch_deps.git_svc.has_commits_ahead_of_main.return_value = True
-
-    async def _run():
-        async with managed_worktree(
-            "issue-42",
-            branch="pycastle/issue-42",
-            sha="abc123",
-            delete_branch_on_teardown=False,
-            deps=branch_deps,
-        ):
-            pass
-
-    asyncio.run(_run())
-    branch_deps.git_svc.delete_branch.assert_not_called()
-
-
 def test_managed_worktree_preserves_branch_with_commits_when_delete_branch_on_teardown_false(
     real_branch_deps,
 ):
     """With delete_branch_on_teardown=False, a branch with at least one commit ahead of
     main must not be deleted on the teardown path — it represents WIP."""
-    captured: dict = {}
 
     async def _run():
         async with managed_worktree(
@@ -1352,7 +1309,6 @@ def test_managed_worktree_preserves_branch_with_commits_when_delete_branch_on_te
                 check=True,
                 capture_output=True,
             )
-            captured["path"] = path
 
     asyncio.run(_run())
 
@@ -1376,9 +1332,10 @@ def test_managed_worktree_deletes_empty_branch_when_delete_branch_on_teardown_fa
 ):
     """With delete_branch_on_teardown=False, an empty branch (zero commits ahead of main)
     must be deleted on the teardown path — empty branches are not WIP."""
-    captured: dict = {}
+    worktree_path: Path | None = None
 
     async def _run():
+        nonlocal worktree_path
         async with managed_worktree(
             "issue-empty",
             branch="pycastle/issue-empty",
@@ -1386,11 +1343,12 @@ def test_managed_worktree_deletes_empty_branch_when_delete_branch_on_teardown_fa
             delete_branch_on_teardown=False,
             deps=real_branch_deps,
         ) as path:
-            captured["path"] = path
+            worktree_path = path
 
     asyncio.run(_run())
 
-    assert not captured["path"].exists()
+    assert worktree_path is not None
+    assert not worktree_path.exists()
     branches = subprocess.run(
         [
             "git",
