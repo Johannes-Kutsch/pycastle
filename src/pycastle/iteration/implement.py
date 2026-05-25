@@ -88,6 +88,7 @@ async def run_issue(
     sha: str,
     semaphore: asyncio.Semaphore | None = None,
     *,
+    worktree_semaphore: asyncio.Semaphore | None = None,
     token: CancellationToken | None = None,
     branch_locks: dict[str, asyncio.Lock] | None = None,
     on_started: Callable[[], None] | None = None,
@@ -141,13 +142,16 @@ async def run_issue(
         _slice_mode, _impl_template = _resolve_slice(issue, deps.cfg)
 
         if not implement_done:
-            async with managed_worktree(
-                _wt_name,
-                branch=_branch,
-                sha=sha,
-                delete_branch_on_teardown=False,
-                deps=deps,
-            ) as impl_mount_path:
+            async with (
+                worktree_semaphore or contextlib.nullcontext(),
+                managed_worktree(
+                    _wt_name,
+                    branch=_branch,
+                    sha=sha,
+                    delete_branch_on_teardown=False,
+                    deps=deps,
+                ) as impl_mount_path,
+            ):
                 _impl_overlay = patch_gitdir_for_container(impl_mount_path)
                 _impl_scope_args = _scope_args_for(
                     impl_mount_path, AgentRole.IMPLEMENTER
@@ -181,13 +185,16 @@ async def run_issue(
                     if _impl_overlay is not None:
                         _impl_overlay.unlink(missing_ok=True)
 
-        async with managed_worktree(
-            _wt_name,
-            branch=_branch,
-            sha=None,
-            delete_branch_on_teardown=False,
-            deps=deps,
-        ) as review_mount_path:
+        async with (
+            worktree_semaphore or contextlib.nullcontext(),
+            managed_worktree(
+                _wt_name,
+                branch=_branch,
+                sha=None,
+                delete_branch_on_teardown=False,
+                deps=deps,
+            ) as review_mount_path,
+        ):
             _review_overlay = patch_gitdir_for_container(review_mount_path)
             _review_scope_args = _scope_args_for(review_mount_path, AgentRole.REVIEWER)
             try:
@@ -234,6 +241,7 @@ async def implement_phase(
 ) -> ImplementResult:
     _token = token if token is not None else CancellationToken()
     semaphore = asyncio.Semaphore(deps.cfg.max_parallel)
+    worktree_semaphore = asyncio.Semaphore(deps.cfg.max_parallel + 1)
     branch_locks: dict[str, asyncio.Lock] = {}
     total = len(issues)
     started = 0
@@ -255,6 +263,7 @@ async def implement_phase(
                 deps,
                 sha,
                 semaphore,
+                worktree_semaphore=worktree_semaphore,
                 token=_token,
                 branch_locks=branch_locks,
                 on_started=_on_started,
