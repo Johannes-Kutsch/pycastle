@@ -1,0 +1,30 @@
+# Operator-actionable git failures retry-then-escalate to the consuming project
+
+`GitService` classifies remote-touching failures (`git pull`, `git fetch`, `git push`) into two buckets and routes them differently from genuine pycastle defects:
+
+- **Transient remote-reach failures** (SSH/network blips, GitHub auth flapping) retry with a generous `[10s, 60s, 300s]` backoff (4 attempts, ~6.2 min total). `"permission denied"`, `"authentication failed"`, `"could not read username"` are removed from `_PERMANENT_FAILURE_PATTERNS` so the retry loop is allowed to run.
+- **Operator-actionable git failures** (transient retries exhausted, or stable misconfig like `repository not found` / `does not appear to be a git repository`) surface as a new exception type caught at the iteration boundary. The orchestrator files **one** issue on the **consuming project's `origin`** with labels `bug + needs-triage` (never `ready-for-agent`), deduped cross-process via `gh issue list --search "[pycastle] git remote unreachable in:title state:open"`, then exits non-zero. This path does **not** go through `auto_file_issue` / `bug_report_repo` — those route to the pycastle bug tracker, which is the wrong audience for an SSH key rotation.
+
+The trigger was issues #875/#876: a momentary GitHub SSH auth blip on 2026-05-25 09:04 UTC caused two concurrent pycastle runs (in `pycastle` and `application-pipeline`) to crash with `Permission denied (publickey)`, file identical stack-trace bugs on the pycastle tracker via the **auto bug reporter**, and lose their in-progress iterations. Local SSH was verified working before and after; the trigger was upstream. Three pycastle layers turned a one-second blip into a crash: `pull_with_merge_fallback` had no retry, `_PERMANENT_FAILURE_PATTERNS` classified `"permission denied"` as permanent (blocking retry at every other callsite too), and `preflight.get_safe_sha` re-raised with no graceful orchestrator handler.
+
+## Considered Options
+
+- **Skip iteration on any preflight git failure (`Continue`).** Rejected: under a sustained outage the loop silently spins doing nothing, with no human signal.
+- **Abort the run cleanly with a friendly message, no auto-file.** Rejected: cron-driven users who don't watch `cron.log` get no signal at all.
+- **Auto-file on pycastle's tracker, like every other crash.** Rejected: this is the status quo and is exactly what produced #875/#876. SSH/network/remote-config failures are operator-environmental, not pycastle defects — filing them on the pycastle tracker creates persistent triage noise for issues nobody on pycastle can fix.
+- **In-process dedup only (one issue per `pycastle run`).** Rejected: cron fires fresh processes; a multi-day outage produces one issue per tick. Cross-process dedup via GitHub search survives restarts.
+- **Per-caller retry profile (some callsites generous, others tight).** Rejected after audit: every existing caller of `_run_or_raise_with_retry` (`pull`, `fetch`, `push`) is a remote-touching op that wants the generous window. No local-only retried op exists to justify the per-caller plumbing. A global bump of `_RETRY_DELAYS = [10, 60, 300]` and `_MAX_ATTEMPTS = 4` covers every case.
+- **Narrow routing — only the retry-exhaustion path files on consuming project; `repository not found` etc. keep filing on pycastle.** Rejected: same misclassification problem in miniature. The principle "*who can act on this?*" is clean and generalises; the narrow option leaves a foreseeable next-bug.
+- **Bucket-by-classify with retry-then-escalate to consuming project — chosen.** Mirrors the three-bucket shape ADR 0023 established for Claude API errors: transient (retry/preserve) vs hard (file + halt), with the audience-aware routing extension that the failure's *owner* (consuming project operator vs pycastle dev) determines *which tracker* the bug lands on.
+
+## Consequences
+
+- `_RETRY_DELAYS` becomes `[10, 60, 300]` and `_MAX_ATTEMPTS` becomes `4` globally. Every retried git op (`pull`, `fetch`, `push`) inherits the new window — push at merge time gets the same robustness as pull at preflight, for free.
+- `_PERMANENT_FAILURE_PATTERNS` no longer contains `"permission denied"`, `"authentication failed"`, `"could not read username"`. Divergence/conflict/unrelated-histories patterns remain so the existing escalation ladder is unchanged.
+- A new exception type (e.g. `OperatorActionableGitError`) is raised when (a) retries are exhausted on a remote-touching op, or (b) `_PERMANENT_FAILURE_PATTERNS` matches a remaining operator-actionable string (`repository not found`, `does not appear to be a git repository`, etc.). Distinct from `GitCommandError` so the iteration-boundary catch can route it without false positives.
+- `run_iteration` gains a top-level `except OperatorActionableGitError` handler (matching the ADR 0008 / 0023 centralisation pattern) that converts to a new terminal `IterationOutcome` variant; orchestrator files the consuming-project issue and exits non-zero after the current iteration.
+- The cross-process dedup query targets the consuming project's `origin` — derived from `git remote get-url origin` the same way the rest of the codebase resolves `(owner, repo)` (per ADR 0004 contract). Title prefix `[pycastle] git remote unreachable` is the stable search anchor.
+- Filed issue carries `bug + needs-triage`. Never `ready-for-agent`: pycastle cannot fix its own SSH key from inside an agent container; auto-promotion would loop.
+- The existing **auto bug reporter** no longer sees these failures — the iteration-boundary catch is upstream of click's exception wrapper. Pycastle's bug tracker stays free of environmental noise.
+- The **preflight pull** glossary contract changes from "aborts if remote unreachable" to "retries 4 times over ~6 minutes, then escalates to the consuming project's tracker". `preflight.get_safe_sha`'s ad-hoc status-display message for non-conflict `GitCommandError` is superseded by the centralised handler.
+- Scope is git-only. The Claude-API-error path (ADR 0023) and the upstream-pycastle-bug path (ADR 0022 / auto bug reporter) are untouched.
