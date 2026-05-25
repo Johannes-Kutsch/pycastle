@@ -101,15 +101,12 @@ IterationOutcome: TypeAlias = (
 
 def _is_in_flight(issue: dict, deps: Deps) -> bool:
     branch = branch_for(issue["number"])
-    name = worktree_name_for_branch(branch)
-    wt_path = worktree_path(name, deps)
-    if wt_path.exists() and any_role_dir_present(wt_path):
+    wt_path = worktree_path(worktree_name_for_branch(branch), deps)
+    if any_role_dir_present(wt_path):
         return True
-    if deps.git_svc.verify_ref_exists(branch, deps.repo_root):
-        return deps.git_svc.branch_has_commits_ahead_of_merge_base(
-            deps.repo_root, branch
-        )
-    return False
+    if not deps.git_svc.verify_ref_exists(branch, deps.repo_root):
+        return False
+    return deps.git_svc.branch_has_commits_ahead_of_merge_base(deps.repo_root, branch)
 
 
 async def _run_implement_and_merge(
