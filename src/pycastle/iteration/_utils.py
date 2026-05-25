@@ -6,6 +6,14 @@ from ..services import GitService
 from ..display.status_display import StatusDisplay
 
 
+BODY_FLOOR = 100
+
+
+def is_well_formed_body(issue: dict) -> bool:
+    body = issue.get("body") or ""
+    return len(body.strip()) >= BODY_FLOOR
+
+
 class _UtilDeps(Protocol):
     git_svc: GitService
     repo_root: Path

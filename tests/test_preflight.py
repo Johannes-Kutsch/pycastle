@@ -102,6 +102,7 @@ def test_get_safe_sha_returns_afk_when_checks_fail_with_afk_label(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
         preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
+    github_svc.get_issue.return_value = {"number": 42, "body": "x" * 100}
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 
@@ -139,6 +140,7 @@ def test_get_safe_sha_failure_cached_on_second_call_at_same_sha(
         [IssueOutput(number=99, labels=["ready-for-agent", "refactor-slice"])],
         preflight_responses=[[("mypy", "mypy .", "error")]],
     )
+    github_svc.get_issue.return_value = {"number": 99, "body": "x" * 100}
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 
@@ -308,6 +310,59 @@ def test_get_safe_sha_raises_when_afk_issue_has_multiple_slice_mode_labels(
 
     with pytest.raises(RuntimeError, match="Pre-Flight Reporter"):
         asyncio.run(cache.get_safe_sha(deps))
+
+
+# ── handle_preflight_failure: AFK body-length validation ─────────────────────
+
+
+def test_get_safe_sha_raises_when_afk_issue_body_is_too_short(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    github_svc.get_issue.return_value = {"number": 42, "body": "x" * 99}
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(RuntimeError, match="#42"):
+        asyncio.run(cache.get_safe_sha(deps))
+
+
+def test_get_safe_sha_does_not_check_body_length_on_hitl_branch(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=7, labels=["bug", "ready-for-human"])],
+        preflight_responses=[[("mypy", "mypy .", "error")]],
+    )
+    github_svc.get_issue.return_value = {"number": 7, "body": "x" * 5}
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightHITL)
+    assert result.issue_number == 7
+    github_svc.get_issue.assert_not_called()
+
+
+def test_get_safe_sha_returns_afk_when_filed_body_meets_floor(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    github_svc.get_issue.return_value = {"number": 42, "body": "x" * 100}
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightAFK)
+    assert result.issue_number == 42
 
 
 # ── get_safe_sha: divergence resolution via agent ────────────────────────────

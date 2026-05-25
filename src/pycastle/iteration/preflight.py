@@ -20,6 +20,7 @@ from ..services import (
 )
 from ..session import RoleSession
 from ..agents.classifier import WellFormed, classify_slice, slice_labels
+from ._utils import is_well_formed_body
 from ..display.status_display import StatusDisplay
 from ._utils import _wait_for_clean_working_tree
 
@@ -106,6 +107,12 @@ async def handle_preflight_failure(
             f"Pre-Flight Reporter filed issue #{agent_result.number} on the AFK branch "
             f"without exactly one slice-mode label — got labels={agent_result.labels!r}. "
             f"Expected exactly one of {sorted(expected)!r}."
+        )
+    filed_issue = deps.github_svc.get_issue(agent_result.number)
+    if not is_well_formed_body(filed_issue):
+        raise RuntimeError(
+            f"Pre-Flight Reporter filed issue #{agent_result.number} whose body is "
+            f"below the minimum length floor — body too short to be valid."
         )
     return "afk", agent_result.number
 
