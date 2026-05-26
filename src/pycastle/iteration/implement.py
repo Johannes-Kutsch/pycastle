@@ -240,9 +240,7 @@ async def implement_phase(
     def _progress_text() -> str:
         parts = [f"started implement Agents for {implement_started}/{total} issues"]
         if review_started > 0:
-            parts.append(
-                f"started review Agents for {review_started}/{total} issues"
-            )
+            parts.append(f"started review Agents for {review_started}/{total} issues")
         return "Running: " + " · ".join(parts)
 
     deps.status_display.update_phase("Implement", _progress_text())

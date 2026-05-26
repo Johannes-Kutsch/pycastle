@@ -3504,3 +3504,77 @@ def test_orchestrator_operator_actionable_never_routes_to_pycastle_upstream(tmp_
     assert auto_file_calls == [], (
         "auto_file_issue must not be called for operator-actionable git errors"
     )
+
+
+# ── Issue-901: log maintenance wired into pycastle run ───────────────────────
+
+
+def test_log_maintenance_trims_oversized_log_after_successful_run(tmp_path):
+    """After a successful run, oversized log files must be trimmed to 10,000 lines."""
+    logs_dir = tmp_path / "pycastle" / "logs"
+    logs_dir.mkdir(parents=True)
+    cron_log = logs_dir / "cron.log"
+    cron_log.write_text("\n".join(str(i) for i in range(11_000)))
+
+    async def _fake_run_agent(request: RunRequest):
+        return _plan_output([])
+
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.return_value = []
+
+    _run(tmp_path, _fake_run_agent, github_service=mock_github, logs_dir=logs_dir)
+
+    lines = cron_log.read_text().splitlines()
+    assert len(lines) == 10_000, f"Expected 10,000 lines after trim; got {len(lines)}"
+
+
+def test_log_maintenance_runs_after_error_exit(tmp_path):
+    """Log maintenance must run even when the orchestrator exits with an error."""
+    logs_dir = tmp_path / "pycastle" / "logs"
+    logs_dir.mkdir(parents=True)
+    cron_log = logs_dir / "cron.log"
+    cron_log.write_text("\n".join(str(i) for i in range(11_000)))
+
+    async def _fake_run_agent(request: RunRequest):
+        if "Pre-Flight Reporter" in request.name:
+            return IssueOutput(number=99, labels=["ready-for-human"])
+        return CompletionOutput()
+
+    with pytest.raises(SystemExit):
+        _run(
+            tmp_path,
+            agent_runner=FakeAgentRunner(
+                side_effect=_fake_run_agent,
+                preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+            ),
+            github_service=_make_github_svc_hitl(),
+            logs_dir=logs_dir,
+        )
+
+    lines = cron_log.read_text().splitlines()
+    assert len(lines) == 10_000, (
+        f"Log maintenance must run even on error exit; got {len(lines)} lines"
+    )
+
+
+def test_log_maintenance_deletes_old_log_files_after_run(tmp_path):
+    """After a run, log files older than 30 days must be deleted."""
+    import os
+    import time
+
+    logs_dir = tmp_path / "pycastle" / "logs"
+    logs_dir.mkdir(parents=True)
+    old_log = logs_dir / "old.log"
+    old_log.write_text("stale data")
+    stale_time = time.time() - 31 * 24 * 3600
+    os.utime(old_log, (stale_time, stale_time))
+
+    async def _fake_run_agent(request: RunRequest):
+        return _plan_output([])
+
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.return_value = []
+
+    _run(tmp_path, _fake_run_agent, github_service=mock_github, logs_dir=logs_dir)
+
+    assert not old_log.exists(), "Old log files must be deleted after run"

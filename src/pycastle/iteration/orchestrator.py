@@ -34,6 +34,7 @@ from ..services._wake_time import compute_wake_time
 from ..session import SESSION_DIR_NAME
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import prune_orphan_worktrees
+from ..log_maintenance import maintain_logs
 from .. import _time as _time_module
 
 
@@ -288,5 +289,6 @@ async def run(
 
         status_display.print("", "All done.")  # type: ignore[union-attr]
     finally:
+        maintain_logs(cfg.logs_dir, 10_000, 30)
         if _owned_display is not None:
             _owned_display.stop()
