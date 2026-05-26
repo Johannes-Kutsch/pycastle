@@ -112,7 +112,7 @@ def _is_in_flight(issue: dict, deps: Deps) -> bool:
 async def _run_implement_and_merge(
     issues: list[dict],
     deps: Deps,
-    sha: str,
+    sha: str | None,
 ) -> IterationOutcome:
     token = CancellationToken()
     async with status_row(

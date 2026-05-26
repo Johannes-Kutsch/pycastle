@@ -1632,11 +1632,11 @@ def test_run_iteration_uses_only_in_flight_issues_when_some_have_existing_branch
     )
 
 
-def test_run_iteration_uses_preflight_sha_for_in_flight_issues(
+def test_run_iteration_in_flight_worktree_uses_existing_branch_path(
     tmp_path, git_svc, logger
 ):
-    """run_issue self-fetches the safe SHA via preflight_cache.get_safe_sha() and pins
-    the implementer worktree to verdict.sha — even for in-flight issues."""
+    """On the in-flight path, sha=None is threaded through so managed_worktree uses
+    the existing-branch path — no preflight pull, no sha pinning."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
         {
@@ -1648,7 +1648,6 @@ def test_run_iteration_uses_preflight_sha_for_in_flight_issues(
         }
     ]
     git_svc.verify_ref_exists.return_value = True
-    git_svc.get_head_sha.return_value = "preflight-sha"
 
     async def _fake_agent(request: RunRequest):
         return CompletionOutput()
@@ -1659,14 +1658,13 @@ def test_run_iteration_uses_preflight_sha_for_in_flight_issues(
         git_svc=git_svc,
         github_svc=github_svc,
         logger=logger,
-        preflight_responses=[[]],
     )
     asyncio.run(run_iteration(deps))
 
-    git_svc.pull_with_merge_fallback.assert_called()
+    git_svc.pull_with_merge_fallback.assert_not_called()
     implementer_sha = git_svc.create_worktree.call_args_list[0].args[3]
-    assert implementer_sha == "preflight-sha", (
-        "In-flight implementer worktree must be pinned to the SHA from preflight_cache"
+    assert implementer_sha is None, (
+        "In-flight implementer worktree must use existing-branch path (sha=None)"
     )
 
 

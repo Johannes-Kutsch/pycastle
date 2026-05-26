@@ -70,7 +70,7 @@ class ImplementResult:
 async def run_issue(
     issue: dict,
     deps: _ImplementDeps,
-    sha: str,
+    sha: str | None,
     semaphore: asyncio.Semaphore | None = None,
     *,
     worktree_semaphore: asyncio.Semaphore | None = None,
@@ -220,7 +220,7 @@ async def run_issue(
 async def implement_phase(
     issues: list[dict],
     deps: _ImplementDeps,
-    sha: str,
+    sha: str | None,
     *,
     token: CancellationToken | None = None,
 ) -> ImplementResult:

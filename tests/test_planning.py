@@ -902,3 +902,31 @@ def test_planning_phase_single_issue_with_short_body_excluded_from_short_circuit
     result = asyncio.run(planning_phase(deps, [short_body], []))
 
     assert isinstance(result, AllBlocked)
+
+
+# ── planning_phase: in-flight sha=None ─────────────────────────────────────
+
+
+def test_planning_phase_in_flight_produces_sha_none_without_calling_preflight(
+    tmp_path, git_svc
+):
+    from pycastle.iteration.preflight import PreflightReady
+
+    call_count = 0
+
+    class _TrackingCache:
+        async def get_safe_sha(self, deps):
+            nonlocal call_count
+            call_count += 1
+            return PreflightReady(sha="should-not-appear")
+
+    issues = [{"number": 1, "title": "A", "body": "", "comments": []}]
+    fake = FakeAgentRunner([])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, preflight_cache=_TrackingCache())
+    result = asyncio.run(planning_phase(deps, issues, [], in_flight=issues))
+
+    assert isinstance(result, PlanReady)
+    assert result.sha is None, (
+        "in-flight path must not call get_safe_sha; sha must be None"
+    )
+    assert call_count == 0, "get_safe_sha must not be called on in-flight planning path"
