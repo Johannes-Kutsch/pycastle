@@ -1045,7 +1045,7 @@ def test_run_iteration_all_blocked_ends_iteration_without_improve(
 def test_run_iteration_improve_chains_into_planning_on_success(
     tmp_path, git_svc, logger
 ):
-    """When dispatcher returns DispatchImprove and improve succeeds (filed issues),
+    """When the improve gate dispatches and improve succeeds (filed issues),
     run_iteration re-fetches open issues and chains into planning, then implement.
     Outcome is Continue."""
     filed_issue = {
