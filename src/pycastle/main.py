@@ -319,6 +319,7 @@ def cron_cmd(no_improve: bool) -> None:
     import threading
 
     from .commands.init import refresh as _refresh
+    from .log_maintenance import maintain_logs
 
     cfg = _load_config_or_exit()
     home = resolve_global_dir(None, os.environ)
@@ -350,6 +351,13 @@ def cron_cmd(no_improve: bool) -> None:
         _print_layer_summary()
         _refresh()
         _do_run(cfg, no_improve=no_improve, improve_mode_flag=None)
+
+    logs_dir = (
+        cfg.logs_dir
+        if cfg.logs_dir.is_absolute()
+        else (Path.cwd() / cfg.logs_dir).resolve()
+    )
+    maintain_logs(logs_dir, max_lines=10000, retention_days=30)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,9 @@
 import contextlib
 import fcntl
+import os
 import threading
+import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -223,6 +226,36 @@ def test_cron_cmd_without_flags_uses_config_improve_mode(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert captured["improve_mode"] == "until_sleep"
+
+
+def test_cron_cmd_sweeps_old_logs_after_run(tmp_path, monkeypatch):
+    """cron_cmd must perform log maintenance — removing *.log files older than 30 days."""
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    logs_dir = tmp_path / "pycastle" / "logs"
+    logs_dir.mkdir(parents=True)
+    old_log = logs_dir / "old.log"
+    old_log.write_text("ancient\n")
+    old_mtime = time.time() - 31 * 24 * 3600
+    os.utime(old_log, (old_mtime, old_mtime))
+    recent_log = logs_dir / "recent.log"
+    recent_log.write_text("fresh\n")
+
+    cfg = Config(docker_image_name="img", logs_dir=Path("pycastle/logs"))
+    fake_svc = _make_docker_svc()
+
+    with _cron_patches(cfg, fake_svc):
+        result = CliRunner().invoke(cli, ["cron", "--no-improve"])
+
+    assert result.exit_code == 0, result.output
+    assert not old_log.exists()
+    assert recent_log.exists()
 
 
 def test_cron_cmd_without_flags_uses_none_when_config_improve_mode_not_set(
