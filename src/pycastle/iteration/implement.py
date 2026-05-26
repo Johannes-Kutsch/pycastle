@@ -76,7 +76,7 @@ async def run_issue(
     worktree_semaphore: asyncio.Semaphore | None = None,
     token: CancellationToken | None = None,
     branch_locks: dict[str, asyncio.Lock] | None = None,
-    on_started: Callable[[], None] | None = None,
+    on_started: Callable[[str], None] | None = None,
 ) -> dict:
     _branch = branch_for(issue["number"])
     _token = token if token is not None else CancellationToken()
@@ -93,14 +93,19 @@ async def run_issue(
             extra_scope_args={"BRANCH": _branch, "WIP_COMMITS": wip},
         )
 
-    _started_fired = False
+    _implement_started = False
+    _review_started = False
 
     async def _bounded_run_agent(request: RunRequest) -> Any:
-        nonlocal _started_fired
+        nonlocal _implement_started, _review_started
         async with semaphore or contextlib.nullcontext():
-            if not _started_fired and on_started is not None:
-                on_started()
-                _started_fired = True
+            if on_started is not None:
+                if request.role == AgentRole.IMPLEMENTER and not _implement_started:
+                    on_started("implement")
+                    _implement_started = True
+                elif request.role == AgentRole.REVIEWER and not _review_started:
+                    on_started("review")
+                    _review_started = True
             return await deps.agent_runner.run(request)
 
     lock: asyncio.Lock | None = None
@@ -229,17 +234,26 @@ async def implement_phase(
     worktree_semaphore = asyncio.Semaphore(deps.cfg.max_parallel + 1)
     branch_locks: dict[str, asyncio.Lock] = {}
     total = len(issues)
-    started = 0
-    deps.status_display.update_phase(
-        "Implement", f"Running: started Agents for 0/{total} issues"
-    )
+    implement_started = 0
+    review_started = 0
 
-    def _on_started() -> None:
-        nonlocal started
-        started += 1
-        deps.status_display.update_phase(
-            "Implement", f"Running: started Agents for {started}/{total} issues"
-        )
+    def _progress_text() -> str:
+        parts = [f"started implement Agents for {implement_started}/{total} issues"]
+        if review_started > 0:
+            parts.append(
+                f"started review Agents for {review_started}/{total} issues"
+            )
+        return "Running: " + " · ".join(parts)
+
+    deps.status_display.update_phase("Implement", _progress_text())
+
+    def _on_started(role: str) -> None:
+        nonlocal implement_started, review_started
+        if role == "implement":
+            implement_started += 1
+        else:
+            review_started += 1
+        deps.status_display.update_phase("Implement", _progress_text())
 
     results = await asyncio.gather(
         *[

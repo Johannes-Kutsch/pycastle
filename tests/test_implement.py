@@ -1109,7 +1109,7 @@ def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
 
 
 def test_implement_phase_sets_initial_progress_text(tmp_path):
-    """implement_phase registers 'Running: started Agents for 0/Y issues' before any agent runs."""
+    """implement_phase registers initial progress text with implement counter at 0/Y before any agent runs."""
     issues = [
         {
             "number": 1,
@@ -1138,7 +1138,7 @@ def test_implement_phase_sets_initial_progress_text(tmp_path):
     assert update_phase_calls[0] == (
         "update_phase",
         "Implement",
-        "Running: started Agents for 0/2 issues",
+        "Running: started implement Agents for 0/2 issues",
     )
 
 
@@ -1176,10 +1176,10 @@ def test_implement_phase_increments_progress_text_per_semaphore_acquisition(tmp_
     update_phase_calls = [
         c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
     ]
-    assert "Running: started Agents for 0/3 issues" in update_phase_calls
-    assert "Running: started Agents for 1/3 issues" in update_phase_calls
-    assert "Running: started Agents for 2/3 issues" in update_phase_calls
-    assert "Running: started Agents for 3/3 issues" in update_phase_calls
+    assert any("started implement Agents for 0/3 issues" in m for m in update_phase_calls)
+    assert any("started implement Agents for 1/3 issues" in m for m in update_phase_calls)
+    assert any("started implement Agents for 2/3 issues" in m for m in update_phase_calls)
+    assert any("started implement Agents for 3/3 issues" in m for m in update_phase_calls)
 
 
 def test_implement_phase_progress_total_matches_issue_count(tmp_path):
@@ -1203,7 +1203,7 @@ def test_implement_phase_progress_total_matches_issue_count(tmp_path):
     initial = next(
         c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
     )
-    assert initial == "Running: started Agents for 0/5 issues"
+    assert initial == "Running: started implement Agents for 0/5 issues"
 
 
 def test_implement_phase_counter_is_monotonic(tmp_path):
@@ -1224,17 +1224,26 @@ def test_implement_phase_counter_is_monotonic(tmp_path):
 
     asyncio.run(implement_phase(issues, deps, "sha-abc"))
 
-    counts = [
-        int(c[2].split("for ")[1].split("/")[0])
-        for c in sd.calls
-        if c[0] == "update_phase" and c[1] == "Implement"
-    ]
-    assert counts == sorted(counts)
+    import re
+
+    implement_counts = []
+    review_counts = []
+    for c in sd.calls:
+        if c[0] != "update_phase" or c[1] != "Implement":
+            continue
+        m = re.search(r"started implement Agents for (\d+)/", c[2])
+        if m:
+            implement_counts.append(int(m.group(1)))
+        m = re.search(r"started review Agents for (\d+)/", c[2])
+        if m:
+            review_counts.append(int(m.group(1)))
+    assert implement_counts == sorted(implement_counts)
+    assert review_counts == sorted(review_counts)
 
 
-def test_run_issue_calls_on_started_once_per_issue(tmp_path):
-    """run_issue calls on_started exactly once regardless of how many agents run."""
-    fired: list[int] = []
+def test_run_issue_calls_on_started_for_implement_and_review(tmp_path):
+    """run_issue calls on_started once for implement and once for review."""
+    fired: list[str] = []
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
 
@@ -1245,14 +1254,14 @@ def test_run_issue_calls_on_started_once_per_issue(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda: fired.append(1)))
+    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda role: fired.append(role)))
 
-    assert fired == [1]
+    assert fired == ["implement", "review"]
 
 
 def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
     """run_issue does not call on_started when reviewer stage-done signal is set."""
-    fired: list[int] = []
+    fired: list[str] = []
     fake = FakeAgentRunner([])
     deps = _make_deps(tmp_path, fake)
     _seed_review_stage_done(tmp_path, 1)
@@ -1264,7 +1273,7 @@ def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda: fired.append(1)))
+    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda role: fired.append(role)))
 
     assert fired == []
 
@@ -1358,8 +1367,8 @@ def test_run_issue_commits_reviewer_with_title_when_no_commit_message_tag(tmp_pa
 
 
 def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
-    """run_issue calls on_started once when implement stage-done signal is set."""
-    fired: list[int] = []
+    """run_issue calls on_started for review when implement stage-done signal is set."""
+    fired: list[str] = []
     fake = FakeAgentRunner([CompletionOutput()])
     deps = _make_deps(tmp_path, fake)
     _seed_implement_stage_done(tmp_path, 1)
@@ -1371,9 +1380,9 @@ def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda: fired.append(1)))
+    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda role: fired.append(role)))
 
-    assert fired == [1]
+    assert fired == ["review"]
 
 
 # ── run_issue: role session cleanup after commit ──────────────────────────────

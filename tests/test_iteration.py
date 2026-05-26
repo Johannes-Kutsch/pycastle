@@ -3826,7 +3826,7 @@ def test_run_iteration_all_planned_issues_complete_when_plan_exceeds_max_paralle
 def test_run_iteration_status_denominator_is_planner_output_not_max_parallel(
     tmp_path, git_svc, logger
 ):
-    """Status row denominator Y in 'started Agents for X/Y' equals the planner output count, not max_parallel."""
+    """Status row denominator Y in 'started implement Agents for X/Y' equals the planner output count, not max_parallel."""
     issues = [
         {
             "number": i,
