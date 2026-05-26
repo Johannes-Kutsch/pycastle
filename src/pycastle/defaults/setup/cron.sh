@@ -37,7 +37,6 @@ mkdir -p "$PYCASTLE_HOME"
         || echo "WARNING: pip upgrade pycastle (attempt 2) failed; continuing with installed version" >&2
 
     .venv/bin/pycastle init --refresh
-    .venv/bin/pycastle build
     .venv/bin/pycastle run "${RUN_EXTRA_ARGS[@]+"${RUN_EXTRA_ARGS[@]}"}"
 ) 200>"$PYCASTLE_HOME/.cron.lock"
 
