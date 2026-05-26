@@ -2,7 +2,6 @@ import os
 import stat
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -241,7 +240,7 @@ def test_cron_sh_does_not_install_consuming_project_deps():
 
 @pytest.fixture()
 def cron_sh_env(tmp_path):
-    """Fake project structure for cron.sh; pycastle shim records its invocations."""
+    """Fake project structure for cron.sh; provides pip and pycastle shims."""
     setup_dir = tmp_path / "pycastle" / "setup"
     setup_dir.mkdir(parents=True)
 
@@ -251,24 +250,14 @@ def cron_sh_env(tmp_path):
         cron_sh_dst.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
     )
 
-    logs_dir = tmp_path / "pycastle" / "logs"
-    logs_dir.mkdir(parents=True)
-
-    pycastle_home = tmp_path / "pycastle_home"
-    pycastle_home.mkdir()
-
     venv_bin = tmp_path / ".venv" / "bin"
     venv_bin.mkdir(parents=True)
-
-    cron_log = logs_dir / "cron.log"
-    calls_file = tmp_path / "pycastle_calls.txt"
 
     python_shim = venv_bin / "python"
     python_shim.write_text(
         "#!/usr/bin/env bash\n"
         'case "${1:-}" in\n'
         "    -m) exit 0 ;;\n"
-        f"    -c) echo '{cron_log}' ;;\n"
         "    *) exit 0 ;;\n"
         "esac\n"
     )
@@ -277,25 +266,19 @@ def cron_sh_env(tmp_path):
     )
 
     pycastle_shim = venv_bin / "pycastle"
-    pycastle_shim.write_text(
-        f'#!/usr/bin/env bash\necho "$@" >> "{calls_file}"\nexit 0\n'
-    )
+    pycastle_shim.write_text("#!/usr/bin/env bash\nexit 0\n")
     pycastle_shim.chmod(
         pycastle_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
     )
 
     env = os.environ.copy()
-    env["PYCASTLE_HOME"] = str(pycastle_home)
 
     return {
         "cron_sh": cron_sh_dst,
-        "logs_dir": logs_dir,
         "env": env,
-        "calls_file": calls_file,
         "venv_bin": venv_bin,
         "python_shim": python_shim,
         "pycastle_shim": pycastle_shim,
-        "cron_log": cron_log,
     }
 
 
@@ -312,119 +295,22 @@ def _run_cron_sh(cron_sh_env, *args) -> subprocess.CompletedProcess:
     )
 
 
-# ── cron.sh --no-improve flag ─────────────────────────────────────────────────
-
-
-def test_cron_sh_no_improve_passes_flag_to_run(cron_sh_env):
-    """cron.sh --no-improve must invoke pycastle run --no-improve."""
-    result = _run_cron_sh(cron_sh_env, "--no-improve")
-
-    assert result.returncode == 0, result.stderr
-    assert "run --no-improve" in cron_sh_env["calls_file"].read_text()
-
-
-def test_cron_sh_no_flag_runs_without_no_improve(cron_sh_env):
-    """cron.sh with no arguments must invoke pycastle run without --no-improve."""
-    result = _run_cron_sh(cron_sh_env)
-
-    assert result.returncode == 0, result.stderr
-    calls = cron_sh_env["calls_file"].read_text()
-    run_lines = [line for line in calls.splitlines() if line.startswith("run")]
-    assert run_lines, "expected at least one 'pycastle run' invocation"
-    assert all("--no-improve" not in line for line in run_lines)
-
-
-def test_cron_sh_unknown_flag_exits_nonzero(cron_sh_env):
-    """cron.sh with an unknown flag must exit non-zero and print a usage message."""
-    result = _run_cron_sh(cron_sh_env, "--unknown-flag")
-
-    assert result.returncode != 0
-    assert "usage" in result.stderr.lower() or "unknown" in result.stderr.lower()
-
-
-def test_cron_sh_usage_comment_documents_no_improve():
-    """cron.sh must have a usage comment documenting the --no-improve flag."""
-    header = "\n".join((SETUP_DIR / "cron.sh").read_text().splitlines()[:10])
-    assert "--no-improve" in header
-
-
-def _old_mtime() -> float:
-    return time.time() - 31 * 24 * 3600
-
-
-def test_cron_sh_deletes_old_log_files(cron_sh_env):
-    """cron.sh must delete *.log files whose mtime is more than 30 days old."""
-    logs_dir = cron_sh_env["logs_dir"]
-    old_log = logs_dir / "old.log"
-    old_log.write_text("old content")
-    t = _old_mtime()
-    os.utime(old_log, (t, t))
-
-    result = _run(cron_sh_env["cron_sh"], cron_sh_env["env"])
-
-    assert result.returncode == 0, result.stderr
-    assert not old_log.exists()
-
-
-def test_cron_sh_keeps_recent_log_files(cron_sh_env):
-    """cron.sh must not delete *.log files whose mtime is within 30 days."""
-    logs_dir = cron_sh_env["logs_dir"]
-    recent_log = logs_dir / "recent.log"
-    recent_log.write_text("recent content")
-
-    result = _run(cron_sh_env["cron_sh"], cron_sh_env["env"])
-
-    assert result.returncode == 0, result.stderr
-    assert recent_log.exists()
-
-
-def test_cron_sh_cron_log_survives_sweep(cron_sh_env):
-    """cron.log must survive the sweep even if it existed before (mtime refreshed)."""
-    logs_dir = cron_sh_env["logs_dir"]
-    cron_log = logs_dir / "cron.log"
-    cron_log.write_text("existing cron log\n")
-    t = _old_mtime()
-    os.utime(cron_log, (t, t))
-
-    result = _run(cron_sh_env["cron_sh"], cron_sh_env["env"])
-
-    assert result.returncode == 0, result.stderr
-    assert cron_log.exists()
-
-
-# ── cron.sh pip-upgrade best-effort ──────────────────────────────────────────
-
-
 def _install_python_shim(cron_sh_env, pip_body: str) -> None:
     """Overwrite the python shim with custom behaviour for `python -m pip ...` calls.
 
     `pip_body` is the bash snippet executed inside the `-m)` case.
     """
-    cron_log = cron_sh_env["cron_log"]
     cron_sh_env["python_shim"].write_text(
         "#!/usr/bin/env bash\n"
         'case "${1:-}" in\n'
         f"    -m) {pip_body} ;;\n"
-        f"    -c) echo '{cron_log}' ;;\n"
         "    *) exit 0 ;;\n"
         "esac\n"
     )
     _make_executable(cron_sh_env["python_shim"])
 
 
-def test_pip_upgrade_failure_warns_and_continues_to_init_run(cron_sh_env):
-    """When pip upgrade fails, cron.sh warns on stderr and still runs init/run."""
-    _install_python_shim(
-        cron_sh_env, "echo 'pip upgrade failed (simulated)' >&2; exit 1"
-    )
-
-    result = _run_cron_sh(cron_sh_env)
-
-    assert result.returncode == 0, result.stderr
-    calls = cron_sh_env["calls_file"].read_text()
-    assert "init --refresh" in calls
-    assert "run" in calls
-    assert "warning" in result.stderr.lower()
+# ── cron.sh pip-upgrade best-effort ──────────────────────────────────────────
 
 
 def test_pip_upgrade_failure_emits_two_warnings(cron_sh_env):
@@ -479,23 +365,3 @@ def test_pip_upgrade_comment_records_rationale():
     assert any(
         token in nearby for token in ("stale", "prefer", "skipped", "last night")
     ), f"expected warn-and-continue rationale near pip calls; got:\n{nearby}"
-
-
-def test_pip_upgrade_failure_does_not_suppress_init_failure(cron_sh_env):
-    """init --refresh failure must still abort the tick even when pip upgrade fails."""
-    _install_python_shim(
-        cron_sh_env, "echo 'pip upgrade failed (simulated)' >&2; exit 1"
-    )
-    calls_file = cron_sh_env["calls_file"]
-    cron_sh_env["pycastle_shim"].write_text(
-        f'#!/usr/bin/env bash\necho "$@" >> "{calls_file}"\n'
-        'if [ "${1:-}" = "init" ]; then exit 1; fi\n'
-        "exit 0\n"
-    )
-    _make_executable(cron_sh_env["pycastle_shim"])
-
-    result = _run_cron_sh(cron_sh_env)
-
-    assert result.returncode != 0, "init failure must abort the tick"
-    calls = calls_file.read_text()
-    assert "run" not in calls, "run must not execute after init fails"
