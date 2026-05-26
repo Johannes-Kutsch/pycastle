@@ -195,28 +195,11 @@ def build_cmd(no_cache: bool) -> None:
         sys.exit(1)
 
 
-@main.command("run")
-@click.option(
-    "--improve",
-    "improve_mode",
-    default=None,
-    is_flag=False,
-    flag_value="until_sleep",
-    type=click.Choice(["until_sleep", "endless"]),
-    help=(
-        "Dispatch the improve agent when no issues are ready. "
-        "Bare --improve defaults to 'until_sleep' (exits after first sleep clears backlog). "
-        "'endless' keeps generating until Ctrl-C."
-    ),
-)
-@click.option(
-    "--no-improve",
-    "no_improve",
-    is_flag=True,
-    default=False,
-    help="Disable improve-agent dispatch for this run, overriding any improve_mode in config.",
-)
-def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
+def _do_run(
+    cfg: Config,
+    no_improve: bool,
+    improve_mode_flag: str | None,
+) -> None:
     from typing import cast
 
     from .commands.build import main as _build
@@ -228,14 +211,6 @@ def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
     from .services.codex_service import CodexService
     from .services.service_registry import ServiceRegistry
 
-    if improve_mode is not None and no_improve:
-        click.echo(
-            "Error: --improve and --no-improve are mutually exclusive.", err=True
-        )
-        sys.exit(1)
-
-    _print_layer_summary()
-    cfg = _load_config_or_exit()
     env = _load_env(cfg=cfg)
     primary = env.get("CLAUDE_CODE_OAUTH_TOKEN")
     if not primary:
@@ -282,8 +257,8 @@ def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
     }
     if no_improve:
         effective_improve_mode = None
-    elif improve_mode is not None:
-        effective_improve_mode = improve_mode
+    elif improve_mode_flag is not None:
+        effective_improve_mode = improve_mode_flag
     else:
         effective_improve_mode = cfg.improve_mode
     registry = ServiceRegistry(service_registry, cfg.default_service)
@@ -295,6 +270,86 @@ def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
             improve_mode=cast(ImproveMode, effective_improve_mode),
         )
     )
+
+
+@main.command("run")
+@click.option(
+    "--improve",
+    "improve_mode",
+    default=None,
+    is_flag=False,
+    flag_value="until_sleep",
+    type=click.Choice(["until_sleep", "endless"]),
+    help=(
+        "Dispatch the improve agent when no issues are ready. "
+        "Bare --improve defaults to 'until_sleep' (exits after first sleep clears backlog). "
+        "'endless' keeps generating until Ctrl-C."
+    ),
+)
+@click.option(
+    "--no-improve",
+    "no_improve",
+    is_flag=True,
+    default=False,
+    help="Disable improve-agent dispatch for this run, overriding any improve_mode in config.",
+)
+def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
+    if improve_mode is not None and no_improve:
+        click.echo(
+            "Error: --improve and --no-improve are mutually exclusive.", err=True
+        )
+        sys.exit(1)
+
+    _print_layer_summary()
+    cfg = _load_config_or_exit()
+    _do_run(cfg, no_improve=no_improve, improve_mode_flag=improve_mode)
+
+
+@main.command("cron")
+@click.option(
+    "--no-improve",
+    "no_improve",
+    is_flag=True,
+    default=False,
+    help="Disable improve-agent dispatch for this run, overriding any improve_mode in config.",
+)
+def cron_cmd(no_improve: bool) -> None:
+    import fcntl
+    import signal
+    import threading
+
+    from .commands.init import refresh as _refresh
+
+    cfg = _load_config_or_exit()
+    home = resolve_global_dir(None, os.environ)
+    lock_path = home / ".cron.lock"
+    home.mkdir(parents=True, exist_ok=True)
+
+    _LOCK_TIMEOUT_SECS = 6 * 3600
+    _in_main_thread = threading.current_thread() is threading.main_thread()
+
+    def _on_alarm(signum: int, frame: object) -> None:
+        raise TimeoutError()
+
+    with open(lock_path, "w") as lock_file:
+        if _in_main_thread:
+            old_handler = signal.signal(signal.SIGALRM, _on_alarm)
+            signal.alarm(_LOCK_TIMEOUT_SECS)
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            if _in_main_thread:
+                signal.alarm(0)
+        except TimeoutError:
+            click.echo("Error: timed out waiting for cron lock after 6 hours", err=True)
+            sys.exit(1)
+        finally:
+            if _in_main_thread:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+
+        _print_layer_summary()
+        _refresh()
+        _do_run(cfg, no_improve=no_improve, improve_mode_flag=None)
 
 
 if __name__ == "__main__":
