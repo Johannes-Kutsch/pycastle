@@ -26,7 +26,7 @@ Review the code changes on branch {{BRANCH}} for issue #{{ISSUE_NUMBER}}: {{ISSU
 
 ## 1. Confirm baseline
 
-Run `{{FEEDBACK_COMMANDS}}` to confirm the current state passes before making any changes.
+Run `{{FEEDBACK_COMMANDS}}` to confirm the current state passes before making any changes. You will emit `<checks_passed>` at the end of the session with the final summary line from this command output.
 
 ## 2. Verify behavior
 
@@ -34,7 +34,16 @@ Attempt to reproduce the original bug with new test cases. If you can reproduce 
 
 ## 3. Read the diff
 
-Run `git diff main...` (and narrower variants scoped to specific paths) to inspect what changed. For anything that looks suspicious — fragile logic, unchecked assumptions, tricky conditions, implicit type coercions, missing guards — write a test that exercises it. Try to break it. If you can, fix it.
+Run `git diff main... --stat` to get the file-level summary, then `git diff main...` (and narrower variants scoped to specific paths) to inspect what changed. For anything that looks suspicious — fragile logic, unchecked assumptions, tricky conditions, implicit type coercions, missing guards — write a test that exercises it. Try to break it. If you can, fix it.
+
+Emit `<reviewed_diff>` immediately after reading so downstream steps are gated on having actually read the diff:
+
+```
+<reviewed_diff>
+<paste of git diff main... --stat output>
+<one-line summary per changed file>
+</reviewed_diff>
+```
 
 ## 4. Enforce test standards
 
@@ -67,8 +76,18 @@ Run `{{FEEDBACK_COMMANDS}}` to ensure nothing is broken.
 
 ## 8. Output
 
-Emit a `<commit_message>` tag with a plain description of the refinements. Keep it concise.
+Emit the three output tags. `<reviewed_diff>` must already be present from step 3; emit `<checks_passed>` and optionally `<commit_message>` now.
 
-Example: `<commit_message>Description of revinements</commit_message>`
+```
+<checks_passed>
+<final FEEDBACK_COMMANDS summary line>
+</checks_passed>
+```
+
+```
+<commit_message>
+Description of refinements (optional — omit if no changes were made)
+</commit_message>
+```
 
 </workflow>

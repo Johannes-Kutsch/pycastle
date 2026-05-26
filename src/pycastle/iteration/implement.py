@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..agents.output_protocol import AgentRole, CommitMessageOutput
+from ..agents.output_protocol import AgentRole, CommitMessageOutput, ReviewerOutput
 from ..agents.result import CancellationToken
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
@@ -199,7 +199,7 @@ async def run_issue(
                         token=_token,
                     )
                 )
-                if isinstance(review_result, CommitMessageOutput):
+                if isinstance(review_result, ReviewerOutput):
                     _rev_msg = review_result.message or issue["title"]
                     deps.git_svc.commit(
                         review_mount_path,

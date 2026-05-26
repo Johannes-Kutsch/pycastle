@@ -11,6 +11,7 @@ from pycastle.agents.output_protocol import (
     AgentRole,
     BehaviorOutput,
     BehaviorParseError,
+    ChecksPassedParseError,
     CommitMessageOutput,
     CompletionOutput,
     IssueOutput,
@@ -19,6 +20,8 @@ from pycastle.agents.output_protocol import (
     PlanParseError,
     PlannerOutput,
     PromiseParseError,
+    ReviewedDiffParseError,
+    ReviewerOutput,
     process_stream,
     process_stream_from_events,
 )
@@ -349,10 +352,16 @@ def test_process_stream_implementer_returns_commit_message_output():
     assert result.message == "did the thing"
 
 
-def test_process_stream_reviewer_returns_commit_message_output():
-    lines = [_result_line("<commit_message>cleaned up</commit_message>")]
-    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.REVIEWER)
-    assert isinstance(result, CommitMessageOutput)
+def test_process_stream_reviewer_returns_reviewer_output():
+    text = (
+        "<reviewed_diff>diff --stat\n src/x.py | 1 +\nSummary</reviewed_diff>\n"
+        "<checks_passed>All 5 checks passed</checks_passed>\n"
+        "<commit_message>cleaned up</commit_message>"
+    )
+    result = process_stream(
+        [_result_line(text)], on_turn=lambda t: None, role=AgentRole.REVIEWER
+    )
+    assert isinstance(result, ReviewerOutput)
     assert result.message == "cleaned up"
 
 
@@ -363,11 +372,10 @@ def test_process_stream_implementer_returns_none_message_when_tag_absent():
     assert result.message is None
 
 
-def test_process_stream_reviewer_returns_none_message_when_tag_absent():
-    lines = [_result_line("no commit_message tag")]
-    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.REVIEWER)
-    assert isinstance(result, CommitMessageOutput)
-    assert result.message is None
+def test_process_stream_reviewer_raises_when_required_tags_absent():
+    lines = [_result_line("no artifact tags here")]
+    with pytest.raises(ReviewedDiffParseError):
+        process_stream(lines, on_turn=lambda t: None, role=AgentRole.REVIEWER)
 
 
 def test_commit_message_output_is_frozen():
@@ -1252,3 +1260,135 @@ def test_process_stream_from_events_non_behavior_slice_no_raise_without_behavior
     )
     assert isinstance(result, CommitMessageOutput)
     assert result.behaviors == ()
+
+
+# ── Reviewer artifact tags ────────────────────────────────────────────────────
+
+
+def _reviewer_text(
+    reviewed_diff: str = "diff --stat\n src/foo.py | 5 ++---\nSummary of foo.py changes",
+    checks_passed: str = "All 42 checks passed",
+    commit_message: str | None = "clean up foo.py",
+) -> str:
+    parts = [
+        f"<reviewed_diff>{reviewed_diff}</reviewed_diff>",
+        f"<checks_passed>{checks_passed}</checks_passed>",
+    ]
+    if commit_message is not None:
+        parts.append(f"<commit_message>{commit_message}</commit_message>")
+    return "\n".join(parts)
+
+
+def test_reviewed_diff_parse_error_is_subclass_of_base():
+    assert issubclass(ReviewedDiffParseError, AgentOutputProtocolError)
+
+
+def test_checks_passed_parse_error_is_subclass_of_base():
+    assert issubclass(ChecksPassedParseError, AgentOutputProtocolError)
+
+
+def test_reviewer_both_tags_surfaces_reviewed_diff():
+    text = _reviewer_text()
+    result = process_stream(
+        [_result_line(text)],
+        on_turn=lambda t: None,
+        role=AgentRole.REVIEWER,
+    )
+    assert isinstance(result, ReviewerOutput)
+    assert "diff --stat" in result.reviewed_diff
+    assert "foo.py" in result.reviewed_diff
+
+
+def test_reviewer_both_tags_surfaces_checks_passed():
+    text = _reviewer_text()
+    result = process_stream(
+        [_result_line(text)],
+        on_turn=lambda t: None,
+        role=AgentRole.REVIEWER,
+    )
+    assert isinstance(result, ReviewerOutput)
+    assert "42 checks passed" in result.checks_passed
+
+
+def test_reviewer_commit_message_optional_when_both_artifact_tags_present():
+    text = _reviewer_text(commit_message=None)
+    result = process_stream(
+        [_result_line(text)],
+        on_turn=lambda t: None,
+        role=AgentRole.REVIEWER,
+    )
+    assert isinstance(result, ReviewerOutput)
+    assert result.message is None
+    assert result.reviewed_diff != ""
+    assert result.checks_passed != ""
+
+
+def test_reviewer_commit_message_surfaced_when_present():
+    text = _reviewer_text(commit_message="polish auth module")
+    result = process_stream(
+        [_result_line(text)],
+        on_turn=lambda t: None,
+        role=AgentRole.REVIEWER,
+    )
+    assert isinstance(result, ReviewerOutput)
+    assert result.message == "polish auth module"
+
+
+def test_reviewer_missing_reviewed_diff_raises_reviewed_diff_parse_error():
+    text = "<checks_passed>All 7 checks passed</checks_passed>"
+    with pytest.raises(ReviewedDiffParseError):
+        process_stream(
+            [_result_line(text)],
+            on_turn=lambda t: None,
+            role=AgentRole.REVIEWER,
+        )
+
+
+def test_reviewer_missing_checks_passed_raises_checks_passed_parse_error():
+    text = "<reviewed_diff>diff --stat\n src/bar.py | 2 +-\nSummary</reviewed_diff>"
+    with pytest.raises(ChecksPassedParseError):
+        process_stream(
+            [_result_line(text)],
+            on_turn=lambda t: None,
+            role=AgentRole.REVIEWER,
+        )
+
+
+def test_reviewer_missing_both_tags_raises_reviewed_diff_parse_error():
+    text = "<commit_message>looks good</commit_message>"
+    with pytest.raises(ReviewedDiffParseError):
+        process_stream(
+            [_result_line(text)],
+            on_turn=lambda t: None,
+            role=AgentRole.REVIEWER,
+        )
+
+
+def test_reviewer_output_is_frozen():
+    out = ReviewerOutput(
+        message=None,
+        reviewed_diff="stat output",
+        checks_passed="all passed",
+    )
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        out.reviewed_diff = "changed"  # type: ignore[misc]
+
+
+def test_reviewer_tags_collected_across_turns():
+    result = process_stream(
+        [
+            _assistant_line(
+                "<reviewed_diff>diff --stat\n README | 1 +\nSummary</reviewed_diff>"
+            ),
+            _assistant_line(
+                "<checks_passed>All 3 checks passed</checks_passed>\n"
+                "<commit_message>update readme</commit_message>"
+            ),
+        ],
+        on_turn=lambda t: None,
+        role=AgentRole.REVIEWER,
+    )
+    assert isinstance(result, ReviewerOutput)
+    assert "README" in result.reviewed_diff
+    assert "3 checks passed" in result.checks_passed
+    assert result.message == "update readme"

@@ -44,9 +44,14 @@ def _make_cfg(tmp_path: Path, **kwargs) -> Config:
 _PLAN_TEMPLATE = PromptTemplate.PLAN
 _PLAN_SCOPE_ARGS = {"ALL_OPEN_ISSUES_JSON": "[]", "READY_FOR_AGENT_ISSUES_JSON": "[]"}
 
-# A minimal NDJSON stream that process_stream accepts as CommitMessageOutput (IMPLEMENTER/REVIEWER role)
+# A minimal NDJSON stream that process_stream accepts as CommitMessageOutput (IMPLEMENTER role)
 _COMPLETE_STREAM = [
     b'{"type": "result", "result": "<commit_message>done</commit_message>", "is_error": false}\n'
+]
+
+# A minimal NDJSON stream that process_stream accepts as ReviewerOutput (REVIEWER role)
+_REVIEWER_COMPLETE_STREAM = [
+    b'{"type": "result", "result": "<reviewed_diff>diff --stat\\n README | 1 +\\nSummary</reviewed_diff>\\n<checks_passed>All 3 passed</checks_passed>\\n<commit_message>done</commit_message>", "is_error": false}\n'
 ]
 
 # A minimal NDJSON stream that process_stream accepts as CompletionOutput (MERGER/IMPROVE role)
@@ -1510,7 +1515,7 @@ def test_agent_runner_injects_claude_config_dir_for_reviewer(tmp_path):
     def exec_side_effect(*args, **kwargs):
         if kwargs.get("stream"):
             r = MagicMock()
-            r.output = iter(_COMPLETE_STREAM)
+            r.output = iter(_REVIEWER_COMPLETE_STREAM)
             return r
         return MagicMock(exit_code=0, output=(b"", b""))
 
@@ -1559,7 +1564,7 @@ def test_agent_runner_passes_resume_flag_to_claude_when_reviewer_session_exists(
         if kwargs.get("stream"):
             captured_cmds.append(cmd)
             r = MagicMock()
-            r.output = iter(_COMPLETE_STREAM)
+            r.output = iter(_REVIEWER_COMPLETE_STREAM)
             return r
         return MagicMock(exit_code=0, output=(b"", b""))
 
