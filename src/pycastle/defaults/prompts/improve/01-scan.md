@@ -4,6 +4,10 @@ You are the Improve Agent — Phase 1: Scan and Pick.
 
 Surface architectural friction in this codebase and pick **one** deepening opportunity that is safe to implement autonomously. The aim is testability and AI-navigability.
 
+</task>
+
+<context>
+
 ## Safety net
 
 You must NOT modify any files in the worktree. Your only output for this phase is the conversation itself — the picked candidate, its justification, and a final `<promise>` tag.
@@ -27,6 +31,10 @@ This phase runs autonomously. Every candidate you shortlist must pass the AFK-sa
 The forbidden list is about **reversibility**: internal seam decisions are reversible at the code level alone — fair game. The forbidden categories require migrating persisted artefacts (CLI flag names, on-disk session files, GitHub-issue body conventions, prompt-template placeholders, ADR-locked seams) — out of bounds.
 
 If every candidate fails the filter, emit `<promise>NO-CANDIDATE</promise>` and stop.
+
+</context>
+
+<workflow>
 
 ## Process
 
@@ -74,6 +82,12 @@ After grilling, answer the following four questions explicitly:
 3. What is closest to front-facing functionality and why is it still safe?
 4. What is the strongest argument *against* the pick?
 
+</workflow>
+
+<output>
+
 Emit `<promise>COMPLETE</promise>` when your pick is finalised.
 
-</task>
+If every candidate fails the AFK-safety filter, emit `<promise>NO-CANDIDATE</promise>`.
+
+</output>

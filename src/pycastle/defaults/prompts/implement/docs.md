@@ -40,9 +40,11 @@ Rules:
 - Do not write new tests. Do not add test cases.
 - Do not run feedback commands or test suites.
 
-## 3. Output
+</workflow>
+
+<output>
 
 {{IMPLEMENT_OUTPUT_RULES}}
 
-</workflow>
+</output>
 
