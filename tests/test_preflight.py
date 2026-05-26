@@ -260,7 +260,7 @@ def test_get_safe_sha_parallel_callers_run_preflight_once(
     assert len(fake.preflight_calls) == 1
 
 
-# ── handle_preflight_failure: AFK slice-mode label validation ─────────────────
+# ── AFK slice-mode label validation via `get_safe_sha` ───────────────────────
 
 
 def test_get_safe_sha_raises_when_afk_issue_missing_slice_mode_label(
@@ -312,7 +312,7 @@ def test_get_safe_sha_raises_when_afk_issue_has_multiple_slice_mode_labels(
         asyncio.run(cache.get_safe_sha(deps))
 
 
-# ── handle_preflight_failure: AFK body-length validation ─────────────────────
+# ── AFK body-length validation via `get_safe_sha` ────────────────────────────
 
 
 def test_get_safe_sha_raises_when_afk_issue_body_is_too_short(

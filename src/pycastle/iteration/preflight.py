@@ -70,52 +70,6 @@ def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
     return result
 
 
-async def handle_preflight_failure(
-    failures: tuple[tuple[str, str, str], ...],
-    deps: _PreflightDeps,
-    mount_path: Path,
-) -> tuple[str, int]:
-    check_name, command, output = failures[0]
-    agent_result = await deps.agent_runner.run(
-        RunRequest(
-            name="Pre-Flight Reporter",
-            template=PromptTemplate.PREFLIGHT_ISSUE,
-            mount_path=mount_path,
-            role=AgentRole.PREFLIGHT_ISSUE,
-            scope_args={
-                "CHECK_NAME": check_name,
-                "COMMAND": command,
-                "OUTPUT": output,
-            },
-            model=deps.cfg.preflight_issue_override.model,
-            effort=deps.cfg.preflight_issue_override.effort,
-            status_display=deps.status_display,
-            work_body=f"reporting {check_name} issue",
-        )
-    )
-    if not isinstance(agent_result, IssueOutput):
-        raise RuntimeError(
-            f"Preflight-issue agent returned unexpected output type: {type(agent_result).__name__}"
-        )
-    if deps.cfg.hitl_label in agent_result.labels:
-        return "hitl", agent_result.number
-    result = classify_slice({"labels": list(agent_result.labels)}, deps.cfg)
-    if not isinstance(result, WellFormed):
-        expected = slice_labels(deps.cfg)
-        raise RuntimeError(
-            f"Pre-Flight Reporter filed issue #{agent_result.number} on the AFK branch "
-            f"without exactly one slice-mode label — got labels={agent_result.labels!r}. "
-            f"Expected exactly one of {sorted(expected)!r}."
-        )
-    filed_issue = deps.github_svc.get_issue(agent_result.number)
-    if not is_well_formed_body(filed_issue):
-        raise RuntimeError(
-            f"Pre-Flight Reporter filed issue #{agent_result.number} whose body is "
-            f"below the minimum length floor — body too short to be valid."
-        )
-    return "afk", agent_result.number
-
-
 class PreflightCache:
     """Single-slot, process-scoped cache for preflight verdicts.
 
@@ -168,6 +122,53 @@ class PreflightCache:
             style="error",
         )
         return False
+
+    async def _handle_failure(
+        self,
+        failures: tuple[tuple[str, str, str], ...],
+        deps: _PreflightDeps,
+        mount_path: Path,
+        sha: str,
+    ) -> PreflightHITL | PreflightAFK:
+        check_name, command, output = failures[0]
+        agent_result = await deps.agent_runner.run(
+            RunRequest(
+                name="Pre-Flight Reporter",
+                template=PromptTemplate.PREFLIGHT_ISSUE,
+                mount_path=mount_path,
+                role=AgentRole.PREFLIGHT_ISSUE,
+                scope_args={
+                    "CHECK_NAME": check_name,
+                    "COMMAND": command,
+                    "OUTPUT": output,
+                },
+                model=deps.cfg.preflight_issue_override.model,
+                effort=deps.cfg.preflight_issue_override.effort,
+                status_display=deps.status_display,
+                work_body=f"reporting {check_name} issue",
+            )
+        )
+        if not isinstance(agent_result, IssueOutput):
+            raise RuntimeError(
+                f"Preflight-issue agent returned unexpected output type: {type(agent_result).__name__}"
+            )
+        if deps.cfg.hitl_label in agent_result.labels:
+            return PreflightHITL(sha=sha, issue_number=agent_result.number)
+        result = classify_slice({"labels": list(agent_result.labels)}, deps.cfg)
+        if not isinstance(result, WellFormed):
+            expected = slice_labels(deps.cfg)
+            raise RuntimeError(
+                f"Pre-Flight Reporter filed issue #{agent_result.number} on the AFK branch "
+                f"without exactly one slice-mode label — got labels={agent_result.labels!r}. "
+                f"Expected exactly one of {sorted(expected)!r}."
+            )
+        filed_issue = deps.github_svc.get_issue(agent_result.number)
+        if not is_well_formed_body(filed_issue):
+            raise RuntimeError(
+                f"Pre-Flight Reporter filed issue #{agent_result.number} whose body is "
+                f"below the minimum length floor — body too short to be valid."
+            )
+        return PreflightAFK(sha=sha, issue_number=agent_result.number)
 
     async def pull_with_resolution(self, deps: _PreflightDeps) -> None:
         """Pull from origin, escalating to the divergence-resolver agent on textual conflict."""
@@ -244,19 +245,14 @@ class PreflightCache:
                     work_body="Checking",
                 )
 
+                result: PreflightResult
                 if failures:
                     try:
-                        verdict, pf_num = await handle_preflight_failure(
-                            tuple(failures), deps, mount_path
+                        result = await self._handle_failure(
+                            tuple(failures), deps, mount_path, sha
                         )
                     except AgentOutputProtocolError as parse_exc:
                         raise RuntimeError(str(parse_exc)) from parse_exc
-                    if verdict == "hitl":
-                        result: PreflightResult = PreflightHITL(
-                            sha=sha, issue_number=pf_num
-                        )
-                    else:
-                        result = PreflightAFK(sha=sha, issue_number=pf_num)
                 else:
                     result = PreflightReady(sha=sha)
 
