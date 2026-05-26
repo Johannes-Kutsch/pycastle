@@ -2,7 +2,7 @@ import os
 import re
 import shutil
 import tempfile
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
 from typing import Protocol
 
@@ -197,30 +197,20 @@ def _cleanup_stale_sandbox(
 ) -> None:
     """Remove any stale worktree and/or branch for an ephemeral sandbox.
 
-    Called before creating an ephemeral sandbox so that the new worktree is
-    always built fresh at the caller-supplied SHA, regardless of what a prior
-    run left behind. All operations are best-effort: failures are silently
-    swallowed so that _create_worktree can surface a proper error if needed.
+    Called before creating an ephemeral sandbox so the new worktree is built
+    fresh at the caller-supplied SHA, regardless of what a prior run left
+    behind. Best-effort: subsequent _create_worktree surfaces real errors.
     """
-    path_exists = wt_path.exists()
     try:
         registered = svc.list_worktrees(repo_path)
     except Exception:
         registered = []
-    if path_exists or wt_path in registered:
-        try:
+    if wt_path.exists() or wt_path in registered:
+        with suppress(Exception):
             svc.remove_worktree(repo_path, wt_path)
-        except Exception:
-            pass
-    try:
-        branch_exists = svc.verify_ref_exists(branch, repo_path)
-    except Exception:
-        branch_exists = False
-    if branch_exists:
-        try:
+    with suppress(Exception):
+        if svc.verify_ref_exists(branch, repo_path):
             svc.delete_branch(branch, repo_path)
-        except Exception:
-            pass
 
 
 @asynccontextmanager
