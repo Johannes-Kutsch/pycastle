@@ -163,8 +163,12 @@ def refresh() -> None:
         if (project_dir / path).exists():
             report.append(("preserved", path))
 
-    for verb, path in sorted(report, key=lambda x: x[1]):
-        print(f"{verb} {path}")
+    overwrote = [(verb, path) for verb, path in report if verb == "overwrote"]
+    if overwrote:
+        for verb, path in sorted(overwrote, key=lambda x: x[1]):
+            print(f"{verb} {path}")
+    else:
+        print("pycastle directory is already up to date.")
 
 
 def _role_namespaces() -> list[tuple[AgentRole, str]]:

@@ -1137,30 +1137,38 @@ def _run_refresh_capture(tmp_path, monkeypatch, capsys) -> list[str]:
 def test_refresh_reports_created_for_every_copied_file_when_pycastle_dir_empty(
     tmp_path, monkeypatch, capsys
 ):
-    """When pycastle/ is empty, every file refresh writes is reported as 'created' (no preserved)."""
-    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
+    """When pycastle/ is empty, refresh copies all scaffold files to disk without per-file output."""
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pycastle").mkdir()
+    refresh()
+    capsys.readouterr()
 
     on_disk = sorted(
         str(p.relative_to(tmp_path / "pycastle"))
         for p in (tmp_path / "pycastle").rglob("*")
         if p.is_file()
     )
-    reported = [ln.split(" ", 1)[1] for ln in report]
-    assert reported == on_disk
-    assert {ln.split(" ", 1)[0] for ln in report} == {"created"}
-    assert "created Dockerfile" in report
+    assert on_disk  # files were actually created
+    assert (tmp_path / "pycastle" / "Dockerfile").exists()
 
 
 def test_refresh_reports_unchanged_when_file_byte_equal(tmp_path, monkeypatch, capsys):
+    """Byte-equal files are not shown in stdout; refresh prints only the confirmation line."""
     from importlib.resources import files
+    from pycastle.commands.init import refresh
 
     rel = "prompts/plan-prompt.md"
     target = tmp_path / "pycastle" / rel
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes((files("pycastle").joinpath("defaults") / rel).read_bytes())
 
-    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
-    assert f"unchanged {rel}" in report
+    monkeypatch.chdir(tmp_path)
+    refresh()
+    out = capsys.readouterr().out
+    assert f"unchanged {rel}" not in out
+    assert "up to date" in out.lower()
 
 
 def test_refresh_reports_overwrote_and_replaces_content_when_file_differs(
@@ -1177,22 +1185,32 @@ def test_refresh_reports_overwrote_and_replaces_content_when_file_differs(
 
 
 def test_refresh_preserves_existing_config_py(tmp_path, monkeypatch, capsys):
+    """config.py content is untouched by refresh and does not appear in stdout."""
+    from pycastle.commands.init import refresh
+
     config = tmp_path / "pycastle" / "config.py"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text("# my config\n")
 
-    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
-    assert "preserved config.py" in report
+    monkeypatch.chdir(tmp_path)
+    refresh()
+    out = capsys.readouterr().out
+    assert "config.py" not in out
     assert config.read_text() == "# my config\n"
 
 
 def test_refresh_preserves_existing_env_file(tmp_path, monkeypatch, capsys):
+    """`.env` content is untouched by refresh and does not appear in stdout."""
+    from pycastle.commands.init import refresh
+
     env_file = tmp_path / "pycastle" / ".env"
     env_file.parent.mkdir(parents=True, exist_ok=True)
     env_file.write_text("GH_TOKEN=secret\n")
 
-    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
-    assert "preserved .env" in report
+    monkeypatch.chdir(tmp_path)
+    refresh()
+    out = capsys.readouterr().out
+    assert ".env" not in out
     assert env_file.read_text() == "GH_TOKEN=secret\n"
 
 
@@ -1235,3 +1253,100 @@ def test_refresh_omits_runtime_artifact_dirs(tmp_path, monkeypatch, capsys):
     report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
     for dir_name in (".worktrees", "logs", ".pycastle-session"):
         assert not any(dir_name in ln for ln in report)
+
+
+# ── Issue #905: quiet --refresh output to overwrote-only ─────────────────────
+
+
+def _run_refresh_stdout(tmp_path, monkeypatch, capsys) -> str:
+    """Run refresh() in tmp_path and return raw stdout."""
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pycastle").mkdir(exist_ok=True)
+    refresh()
+    return capsys.readouterr().out
+
+
+def test_refresh_prints_confirmation_when_nothing_modified(
+    tmp_path, monkeypatch, capsys
+):
+    """When no files differ, refresh prints one confirmation line and no per-file lines."""
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    refresh()
+    capsys.readouterr()
+
+    refresh()
+    out = capsys.readouterr().out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert len(lines) == 1
+    assert "up to date" in lines[0].lower()
+    assert not any(
+        ln.startswith(("created ", "unchanged ", "overwrote ", "preserved "))
+        for ln in lines
+    )
+
+
+def test_refresh_shows_only_overwrote_file_when_one_mutated(
+    tmp_path, monkeypatch, capsys
+):
+    """After mutating one file, refresh prints only that file's overwrote line."""
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    refresh()
+    capsys.readouterr()
+
+    rel = "prompts/plan-prompt.md"
+    (pycastle_dir / rel).write_bytes(b"STALE CONTENT\n")
+
+    refresh()
+    out = capsys.readouterr().out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert lines == [f"overwrote {rel}"]
+
+
+def test_refresh_does_not_print_created_files(tmp_path, monkeypatch, capsys):
+    """Files copied for the first time (created) do not appear in stdout."""
+    out = _run_refresh_stdout(tmp_path, monkeypatch, capsys)
+    assert not any(ln.startswith("created ") for ln in out.splitlines())
+
+
+def test_refresh_does_not_print_config_py_or_env_even_when_present(
+    tmp_path, monkeypatch, capsys
+):
+    """config.py and .env never appear in stdout regardless of their state."""
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "config.py").write_text("# my config\n")
+    (pycastle_dir / ".env").write_text("GH_TOKEN=secret\n")
+    refresh()
+    out = capsys.readouterr().out
+    assert "config.py" not in out
+    assert ".env" not in out
+
+
+def test_refresh_shows_dockerfile_only_when_overwrote(tmp_path, monkeypatch, capsys):
+    """Dockerfile appears in stdout only when its content was modified."""
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    refresh()
+    capsys.readouterr()
+
+    (pycastle_dir / "Dockerfile").write_bytes(b"FROM scratch\n")
+
+    refresh()
+    out = capsys.readouterr().out
+    assert "overwrote Dockerfile" in out
