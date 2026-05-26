@@ -1,3 +1,4 @@
+import os
 import time
 from pathlib import Path
 
@@ -43,8 +44,6 @@ def test_log_file_within_max_lines_is_unchanged(logs_dir: Path) -> None:
 
 def _set_old_mtime(path: Path, days: int = 31) -> None:
     t = time.time() - days * 24 * 3600
-    import os
-
     os.utime(path, (t, t))
 
 
