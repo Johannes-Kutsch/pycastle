@@ -1,3 +1,9 @@
+<task>
+
+Analyze the open issues and build a dependency graph. For each issue in the {{READY_FOR_AGENT_LABEL}} list, determine whether it is **blocked** by any other open issue.
+
+</task>
+
 <context>
 
 Here are all open issues in the repo (any label), for blocker visibility:
@@ -18,11 +24,9 @@ Here are the open issues labeled {{READY_FOR_AGENT_LABEL}} — your candidate se
 
 </context>
 
-<task>
+<workflow>
 
 When blocker analysis requires architectural context, use `Read` to selectively read `CONTEXT.md` and files under `docs/adr/`.
-
-Analyze the open issues and build a dependency graph. For each issue in the {{READY_FOR_AGENT_LABEL}} list, determine whether it is **blocked** by any other open issue.
 
 An issue B is **blocked by** issue A if:
 
@@ -47,7 +51,7 @@ Issues absent from both lists have already been completed. Do not treat absent i
 
 If multiple unblocked issues work on the same part of the codebase, only include the highest-priority one to prevent merge conflicts. When priority is unclear, choose the lowest issue number.
 
-</task>
+</workflow>
 
 <output>
 

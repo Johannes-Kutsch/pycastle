@@ -44,7 +44,9 @@ Rules:
 
 Run `{{FEEDBACK_COMMANDS}}` after the refactor to confirm all existing tests still pass.
 
-## 3. Output
+</workflow>
+
+<output>
 
 Before finishing, run `{{FEEDBACK_COMMANDS}}` to ensure all tests pass.
 
@@ -54,4 +56,4 @@ Emit a `<commit_message>` tag with a plain description of the changes. Keep it c
 
 Example: `<commit_message>task completed + PRD reference; key decisions; files changed; Blockers or notes for next iteration</commit_message>`
 
-</workflow>
+</output>

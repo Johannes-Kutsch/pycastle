@@ -92,7 +92,11 @@ If you applied `{{READY_FOR_HUMAN_LABEL}}`, do **not** apply any slice-mode labe
 
 {{ISSUE_TRACKER}}
 
-### 5. Output the issue number and labels
+</workflow>
+
+<output>
+
+Output the issue number and labels:
 
 ```
 <issue>
@@ -100,4 +104,4 @@ If you applied `{{READY_FOR_HUMAN_LABEL}}`, do **not** apply any slice-mode labe
 </issue>
 ```
 
-</workflow>
+</output>

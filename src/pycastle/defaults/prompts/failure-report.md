@@ -29,12 +29,6 @@ Failure class: `{{FAILURE_CLASS}}`
 
 {{ISSUE_TRACKER}}
 
-4. Once the issue is filed, output its number:
-
-```
-<issue>{"number": ISSUE_NUMBER, "labels": ["{{BUG_LABEL}}", "{{NEEDS_TRIAGE_LABEL}}"]}</issue>
-```
-
 Do not attempt to fix the failure — analysis and filing only.
 {{#if FAILURE_CLASS=non_typed_crash}}
 ## Recovery
@@ -49,3 +43,13 @@ Apply this only if transcript corruption is suspected — it cannot be undone.
 {{/if}}
 
 </workflow>
+
+<output>
+
+Once the issue is filed, output its number:
+
+```
+<issue>{"number": ISSUE_NUMBER, "labels": ["{{BUG_LABEL}}", "{{NEEDS_TRIAGE_LABEL}}"]}</issue>
+```
+
+</output>

@@ -193,10 +193,12 @@ After creating all issues, register each new issue as a sub-issue of the parent 
 
 Do NOT close or modify the parent PRD issue.
 
-## Output
+</workflow>
+
+<output>
 
 Output each filed issue number as `<issue>N</issue>`.
 
 Then emit `<promise>COMPLETE</promise>`.
 
-</workflow>
+</output>

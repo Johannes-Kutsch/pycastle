@@ -1,8 +1,16 @@
 <task>
 
-Merge the following branches into the current branch:
+Merge the following branches into the current branch and make a single commit summarizing the merge.
+
+</task>
+
+<context>
 
 {{BRANCHES}}
+
+</context>
+
+<workflow>
 
 For each branch:
 
@@ -13,10 +21,10 @@ For each branch:
 
 After all branches are merged, make a single commit summarizing the merge.
 
-</task>
+</workflow>
 
 <output>
 
-Once you've merged everything you can, output <promise>COMPLETE</promise>.
+Once you've merged everything you can, output `<promise>COMPLETE</promise>`.
 
 </output>
