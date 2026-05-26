@@ -412,8 +412,8 @@ def _install_python_shim(cron_sh_env, pip_body: str) -> None:
     _make_executable(cron_sh_env["python_shim"])
 
 
-def test_pip_upgrade_failure_warns_and_continues_to_init_build_run(cron_sh_env):
-    """When pip upgrade fails, cron.sh warns on stderr and still runs init/build/run."""
+def test_pip_upgrade_failure_warns_and_continues_to_init_run(cron_sh_env):
+    """When pip upgrade fails, cron.sh warns on stderr and still runs init/run."""
     _install_python_shim(
         cron_sh_env, "echo 'pip upgrade failed (simulated)' >&2; exit 1"
     )
@@ -423,7 +423,6 @@ def test_pip_upgrade_failure_warns_and_continues_to_init_build_run(cron_sh_env):
     assert result.returncode == 0, result.stderr
     calls = cron_sh_env["calls_file"].read_text()
     assert "init --refresh" in calls
-    assert "build" in calls
     assert "run" in calls
     assert "warning" in result.stderr.lower()
 
@@ -499,4 +498,4 @@ def test_pip_upgrade_failure_does_not_suppress_init_failure(cron_sh_env):
 
     assert result.returncode != 0, "init failure must abort the tick"
     calls = calls_file.read_text()
-    assert "build" not in calls, "build must not run after init fails"
+    assert "run" not in calls, "run must not execute after init fails"
