@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol, TypeAlias
 
 from ..agents.output_protocol import AgentOutput, AgentSuccessOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest, translate_run_outcome
@@ -11,8 +11,9 @@ from ..errors import HardAgentError
 from ..services import GitService
 from ..services import GithubService
 from ..display.status_display import StatusDisplay
-from .dispatcher import ImproveMode
 from .preflight import PreflightCache, PreflightReady, PreflightResult
+
+ImproveMode: TypeAlias = Literal["until_sleep", "endless"] | None
 
 
 class Logger(Protocol):

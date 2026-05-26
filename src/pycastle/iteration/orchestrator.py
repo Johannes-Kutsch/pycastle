@@ -20,8 +20,7 @@ from . import (
     run_iteration,
 )
 from ..bug_reporter import file_operator_actionable_git_issue
-from ._deps import Deps as IterationDeps
-from .dispatcher import ImproveMode
+from ._deps import Deps as IterationDeps, ImproveMode
 from .preflight import PreflightCache
 from ..display.rich_status_display import RichStatusDisplay
 from ..services import (

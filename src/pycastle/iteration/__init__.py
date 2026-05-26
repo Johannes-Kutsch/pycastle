@@ -22,8 +22,6 @@ from ..session import any_role_dir_present
 from ._deps import Deps
 from ._rows import StatusRow as StatusRow
 from ._rows import status_row as status_row
-from .dispatcher import Done as Done
-from .dispatcher import should_dispatch_improve
 from .implement import branch_for, implement_phase
 from .improve import ImproveContinue as ImproveContinue
 from .improve import ImproveNoCandidate as ImproveNoCandidate
@@ -77,6 +75,11 @@ class AbortedTimeout:
 @dataclasses.dataclass(frozen=True)
 class AbortedHardApiError:
     status_code: int | None
+
+
+@dataclasses.dataclass(frozen=True)
+class Done:
+    improve_cap_reached: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -179,11 +182,13 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
         # ── (Improve) — runs when idle: no open issues, no in-flight ────────
         if not open_issues and not in_flight:
-            if should_dispatch_improve(
-                deps.improve_mode,
-                deps.slept_once,
-                deps.improve_dispatched_count,
-                deps.cfg.improve_max,
+            if (
+                deps.improve_mode is not None
+                and not (deps.improve_mode == "until_sleep" and deps.slept_once)
+                and not (
+                    deps.cfg.improve_max is not None
+                    and deps.improve_dispatched_count >= deps.cfg.improve_max
+                )
             ):
                 improve_result = await improve_phase(deps)
                 deps.improve_dispatched_count += 1

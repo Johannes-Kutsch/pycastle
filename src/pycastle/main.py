@@ -221,7 +221,7 @@ def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
 
     from .commands.build import main as _build
     from .config.loader import referenced_services
-    from .iteration.dispatcher import ImproveMode
+    from .iteration._deps import ImproveMode
     from .iteration.orchestrator import run
     from .services.agent_service import AgentService
     from .services.claude_service import ClaudeService
