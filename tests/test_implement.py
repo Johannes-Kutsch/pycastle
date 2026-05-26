@@ -1176,10 +1176,18 @@ def test_implement_phase_increments_progress_text_per_semaphore_acquisition(tmp_
     update_phase_calls = [
         c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
     ]
-    assert any("started implement Agents for 0/3 issues" in m for m in update_phase_calls)
-    assert any("started implement Agents for 1/3 issues" in m for m in update_phase_calls)
-    assert any("started implement Agents for 2/3 issues" in m for m in update_phase_calls)
-    assert any("started implement Agents for 3/3 issues" in m for m in update_phase_calls)
+    assert any(
+        "started implement Agents for 0/3 issues" in m for m in update_phase_calls
+    )
+    assert any(
+        "started implement Agents for 1/3 issues" in m for m in update_phase_calls
+    )
+    assert any(
+        "started implement Agents for 2/3 issues" in m for m in update_phase_calls
+    )
+    assert any(
+        "started implement Agents for 3/3 issues" in m for m in update_phase_calls
+    )
 
 
 def test_implement_phase_progress_total_matches_issue_count(tmp_path):
@@ -1254,7 +1262,9 @@ def test_run_issue_calls_on_started_for_implement_and_review(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda role: fired.append(role)))
+    asyncio.run(
+        run_issue(issue, deps, "sha-abc", on_started=lambda role: fired.append(role))
+    )
 
     assert fired == ["implement", "review"]
 
@@ -1273,7 +1283,9 @@ def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda role: fired.append(role)))
+    asyncio.run(
+        run_issue(issue, deps, "sha-abc", on_started=lambda role: fired.append(role))
+    )
 
     assert fired == []
 
@@ -1380,7 +1392,9 @@ def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=lambda role: fired.append(role)))
+    asyncio.run(
+        run_issue(issue, deps, "sha-abc", on_started=lambda role: fired.append(role))
+    )
 
     assert fired == ["review"]
 
