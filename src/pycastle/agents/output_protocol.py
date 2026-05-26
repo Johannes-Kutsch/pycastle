@@ -63,6 +63,13 @@ class CommitMessageOutput:
 
 
 @dataclasses.dataclass(frozen=True)
+class ReviewerOutput:
+    message: str | None
+    reviewed_diff: str
+    checks_passed: str
+
+
+@dataclasses.dataclass(frozen=True)
 class FailedOutput:
     failure_class: str = ""
 
@@ -73,6 +80,7 @@ AgentOutput: TypeAlias = (
     | CompletionOutput
     | NoCandidateOutput
     | CommitMessageOutput
+    | ReviewerOutput
     | FailedOutput
 )
 
@@ -82,6 +90,7 @@ AgentSuccessOutput: TypeAlias = (
     | CompletionOutput
     | NoCandidateOutput
     | CommitMessageOutput
+    | ReviewerOutput
 )
 
 
@@ -102,6 +111,14 @@ class PromiseParseError(AgentOutputProtocolError):
 
 
 class BehaviorParseError(AgentOutputProtocolError):
+    pass
+
+
+class ReviewedDiffParseError(AgentOutputProtocolError):
+    pass
+
+
+class ChecksPassedParseError(AgentOutputProtocolError):
     pass
 
 
@@ -381,14 +398,42 @@ class _ImproveHandler:
         return _extract_improve_output(text)
 
 
+class _ReviewerHandler:
+    def check_turn(self, turn: str) -> AgentOutput | None:
+        return None
+
+    def extract_final(self, text: str, tail: str) -> AgentOutput:
+        commit_body = _last_tag_block(text, "commit_message")
+        message = commit_body.strip() if commit_body is not None else None
+
+        diff_body = _last_tag_block(text, "reviewed_diff")
+        if diff_body is None:
+            raise ReviewedDiffParseError(
+                f"Reviewer produced no <reviewed_diff> tag.{tail}"
+            )
+
+        checks_body = _last_tag_block(text, "checks_passed")
+        if checks_body is None:
+            raise ChecksPassedParseError(
+                f"Reviewer produced no <checks_passed> tag.{tail}"
+            )
+
+        return ReviewerOutput(
+            message=message,
+            reviewed_diff=diff_body.strip(),
+            checks_passed=checks_body.strip(),
+        )
+
+
 _commit_message_handler = _CommitMessageHandler()
 _preflight_issue_handler = _PreflightIssueHandler()
+_reviewer_handler = _ReviewerHandler()
 
 _merger_handler = _MergerHandler()
 
 _HANDLERS: dict[AgentRole, _RoleHandler] = {
     AgentRole.IMPLEMENTER: _commit_message_handler,
-    AgentRole.REVIEWER: _commit_message_handler,
+    AgentRole.REVIEWER: _reviewer_handler,
     AgentRole.PLANNER: _PlannerHandler(),
     AgentRole.PREFLIGHT_ISSUE: _preflight_issue_handler,
     AgentRole.FAILURE_REPORT: _preflight_issue_handler,
