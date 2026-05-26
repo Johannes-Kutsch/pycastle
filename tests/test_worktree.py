@@ -514,7 +514,8 @@ def test_managed_worktree_does_not_recreate_valid_ancestor_branch(git_repo):
 def test_managed_worktree_raises_when_non_ancestor_branch_has_no_project_files(
     git_repo,
 ):
-    """A branch with real commits but no project files must raise, not silently discard work."""
+    """Non-ephemeral (delete_branch_on_teardown=False) branch with real commits but no project
+    files must raise, not silently discard work."""
     subprocess.run(
         ["git", "-C", str(git_repo), "branch", "issue/2-real-work"],
         check=True,
@@ -572,7 +573,7 @@ def test_managed_worktree_raises_when_non_ancestor_branch_has_no_project_files(
                 "issue-2",
                 branch="issue/2-real-work",
                 sha=None,
-                delete_branch_on_teardown=True,
+                delete_branch_on_teardown=False,
                 deps=deps,
             ):
                 pass
@@ -1451,3 +1452,202 @@ def test_managed_worktree_deletes_empty_branch_when_delete_branch_on_teardown_fa
         text=True,
     ).stdout
     assert "pycastle/issue-empty" not in branches
+
+
+# ── managed_worktree: ephemeral sandbox rebuild guarantee (issue #896) ────────
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def test_ephemeral_sandbox_rebuilds_at_sha_when_stale_divergent_branch_exists(repo):
+    """AC#1: delete_branch_on_teardown=True + divergent stale branch → worktree HEAD is sha."""
+    cfg = Config(pycastle_dir=".pycastle")
+    deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
+
+    # sha_base: HEAD of the repo fixture (has pyproject.toml)
+    sha_base = _git(repo, "rev-parse", "HEAD")
+
+    # Advance main with a new commit → sha_main
+    (repo / "main_extra.txt").write_text("extra")
+    _git(repo, "add", "main_extra.txt")
+    _git(repo, "commit", "-m", "main extra")
+    sha_main = _git(repo, "rev-parse", "HEAD")
+
+    # Create sandbox branch at sha_base and add a diverging commit
+    _git(repo, "branch", "pycastle/merge-sandbox", sha_base)
+    temp_wt = repo.parent / "temp-sandbox-wt"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "worktree",
+            "add",
+            str(temp_wt),
+            "pycastle/merge-sandbox",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    (temp_wt / "sandbox_work.txt").write_text("stale sandbox work")
+    _git(temp_wt, "add", "sandbox_work.txt")
+    _git(temp_wt, "commit", "-m", "stale sandbox commit")
+    sha_sandbox = _git(temp_wt, "rev-parse", "HEAD")
+    subprocess.run(
+        ["git", "-C", str(repo), "worktree", "remove", str(temp_wt)],
+        check=True,
+        capture_output=True,
+    )
+
+    # Precondition: the sandbox branch now diverges from main
+    assert sha_sandbox != sha_main
+    assert sha_sandbox != sha_base
+
+    # Enter ephemeral sandbox with sha=sha_main — must produce HEAD at sha_main
+    head_inside: list[str] = []
+
+    async def _run():
+        async with managed_worktree(
+            "merge-sandbox",
+            branch="pycastle/merge-sandbox",
+            sha=sha_main,
+            delete_branch_on_teardown=True,
+            deps=deps,
+        ) as path:
+            head_inside.append(_git(path, "rev-parse", "HEAD"))
+
+    asyncio.run(_run())
+
+    assert head_inside == [sha_main], (
+        f"worktree HEAD was {head_inside[0]!r}, expected sha_main={sha_main!r}"
+    )
+
+
+def test_ephemeral_sandbox_rebuilds_at_sha_when_stale_reusable_worktree_exists(repo):
+    """AC#2: delete_branch_on_teardown=True + reusable stale worktree → worktree HEAD is sha."""
+    cfg = Config(pycastle_dir=".pycastle")
+    deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
+
+    # sha_base: HEAD of the repo fixture
+    sha_base = _git(repo, "rev-parse", "HEAD")
+
+    # Advance main with a new commit → sha_main
+    (repo / "main_extra2.txt").write_text("extra2")
+    _git(repo, "add", "main_extra2.txt")
+    _git(repo, "commit", "-m", "main extra2")
+    sha_main = _git(repo, "rev-parse", "HEAD")
+
+    # Simulate a stale sandbox worktree at sha_base with a role dir (is_worktree_reusable=True)
+    wt_dir = repo / ".pycastle" / ".worktrees" / "merge-sandbox"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "worktree",
+            "add",
+            "-b",
+            "pycastle/merge-sandbox",
+            str(wt_dir),
+            sha_base,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    # Add a diverging commit to the stale sandbox worktree
+    (wt_dir / "stale.txt").write_text("stale")
+    _git(wt_dir, "add", "stale.txt")
+    _git(wt_dir, "commit", "-m", "stale sandbox commit")
+    sha_stale = _git(wt_dir, "rev-parse", "HEAD")
+
+    # Plant a role dir so is_worktree_reusable returns True
+    (wt_dir / ".pycastle-session" / "merger").mkdir(parents=True)
+
+    assert sha_stale != sha_main
+
+    # Enter ephemeral sandbox with sha=sha_main — must rebuild at sha_main, not hand back stale
+    head_inside: list[str] = []
+
+    async def _run():
+        async with managed_worktree(
+            "merge-sandbox",
+            branch="pycastle/merge-sandbox",
+            sha=sha_main,
+            delete_branch_on_teardown=True,
+            deps=deps,
+        ) as path:
+            head_inside.append(_git(path, "rev-parse", "HEAD"))
+
+    asyncio.run(_run())
+
+    assert head_inside == [sha_main], (
+        f"worktree HEAD was {head_inside[0]!r}, expected sha_main={sha_main!r}"
+    )
+
+
+def test_non_ephemeral_worktree_reuses_existing_branch_tip(repo):
+    """AC#3: delete_branch_on_teardown=False + existing branch → worktree HEAD is branch tip (sha ignored)."""
+    cfg = Config(pycastle_dir=".pycastle")
+    deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
+
+    sha_base = _git(repo, "rev-parse", "HEAD")
+
+    # Advance main → sha_main
+    (repo / "main_extra3.txt").write_text("extra3")
+    _git(repo, "add", "main_extra3.txt")
+    _git(repo, "commit", "-m", "main extra3")
+    sha_main = _git(repo, "rev-parse", "HEAD")
+
+    # Create issue branch at sha_base with a commit (sha_branch diverges from main)
+    _git(repo, "branch", "pycastle/issue-123", sha_base)
+    temp_wt2 = repo.parent / "temp-issue-wt"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "worktree",
+            "add",
+            str(temp_wt2),
+            "pycastle/issue-123",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    (temp_wt2 / "impl.txt").write_text("impl work")
+    _git(temp_wt2, "add", "impl.txt")
+    _git(temp_wt2, "commit", "-m", "impl")
+    sha_branch = _git(temp_wt2, "rev-parse", "HEAD")
+    subprocess.run(
+        ["git", "-C", str(repo), "worktree", "remove", str(temp_wt2)],
+        check=True,
+        capture_output=True,
+    )
+
+    assert sha_branch != sha_main
+
+    # Enter non-ephemeral worktree with sha=sha_main — sha is ignored, must land at sha_branch
+    head_inside: list[str] = []
+
+    async def _run():
+        async with managed_worktree(
+            "issue-123",
+            branch="pycastle/issue-123",
+            sha=sha_main,
+            delete_branch_on_teardown=False,
+            deps=deps,
+        ) as path:
+            head_inside.append(_git(path, "rev-parse", "HEAD"))
+
+    asyncio.run(_run())
+
+    assert head_inside == [sha_branch], (
+        f"worktree HEAD was {head_inside[0]!r}, expected sha_branch={sha_branch!r}"
+    )

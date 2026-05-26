@@ -1032,10 +1032,12 @@ def test_merge_phase_tears_down_and_deletes_branch_when_clean_sandbox_and_no_ses
     assert "pycastle/merge-sandbox" in deleted
 
 
-def test_merge_phase_reuses_existing_sandbox_when_merger_session_is_resumable(
+def test_merge_phase_rebuilds_sandbox_at_sha_even_when_merger_session_dir_present(
     tmp_path, git_svc, github_svc
 ):
-    """When sandbox exists with a resumable session, branch_worktree must not re-create it."""
+    """Ephemeral sandboxes (delete_branch_on_teardown=True) must always be rebuilt at the
+    requested SHA, even if a prior-run role-session dir is present at the sandbox path.
+    The old is_worktree_reusable shortcut must not apply to ephemeral sandboxes."""
     git_svc.try_merge.return_value = False
     sandbox_path = tmp_path / Config().pycastle_dir / ".worktrees" / "merge-sandbox"
 
@@ -1056,8 +1058,8 @@ def test_merge_phase_reuses_existing_sandbox_when_merger_session_is_resumable(
         for call in git_svc.create_worktree.call_args_list
         if call.args[1] == sandbox_path
     ]
-    assert not create_calls, (
-        "create_worktree must not be called for an existing resumable sandbox"
+    assert create_calls, (
+        "create_worktree must be called to rebuild the ephemeral sandbox at the requested sha"
     )
 
 

@@ -189,6 +189,40 @@ def is_worktree_reusable(path: Path, branch: str, git_svc: GitService) -> bool:
     return current == branch and any_role_dir_present(path)
 
 
+def _cleanup_stale_sandbox(
+    svc: GitService,
+    repo_path: Path,
+    wt_path: Path,
+    branch: str,
+) -> None:
+    """Remove any stale worktree and/or branch for an ephemeral sandbox.
+
+    Called before creating an ephemeral sandbox so that the new worktree is
+    always built fresh at the caller-supplied SHA, regardless of what a prior
+    run left behind. All operations are best-effort: failures are silently
+    swallowed so that _create_worktree can surface a proper error if needed.
+    """
+    path_exists = wt_path.exists()
+    try:
+        registered = svc.list_worktrees(repo_path)
+    except Exception:
+        registered = []
+    if path_exists or wt_path in registered:
+        try:
+            svc.remove_worktree(repo_path, wt_path)
+        except Exception:
+            pass
+    try:
+        branch_exists = svc.verify_ref_exists(branch, repo_path)
+    except Exception:
+        branch_exists = False
+    if branch_exists:
+        try:
+            svc.delete_branch(branch, repo_path)
+        except Exception:
+            pass
+
+
 @asynccontextmanager
 async def managed_worktree(
     name: str,
@@ -199,7 +233,10 @@ async def managed_worktree(
     deps: _WorktreeDeps,
 ):
     path = worktree_path(name, deps)
-    if not is_worktree_reusable(path, branch, deps.git_svc):
+    if delete_branch_on_teardown:
+        _cleanup_stale_sandbox(deps.git_svc, deps.repo_root, path, branch)
+        _create_worktree(deps.git_svc, deps.repo_root, path, branch, sha)
+    elif not is_worktree_reusable(path, branch, deps.git_svc):
         _create_worktree(deps.git_svc, deps.repo_root, path, branch, sha)
     _preservation_worthy_exc = False
     try:
