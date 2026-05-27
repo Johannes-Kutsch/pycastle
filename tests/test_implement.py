@@ -1104,7 +1104,7 @@ def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
 
 
 def test_implement_phase_sets_initial_progress_text(tmp_path):
-    """implement_phase registers initial progress text with implement counter at 0/Y before any agent runs."""
+    """implement_phase registers initial progress text with both counters at 0/Y before any agent runs."""
     issues = [
         {
             "number": 1,
@@ -1133,7 +1133,7 @@ def test_implement_phase_sets_initial_progress_text(tmp_path):
     assert update_phase_calls[0] == (
         "update_phase",
         "Implement",
-        "Running: started implement Agents for 0/2 issues",
+        "Running: started implement Agents for 0/2 issues · started review Agents for 0/2 issues",
     )
 
 
@@ -1185,6 +1185,103 @@ def test_implement_phase_increments_progress_text_per_semaphore_acquisition(tmp_
     )
 
 
+def test_implement_phase_seeds_initial_progress_from_done_implementers(tmp_path):
+    """Resumed issues with completed Implementers start with implement progress already counted."""
+    issues = [
+        {
+            "number": 1,
+            "title": "A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+    _seed_implement_stage_done(tmp_path, 1)
+    _seed_implement_stage_done(tmp_path, 2)
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    sd = RecordingStatusDisplay()
+    deps = _make_deps(tmp_path, fake, status_display=sd)
+
+    asyncio.run(implement_phase(issues, deps, "sha-abc"))
+
+    initial = next(
+        c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
+    )
+    assert (
+        initial
+        == "Running: started implement Agents for 2/2 issues · started review Agents for 0/2 issues"
+    )
+
+
+def test_implement_phase_seeds_initial_progress_from_done_reviewers(tmp_path):
+    """Resumed issues with completed Reviewers start with review progress already counted."""
+    issues = [
+        {
+            "number": 1,
+            "title": "A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
+    _seed_implement_stage_done(tmp_path, 1)
+    _seed_review_stage_done(tmp_path, 1)
+    fake = FakeAgentRunner([])
+    sd = RecordingStatusDisplay()
+    deps = _make_deps(tmp_path, fake, status_display=sd)
+
+    asyncio.run(implement_phase(issues, deps, "sha-abc"))
+
+    initial = next(
+        c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
+    )
+    assert (
+        initial
+        == "Running: started implement Agents for 1/1 issues · started review Agents for 1/1 issues"
+    )
+
+
+def test_implement_phase_mixed_fresh_and_done_implementer_starts_at_seed(tmp_path):
+    """A mixed fresh/resumed batch starts implement progress from the resumed issue count."""
+    issues = [
+        {
+            "number": 1,
+            "title": "A",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "B",
+            "body": "",
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+    _seed_implement_stage_done(tmp_path, 1)
+    fake = FakeAgentRunner([CompletionOutput()] * 3)
+    sd = RecordingStatusDisplay()
+    deps = _make_deps(tmp_path, fake, status_display=sd)
+
+    asyncio.run(implement_phase(issues, deps, "sha-abc"))
+
+    initial = next(
+        c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
+    )
+    assert (
+        initial
+        == "Running: started implement Agents for 1/2 issues · started review Agents for 0/2 issues"
+    )
+
+
 def test_implement_phase_progress_total_matches_issue_count(tmp_path):
     """Y in the progress text equals the number of issues passed to implement_phase."""
     issues = [
@@ -1206,7 +1303,10 @@ def test_implement_phase_progress_total_matches_issue_count(tmp_path):
     initial = next(
         c[2] for c in sd.calls if c[0] == "update_phase" and c[1] == "Implement"
     )
-    assert initial == "Running: started implement Agents for 0/5 issues"
+    assert (
+        initial
+        == "Running: started implement Agents for 0/5 issues · started review Agents for 0/5 issues"
+    )
 
 
 def test_implement_phase_counter_is_monotonic(tmp_path):
