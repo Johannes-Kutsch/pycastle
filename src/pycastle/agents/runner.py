@@ -117,6 +117,7 @@ class AgentRunner:
         container_env = dict(self._env)
         state_dir: str | None = None
         if state_dir_relpath is not None:
+            (mount_path / state_dir_relpath).mkdir(parents=True, exist_ok=True)
             state_dir = f"{_CONTAINER_WORKSPACE}/{state_dir_relpath}"
         container_env.update(self._service.build_env(state_dir))
         return DockerSession(
