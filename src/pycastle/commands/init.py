@@ -351,6 +351,23 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
 
     pycastle_home = resolve_global_dir(None, os.environ)
     scoped_dir = pycastle_home if scope == "global" else project_dir
+    local_env_file = project_dir / ".env"
+    manage_env_file = True
+
+    if scope == "global" and local_env_file.exists():
+        if click.confirm(
+            "Delete local .env? (Global will be used instead)", default=False
+        ):
+            local_env_file.unlink()
+    if (
+        scope == "local"
+        and (pycastle_home / ".env").exists()
+        and not local_env_file.exists()
+    ):
+        manage_env_file = click.confirm(
+            "Create local .env? (Global stays unchanged, local takes priority)",
+            default=False,
+        )
 
     for rel in _discover_project_shaped_files(pkg):
         target = project_dir / rel
@@ -393,39 +410,41 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             sys.exit(1)
 
     env_file = scoped_dir / ".env"
-    if env_file.exists():
-        _merge_env_template(env_file, _ENV_TEMPLATE)
-    else:
-        env_file.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            env_file.write_text(_ENV_TEMPLATE)
-        except Exception as e:
-            click.echo(
-                click.style(f"Error: could not write {env_file} — {e}", fg="red"),
-                err=True,
-            )
-            sys.exit(1)
-
-    existing_env = _read_env_values(env_file)
-
-    gh_token = _prompt_credential_with_overwrite(
-        env_file, "GH_TOKEN", "GitHub token (press Enter to skip)", existing_env
-    )
-
+    gh_token = ""
     claude_token = ""
-    if service != "codex":
-        claude_token = _prompt_credential_with_overwrite(
-            env_file,
-            "CLAUDE_CODE_OAUTH_TOKEN",
-            "Claude OAuth token (run `claude setup-token` to generate one; press Enter to skip)",
-            existing_env,
+    if manage_env_file:
+        if env_file.exists():
+            _merge_env_template(env_file, _ENV_TEMPLATE)
+        else:
+            env_file.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                env_file.write_text(_ENV_TEMPLATE)
+            except Exception as e:
+                click.echo(
+                    click.style(f"Error: could not write {env_file} — {e}", fg="red"),
+                    err=True,
+                )
+                sys.exit(1)
+
+        existing_env = _read_env_values(env_file)
+
+        gh_token = _prompt_credential_with_overwrite(
+            env_file, "GH_TOKEN", "GitHub token (press Enter to skip)", existing_env
         )
 
-        if not claude_token:
-            click.echo(
-                f"Set CLAUDE_CODE_OAUTH_TOKEN in {env_file} before running pycastle. "
-                "Run `claude setup-token` to generate a token."
+        if service != "codex":
+            claude_token = _prompt_credential_with_overwrite(
+                env_file,
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                "Claude OAuth token (run `claude setup-token` to generate one; press Enter to skip)",
+                existing_env,
             )
+
+            if not claude_token:
+                click.echo(
+                    f"Set CLAUDE_CODE_OAUTH_TOKEN in {env_file} before running pycastle. "
+                    "Run `claude setup-token` to generate a token."
+                )
 
     click.echo()
     if gh_token and click.confirm("Create GitHub labels?", default=False):
