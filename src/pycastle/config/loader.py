@@ -18,7 +18,7 @@ __all__ = ["Config", "describe_config_layers", "load_config", "resolve_global_di
 
 _BUG_REPORT_REPO_RE = re.compile(r"^[^/]+/[^/]+$")
 
-_IGNORED_CONFIG_KEYS = frozenset({"usage_limit_patterns"})
+_IGNORED_CONFIG_KEYS = frozenset({"usage_limit_patterns", "default_service"})
 
 _GLOBAL_FORBIDDEN_FIELDS = frozenset(
     {
@@ -84,15 +84,25 @@ class Config:
     auto_file_bugs: bool = False
     bug_report_repo: str = "Johannes-Kutsch/pycastle"
     timeout_retries: int = 1
-    plan_override: StageOverride = dataclasses.field(default_factory=StageOverride)
-    implement_override: StageOverride = dataclasses.field(default_factory=StageOverride)
-    review_override: StageOverride = dataclasses.field(default_factory=StageOverride)
-    merge_override: StageOverride = dataclasses.field(default_factory=StageOverride)
+    plan_override: StageOverride = dataclasses.field(
+        default_factory=lambda: StageOverride(service="claude")
+    )
+    implement_override: StageOverride = dataclasses.field(
+        default_factory=lambda: StageOverride(service="claude")
+    )
+    review_override: StageOverride = dataclasses.field(
+        default_factory=lambda: StageOverride(service="claude")
+    )
+    merge_override: StageOverride = dataclasses.field(
+        default_factory=lambda: StageOverride(service="claude")
+    )
     preflight_issue_override: StageOverride = dataclasses.field(
-        default_factory=StageOverride
+        default_factory=lambda: StageOverride(service="claude")
     )
     improve_override: StageOverride = dataclasses.field(
-        default_factory=lambda: StageOverride(model="opus", effort="high")
+        default_factory=lambda: StageOverride(
+            service="claude", model="opus", effort="high"
+        )
     )
     improve_max: int | None = None
     improve_mode: Literal["until_sleep", "endless"] | None = None

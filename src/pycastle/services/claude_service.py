@@ -264,6 +264,9 @@ class ClaudeService:
             return []
         return self._pool.names()
 
+    def valid_models(self) -> frozenset[str]:
+        return frozenset({"haiku", "sonnet", "opus"})
+
     def valid_efforts(self) -> frozenset[str]:
         return frozenset({"low", "medium", "high", "xhigh", "max"})
 
