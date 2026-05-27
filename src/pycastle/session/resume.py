@@ -1,4 +1,6 @@
+import os
 import shutil
+import stat
 import uuid
 from enum import Enum
 from pathlib import Path
@@ -8,6 +10,11 @@ from ..agents.output_protocol import AgentRole
 _NAMESPACE = uuid.NAMESPACE_DNS
 
 SESSION_DIR_NAME = ".pycastle-session"
+
+
+def _force_remove_readonly(func, path, _exc_info):
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 
 class RunKind(Enum):
@@ -72,7 +79,8 @@ class RoleSession:
         return RunKind.RESUME if self.is_resumable() else RunKind.FRESH
 
     def start_fresh(self) -> None:
-        shutil.rmtree(self.path, ignore_errors=True)
+        if self.path.is_dir():
+            shutil.rmtree(self.path, onerror=_force_remove_readonly)
         self.path.mkdir(parents=True, exist_ok=True)
 
     def mark_done(self) -> None:
@@ -82,7 +90,8 @@ class RoleSession:
             if child.is_file() or child.is_symlink():
                 child.unlink(missing_ok=True)
             elif child.is_dir():
-                shutil.rmtree(child, ignore_errors=True)
+                shutil.rmtree(child, onerror=_force_remove_readonly)
 
     def discard(self) -> None:
-        shutil.rmtree(self.path, ignore_errors=True)
+        if self.path.is_dir():
+            shutil.rmtree(self.path, onerror=_force_remove_readonly)

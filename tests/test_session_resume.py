@@ -1,5 +1,7 @@
 """Tests for session_resume: RoleSession lifecycle and module-level helpers."""
 
+import os
+import stat
 import uuid
 
 import pytest
@@ -101,6 +103,20 @@ def test_mark_done_signals_done_dir_survives_next_session_is_fresh(rs, worktree)
     assert rs.is_resumable() is False
     assert rs.path.is_dir()
     assert RoleSession(worktree, AgentRole.IMPLEMENTER).run_kind() == RunKind.FRESH
+
+
+def test_mark_done_removes_readonly_files(rs):
+    rs.start_fresh()
+    pack_dir = rs.path / "codex" / ".tmp" / "plugins" / ".git" / "objects" / "pack"
+    pack_dir.mkdir(parents=True)
+    pack_file = pack_dir / "pack-abc123.pack"
+    pack_file.write_bytes(b"data")
+    os.chmod(pack_file, stat.S_IREAD)
+
+    rs.mark_done()
+
+    assert rs.is_done() is True
+    assert rs.is_resumable() is False
 
 
 def test_start_fresh_on_populated_dir_makes_not_resumable(rs):
