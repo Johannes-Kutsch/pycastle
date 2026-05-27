@@ -153,6 +153,90 @@ def test_init_creates_all_scaffold_files(tmp_path, monkeypatch):
     assert (scaffold / "prompts" / "merge-prompt.md").exists()
 
 
+def test_init_writes_local_config_example_with_all_supported_settings(
+    tmp_path, monkeypatch
+):
+    """init always overwrites local config.py.example with the discoverable template."""
+    import dataclasses
+    import re
+
+    from pycastle.commands.init import main
+    from pycastle.config import Config
+
+    monkeypatch.chdir(tmp_path)
+    example = tmp_path / "pycastle" / "config.py.example"
+    example.parent.mkdir()
+    example.write_text("# stale example\n")
+
+    with (
+        patch("click.prompt", side_effect=["claude", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    content = example.read_text()
+    assert content != "# stale example\n"
+    for section in (
+        "Behaviour",
+        "Docker",
+        "Labels",
+        "Paths",
+        "Preflight checks",
+        "Implement checks",
+        "Improve",
+        "Stage overrides",
+        "Service",
+    ):
+        assert f"--- {section} ---" in content
+
+    expected_fields = {
+        field.name
+        for field in dataclasses.fields(Config)
+        if field.name not in {"auto_file_bugs", "bug_report_repo"}
+    }
+    for field_name in sorted(expected_fields):
+        assert re.search(rf"(^|\W){re.escape(field_name)}\s*=", content), field_name
+
+    assert "auto_file_bugs" not in content
+    assert "bug_report_repo" not in content
+    assert "bug reporter" not in content.lower()
+
+    assert "Claude model shorthands: haiku, sonnet, opus" in content
+    assert (
+        "Codex model names: gpt-5.5, gpt-5.4, gpt-5.4-mini, "
+        "gpt-5.3-codex, gpt-5.3-codex-spark, gpt-5.2"
+    ) in content
+    assert "Claude effort values: low, medium, high, xhigh, max" in content
+    assert "Codex effort values: none, minimal, low, medium, high, xhigh" in content
+    assert 'default_service = "claude"  # options: "claude", "codex"' in content
+    assert 'StageOverride(service="codex"' in content
+    assert "fallback=StageOverride(" in content
+    assert "injected via prompt" in content
+    assert "not run directly by pycastle config" in content
+
+
+def test_init_writes_config_example_to_existing_pycastle_home(tmp_path, monkeypatch):
+    """init also writes config.py.example to pycastle home when that directory exists."""
+    from pycastle.commands.init import main
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.py.example").write_text("# stale global example\n")
+    monkeypatch.setenv("PYCASTLE_HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=["claude", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    local_content = (tmp_path / "pycastle" / "config.py.example").read_text()
+    global_content = (home / "config.py.example").read_text()
+    assert global_content == local_content
+    assert global_content != "# stale global example\n"
+
+
 @pytest.mark.skipif(
     sys.platform == "win32",
     reason="POSIX executable bit not meaningful on Windows",

@@ -43,6 +43,96 @@ def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
 
 _ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
 
+_CONFIG_EXAMPLE_TEMPLATE = """from pathlib import Path
+
+from pycastle import StageOverride
+
+# --- Behaviour ---
+max_iterations = 10
+max_parallel = 1
+worktree_timeout = 30
+idle_timeout = 300
+auto_push = True
+timeout_retries = 1
+diagnose_on_failure = True
+
+# --- Docker ---
+# Name for the Docker image base built by `pycastle build`.
+docker_image_name = ""
+dockerfile = Path("pycastle/Dockerfile")
+
+# --- Labels ---
+bug_label = "bug"
+issue_label = "ready-for-agent"
+hitl_label = "ready-for-human"
+enhancement_label = "enhancement"
+needs_triage_label = "needs-triage"
+needs_info_label = "needs-info"
+wontfix_label = "wontfix"
+refactor_slice_label = "refactor-slice"
+behavior_slice_label = "behavior-slice"
+docs_slice_label = "docs-slice"
+needs_slice_type_label = "needs-slice-type"
+
+# --- Paths ---
+pycastle_dir = Path("pycastle")
+prompts_dir = Path("pycastle/prompts")
+logs_dir = Path("pycastle/logs")
+worktrees_dir = Path("worktrees")
+env_file = Path("pycastle/.env")
+
+# --- Preflight checks ---
+# Run by pycastle before agent work; format: (name, command).
+preflight_checks = (
+    ("ruff", "ruff check ."),
+    ("mypy", "mypy ."),
+    ("pytest", "pytest"),
+)
+
+# --- Implement checks ---
+# injected via prompt - these commands appear in the agent's FEEDBACK LOOPS
+# section, they are not run directly by pycastle config.
+implement_checks = (
+    "ruff check --fix",
+    "ruff format --check",
+    "mypy .",
+    "pytest",
+)
+
+# --- Improve ---
+# Default improve mode used when --improve is not passed on the CLI.
+# Options: "until_sleep", "endless", or None.
+improve_mode = None
+
+# Maximum number of improve-agent dispatches per run.
+improve_max = None
+
+# --- Stage overrides ---
+# Claude model shorthands: haiku, sonnet, opus
+# Codex model names: gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.3-codex, gpt-5.3-codex-spark, gpt-5.2
+# Claude effort values: low, medium, high, xhigh, max
+# Codex effort values: none, minimal, low, medium, high, xhigh
+plan_override = StageOverride(service="claude", model="haiku", effort="low")
+implement_override = StageOverride(
+    service="claude",
+    model="sonnet",
+    effort="medium",
+    fallback=StageOverride(service="codex", model="gpt-5.3-codex", effort="medium"),
+)
+review_override = StageOverride(service="claude", model="opus", effort="medium")
+merge_override = StageOverride(service="claude", model="opus", effort="high")
+preflight_issue_override = StageOverride(
+    service="codex",
+    model="gpt-5.4-mini",
+    effort="low",
+    fallback=StageOverride(service="claude", model="haiku", effort="low"),
+)
+improve_override = StageOverride(service="claude", model="opus", effort="high")
+
+# --- Service ---
+default_service = "claude"  # options: "claude", "codex"
+"""
+
 
 def _write_env_key(env_file: Path, key: str, value: str) -> None:
     content = env_file.read_text()
@@ -112,6 +202,11 @@ def _merge_env_template(env_file: Path, template: str) -> None:
                 content += "\n"
             content += f"{key}=\n"
     env_file.write_text(content)
+
+
+def _write_config_example(target_dir: Path) -> None:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "config.py.example").write_text(_CONFIG_EXAMPLE_TEMPLATE)
 
 
 def _prompt_credential_with_overwrite(
@@ -253,6 +348,10 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         if target.exists():
             continue
         _copy_template(rel, target, pkg)
+
+    _write_config_example(project_dir)
+    if pycastle_home.is_dir():
+        _write_config_example(pycastle_home)
 
     dockerfile_target = project_dir / "Dockerfile"
     if not dockerfile_target.exists():
