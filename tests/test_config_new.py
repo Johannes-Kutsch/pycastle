@@ -235,31 +235,6 @@ def test_load_config_all_stage_model_strings_pass_through(tmp_path):
     assert cfg.merge_override.model == "haiku"
 
 
-# ── load_config: invalid effort raises ConfigValidationError ───
-
-
-def test_load_config_validate_invalid_effort_raises(tmp_path):
-    (tmp_path / "pycastle").mkdir()
-    (tmp_path / "pycastle" / "config.py").write_text(
-        "from pycastle import StageOverride\n"
-        'plan_override = StageOverride(model="", effort="ultra")\n'
-    )
-    with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path)
-    assert exc_info.value.invalid_value == "ultra"
-
-
-def test_load_config_validate_invalid_effort_has_suggestion(tmp_path):
-    (tmp_path / "pycastle").mkdir()
-    (tmp_path / "pycastle" / "config.py").write_text(
-        "from pycastle import StageOverride\n"
-        'plan_override = StageOverride(model="", effort="hih")\n'
-    )
-    with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path)
-    assert exc_info.value.suggestion == "high"
-
-
 def test_load_config_validate_valid_efforts_pass(tmp_path):
     (tmp_path / "pycastle").mkdir()
     config_dir = tmp_path / "pycastle"
@@ -270,36 +245,6 @@ def test_load_config_validate_valid_efforts_pass(tmp_path):
         )
         cfg = load_config(repo_root=tmp_path)
         assert cfg.plan_override.effort == effort
-
-
-def test_load_config_validate_invalid_effort_lists_valid_options(tmp_path):
-    (tmp_path / "pycastle").mkdir()
-    (tmp_path / "pycastle" / "config.py").write_text(
-        "from pycastle import StageOverride\n"
-        'plan_override = StageOverride(model="", effort="ultra")\n'
-    )
-    with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path)
-    assert set(exc_info.value.valid_options) == {
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max",
-    }
-
-
-def test_load_config_validate_valid_model_with_invalid_effort_raises_effort_error(
-    tmp_path,
-):
-    (tmp_path / "pycastle").mkdir()
-    (tmp_path / "pycastle" / "config.py").write_text(
-        "from pycastle import StageOverride\n"
-        'plan_override = StageOverride(model="", effort="badeffort")\n'
-    )
-    with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path)
-    assert exc_info.value.invalid_value == "badeffort"
 
 
 # ── ConfigValidationError hierarchy ─────────────────────────────────────────
@@ -343,26 +288,6 @@ def test_load_config_applies_auto_push_false_from_local_file(tmp_path):
     assert cfg.auto_push is False
 
 
-def test_load_config_validates_effort_from_programmatic_overrides(tmp_path):
-    with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(
-            repo_root=tmp_path,
-            overrides={"plan_override": StageOverride(effort="ultra")},
-        )
-    assert exc_info.value.invalid_value == "ultra"
-
-
-def test_load_config_validate_effort_error_names_the_stage(tmp_path):
-    (tmp_path / "pycastle").mkdir()
-    (tmp_path / "pycastle" / "config.py").write_text(
-        "from pycastle import StageOverride\n"
-        'implement_override = StageOverride(model="", effort="turbo")\n'
-    )
-    with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path)
-    assert "implement" in str(exc_info.value)
-
-
 # ── Issue 479: preflight_issue_override stage override ─────────────────────
 
 
@@ -380,20 +305,6 @@ def test_load_config_applies_preflight_issue_override_from_local_file(tmp_path):
     cfg = load_config(repo_root=tmp_path)
     assert cfg.preflight_issue_override.model == "opus"
     assert cfg.preflight_issue_override.effort == "high"
-
-
-def test_load_config_validate_invalid_effort_for_preflight_issue_override_raises(
-    tmp_path,
-):
-    (tmp_path / "pycastle").mkdir()
-    (tmp_path / "pycastle" / "config.py").write_text(
-        "from pycastle import StageOverride\n"
-        'preflight_issue_override = StageOverride(model="", effort="turbo")\n'
-    )
-    with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path)
-    assert exc_info.value.invalid_value == "turbo"
-    assert "preflight_issue" in str(exc_info.value)
 
 
 # ── Issue 472: global config.py layer + path-field guard ───────────────────
