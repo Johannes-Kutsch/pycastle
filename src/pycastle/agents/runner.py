@@ -221,7 +221,7 @@ class AgentRunner:
             and self._service.is_resumable(state_dir)
             else RunKind.FRESH
         )
-        service_session_id = session_uuid
+        service_session_id: str | None = session_uuid
         if self._service.name == "codex":
             service_session_id = None
             if run_kind == RunKind.RESUME and state_dir is not None:
@@ -297,16 +297,19 @@ class AgentRunner:
                         work_run_kind = run_kind
                         for _ in range(3):
                             try:
-                                work_kwargs = {
-                                    "run_kind": work_run_kind,
-                                    "session_uuid": service_session_id,
-                                }
                                 if self._service.name == "codex":
-                                    work_kwargs["on_thread_id"] = remember_thread_id
+                                    return await runner.work(
+                                        role,
+                                        work_prompt,
+                                        run_kind=work_run_kind,
+                                        session_uuid=service_session_id,
+                                        on_thread_id=remember_thread_id,
+                                    )
                                 return await runner.work(
                                     role,
                                     work_prompt,
-                                    **work_kwargs,
+                                    run_kind=work_run_kind,
+                                    session_uuid=service_session_id,
                                 )
                             except AgentOutputProtocolError:
                                 if (
