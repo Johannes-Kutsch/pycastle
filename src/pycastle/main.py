@@ -314,9 +314,8 @@ def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
     help="Disable improve-agent dispatch for this run, overriding any improve_mode in config.",
 )
 def cron_cmd(no_improve: bool) -> None:
-    import fcntl
-    import signal
     import threading
+    import time as _time
 
     from .commands.init import refresh as _refresh
     from .log_maintenance import maintain_logs
@@ -327,26 +326,50 @@ def cron_cmd(no_improve: bool) -> None:
     home.mkdir(parents=True, exist_ok=True)
 
     _LOCK_TIMEOUT_SECS = 6 * 3600
-    _in_main_thread = threading.current_thread() is threading.main_thread()
-
-    def _on_alarm(signum: int, frame: object) -> None:
-        raise TimeoutError()
 
     with open(lock_path, "w") as lock_file:
-        if _in_main_thread:
-            old_handler = signal.signal(signal.SIGALRM, _on_alarm)
-            signal.alarm(_LOCK_TIMEOUT_SECS)
-        try:
-            fcntl.flock(lock_file, fcntl.LOCK_EX)
+        if sys.platform == "win32":
+            import msvcrt
+
+            deadline = _time.monotonic() + _LOCK_TIMEOUT_SECS
+            while True:
+                try:
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if _time.monotonic() >= deadline:
+                        click.echo(
+                            "Error: timed out waiting for cron lock after 6 hours",
+                            err=True,
+                        )
+                        sys.exit(1)
+                    _time.sleep(1)
+        else:
+            import fcntl
+            import signal
+
+            _in_main_thread = threading.current_thread() is threading.main_thread()
+
+            def _on_alarm(signum: int, frame: object) -> None:
+                raise TimeoutError()
+
             if _in_main_thread:
-                signal.alarm(0)
-        except TimeoutError:
-            click.echo("Error: timed out waiting for cron lock after 6 hours", err=True)
-            sys.exit(1)
-        finally:
-            if _in_main_thread:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
+                old_handler = signal.signal(signal.SIGALRM, _on_alarm)
+                signal.alarm(_LOCK_TIMEOUT_SECS)
+            try:
+                fcntl.flock(lock_file, fcntl.LOCK_EX)
+                if _in_main_thread:
+                    signal.alarm(0)
+            except TimeoutError:
+                click.echo(
+                    "Error: timed out waiting for cron lock after 6 hours",
+                    err=True,
+                )
+                sys.exit(1)
+            finally:
+                if _in_main_thread:
+                    signal.alarm(0)
+                    signal.signal(signal.SIGALRM, old_handler)
 
         _print_layer_summary()
         _refresh()

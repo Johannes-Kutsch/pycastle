@@ -1,11 +1,12 @@
 import contextlib
-import fcntl
 import os
+import sys
 import threading
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from pycastle.config import Config
@@ -57,7 +58,10 @@ def test_cron_cmd_creates_lock_file_at_pycastle_home(tmp_path, monkeypatch):
     assert (home / ".cron.lock").exists()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="fcntl locking is Unix-only")
 def test_cron_cmd_second_invocation_blocks_until_lock_released(tmp_path, monkeypatch):
+    import fcntl
+
     from pycastle.main import main as cli
 
     monkeypatch.chdir(tmp_path)

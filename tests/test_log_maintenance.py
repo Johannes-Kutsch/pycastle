@@ -66,6 +66,15 @@ def test_recent_log_files_are_kept(logs_dir: Path) -> None:
     assert recent.exists()
 
 
+def test_log_file_with_non_utf8_bytes_does_not_crash(logs_dir: Path) -> None:
+    log = logs_dir / "binary.log"
+    log.write_bytes(b"line1\nsome \x9d bad \xff bytes\nline3\n")
+
+    maintain_logs(logs_dir, max_lines=10000, retention_days=30)
+
+    assert log.exists()
+
+
 def test_non_log_files_are_untouched(logs_dir: Path) -> None:
     txt = logs_dir / "notes.txt"
     txt.write_text("not a log")

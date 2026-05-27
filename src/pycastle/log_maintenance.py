@@ -13,6 +13,6 @@ def maintain_logs(logs_dir: Path, max_lines: int, retention_days: int) -> None:
             log_file.unlink()
             continue
 
-        lines = log_file.read_text().splitlines()
+        lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
         if len(lines) > max_lines:
-            log_file.write_text("\n".join(lines[-max_lines:]))
+            log_file.write_text("\n".join(lines[-max_lines:]), encoding="utf-8")
