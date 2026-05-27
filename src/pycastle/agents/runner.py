@@ -209,10 +209,18 @@ class AgentRunner:
                 git_email = self._git_service.get_user_email()
                 await runner.setup(git_name, git_email, work_body)
 
+                loop = asyncio.get_running_loop()
+
+                if svc_state_relpath is not None:
+                    state_container_path = f"{_CONTAINER_WORKSPACE}/{svc_state_relpath}"
+                    await loop.run_in_executor(
+                        None,
+                        session.exec_simple,
+                        f"mkdir -p {state_container_path}",
+                    )
+
                 if run_kind == RunKind.FRESH:
                     role_session.start_fresh()
-
-                loop = asyncio.get_running_loop()
 
                 async def container_exec(cmd: str) -> str:
                     return await loop.run_in_executor(None, session.exec_simple, cmd)
