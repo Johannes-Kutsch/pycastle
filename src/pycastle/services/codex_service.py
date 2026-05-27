@@ -166,7 +166,10 @@ class CodexService:
         state_dir_container_path: str | None = None,
         token: str | None = None,
     ) -> dict[str, str]:
-        return {"TZ": "UTC", "CODEX_HOME": "/home/agent/.codex"}
+        env: dict[str, str] = {"TZ": "UTC"}
+        if state_dir_container_path:
+            env["CODEX_HOME"] = state_dir_container_path
+        return env
 
     def run(
         self,
