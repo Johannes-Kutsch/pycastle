@@ -84,6 +84,24 @@ def test_run_cmd_fails_fast_when_oauth_token_missing(tmp_path, monkeypatch):
     assert "claude setup-token" in result.output
 
 
+def test_run_cmd_both_default_service_requires_claude_token(tmp_path, monkeypatch):
+    from pycastle.config import Config
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(default_service="both", docker_image_name="myimage")
+    with patch("pycastle.main.load_config", return_value=cfg):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "Error: CLAUDE_CODE_OAUTH_TOKEN is not set." in result.output
+    assert "claude setup-token" in result.output
+
+
 # ── Issue 309: load_config() called at entry in CLI commands ──────────────────
 
 
@@ -435,6 +453,38 @@ def test_init_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
 
 
 # ── Issue 504/691: service registry seeding from env ─────────────────────────
+
+
+def test_run_cmd_codex_only_does_not_require_claude_token(tmp_path, monkeypatch):
+    from pycastle.config import Config
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+    monkeypatch.setenv("GH_TOKEN", "gh")
+
+    cfg = Config(default_service="codex", docker_image_name="myimage")
+    captured: dict = {}
+    fake_svc = MagicMock()
+    fake_svc.build_image.return_value = None
+
+    async def _fake_run(env, repo_root, **kwargs):
+        captured["registry"] = kwargs.get("service_registry")
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    registry = captured["registry"]
+    assert registry is not None
+    assert registry["codex"].name == "codex"
+    assert registry["claude"] is None
 
 
 def test_run_cmd_seeds_pool_with_primary_only_when_secondary_absent(
