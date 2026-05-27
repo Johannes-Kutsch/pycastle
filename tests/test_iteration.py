@@ -2867,6 +2867,56 @@ def test_run_iteration_failure_report_receives_correct_run_request(
     assert "SESSION_DIR" in failure_req.scope_args
 
 
+def test_run_iteration_failure_report_crash_logs_warning_and_error(
+    tmp_path, git_svc, logger
+):
+    """When the Failure-Report agent itself crashes, the except block must log a
+    status-display warning and write both tracebacks to the logger."""
+    original_error = _make_agent_failed_error(
+        AgentRole.IMPROVE, tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    )
+    report_crash = RuntimeError("report agent exploded")
+    response_queue: list = [original_error, report_crash]
+
+    async def agent_fn(req: RunRequest):
+        resp = response_queue.pop(0)
+        if isinstance(resp, BaseException):
+            raise resp
+        return resp
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+
+    status = RecordingStatusDisplay()
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(),
+            status_display=status,
+        ),
+        improve_mode="endless",
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentFailure)
+    assert result.issue_number is None
+
+    prints = [(c[1], c[2]) for c in status.calls if c[0] == "print"]
+    assert any(
+        "Failure-Report agent crashed" in str(msg) for _, msg in prints
+    )
+
+    assert len(logger.internal_errors) == 1
+    label, logged_error, logged_cause = logger.internal_errors[0]
+    assert "role=improve" in label
+    assert logged_error is report_crash
+    assert logged_cause is original_error
+
+
 def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
     tmp_path, git_svc, logger
 ):
@@ -3743,7 +3793,7 @@ def test_run_iteration_operator_actionable_does_not_call_auto_file_issue_or_fail
     tmp_path, git_svc, github_svc, logger
 ):
     """OperatorActionableGitError catch arm must not invoke auto_file_issue
-    and must not spawn the Failure-Analysis agent."""
+    and must not spawn the Failure-Report agent."""
     from pycastle.services import OperatorActionableGitError
     from pycastle.iteration import AbortedOperatorActionable
 
@@ -3777,7 +3827,7 @@ def test_run_iteration_operator_actionable_does_not_call_auto_file_issue_or_fail
     )
     agent_calls = deps.agent_runner.calls
     assert not any("Failure" in r.name for r in agent_calls), (
-        "Failure-Analysis agent must not be spawned"
+        "Failure-Report agent must not be spawned"
     )
 
 

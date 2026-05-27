@@ -1,6 +1,6 @@
 # Session resume across container teardown
 
-> **Amended 2026-05-10 (#640).** Fail-soft fresh fallback removed. Non-typed exceptions on Resume now retry once against the same session, then convert to `FailedOutput(failure_class="non_typed_crash")` routing through the Failure-Analysis path.
+> **Amended 2026-05-10 (#640).** Fail-soft fresh fallback removed. Non-typed exceptions on Resume now retry once against the same session, then convert to `FailedOutput(failure_class="non_typed_crash")` routing through the Failure-Report path.
 >
 > **Amended 2026-05-15 (#692) per ADR 0015.** Claude session files moved from `.pycastle-session/<role>/` to `.pycastle-session/<role>/[<namespace>/]claude/`. `CLAUDE_CONFIG_DIR` and `--resume`/`--session-id` are claude-private (owned by `ClaudeService` via `state_dir_relpath` and `is_resumable`). The role-dir-empty stage-done predicate is unchanged.
 
@@ -18,7 +18,7 @@ When an agent is interrupted mid-task the orchestrator preserves the worktree an
 - **In-worktree `.pycastle-session/.gitignore` with `*`.** Rejected: doesn't hide the dir itself from `git status`.
 - **Auto-append to root `.gitignore`.** Rejected: writes a tracked file, requires migration.
 - **`.git/info/exclude` idempotent append — chosen.** Local, never-committed, shared across worktrees.
-- **Re-launch as Fresh on any non-typed Resume crash (original fail-soft, rejected on amendment #640).** Common transient crashes were triggering silent history wipes — the exact failure the primitive should prevent. Current design retries once; second failure → `FailedOutput`. Failure-Analysis files a `bug` + `needs-triage` issue with a Recovery section instructing manual session wipe if transcript corruption is suspected.
+- **Re-launch as Fresh on any non-typed Resume crash (original fail-soft, rejected on amendment #640).** Common transient crashes were triggering silent history wipes — the exact failure the primitive should prevent. Current design retries once; second failure → `FailedOutput`. Failure-Report files a `bug` + `needs-triage` issue with a Recovery section instructing manual session wipe if transcript corruption is suspected.
 
 ## Consequences
 

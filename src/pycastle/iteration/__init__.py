@@ -246,8 +246,17 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 )
                 if isinstance(result, IssueOutput):
                     issue_number = result.number
-            except Exception:
-                pass
+            except Exception as report_err:
+                deps.status_display.print(
+                    "Failure Report",
+                    "Failure-Report agent crashed — no issue filed",
+                    "warning",
+                )
+                deps.logger.log_internal_error(
+                    f"Failure-Report agent crashed (original failure: role={err.role_value})",
+                    report_err,
+                    cause=err,
+                )
             finally:
                 if err.worktree_path != deps.repo_root:
                     teardown_worktree(

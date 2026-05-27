@@ -53,6 +53,27 @@ class FileLogger:
         with open(self._logs_dir / "errors.log", "a", encoding="utf-8") as f:
             f.write(entry)
 
+    def log_internal_error(self, label: str, error: Exception, cause: Exception | None = None) -> None:
+        parts: list[str] = []
+        timestamp = _time_module.now_local().isoformat()
+        parts.append(f"--- {timestamp} ---")
+        parts.append(label)
+        if cause is not None:
+            parts.append("--- Original failure ---")
+            parts.append(
+                "".join(traceback.format_exception(type(cause), cause, cause.__traceback__)).rstrip()
+            )
+        parts.append("--- Crash traceback ---")
+        parts.append(
+            "".join(traceback.format_exception(type(error), error, error.__traceback__)).rstrip()
+        )
+        parts.append("")
+        entry = "\n".join(parts) + "\n"
+        print(entry, file=sys.stderr)
+        self._logs_dir.mkdir(parents=True, exist_ok=True)
+        with open(self._logs_dir / "errors.log", "a", encoding="utf-8") as f:
+            f.write(entry)
+
     def log_agent_output(self, agent_name: str, output: str) -> None:
         pass
 

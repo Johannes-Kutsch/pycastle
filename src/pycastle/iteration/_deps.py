@@ -18,16 +18,21 @@ ImproveMode: TypeAlias = Literal["until_sleep", "endless"] | None
 
 class Logger(Protocol):
     def log_error(self, issue: dict, error: Exception) -> None: ...
+    def log_internal_error(self, label: str, error: Exception, cause: Exception | None = None) -> None: ...
     def log_agent_output(self, agent_name: str, output: str) -> None: ...
 
 
 class RecordingLogger:
     def __init__(self) -> None:
         self.errors: list[tuple[dict, Exception]] = []
+        self.internal_errors: list[tuple[str, Exception, Exception | None]] = []
         self.agent_outputs: list[tuple[str, str]] = []
 
     def log_error(self, issue: dict, error: Exception) -> None:
         self.errors.append((issue, error))
+
+    def log_internal_error(self, label: str, error: Exception, cause: Exception | None = None) -> None:
+        self.internal_errors.append((label, error, cause))
 
     def log_agent_output(self, agent_name: str, output: str) -> None:
         self.agent_outputs.append((agent_name, output))
