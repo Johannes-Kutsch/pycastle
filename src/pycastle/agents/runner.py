@@ -211,6 +211,9 @@ class AgentRunner:
                 if run_kind == RunKind.FRESH:
                     role_session.start_fresh()
 
+                if svc_state_relpath:
+                    (mount_path / svc_state_relpath).mkdir(parents=True, exist_ok=True)
+
                 loop = asyncio.get_running_loop()
 
                 async def container_exec(cmd: str) -> str:

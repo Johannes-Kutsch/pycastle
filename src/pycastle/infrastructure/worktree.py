@@ -255,10 +255,15 @@ async def transient_worktree(name: str, *, sha: str | None, deps: _WorktreeDeps)
     path = worktree_path(name, deps)
     if sha is not None:
         deps.git_svc.checkout_detached(deps.repo_root, path, sha)
+    _preserve = False
     try:
         yield path
+    except AgentFailedError:
+        _preserve = True
+        raise
     finally:
-        pass
+        if not _preserve:
+            teardown_worktree(deps.git_svc, deps.repo_root, path)
 
 
 def patch_gitdir_for_container(worktree_path: Path) -> Path | None:
