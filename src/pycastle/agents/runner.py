@@ -117,7 +117,6 @@ class AgentRunner:
         container_env = dict(self._env)
         state_dir: str | None = None
         if state_dir_relpath is not None:
-            (mount_path / state_dir_relpath).mkdir(parents=True, exist_ok=True)
             state_dir = f"{_CONTAINER_WORKSPACE}/{state_dir_relpath}"
         container_env.update(self._service.build_env(state_dir))
         return DockerSession(
@@ -209,18 +208,10 @@ class AgentRunner:
                 git_email = self._git_service.get_user_email()
                 await runner.setup(git_name, git_email, work_body)
 
-                loop = asyncio.get_running_loop()
-
-                if svc_state_relpath is not None:
-                    state_container_path = f"{_CONTAINER_WORKSPACE}/{svc_state_relpath}"
-                    await loop.run_in_executor(
-                        None,
-                        session.exec_simple,
-                        f"mkdir -p {state_container_path}",
-                    )
-
                 if run_kind == RunKind.FRESH:
                     role_session.start_fresh()
+
+                loop = asyncio.get_running_loop()
 
                 async def container_exec(cmd: str) -> str:
                     return await loop.run_in_executor(None, session.exec_simple, cmd)

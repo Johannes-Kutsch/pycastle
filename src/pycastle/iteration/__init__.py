@@ -258,10 +258,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                     cause=err,
                 )
             finally:
-                if err.worktree_path != deps.repo_root:
-                    teardown_worktree(
-                        deps.git_svc, deps.repo_root, err.worktree_path
-                    )
+                pass
         return AbortedAgentFailure(
             failed_role=err.role_value, issue_number=issue_number
         )
