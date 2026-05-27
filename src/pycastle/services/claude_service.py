@@ -4,7 +4,7 @@ import dataclasses
 import json
 import re
 import shlex
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
@@ -314,7 +314,11 @@ class ClaudeService:
             env["CLAUDE_CONFIG_DIR"] = state_dir_container_path
         return env
 
-    def run(self, lines: Iterable[str]) -> Iterator[ParsedTurn]:
+    def run(
+        self,
+        lines: Iterable[str],
+        on_thread_id: Callable[[str], None] | None = None,
+    ) -> Iterator[ParsedTurn]:
         for line in lines:
             for event in _classify_line(line):
                 yield event

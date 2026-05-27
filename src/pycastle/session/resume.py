@@ -47,6 +47,21 @@ class RoleSession:
         session_id = uuid.uuid5(role_ns, str(self._worktree.resolve()))
         return str(session_id)
 
+    def service_session_id_path(self, service_name: str) -> Path:
+        return self.path / service_name / "thread_id"
+
+    def service_session_id(self, service_name: str) -> str | None:
+        path = self.service_session_id_path(service_name)
+        if not path.is_file():
+            return None
+        value = path.read_text(encoding="utf-8").strip()
+        return value or None
+
+    def save_service_session_id(self, service_name: str, session_id: str) -> None:
+        path = self.service_session_id_path(service_name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(session_id, encoding="utf-8")
+
     def is_resumable(self) -> bool:
         return self.path.is_dir() and any(f.is_file() for f in self.path.rglob("*"))
 

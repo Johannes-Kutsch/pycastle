@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
@@ -65,7 +65,11 @@ class AgentService(Protocol):
         token: str | None = None,
     ) -> dict[str, str]: ...
 
-    def run(self, lines: Iterable[str]) -> Iterator[ParsedTurn]: ...
+    def run(
+        self,
+        lines: Iterable[str],
+        on_thread_id: Callable[[str], None] | None = None,
+    ) -> Iterator[ParsedTurn]: ...
 
     def is_available(self, now: datetime | None = None) -> bool: ...
 

@@ -12,6 +12,7 @@ from pycastle.agents.output_protocol import (
     CommitMessageOutput,
     CompletionOutput,
     FailedOutput,
+    PlannerOutput,
 )
 from pycastle.agents.result import CancellationToken
 from pycastle.agents.runner import AgentRunner, RunRequest
@@ -62,6 +63,18 @@ _MERGER_COMPLETE_STREAM = [
 _CODEX_COMPLETE_STREAM = [
     b'{"type":"item.completed","item":{"type":"agent_message",'
     b'"content":"<commit_message>done</commit_message>"}}\n'
+]
+
+_CODEX_PROTOCOL_ERROR_STREAM = [
+    b'{"type":"thread.started","thread_id":"thread-from-fresh"}\n',
+    b'{"type":"item.completed","item":{"type":"agent_message",'
+    b'"content":"missing required tag"}}\n',
+    b'{"type":"turn.completed","usage":{}}\n',
+]
+
+_CODEX_PLAN_COMPLETE_STREAM = [
+    b'{"type":"item.completed","item":{"type":"agent_message",'
+    b'"content":"<plan>{\\"issues\\": [], \\"blocked\\": []}</plan>"}}\n'
 ]
 
 
@@ -1850,6 +1863,107 @@ def test_agent_runner_seeds_codex_auth_for_fresh_state_dir(tmp_path, monkeypatch
 
     seeded = tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
     assert seeded.read_text(encoding="utf-8") == '{"mode":"oauth"}'
+
+
+def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
+    tmp_path, monkeypatch
+):
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+    streams = iter([_CODEX_PROTOCOL_ERROR_STREAM, _CODEX_PLAN_COMPLETE_STREAM])
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            r = MagicMock()
+            r.output = iter(next(streams))
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service=CodexService(),
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Codex",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+            )
+        )
+    )
+
+    assert isinstance(result, PlannerOutput)
+    assert captured_cmds[0].startswith("codex exec ")
+    assert "resume" not in captured_cmds[0]
+    assert "codex exec resume thread-from-fresh" in captured_cmds[1]
+    saved = tmp_path / ".pycastle-session" / "planner" / "codex" / "thread_id"
+    assert saved.read_text(encoding="utf-8") == "thread-from-fresh"
+
+
+def test_agent_runner_codex_resume_uses_thread_id_from_rollout(tmp_path):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
+    )
+
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            r = MagicMock()
+            r.output = iter(_CODEX_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service=CodexService(),
+    )
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Codex",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+            )
+        )
+    )
+
+    assert captured_cmds
+    assert "codex exec resume thread-from-rollout" in captured_cmds[0]
 
 
 def test_agent_runner_codex_missing_host_auth_raises_hard_error(

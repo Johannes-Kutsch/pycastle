@@ -89,6 +89,7 @@ class ContainerRunner:
         *,
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
+        on_thread_id: Callable[[str], None] | None = None,
     ) -> AgentOutput:
         self._status_display.update_phase(self.name, "Work")
         loop = asyncio.get_running_loop()
@@ -102,7 +103,7 @@ class ContainerRunner:
         return await loop.run_in_executor(
             None,
             lambda: self._run_streaming(
-                role, prompt, on_turn, on_tokens, run_kind, session_uuid
+                role, prompt, on_turn, on_tokens, run_kind, session_uuid, on_thread_id
             ),
         )
 
@@ -114,6 +115,7 @@ class ContainerRunner:
         on_tokens: Callable[[int], None] | None = None,
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
+        on_thread_id: Callable[[str], None] | None = None,
     ) -> AgentOutput:
         self._session.write_file(prompt, "/tmp/.pycastle_prompt")
         command = self._service.build_command(
@@ -172,7 +174,7 @@ class ContainerRunner:
                             yield line
 
                 return process_stream_from_events(
-                    self._service.run(_lines()),
+                    self._service.run(_lines(), on_thread_id=on_thread_id),
                     on_turn,
                     role,
                     on_tokens,

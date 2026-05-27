@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import json
 import shutil
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -147,6 +148,29 @@ class AgentRunner:
         state_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(host_auth, dest)
 
+    def _codex_thread_id_from_rollouts(self, state_dir: Path) -> str | None:
+        sessions_dir = state_dir / "sessions"
+        if not sessions_dir.is_dir():
+            return None
+        for rollout in sorted(sessions_dir.glob("rollout-*.jsonl"), reverse=True):
+            try:
+                lines = rollout.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            for line in lines:
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                if obj.get("type") != "thread.started":
+                    continue
+                thread_id = obj.get("thread_id")
+                if isinstance(thread_id, str) and thread_id.strip():
+                    return thread_id.strip()
+        return None
+
     async def _build_prompt(
         self,
         template: PromptTemplate,
@@ -189,12 +213,26 @@ class AgentRunner:
         role_session = RoleSession(mount_path, role, session_namespace)
         session_uuid = role_session.session_uuid()
         svc_state_relpath = self._service.state_dir_relpath(role, session_namespace)
+        state_dir = mount_path / svc_state_relpath if svc_state_relpath else None
         run_kind = (
             RunKind.RESUME
             if svc_state_relpath
-            and self._service.is_resumable(mount_path / svc_state_relpath)
+            and state_dir is not None
+            and self._service.is_resumable(state_dir)
             else RunKind.FRESH
         )
+        service_session_id = session_uuid
+        if self._service.name == "codex":
+            service_session_id = None
+            if run_kind == RunKind.RESUME and state_dir is not None:
+                service_session_id = (
+                    role_session.service_session_id("codex")
+                    or self._codex_thread_id_from_rollouts(state_dir)
+                )
+                if service_session_id is not None:
+                    role_session.save_service_session_id("codex", service_session_id)
+                else:
+                    run_kind = RunKind.FRESH
 
         non_typed_retry_done = False
 
@@ -230,10 +268,14 @@ class AgentRunner:
                 if run_kind == RunKind.FRESH:
                     role_session.start_fresh()
 
-                if svc_state_relpath:
-                    state_dir = mount_path / svc_state_relpath
+                if state_dir is not None:
                     state_dir.mkdir(parents=True, exist_ok=True)
                     self._seed_codex_auth_if_needed(state_dir)
+
+                def remember_thread_id(thread_id: str) -> None:
+                    nonlocal service_session_id
+                    service_session_id = thread_id
+                    role_session.save_service_session_id("codex", thread_id)
 
                 loop = asyncio.get_running_loop()
 
@@ -255,13 +297,23 @@ class AgentRunner:
                         work_run_kind = run_kind
                         for _ in range(3):
                             try:
+                                work_kwargs = {
+                                    "run_kind": work_run_kind,
+                                    "session_uuid": service_session_id,
+                                }
+                                if self._service.name == "codex":
+                                    work_kwargs["on_thread_id"] = remember_thread_id
                                 return await runner.work(
                                     role,
                                     work_prompt,
-                                    run_kind=work_run_kind,
-                                    session_uuid=session_uuid,
+                                    **work_kwargs,
                                 )
                             except AgentOutputProtocolError:
+                                if (
+                                    self._service.name == "codex"
+                                    and service_session_id is None
+                                ):
+                                    return FailedOutput(failure_class="protocol_error")
                                 work_prompt = REPROMPT_MESSAGE
                                 work_run_kind = RunKind.RESUME
                         return FailedOutput(failure_class="protocol_error")
