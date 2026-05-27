@@ -10,7 +10,14 @@ from pathlib import Path
 
 from ..agents.output_protocol import AgentRole
 from ..session import SESSION_DIR_NAME, RunKind
-from .agent_service import AssistantTurn, ParsedTurn, Tokens, UsageLimit
+from .agent_service import (
+    AssistantTurn,
+    HardError,
+    ParsedTurn,
+    Tokens,
+    TransientError,
+    UsageLimit,
+)
 from ._wake_time import compute_wake_time
 
 _log = logging.getLogger(__name__)
@@ -51,6 +58,28 @@ _MONTHS = {
     "december": 12,
     "dec": 12,
 }
+
+_UNAUTHORIZED_RE = re.compile(
+    r"\b(?:401|unauthorized|missing bearer|basic authentication)\b",
+    re.IGNORECASE,
+)
+_HTTP_STATUS_RE = re.compile(r"\bstatus\s+(?P<status>\d{3})\b", re.IGNORECASE)
+
+
+def _classify_error_message(message: str) -> HardError | TransientError | None:
+    if _UNAUTHORIZED_RE.search(message):
+        return HardError(status_code=401, raw_message=message)
+
+    match = _HTTP_STATUS_RE.search(message)
+    if match is None:
+        return None
+
+    status = int(match.group("status"))
+    if status >= 500:
+        return TransientError(status_code=status, raw_message=message)
+    if 400 <= status < 500:
+        return HardError(status_code=status, raw_message=message)
+    return None
 
 
 def _parse_reset_time(message: str) -> datetime | None:
@@ -219,6 +248,9 @@ class CodexService:
                 if limit is not None:
                     yield limit
                 else:
+                    classified = _classify_error_message(message)
+                    if classified is not None:
+                        yield classified
                     _log.warning("codex turn.failed: %s", message)
                 return
 
@@ -228,5 +260,8 @@ class CodexService:
                 if limit is not None:
                     yield limit
                 else:
+                    classified = _classify_error_message(message)
+                    if classified is not None:
+                        yield classified
                     _log.warning("codex error: %s", message)
                 return

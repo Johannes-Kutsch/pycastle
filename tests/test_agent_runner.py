@@ -26,7 +26,7 @@ from pycastle.errors import (
 )
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session import RunKind
-from pycastle.services import GitCommandError, GitService
+from pycastle.services import CodexService, GitCommandError, GitService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 
 
@@ -57,6 +57,11 @@ _REVIEWER_COMPLETE_STREAM = [
 # A minimal NDJSON stream that process_stream accepts as CompletionOutput (MERGER/IMPROVE role)
 _MERGER_COMPLETE_STREAM = [
     b'{"type": "result", "result": "<promise>COMPLETE</promise>", "is_error": false}\n'
+]
+
+_CODEX_COMPLETE_STREAM = [
+    b'{"type":"item.completed","item":{"type":"agent_message",'
+    b'"content":"<commit_message>done</commit_message>"}}\n'
 ]
 
 
@@ -1814,6 +1819,67 @@ def test_agent_runner_does_not_call_mark_exhausted_on_hard_agent_error(tmp_path)
 
     # Account must still be available — mark_exhausted was NOT called
     assert svc.is_available() is True
+
+
+def test_agent_runner_seeds_codex_auth_for_fresh_state_dir(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    mock_client = _make_docker_client(_CODEX_COMPLETE_STREAM)
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service=CodexService(),
+    )
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Codex",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+            )
+        )
+    )
+
+    seeded = tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
+    assert seeded.read_text(encoding="utf-8") == '{"mode":"oauth"}'
+
+
+def test_agent_runner_codex_missing_host_auth_raises_hard_error(
+    tmp_path, monkeypatch
+):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client(_CODEX_COMPLETE_STREAM),
+        service=CodexService(),
+    )
+
+    with pytest.raises(HardAgentError, match="Codex authentication missing") as exc_info:
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Codex",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                )
+            )
+        )
+
+    assert exc_info.value.status_code == 401
 
 
 # ── AgentRunner: protocol-error retry semantics ───────────────────────────────

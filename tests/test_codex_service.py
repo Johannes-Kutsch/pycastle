@@ -6,7 +6,13 @@ from datetime import datetime
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services import CodexService
-from pycastle.services.agent_service import AssistantTurn, Tokens, UsageLimit
+from pycastle.services.agent_service import (
+    AssistantTurn,
+    HardError,
+    Tokens,
+    TransientError,
+    UsageLimit,
+)
 from pycastle.session import RunKind
 
 
@@ -457,6 +463,27 @@ def test_run_non_usage_limit_turn_failed_logs_and_returns():
     events = list(CodexService().run(lines))
     assert not any(isinstance(e, AssistantTurn) for e in events)
     assert not any(isinstance(e, UsageLimit) for e in events)
+
+
+def test_run_error_event_unauthorized_yields_hard_error():
+    message = (
+        "Reconnecting... 2/5 (unexpected status 401 Unauthorized: "
+        "Missing bearer or basic authentication in header)"
+    )
+    events = list(CodexService().run([_error_line(message)]))
+    assert events == [HardError(status_code=401, raw_message=message)]
+
+
+def test_run_turn_failed_4xx_status_yields_hard_error():
+    message = "unexpected status 403 Forbidden"
+    events = list(CodexService().run([_turn_failed(message)]))
+    assert events == [HardError(status_code=403, raw_message=message)]
+
+
+def test_run_error_event_5xx_status_yields_transient_error():
+    message = "unexpected status 529 Overloaded"
+    events = list(CodexService().run([_error_line(message)]))
+    assert events == [TransientError(status_code=529, raw_message=message)]
 
 
 # ── CodexService exhaustion state ────────────────────────────────────────────

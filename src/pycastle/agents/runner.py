@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import shutil
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any, Protocol
@@ -128,6 +129,24 @@ class AgentRunner:
             auto_overlay=auto_overlay,
         )
 
+    def _seed_codex_auth_if_needed(self, state_dir: Path) -> None:
+        if self._service.name != "codex":
+            return
+
+        dest = state_dir / "auth.json"
+        if dest.exists():
+            return
+
+        host_auth = Path.home() / ".codex" / "auth.json"
+        if not host_auth.exists():
+            raise HardAgentError(
+                "Codex authentication missing: run `codex login` on the host.",
+                status_code=401,
+            )
+
+        state_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(host_auth, dest)
+
     async def _build_prompt(
         self,
         template: PromptTemplate,
@@ -212,7 +231,9 @@ class AgentRunner:
                     role_session.start_fresh()
 
                 if svc_state_relpath:
-                    (mount_path / svc_state_relpath).mkdir(parents=True, exist_ok=True)
+                    state_dir = mount_path / svc_state_relpath
+                    state_dir.mkdir(parents=True, exist_ok=True)
+                    self._seed_codex_auth_if_needed(state_dir)
 
                 loop = asyncio.get_running_loop()
 
