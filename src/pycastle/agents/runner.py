@@ -49,6 +49,7 @@ class RunRequest:
     scope_args: dict[str, str] | None = None
     model: str = ""
     effort: str = ""
+    service: str = ""
     stage: str = ""
     token: CancellationToken | None = None
     status_display: Any = None
@@ -99,20 +100,28 @@ class AgentRunner:
         cfg: Config,
         git_service: GitService,
         docker_client=None,
-        service: AgentService | None = None,
+        service_registry: dict[str, AgentService] | None = None,
     ) -> None:
         self._env = env
         self._cfg = cfg
         self._git_service = git_service
         self._docker_client = docker_client
-        self._service: AgentService = (
-            service if service is not None else ClaudeService()
-        )
+        self._service_registry = service_registry or {
+            cfg.default_service: ClaudeService()
+        }
         self._renderer = PromptRenderer(cfg)
+
+    def _resolve_service(self, service_name: str = "") -> AgentService:
+        resolved_name = service_name or self._cfg.default_service
+        service = self._service_registry.get(resolved_name)
+        if service is not None:
+            return service
+        return ClaudeService()
 
     def _build_session(
         self,
         mount_path: Path,
+        service: AgentService,
         state_dir_relpath: str | None = None,
     ) -> DockerSession:
         volumes, auto_overlay = build_volume_spec(mount_path)
@@ -120,7 +129,7 @@ class AgentRunner:
         state_dir: str | None = None
         if state_dir_relpath is not None:
             state_dir = f"{_CONTAINER_WORKSPACE}/{state_dir_relpath}"
-        container_env.update(self._service.build_env(state_dir))
+        container_env.update(service.build_env(state_dir))
         return DockerSession(
             volumes=volumes,
             container_env=container_env,
@@ -130,8 +139,10 @@ class AgentRunner:
             auto_overlay=auto_overlay,
         )
 
-    def _seed_codex_auth_if_needed(self, state_dir: Path) -> None:
-        if self._service.name != "codex":
+    def _seed_codex_auth_if_needed(
+        self, service: AgentService, state_dir: Path
+    ) -> None:
+        if service.name != "codex":
             return
 
         dest = state_dir / "auth.json"
@@ -198,6 +209,7 @@ class AgentRunner:
         scope_args = request.scope_args or {}
         model = request.model
         effort = request.effort
+        service = self._resolve_service(request.service)
         token = request.token
         status_display = request.status_display
         work_body = request.work_body
@@ -212,17 +224,17 @@ class AgentRunner:
         session_namespace = request.session_namespace
         role_session = RoleSession(mount_path, role, session_namespace)
         session_uuid = role_session.session_uuid()
-        svc_state_relpath = self._service.state_dir_relpath(role, session_namespace)
+        svc_state_relpath = service.state_dir_relpath(role, session_namespace)
         state_dir = mount_path / svc_state_relpath if svc_state_relpath else None
         run_kind = (
             RunKind.RESUME
             if svc_state_relpath
             and state_dir is not None
-            and self._service.is_resumable(state_dir)
+            and service.is_resumable(state_dir)
             else RunKind.FRESH
         )
         service_session_id: str | None = session_uuid
-        if self._service.name == "codex":
+        if service.name == "codex":
             service_session_id = None
             if run_kind == RunKind.RESUME and state_dir is not None:
                 service_session_id = role_session.service_session_id(
@@ -249,7 +261,7 @@ class AgentRunner:
             work_body=work_body,
             color_key=color_key,
         ):
-            session = self._build_session(mount_path, svc_state_relpath)
+            session = self._build_session(mount_path, service, svc_state_relpath)
             runner = ContainerRunner(
                 name,
                 session,
@@ -257,7 +269,7 @@ class AgentRunner:
                 effort=effort,
                 status_display=status_display,
                 cfg=self._cfg,
-                service=self._service,
+                service=service,
             )
             try:
                 git_name = self._git_service.get_user_name()
@@ -269,7 +281,7 @@ class AgentRunner:
 
                 if state_dir is not None:
                     state_dir.mkdir(parents=True, exist_ok=True)
-                    self._seed_codex_auth_if_needed(state_dir)
+                    self._seed_codex_auth_if_needed(service, state_dir)
 
                 def remember_thread_id(thread_id: str) -> None:
                     nonlocal service_session_id
@@ -296,7 +308,7 @@ class AgentRunner:
                         work_run_kind = run_kind
                         for _ in range(3):
                             try:
-                                if self._service.name == "codex":
+                                if service.name == "codex":
                                     return await runner.work(
                                         role,
                                         work_prompt,
@@ -312,7 +324,7 @@ class AgentRunner:
                                 )
                             except AgentOutputProtocolError:
                                 if (
-                                    self._service.name == "codex"
+                                    service.name == "codex"
                                     and service_session_id is None
                                 ):
                                     return FailedOutput(failure_class="protocol_error")
@@ -330,7 +342,7 @@ class AgentRunner:
                         )
                         retries_left -= 1
                     except UsageLimitError as err:
-                        self._service.mark_exhausted(err.reset_time)
+                        service.mark_exhausted(err.reset_time)
                         _token.cancel()
                         raise
                     except TransientAgentError as err:
@@ -375,6 +387,7 @@ class AgentRunner:
         if status_display is None:
             status_display = PlainStatusDisplay()
 
+        service = self._resolve_service()
         git_name = self._git_service.get_user_name()
         git_email = self._git_service.get_user_email()
         async with status_row(
@@ -385,13 +398,13 @@ class AgentRunner:
             work_body=work_body,
             color_key=None,
         ) as row:
-            session = self._build_session(mount_path)
+            session = self._build_session(mount_path, service)
             runner = ContainerRunner(
                 name,
                 session,
                 status_display=status_display,
                 cfg=self._cfg,
-                service=self._service,
+                service=service,
             )
             try:
                 await runner.setup(git_name, git_email, work_body)

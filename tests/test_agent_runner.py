@@ -928,7 +928,7 @@ def test_agent_runner_injects_picked_token_into_container_env(tmp_path):
         _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
-        service=svc,
+        service_registry={"claude": svc},
     )
 
     asyncio.run(
@@ -990,7 +990,7 @@ def test_agent_runner_does_not_call_mark_exhausted_on_transient_agent_error(tmp_
         _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
-        service=svc,
+        service_registry={"claude": svc},
     )
 
     with pytest.raises(TransientAgentError):
@@ -1027,7 +1027,7 @@ def test_agent_runner_marks_picked_token_exhausted_on_usage_limit(tmp_path):
         _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
-        service=svc,
+        service_registry={"claude": svc},
     )
 
     with pytest.raises(UsageLimitError):
@@ -1815,7 +1815,7 @@ def test_agent_runner_does_not_call_mark_exhausted_on_hard_agent_error(tmp_path)
         _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
-        service=svc,
+        service_registry={"claude": svc},
     )
 
     with pytest.raises(HardAgentError):
@@ -1847,7 +1847,7 @@ def test_agent_runner_seeds_codex_auth_for_fresh_state_dir(tmp_path, monkeypatch
         _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
-        service=CodexService(),
+        service_registry={"codex": CodexService()},
     )
 
     asyncio.run(
@@ -1857,6 +1857,7 @@ def test_agent_runner_seeds_codex_auth_for_fresh_state_dir(tmp_path, monkeypatch
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
+                service="codex",
             )
         )
     )
@@ -1895,7 +1896,7 @@ def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
         _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
-        service=CodexService(),
+        service_registry={"codex": CodexService()},
     )
 
     result = asyncio.run(
@@ -1906,6 +1907,7 @@ def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
                 role=AgentRole.PLANNER,
+                service="codex",
             )
         )
     )
@@ -1948,7 +1950,7 @@ def test_agent_runner_codex_resume_uses_thread_id_from_rollout(tmp_path):
         _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=mock_client,
-        service=CodexService(),
+        service_registry={"codex": CodexService()},
     )
 
     asyncio.run(
@@ -1958,6 +1960,7 @@ def test_agent_runner_codex_resume_uses_thread_id_from_rollout(tmp_path):
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
+                service="codex",
             )
         )
     )
@@ -1976,7 +1979,7 @@ def test_agent_runner_codex_missing_host_auth_raises_hard_error(tmp_path, monkey
         _make_cfg(tmp_path),
         _make_git_service(),
         docker_client=_make_docker_client(_CODEX_COMPLETE_STREAM),
-        service=CodexService(),
+        service_registry={"codex": CodexService()},
     )
 
     with pytest.raises(
@@ -1989,6 +1992,7 @@ def test_agent_runner_codex_missing_host_auth_raises_hard_error(tmp_path, monkey
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
+                    service="codex",
                 )
             )
         )

@@ -291,6 +291,7 @@ async def improve_phase(
                         scope_args=scope_args,
                         model=deps.cfg.improve_override.model,
                         effort=deps.cfg.improve_override.effort,
+                        service=deps.cfg.improve_override.service,
                         stage="improve-sandbox",
                         status_display=deps.status_display,
                         work_body=step.cfg.display_body,

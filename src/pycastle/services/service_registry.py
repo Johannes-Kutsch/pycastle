@@ -11,6 +11,10 @@ class ServiceRegistry:
         self._services = services
         self._default_service = default_service
 
+    @property
+    def services(self) -> dict[str, AgentService]:
+        return dict(self._services)
+
     def resolve(self, override: StageOverride, now: datetime) -> StageOverride:
         primary_name = override.service or self._default_service
         primary_svc = self._services.get(primary_name)

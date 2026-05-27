@@ -206,13 +206,13 @@ async def run(
             if agent_runner is not None:
                 _agent_runner: AgentRunnerProtocol = agent_runner
             else:
-                _svc_name = _iter_cfg.default_service
-                _svc = service_registry[_svc_name] if service_registry else None
                 _agent_runner = AgentRunner(
                     env=env,
                     cfg=_iter_cfg,
                     git_service=git_svc,
-                    service=_svc,
+                    service_registry=service_registry.services
+                    if service_registry is not None
+                    else None,
                 )
 
             deps = IterationDeps(

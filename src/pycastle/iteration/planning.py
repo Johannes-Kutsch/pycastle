@@ -227,6 +227,7 @@ async def planning_phase(
                         },
                         model=deps.cfg.plan_override.model,
                         effort=deps.cfg.plan_override.effort,
+                        service=deps.cfg.plan_override.service,
                         stage="plan-sandbox",
                         status_display=deps.status_display,
                         work_body=f"Creating Plan from {len(well_formed)} issues",

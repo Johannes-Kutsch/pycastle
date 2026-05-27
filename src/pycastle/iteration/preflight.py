@@ -144,6 +144,7 @@ class PreflightCache:
                 },
                 model=deps.cfg.preflight_issue_override.model,
                 effort=deps.cfg.preflight_issue_override.effort,
+                service=deps.cfg.preflight_issue_override.service,
                 status_display=deps.status_display,
                 work_body=f"reporting {check_name} issue",
             )

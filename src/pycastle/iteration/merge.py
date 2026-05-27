@@ -224,6 +224,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                         model=deps.cfg.merge_override.model,
                         status_display=deps.status_display,
                         effort=deps.cfg.merge_override.effort,
+                        service=deps.cfg.merge_override.service,
                         stage="pre-merge",
                         work_body=f"Merging {len(conflict_issues)} Branches",
                     )
