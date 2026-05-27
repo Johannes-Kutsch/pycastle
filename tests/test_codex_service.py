@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-
+from pycastle import _time as _time_module
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services import CodexService
 from pycastle.services.agent_service import (
@@ -437,41 +437,53 @@ _CROSS_DAY_LIMIT_MSG = (
 _DEGRADED_LIMIT_MSG = "You've hit your usage limit. Try again later."
 
 
-def test_run_yields_usage_limit_on_turn_failed():
+def test_run_yields_usage_limit_on_turn_failed(monkeypatch):
+    frozen = datetime(2026, 5, 27, 14, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(_time_module, "now_local", lambda: frozen)
     lines = [_turn_failed(_SAME_DAY_LIMIT_MSG)]
     events = list(CodexService().run(lines))
     assert any(isinstance(e, UsageLimit) for e in events)
 
 
-def test_run_yields_usage_limit_on_error_event():
+def test_run_yields_usage_limit_on_error_event(monkeypatch):
+    frozen = datetime(2026, 5, 27, 14, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(_time_module, "now_local", lambda: frozen)
     lines = [_error_line(_SAME_DAY_LIMIT_MSG)]
     events = list(CodexService().run(lines))
     assert any(isinstance(e, UsageLimit) for e in events)
 
 
-def test_run_same_day_limit_parses_reset_time():
+def test_run_same_day_limit_parses_reset_time(monkeypatch):
+    frozen = datetime(2026, 5, 27, 14, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(_time_module, "now_local", lambda: frozen)
     lines = [_turn_failed(_SAME_DAY_LIMIT_MSG)]
     events = list(CodexService().run(lines))
     usage_events = [e for e in events if isinstance(e, UsageLimit)]
     assert len(usage_events) == 1
     assert usage_events[0].reset_time is not None
     rt = usage_events[0].reset_time
-    assert rt.hour == 15
-    assert rt.minute == 30
+    assert rt.tzinfo is not None
+    utc_rt = rt.astimezone(timezone.utc)
+    assert utc_rt.hour == 15
+    assert utc_rt.minute == 30
 
 
-def test_run_cross_day_limit_parses_reset_time():
+def test_run_cross_day_limit_parses_reset_time(monkeypatch):
+    frozen = datetime(2026, 3, 15, 14, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(_time_module, "now_local", lambda: frozen)
     lines = [_turn_failed(_CROSS_DAY_LIMIT_MSG)]
     events = list(CodexService().run(lines))
     usage_events = [e for e in events if isinstance(e, UsageLimit)]
     assert len(usage_events) == 1
     assert usage_events[0].reset_time is not None
     rt = usage_events[0].reset_time
-    assert rt.year == 2026
-    assert rt.month == 3
-    assert rt.day == 15
-    assert rt.hour == 15
-    assert rt.minute == 30
+    assert rt.tzinfo is not None
+    utc_rt = rt.astimezone(timezone.utc)
+    assert utc_rt.year == 2026
+    assert utc_rt.month == 3
+    assert utc_rt.day == 15
+    assert utc_rt.hour == 15
+    assert utc_rt.minute == 30
 
 
 def test_run_degraded_limit_has_none_reset_time():
@@ -482,7 +494,9 @@ def test_run_degraded_limit_has_none_reset_time():
     assert usage_events[0].reset_time is None
 
 
-def test_run_stops_after_usage_limit():
+def test_run_stops_after_usage_limit(monkeypatch):
+    frozen = datetime(2026, 5, 27, 14, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(_time_module, "now_local", lambda: frozen)
     lines = [
         _turn_failed(_SAME_DAY_LIMIT_MSG),
         _item_completed("agent_message", "should not appear"),
@@ -613,7 +627,9 @@ def test_run_error_event_usage_limit_carries_raw_message_when_reset_time_unparse
     assert limit.raw_message == message
 
 
-def test_run_turn_failed_usage_limit_has_no_raw_message_when_reset_time_parsed():
+def test_run_turn_failed_usage_limit_has_no_raw_message_when_reset_time_parsed(monkeypatch):
+    frozen = datetime(2026, 5, 27, 14, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(_time_module, "now_local", lambda: frozen)
     message = "You've hit your usage limit. Please wait or try again at 3:30 PM"
     events = list(CodexService().run([_turn_failed(message)]))
     limit = next(e for e in events if isinstance(e, UsageLimit))

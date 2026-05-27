@@ -84,10 +84,10 @@ def _classify_error_message(message: str) -> HardError | TransientError | None:
 
 
 def _parse_reset_time(message: str) -> datetime | None:
-    """Extract a local-tz reset datetime from a Codex usage-limit error message.
+    """Extract a reset datetime from a Codex usage-limit error message.
 
-    Codex reports reset times in the user's local timezone, unlike Claude
-    which reports UTC.
+    Codex reports reset times in UTC.  We parse as UTC and convert to local
+    so the displayed wake time matches the user's clock.
     """
     match = _RESET_TIME_RE.search(message)
     if not match:
@@ -106,23 +106,26 @@ def _parse_reset_time(message: str) -> datetime | None:
     day_str = match.group("day")
 
     now_local = _time_module.now_local()
+    now_utc = now_local.astimezone(timezone.utc)
 
     if year_str and month_str and day_str:
         month = _MONTHS.get(month_str.lower())
         if month is None:
             return None
         try:
-            return datetime(
+            utc_dt = datetime(
                 int(year_str), month, int(day_str), hour, minute,
-                tzinfo=now_local.tzinfo,
+                tzinfo=timezone.utc,
             )
         except ValueError:
             return None
+        return utc_dt.astimezone()
 
-    candidate = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if candidate < now_local - timedelta(minutes=2):
-        candidate += timedelta(days=1)
-    return candidate
+    utc_dt = now_utc.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    local_dt = utc_dt.astimezone()
+    if local_dt < now_local - timedelta(minutes=2):
+        local_dt += timedelta(days=1)
+    return local_dt
 
 
 def _extract_usage_limit(message: str) -> UsageLimit | None:
