@@ -6,7 +6,6 @@ import os
 import re
 import types
 from collections.abc import Mapping
-from difflib import get_close_matches
 from pathlib import Path
 from typing import Any, Literal
 
@@ -16,8 +15,6 @@ from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
 
 __all__ = ["Config", "describe_config_layers", "load_config", "resolve_global_dir"]
-
-_VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 
 _BUG_REPORT_REPO_RE = re.compile(r"^[^/]+/[^/]+$")
 
@@ -206,7 +203,7 @@ def load_config(
     _validate_bug_report_repo(cfg)
     _validate_improve_max(cfg)
     _validate_improve_mode(cfg)
-    return _validate_efforts(cfg)
+    return cfg
 
 
 def _validate_improve_mode(cfg: Config) -> None:
@@ -258,28 +255,3 @@ def _read_config_file(
             raise ValueError(f"Unknown config key: {k!r}")
         result[k] = v
     return result
-
-
-def _validate_efforts(cfg: Config) -> Config:
-    valid_efforts = sorted(_VALID_EFFORTS)
-    stage_overrides = {
-        "plan": cfg.plan_override,
-        "implement": cfg.implement_override,
-        "review": cfg.review_override,
-        "merge": cfg.merge_override,
-        "preflight_issue": cfg.preflight_issue_override,
-        "improve": cfg.improve_override,
-    }
-    for stage, override in stage_overrides.items():
-        effort = override.effort
-        if effort and effort not in _VALID_EFFORTS:
-            close = get_close_matches(effort, valid_efforts, n=1, cutoff=0.0)
-            suggestion = close[0] if close else valid_efforts[0]
-            raise ConfigValidationError(
-                f"Invalid effort {effort!r} for stage {stage!r}; "
-                f"did you mean {suggestion!r}? Valid efforts: {valid_efforts}",
-                invalid_value=effort,
-                suggestion=suggestion,
-                valid_options=valid_efforts,
-            )
-    return cfg
