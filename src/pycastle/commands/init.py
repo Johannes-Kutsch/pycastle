@@ -213,18 +213,27 @@ def _seed_codex_credentials(project_root: Path) -> None:
     host_auth = Path.home() / ".codex" / "auth.json"
     if not host_auth.exists():
         click.echo(
-            "No codex credentials found at ~/.codex/auth.json. "
-            "Run 'codex login' and re-run 'pycastle init'."
+            "No codex credentials found at ~/.codex/auth.json.\n"
+            "Install and log in to Codex, then re-run init:\n"
+            "1. npm install -g @openai/codex\n"
+            "2. codex login\n"
+            "3. pycastle init"
         )
         sys.exit(1)
 
     auth_bytes = host_auth.read_bytes()
+    destinations: list[tuple[Path, Path]] = []
     for role, namespace in _role_namespaces():
         base = project_root / SESSION_DIR_NAME / role.value
         codex_dir = (base / namespace if namespace else base) / "codex"
         dest = codex_dir / "auth.json"
-        if dest.exists():
-            continue
+        destinations.append((codex_dir, dest))
+
+    if any(dest.exists() for _, dest in destinations):
+        if not click.confirm("Overwrite existing codex credentials?", default=False):
+            return
+
+    for codex_dir, dest in destinations:
         codex_dir.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(auth_bytes)
 

@@ -953,7 +953,17 @@ def test_init_codex_exits_with_message_when_auth_json_absent(
     assert exc_info.value.code != 0
     captured = capsys.readouterr()
     assert "No codex credentials found at ~/.codex/auth.json" in captured.out
-    assert "codex login" in captured.out
+    install_step = "npm install -g @openai/codex"
+    login_step = "codex login"
+    rerun_step = "pycastle init"
+    assert install_step in captured.out
+    assert login_step in captured.out
+    assert rerun_step in captured.out
+    assert (
+        captured.out.index(install_step)
+        < captured.out.index(login_step)
+        < captured.out.index(rerun_step)
+    )
 
 
 def test_init_codex_seeds_auth_json_for_all_roles_when_present(tmp_path, monkeypatch):
@@ -969,9 +979,12 @@ def test_init_codex_seeds_auth_json_for_all_roles_when_present(tmp_path, monkeyp
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
+    def fail_on_confirm(prompt: str, default: bool = False) -> bool:
+        raise AssertionError(f"unexpected prompt: {prompt}")
+
     with (
         patch("click.prompt", side_effect=["codex", "", ""]),
-        patch("click.confirm", return_value=False),
+        patch("click.confirm", side_effect=fail_on_confirm),
     ):
         main(scope="local")
 
@@ -1064,6 +1077,99 @@ def test_init_codex_rerun_does_not_overwrite_existing_role_auth_json(
 
     assert impl_auth.stat().st_mtime == mtime_before
     assert impl_auth.read_bytes() == b'{"access_token": "first"}'
+
+
+def test_init_codex_rerun_overwrites_all_existing_role_auth_json_when_confirmed(
+    tmp_path, monkeypatch
+):
+    """Re-running pycastle init with codex refreshes every role codex/auth.json when confirmed."""
+    from pycastle.agents.output_protocol import AgentRole
+    from pycastle.commands.init import main
+    from pycastle.session.resume import SESSION_DIR_NAME
+
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "first"}')
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=["codex", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "second"}')
+    confirm_prompts: list[str] = []
+
+    def confirm_once(prompt: str, default: bool = False) -> bool:
+        confirm_prompts.append(prompt)
+        return True
+
+    with (
+        patch("click.prompt", side_effect=["codex", "", ""]),
+        patch("click.confirm", side_effect=confirm_once),
+    ):
+        main(scope="local")
+
+    assert confirm_prompts == ["Overwrite existing codex credentials?"]
+
+    for role in AgentRole:
+        namespaces = ["main", "issues"] if role == AgentRole.IMPROVE else [""]
+        for namespace in namespaces:
+            base = tmp_path / SESSION_DIR_NAME / role.value
+            role_state_dir = base / namespace if namespace else base
+            auth_file = role_state_dir / "codex" / "auth.json"
+            assert auth_file.read_bytes() == b'{"access_token": "second"}'
+
+
+def test_init_codex_rerun_skips_all_role_auth_json_when_overwrite_declined(
+    tmp_path, monkeypatch
+):
+    """Declining codex credential overwrite leaves existing files untouched and creates no new copies."""
+    from pycastle.agents.output_protocol import AgentRole
+    from pycastle.commands.init import main
+    from pycastle.session.resume import SESSION_DIR_NAME
+
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "host"}')
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    existing_auth = (
+        tmp_path
+        / SESSION_DIR_NAME
+        / AgentRole.IMPLEMENTER.value
+        / "codex"
+        / "auth.json"
+    )
+    existing_auth.parent.mkdir(parents=True)
+    existing_auth.write_bytes(b'{"access_token": "stale"}')
+
+    confirm_prompts: list[str] = []
+
+    def decline(prompt: str, default: bool = False) -> bool:
+        confirm_prompts.append(prompt)
+        return False
+
+    with (
+        patch("click.prompt", side_effect=["codex", "", ""]),
+        patch("click.confirm", side_effect=decline),
+    ):
+        main(scope="local")
+
+    assert confirm_prompts == ["Overwrite existing codex credentials?"]
+    assert existing_auth.read_bytes() == b'{"access_token": "stale"}'
+
+    for role in AgentRole:
+        namespaces = ["main", "issues"] if role == AgentRole.IMPROVE else [""]
+        for namespace in namespaces:
+            base = tmp_path / SESSION_DIR_NAME / role.value
+            role_state_dir = base / namespace if namespace else base
+            auth_file = role_state_dir / "codex" / "auth.json"
+            if auth_file != existing_auth:
+                assert not auth_file.exists()
 
 
 def test_init_both_rerun_seeds_codex_without_disturbing_existing_env(
