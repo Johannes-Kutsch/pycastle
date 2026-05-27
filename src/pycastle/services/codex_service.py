@@ -84,7 +84,11 @@ def _classify_error_message(message: str) -> HardError | TransientError | None:
 
 
 def _parse_reset_time(message: str) -> datetime | None:
-    """Extract a UTC reset datetime from a Codex usage-limit error message."""
+    """Extract a local-tz reset datetime from a Codex usage-limit error message.
+
+    Codex reports reset times in the user's local timezone, unlike Claude
+    which reports UTC.
+    """
     match = _RESET_TIME_RE.search(message)
     if not match:
         return None
@@ -101,18 +105,22 @@ def _parse_reset_time(message: str) -> datetime | None:
     month_str = match.group("month")
     day_str = match.group("day")
 
+    now_local = _time_module.now_local()
+
     if year_str and month_str and day_str:
         month = _MONTHS.get(month_str.lower())
         if month is None:
             return None
         try:
-            return datetime(int(year_str), month, int(day_str), hour, minute, tzinfo=timezone.utc)
+            return datetime(
+                int(year_str), month, int(day_str), hour, minute,
+                tzinfo=now_local.tzinfo,
+            )
         except ValueError:
             return None
 
-    now = datetime.now(timezone.utc)
-    candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if candidate < now - timedelta(minutes=2):
+    candidate = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if candidate < now_local - timedelta(minutes=2):
         candidate += timedelta(days=1)
     return candidate
 
