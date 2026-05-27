@@ -374,8 +374,8 @@ def test_init_global_skip_existing_config_with_message(tmp_path, monkeypatch, ca
     assert str(home / "config.py") in captured
 
 
-def test_init_global_skip_existing_env_with_message(tmp_path, monkeypatch, capsys):
-    """Existing global .env is left untouched and a clear message is printed."""
+def test_init_global_merges_missing_keys_into_existing_env(tmp_path, monkeypatch):
+    """Existing global .env gets missing template keys merged in; existing values preserved."""
     from pycastle.commands.init import main
 
     home = tmp_path / "home"
@@ -389,15 +389,15 @@ def test_init_global_skip_existing_env_with_message(tmp_path, monkeypatch, capsy
     ):
         main(scope="global")
 
-    assert (home / ".env").read_text() == "GH_TOKEN=preexisting\n"
-    captured = capsys.readouterr().out
-    assert "leaving it untouched" in captured
+    content = (home / ".env").read_text()
+    assert "GH_TOKEN=preexisting" in content
+    assert "CLAUDE_CODE_OAUTH_TOKEN=" in content
 
 
 def test_init_global_skips_credential_prompts_when_present_in_global_env(
     tmp_path, monkeypatch
 ):
-    """With --global and credentials already in global .env, no prompt is issued."""
+    """With --global and existing credentials, the credential prompts are skipped (overwrite declined by default)."""
     from pycastle.commands.init import main
 
     home = tmp_path / "home"
@@ -413,7 +413,7 @@ def test_init_global_skips_credential_prompts_when_present_in_global_env(
     with prompt_mock as pm, confirm_mock:
         main(scope="global")
 
-    # No prompt should have been issued for either credential
+    # No credential click.prompt should have been issued (overwrite confirm defaults to False)
     prompt_calls = [c.args[0] for c in pm.call_args_list]
     assert not any("GitHub token" in m for m in prompt_calls)
     assert not any("Claude OAuth token" in m for m in prompt_calls)
@@ -536,6 +536,201 @@ def test_init_cli_global_flag_skips_scope_prompt(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert (home / "config.py").exists()
     assert not (tmp_path / "pycastle" / "config.py").exists()
+
+
+# ── Issue #910: Service-aware credential prompting and .env key merge ─────────
+
+
+def test_init_codex_service_does_not_prompt_for_claude_token(tmp_path, monkeypatch):
+    """Selecting codex should not prompt for CLAUDE_CODE_OAUTH_TOKEN."""
+    from pycastle.commands.init import main
+
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_bytes(b"{}")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    def prompt_side_effect(*args, **kwargs):
+        msg = args[0] if args else ""
+        return "codex" if "service" in msg.lower() else ""
+
+    with (
+        patch("click.prompt", side_effect=prompt_side_effect) as pm,
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    prompt_calls = [c.args[0] for c in pm.call_args_list]
+    assert not any("Claude OAuth token" in m for m in prompt_calls)
+
+
+def test_init_codex_service_does_not_print_claude_token_warning(
+    tmp_path, monkeypatch, capsys
+):
+    """Selecting codex should not print the 'Set CLAUDE_CODE_OAUTH_TOKEN' warning."""
+    from pycastle.commands.init import main
+
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_bytes(b"{}")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    def prompt_side_effect(*args, **kwargs):
+        msg = args[0] if args else ""
+        return "codex" if "service" in msg.lower() else ""
+
+    with (
+        patch("click.prompt", side_effect=prompt_side_effect),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    out = capsys.readouterr().out
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in out
+
+
+def test_init_merges_missing_template_keys_into_existing_env(tmp_path, monkeypatch):
+    """Re-running init adds missing template keys to .env without touching existing values."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    env_file = tmp_path / "pycastle" / ".env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text("GH_TOKEN=preexisting\n")
+
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    content = env_file.read_text()
+    assert "GH_TOKEN=preexisting" in content
+    assert "CLAUDE_CODE_OAUTH_TOKEN=" in content
+
+
+def test_init_overwrite_no_preserves_existing_gh_token(tmp_path, monkeypatch):
+    """Declining overwrite for GH_TOKEN keeps the existing value unchanged."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    env_file = tmp_path / "pycastle" / ".env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text("GH_TOKEN=existing-gh\nCLAUDE_CODE_OAUTH_TOKEN=\n")
+
+    with (
+        patch("click.prompt", return_value="new-value"),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert "GH_TOKEN=existing-gh" in env_file.read_text()
+
+
+def test_init_overwrite_yes_replaces_existing_gh_token(tmp_path, monkeypatch):
+    """Confirming overwrite for GH_TOKEN prompts for a new value and writes it."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    env_file = tmp_path / "pycastle" / ".env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text("GH_TOKEN=old-gh\nCLAUDE_CODE_OAUTH_TOKEN=\n")
+
+    def confirm_side_effect(message, *args, **kwargs):
+        if "Overwrite" in message and "GH_TOKEN" in message:
+            return True
+        return False
+
+    def prompt_side_effect(*args, **kwargs):
+        msg = args[0] if args else ""
+        if "GitHub token" in msg:
+            return "new-gh"
+        return ""
+
+    with (
+        patch("click.prompt", side_effect=prompt_side_effect),
+        patch("click.confirm", side_effect=confirm_side_effect),
+    ):
+        main(scope="local")
+
+    assert "GH_TOKEN=new-gh" in env_file.read_text()
+
+
+def test_init_overwrite_no_preserves_existing_claude_token(tmp_path, monkeypatch):
+    """Declining overwrite for CLAUDE_CODE_OAUTH_TOKEN keeps the existing value unchanged."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    env_file = tmp_path / "pycastle" / ".env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text("GH_TOKEN=\nCLAUDE_CODE_OAUTH_TOKEN=existing-claude\n")
+
+    with (
+        patch("click.prompt", return_value="new-value"),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert "CLAUDE_CODE_OAUTH_TOKEN=existing-claude" in env_file.read_text()
+
+
+def test_init_overwrite_yes_replaces_existing_claude_token(tmp_path, monkeypatch):
+    """Confirming overwrite for CLAUDE_CODE_OAUTH_TOKEN prompts for a new value and writes it."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    env_file = tmp_path / "pycastle" / ".env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text("GH_TOKEN=\nCLAUDE_CODE_OAUTH_TOKEN=old-claude\n")
+
+    def confirm_side_effect(message, *args, **kwargs):
+        if "Overwrite" in message and "CLAUDE_CODE_OAUTH_TOKEN" in message:
+            return True
+        return False
+
+    def prompt_side_effect(*args, **kwargs):
+        msg = args[0] if args else ""
+        if "Claude OAuth token" in msg:
+            return "new-claude"
+        return ""
+
+    with (
+        patch("click.prompt", side_effect=prompt_side_effect),
+        patch("click.confirm", side_effect=confirm_side_effect),
+    ):
+        main(scope="local")
+
+    assert "CLAUDE_CODE_OAUTH_TOKEN=new-claude" in env_file.read_text()
+
+
+@pytest.mark.parametrize("service", ["claude", "both"])
+def test_init_claude_and_both_service_prompt_for_both_credentials(
+    tmp_path, monkeypatch, service
+):
+    """Selecting claude or both prompts for both CLAUDE_CODE_OAUTH_TOKEN and GH_TOKEN."""
+    from pycastle.commands.init import main
+
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_bytes(b"{}")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    def prompt_side_effect(*args, **kwargs):
+        msg = args[0] if args else ""
+        return service if "service" in msg.lower() else ""
+
+    with (
+        patch("click.prompt", side_effect=prompt_side_effect) as pm,
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    prompt_calls = [c.args[0] for c in pm.call_args_list]
+    assert any("GitHub token" in m for m in prompt_calls)
+    assert any("Claude OAuth token" in m for m in prompt_calls)
 
 
 # ── Issue #483: --refresh flag for non-interactive scaffold updates ──────────

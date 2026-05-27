@@ -100,6 +100,34 @@ def _copy_template(rel: str, target: Path, pkg: Traversable) -> None:
         sys.exit(1)
 
 
+def _merge_env_template(env_file: Path, template: str) -> None:
+    """Add any keys from template that are missing from env_file (with empty values)."""
+    content = env_file.read_text()
+    for line in template.splitlines():
+        if not line or "=" not in line:
+            continue
+        key = line.partition("=")[0].strip()
+        if not re.search(rf"^{re.escape(key)}=", content, flags=re.MULTILINE):
+            if not content.endswith("\n"):
+                content += "\n"
+            content += f"{key}=\n"
+    env_file.write_text(content)
+
+
+def _prompt_credential_with_overwrite(
+    env_file: Path,
+    key: str,
+    prompt_text: str,
+    existing: dict[str, str],
+) -> str:
+    """Prompt for a credential, asking for overwrite confirmation if already set."""
+    current = existing.get(key, "")
+    if current:
+        if not click.confirm(f"Overwrite existing {key}?", default=False):
+            return current
+    return _prompt_and_save_credential(env_file, key, prompt_text)
+
+
 def _prompt_and_save_credential(env_file: Path, key: str, prompt_text: str) -> str:
     value = click.prompt(prompt_text, default="", hide_input=True, show_default=False)
     if not value:
@@ -258,10 +286,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
 
     env_file = scoped_dir / ".env"
     if env_file.exists():
-        if scope == "global":
-            click.echo(
-                f"global .env already exists at {env_file}; leaving it untouched"
-            )
+        _merge_env_template(env_file, _ENV_TEMPLATE)
     else:
         env_file.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -273,29 +298,26 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             )
             sys.exit(1)
 
-    global_env_values = (
-        _read_env_values(pycastle_home / ".env") if scope == "global" else {}
+    existing_env = _read_env_values(env_file)
+
+    gh_token = _prompt_credential_with_overwrite(
+        env_file, "GH_TOKEN", "GitHub token (press Enter to skip)", existing_env
     )
 
-    gh_token = global_env_values.get("GH_TOKEN", "")
-    if not gh_token:
-        gh_token = _prompt_and_save_credential(
-            env_file, "GH_TOKEN", "GitHub token (press Enter to skip)"
-        )
-
-    claude_token = global_env_values.get("CLAUDE_CODE_OAUTH_TOKEN", "")
-    if not claude_token:
-        claude_token = _prompt_and_save_credential(
+    claude_token = ""
+    if service != "codex":
+        claude_token = _prompt_credential_with_overwrite(
             env_file,
             "CLAUDE_CODE_OAUTH_TOKEN",
             "Claude OAuth token (run `claude setup-token` to generate one; press Enter to skip)",
+            existing_env,
         )
 
-    if not claude_token:
-        click.echo(
-            f"Set CLAUDE_CODE_OAUTH_TOKEN in {env_file} before running pycastle. "
-            "Run `claude setup-token` to generate a token."
-        )
+        if not claude_token:
+            click.echo(
+                f"Set CLAUDE_CODE_OAUTH_TOKEN in {env_file} before running pycastle. "
+                "Run `claude setup-token` to generate a token."
+            )
 
     click.echo()
     if gh_token and click.confirm("Create GitHub labels?", default=False):
