@@ -63,13 +63,6 @@ class CommitMessageOutput:
 
 
 @dataclasses.dataclass(frozen=True)
-class ReviewerOutput:
-    message: str | None
-    reviewed_diff: str
-    checks_passed: str
-
-
-@dataclasses.dataclass(frozen=True)
 class FailedOutput:
     failure_class: str = ""
 
@@ -80,7 +73,6 @@ AgentOutput: TypeAlias = (
     | CompletionOutput
     | NoCandidateOutput
     | CommitMessageOutput
-    | ReviewerOutput
     | FailedOutput
 )
 
@@ -90,7 +82,6 @@ AgentSuccessOutput: TypeAlias = (
     | CompletionOutput
     | NoCandidateOutput
     | CommitMessageOutput
-    | ReviewerOutput
 )
 
 
@@ -109,17 +100,6 @@ class IssueParseError(AgentOutputProtocolError):
 class PromiseParseError(AgentOutputProtocolError):
     pass
 
-
-class BehaviorParseError(AgentOutputProtocolError):
-    pass
-
-
-class ReviewedDiffParseError(AgentOutputProtocolError):
-    pass
-
-
-class ChecksPassedParseError(AgentOutputProtocolError):
-    pass
 
 
 def _strip_markdown_fence(s: str) -> str:
@@ -174,7 +154,7 @@ _BEHAVIOR_FIELD_RE = re.compile(
 def _parse_behavior_body(body: str) -> BehaviorOutput:
     m = _BEHAVIOR_FIELD_RE.match(body.strip())
     if m is None:
-        raise BehaviorParseError(
+        raise ValueError(
             f"<behavior> tag body does not match expected format: {body[:200]!r}"
         )
     return BehaviorOutput(
@@ -190,7 +170,7 @@ def _extract_all_behaviors(text: str) -> tuple[BehaviorOutput, ...]:
     for m in _BEHAVIOR_TAG_RE.finditer(text):
         try:
             results.append(_parse_behavior_body(m.group(1)))
-        except BehaviorParseError:
+        except ValueError:
             pass
     return tuple(results)
 
@@ -398,42 +378,14 @@ class _ImproveHandler:
         return _extract_improve_output(text)
 
 
-class _ReviewerHandler:
-    def check_turn(self, turn: str) -> AgentOutput | None:
-        return None
-
-    def extract_final(self, text: str, tail: str) -> AgentOutput:
-        commit_body = _last_tag_block(text, "commit_message")
-        message = commit_body.strip() if commit_body is not None else None
-
-        diff_body = _last_tag_block(text, "reviewed_diff")
-        if diff_body is None:
-            raise ReviewedDiffParseError(
-                f"Reviewer produced no <reviewed_diff> tag.{tail}"
-            )
-
-        checks_body = _last_tag_block(text, "checks_passed")
-        if checks_body is None:
-            raise ChecksPassedParseError(
-                f"Reviewer produced no <checks_passed> tag.{tail}"
-            )
-
-        return ReviewerOutput(
-            message=message,
-            reviewed_diff=diff_body.strip(),
-            checks_passed=checks_body.strip(),
-        )
-
-
 _commit_message_handler = _CommitMessageHandler()
 _preflight_issue_handler = _PreflightIssueHandler()
-_reviewer_handler = _ReviewerHandler()
 
 _merger_handler = _MergerHandler()
 
 _HANDLERS: dict[AgentRole, _RoleHandler] = {
     AgentRole.IMPLEMENTER: _commit_message_handler,
-    AgentRole.REVIEWER: _reviewer_handler,
+    AgentRole.REVIEWER: _commit_message_handler,
     AgentRole.PLANNER: _PlannerHandler(),
     AgentRole.PREFLIGHT_ISSUE: _preflight_issue_handler,
     AgentRole.FAILURE_REPORT: _preflight_issue_handler,
@@ -445,18 +397,10 @@ _HANDLERS: dict[AgentRole, _RoleHandler] = {
 assert len(_HANDLERS) == len(AgentRole)
 
 
-def _inject_behaviors(
-    result: AgentOutput,
-    text: str,
-    behavior_slice: bool,
-) -> AgentOutput:
+def _inject_behaviors(result: AgentOutput, text: str) -> AgentOutput:
     if not isinstance(result, CommitMessageOutput):
         return result
     behaviors = _extract_all_behaviors(text)
-    if behavior_slice and not behaviors:
-        raise BehaviorParseError(
-            "Behavior-slice Implementer produced no <behavior> tags."
-        )
     return CommitMessageOutput(message=result.message, behaviors=behaviors)
 
 
@@ -466,7 +410,6 @@ def process_stream_from_events(
     role: AgentRole,
     on_tokens: Callable[[int], None] | None = None,
     provider: str | None = None,
-    behavior_slice: bool = False,
 ) -> AgentOutput:
     from ..services.agent_service import (
         AssistantTurn,
@@ -506,14 +449,14 @@ def process_stream_from_events(
             result = handler.check_turn(event.text)
             if result is not None:
                 full_text = "\n".join(collected_turns)
-                return _inject_behaviors(result, full_text, behavior_slice)
+                return _inject_behaviors(result, full_text)
         elif isinstance(event, Result):
             result_text = event.text
             break
     text = result_text if result_text is not None else "\n".join(collected_turns)
     tail = f"\nOutput tail: {text[-300:]!r}"
     result = handler.extract_final(text, tail)
-    return _inject_behaviors(result, text, behavior_slice)
+    return _inject_behaviors(result, text)
 
 
 def process_stream(
@@ -521,7 +464,6 @@ def process_stream(
     on_turn: Callable[[str], None],
     role: AgentRole,
     on_tokens: Callable[[int], None] | None = None,
-    behavior_slice: bool = False,
 ) -> AgentOutput:
     from ..services.claude_service import ClaudeService
 
@@ -531,5 +473,4 @@ def process_stream(
         role,
         on_tokens,
         provider="claude",
-        behavior_slice=behavior_slice,
     )

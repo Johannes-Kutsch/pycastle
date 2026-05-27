@@ -49,9 +49,9 @@ _COMPLETE_STREAM = [
     b'{"type": "result", "result": "<commit_message>done</commit_message>", "is_error": false}\n'
 ]
 
-# A minimal NDJSON stream that process_stream accepts as ReviewerOutput (REVIEWER role)
+# A minimal NDJSON stream that process_stream accepts as CommitMessageOutput (REVIEWER role)
 _REVIEWER_COMPLETE_STREAM = [
-    b'{"type": "result", "result": "<reviewed_diff>diff --stat\\n README | 1 +\\nSummary</reviewed_diff>\\n<checks_passed>All 3 passed</checks_passed>\\n<commit_message>done</commit_message>", "is_error": false}\n'
+    b'{"type": "result", "result": "<commit_message>done</commit_message>", "is_error": false}\n'
 ]
 
 # A minimal NDJSON stream that process_stream accepts as CompletionOutput (MERGER/IMPROVE role)

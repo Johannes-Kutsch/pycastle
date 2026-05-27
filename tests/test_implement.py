@@ -9,7 +9,6 @@ from pycastle.agents.output_protocol import (
     CommitMessageOutput,
     CompletionOutput,
     PromiseParseError,
-    ReviewerOutput,
 )
 from pycastle.agents.runner import RunRequest
 from pycastle.config import Config
@@ -34,12 +33,8 @@ from pycastle.prompts.pipeline import PromptRenderError, build_issue_scope_args
 _cfg = Config()
 
 
-def _reviewer_output(message: str | None) -> ReviewerOutput:
-    return ReviewerOutput(
-        message=message,
-        reviewed_diff="diff --stat\n src/x.py | 1 +\nSummary",
-        checks_passed="All checks passed",
-    )
+def _reviewer_output(message: str | None) -> CommitMessageOutput:
+    return CommitMessageOutput(message=message)
 
 
 @dataclasses.dataclass
@@ -1336,7 +1331,7 @@ def test_run_issue_commits_implementer_with_title_when_no_commit_message_tag(tmp
 
 
 def test_run_issue_commits_reviewer_with_issue_number_and_message(tmp_path):
-    """After Reviewer returns ReviewerOutput with message, commit uses 'Review #N - <msg>'."""
+    """After Reviewer returns CommitMessageOutput with message, commit uses 'Review #N - <msg>'."""
     fake = FakeAgentRunner(
         [
             CommitMessageOutput(message="add foo"),
@@ -1360,7 +1355,7 @@ def test_run_issue_commits_reviewer_with_issue_number_and_message(tmp_path):
 
 
 def test_run_issue_commits_reviewer_with_title_when_no_commit_message_tag(tmp_path):
-    """After Reviewer returns ReviewerOutput(message=None), commit uses issue title as fallback."""
+    """After Reviewer returns CommitMessageOutput(message=None), commit uses issue title as fallback."""
     fake = FakeAgentRunner([CommitMessageOutput(message=None), _reviewer_output(None)])
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
