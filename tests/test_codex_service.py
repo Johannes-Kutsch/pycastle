@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 from pycastle.agents.output_protocol import AgentRole
@@ -531,30 +531,38 @@ def test_is_available_true_by_default():
 
 def test_is_available_false_after_mark_exhausted_with_reset_time():
     svc = CodexService()
-    reset = datetime(2026, 5, 18, 12, 0)
+    reset = datetime(2026, 5, 18, 12, 0, tzinfo=timezone.utc)
     svc.mark_exhausted(reset)
-    now = datetime(2026, 5, 18, 12, 1)
+    now = datetime(2026, 5, 18, 12, 1, tzinfo=timezone.utc)
     assert svc.is_available(now=now) is False
 
 
 def test_is_available_true_after_reset_time_plus_2min():
     svc = CodexService()
-    reset = datetime(2026, 5, 18, 12, 0)
+    reset = datetime(2026, 5, 18, 12, 0, tzinfo=timezone.utc)
     svc.mark_exhausted(reset)
-    after = datetime(2026, 5, 18, 12, 3)
+    after = datetime(2026, 5, 18, 12, 3, tzinfo=timezone.utc)
     assert svc.is_available(now=after) is True
 
 
 def test_next_wake_time_returns_wake_after_mark_exhausted_with_reset():
     svc = CodexService()
-    reset = datetime(2026, 5, 18, 12, 0)
+    reset = datetime(2026, 5, 18, 12, 0, tzinfo=timezone.utc)
     svc.mark_exhausted(reset)
     assert svc.next_wake_time() is not None
 
 
+def test_is_available_accepts_tz_aware_now():
+    svc = CodexService()
+    reset = datetime(2026, 5, 18, 12, 0, tzinfo=timezone.utc)
+    svc.mark_exhausted(reset)
+    now_aware = datetime(2026, 5, 18, 12, 3, tzinfo=timezone.utc)
+    assert svc.is_available(now=now_aware) is True
+
+
 def test_next_wake_time_returns_wake_after_mark_exhausted_without_reset():
     svc = CodexService()
-    now = datetime(2026, 5, 18, 12, 15)
+    now = datetime(2026, 5, 18, 12, 15, tzinfo=timezone.utc)
     svc.mark_exhausted(None, _now=now)
     assert svc.next_wake_time() is not None
 

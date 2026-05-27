@@ -5,9 +5,10 @@ import json
 import logging
 import re
 from collections.abc import Callable, Iterable, Iterator
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
 from ..session import SESSION_DIR_NAME, RunKind
 from .agent_service import (
@@ -105,12 +106,11 @@ def _parse_reset_time(message: str) -> datetime | None:
         if month is None:
             return None
         try:
-            return datetime(int(year_str), month, int(day_str), hour, minute)
+            return datetime(int(year_str), month, int(day_str), hour, minute, tzinfo=timezone.utc)
         except ValueError:
             return None
 
-    # Same-day: TZ=UTC in container makes "now" UTC-by-construction
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if candidate < now - timedelta(minutes=2):
         candidate += timedelta(days=1)
@@ -145,7 +145,7 @@ class CodexService:
     def is_available(self, now: datetime | None = None) -> bool:
         if self._exhausted_until is None:
             return True
-        now = now or datetime.utcnow()
+        now = now or _time_module.now_local()
         return now >= self._exhausted_until
 
     def next_wake_time(self) -> datetime:
@@ -156,8 +156,11 @@ class CodexService:
     def mark_exhausted(
         self, reset_time: datetime | None, *, _now: datetime | None = None
     ) -> None:
-        now = _now or datetime.utcnow()
-        self._exhausted_until, _ = compute_wake_time(reset_time, now)
+        now = _now or _time_module.now_local()
+        wake, _ = compute_wake_time(reset_time, now)
+        if wake.tzinfo is None:
+            wake = wake.replace(tzinfo=timezone.utc)
+        self._exhausted_until = wake
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         if namespace:
