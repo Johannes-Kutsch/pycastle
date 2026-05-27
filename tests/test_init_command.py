@@ -397,7 +397,7 @@ def test_init_global_merges_missing_keys_into_existing_env(tmp_path, monkeypatch
 def test_init_global_skips_credential_prompts_when_present_in_global_env(
     tmp_path, monkeypatch
 ):
-    """With --global and credentials already in global .env, no prompt is issued."""
+    """With --global and existing credentials, the credential prompts are skipped (overwrite declined by default)."""
     from pycastle.commands.init import main
 
     home = tmp_path / "home"
@@ -413,7 +413,7 @@ def test_init_global_skips_credential_prompts_when_present_in_global_env(
     with prompt_mock as pm, confirm_mock:
         main(scope="global")
 
-    # No prompt should have been issued for either credential
+    # No credential click.prompt should have been issued (overwrite confirm defaults to False)
     prompt_calls = [c.args[0] for c in pm.call_args_list]
     assert not any("GitHub token" in m for m in prompt_calls)
     assert not any("Claude OAuth token" in m for m in prompt_calls)
@@ -620,14 +620,9 @@ def test_init_overwrite_no_preserves_existing_gh_token(tmp_path, monkeypatch):
     env_file.parent.mkdir(parents=True)
     env_file.write_text("GH_TOKEN=existing-gh\nCLAUDE_CODE_OAUTH_TOKEN=\n")
 
-    def confirm_side_effect(message, *args, **kwargs):
-        if "Overwrite" in message and "GH_TOKEN" in message:
-            return False
-        return False
-
     with (
         patch("click.prompt", return_value="new-value"),
-        patch("click.confirm", side_effect=confirm_side_effect),
+        patch("click.confirm", return_value=False),
     ):
         main(scope="local")
 
@@ -672,18 +667,42 @@ def test_init_overwrite_no_preserves_existing_claude_token(tmp_path, monkeypatch
     env_file.parent.mkdir(parents=True)
     env_file.write_text("GH_TOKEN=\nCLAUDE_CODE_OAUTH_TOKEN=existing-claude\n")
 
-    def confirm_side_effect(message, *args, **kwargs):
-        if "Overwrite" in message and "CLAUDE_CODE_OAUTH_TOKEN" in message:
-            return False
-        return False
-
     with (
         patch("click.prompt", return_value="new-value"),
-        patch("click.confirm", side_effect=confirm_side_effect),
+        patch("click.confirm", return_value=False),
     ):
         main(scope="local")
 
     assert "CLAUDE_CODE_OAUTH_TOKEN=existing-claude" in env_file.read_text()
+
+
+def test_init_overwrite_yes_replaces_existing_claude_token(tmp_path, monkeypatch):
+    """Confirming overwrite for CLAUDE_CODE_OAUTH_TOKEN prompts for a new value and writes it."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    env_file = tmp_path / "pycastle" / ".env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text("GH_TOKEN=\nCLAUDE_CODE_OAUTH_TOKEN=old-claude\n")
+
+    def confirm_side_effect(message, *args, **kwargs):
+        if "Overwrite" in message and "CLAUDE_CODE_OAUTH_TOKEN" in message:
+            return True
+        return False
+
+    def prompt_side_effect(*args, **kwargs):
+        msg = args[0] if args else ""
+        if "Claude OAuth token" in msg:
+            return "new-claude"
+        return ""
+
+    with (
+        patch("click.prompt", side_effect=prompt_side_effect),
+        patch("click.confirm", side_effect=confirm_side_effect),
+    ):
+        main(scope="local")
+
+    assert "CLAUDE_CODE_OAUTH_TOKEN=new-claude" in env_file.read_text()
 
 
 @pytest.mark.parametrize("service", ["claude", "both"])
