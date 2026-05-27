@@ -19,7 +19,7 @@ from ..config.loader import (
 )
 from ..session.resume import SESSION_DIR_NAME
 
-_SPECIAL_FILES = {"config.py", ".env", "Dockerfile.claude", "Dockerfile.claude-codex"}
+_SPECIAL_FILES = {"config.py", ".env", "Dockerfile.claude", "Dockerfile.codex"}
 
 
 def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
@@ -275,7 +275,7 @@ def refresh() -> None:
 
     referenced = referenced_services(load_config())
     dockerfile_template = (
-        "Dockerfile.claude-codex" if "codex" in referenced else "Dockerfile.claude"
+        "Dockerfile.codex" if "codex" in referenced else "Dockerfile.claude"
     )
     dockerfile_target = project_dir / "Dockerfile"
     dockerfile_verb = _refresh_status(dockerfile_template, dockerfile_target, pkg)
@@ -365,7 +365,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     dockerfile_target = project_dir / "Dockerfile"
     if not dockerfile_target.exists():
         dockerfile_template = (
-            "Dockerfile.claude" if service == "claude" else "Dockerfile.claude-codex"
+            "Dockerfile.claude" if service == "claude" else "Dockerfile.codex"
         )
         _copy_template(dockerfile_template, dockerfile_target, pkg)
 
