@@ -146,9 +146,14 @@ def test_build_env_sets_tz_utc():
     assert env.get("TZ") == "UTC"
 
 
-def test_build_env_sets_codex_home():
+def test_build_env_sets_codex_home_from_state_dir():
+    env = CodexService().build_env(state_dir_container_path="/home/agent/workspace/.pycastle-session/planner/codex")
+    assert env.get("CODEX_HOME") == "/home/agent/workspace/.pycastle-session/planner/codex"
+
+
+def test_build_env_omits_codex_home_without_state_dir():
     env = CodexService().build_env()
-    assert env.get("CODEX_HOME") == "/home/agent/.codex"
+    assert "CODEX_HOME" not in env
 
 
 def test_build_env_does_not_set_token_env_var():
@@ -158,8 +163,13 @@ def test_build_env_does_not_set_token_env_var():
     assert "OPENAI_API_KEY" not in env
 
 
-def test_build_env_contains_exactly_tz_and_codex_home():
+def test_build_env_without_state_dir_contains_only_tz():
     env = CodexService().build_env()
+    assert set(env.keys()) == {"TZ"}
+
+
+def test_build_env_with_state_dir_contains_tz_and_codex_home():
+    env = CodexService().build_env(state_dir_container_path="/home/agent/workspace/.pycastle-session/planner/codex")
     assert set(env.keys()) == {"TZ", "CODEX_HOME"}
 
 
