@@ -956,6 +956,38 @@ def test_run_cmd_exits_nonzero_on_invalid_effort_for_codex_stage(tmp_path, monke
     assert not build_called
 
 
+def test_run_cmd_exits_nonzero_on_invalid_effort_for_claude_stage(
+    tmp_path, monkeypatch
+):
+    from pycastle.config.types import StageOverride
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=StageOverride(effort="ultra"),
+    )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "plan" in result.output
+    assert "ultra" in result.output
+    assert not build_called
+
+
 def test_run_cmd_reports_all_violations_in_single_message(tmp_path, monkeypatch):
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
