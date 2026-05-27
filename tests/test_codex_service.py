@@ -131,6 +131,13 @@ def test_build_command_resume_includes_approval_policy():
     assert "-c approval_policy=never" in cmd
 
 
+def test_build_command_resume_excludes_sandbox():
+    cmd = CodexService().build_command(
+        run_kind=RunKind.RESUME, session_uuid="thread-xyz"
+    )
+    assert "--sandbox" not in cmd
+
+
 # ── CodexService.build_env ────────────────────────────────────────────────────
 
 

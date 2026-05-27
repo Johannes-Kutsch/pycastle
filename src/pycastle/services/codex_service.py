@@ -152,9 +152,10 @@ class CodexService:
             parts.append(f"-m {model}")
         if effort:
             parts.append(f"-c model_reasoning_effort={effort}")
+        parts.append("-c approval_policy=never")
+        if run_kind != RunKind.RESUME:
+            parts.append("--sandbox danger-full-access")
         parts += [
-            "-c approval_policy=never",
-            "--sandbox danger-full-access",
             "--json",
             "< /tmp/.pycastle_prompt",
         ]

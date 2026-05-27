@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
   && rm -rf /var/lib/apt/lists/*
 
 # Install Codex CLI globally
-RUN npm install -g @openai/codex
+RUN npm install -g @openai/codex@0.134.0
 
 # Create agent user with UID 1000 for compatibility with --userns=keep-id and --user 1000:1000
 RUN useradd -m -u 1000 -s /bin/bash agent
@@ -27,7 +27,7 @@ USER agent
 RUN git config --global --add safe.directory '*'
 
 # Install Claude Code CLI
-RUN curl -fsSL https://claude.ai/install.sh | bash
+RUN curl -fsSL https://claude.ai/install.sh | bash -s -- 2.1.152
 
 # Add Claude to PATH
 ENV PATH="/home/agent/.local/bin:$PATH"

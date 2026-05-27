@@ -22,7 +22,7 @@ USER agent
 RUN git config --global --add safe.directory '*'
 
 # Install Claude Code CLI
-RUN curl -fsSL https://claude.ai/install.sh | bash
+RUN curl -fsSL https://claude.ai/install.sh | bash -s -- 2.1.152
 
 # Add Claude to PATH
 ENV PATH="/home/agent/.local/bin:$PATH"
