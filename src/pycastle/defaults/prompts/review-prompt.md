@@ -19,7 +19,7 @@ Review the code changes on branch {{BRANCH}} for issue #{{ISSUE_NUMBER}}: {{ISSU
 {{ISSUE_COMMENTS}}
 
 </comments>
-{{WIP_COMMITS}}
+{{INTERRUPTED_WORK}}
 </context>
 
 <workflow>

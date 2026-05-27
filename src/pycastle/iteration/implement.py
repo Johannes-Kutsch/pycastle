@@ -17,7 +17,11 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from ..prompts.pipeline import PromptTemplate, build_issue_scope_args, build_wip_clause
+from ..prompts.pipeline import (
+    PromptTemplate,
+    build_interrupted_work_clause,
+    build_issue_scope_args,
+)
 from ..agents.classifier import WellFormed, classify_slice
 from ..session import RoleSession, is_stage_done_for
 from ..display.status_display import StatusDisplay
@@ -82,15 +86,13 @@ async def run_issue(
     _token = token if token is not None else CancellationToken()
 
     def _scope_args_for(mount_path: Path, role: AgentRole) -> dict[str, str]:
-        wip = build_wip_clause(
-            deps.git_svc.get_branch_commit_subjects(_branch, deps.repo_root),
-            RoleSession(mount_path, role).is_resumable(),
-            role=role.value,
-            issue_number=issue["number"],
+        interrupted_work = build_interrupted_work_clause(
+            RoleSession(mount_path, role).run_kind(),
+            is_dirty=not deps.git_svc.is_working_tree_clean(mount_path),
         )
         return build_issue_scope_args(
             issue,
-            extra_scope_args={"BRANCH": _branch, "WIP_COMMITS": wip},
+            extra_scope_args={"BRANCH": _branch, "INTERRUPTED_WORK": interrupted_work},
         )
 
     _implement_started = False

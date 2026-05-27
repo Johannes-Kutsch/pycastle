@@ -19,7 +19,7 @@ Only work on the issue specified. Work on branch {{BRANCH}}.
 {{ISSUE_COMMENTS}}
 
 </comments>
-{{WIP_COMMITS}}
+{{INTERRUPTED_WORK}}
 </context>
 
 <workflow>
@@ -47,4 +47,3 @@ Rules:
 {{IMPLEMENT_OUTPUT_RULES}}
 
 </output>
-

@@ -664,6 +664,71 @@ def test_run_issue_does_not_pass_diff_to_either_agent(tmp_path):
     assert "DIFF" not in rev_call.scope_args
 
 
+def test_run_issue_injects_interrupted_work_for_fresh_dirty_worktree(tmp_path):
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = False
+    issue = {
+        "number": 6,
+        "title": "Resume dirty work",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    interrupted_work = fake.calls[0].scope_args["INTERRUPTED_WORK"]
+    assert "Interrupted Work" in interrupted_work
+    assert "git diff" in interrupted_work
+    assert "git status" in interrupted_work
+    assert "diff --git" not in interrupted_work
+
+
+def test_run_issue_omits_interrupted_work_for_fresh_clean_worktree(tmp_path):
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = True
+    issue = {
+        "number": 6,
+        "title": "Fresh clean work",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    assert fake.calls[0].scope_args["INTERRUPTED_WORK"] == ""
+
+
+def test_run_issue_omits_interrupted_work_for_resume_dirty_worktree(tmp_path):
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = False
+    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / "issue-6"
+    impl_session_dir = wt_path / ".pycastle-session" / "implementer"
+    original_create = deps.git_svc.create_worktree.side_effect
+
+    def _seeding_create(repo, path, branch, sha=None):
+        original_create(repo, path, branch, sha)
+        impl_session_dir.mkdir(parents=True, exist_ok=True)
+        (impl_session_dir / "session.json").write_text("{}")
+
+    deps.git_svc.create_worktree.side_effect = _seeding_create
+    issue = {
+        "number": 6,
+        "title": "Resume dirty work",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    assert fake.calls[0].scope_args["INTERRUPTED_WORK"] == ""
+
+
 def test_run_issue_handles_issue_without_body_or_comments(tmp_path):
     """AFK-path issues lack body/comments — prompt args must still be populated."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
