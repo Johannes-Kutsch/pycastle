@@ -11,6 +11,6 @@
 ## Consequences
 
 - `transient_worktree` imports `AgentFailedError` and uses an `except AgentFailedError` guard to skip its `finally` teardown. All other exceptions still tear down unconditionally.
-- `run_iteration`'s `AgentFailedError` handler gains a `try/finally` around the Failure-Analysis agent call that cleans up the preserved worktree. A `!= repo_root` guard prevents accidental teardown when the error originates from a non-worktree path.
+- `run_iteration`'s `AgentFailedError` handler wraps the Failure-Analysis agent call in `try/except Exception/finally`: the `except` swallows failures from the Failure-Analysis agent itself (preventing a secondary `AgentFailedError` from escaping the handler), and the `finally` cleans up the preserved worktree. A `!= repo_root` guard prevents accidental teardown when the error originates from a non-worktree path.
 - `teardown_worktree` is now imported in `iteration/__init__.py`.
 - No change to `managed_worktree` — it already preserves on `UsageLimitError`, `TransientAgentError`, and `HardAgentError` via the broadened preservation rule.

@@ -246,6 +246,8 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 )
                 if isinstance(result, IssueOutput):
                     issue_number = result.number
+            except Exception:
+                pass
             finally:
                 if err.worktree_path != deps.repo_root:
                     teardown_worktree(
