@@ -114,7 +114,11 @@ def _parse_reset_time(message: str) -> datetime | None:
             return None
         try:
             utc_dt = datetime(
-                int(year_str), month, int(day_str), hour, minute,
+                int(year_str),
+                month,
+                int(day_str),
+                hour,
+                minute,
                 tzinfo=timezone.utc,
             )
         except ValueError:
@@ -260,9 +264,7 @@ class CodexService:
                     _usage_value(usage, "input_tokens")
                     + _usage_value(usage, "cached_input_tokens", "cached_tokens")
                     + _usage_value(usage, "output_tokens")
-                    + _usage_value(
-                        usage, "reasoning_output_tokens", "reasoning_tokens"
-                    )
+                    + _usage_value(usage, "reasoning_output_tokens", "reasoning_tokens")
                 )
                 yield Tokens(count=count)
                 return

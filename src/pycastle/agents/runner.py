@@ -225,10 +225,9 @@ class AgentRunner:
         if self._service.name == "codex":
             service_session_id = None
             if run_kind == RunKind.RESUME and state_dir is not None:
-                service_session_id = (
-                    role_session.service_session_id("codex")
-                    or self._codex_thread_id_from_rollouts(state_dir)
-                )
+                service_session_id = role_session.service_session_id(
+                    "codex"
+                ) or self._codex_thread_id_from_rollouts(state_dir)
                 if service_session_id is not None:
                     role_session.save_service_session_id("codex", service_session_id)
                 else:

@@ -1966,9 +1966,7 @@ def test_agent_runner_codex_resume_uses_thread_id_from_rollout(tmp_path):
     assert "codex exec resume thread-from-rollout" in captured_cmds[0]
 
 
-def test_agent_runner_codex_missing_host_auth_raises_hard_error(
-    tmp_path, monkeypatch
-):
+def test_agent_runner_codex_missing_host_auth_raises_hard_error(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(Path, "home", lambda: home)
@@ -1981,7 +1979,9 @@ def test_agent_runner_codex_missing_host_auth_raises_hard_error(
         service=CodexService(),
     )
 
-    with pytest.raises(HardAgentError, match="Codex authentication missing") as exc_info:
+    with pytest.raises(
+        HardAgentError, match="Codex authentication missing"
+    ) as exc_info:
         asyncio.run(
             runner.run(
                 RunRequest(

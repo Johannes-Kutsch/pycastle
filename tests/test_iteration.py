@@ -2906,9 +2906,7 @@ def test_run_iteration_failure_report_crash_logs_warning_and_error(
     assert result.issue_number is None
 
     prints = [(c[1], c[2]) for c in status.calls if c[0] == "print"]
-    assert any(
-        "Failure-Report agent crashed" in str(msg) for _, msg in prints
-    )
+    assert any("Failure-Report agent crashed" in str(msg) for _, msg in prints)
 
     assert len(logger.internal_errors) == 1
     label, logged_error, logged_cause = logger.internal_errors[0]

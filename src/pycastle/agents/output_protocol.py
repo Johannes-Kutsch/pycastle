@@ -101,7 +101,6 @@ class PromiseParseError(AgentOutputProtocolError):
     pass
 
 
-
 def _strip_markdown_fence(s: str) -> str:
     s = s.strip()
     if s.startswith("```"):

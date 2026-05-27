@@ -17,7 +17,11 @@ from ..errors import (
 )
 from ..services import OperatorActionableGitError
 from ..prompts.pipeline import PromptTemplate
-from ..infrastructure.worktree import teardown_worktree, worktree_name_for_branch, worktree_path
+from ..infrastructure.worktree import (
+    teardown_worktree,
+    worktree_name_for_branch,
+    worktree_path,
+)
 from ..session import any_role_dir_present
 from ._deps import Deps
 from ._rows import StatusRow as StatusRow
@@ -259,9 +263,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 )
             finally:
                 if err.worktree_path != deps.repo_root:
-                    teardown_worktree(
-                        deps.git_svc, deps.repo_root, err.worktree_path
-                    )
+                    teardown_worktree(deps.git_svc, deps.repo_root, err.worktree_path)
         return AbortedAgentFailure(
             failed_role=err.role_value, issue_number=issue_number
         )

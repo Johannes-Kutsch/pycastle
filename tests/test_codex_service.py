@@ -160,8 +160,12 @@ def test_build_env_sets_tz_utc():
 
 
 def test_build_env_sets_codex_home_from_state_dir():
-    env = CodexService().build_env(state_dir_container_path="/home/agent/workspace/.pycastle-session/planner/codex")
-    assert env.get("CODEX_HOME") == "/home/agent/workspace/.pycastle-session/planner/codex"
+    env = CodexService().build_env(
+        state_dir_container_path="/home/agent/workspace/.pycastle-session/planner/codex"
+    )
+    assert (
+        env.get("CODEX_HOME") == "/home/agent/workspace/.pycastle-session/planner/codex"
+    )
 
 
 def test_build_env_omits_codex_home_without_state_dir():
@@ -182,7 +186,9 @@ def test_build_env_without_state_dir_contains_only_tz():
 
 
 def test_build_env_with_state_dir_contains_tz_and_codex_home():
-    env = CodexService().build_env(state_dir_container_path="/home/agent/workspace/.pycastle-session/planner/codex")
+    env = CodexService().build_env(
+        state_dir_container_path="/home/agent/workspace/.pycastle-session/planner/codex"
+    )
     assert set(env.keys()) == {"TZ", "CODEX_HOME"}
 
 
@@ -271,7 +277,7 @@ def test_run_yields_assistant_turn_for_agent_message():
 def test_run_yields_assistant_turn_from_current_agent_message_text_field():
     lines = [
         _thread_started(),
-        _item_completed_text("agent_message", "<plan>{\"issues\": []}</plan>"),
+        _item_completed_text("agent_message", '<plan>{"issues": []}</plan>'),
         _turn_completed(),
     ]
     events = list(CodexService().run(lines))
@@ -627,7 +633,9 @@ def test_run_error_event_usage_limit_carries_raw_message_when_reset_time_unparse
     assert limit.raw_message == message
 
 
-def test_run_turn_failed_usage_limit_has_no_raw_message_when_reset_time_parsed(monkeypatch):
+def test_run_turn_failed_usage_limit_has_no_raw_message_when_reset_time_parsed(
+    monkeypatch,
+):
     frozen = datetime(2026, 5, 27, 14, 0, tzinfo=timezone.utc)
     monkeypatch.setattr(_time_module, "now_local", lambda: frozen)
     message = "You've hit your usage limit. Please wait or try again at 3:30 PM"
