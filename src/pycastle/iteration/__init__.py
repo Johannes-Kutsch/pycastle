@@ -17,7 +17,7 @@ from ..errors import (
 )
 from ..services import OperatorActionableGitError
 from ..prompts.pipeline import PromptTemplate
-from ..infrastructure.worktree import worktree_name_for_branch, worktree_path
+from ..infrastructure.worktree import teardown_worktree, worktree_name_for_branch, worktree_path
 from ..session import any_role_dir_present
 from ._deps import Deps
 from ._rows import StatusRow as StatusRow
@@ -229,22 +229,28 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
     except AgentFailedError as err:
         issue_number: int | None = None
         if deps.cfg.diagnose_on_failure:
-            result = await deps.agent_runner.run(
-                RunRequest(
-                    name="Failure Report Agent",
-                    template=PromptTemplate.FAILURE_REPORT,
-                    mount_path=err.worktree_path,
-                    role=AgentRole.FAILURE_REPORT,
-                    scope_args={
-                        "FAILED_ROLE": err.role_value,
-                        "SESSION_DIR": err.session_dir,
-                        "FAILURE_CLASS": err.failure_class,
-                    },
-                    status_display=deps.status_display,
+            try:
+                result = await deps.agent_runner.run(
+                    RunRequest(
+                        name="Failure Report Agent",
+                        template=PromptTemplate.FAILURE_REPORT,
+                        mount_path=err.worktree_path,
+                        role=AgentRole.FAILURE_REPORT,
+                        scope_args={
+                            "FAILED_ROLE": err.role_value,
+                            "SESSION_DIR": err.session_dir,
+                            "FAILURE_CLASS": err.failure_class,
+                        },
+                        status_display=deps.status_display,
+                    )
                 )
-            )
-            if isinstance(result, IssueOutput):
-                issue_number = result.number
+                if isinstance(result, IssueOutput):
+                    issue_number = result.number
+            finally:
+                if err.worktree_path != deps.repo_root:
+                    teardown_worktree(
+                        deps.git_svc, deps.repo_root, err.worktree_path
+                    )
         return AbortedAgentFailure(
             failed_role=err.role_value, issue_number=issue_number
         )
