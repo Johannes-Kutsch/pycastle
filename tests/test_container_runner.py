@@ -16,6 +16,7 @@ from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.infrastructure.docker_session import DockerSession
 from pycastle.errors import AgentTimeoutError, DockerError, UsageLimitError
 from pycastle.iteration._deps import RecordingStatusDisplay
+from pycastle.session import RunKind
 from pycastle.services.claude_service import ClaudeService
 
 _ROLE = AgentRole.IMPLEMENTER
@@ -141,6 +142,19 @@ def test_two_runners_at_different_minutes_produce_distinct_log_files(
     monkeypatch.setattr(_time_module, "now_local", lambda: dt2)
     runner2, _ = _make_runner(name="merge", tmp_path=tmp_path)
     assert runner1.log_path != runner2.log_path
+
+
+def test_two_runners_in_same_minute_reserve_distinct_log_files(tmp_path, monkeypatch):
+    fixed_dt = datetime(2026, 5, 17, 14, 30, tzinfo=timezone.utc).astimezone()
+    monkeypatch.setattr(_time_module, "now_local", lambda: fixed_dt)
+
+    runner1, _ = _make_runner(name="plan", tmp_path=tmp_path)
+    runner2, _ = _make_runner(name="plan", tmp_path=tmp_path)
+
+    assert runner1.log_path.name == f"plan-{fixed_dt.strftime('%Y%m%dT%H%M')}.log"
+    assert runner2.log_path.name == f"plan-{fixed_dt.strftime('%Y%m%dT%H%M')}-2.log"
+    assert runner1.log_path.exists()
+    assert runner2.log_path.exists()
 
 
 def test_timestamp_is_fixed_at_construction_not_recomputed_per_write(
@@ -278,6 +292,40 @@ def test_work_called_twice_writes_each_prompt(tmp_path):
     prompt_writes = [c for c in session.write_calls if c[0] == "/tmp/.pycastle_prompt"]
     assert prompt_writes[0][1] == "First prompt"
     assert prompt_writes[1][1] == "Second prompt"
+
+
+def test_work_called_twice_appends_each_invocation_to_same_log(tmp_path):
+    chunk_lists = [
+        [_result_line("<commit_message>first</commit_message>")],
+        [_result_line("<commit_message>second</commit_message>")],
+    ]
+    call_count = {"n": 0}
+    session = FakeDockerSession()
+
+    def _stream(command: str):
+        session.stream_calls.append(command)
+        chunks = chunk_lists[call_count["n"]]
+        call_count["n"] += 1
+        return iter(chunks)
+
+    session.exec_stream = _stream  # type: ignore[method-assign]
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+
+    asyncio.run(runner.work(_ROLE, "First prompt"))
+    asyncio.run(runner.work(_ROLE, "Second prompt", run_kind=RunKind.RESUME))
+
+    log_lines = runner.log_path.read_text(encoding="utf-8").splitlines()
+    first_record = json.loads(log_lines[0])
+    second_record = json.loads(log_lines[3])
+    assert log_lines[2] == ""
+    assert first_record["type"] == "pycastle_input"
+    assert first_record["prompt"] == "First prompt"
+    assert first_record["run_kind"] == "fresh"
+    assert second_record["type"] == "pycastle_input"
+    assert second_record["prompt"] == "Second prompt"
+    assert second_record["run_kind"] == "resume"
+    assert "first" in log_lines[1]
+    assert "second" in log_lines[4]
 
 
 def test_work_updates_phase_to_work(tmp_path):

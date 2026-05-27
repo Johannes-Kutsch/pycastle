@@ -40,7 +40,20 @@ class ContainerRunner:
         )
         slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
         ts = _time_module.now_local().strftime("%Y%m%dT%H%M")
-        self._log_path = self._cfg.logs_dir / f"{slug}-{ts}.log"
+        self._log_path = self._reserve_log_path(slug, ts)
+
+    def _reserve_log_path(self, slug: str, ts: str) -> Path:
+        self._cfg.logs_dir.mkdir(parents=True, exist_ok=True)
+        stem = f"{slug}-{ts}"
+        for suffix in ["", *[f"-{n}" for n in range(2, 10_000)]]:
+            path = self._cfg.logs_dir / f"{stem}{suffix}.log"
+            try:
+                with open(path, "xb"):
+                    pass
+                return path
+            except FileExistsError:
+                continue
+        raise RuntimeError(f"could not reserve unique agent log path for {stem}")
 
     @property
     def log_path(self) -> Path:
@@ -147,7 +160,9 @@ class ContainerRunner:
         threading.Thread(target=_feed, daemon=True).start()
 
         try:
-            with open(self._log_path, "wb") as log:
+            with open(self._log_path, "ab") as log:
+                if self._log_path.stat().st_size > 0:
+                    log.write(b"\n")
                 log.write(json.dumps(input_record).encode() + b"\n")
                 log.flush()
 
