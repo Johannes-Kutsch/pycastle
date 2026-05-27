@@ -30,6 +30,13 @@ def _item_completed(item_type: str, content: str = "") -> str:
     return json.dumps({"type": "item.completed", "item": item})
 
 
+def _item_completed_text(item_type: str, text: str = "") -> str:
+    item: dict = {"type": item_type}
+    if text:
+        item["text"] = text
+    return json.dumps({"type": "item.completed", "item": item})
+
+
 def _turn_completed(
     input_tokens: int = 100,
     cached_tokens: int = 50,
@@ -261,6 +268,19 @@ def test_run_yields_assistant_turn_for_agent_message():
     assert any(isinstance(e, AssistantTurn) and e.text == "Hello world" for e in events)
 
 
+def test_run_yields_assistant_turn_from_current_agent_message_text_field():
+    lines = [
+        _thread_started(),
+        _item_completed_text("agent_message", "<plan>{\"issues\": []}</plan>"),
+        _turn_completed(),
+    ]
+    events = list(CodexService().run(lines))
+    assert any(
+        isinstance(e, AssistantTurn) and e.text == '<plan>{"issues": []}</plan>'
+        for e in events
+    )
+
+
 def test_run_yields_tokens_from_turn_completed():
     lines = [
         _thread_started(),
@@ -270,6 +290,22 @@ def test_run_yields_tokens_from_turn_completed():
         ),
     ]
     events = list(CodexService().run(lines))
+    assert any(isinstance(e, Tokens) and e.count == 360 for e in events)
+
+
+def test_run_yields_tokens_from_current_turn_completed_usage_fields():
+    line = json.dumps(
+        {
+            "type": "turn.completed",
+            "usage": {
+                "input_tokens": 100,
+                "cached_input_tokens": 50,
+                "output_tokens": 200,
+                "reasoning_output_tokens": 10,
+            },
+        }
+    )
+    events = list(CodexService().run([line]))
     assert any(isinstance(e, Tokens) and e.count == 360 for e in events)
 
 

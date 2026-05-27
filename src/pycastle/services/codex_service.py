@@ -126,6 +126,14 @@ def _extract_usage_limit(message: str) -> UsageLimit | None:
     return UsageLimit(reset_time=reset_time, raw_message=raw)
 
 
+def _usage_value(usage: dict, *names: str) -> int:
+    for name in names:
+        value = usage.get(name)
+        if isinstance(value, int):
+            return value
+    return 0
+
+
 @dataclasses.dataclass
 class CodexService:
     _exhausted_until: datetime | None = dataclasses.field(default=None, init=False)
@@ -225,7 +233,9 @@ class CodexService:
                 item = obj.get("item") or {}
                 item_type = item.get("type")
                 if item_type == "agent_message":
-                    content = item.get("content") or ""
+                    content = item.get("text")
+                    if content is None:
+                        content = item.get("content") or ""
                     if content:
                         yield AssistantTurn(text=content)
                 continue
@@ -233,10 +243,12 @@ class CodexService:
             if event_type == "turn.completed":
                 usage = obj.get("usage") or {}
                 count = (
-                    (usage.get("input_tokens") or 0)
-                    + (usage.get("cached_tokens") or 0)
-                    + (usage.get("output_tokens") or 0)
-                    + (usage.get("reasoning_tokens") or 0)
+                    _usage_value(usage, "input_tokens")
+                    + _usage_value(usage, "cached_input_tokens", "cached_tokens")
+                    + _usage_value(usage, "output_tokens")
+                    + _usage_value(
+                        usage, "reasoning_output_tokens", "reasoning_tokens"
+                    )
                 )
                 yield Tokens(count=count)
                 return

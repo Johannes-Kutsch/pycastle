@@ -112,8 +112,9 @@
 | **blocker** | Issue that must be resolved before another can be worked on. Any open non-`wontfix` issue counts as a hard blocker; `wontfix` treated as closed | dependency, prerequisite |
 | **all-open issues list** | Lightweight `[{number, title, labels}]` projection of every open issue injected into plan prompt as `ALL_OPEN_ISSUES_JSON`; gives Planner cross-label visibility for blocker detection | blocker visibility list |
 | **ready-for-agent issues list** | Hydrated `[{number, title, body, labels, comments}]` projection of open issues carrying `issue_label`; injected as `READY_FOR_AGENT_ISSUES_JSON`; candidate set Planner picks from | AFK issues list, candidate set |
-| **AllBlocked** | Outcome returned by `planning_phase` when Planner produces zero implementable issues; `run_iteration` ends with `Done` — no within-iteration improve dispatch from this path | empty plan, all-blocked |
+| **AllBlocked** | Outcome returned by `planning_phase` when Planner produces zero implementable issues; `run_iteration` ends with `Done` and status does not surface `blocked[]` details because they are prompt-level reasoning scaffold | empty plan, all-blocked |
 | **dependency graph** | Blocker relationships analyzed by Planner to determine the safe working set | issue graph, dependency map |
+| **blocker reason** | Human-readable explanation or category on a planned `blocked` entry explaining why an AFK issue is held back; prompt-level reasoning scaffold, not an operator-critical result | offending label |
 | **worktree** | Isolated git working tree on the host, bind-mounted into an agent container; one of: named-branch worktree (Implementer/Reviewer/Merger), merge-sandbox, diverge-sandbox, improve-sandbox, or detached plan-sandbox | workspace, branch dir |
 | **plan-sandbox worktree** | Temporary detached checkout of safe SHA created by `planning_phase`; always removed in `try/finally`; never branch-associated; at `.pycastle/.worktrees/plan-sandbox` | planner worktree |
 | **merge-sandbox worktree** | Temporary named-branch worktree (`pycastle/merge-sandbox`) created by `merge_phase` from HEAD after clean merges; Merger runs inside; always removed in `try/finally`; on success `merge_phase` fast-forwards `main` from the branch before cleanup | merger worktree, conflict worktree |
@@ -158,7 +159,7 @@
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **agent output protocol** | Contract between prompts and orchestrator: XML tags (`<plan>`, `<issue>`, `<commit_message>`, `<promise>`), plus the module owning the NDJSON → typed output pipeline. `<behavior>`, `<reviewed_diff>`, and `<checks_passed>` remain in prompts as workflow scaffolding but are not parsed or required by the host | output format, agent tags, agent signals |
-| **`<plan>` tag** | XML tag from Planner with JSON payload `{issues, blocked}`; `issues` lists unblocked AFK issues; `blocked` lists held-back AFK with `{number, blocked_by, reason}` | plan output, plan block |
+| **`<plan>` tag** | XML tag from Planner with JSON payload `{issues, blocked}`; `issues` lists unblocked AFK issues; `blocked` is prompt-level reasoning scaffold for held-back AFK candidates with `{number, blocked_by, reason}` where `reason` is a **blocker reason** and invalid/out-of-scope entries are ignored | plan output, plan block |
 | **`<issue>` tag** | XML tag from preflight-issue agent containing the filed GitHub issue number | issue output, issue number tag |
 | **`<promise>COMPLETE</promise>`** | XML tag from Merger and preflight-issue agent declaring work phase complete; Implementers/Reviewers use `<commit_message>` instead | done signal, completion tag |
 | **`AgentOutputProtocolError`** | Base exception when a required tag is missing or malformed; subclassed by `PlanParseError`, `IssueParseError`, `PromiseParseError` | parse error, protocol error |

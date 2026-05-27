@@ -74,7 +74,7 @@ _CODEX_PROTOCOL_ERROR_STREAM = [
 
 _CODEX_PLAN_COMPLETE_STREAM = [
     b'{"type":"item.completed","item":{"type":"agent_message",'
-    b'"content":"<plan>{\\"issues\\": [], \\"blocked\\": []}</plan>"}}\n'
+    b'"text":"<plan>{\\"issues\\": [], \\"blocked\\": []}</plan>"}}\n'
 ]
 
 
