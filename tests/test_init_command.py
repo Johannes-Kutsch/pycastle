@@ -72,6 +72,7 @@ def test_init_service_selection_copies_matching_dockerfile(
     (fake_home / ".codex").mkdir(parents=True)
     (fake_home / ".codex" / "auth.json").write_bytes(b"{}")
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
     with (
         patch("click.prompt", side_effect=[service, "", ""]),
@@ -549,6 +550,7 @@ def test_init_codex_service_does_not_prompt_for_claude_token(tmp_path, monkeypat
     (fake_home / ".codex").mkdir(parents=True)
     (fake_home / ".codex" / "auth.json").write_bytes(b"{}")
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
     def prompt_side_effect(*args, **kwargs):
@@ -575,6 +577,7 @@ def test_init_codex_service_does_not_print_claude_token_warning(
     (fake_home / ".codex").mkdir(parents=True)
     (fake_home / ".codex" / "auth.json").write_bytes(b"{}")
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
     def prompt_side_effect(*args, **kwargs):
@@ -716,6 +719,7 @@ def test_init_claude_and_both_service_prompt_for_both_credentials(
     (fake_home / ".codex").mkdir(parents=True)
     (fake_home / ".codex" / "auth.json").write_bytes(b"{}")
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
     def prompt_side_effect(*args, **kwargs):
@@ -941,6 +945,7 @@ def test_init_codex_exits_with_message_when_auth_json_absent(
     fake_home = tmp_path / "fakehome"
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
     with (
@@ -967,6 +972,7 @@ def test_init_codex_seeds_auth_json_for_all_roles_when_present(tmp_path, monkeyp
     host_auth = fake_home / ".codex" / "auth.json"
     host_auth.write_bytes(b'{"access_token": "test-token"}')
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
     with (
@@ -1002,6 +1008,7 @@ def test_init_codex_seeds_only_auth_json_not_other_files(tmp_path, monkeypatch):
     (codex_dir / "sessions").mkdir()
     (codex_dir / "sessions" / "rollout-abc.jsonl").write_text("{}\n")
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
     with (
@@ -1036,6 +1043,7 @@ def test_init_codex_rerun_does_not_overwrite_existing_role_auth_json(
     (fake_home / ".codex").mkdir(parents=True)
     (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "first"}')
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
     with (
@@ -1078,6 +1086,7 @@ def test_init_both_rerun_seeds_codex_without_disturbing_existing_env(
     (fake_home / ".codex").mkdir(parents=True)
     (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "tok"}')
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
     # First init: claude-only
@@ -1120,6 +1129,7 @@ def test_init_both_absent_codex_creds_exits_without_rolling_back_env(
     fake_home.mkdir()
     # No .codex/auth.json
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
     with (
@@ -1147,6 +1157,7 @@ def test_init_both_absent_codex_creds_on_rerun_keeps_existing_env(
     fake_home = tmp_path / "fakehome"
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
     # First run: claude-only succeeds, .env written
@@ -1246,6 +1257,7 @@ def test_init_refresh_leaves_existing_role_codex_dirs_unmodified(tmp_path, monke
     (fake_home / ".codex").mkdir(parents=True)
     (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "tok"}')
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
     with (
