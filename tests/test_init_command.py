@@ -18,15 +18,29 @@ def test_dockerfile_claude_template_exists_with_claude_cli():
     assert "npm" not in content
 
 
-def test_dockerfile_claude_codex_template_exists_with_node_and_codex():
-    """Dockerfile.claude-codex must install Claude CLI, Node.js, and @openai/codex."""
+def test_dockerfile_codex_template_exists_with_node_and_codex():
+    """Dockerfile.codex must install only the Codex per-service Dockerfile runtime."""
     from importlib.resources import files
 
     pkg = files("pycastle").joinpath("defaults")
-    content = (pkg / "Dockerfile.claude-codex").read_text()
-    assert "claude.ai/install.sh" in content
+    content = (pkg / "Dockerfile.codex").read_text()
+    assert "FROM python:" in content
+    assert "git" in content
+    assert "cli.github.com/packages" in content
+    assert "apt-get install" in content and " gh" in content
     assert "nodejs" in content
     assert "@openai/codex" in content
+    assert "claude.ai/install.sh" not in content
+    assert "Claude Code CLI" not in content
+    assert ".local/bin" not in content
+
+
+def test_dockerfile_claude_codex_template_is_not_bundled():
+    """Dockerfile.claude-codex must not exist in bundled defaults."""
+    from importlib.resources import files
+
+    pkg = files("pycastle").joinpath("defaults")
+    assert not (pkg / "Dockerfile.claude-codex").is_file()
 
 
 # ── Issue #801: gh CLI must be installed in both Dockerfile templates ──────────
@@ -42,12 +56,12 @@ def test_dockerfile_claude_installs_gh_from_github_apt():
     assert "apt-get install" in content and " gh" in content
 
 
-def test_dockerfile_claude_codex_installs_gh_from_github_apt():
-    """Dockerfile.claude-codex must install gh via the GitHub apt repository."""
+def test_dockerfile_codex_installs_gh_from_github_apt():
+    """Dockerfile.codex must install gh via the GitHub apt repository."""
     from importlib.resources import files
 
     pkg = files("pycastle").joinpath("defaults")
-    content = (pkg / "Dockerfile.claude-codex").read_text()
+    content = (pkg / "Dockerfile.codex").read_text()
     assert "cli.github.com/packages" in content
     assert "apt-get install" in content and " gh" in content
 
@@ -56,8 +70,8 @@ def test_dockerfile_claude_codex_installs_gh_from_github_apt():
     ("service", "expected_template"),
     [
         ("claude", "Dockerfile.claude"),
-        ("codex", "Dockerfile.claude-codex"),
-        ("both", "Dockerfile.claude-codex"),
+        ("codex", "Dockerfile.codex"),
+        ("both", "Dockerfile.codex"),
     ],
 )
 def test_init_service_selection_copies_matching_dockerfile(
@@ -1410,10 +1424,10 @@ def test_init_refresh_claude_only_config_writes_dockerfile_claude(
     ],
     ids=["default_service", "stage_service", "fallback_service"],
 )
-def test_init_refresh_codex_config_writes_dockerfile_claude_codex(
+def test_init_refresh_codex_config_writes_dockerfile_codex(
     tmp_path, monkeypatch, config_snippet
 ):
-    """`pycastle init --refresh` on a codex-referencing config writes Dockerfile.claude-codex."""
+    """`pycastle init --refresh` on a codex-referencing config writes Dockerfile.codex."""
     from importlib.resources import files
 
     from pycastle.commands.init import main, refresh
@@ -1432,7 +1446,7 @@ def test_init_refresh_codex_config_writes_dockerfile_claude_codex(
     refresh()
 
     pkg = files("pycastle").joinpath("defaults")
-    expected = (pkg / "Dockerfile.claude-codex").read_bytes()
+    expected = (pkg / "Dockerfile.codex").read_bytes()
     dockerfile = tmp_path / "pycastle" / "Dockerfile"
     assert dockerfile.read_bytes() == expected
 
