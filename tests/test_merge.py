@@ -240,6 +240,70 @@ def test_incomplete_merger_raises_and_does_not_fast_forward(
     git_svc.fast_forward_branch.assert_not_called()
 
 
+def test_merger_without_active_branch_ancestry_fails_closed_with_branch_name(
+    tmp_path, git_svc, github_svc
+):
+    git_svc.try_merge.return_value = False
+
+    def _is_ancestor(branch, repo_root):
+        return branch == "pycastle/merge-sandbox"
+
+    git_svc.is_ancestor.side_effect = _is_ancestor
+    fake = FakeAgentRunner([CompletionOutput()])
+    local_deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    issues = [{"number": 1, "title": "Conflict"}]
+
+    with pytest.raises(RuntimeError, match="pycastle/issue-1 is not a merged branch"):
+        _run(issues, local_deps)
+    git_svc.fast_forward_branch.assert_not_called()
+
+
+def test_merger_without_active_branch_ancestry_keeps_conflict_issue_open(
+    tmp_path, git_svc, github_svc
+):
+    git_svc.try_merge.return_value = False
+
+    def _is_ancestor(branch, repo_root):
+        return branch == "pycastle/merge-sandbox"
+
+    git_svc.is_ancestor.side_effect = _is_ancestor
+    local_deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner([CompletionOutput()]),
+        git_svc=git_svc,
+        github_svc=github_svc,
+    )
+
+    with pytest.raises(RuntimeError, match="pycastle/issue-1 is not a merged branch"):
+        _run([{"number": 1, "title": "Conflict"}], local_deps)
+
+    github_svc.close_issue.assert_not_called()
+    github_svc.close_completed_parent_issues.assert_not_called()
+
+
+def test_merger_without_active_branch_ancestry_skips_conflict_branch_cleanup(
+    tmp_path, git_svc, github_svc
+):
+    git_svc.try_merge.return_value = False
+
+    def _is_ancestor(branch, repo_root):
+        return branch == "pycastle/merge-sandbox"
+
+    git_svc.is_ancestor.side_effect = _is_ancestor
+    local_deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner([CompletionOutput()]),
+        git_svc=git_svc,
+        github_svc=github_svc,
+    )
+
+    with pytest.raises(RuntimeError, match="pycastle/issue-1 is not a merged branch"):
+        _run([{"number": 1, "title": "Conflict"}], local_deps)
+
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-1" not in deleted
+
+
 # ── Merge-time preflight via cache ───────────────────────────────────────────
 
 
