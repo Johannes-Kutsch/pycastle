@@ -167,3 +167,156 @@ def test_opencode_service_maps_transient_and_hard_runtime_errors() -> None:
         TransientError(status_code=None, raw_message="connection dropped")
     ]
     assert hard == [HardError(status_code=401, raw_message="invalid api key")]
+
+
+def test_opencode_service_session_id_callback_fires_once_for_repeated_id() -> None:
+    service = OpenCodeService()
+    session_ids: list[str] = []
+
+    list(
+        service.run(
+            [
+                (
+                    '{"type":"text","sessionID":"sess_1",'
+                    '"part":{"type":"text","text":"a","time":{"start":1,"end":2}}}'
+                ),
+                (
+                    '{"type":"text","sessionID":"sess_1",'
+                    '"part":{"type":"text","text":"b","time":{"start":2,"end":3}}}'
+                ),
+                '{"type":"session.status","sessionID":"sess_1","status":{"type":"idle"}}',
+            ],
+            on_thread_id=session_ids.append,
+        )
+    )
+
+    assert session_ids == ["sess_1"]
+
+
+def test_opencode_service_skips_malformed_json_and_non_dict_values() -> None:
+    service = OpenCodeService()
+
+    events = list(
+        service.run(
+            [
+                "not json at all",
+                '"just a string"',
+                "[1, 2, 3]",
+                (
+                    '{"type":"text","sessionID":"s",'
+                    '"part":{"type":"text","text":"valid","time":{"start":1,"end":2}}}'
+                ),
+                '{"type":"session.status","status":{"type":"idle"}}',
+            ]
+        )
+    )
+
+    assert events == [AssistantTurn(text="valid"), Result(text="valid")]
+
+
+def test_opencode_service_skips_text_events_with_incomplete_part() -> None:
+    service = OpenCodeService()
+
+    events = list(
+        service.run(
+            [
+                # part still in progress: time.end is null
+                (
+                    '{"type":"text","sessionID":"s",'
+                    '"part":{"type":"text","text":"in-progress","time":{"start":1,"end":null}}}'
+                ),
+                # part missing entirely
+                '{"type":"text","sessionID":"s"}',
+                # part has wrong type
+                (
+                    '{"type":"text","sessionID":"s",'
+                    '"part":{"type":"tool_use","text":"tool call","time":{"start":1,"end":2}}}'
+                ),
+                # valid completed part
+                (
+                    '{"type":"text","sessionID":"s",'
+                    '"part":{"type":"text","text":"complete","time":{"start":1,"end":2}}}'
+                ),
+                '{"type":"session.status","status":{"type":"idle"}}',
+            ]
+        )
+    )
+
+    assert events == [AssistantTurn(text="complete"), Result(text="complete")]
+
+
+def test_opencode_service_skips_whitespace_only_assistant_text() -> None:
+    service = OpenCodeService()
+
+    events = list(
+        service.run(
+            [
+                (
+                    '{"type":"text","sessionID":"s",'
+                    '"part":{"type":"text","text":"   ","time":{"start":1,"end":2}}}'
+                ),
+                (
+                    '{"type":"text","sessionID":"s",'
+                    '"part":{"type":"text","text":"real content","time":{"start":2,"end":3}}}'
+                ),
+                '{"type":"session.status","status":{"type":"idle"}}',
+            ]
+        )
+    )
+
+    assert events == [
+        AssistantTurn(text="real content"),
+        Result(text="real content"),
+    ]
+
+
+def test_opencode_service_yields_no_result_when_idle_follows_no_assistant_turns() -> (
+    None
+):
+    service = OpenCodeService()
+
+    events = list(service.run(['{"type":"session.status","status":{"type":"idle"}}']))
+
+    assert events == []
+
+
+def test_opencode_service_parses_noon_and_midnight_reset_times() -> None:
+    service = OpenCodeService()
+
+    noon = list(
+        service.run(
+            [
+                (
+                    '{"type":"error","timestamp":1,"sessionID":"s","error":{'
+                    '"name":"RateLimitError","data":{"message":"Limit hit. '
+                    'Try again at May 1st, 2026 12:00 PM.",'
+                    '"statusCode":429}}}'
+                )
+            ]
+        )
+    )
+    midnight = list(
+        service.run(
+            [
+                (
+                    '{"type":"error","timestamp":1,"sessionID":"s","error":{'
+                    '"name":"RateLimitError","data":{"message":"Limit hit. '
+                    'Try again at May 1st, 2026 12:00 AM.",'
+                    '"statusCode":429}}}'
+                )
+            ]
+        )
+    )
+
+    assert noon == [
+        UsageLimit(
+            reset_time=datetime(2026, 5, 1, 12, 0, tzinfo=timezone.utc).astimezone(),
+            raw_message=None,
+        )
+    ]
+    assert midnight == [
+        UsageLimit(
+            reset_time=datetime(2026, 5, 1, 0, 0, tzinfo=timezone.utc).astimezone(),
+            raw_message=None,
+        )
+    ]
