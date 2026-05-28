@@ -16,6 +16,7 @@ from pycastle.config import StageOverride
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.services import (
     GitCommandError,
+    GithubAPIError,
     GithubAuthError,
     GithubService,
     GitService,
@@ -3431,6 +3432,39 @@ def test_orchestrator_exits_nonzero_on_hard_api_error(tmp_path):
             )
 
     assert exc_info.value.code != 0
+
+
+# ── GithubAPIError: orchestrator exits non-zero on repo access failure ──────────
+
+
+def test_orchestrator_exits_nonzero_on_github_api_error(tmp_path):
+    """Repo-scoped GitHub API failures must stop the run with a clear message."""
+    github_svc = _make_github_svc()
+    github_svc.check_auth.return_value = "alice"
+    github_svc.get_open_issues.side_effect = GithubAPIError(
+        "GitHub API GET /repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100 returned 404: Not Found",
+        status=404,
+        body="Not Found",
+        method="GET",
+        path="/repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100",
+    )
+    recording = RecordingStatusDisplay()
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run(
+            tmp_path,
+            github_service=github_svc,
+            git_service=_make_git_svc(),
+            status_display=recording,
+        )
+
+    assert exc_info.value.code == 1
+    assert any(
+        call[0] == "print"
+        and "GitHub repository access failed:" in str(call[2])
+        and "404" in str(call[2])
+        for call in recording.calls
+    )
 
 
 # ── AbortedOperatorActionable: orchestrator files issue on consuming repo ─────

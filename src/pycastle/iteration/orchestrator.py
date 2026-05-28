@@ -25,6 +25,7 @@ from .preflight import PreflightCache
 from ..display.rich_status_display import RichStatusDisplay
 from ..services import (
     GitCommandError,
+    GithubAPIError,
     GithubAuthError,
     GithubService,
     GitService,
@@ -228,7 +229,15 @@ async def run(
                 improve_dispatched_count=improve_dispatched_count,
                 preflight_cache=preflight_cache,
             )
-            outcome = await run_iteration(deps)
+            try:
+                outcome = await run_iteration(deps)
+            except GithubAPIError as exc:
+                status_display.print(  # type: ignore[union-attr]
+                    "",
+                    "GitHub repository access failed:"
+                    f" {exc}",
+                )
+                sys.exit(1)
             improve_dispatched_count = deps.improve_dispatched_count
 
             match outcome:
