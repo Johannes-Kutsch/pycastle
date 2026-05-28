@@ -382,6 +382,25 @@ def test_packaging_includes_bundled_universal_dockerfile():
     assert '"defaults/Dockerfile.opencode",' not in package_data
 
 
+def test_package_data_ships_current_bundled_runtime_defaults_tree_only():
+    package_data = Path("pyproject.toml").read_text(encoding="utf-8")
+    shipped_defaults = {
+        line.strip().strip('",')
+        for line in package_data.splitlines()
+        if "defaults/" in line
+    }
+    bundled_defaults = {
+        str(path.relative_to(Path("src/pycastle")))
+        for path in Path("src/pycastle/defaults").rglob("*")
+        if path.is_file()
+    }
+
+    assert bundled_defaults <= shipped_defaults
+    assert "defaults/Dockerfile.claude" not in shipped_defaults
+    assert "defaults/Dockerfile.codex" not in shipped_defaults
+    assert "defaults/Dockerfile.opencode" not in shipped_defaults
+
+
 def test_bundled_universal_dockerfile_installs_supported_clis_and_baseline_tools():
     dockerfile = Path("src/pycastle/defaults/Dockerfile").read_text(encoding="utf-8")
 
