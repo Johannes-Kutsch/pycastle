@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from ..agents.output_protocol import AgentRole
+from ..agents.output_protocol import AgentRole, CommitMessageOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompts.pipeline import PromptTemplate
@@ -220,7 +220,11 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 delete_branch_on_teardown=True,
                 deps=deps,
             ) as sandbox_path:
-                await deps.agent_runner.run(
+                active_issue = conflict_issues[0]
+                deps.git_svc.start_merge(
+                    sandbox_path, branch_for(active_issue["number"])
+                )
+                result = await deps.agent_runner.run(
                     RunRequest(
                         name="Merge Agent",
                         template=PromptTemplate.MERGE,
@@ -239,6 +243,12 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                         work_body=f"Merging {len(conflict_issues)} Branches",
                     )
                 )
+                if isinstance(result, CommitMessageOutput):
+                    deps.git_svc.commit(
+                        sandbox_path,
+                        deps.repo_root,
+                        result.message or active_issue["title"],
+                    )
                 _ensure_conflict_branches_are_merged(
                     conflict_issues, sandbox_path, deps
                 )
