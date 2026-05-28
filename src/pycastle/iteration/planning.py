@@ -194,12 +194,16 @@ async def planning_phase(
         startup_message=startup_msg,
     ) as row:
         if _in_flight:
+            verdict = await deps.preflight_cache.get_safe_sha(deps)
+            if isinstance(verdict, (PreflightHITL, PreflightAFK)):
+                row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
+                return verdict
             nums = ", ".join(f"#{i['number']}" for i in _in_flight)
             row.close(
                 f"resuming {len(_in_flight)} in-flight branch(es) ({nums}) labeled"
                 f" {deps.cfg.issue_label}, skipping plan agent"
             )
-            return PlanReady(issues=_fill_fields(_in_flight), sha=None)
+            return PlanReady(issues=_fill_fields(_in_flight), sha=verdict.sha)
 
         verdict = await deps.preflight_cache.get_safe_sha(deps)
         if isinstance(verdict, (PreflightHITL, PreflightAFK)):

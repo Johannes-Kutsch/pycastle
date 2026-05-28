@@ -10,7 +10,12 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.config import Config, StageOverride
 from pycastle.services import GitService
-from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay, _make_deps
+from pycastle.iteration._deps import (
+    FakeAgentRunner,
+    RecordingStatusDisplay,
+    StubPreflightCache,
+    _make_deps,
+)
 from pycastle.iteration.planning import (
     AllBlocked,
     PlanReady,
@@ -1089,10 +1094,10 @@ def test_planning_phase_all_blocked_summary_precedes_planner_blocked_lines(
     )
 
 
-# ── planning_phase: in-flight sha=None ─────────────────────────────────────
+# ── planning_phase: in-flight preflight gate ───────────────────────────────
 
 
-def test_planning_phase_in_flight_produces_sha_none_without_calling_preflight(
+def test_planning_phase_in_flight_returns_safe_sha_without_calling_planner(
     tmp_path, git_svc
 ):
     from pycastle.iteration.preflight import PreflightReady
@@ -1103,7 +1108,7 @@ def test_planning_phase_in_flight_produces_sha_none_without_calling_preflight(
         async def get_safe_sha(self, deps):
             nonlocal call_count
             call_count += 1
-            return PreflightReady(sha="should-not-appear")
+            return PreflightReady(sha="safe-sha-123")
 
     issues = [{"number": 1, "title": "A", "body": "", "comments": []}]
     fake = FakeAgentRunner([])
@@ -1111,7 +1116,52 @@ def test_planning_phase_in_flight_produces_sha_none_without_calling_preflight(
     result = asyncio.run(planning_phase(deps, issues, [], in_flight=issues))
 
     assert isinstance(result, PlanReady)
-    assert result.sha is None, (
-        "in-flight path must not call get_safe_sha; sha must be None"
+    assert result.sha == "safe-sha-123", (
+        "in-flight path must return the safe SHA from the preflight gate"
     )
-    assert call_count == 0, "get_safe_sha must not be called on in-flight planning path"
+    assert call_count == 1, "get_safe_sha must be called on in-flight planning path"
+    assert len(fake.calls) == 0, "Planner must not be called on in-flight planning path"
+
+
+def test_planning_phase_in_flight_returns_preflight_afk_before_resuming(
+    tmp_path, git_svc
+):
+    from pycastle.iteration.preflight import PreflightAFK
+
+    issues = [{"number": 1, "title": "A", "body": "", "comments": []}]
+    fake = FakeAgentRunner([])
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        preflight_cache=StubPreflightCache(
+            PreflightAFK(sha="safe-sha-123", issue_number=181)
+        ),
+    )
+
+    result = asyncio.run(planning_phase(deps, issues, [], in_flight=issues))
+
+    assert result == PreflightAFK(sha="safe-sha-123", issue_number=181)
+    assert len(fake.calls) == 0, "Planner must not be called on in-flight AFK path"
+
+
+def test_planning_phase_in_flight_returns_preflight_hitl_before_resuming(
+    tmp_path, git_svc
+):
+    from pycastle.iteration.preflight import PreflightHITL
+
+    issues = [{"number": 1, "title": "A", "body": "", "comments": []}]
+    fake = FakeAgentRunner([])
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        preflight_cache=StubPreflightCache(
+            PreflightHITL(sha="safe-sha-123", issue_number=182)
+        ),
+    )
+
+    result = asyncio.run(planning_phase(deps, issues, [], in_flight=issues))
+
+    assert result == PreflightHITL(sha="safe-sha-123", issue_number=182)
+    assert len(fake.calls) == 0, "Planner must not be called on in-flight HITL path"
