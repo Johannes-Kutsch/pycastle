@@ -7,16 +7,19 @@ import re
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
+from ..agents.output_protocol import AgentOutputProtocolError
 from ..session import SESSION_DIR_NAME, RunKind
 from .agent_service import (
     AssistantTurn,
     HardError,
     ParsedTurn,
-    Tokens,
+    PromptTokens,
     TransientError,
+    UnsupportedTokens,
     UsageLimit,
 )
 from ._wake_time import compute_wake_time
@@ -149,8 +152,26 @@ def _usage_value(usage: dict, *names: str) -> int:
     return 0
 
 
+@dataclasses.dataclass(frozen=True)
+class CodexPromptTokensContract:
+    exact_live_extractor: Callable[[dict[str, Any]], int | None] | None = None
+    require_exact_live: bool = False
+
+    def extract_exact_live(self, event: dict[str, Any]) -> int | None:
+        if self.exact_live_extractor is None:
+            return None
+        return self.exact_live_extractor(event)
+
+    @classmethod
+    def unsupported(cls) -> "CodexPromptTokensContract":
+        return cls()
+
+
 @dataclasses.dataclass
 class CodexService:
+    prompt_tokens_contract: CodexPromptTokensContract = dataclasses.field(
+        default_factory=CodexPromptTokensContract.unsupported
+    )
     _exhausted_until: datetime | None = dataclasses.field(default=None, init=False)
 
     @property
@@ -243,6 +264,7 @@ class CodexService:
         lines: Iterable[str],
         on_thread_id: Callable[[str], None] | None = None,
     ) -> Iterator[ParsedTurn]:
+        saw_exact_live_prompt_tokens = False
         for line in lines:
             try:
                 obj = json.loads(line)
@@ -250,6 +272,13 @@ class CodexService:
                 continue
             if not isinstance(obj, dict):
                 continue
+
+            exact_live_prompt_tokens = self.prompt_tokens_contract.extract_exact_live(
+                obj
+            )
+            if exact_live_prompt_tokens is not None:
+                saw_exact_live_prompt_tokens = True
+                yield PromptTokens(count=exact_live_prompt_tokens)
 
             event_type = obj.get("type")
 
@@ -278,7 +307,18 @@ class CodexService:
                     + _usage_value(usage, "output_tokens")
                     + _usage_value(usage, "reasoning_output_tokens", "reasoning_tokens")
                 )
-                yield Tokens(count=count)
+                if count > 0:
+                    yield UnsupportedTokens(
+                        count=count,
+                        source="codex.turn.completed.usage",
+                    )
+                if (
+                    self.prompt_tokens_contract.require_exact_live
+                    and not saw_exact_live_prompt_tokens
+                ):
+                    raise AgentOutputProtocolError(
+                        "Codex exact live prompt-side telemetry missing from stream."
+                    )
                 return
 
             if event_type == "turn.failed":

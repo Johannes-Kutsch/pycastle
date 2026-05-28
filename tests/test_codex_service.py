@@ -9,7 +9,7 @@ from pycastle.services import CodexService
 from pycastle.services.agent_service import (
     AssistantTurn,
     HardError,
-    Tokens,
+    UnsupportedTokens,
     TransientError,
     UsageLimit,
 )
@@ -287,7 +287,7 @@ def test_run_yields_assistant_turn_from_current_agent_message_text_field():
     )
 
 
-def test_run_yields_tokens_from_turn_completed():
+def test_run_marks_turn_completed_usage_as_unsupported_tokens():
     lines = [
         _thread_started(),
         _item_completed("agent_message", "Hi"),
@@ -296,10 +296,10 @@ def test_run_yields_tokens_from_turn_completed():
         ),
     ]
     events = list(CodexService().run(lines))
-    assert any(isinstance(e, Tokens) and e.count == 360 for e in events)
+    assert any(isinstance(e, UnsupportedTokens) and e.count == 360 for e in events)
 
 
-def test_run_yields_tokens_from_current_turn_completed_usage_fields():
+def test_run_marks_current_turn_completed_usage_fields_as_unsupported_tokens():
     line = json.dumps(
         {
             "type": "turn.completed",
@@ -312,7 +312,7 @@ def test_run_yields_tokens_from_current_turn_completed_usage_fields():
         }
     )
     events = list(CodexService().run([line]))
-    assert any(isinstance(e, Tokens) and e.count == 360 for e in events)
+    assert any(isinstance(e, UnsupportedTokens) and e.count == 360 for e in events)
 
 
 def test_run_stops_after_turn_completed():
@@ -427,7 +427,7 @@ def test_run_thread_started_yields_no_event():
     ]
     events = list(CodexService().run(lines))
     assert not any(isinstance(e, AssistantTurn) for e in events)
-    tokens = [e for e in events if isinstance(e, Tokens)]
+    tokens = [e for e in events if isinstance(e, UnsupportedTokens)]
     assert len(tokens) == 1
 
 
