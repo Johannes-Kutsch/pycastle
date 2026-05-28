@@ -400,6 +400,13 @@ def test_process_stream_merger_returns_completion_output():
     assert isinstance(result, CompletionOutput)
 
 
+def test_process_stream_merger_returns_commit_message_output():
+    lines = [_result_line("<commit_message>resolve active conflict</commit_message>")]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.MERGER)
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message == "resolve active conflict"
+
+
 def test_process_stream_improve_complete_returns_completion_output():
     lines = [_result_line("<promise>COMPLETE</promise>")]
     result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.IMPROVE)
