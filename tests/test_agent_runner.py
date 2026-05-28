@@ -504,6 +504,39 @@ def test_agent_runner_uses_per_service_image_for_requested_service(tmp_path):
     assert docker_client.containers.run.call_args.args[0] == "pycastle-test-codex"
 
 
+def test_agent_runner_uses_default_service_for_empty_request_service(tmp_path):
+    cfg = _make_cfg(tmp_path, docker_image_name="pycastle-test")
+    object.__setattr__(cfg, "default_service", "codex")
+    codex_service = _RecordingAgentService("codex")
+    claude_service = _RecordingAgentService("claude")
+    docker_client = _make_docker_client([])
+    runner = AgentRunner(
+        {},
+        cfg,
+        _make_git_service(),
+        docker_client=docker_client,
+        service_registry={"claude": claude_service, "codex": codex_service},
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Test",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert codex_service.commands == ["codex exec"]
+    assert codex_service.env_state_dirs == [None]
+    assert claude_service.commands == []
+    docker_client.containers.run.assert_called_once()
+    assert docker_client.containers.run.call_args.args[0] == "pycastle-test-codex"
+
+
 def test_agent_runner_mixed_services_use_service_command_env_and_parser(
     tmp_path, monkeypatch
 ):
