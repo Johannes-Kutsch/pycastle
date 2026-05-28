@@ -93,6 +93,35 @@ def test_renderer_renders_global_placeholder(cfg, prompts_dir):
     assert result == "Label: ready-for-agent"
 
 
+def test_renderer_uses_fixed_project_local_prompt_overrides_when_config_is_stale(
+    tmp_path: Path,
+):
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    (prompts_dir / "implement").mkdir(parents=True)
+    (prompts_dir / "implement" / "behavior.md").write_text(
+        "Fixed local prompt override"
+    )
+    stale_cfg = Config(prompts_dir=Path("legacy-prompts"))
+    renderer = PromptRenderer(stale_cfg)
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
+            {
+                "ISSUE_NUMBER": "1",
+                "ISSUE_TITLE": "title",
+                "ISSUE_BODY": "",
+                "ISSUE_COMMENTS": "",
+                "BRANCH": "pycastle/issue-1",
+                "INTERRUPTED_WORK": "",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert result == "Fixed local prompt override"
+
+
 # ── Scope enum has correct placeholder sets ───────────────────────────────────
 
 
