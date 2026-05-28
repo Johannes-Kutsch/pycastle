@@ -18,7 +18,7 @@ from .errors import (
 from .display.status_display import PlainStatusDisplay
 from .service_availability import iter_stage_chain
 
-_KNOWN_SERVICES: frozenset[str] = frozenset({"claude", "codex"})
+_KNOWN_SERVICES: frozenset[str] = frozenset({"claude", "codex", "opencode"})
 
 
 def _stage_overrides(cfg: Config) -> list[tuple[str, StageOverride]]:
@@ -85,6 +85,7 @@ _ENV_KEYS = (
     "CLAUDE_CODE_OAUTH_TOKEN",
     "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY",
     "GH_TOKEN",
+    "OPENCODE_GO_API_KEY",
 )
 
 
@@ -237,11 +238,13 @@ def _do_run(
     from .services.agent_service import AgentService
     from .services.claude_service import ClaudeService
     from .services.codex_service import CodexService
+    from .services.opencode_service import OpenCodeService
     from .services.service_registry import ServiceRegistry
 
     validation_services: dict[str, AgentService] = {
         "claude": ClaudeService(),
         "codex": CodexService(),
+        "opencode": OpenCodeService(),
     }
     valid_efforts_by_service = {
         name: svc.valid_efforts() for name, svc in validation_services.items()
@@ -262,7 +265,7 @@ def _do_run(
     env = _load_env(cfg=cfg)
     referenced = referenced_services(cfg)
     if "both" in referenced:
-        referenced = (referenced - {"both"}) | {"claude", "codex"}
+        referenced = (referenced - {"both"}) | {"claude", "codex", "opencode"}
     service_registry: dict[str, AgentService] = {}
     if "claude" in referenced:
         primary = env.get("CLAUDE_CODE_OAUTH_TOKEN")
@@ -282,16 +285,22 @@ def _do_run(
         service_registry["claude"] = ClaudeService(accounts=accounts)
     if "codex" in referenced:
         service_registry["codex"] = CodexService()
+    if "opencode" in referenced:
+        service_registry["opencode"] = OpenCodeService(
+            api_key=env.get("OPENCODE_GO_API_KEY")
+        )
 
     try:
         _build(stream=True, terse=True, cfg=cfg)
     except (ConfigValidationError, DockerServiceError) as exc:
         click.echo(str(exc), err=True)
         sys.exit(1)
-    # Strip the secondary token from container env; ClaudeService picks the
-    # active token from its internal pool per session.
+    # Strip provider-specific credentials from the shared env; service adapters
+    # inject what they need into the agent container at the streaming-execution seam.
     container_env = {
-        k: v for k, v in env.items() if k != "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY"
+        k: v
+        for k, v in env.items()
+        if k not in {"CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", "OPENCODE_GO_API_KEY"}
     }
     if no_improve:
         effective_improve_mode = None

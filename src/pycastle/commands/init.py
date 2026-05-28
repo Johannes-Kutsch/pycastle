@@ -16,7 +16,7 @@ from ..config.loader import (
     resolve_global_dir,
 )
 
-_SPECIAL_FILES = {"config.py", ".env", "Dockerfile.claude", "Dockerfile.codex"}
+_SPECIAL_FILES = {"config.py", ".env"}
 _INIT_REFRESHED_FILES = {
     "setup/cron.sh",
     "setup/cron-install.sh",
@@ -40,7 +40,11 @@ def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
                 out.append(rel)
         return out
 
-    return sorted(p for p in _walk(pkg, "") if p not in _SPECIAL_FILES)
+    return sorted(
+        p
+        for p in _walk(pkg, "")
+        if p not in _SPECIAL_FILES and not Path(p).name.startswith("Dockerfile")
+    )
 
 
 _ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"

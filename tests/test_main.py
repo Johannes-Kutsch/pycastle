@@ -585,6 +585,48 @@ def test_run_cmd_explicit_codex_only_does_not_require_claude_token(
     assert captured["registry"]["claude"] is None
 
 
+def test_run_cmd_routes_opencode_go_key_through_service_env_only(tmp_path, monkeypatch):
+    from pycastle.config import Config, StageOverride
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.setenv("OPENCODE_GO_API_KEY", "go-key")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    opencode = StageOverride(service="opencode", model="kimi-k2.6", effort="medium")
+    cfg = Config(
+        docker_image_name="myimage",
+        plan_override=opencode,
+        implement_override=opencode,
+        review_override=opencode,
+        merge_override=opencode,
+        preflight_issue_override=opencode,
+        improve_override=opencode,
+    )
+    captured: dict = {}
+    fake_svc = MagicMock()
+    fake_svc.build_image.return_value = None
+
+    async def _fake_run(env, repo_root, **kwargs):
+        captured["env"] = env
+        captured["registry"] = kwargs.get("service_registry")
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    assert "OPENCODE_GO_API_KEY" not in captured["env"]
+    registry = captured["registry"]
+    assert registry["opencode"].build_env()["OPENCODE_GO_API_KEY"] == "go-key"
+
+
 def test_run_cmd_seeds_pool_with_primary_only_when_secondary_absent(
     tmp_path, monkeypatch
 ):
@@ -1279,6 +1321,82 @@ def test_run_cmd_exits_nonzero_on_cross_service_model_with_valid_claude_list(
     assert "plan" in result.output
     assert "gpt-5.4" in result.output
     assert "valid: ['haiku', 'opus', 'sonnet']" in result.output
+    assert not build_called
+
+
+def test_run_cmd_rejects_provider_prefixed_model_for_opencode_stage(
+    tmp_path, monkeypatch
+):
+    from pycastle.config.types import StageOverride
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.setenv("OPENCODE_GO_API_KEY", "go-key")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=StageOverride(
+            service="opencode",
+            model="anthropic/claude-sonnet-4-5",
+            effort="medium",
+        ),
+    )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "plan" in result.output
+    assert "anthropic/claude-sonnet-4-5" in result.output
+    assert "service='opencode'" in result.output
+    assert "model='anthropic/claude-sonnet-4-5' is invalid" in result.output
+    assert not build_called
+
+
+def test_run_cmd_rejects_non_neutral_effort_for_opencode_stage(tmp_path, monkeypatch):
+    from pycastle.config.types import StageOverride
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.setenv("OPENCODE_GO_API_KEY", "go-key")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=StageOverride(
+            service="opencode",
+            model="kimi-k2.6",
+            effort="low",
+        ),
+    )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "plan" in result.output
+    assert "service='opencode'" in result.output
+    assert "effort='low' is invalid" in result.output
+    assert "valid: ['medium']" in result.output
     assert not build_called
 
 
