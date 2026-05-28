@@ -48,7 +48,7 @@ def derive_docker_image_name(name: str) -> str:
 
 
 def image_name_for(base: str, service: str) -> str:
-    return f"{base}-{service}"
+    return base
 
 
 @dataclasses.dataclass(frozen=True)
@@ -165,16 +165,29 @@ def referenced_services(cfg: Config) -> set[str]:
     return names
 
 
-def resolve_dockerfile(service: str, pycastle_dir: Path) -> Path:
-    local = pycastle_dir / f"Dockerfile.{service}"
+def _resolve_dockerfile_dir(
+    pycastle_dir: Path | str, service: str | Path | None
+) -> Path:
+    if isinstance(pycastle_dir, Path):
+        return pycastle_dir
+    if isinstance(service, Path):
+        return service
+    raise TypeError("resolve_dockerfile() expects a pycastle_dir Path")
+
+
+def resolve_dockerfile(
+    pycastle_dir: Path | str, service: str | Path | None = None
+) -> Path:
+    pycastle_dir = _resolve_dockerfile_dir(pycastle_dir, service)
+    local = pycastle_dir / "Dockerfile"
     if local.exists():
         return local
-    bundled = _DEFAULTS_DIR / f"Dockerfile.{service}"
+    bundled = _DEFAULTS_DIR / "Dockerfile"
     if bundled.exists():
         return bundled
     raise ConfigValidationError(
-        f"Unknown service {service!r}; no bundled Dockerfile default exists",
-        invalid_value=service,
+        "No bundled universal Dockerfile default exists",
+        invalid_value=str(pycastle_dir),
     )
 
 

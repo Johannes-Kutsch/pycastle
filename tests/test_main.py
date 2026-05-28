@@ -299,8 +299,7 @@ def test_build_cmd_uses_config_docker_image_name(tmp_path, monkeypatch):
             CliRunner().invoke(cli, ["build"])
 
     assert [call.args[0] for call in fake_svc.build_image.call_args_list] == [
-        "custom-img-claude",
-        "custom-img-codex",
+        "custom-img"
     ]
 
 
