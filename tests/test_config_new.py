@@ -169,6 +169,17 @@ def test_resolve_dockerfile_accepts_string_pycastle_dir(tmp_path):
     assert resolve_dockerfile(str(pycastle_dir)) == bundled_default
 
 
+def test_resolve_dockerfile_uses_local_universal_override_for_string_pycastle_dir(
+    tmp_path,
+):
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    dockerfile = pycastle_dir / "Dockerfile"
+    dockerfile.write_text("FROM scratch\n")
+
+    assert resolve_dockerfile(str(pycastle_dir)) == dockerfile
+
+
 def test_resolve_dockerfile_requires_path_for_legacy_two_string_argument_order():
     with pytest.raises(TypeError, match="expects a pycastle_dir Path"):
         resolve_dockerfile("codex", "pycastle")
