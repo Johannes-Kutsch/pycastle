@@ -1,3 +1,4 @@
+import pytest
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -1100,7 +1101,10 @@ def test_run_cmd_exits_nonzero_on_invalid_effort_for_codex_stage(tmp_path, monke
     assert not build_called
 
 
-def test_run_cmd_exits_nonzero_on_none_effort_for_codex_stage(tmp_path, monkeypatch):
+@pytest.mark.parametrize("effort", ["none", "minimal"])
+def test_run_cmd_exits_nonzero_on_unsupported_codex_effort_for_stage(
+    tmp_path, monkeypatch, effort
+):
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
 
@@ -1112,7 +1116,7 @@ def test_run_cmd_exits_nonzero_on_none_effort_for_codex_stage(tmp_path, monkeypa
 
     cfg = Config(
         docker_image_name="img",
-        implement_override=StageOverride(service="codex", effort="none"),
+        implement_override=StageOverride(service="codex", effort=effort),
     )
     build_called = []
     fake_svc = MagicMock()
@@ -1126,7 +1130,7 @@ def test_run_cmd_exits_nonzero_on_none_effort_for_codex_stage(tmp_path, monkeypa
 
     assert result.exit_code == 1
     assert "implement" in result.output
-    assert "none" in result.output
+    assert effort in result.output
     assert "codex" in result.output
     assert "low" in result.output
     assert "medium" in result.output
@@ -1135,7 +1139,10 @@ def test_run_cmd_exits_nonzero_on_none_effort_for_codex_stage(tmp_path, monkeypa
     assert not build_called
 
 
-def test_run_cmd_exits_nonzero_on_minimal_effort_for_codex_stage(tmp_path, monkeypatch):
+@pytest.mark.parametrize("effort", ["none", "minimal"])
+def test_run_cmd_exits_nonzero_on_unsupported_codex_effort_for_stage_fallback(
+    tmp_path, monkeypatch, effort
+):
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
 
@@ -1147,7 +1154,11 @@ def test_run_cmd_exits_nonzero_on_minimal_effort_for_codex_stage(tmp_path, monke
 
     cfg = Config(
         docker_image_name="img",
-        implement_override=StageOverride(service="codex", effort="minimal"),
+        implement_override=StageOverride(
+            service="claude",
+            effort="medium",
+            fallback=StageOverride(service="codex", effort=effort),
+        ),
     )
     build_called = []
     fake_svc = MagicMock()
@@ -1160,8 +1171,8 @@ def test_run_cmd_exits_nonzero_on_minimal_effort_for_codex_stage(tmp_path, monke
         result = CliRunner().invoke(cli, ["run"])
 
     assert result.exit_code == 1
-    assert "implement" in result.output
-    assert "minimal" in result.output
+    assert "implement fallback" in result.output
+    assert effort in result.output
     assert "codex" in result.output
     assert "low" in result.output
     assert "medium" in result.output
