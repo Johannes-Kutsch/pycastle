@@ -144,6 +144,16 @@ def test_load_config_silently_ignores_usage_limit_patterns_in_local_file(tmp_pat
     assert not hasattr(cfg, "usage_limit_patterns")
 
 
+def test_load_config_silently_ignores_legacy_dockerfile_in_local_file(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pathlib import Path\ndockerfile = Path('some/path')\nmax_parallel = 3\n"
+    )
+    cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
+    assert cfg.max_parallel == 3
+    assert not hasattr(cfg, "dockerfile")
+
+
 def test_load_config_applies_in_process_overrides(tmp_path):
     cfg = load_config(repo_root=tmp_path, overrides={"max_parallel": 4})
     assert cfg.max_parallel == 4
@@ -438,6 +448,17 @@ def test_load_config_global_path_field_lists_all_offending(tmp_path):
     msg = str(exc_info.value)
     assert "prompts_dir" in msg
     assert "logs_dir" in msg
+
+
+def test_load_config_silently_ignores_legacy_dockerfile_in_global_file(tmp_path):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text(
+        "from pathlib import Path\ndockerfile = Path('some/path')\nmax_parallel = 3\n"
+    )
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert cfg.max_parallel == 3
+    assert not hasattr(cfg, "dockerfile")
 
 
 def test_load_config_local_path_fields_still_allowed(tmp_path):

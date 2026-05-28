@@ -25,7 +25,9 @@ __all__ = [
 _BUG_REPORT_REPO_RE = re.compile(r"^[^/]+/[^/]+$")
 _DEFAULTS_DIR = Path(__file__).resolve().parents[1] / "defaults"
 
-_IGNORED_CONFIG_KEYS = frozenset({"usage_limit_patterns", "default_service"})
+_IGNORED_CONFIG_KEYS = frozenset(
+    {"usage_limit_patterns", "default_service", "dockerfile"}
+)
 
 _GLOBAL_FORBIDDEN_FIELDS = frozenset(
     {
@@ -34,7 +36,6 @@ _GLOBAL_FORBIDDEN_FIELDS = frozenset(
         "logs_dir",
         "worktrees_dir",
         "env_file",
-        "dockerfile",
         "docker_image_name",
     }
 )
@@ -69,9 +70,6 @@ class Config:
     logs_dir: Path = dataclasses.field(default_factory=lambda: Path("pycastle/logs"))
     worktrees_dir: Path = dataclasses.field(default_factory=lambda: Path("worktrees"))
     env_file: Path = dataclasses.field(default_factory=lambda: Path("pycastle/.env"))
-    dockerfile: Path = dataclasses.field(
-        default_factory=lambda: Path("pycastle/Dockerfile")
-    )
     preflight_checks: tuple[tuple[str, str], ...] = dataclasses.field(
         default_factory=lambda: (
             ("ruff", "ruff check ."),
