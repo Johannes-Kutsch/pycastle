@@ -47,7 +47,7 @@ def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
     )
 
 
-_ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
+_ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\nOPENCODE_GO_API_KEY=\n"
 
 _CONFIG_EXAMPLE_TEMPLATE = """from pathlib import Path
 
@@ -122,8 +122,18 @@ improve_max = None
 # --- Stage overrides ---
 # Claude model shorthands: haiku, sonnet, opus
 # Codex model names: gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.3-codex, gpt-5.3-codex-spark, gpt-5.2
+# OpenCode model ids: deepseek-v4-flash, deepseek-v4-pro, glm-5, glm-5.1, hy3-preview, kimi-k2.5, kimi-k2.6, mimo-v2-omni, mimo-v2-pro, mimo-v2.5, mimo-v2.5-pro, minimax-m2.5, minimax-m2.7, qwen3.5-plus, qwen3.6-plus, qwen3.7-max
 # Claude effort values: low, medium, high, xhigh, max
 # Codex effort values: low, medium, high, xhigh
+# OpenCode effort values: medium
+# Opt-in example:
+# opencode_review_override = StageOverride(service="opencode", model="kimi-k2.6", effort="medium")
+# opencode_implement_override = StageOverride(
+#     service="opencode",
+#     model="kimi-k2.6",
+#     effort="medium",
+#     fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
+# )
 plan_override = StageOverride(
     service="codex",
     model="gpt-5.4-mini",
@@ -309,10 +319,10 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     pkg = files("pycastle").joinpath("defaults")
 
     service = click.prompt(
-        "Which agent services do you want to use? [claude/codex/both]",
+        "Which agent services do you want to use? [claude/codex/opencode/both]",
         default="claude",
     )
-    if service not in {"claude", "codex", "both"}:
+    if service not in {"claude", "codex", "opencode", "both"}:
         service = "claude"
 
     if scope is None:
@@ -398,7 +408,14 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             env_file, "GH_TOKEN", "GitHub token (press Enter to skip)", existing_env
         )
 
-        if service != "codex":
+        if service == "opencode":
+            _prompt_credential_with_overwrite(
+                env_file,
+                "OPENCODE_GO_API_KEY",
+                "OpenCode Go API key (press Enter to skip)",
+                existing_env,
+            )
+        elif service != "codex":
             claude_token = _prompt_credential_with_overwrite(
                 env_file,
                 "CLAUDE_CODE_OAUTH_TOKEN",

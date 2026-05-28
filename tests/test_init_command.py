@@ -668,6 +668,80 @@ def test_init_service_selection_changes_only_credential_collection(
         assert not (pycastle_dir / "Dockerfile.codex").exists()
 
 
+def test_init_opencode_selection_adds_env_key_without_changing_stage_policy(
+    tmp_path, monkeypatch
+):
+    from pycastle import StageOverride
+    from pycastle.config import load_config
+    from pycastle.commands.init import main
+
+    workspace = tmp_path / "opencode"
+    workspace.mkdir()
+    monkeypatch.chdir(workspace)
+    prompt_calls: list[str] = []
+
+    def capture_prompt(message: str, *args: object, **kwargs: object) -> str:
+        prompt_calls.append(message)
+        if "agent services" in message.lower():
+            return "opencode"
+        return ""
+
+    with (
+        patch("click.prompt", side_effect=capture_prompt),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    env_content = (workspace / "pycastle" / ".env").read_text()
+    cfg = load_config(repo_root=workspace)
+
+    assert any("GitHub token" in prompt for prompt in prompt_calls)
+    assert any("OpenCode Go API key" in prompt for prompt in prompt_calls)
+    assert not any("Claude OAuth token" in prompt for prompt in prompt_calls)
+    assert "OPENCODE_GO_API_KEY=\n" in env_content
+    assert cfg.plan_override == StageOverride(
+        service="codex",
+        model="gpt-5.4-mini",
+        effort="low",
+        fallback=StageOverride(service="claude", model="haiku", effort="low"),
+    )
+    assert cfg.implement_override == StageOverride(
+        service="codex",
+        model="gpt-5.4",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
+    )
+    assert cfg.review_override == StageOverride(
+        service="claude",
+        model="sonnet",
+        effort="medium",
+        fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
+    )
+
+
+def test_init_config_example_documents_opencode_opt_in_stage_chain(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", side_effect=["claude", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    content = (tmp_path / "pycastle" / "config.py.example").read_text()
+
+    assert "OpenCode model ids:" in content
+    assert "kimi-k2.6" in content
+    assert "OpenCode effort values: medium" in content
+    assert (
+        'StageOverride(service="opencode", model="kimi-k2.6", effort="medium")'
+        in content
+    )
+
+
 # ── Cycle 4: init does not overwrite other existing files ─────────────────────
 
 
