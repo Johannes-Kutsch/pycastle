@@ -22,6 +22,25 @@ class PromptSource:
     ) -> None:
         self._local_dir = local_dir
         self._bundled_dir = bundled_dir
+        self._bundled_relative_paths = (
+            {
+                str(path.relative_to(bundled_dir))
+                for path in bundled_dir.rglob("*")
+                if path.is_file()
+            }
+            if bundled_dir is not None and bundled_dir.exists()
+            else None
+        )
+
+    def _resolve_local_override(self, relative_path: str) -> Path | None:
+        local_path = self._local_dir / relative_path
+        if not local_path.exists():
+            return None
+        if self._bundled_relative_paths is None:
+            return local_path
+        if relative_path in self._bundled_relative_paths:
+            return local_path
+        return None
 
     @classmethod
     def for_prompts_dir(cls, prompts_dir: Path) -> PromptSource:
@@ -31,14 +50,12 @@ class PromptSource:
         return cls(prompts_dir, bundled_dir=bundled_dir)
 
     def resolve(self, relative_path: str) -> Path:
-        local_path = self._local_dir / relative_path
-        if local_path.exists():
-            return local_path
+        local_override = self._resolve_local_override(relative_path)
+        if local_override is not None:
+            return local_override
         if self._bundled_dir is not None:
-            bundled_path = self._bundled_dir / relative_path
-            if bundled_path.exists():
-                return bundled_path
-        return local_path
+            return self._bundled_dir / relative_path
+        return self._local_dir / relative_path
 
     def exists(self, relative_path: str) -> bool:
         return self.resolve(relative_path).exists()

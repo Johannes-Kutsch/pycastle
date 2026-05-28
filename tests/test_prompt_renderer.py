@@ -13,6 +13,7 @@ from pycastle.prompts.pipeline import (
     Scope,
     build_interrupted_work_clause,
 )
+from pycastle.prompts.source import PromptSource
 from pycastle.session import RunKind
 
 _SHIPPED_PROMPTS_DIR = (
@@ -808,6 +809,48 @@ def test_renderer_uses_bundled_prompt_when_absolute_local_prompts_dir_is_absent(
     )
 
     assert result == shipped_result
+
+
+def test_prompt_source_ignores_unknown_local_file_when_bundled_fallback_is_enabled(
+    tmp_path: Path,
+):
+    local_dir = tmp_path / "pycastle" / "prompts"
+    bundled_dir = tmp_path / "bundled-prompts"
+    local_dir.mkdir(parents=True)
+    bundled_dir.mkdir()
+    (local_dir / "unknown.md").write_text("stale local prompt")
+
+    source = PromptSource(local_dir, bundled_dir=bundled_dir)
+
+    assert source.maybe_read_text("unknown.md") is None
+
+
+def test_prompt_source_ignores_stale_local_file_for_removed_bundled_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    (prompts_dir / "coding-standards").mkdir(parents=True)
+    (prompts_dir / "coding-standards" / "testing.md").write_text(
+        "stale local testing standards"
+    )
+
+    source = PromptSource.for_prompts_dir(prompts_dir)
+
+    assert source.maybe_read_text("coding-standards/testing.md") is None
+
+
+def test_prompt_source_only_shadows_for_known_bundled_relative_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "_resume-prompt.md").write_text("local resume prompt")
+
+    source = PromptSource.for_prompts_dir(prompts_dir)
+
+    assert source.read_text("_resume-prompt.md") == "local resume prompt"
 
 
 def test_renderer_prefers_local_override_over_bundled_prompt(tmp_path, monkeypatch):
