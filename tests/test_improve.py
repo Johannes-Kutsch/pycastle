@@ -13,7 +13,7 @@ from pycastle.agents.output_protocol import (
     IssueOutput,
     NoCandidateOutput,
 )
-from pycastle.config import Config
+from pycastle.config import Config, StageOverride
 from pycastle.iteration._deps import FakeAgentRunner, _make_deps
 from pycastle.iteration.improve import (
     IMPROVE_SANDBOX,
@@ -82,6 +82,19 @@ def test_improve_phase_creates_worktree_on_improve_sandbox_branch(deps, git_svc)
     git_svc.create_worktree.assert_called_once()
     _repo, _wt, branch, _sha = git_svc.create_worktree.call_args[0]
     assert branch == IMPROVE_SANDBOX
+
+
+def test_improve_phase_uses_improve_override_service(tmp_path, git_svc):
+    runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
+    )
+    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, cfg=cfg)
+
+    _run(deps)
+
+    assert {call.service for call in runner.calls} == {"codex"}
 
 
 # ── Multi-prompt execution ───────────────────────────────────────────────────

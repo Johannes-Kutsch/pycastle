@@ -246,6 +246,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                                 "SESSION_DIR": err.session_dir,
                                 "FAILURE_CLASS": err.failure_class,
                             },
+                            service=deps.cfg.preflight_issue_override.service,
                             status_display=deps.status_display,
                         )
                     )

@@ -8,6 +8,7 @@ from pycastle.agents.output_protocol import (
     PlanParseError,
     PlannerOutput,
 )
+from pycastle.config import Config, StageOverride
 from pycastle.services import GitService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay, _make_deps
 from pycastle.iteration.planning import (
@@ -205,6 +206,32 @@ def test_planning_phase_passes_all_open_issues_as_json_to_planner(tmp_path, git_
     asyncio.run(planning_phase(deps, issues, all_open))
 
     assert fake.calls[0].scope_args["ALL_OPEN_ISSUES_JSON"] == json.dumps(all_open)
+
+
+def test_planning_phase_uses_plan_override_service(tmp_path, git_svc):
+    issues = [
+        {
+            "number": 1,
+            "title": "A",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "B",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+    fake = FakeAgentRunner([_plan_output(issues)])
+    cfg = Config(plan_override=StageOverride(service="codex", effort="medium"))
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, cfg=cfg)
+    asyncio.run(planning_phase(deps, issues, []))
+
+    assert fake.calls[0].service == "codex"
 
 
 # ── planning_phase: worktree lifecycle ──────────────────────────────────────

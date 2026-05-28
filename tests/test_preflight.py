@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import shutil
 
 from pycastle.agents.output_protocol import CompletionOutput, IssueOutput
-from pycastle.config import Config
+from pycastle.config import Config, StageOverride
 from pycastle.services import (
     GitCommandError,
     GitService,
@@ -51,13 +51,15 @@ def github_svc():
     return MagicMock(spec=GithubService)
 
 
-def _make_deps(tmp_path, agent_runner, *, git_svc, github_svc):
+def _make_deps(
+    tmp_path, agent_runner, *, git_svc, github_svc, cfg: Config | None = None
+):
     return _CacheDeps(
         repo_root=tmp_path,
         git_svc=git_svc,
         github_svc=github_svc,
         agent_runner=agent_runner,
-        cfg=Config(max_parallel=4, max_iterations=1),
+        cfg=cfg or Config(max_parallel=4, max_iterations=1),
         status_display=PlainStatusDisplay(),
     )
 
@@ -93,6 +95,32 @@ def test_get_safe_sha_returns_hitl_when_checks_fail_with_hitl_label(
     assert isinstance(result, PreflightHITL)
     assert result.issue_number == 55
     assert result.sha == "abc123"
+
+
+def test_get_safe_sha_preflight_issue_uses_preflight_issue_override_service(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=Config(
+            max_parallel=4,
+            max_iterations=1,
+            preflight_issue_override=StageOverride(service="codex", effort="medium"),
+        ),
+    )
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightHITL)
+    assert fake.calls[0].service == "codex"
 
 
 def test_get_safe_sha_returns_afk_when_checks_fail_with_afk_label(
@@ -410,6 +438,38 @@ def test_get_safe_sha_resolves_divergence_via_agent_and_returns_ready(
     assert isinstance(result, PreflightReady)
     assert result.sha == "merged-sha"
     git_svc.fast_forward_branch.assert_called_once()
+
+
+def test_get_safe_sha_divergence_resolver_uses_merge_override_service(
+    tmp_path, git_svc, github_svc
+):
+    """The divergence-resolver RunRequest uses the merge stage override's service."""
+    _setup_worktree_mocks(git_svc)
+
+    git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
+        "git merge origin/main failed due to conflicts"
+    )
+    git_svc.get_current_branch.return_value = "main"
+    git_svc.get_head_sha.side_effect = ["abc123", "merged-sha"]
+
+    fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=Config(
+            max_parallel=4,
+            max_iterations=1,
+            merge_override=StageOverride(service="codex", effort="medium"),
+        ),
+    )
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightReady)
+    assert fake.calls[0].service == "codex"
 
 
 def test_get_safe_sha_propagates_pull_error_when_divergence_agent_fails(
