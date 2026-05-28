@@ -1564,6 +1564,39 @@ def test_init_refresh_overwrites_stale_prompt_file(tmp_path, monkeypatch):
     assert plan_prompt.read_bytes() == bundled_bytes
 
 
+@pytest.mark.parametrize(
+    "rel_path",
+    [
+        "prompts/_issue-tracker.md",
+        "prompts/coding-standards/implementation.md",
+    ],
+    ids=["shared_fragment", "nested_prompt_fragment"],
+)
+def test_init_and_refresh_preserve_existing_prompt_fragments(
+    tmp_path, monkeypatch, rel_path
+):
+    """init and refresh leave existing local prompt fragments untouched."""
+    from pycastle.commands.init import main, refresh
+
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "pycastle" / rel_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    original = b"user-owned prompt fragment\n"
+    target.write_bytes(original)
+
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert target.read_bytes() == original
+
+    refresh()
+
+    assert target.read_bytes() == original
+
+
 def test_init_refresh_copies_cron_sh(tmp_path, monkeypatch):
     """`pycastle init --refresh` copies cron.sh into the consuming project."""
     from pycastle.commands.init import main, refresh
@@ -2383,3 +2416,28 @@ def test_refresh_preserves_user_owned_overrides_and_keeps_up_to_date_output(
     assert rel_path not in out
     assert "up to date" in out.lower()
     assert target.read_bytes() == content
+
+
+def test_refresh_reports_only_overwritten_managed_scaffold_when_prompt_override_exists(
+    tmp_path, monkeypatch, capsys
+):
+    """Refresh output stays scoped to overwritten managed scaffold, not prompt overrides."""
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    refresh()
+    capsys.readouterr()
+
+    prompt_override = pycastle_dir / "prompts" / "_issue-tracker.md"
+    prompt_override.parent.mkdir(parents=True, exist_ok=True)
+    prompt_override.write_text("user override\n")
+    (pycastle_dir / "setup" / "cron.sh").write_text("STALE CONTENT\n")
+
+    refresh()
+    out = capsys.readouterr().out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert lines == ["overwrote setup/cron.sh"]
+    assert "_issue-tracker.md" not in out
+    assert prompt_override.read_text() == "user override\n"
