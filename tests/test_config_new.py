@@ -65,6 +65,12 @@ def test_resolve_dockerfile_unknown_service_raises_config_validation_error(
         resolve_dockerfile("unknown-service", pycastle_dir)
 
 
+def test_image_name_for_returns_per_service_image_name():
+    from pycastle.config import image_name_for
+
+    assert image_name_for("myproject", "claude") == "myproject-claude"
+
+
 def test_config_has_bug_label_default():
     cfg = Config()
     assert cfg.bug_label == "bug"
