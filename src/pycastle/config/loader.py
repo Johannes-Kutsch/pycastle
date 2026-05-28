@@ -90,19 +90,19 @@ class Config:
     bug_report_repo: str = "Johannes-Kutsch/pycastle"
     timeout_retries: int = 1
     plan_override: StageOverride = dataclasses.field(
-        default_factory=lambda: StageOverride(service="claude")
+        default_factory=lambda: StageOverride(service="claude", effort="low")
     )
     implement_override: StageOverride = dataclasses.field(
-        default_factory=lambda: StageOverride(service="claude")
+        default_factory=lambda: StageOverride(service="claude", effort="medium")
     )
     review_override: StageOverride = dataclasses.field(
-        default_factory=lambda: StageOverride(service="claude")
+        default_factory=lambda: StageOverride(service="claude", effort="medium")
     )
     merge_override: StageOverride = dataclasses.field(
-        default_factory=lambda: StageOverride(service="claude")
+        default_factory=lambda: StageOverride(service="claude", effort="high")
     )
     preflight_issue_override: StageOverride = dataclasses.field(
-        default_factory=lambda: StageOverride(service="claude")
+        default_factory=lambda: StageOverride(service="claude", effort="high")
     )
     improve_override: StageOverride = dataclasses.field(
         default_factory=lambda: StageOverride(

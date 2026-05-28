@@ -608,8 +608,8 @@ def test_cross_service_config_threads_service_to_core_phase_requests(tmp_path):
     assert merger_call["service"] == "codex"
 
 
-def test_empty_stage_override_passes_empty_strings(tmp_path):
-    """Empty model and effort in stage override must pass empty strings to run_agent."""
+def test_empty_stage_override_model_uses_cli_default(tmp_path):
+    """Empty model in stage override must pass an empty string to run_agent."""
     captured: list[dict] = []
 
     async def _fake_run_agent(request: RunRequest):
@@ -626,7 +626,7 @@ def test_empty_stage_override_passes_empty_strings(tmp_path):
 
     planner_call = next(c for c in captured if c["name"] == "Plan Agent")
     assert planner_call["model"] == ""
-    assert planner_call["effort"] == ""
+    assert planner_call["effort"] == "low"
 
 
 def test_stage_overrides_are_independent(tmp_path):

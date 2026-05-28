@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
+import difflib
 import os
 import sys
 from pathlib import Path
@@ -30,26 +31,56 @@ def _stage_overrides(cfg: Config) -> list[tuple[str, StageOverride]]:
     ]
 
 
-def _validate_stage_services_and_efforts(
-    cfg: Config, valid_efforts_by_service: dict[str, frozenset[str]]
+def _validate_stage_overrides(
+    cfg: Config,
+    valid_efforts_by_service: dict[str, frozenset[str]],
+    valid_models_by_service: dict[str, frozenset[str]] | None = None,
 ) -> list[str]:
+    if valid_models_by_service is None:
+        valid_models_by_service = {}
     violations: list[str] = []
     for stage_name, override in _stage_overrides(cfg):
         node: StageOverride | None = override
+        fallback_depth = 0
         while node is not None:
+            stage_label = (
+                stage_name if fallback_depth == 0 else f"{stage_name} fallback"
+            )
             svc_name = node.service
-            valid_efforts = valid_efforts_by_service.get(svc_name)
-            if valid_efforts is None:
+            valid_efforts: frozenset[str] | None = None
+            if not svc_name:
+                violations.append(f"  stage={stage_label!r}: service is required")
+            else:
+                valid_efforts = valid_efforts_by_service.get(svc_name)
+                if valid_efforts is None:
+                    violations.append(
+                        f"  stage={stage_label!r}: service={svc_name!r} is not a known service"
+                        f" (known: {sorted(_KNOWN_SERVICES)})"
+                    )
+            if not node.effort:
+                violations.append(f"  stage={stage_label!r}: effort is required")
+            elif valid_efforts is not None and node.effort not in valid_efforts:
                 violations.append(
-                    f"  stage={stage_name!r}: service={svc_name!r} is not a known service"
-                    f" (known: {sorted(_KNOWN_SERVICES)})"
-                )
-            elif node.effort and node.effort not in valid_efforts:
-                violations.append(
-                    f"  stage={stage_name!r}: effort={node.effort!r} is invalid"
+                    f"  stage={stage_label!r}: effort={node.effort!r} is invalid"
                     f" for service={svc_name!r} (valid: {sorted(valid_efforts)})"
                 )
+            if svc_name and node.model:
+                valid_models = valid_models_by_service.get(svc_name)
+                if valid_models is not None and node.model not in valid_models:
+                    suggestion = difflib.get_close_matches(
+                        node.model, sorted(valid_models), n=1
+                    )
+                    detail = (
+                        f' Did you mean "{suggestion[0]}"?'
+                        if suggestion
+                        else f" (valid: {sorted(valid_models)})"
+                    )
+                    violations.append(
+                        f"  stage={stage_label!r}: model={node.model!r} is invalid"
+                        f" for service={svc_name!r}.{detail}"
+                    )
             node = node.fallback
+            fallback_depth += 1
     return violations
 
 
@@ -238,7 +269,12 @@ def _do_run(
     valid_efforts_by_service = {
         name: svc.valid_efforts() for name, svc in service_registry.items()
     }
-    violations = _validate_stage_services_and_efforts(cfg, valid_efforts_by_service)
+    valid_models_by_service = {
+        name: svc.valid_models() for name, svc in service_registry.items()
+    }
+    violations = _validate_stage_overrides(
+        cfg, valid_efforts_by_service, valid_models_by_service
+    )
     if violations:
         click.echo(
             "Config validation errors:\n" + "\n".join(violations),

@@ -361,9 +361,11 @@ def test_load_config_applies_auto_push_false_from_local_file(tmp_path):
 # ── Issue 479: preflight_issue_override stage override ─────────────────────
 
 
-def test_config_has_preflight_issue_override_field_with_empty_default():
+def test_config_has_preflight_issue_override_field_with_default_effort():
     cfg = Config()
-    assert cfg.preflight_issue_override == StageOverride(service="claude")
+    assert cfg.preflight_issue_override == StageOverride(
+        service="claude", effort="high"
+    )
 
 
 def test_load_config_applies_preflight_issue_override_from_local_file(tmp_path):
