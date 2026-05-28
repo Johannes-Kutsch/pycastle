@@ -2226,10 +2226,18 @@ def test_refresh_does_not_print_config_py_or_env_even_when_present(
     assert ".env" not in out
 
 
-def test_refresh_preserves_custom_local_dockerfile_without_output(
-    tmp_path, monkeypatch, capsys
+@pytest.mark.parametrize(
+    ("rel_path", "content"),
+    [
+        ("prompts/plan-prompt.md", b"user prompt override\n"),
+        ("Dockerfile", b"FROM scratch\n"),
+    ],
+    ids=["prompt_override", "dockerfile_override"],
+)
+def test_refresh_preserves_user_owned_overrides_and_keeps_up_to_date_output(
+    tmp_path, monkeypatch, capsys, rel_path, content
 ):
-    """A customized local Dockerfile override is preserved and omitted from stdout."""
+    """User-owned prompt and Dockerfile overrides stay untouched and invisible to refresh output."""
     from pycastle.commands.init import refresh
 
     monkeypatch.chdir(tmp_path)
@@ -2238,9 +2246,12 @@ def test_refresh_preserves_custom_local_dockerfile_without_output(
     refresh()
     capsys.readouterr()
 
-    (pycastle_dir / "Dockerfile").write_bytes(b"FROM scratch\n")
+    target = pycastle_dir / rel_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(content)
 
     refresh()
     out = capsys.readouterr().out
-    assert "Dockerfile" not in out
-    assert (pycastle_dir / "Dockerfile").read_bytes() == b"FROM scratch\n"
+    assert rel_path not in out
+    assert "up to date" in out.lower()
+    assert target.read_bytes() == content
