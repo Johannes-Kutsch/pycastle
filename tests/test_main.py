@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from pycastle.config import Config
+from pycastle.config import Config, StageOverride
 from pycastle.errors import (
     ClaudeCliNotFoundError,
     ConfigValidationError,
@@ -100,6 +100,20 @@ def test_run_cmd_default_stage_override_requires_claude_token(tmp_path, monkeypa
     assert result.exit_code == 1
     assert "Error: CLAUDE_CODE_OAUTH_TOKEN is not set." in result.output
     assert "claude setup-token" in result.output
+
+
+def test_stage_service_validation_rejects_empty_stage_override_service():
+    from pycastle.main import _validate_stage_services_and_efforts
+
+    cfg = Config(plan_override=StageOverride(service=""))
+
+    violations = _validate_stage_services_and_efforts(
+        cfg, {"claude": frozenset({"low", "medium", "high"})}
+    )
+
+    assert violations == [
+        "  stage='plan': service='' is not a known service (known: ['claude', 'codex'])"
+    ]
 
 
 # ── Issue 309: load_config() called at entry in CLI commands ──────────────────
