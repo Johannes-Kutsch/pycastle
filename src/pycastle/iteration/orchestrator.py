@@ -94,6 +94,22 @@ def _fmt_wake(wake: datetime, now: datetime) -> str:
     return wake.strftime("%H:%M")
 
 
+def _override_for_stage_key(cfg, stage_key: str | None):
+    if stage_key == "plan":
+        return cfg.plan_override
+    if stage_key == "implement":
+        return cfg.implement_override
+    if stage_key == "review":
+        return cfg.review_override
+    if stage_key == "merge":
+        return cfg.merge_override
+    if stage_key == "preflight_issue":
+        return cfg.preflight_issue_override
+    if stage_key == "improve":
+        return cfg.improve_override
+    return None
+
+
 def ensure_session_excludes(repo_root: Path) -> None:
     exclude_file = repo_root / ".git" / "info" / "exclude"
     if not exclude_file.parent.exists():
@@ -267,11 +283,23 @@ async def run(
                     provider=provider,
                     account_label=account_label,
                     is_permanent=is_permanent,
+                    stage_key=stage_key,
                 ):
                     now = _time_module.now_local()
-                    if service_registry is not None and service_registry.has_available(
-                        now
-                    ):
+                    stage_override = _override_for_stage_key(_iter_cfg, stage_key)
+                    registry = service_registry
+                    use_stage_scope = (
+                        registry is not None
+                        and stage_override is not None
+                        and registry.has_configured_candidate(stage_override)
+                    )
+                    if registry is None:
+                        has_available = False
+                    elif use_stage_scope:
+                        has_available = registry.has_available_for(stage_override, now)
+                    else:
+                        has_available = registry.has_available(now)
+                    if has_available:
                         if (
                             is_permanent
                             and provider is not None
@@ -283,7 +311,14 @@ async def run(
                                 "switching to next available.",
                             )
                         else:
-                            exhausted_wake = service_registry.next_wake_time(now)
+                            if registry is None:
+                                exhausted_wake = None
+                            elif use_stage_scope:
+                                exhausted_wake = registry.next_wake_time_for(
+                                    stage_override, now
+                                )
+                            else:
+                                exhausted_wake = registry.next_wake_time(now)
                             if exhausted_wake is not None:
                                 status_display.print(  # type: ignore[union-attr]
                                     "",
@@ -291,11 +326,12 @@ async def run(
                                     "switching to next available.",
                                 )
                         continue
-                    next_wake = (
-                        service_registry.next_wake_time(now)
-                        if service_registry is not None
-                        else None
-                    )
+                    if registry is None:
+                        next_wake = None
+                    elif use_stage_scope:
+                        next_wake = registry.next_wake_time_for(stage_override, now)
+                    else:
+                        next_wake = registry.next_wake_time(now)
                     if next_wake is not None:
                         wake_time = next_wake
                         suffix = ""

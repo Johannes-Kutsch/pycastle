@@ -3390,6 +3390,70 @@ def test_dual_exhaustion_sleeps_until_earliest_of_primary_and_fallback(tmp_path)
     mock_sleep.assert_called_once_with(expected_seconds)
 
 
+def test_dual_exhaustion_ignores_unrelated_available_service(tmp_path):
+    """Sleeping/switching decisions must use the current stage chain, not any
+    unrelated available service in the registry."""
+    fixed_now = datetime(2026, 1, 1, 14, 0, 0).astimezone()
+    primary_wake = datetime(2026, 1, 1, 16, 0, 0).astimezone()
+    fallback_wake = datetime(2026, 1, 1, 15, 0, 0).astimezone()
+    status = RecordingStatusDisplay()
+
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.side_effect = [
+        [
+            {
+                "number": 1,
+                "title": "Fix",
+                "body": "x" * 100,
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
+        ],
+        [],
+    ]
+
+    claude_svc = _FakeService(available=False, wake_time=primary_wake)
+    codex_svc = _FakeService(available=False, wake_time=fallback_wake)
+    opencode_svc = _FakeService(available=True)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+            )
+        raise UsageLimitError(reset_time=None)
+
+    with (
+        patch("time.sleep") as mock_sleep,
+        patch("pycastle._time.now_local", return_value=fixed_now),
+    ):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            status_display=status,
+            service_registry=ServiceRegistry(
+                {"claude": claude_svc, "codex": codex_svc, "opencode": opencode_svc}
+            ),
+            implement_override=StageOverride(
+                service="claude",
+                model="primary-model",
+                effort="low",
+                fallback=StageOverride(
+                    service="codex", model="fallback-model", effort="high"
+                ),
+            ),
+            max_iterations=2,
+        )
+
+    expected_seconds = (fallback_wake - fixed_now).total_seconds()
+    mock_sleep.assert_called_once_with(expected_seconds)
+    assert not any(
+        call[0] == "print" and "switching to next available" in str(call[2])
+        for call in status.calls
+    )
+
+
 def test_primary_takes_precedence_when_both_services_available(tmp_path):
     """Snap-back is automatic: when the primary service is available, dispatch uses
     the primary's (service, model, effort) even if the fallback is also available."""

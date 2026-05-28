@@ -59,6 +59,7 @@ class AbortedUsageLimit:
     provider: str | None = None
     account_label: str | None = None
     is_permanent: bool = False
+    stage_key: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -140,6 +141,7 @@ async def _run_implement_and_merge(
                 provider=impl_result.usage_limit_provider,
                 account_label=impl_result.usage_limit_account_label,
                 is_permanent=impl_result.usage_limit_is_permanent,
+                stage_key="implement",
             )
 
         for issue, error in impl_result.errors:
@@ -287,6 +289,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             provider=err.provider,
             account_label=err.account_label,
             is_permanent=err.is_permanent,
+            stage_key=err.stage_key,
         )
     except AgentTimeoutError as err:
         return AbortedTimeout(

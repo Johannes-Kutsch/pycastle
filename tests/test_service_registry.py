@@ -95,6 +95,43 @@ def test_resolve_returns_primary_when_no_stage_candidate_is_registered() -> None
     assert result is override
 
 
+def test_resolve_uses_first_available_configured_candidate_in_deep_chain() -> None:
+    secondary = _make_svc(available=False)
+    tertiary = _make_svc(available=True)
+    registry = ServiceRegistry(
+        services={"secondary": secondary, "tertiary": tertiary},
+    )
+    tertiary_override = StageOverride(service="tertiary")
+    override = StageOverride(
+        service="primary",
+        fallback=StageOverride(
+            service="secondary",
+            fallback=StageOverride(service="missing", fallback=tertiary_override),
+        ),
+    )
+
+    result = registry.resolve(override, _now())
+
+    assert result.service == "tertiary"
+    assert result.fallback is None
+
+
+def test_resolve_returns_first_configured_candidate_when_all_configured_are_exhausted() -> (
+    None
+):
+    fallback_svc = _make_svc(available=False)
+    registry = ServiceRegistry(services={"fallback": fallback_svc})
+    override = StageOverride(
+        service="primary",
+        fallback=StageOverride(service="fallback"),
+    )
+
+    result = registry.resolve(override, _now())
+
+    assert result.service == "fallback"
+    assert result.fallback is None
+
+
 # --- has_available ---
 
 

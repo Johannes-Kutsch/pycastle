@@ -111,10 +111,13 @@ def _configured_service_registry(
     from .services.codex_service import CodexService
     from .services.opencode_service import OpenCodeService
 
-    service_registry: dict[str, AgentService] = {"codex": CodexService()}
     referenced = referenced_services(cfg)
+    service_registry: dict[str, AgentService] = {}
 
-    if "opencode" in referenced:
+    if "codex" in referenced:
+        service_registry["codex"] = CodexService()
+
+    if "opencode" in referenced and env.get("OPENCODE_GO_API_KEY"):
         service_registry["opencode"] = OpenCodeService(
             api_key=env.get("OPENCODE_GO_API_KEY")
         )
@@ -133,6 +136,29 @@ def _configured_service_registry(
     accounts.append(("primary", primary))
     service_registry["claude"] = ClaudeService(accounts=accounts)
     return service_registry
+
+
+def _stage_chain_label(override: StageOverride) -> str:
+    return " -> ".join(
+        node.service or "<missing>" for node in iter_stage_chain(override)
+    )
+
+
+def _validate_locally_configured_stage_overrides(
+    cfg: Config, service_registry: dict[str, "AgentService"]
+) -> list[str]:
+    from .services.service_registry import ServiceRegistry
+
+    registry = ServiceRegistry(service_registry)
+    violations: list[str] = []
+    for stage_name, override in _stage_overrides(cfg):
+        if registry.has_configured_candidate(override):
+            continue
+        violations.append(
+            f"  stage={stage_name!r}: no locally configured service in priority chain "
+            f"{_stage_chain_label(override)!r}"
+        )
+    return violations
 
 
 def _print_layer_summary() -> None:
@@ -298,6 +324,15 @@ def _do_run(
 
     env = _load_env(cfg=cfg)
     service_registry = _configured_service_registry(cfg, env)
+    local_config_violations = _validate_locally_configured_stage_overrides(
+        cfg, service_registry
+    )
+    if local_config_violations:
+        click.echo(
+            "Config validation errors:\n" + "\n".join(local_config_violations),
+            err=True,
+        )
+        sys.exit(1)
 
     try:
         _build(stream=True, terse=True, cfg=cfg)

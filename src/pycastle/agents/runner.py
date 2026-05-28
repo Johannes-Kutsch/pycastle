@@ -40,6 +40,19 @@ REPROMPT_MESSAGE = (
 )
 
 
+def _stage_key_for_role(role: AgentRole) -> str | None:
+    mapping = {
+        AgentRole.PLANNER: "plan",
+        AgentRole.IMPLEMENTER: "implement",
+        AgentRole.REVIEWER: "review",
+        AgentRole.MERGER: "merge",
+        AgentRole.PREFLIGHT_ISSUE: "preflight_issue",
+        AgentRole.IMPROVE: "improve",
+        AgentRole.FAILURE_REPORT: "preflight_issue",
+    }
+    return mapping.get(role)
+
+
 @dataclasses.dataclass
 class RunRequest:
     name: str
@@ -216,7 +229,7 @@ class AgentRunner:
 
         _token = token if token is not None else CancellationToken()
         if _token.is_cancelled:
-            raise UsageLimitError(reset_time=None)
+            raise UsageLimitError(reset_time=None, stage_key=_stage_key_for_role(role))
 
         session_namespace = request.session_namespace
         role_session = RoleSession(mount_path, role, session_namespace)
@@ -351,6 +364,8 @@ class AgentRunner:
                         )
                         retries_left -= 1
                     except UsageLimitError as err:
+                        if err.stage_key is None:
+                            err.stage_key = _stage_key_for_role(role)
                         if err.is_permanent and isinstance(service, ClaudeService):
                             err.account_label = service.mark_permanently_exhausted()
                         else:
