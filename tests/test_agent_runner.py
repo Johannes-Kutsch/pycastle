@@ -403,7 +403,7 @@ def test_agent_runner_run_returns_agent_output(tmp_path):
     assert isinstance(result, CommitMessageOutput)
 
 
-def test_agent_runner_uses_claude_when_request_service_is_empty(
+def test_agent_runner_dispatches_with_explicit_claude_service(
     tmp_path,
 ):
     codex_service = _RecordingAgentService("codex")
@@ -551,36 +551,58 @@ def test_agent_runner_requires_explicit_resolved_service_for_dispatch(tmp_path):
     docker_client.containers.run.assert_not_called()
 
 
-def test_agent_runner_uses_claude_when_default_service_is_empty(tmp_path):
+def test_agent_runner_requires_explicit_resolved_service_for_whitespace_only_service(
+    tmp_path,
+):
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client([]),
+        service_registry={"claude": _RecordingAgentService("claude")},
+    )
+
+    with pytest.raises(ValueError, match="resolved service"):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Test",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    service="   ",
+                )
+            )
+        )
+
+
+def test_agent_runner_fails_when_no_explicit_service_even_if_default_service_is_empty(
+    tmp_path,
+):
     cfg = _make_cfg(tmp_path, docker_image_name="pycastle-test")
     object.__setattr__(cfg, "default_service", "")
-    codex_service = _RecordingAgentService("codex")
-    claude_service = _RecordingAgentService("claude")
     docker_client = _make_docker_client([])
     runner = AgentRunner(
         {},
         cfg,
         _make_git_service(),
         docker_client=docker_client,
-        service_registry={"claude": claude_service, "codex": codex_service},
+        service_registry={"claude": _RecordingAgentService("claude")},
     )
 
-    result = asyncio.run(
-        runner.run(
-            _run_request(
-                name="Test",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+    with pytest.raises(ValueError, match="resolved service"):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Test",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                )
             )
         )
-    )
 
-    assert isinstance(result, CommitMessageOutput)
-    assert claude_service.commands == ["claude exec"]
-    assert codex_service.commands == []
-    docker_client.containers.run.assert_called_once()
-    assert docker_client.containers.run.call_args.args[0] == "pycastle-test"
+    docker_client.containers.run.assert_not_called()
 
 
 def test_agent_runner_mixed_services_use_service_command_env_and_parser(
