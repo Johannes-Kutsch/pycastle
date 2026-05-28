@@ -30,7 +30,7 @@ from pycastle.errors import (
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session import RoleSession, RunKind
 from pycastle.services.agent_service import ParsedTurn, Result
-from pycastle.services import CodexService, GitCommandError, GitService
+from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 
 
@@ -86,6 +86,22 @@ _CODEX_PROTOCOL_ERROR_STREAM = [
 _CODEX_PLAN_COMPLETE_STREAM = [
     b'{"type":"item.completed","item":{"type":"agent_message",'
     b'"text":"<plan>{\\"issues\\": [], \\"blocked\\": []}</plan>"}}\n'
+]
+
+_OPENCODE_PROTOCOL_ERROR_STREAM = [
+    b'{"type":"text","sessionID":"sess-from-fresh",'
+    b'"part":{"type":"text","text":"missing required tag",'
+    b'"time":{"start":1,"end":2}}}\n',
+    b'{"type":"session.status","sessionID":"sess-from-fresh",'
+    b'"status":{"type":"idle"}}\n',
+]
+
+_OPENCODE_PLAN_COMPLETE_STREAM = [
+    b'{"type":"text","sessionID":"sess-from-fresh",'
+    b'"part":{"type":"text","text":"<plan>{\\"issues\\": [], \\"blocked\\": []}</plan>",'
+    b'"time":{"start":1,"end":2}}}\n',
+    b'{"type":"session.status","sessionID":"sess-from-fresh",'
+    b'"status":{"type":"idle"}}\n',
 ]
 
 
@@ -2369,6 +2385,132 @@ def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
     assert "codex exec resume thread-from-fresh" in captured_cmds[1]
     saved = tmp_path / ".pycastle-session" / "planner" / "codex" / "thread_id"
     assert saved.read_text(encoding="utf-8") == "thread-from-fresh"
+
+
+def test_agent_runner_opencode_reprompt_resumes_with_persisted_session_id(tmp_path):
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+    streams = iter([_OPENCODE_PROTOCOL_ERROR_STREAM, _OPENCODE_PLAN_COMPLETE_STREAM])
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            result = MagicMock()
+            result.output = iter(next(streams))
+            return result
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"opencode": OpenCodeService()},
+    )
+
+    result = asyncio.run(
+        runner.run(
+            _run_request(
+                name="OpenCode",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+                service="opencode",
+            )
+        )
+    )
+
+    assert isinstance(result, PlannerOutput)
+    assert captured_cmds[0].startswith("opencode run --format json ")
+    assert "--session" not in captured_cmds[0]
+    assert "--session sess-from-fresh" in captured_cmds[1]
+    saved = tmp_path / ".pycastle-session" / "planner" / "opencode" / "session_id"
+    assert saved.read_text(encoding="utf-8") == "sess-from-fresh"
+
+
+def test_agent_runner_opencode_resume_uses_persisted_session_id_on_later_run(tmp_path):
+    state_dir = tmp_path / ".pycastle-session" / "planner" / "opencode"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text("sess-from-prior-run", encoding="utf-8")
+
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            result = MagicMock()
+            result.output = iter(_OPENCODE_PLAN_COMPLETE_STREAM)
+            return result
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"opencode": OpenCodeService()},
+    )
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="OpenCode",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+                service="opencode",
+            )
+        )
+    )
+
+    assert captured_cmds == [
+        'opencode run --format json --session sess-from-prior-run "$(cat /tmp/.pycastle_prompt)"'
+    ]
+
+
+def test_agent_runner_opencode_keeps_api_key_out_of_session_files_across_resume_runs(
+    tmp_path,
+):
+    service = OpenCodeService(api_key="go-key")
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client(_OPENCODE_PLAN_COMPLETE_STREAM),
+        service_registry={"opencode": service},
+    )
+
+    request = _run_request(
+        name="OpenCode",
+        template=_PLAN_TEMPLATE,
+        scope_args=_PLAN_SCOPE_ARGS,
+        mount_path=tmp_path,
+        role=AgentRole.PLANNER,
+        service="opencode",
+    )
+    asyncio.run(runner.run(request))
+    asyncio.run(runner.run(request))
+
+    session_files = sorted(
+        path for path in (tmp_path / ".pycastle-session").rglob("*") if path.is_file()
+    )
+
+    assert session_files == [
+        tmp_path / ".pycastle-session" / "planner" / "opencode" / "session_id"
+    ]
+    assert session_files[0].read_text(encoding="utf-8") == "sess-from-fresh"
+    assert "go-key" not in session_files[0].read_text(encoding="utf-8")
 
 
 def test_agent_runner_codex_resume_uses_thread_id_from_rollout(tmp_path):

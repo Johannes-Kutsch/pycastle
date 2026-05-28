@@ -11,6 +11,11 @@ _NAMESPACE = uuid.NAMESPACE_DNS
 
 SESSION_DIR_NAME = ".pycastle-session"
 
+_SERVICE_SESSION_ID_FILENAMES = {
+    "codex": "thread_id",
+    "opencode": "session_id",
+}
+
 
 def _force_remove_readonly(func, path, _exc_info):
     os.chmod(path, stat.S_IWRITE)
@@ -55,7 +60,8 @@ class RoleSession:
         return str(session_id)
 
     def service_session_id_path(self, service_name: str) -> Path:
-        return self.path / service_name / "thread_id"
+        filename = _SERVICE_SESSION_ID_FILENAMES.get(service_name, "thread_id")
+        return self.path / service_name / filename
 
     def service_session_id(self, service_name: str) -> str | None:
         path = self.service_session_id_path(service_name)

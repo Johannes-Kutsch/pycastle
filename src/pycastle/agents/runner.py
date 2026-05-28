@@ -265,6 +265,10 @@ class AgentRunner:
                     role_session.save_service_session_id("codex", service_session_id)
                 else:
                     run_kind = RunKind.FRESH
+        elif service.name == "opencode" and run_kind == RunKind.RESUME:
+            service_session_id = role_session.service_session_id("opencode")
+            if service_session_id is None:
+                run_kind = RunKind.FRESH
         host_codex_auth: Path | None = None
         if state_dir is not None and service.name == "codex":
             auth_missing_from_state_dir = not (state_dir / "auth.json").exists()
@@ -313,7 +317,8 @@ class AgentRunner:
                 def remember_thread_id(thread_id: str) -> None:
                     nonlocal service_session_id
                     service_session_id = thread_id
-                    role_session.save_service_session_id("codex", thread_id)
+                    if service.name in {"codex", "opencode"}:
+                        role_session.save_service_session_id(service.name, thread_id)
 
                 loop = asyncio.get_running_loop()
 
@@ -335,7 +340,7 @@ class AgentRunner:
                         work_run_kind = run_kind
                         for _ in range(3):
                             try:
-                                if service.name == "codex":
+                                if service.name in {"codex", "opencode"}:
                                     output = await runner.work(
                                         role,
                                         work_prompt,

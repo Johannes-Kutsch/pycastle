@@ -127,6 +127,20 @@ def test_start_fresh_on_populated_dir_makes_not_resumable(rs):
     assert rs.is_resumable() is False
 
 
+def test_service_session_ids_are_isolated_by_role_and_worktree(tmp_path):
+    planner_a = RoleSession(tmp_path / "worktree-a", AgentRole.PLANNER)
+    planner_b = RoleSession(tmp_path / "worktree-b", AgentRole.PLANNER)
+    reviewer_a = RoleSession(tmp_path / "worktree-a", AgentRole.REVIEWER)
+
+    planner_a.save_service_session_id("opencode", "sess-a")
+    planner_b.save_service_session_id("opencode", "sess-b")
+    reviewer_a.save_service_session_id("opencode", "sess-review")
+
+    assert planner_a.service_session_id("opencode") == "sess-a"
+    assert planner_b.service_session_id("opencode") == "sess-b"
+    assert reviewer_a.service_session_id("opencode") == "sess-review"
+
+
 # ── any_role_dir_present ──────────────────────────────────────────────────────
 
 
