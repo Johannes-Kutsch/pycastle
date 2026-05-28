@@ -66,7 +66,7 @@ def test_resolve_returns_primary_when_both_exhausted() -> None:
     assert result is override
 
 
-def test_resolve_treats_empty_service_as_default() -> None:
+def test_resolve_does_not_treat_empty_service_as_default() -> None:
     svc = _make_svc(available=True)
     registry = ServiceRegistry(services={"claude": svc}, default_service="claude")
     override = StageOverride(service="")
@@ -74,7 +74,7 @@ def test_resolve_treats_empty_service_as_default() -> None:
     result = registry.resolve(override, _now())
 
     assert result is override
-    svc.is_available.assert_called_once_with(now=_now())
+    svc.is_available.assert_not_called()
 
 
 def test_resolve_returns_primary_when_service_not_registered() -> None:
@@ -200,11 +200,11 @@ def test_lookup_known_key_returns_service() -> None:
     assert registry["claude"] is svc
 
 
-def test_lookup_empty_string_returns_default_service() -> None:
+def test_lookup_empty_string_returns_none() -> None:
     svc = _make_svc(available=True)
     registry = ServiceRegistry(services={"claude": svc}, default_service="claude")
 
-    assert registry[""] is svc
+    assert registry[""] is None
 
 
 def test_lookup_unknown_key_returns_none() -> None:

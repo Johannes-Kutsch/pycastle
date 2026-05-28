@@ -305,7 +305,7 @@ def test_load_config_applies_auto_push_false_from_local_file(tmp_path):
 
 def test_config_has_preflight_issue_override_field_with_empty_default():
     cfg = Config()
-    assert cfg.preflight_issue_override == StageOverride()
+    assert cfg.preflight_issue_override == StageOverride(service="claude")
 
 
 def test_load_config_applies_preflight_issue_override_from_local_file(tmp_path):
@@ -664,19 +664,29 @@ def test_stage_override_fallback_defaults_to_none():
     assert StageOverride().fallback is None
 
 
-def test_load_config_round_trips_default_service_from_local_file(tmp_path):
+def test_load_config_ignores_legacy_default_service_from_local_file(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text('default_service = "codex"\n')
     cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
-    assert cfg.default_service == "codex"
+    assert cfg.default_service == "claude"
 
 
-def test_load_config_round_trips_default_service_from_global_file(tmp_path):
+def test_load_config_ignores_legacy_default_service_from_global_file(tmp_path):
     global_dir = tmp_path / "global"
     global_dir.mkdir()
     (global_dir / "config.py").write_text('default_service = "codex"\n')
     cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
-    assert cfg.default_service == "codex"
+    assert cfg.default_service == "claude"
+
+
+def test_legacy_default_service_does_not_select_referenced_services(tmp_path):
+    from pycastle.config.loader import referenced_services
+
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text('default_service = "codex"\n')
+    cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
+
+    assert referenced_services(cfg) == {"claude"}
 
 
 def test_load_config_round_trips_stage_override_service_and_fallback(tmp_path):

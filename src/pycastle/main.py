@@ -37,7 +37,7 @@ def _validate_stage_services_and_efforts(
     for stage_name, override in _stage_overrides(cfg):
         node: StageOverride | None = override
         while node is not None:
-            svc_name = node.service or cfg.default_service
+            svc_name = node.service
             valid_efforts = valid_efforts_by_service.get(svc_name)
             if valid_efforts is None:
                 violations.append(
@@ -262,7 +262,7 @@ def _do_run(
         effective_improve_mode = improve_mode_flag
     else:
         effective_improve_mode = cfg.improve_mode
-    registry = ServiceRegistry(service_registry, cfg.default_service)
+    registry = ServiceRegistry(service_registry)
     asyncio.run(
         run(
             container_env,

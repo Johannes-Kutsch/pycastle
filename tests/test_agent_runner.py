@@ -391,17 +391,17 @@ def test_agent_runner_run_returns_agent_output(tmp_path):
     assert isinstance(result, CommitMessageOutput)
 
 
-def test_agent_runner_uses_default_service_from_registry_when_request_service_is_empty(
+def test_agent_runner_uses_claude_when_request_service_is_empty(
     tmp_path,
 ):
-    default_service = _RecordingAgentService("codex")
-    other_service = _RecordingAgentService("claude")
+    codex_service = _RecordingAgentService("codex")
+    claude_service = _RecordingAgentService("claude")
     runner = AgentRunner(
         {},
         _make_cfg(tmp_path, default_service="codex"),
         _make_git_service(),
         docker_client=_make_docker_client([]),
-        service_registry={"claude": other_service, "codex": default_service},
+        service_registry={"claude": claude_service, "codex": codex_service},
     )
 
     result = asyncio.run(
@@ -416,8 +416,8 @@ def test_agent_runner_uses_default_service_from_registry_when_request_service_is
     )
 
     assert isinstance(result, CommitMessageOutput)
-    assert default_service.commands == ["codex exec"]
-    assert other_service.commands == []
+    assert claude_service.commands == ["claude exec"]
+    assert codex_service.commands == []
 
 
 def test_agent_runner_uses_requested_service_from_registry(tmp_path):

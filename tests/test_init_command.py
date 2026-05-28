@@ -315,12 +315,22 @@ def test_init_config_contains_stage_override_import_and_defaults(tmp_path, monke
 
     content = (tmp_path / "pycastle" / "config.py").read_text()
     assert "from pycastle import StageOverride" in content
-    assert 'plan_override = StageOverride(model="haiku", effort="low")' in content
     assert (
-        'implement_override = StageOverride(model="sonnet", effort="medium")' in content
+        'plan_override = StageOverride(service="claude", model="haiku", effort="low")'
+        in content
     )
-    assert 'review_override = StageOverride(model="opus", effort="medium")' in content
-    assert 'merge_override = StageOverride(model="opus", effort="high")' in content
+    assert (
+        'implement_override = StageOverride(service="claude", '
+        'model="sonnet", effort="medium")' in content
+    )
+    assert (
+        'review_override = StageOverride(service="claude", model="opus", '
+        'effort="medium")' in content
+    )
+    assert (
+        'merge_override = StageOverride(service="claude", model="opus", '
+        'effort="high")' in content
+    )
 
 
 # ── Cycle 6: load_config from scaffolded project returns correct StageOverride values ──
@@ -341,10 +351,18 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
         main()
 
     cfg = load_config(repo_root=tmp_path)
-    assert cfg.plan_override == StageOverride(model="haiku", effort="low")
-    assert cfg.implement_override == StageOverride(model="sonnet", effort="medium")
-    assert cfg.review_override == StageOverride(model="opus", effort="medium")
-    assert cfg.merge_override == StageOverride(model="opus", effort="high")
+    assert cfg.plan_override == StageOverride(
+        service="claude", model="haiku", effort="low"
+    )
+    assert cfg.implement_override == StageOverride(
+        service="claude", model="sonnet", effort="medium"
+    )
+    assert cfg.review_override == StageOverride(
+        service="claude", model="opus", effort="medium"
+    )
+    assert cfg.merge_override == StageOverride(
+        service="claude", model="opus", effort="high"
+    )
 
 
 # ── Cycle 4: init does not overwrite other existing files ─────────────────────
@@ -1603,11 +1621,10 @@ def test_init_refresh_claude_only_config_writes_dockerfile_claude(
 @pytest.mark.parametrize(
     "config_snippet",
     [
-        'default_service = "codex"',
         'from pycastle import StageOverride\nplan_override = StageOverride(service="codex")',
         'from pycastle import StageOverride\nplan_override = StageOverride(fallback=StageOverride(service="codex"))',
     ],
-    ids=["default_service", "stage_service", "fallback_service"],
+    ids=["stage_service", "fallback_service"],
 )
 def test_init_refresh_codex_config_writes_dockerfile_codex(
     tmp_path, monkeypatch, config_snippet
@@ -1632,6 +1649,32 @@ def test_init_refresh_codex_config_writes_dockerfile_codex(
 
     pkg = files("pycastle").joinpath("defaults")
     expected = (pkg / "Dockerfile.codex").read_bytes()
+    dockerfile = tmp_path / "pycastle" / "Dockerfile"
+    assert dockerfile.read_bytes() == expected
+
+
+def test_init_refresh_legacy_default_service_codex_writes_dockerfile_claude(
+    tmp_path, monkeypatch
+):
+    """`default_service = "codex"` is ignored for Dockerfile selection."""
+    from importlib.resources import files
+
+    from pycastle.commands.init import main, refresh
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    config_file = tmp_path / "pycastle" / "config.py"
+    config_file.write_text('default_service = "codex"\n')
+
+    refresh()
+
+    pkg = files("pycastle").joinpath("defaults")
+    expected = (pkg / "Dockerfile.claude").read_bytes()
     dockerfile = tmp_path / "pycastle" / "Dockerfile"
     assert dockerfile.read_bytes() == expected
 

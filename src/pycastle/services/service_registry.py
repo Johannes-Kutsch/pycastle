@@ -7,21 +7,22 @@ from .agent_service import AgentService
 
 
 class ServiceRegistry:
-    def __init__(self, services: dict[str, AgentService], default_service: str) -> None:
+    def __init__(
+        self, services: dict[str, AgentService], default_service: str = ""
+    ) -> None:
         self._services = services
-        self._default_service = default_service
 
     @property
     def services(self) -> dict[str, AgentService]:
         return dict(self._services)
 
     def resolve(self, override: StageOverride, now: datetime) -> StageOverride:
-        primary_name = override.service or self._default_service
+        primary_name = override.service
         primary_svc = self._services.get(primary_name)
         if primary_svc is None or primary_svc.is_available(now=now):
             return override
         if override.fallback is not None:
-            fallback_name = override.fallback.service or self._default_service
+            fallback_name = override.fallback.service
             fallback_svc = self._services.get(fallback_name)
             if fallback_svc is not None and fallback_svc.is_available(now=now):
                 return override.fallback
@@ -39,8 +40,7 @@ class ServiceRegistry:
         return min(svc.next_wake_time() for svc in exhausted)
 
     def __getitem__(self, key: str) -> AgentService | None:
-        name = key or self._default_service
-        return self._services.get(name)
+        return self._services.get(key)
 
     def summary_lines(self) -> list[str]:
         lines = []

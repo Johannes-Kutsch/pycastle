@@ -112,7 +112,7 @@ class Config:
 
 def referenced_services(cfg: Config) -> set[str]:
     """Return the set of service names the resolved config references."""
-    names: set[str] = {cfg.default_service}
+    names: set[str] = set()
     for override in (
         cfg.plan_override,
         cfg.implement_override,

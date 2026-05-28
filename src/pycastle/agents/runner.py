@@ -106,13 +106,11 @@ class AgentRunner:
         self._cfg = cfg
         self._git_service = git_service
         self._docker_client = docker_client
-        self._service_registry = service_registry or {
-            cfg.default_service: ClaudeService()
-        }
+        self._service_registry = service_registry or {"claude": ClaudeService()}
         self._renderer = PromptRenderer(cfg)
 
     def _resolve_service(self, service_name: str = "") -> AgentService:
-        resolved_name = service_name or self._cfg.default_service
+        resolved_name = service_name or "claude"
         service = self._service_registry.get(resolved_name)
         if service is not None:
             return service
