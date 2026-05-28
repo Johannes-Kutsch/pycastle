@@ -66,6 +66,16 @@ def test_dockerfile_codex_installs_gh_from_github_apt():
     assert "apt-get install" in content and " gh" in content
 
 
+@pytest.mark.parametrize("service", ["claude", "codex"])
+def test_default_agent_dockerfiles_install_ripgrep(service: str):
+    """Bundled default agent Dockerfiles must install ripgrep for workspace search."""
+    from importlib.resources import files
+
+    pkg = files("pycastle").joinpath("defaults")
+    content = (pkg / f"Dockerfile.{service}").read_text()
+    assert "ripgrep" in content
+
+
 def test_init_claude_service_seeds_only_claude_dockerfile(tmp_path, monkeypatch):
     """Selecting claude seeds only pycastle/Dockerfile.claude."""
     from importlib.resources import files
