@@ -3712,6 +3712,32 @@ def test_orchestrator_exits_nonzero_on_hard_api_error(tmp_path):
     assert exc_info.value.code != 0
 
 
+def test_orchestrator_files_upstream_bug_and_exits_on_preflight_setup_failure(
+    tmp_path,
+):
+    """Preflight setup failures abort before diagnosis and route through auto_file_issue."""
+    from pycastle.errors import DockerError
+
+    github_svc = _make_github_svc()
+
+    with patch(
+        "pycastle.iteration.orchestrator.auto_file_issue",
+        return_value="https://example.com/upstream/1",
+    ) as mock_file:
+        with pytest.raises(SystemExit) as exc_info:
+            _run(
+                tmp_path,
+                agent_runner=FakeAgentRunner(
+                    preflight_responses=[DockerError("pip install failed")]
+                ),
+                github_service=github_svc,
+                git_service=_make_git_svc(),
+            )
+
+    assert exc_info.value.code == 1
+    mock_file.assert_called_once()
+
+
 # ── GithubAPIError: orchestrator exits non-zero on repo access failure ──────────
 
 

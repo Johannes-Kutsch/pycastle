@@ -14,6 +14,12 @@ class DockerTimeoutError(DockerError, TimeoutError):
     pass
 
 
+class SetupPhaseError(PycastleError):
+    def __init__(self, phase: str, message: str) -> None:
+        self.phase = phase
+        super().__init__(message)
+
+
 class WorktreeError(PycastleError):
     pass
 

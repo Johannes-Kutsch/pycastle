@@ -19,6 +19,7 @@ from ..services import (
     ServiceRegistry,
     UnrelatedHistoriesError,
 )
+from ..errors import DockerError, SetupPhaseError
 from ..session import RoleSession
 from ..agents.classifier import WellFormed, classify_slice, slice_labels
 from ..display.status_display import StatusDisplay
@@ -275,13 +276,16 @@ class PreflightCache:
             async with transient_worktree(
                 "preflight-sandbox", sha=sha, deps=deps
             ) as mount_path:
-                failures = await deps.agent_runner.run_preflight(
-                    name="Preflight Agent",
-                    mount_path=mount_path,
-                    stage="PREFLIGHT",
-                    status_display=deps.status_display,
-                    work_body="Checking",
-                )
+                try:
+                    failures = await deps.agent_runner.run_preflight(
+                        name="Preflight Agent",
+                        mount_path=mount_path,
+                        stage="PREFLIGHT",
+                        status_display=deps.status_display,
+                        work_body="Checking",
+                    )
+                except DockerError as exc:
+                    raise SetupPhaseError("preflight", str(exc)) from exc
 
                 result: PreflightResult
                 if failures:
