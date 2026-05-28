@@ -5,74 +5,48 @@ import pytest
 from click.testing import CliRunner
 
 
-# ── Issue #784: service-selection prompt and bundled Dockerfile templates ──────
+# ── Issue #784 / #1045: bundled universal Dockerfile contract ─────────────────
 
 
-def test_dockerfile_claude_template_exists_with_claude_cli():
-    """Dockerfile.claude must exist in bundled defaults and install Claude Code CLI."""
+def test_universal_dockerfile_template_exists_with_supported_clis():
+    """Bundled universal Dockerfile must install the supported agent CLIs."""
     from importlib.resources import files
 
     pkg = files("pycastle").joinpath("defaults")
-    content = (pkg / "Dockerfile.claude").read_text()
-    assert "claude.ai/install.sh" in content
-    assert "npm" not in content
-
-
-def test_dockerfile_codex_template_exists_with_node_and_codex():
-    """Dockerfile.codex must install only the Codex per-service Dockerfile runtime."""
-    from importlib.resources import files
-
-    pkg = files("pycastle").joinpath("defaults")
-    content = (pkg / "Dockerfile.codex").read_text()
-    assert "FROM python:" in content
-    assert "git" in content
-    assert "cli.github.com/packages" in content
-    assert "apt-get install" in content and " gh" in content
-    assert "nodejs" in content
+    content = (pkg / "Dockerfile").read_text()
+    assert "@anthropic-ai/claude-code" in content
     assert "@openai/codex" in content
-    assert "claude.ai/install.sh" not in content
-    assert "Claude Code CLI" not in content
-    assert ".local/bin" not in content
+    assert "opencode-ai" in content
 
 
-def test_dockerfile_claude_codex_template_is_not_bundled():
-    """Dockerfile.claude-codex must not exist in bundled defaults."""
+# ── Issue #801 / #1045: gh CLI and stale per-service templates ────────────────
+
+
+def test_universal_dockerfile_installs_gh_from_github_apt():
+    """Bundled universal Dockerfile must install gh via the GitHub apt repository."""
     from importlib.resources import files
 
     pkg = files("pycastle").joinpath("defaults")
-    assert not (pkg / "Dockerfile.claude-codex").is_file()
-
-
-# ── Issue #801: gh CLI must be installed in both Dockerfile templates ──────────
-
-
-def test_dockerfile_claude_installs_gh_from_github_apt():
-    """Dockerfile.claude must install gh via the GitHub apt repository."""
-    from importlib.resources import files
-
-    pkg = files("pycastle").joinpath("defaults")
-    content = (pkg / "Dockerfile.claude").read_text()
+    content = (pkg / "Dockerfile").read_text()
     assert "cli.github.com/packages" in content
     assert "apt-get install" in content and " gh" in content
 
 
-def test_dockerfile_codex_installs_gh_from_github_apt():
-    """Dockerfile.codex must install gh via the GitHub apt repository."""
+@pytest.mark.parametrize("service", ["claude", "codex", "opencode"])
+def test_service_specific_bundled_dockerfiles_are_not_present(service: str):
+    """Service-specific bundled Dockerfiles are stale and must not ship."""
     from importlib.resources import files
 
     pkg = files("pycastle").joinpath("defaults")
-    content = (pkg / "Dockerfile.codex").read_text()
-    assert "cli.github.com/packages" in content
-    assert "apt-get install" in content and " gh" in content
+    assert not (pkg / f"Dockerfile.{service}").is_file()
 
 
-@pytest.mark.parametrize("service", ["claude", "codex"])
-def test_default_agent_dockerfiles_install_ripgrep(service: str):
-    """Bundled default agent Dockerfiles must install ripgrep for workspace search."""
+def test_universal_dockerfile_installs_ripgrep():
+    """Bundled universal Dockerfile must install ripgrep for workspace search."""
     from importlib.resources import files
 
     pkg = files("pycastle").joinpath("defaults")
-    content = (pkg / f"Dockerfile.{service}").read_text()
+    content = (pkg / "Dockerfile").read_text()
     assert "ripgrep" in content
 
 

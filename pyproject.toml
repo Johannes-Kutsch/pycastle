@@ -49,8 +49,6 @@ pycastle = [
     "defaults/.gitignore",
     "defaults/config.py",
     "defaults/Dockerfile",
-    "defaults/Dockerfile.claude",
-    "defaults/Dockerfile.codex",
     "defaults/prompts/plan-prompt.md",
     "defaults/prompts/implement/behavior.md",
     "defaults/prompts/implement/refactor.md",

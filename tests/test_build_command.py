@@ -377,6 +377,9 @@ def test_packaging_includes_bundled_universal_dockerfile():
     package_data = Path("pyproject.toml").read_text(encoding="utf-8")
 
     assert '"defaults/Dockerfile",' in package_data
+    assert '"defaults/Dockerfile.claude",' not in package_data
+    assert '"defaults/Dockerfile.codex",' not in package_data
+    assert '"defaults/Dockerfile.opencode",' not in package_data
 
 
 def test_bundled_universal_dockerfile_installs_supported_clis_and_baseline_tools():
