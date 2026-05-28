@@ -212,6 +212,33 @@ def test_process_stream_planner_extracts_blocked_when_present():
     ]
 
 
+def test_process_stream_planner_accepts_concise_blocked_entries():
+    payload = json.dumps(
+        {
+            "issues": [{"number": 2, "title": "B"}],
+            "blocked": [{"number": 5, "title": "Unblock planner parsing"}],
+        }
+    )
+    lines = [_result_line(f"<plan>{payload}</plan>")]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == [{"number": 2, "title": "B"}]
+    assert result.blocked == [{"number": 5, "title": "Unblock planner parsing"}]
+
+
+def test_process_stream_planner_accepts_custom_blocked_entries():
+    payload = json.dumps(
+        {
+            "issues": [],
+            "blocked": [{"number": 5, "note": "waiting on maintainer"}],
+        }
+    )
+    lines = [_result_line(f"<plan>{payload}</plan>")]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.blocked == [{"number": 5, "note": "waiting on maintainer"}]
+
+
 def test_process_stream_planner_defaults_blocked_to_empty_when_absent():
     lines = [_result_line('<plan>{"issues": [{"number": 1, "title": "A"}]}</plan>')]
     result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
@@ -223,7 +250,7 @@ def test_process_stream_planner_raises_plan_parse_error_for_malformed_blocked():
     payload = json.dumps(
         {
             "issues": [],
-            "blocked": [{"number": 5}],  # missing blocked_by and reason
+            "blocked": [{"number": 5}],
         }
     )
     lines = [_result_line(f"<plan>{payload}</plan>")]

@@ -195,6 +195,15 @@ def test_template_enum_has_fifteen_variants():
     assert len(list(PromptTemplate)) == 15
 
 
+def test_shipped_plan_prompt_requests_concise_blocked_entries():
+    text = (_SHIPPED_PROMPTS_DIR / "plan-prompt.md").read_text(encoding="utf-8")
+
+    assert "`number`: the blocked issue's number" in text
+    assert "`title`: the blocked issue's title" in text
+    assert "`blocked_by`" not in text
+    assert "`reason`" not in text
+
+
 # ── Ctor validates: unknown token raises ─────────────────────────────────────
 
 

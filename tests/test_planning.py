@@ -410,6 +410,77 @@ def test_planning_phase_all_blocked_carries_blocked_list(tmp_path, git_svc):
     assert result.blocked == blocked
 
 
+def test_planning_phase_all_blocked_accepts_concise_blocked_entries(tmp_path, git_svc):
+    recording = RecordingStatusDisplay()
+    blocked = [
+        {"number": 5, "title": "Unblock planner parsing"},
+        {"number": 6, "title": "Keep planner status tolerant"},
+    ]
+    output = PlannerOutput(issues=[], blocked=blocked)
+    issues = [
+        {
+            "number": 5,
+            "title": "Unblock planner parsing",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["ready-for-agent", "behavior-slice"],
+        },
+        {
+            "number": 6,
+            "title": "Keep planner status tolerant",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["ready-for-agent", "docs-slice"],
+        },
+    ]
+    fake = FakeAgentRunner([output])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
+    result = asyncio.run(planning_phase(deps, issues, []))
+
+    assert isinstance(result, AllBlocked)
+    assert result.blocked == blocked
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must be removed"
+    assert (
+        plan_removes[0][2] == "All ready-for-agent issues are blocked:\n"
+        "  #5: Unblock planner parsing\n"
+        "  #6: Keep planner status tolerant"
+    )
+
+
+def test_planning_phase_all_blocked_accepts_custom_blocked_entries(tmp_path, git_svc):
+    recording = RecordingStatusDisplay()
+    blocked = [{"number": 5, "note": "waiting on maintainer"}]
+    output = PlannerOutput(issues=[], blocked=blocked)
+    issues = [
+        {
+            "number": 5,
+            "title": "Unblock planner parsing",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["ready-for-agent", "behavior-slice"],
+        },
+        {
+            "number": 6,
+            "title": "Keep planner status tolerant",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["ready-for-agent", "docs-slice"],
+        },
+    ]
+    fake = FakeAgentRunner([output])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
+    result = asyncio.run(planning_phase(deps, issues, []))
+
+    assert isinstance(result, AllBlocked)
+    assert result.blocked == blocked
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must be removed"
+    assert plan_removes[0][2] == "All ready-for-agent issues are blocked:\n  #5"
+
+
 # ── hydrate_planned_issues ──────────────────────────────────────────────────
 
 

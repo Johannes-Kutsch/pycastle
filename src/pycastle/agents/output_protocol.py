@@ -217,18 +217,29 @@ def _parse_planner_body(body: str) -> PlannerOutput:
     raw_blocked = data.get("blocked", [])
     try:
         blocked = [
-            {
-                "number": b["number"],
-                "blocked_by": b["blocked_by"],
-                "reason": b["reason"],
-            }
-            for b in raw_blocked
+            _normalize_blocked_entry(blocked_issue) for blocked_issue in raw_blocked
         ]
     except (KeyError, TypeError) as exc:
         raise PlanParseError(
             f"Plan JSON blocked list has unexpected structure: {exc}"
         ) from exc
     return PlannerOutput(issues=issues, blocked=blocked)
+
+
+def _normalize_blocked_entry(entry: dict) -> dict:
+    blocked = {"number": entry["number"]}
+    if "title" in entry:
+        blocked["title"] = entry["title"]
+    if "blocked_by" in entry:
+        blocked["blocked_by"] = entry["blocked_by"]
+    if "reason" in entry:
+        blocked["reason"] = entry["reason"]
+    for key, value in entry.items():
+        if key not in blocked:
+            blocked[key] = value
+    if len(blocked) == 1:
+        raise KeyError("title")
+    return blocked
 
 
 def _extract_issue_output(text: str) -> IssueOutput:

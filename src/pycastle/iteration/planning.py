@@ -264,8 +264,8 @@ async def planning_phase(
             if not output.issues:
                 blocker_summary = _planning_blocker_summary(slice_malformed, bad_body)
                 blocked_lines = [
-                    f"  #{b['number']} blocked by #{b['blocked_by']}: {b['reason']}"
-                    for b in output.blocked
+                    _format_blocked_issue_line(blocked_issue)
+                    for blocked_issue in output.blocked
                 ]
                 lines = [
                     "All ready-for-agent issues are blocked:"
@@ -296,3 +296,15 @@ async def planning_phase(
                 )
             )
             return hydrated
+
+
+def _format_blocked_issue_line(blocked_issue: dict) -> str:
+    number = blocked_issue["number"]
+    if "title" in blocked_issue:
+        return f"  #{number}: {blocked_issue['title']}"
+    if "blocked_by" in blocked_issue and "reason" in blocked_issue:
+        return (
+            f"  #{number} blocked by #{blocked_issue['blocked_by']}: "
+            f"{blocked_issue['reason']}"
+        )
+    return f"  #{number}"
