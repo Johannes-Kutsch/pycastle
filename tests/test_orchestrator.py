@@ -3186,7 +3186,13 @@ def test_exhausted_primary_dispatches_with_fallback_triple(tmp_path):
                 [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         if "Implement Agent" in request.name:
-            captured.append({"model": request.model, "effort": request.effort})
+            captured.append(
+                {
+                    "service": request.service,
+                    "model": request.model,
+                    "effort": request.effort,
+                }
+            )
             return CompletionOutput()
         return CompletionOutput()
 
@@ -3209,6 +3215,9 @@ def test_exhausted_primary_dispatches_with_fallback_triple(tmp_path):
     )
 
     assert len(captured) == 1, f"Expected one implement dispatch; got {len(captured)}"
+    assert captured[0]["service"] == "codex", (
+        f"Expected fallback service 'codex'; got {captured[0]['service']!r}"
+    )
     assert captured[0]["model"] == "fallback-model", (
         f"Expected fallback model 'fallback-model'; got {captured[0]['model']!r}"
     )
@@ -3288,7 +3297,13 @@ def test_primary_takes_precedence_when_both_services_available(tmp_path):
                 [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         if "Implement Agent" in request.name:
-            captured.append({"model": request.model, "effort": request.effort})
+            captured.append(
+                {
+                    "service": request.service,
+                    "model": request.model,
+                    "effort": request.effort,
+                }
+            )
             return CompletionOutput()
         return CompletionOutput()
 
@@ -3311,6 +3326,9 @@ def test_primary_takes_precedence_when_both_services_available(tmp_path):
     )
 
     assert len(captured) == 1
+    assert captured[0]["service"] == "claude", (
+        "Primary available: dispatch must use primary service, not fallback"
+    )
     assert captured[0]["model"] == "primary-model", (
         "Primary available: dispatch must use primary model, not fallback"
     )
@@ -3332,7 +3350,13 @@ def test_stage_with_no_fallback_behaves_as_before(tmp_path):
                 [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
         if "Implement Agent" in request.name:
-            captured.append({"model": request.model, "effort": request.effort})
+            captured.append(
+                {
+                    "service": request.service,
+                    "model": request.model,
+                    "effort": request.effort,
+                }
+            )
             return CompletionOutput()
         return CompletionOutput()
 
@@ -3348,6 +3372,7 @@ def test_stage_with_no_fallback_behaves_as_before(tmp_path):
     )
 
     assert len(captured) == 1
+    assert captured[0]["service"] == "claude"
     assert captured[0]["model"] == "my-model"
     assert captured[0]["effort"] == "medium"
 

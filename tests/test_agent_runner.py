@@ -2,6 +2,8 @@
 
 import asyncio
 import threading
+from collections.abc import Callable, Iterable, Iterator
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -27,6 +29,7 @@ from pycastle.errors import (
 )
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session import RunKind
+from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 
@@ -312,6 +315,59 @@ def _never_yields():
     yield  # make this a generator
 
 
+class _RecordingAgentService:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.commands: list[str] = []
+        self.env_state_dirs: list[str | None] = []
+
+    def build_command(
+        self,
+        role: AgentRole,
+        model: str,
+        effort: str,
+        run_kind: RunKind,
+        session_uuid: str | None,
+    ) -> str:
+        command = f"{self.name} exec"
+        self.commands.append(command)
+        return command
+
+    def build_env(
+        self,
+        state_dir_container_path: str | None = None,
+        token: str | None = None,
+    ) -> dict[str, str]:
+        self.env_state_dirs.append(state_dir_container_path)
+        return {"PYCASTLE_TEST_SERVICE": self.name}
+
+    def run(
+        self,
+        lines: Iterable[str],
+        on_thread_id: Callable[[str], None] | None = None,
+    ) -> Iterator[ParsedTurn]:
+        list(lines)
+        yield Result("<commit_message>done</commit_message>")
+
+    def is_available(self, now: datetime | None = None) -> bool:
+        return True
+
+    def next_wake_time(self) -> datetime:
+        return datetime.max
+
+    def mark_exhausted(self, reset_time: datetime | None) -> None:
+        pass
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        return None
+
+    def is_resumable(self, state_dir: Path) -> bool:
+        return False
+
+    def valid_efforts(self) -> frozenset[str]:
+        return frozenset({"low", "medium", "high"})
+
+
 # ── AgentRunner: run() return values ─────────────────────────────────────────
 
 
@@ -333,6 +389,63 @@ def test_agent_runner_run_returns_agent_output(tmp_path):
     )
 
     assert isinstance(result, CommitMessageOutput)
+
+
+def test_agent_runner_uses_default_service_from_registry_when_request_service_is_empty(
+    tmp_path,
+):
+    default_service = _RecordingAgentService("codex")
+    other_service = _RecordingAgentService("claude")
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path, default_service="codex"),
+        _make_git_service(),
+        docker_client=_make_docker_client([]),
+        service_registry={"claude": other_service, "codex": default_service},
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Test",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert default_service.commands == ["codex exec"]
+    assert other_service.commands == []
+
+
+def test_agent_runner_uses_requested_service_from_registry(tmp_path):
+    default_service = _RecordingAgentService("claude")
+    requested_service = _RecordingAgentService("codex")
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path, default_service="claude"),
+        _make_git_service(),
+        docker_client=_make_docker_client([]),
+        service_registry={"claude": default_service, "codex": requested_service},
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Test",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                service="codex",
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert requested_service.commands == ["codex exec"]
+    assert default_service.commands == []
 
 
 # ── AgentRunner: error propagation ───────────────────────────────────────────
