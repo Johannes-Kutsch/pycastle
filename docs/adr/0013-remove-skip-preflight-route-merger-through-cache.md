@@ -2,7 +2,7 @@
 
 The iteration-scoped preflight gate (`ensure_preflight` + `Deps.preflight_verdict`) collapses into a single `PreflightCache` owned by the orchestrator and threaded through every iteration's `Deps`. **One slot:** the most recently observed safe SHA's verdict (`PreflightReady | PreflightAFK | PreflightHITL`). Every save-SHA-consuming caller invokes `await deps.preflight_cache.get_safe_sha(deps)`; the method serialises via `asyncio.Lock`, runs `git pull --ff-only`, returns the cached verdict iff slot SHA matches HEAD, otherwise runs preflight in an ephemeral `transient_worktree("preflight-sandbox")` and updates the slot. Constructed once in `orchestrator.run()` outside the iteration loop.
 
-`RunRequest.skip_preflight`, `runner.preflight()` inside `agent_runner.run()`, and `PreflightFailure` deleted. The Merger — previously the only agent not passing `skip_preflight=True` — calls `get_safe_sha(deps)` directly inside `merge_phase` over post-clean-merge HEAD and pattern-matches: `PreflightReady` → construct merge-sandbox at `verdict.sha`; `PreflightAFK | PreflightHITL` → soft-skip returning `MergeResult(clean, conflicts)`.
+`RunRequest.skip_preflight`, `runner.preflight()` inside `agent_runner.run()`, and `PreflightFailure` deleted. The Merger — previously the only agent not passing `skip_preflight=True` — calls `get_safe_sha(deps)` directly inside `merge_phase` over post-clean-merge HEAD and pattern-matches: `PreflightReady` → construct merge-sandbox at `verdict.sha`; `PreflightAFK | PreflightHITL` → skip Merger and surface the preflight blocker to the iteration driver.
 
 Trigger was #639: iteration 2 re-ran preflight over the same improve-sandbox at the same HEAD after a usage-limit account switch. Two redundancies: `Deps.preflight_verdict` is reconstructed every iteration; "is this SHA safe" is structurally content-addressable.
 
@@ -30,3 +30,7 @@ Trigger was #639: iteration 2 re-ran preflight over the same improve-sandbox at 
 - All three verdict types expose uniform `.sha` (`PreflightHITL.worktree_sha` → `sha`).
 - `git_svc.pull()` runs inside every `get_safe_sha()`, gated by the lock. Normal flow: no-op pull + cache hit.
 - Tests injecting `Deps.preflight_verdict` migrate to seeding `PreflightCache._verdict` or a subclass returning a fixture verdict.
+
+## Amendment: merge-time AFK routes before conflict resume
+
+Issue #1022 exposed that treating merge-time `PreflightAFK` as only a soft-skip creates an endless retry pattern when conflict branches are in flight. The chosen contract is: a merge-time `PreflightAFK` or `PreflightHITL` is returned to the iteration boundary. AFK routes only the freshly-filed preflight issue through implement/review/merge first; remaining conflict branches stay open and resume only after the preflight-fix path establishes a green safe SHA.
