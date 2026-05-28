@@ -717,6 +717,47 @@ def test_renderer_aborts_on_broken_local_shared_framing_override(tmp_path, monke
         PromptRenderer(Config())
 
 
+def test_renderer_allows_empty_local_shared_framing_override(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "_implement-review-shared-framing.md").write_text("")
+    renderer = PromptRenderer(Config())
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.REVIEW,
+            {
+                "ISSUE_NUMBER": "1",
+                "ISSUE_TITLE": "t",
+                "ISSUE_BODY": "",
+                "ISSUE_COMMENTS": "",
+                "BRANCH": "pycastle/issue-1",
+                "INTERRUPTED_WORK": "",
+            },
+            _noop_exec,
+        )
+    )
+
+    bundled_framing = (
+        _SHIPPED_PROMPTS_DIR / "_implement-review-shared-framing.md"
+    ).read_text(encoding="utf-8")
+
+    assert bundled_framing not in result
+
+
+def test_renderer_aborts_when_shared_framing_referenced_but_absent(prompts_dir):
+    custom_prompts_dir = prompts_dir.parent / "custom-prompts"
+    custom_prompts_dir.mkdir(parents=True)
+    (custom_prompts_dir / "review-prompt.md").write_text(
+        "{{IMPLEMENT_REVIEW_SHARED_FRAMING}}"
+    )
+    cfg = _cfg_for_prompts_dir(custom_prompts_dir)
+
+    with pytest.raises(PromptRenderError, match="_implement-review-shared-framing"):
+        PromptRenderer(cfg)
+
+
 def test_renderer_aborts_when_issue_tracker_referenced_but_absent(prompts_dir):
     custom_prompts_dir = prompts_dir.parent / "custom-prompts"
     (custom_prompts_dir / "improve").mkdir(parents=True)
