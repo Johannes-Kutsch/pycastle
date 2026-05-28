@@ -13,6 +13,7 @@ _DECLARED_TOOL_MISSING_PATTERNS = (
     ),
 )
 _REQUIREMENT_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+_PYTHON_MODULE_LAUNCHERS = {"py"}
 
 
 def _normalize_package_name(name: str) -> str:
@@ -31,6 +32,12 @@ def _configured_tool_name(command: str, check_name: str) -> str:
         parts = shlex.split(command)
     except ValueError:
         parts = command.split()
+    if len(parts) >= 3:
+        launcher = _normalize_package_name(Path(parts[0]).name)
+        if (launcher in _PYTHON_MODULE_LAUNCHERS or launcher.startswith("python")) and (
+            parts[1] == "-m"
+        ):
+            return _normalize_package_name(parts[2])
     if parts:
         return _normalize_package_name(Path(parts[0]).name)
     return _normalize_package_name(check_name)
@@ -68,30 +75,30 @@ def load_python_dependency_metadata(project_root: Path) -> PythonDependencyMetad
     if pyproject_path.exists():
         data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
         project = data.get("project")
-        if not isinstance(project, dict):
-            return PythonDependencyMetadata(declared_packages=frozenset())
+        if isinstance(project, dict):
+            requirements: list[str] = []
+            dependencies = project.get("dependencies")
+            if isinstance(dependencies, list):
+                requirements.extend(req for req in dependencies if isinstance(req, str))
 
-        requirements: list[str] = []
-        dependencies = project.get("dependencies")
-        if isinstance(dependencies, list):
-            requirements.extend(req for req in dependencies if isinstance(req, str))
+            optional_dependencies = project.get("optional-dependencies")
+            if isinstance(optional_dependencies, dict):
+                for extra_requirements in optional_dependencies.values():
+                    if isinstance(extra_requirements, list):
+                        requirements.extend(
+                            req for req in extra_requirements if isinstance(req, str)
+                        )
 
-        optional_dependencies = project.get("optional-dependencies")
-        if isinstance(optional_dependencies, dict):
-            for extra_requirements in optional_dependencies.values():
-                if isinstance(extra_requirements, list):
-                    requirements.extend(
-                        req for req in extra_requirements if isinstance(req, str)
-                    )
-
-        return PythonDependencyMetadata(
-            declared_packages=frozenset(
+            declared_packages = frozenset(
                 name
                 for req in requirements
                 if (name := _requirement_name(req)) is not None
-            ),
-            source=pyproject_path.name,
-        )
+            )
+            if declared_packages:
+                return PythonDependencyMetadata(
+                    declared_packages=declared_packages,
+                    source=pyproject_path.name,
+                )
 
     requirements_path = project_root / "requirements.txt"
     if not requirements_path.exists():
