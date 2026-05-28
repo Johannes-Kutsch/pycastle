@@ -528,6 +528,49 @@ def test_renderer_aborts_when_issue_tracker_referenced_but_absent(prompts_dir):
         PromptRenderer(cfg)
 
 
+def test_renderer_uses_bundled_prompt_when_default_local_prompt_is_absent(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    renderer = PromptRenderer(Config())
+    shipped_renderer = _make_shipped_prompt_renderer()
+
+    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
+    shipped_result = _run(
+        shipped_renderer.render(PromptTemplate.RESUME, {}, _noop_exec)
+    )
+
+    assert result == shipped_result
+
+
+def test_renderer_prefers_local_override_over_bundled_prompt(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "_resume-prompt.md").write_text("local resume prompt")
+    renderer = PromptRenderer(Config())
+
+    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
+
+    assert result == "local resume prompt"
+
+
+def test_renderer_mixes_local_and_bundled_shared_prompt_files(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    standards_dir = tmp_path / "pycastle" / "prompts" / "coding-standards"
+    standards_dir.mkdir(parents=True)
+    (standards_dir / "design.md").write_text("local design guidance")
+    renderer = PromptRenderer(Config())
+
+    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+    bundled_implementation = (
+        _SHIPPED_PROMPTS_DIR / "coding-standards" / "implementation.md"
+    ).read_text(encoding="utf-8")
+
+    assert "local design guidance" in result
+    assert bundled_implementation in result
+
+
 def test_render_shipped_preflight_issue_prompt():
     renderer = _make_shipped_prompt_renderer()
 
