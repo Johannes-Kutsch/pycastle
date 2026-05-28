@@ -2335,8 +2335,8 @@ def test_run_calls_check_auth_before_iteration(tmp_path):
     assert "get_open_issues" in call_order
 
 
-def test_run_prints_authenticated_login_at_startup(tmp_path):
-    """run() must print 'Authenticated as @<login>' once at startup after check_auth succeeds."""
+def test_run_prints_github_authenticated_login_at_startup(tmp_path):
+    """run() must print a GitHub-specific auth line with the authenticated login."""
     recording = RecordingStatusDisplay()
     mock_github = _make_github_svc()
     mock_github.check_auth.return_value = "octocat"
@@ -2352,10 +2352,10 @@ def test_run_prints_authenticated_login_at_startup(tmp_path):
     auth_prints = [
         c
         for c in recording.calls
-        if c[0] == "print" and isinstance(c[2], str) and "Authenticated as @" in c[2]
+        if c[0] == "print" and isinstance(c[2], str) and "GitHub auth:" in c[2]
     ]
     assert len(auth_prints) == 1, f"Expected one auth-summary print; got {auth_prints}"
-    assert auth_prints[0][2] == "Authenticated as @octocat"
+    assert auth_prints[0][2] == "GitHub auth: authenticated as @octocat"
 
 
 def test_run_exits_when_github_auth_error(tmp_path, capsys):
@@ -2944,6 +2944,26 @@ def test_pool_summary_printed_at_startup_with_primary_only(tmp_path):
 
     msgs = [c[2] for c in recording.calls if c[0] == "print"]
     assert any("Claude accounts: primary (active)" in str(m) for m in msgs)
+
+
+def test_codex_auth_summary_printed_at_startup(tmp_path):
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.return_value = []
+    recording = RecordingStatusDisplay()
+
+    async def _fake_run_agent(request: RunRequest):
+        return CompletionOutput()
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        github_service=mock_github,
+        service_registry=ServiceRegistry({"codex": _FakeService()}),
+        status_display=recording,
+    )
+
+    msgs = [c[2] for c in recording.calls if c[0] == "print"]
+    assert any("Codex auth: local auth available" in str(m) for m in msgs)
 
 
 # ── ensure_session_excludes ───────────────────────────────────────────────────

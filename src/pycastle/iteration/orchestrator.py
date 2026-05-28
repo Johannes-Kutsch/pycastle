@@ -166,7 +166,7 @@ async def run(
         )
         sys.exit(1)
 
-    status_display.print("", f"Authenticated as @{login}")  # type: ignore[union-attr]
+    status_display.print("", f"GitHub auth: authenticated as @{login}")  # type: ignore[union-attr]
 
     if service_registry:
         for line in service_registry.summary_lines():
@@ -234,8 +234,7 @@ async def run(
             except GithubAPIError as exc:
                 status_display.print(  # type: ignore[union-attr]
                     "",
-                    "GitHub repository access failed:"
-                    f" {exc}",
+                    f"GitHub repository access failed: {exc}",
                 )
                 sys.exit(1)
             improve_dispatched_count = deps.improve_dispatched_count
