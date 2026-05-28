@@ -10,6 +10,7 @@ from pycastle.errors import (
     AgentFailedError,
     AgentTimeoutError,
     HardAgentError,
+    SetupPhaseError,
     TransientAgentError,
     UsageLimitError,
 )
@@ -240,15 +241,13 @@ def test_run_iteration_returns_setup_abort_when_preflight_setup_fails(
     tmp_path, git_svc, github_svc, logger
 ):
     """A Setup-phase preflight failure aborts before check diagnosis begins."""
-    from pycastle.errors import DockerError
-
     deps = _make_deps(
         tmp_path,
         lambda request: CompletionOutput(),
         git_svc=git_svc,
         github_svc=github_svc,
         logger=logger,
-        preflight_responses=[DockerError("pip install failed")],
+        preflight_responses=[SetupPhaseError("preflight", "pip install failed")],
     )
 
     result = asyncio.run(run_iteration(deps))

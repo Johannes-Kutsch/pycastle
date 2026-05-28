@@ -14,7 +14,7 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.runner import RunRequest
 from pycastle.config import StageOverride
-from pycastle.errors import AgentTimeoutError, UsageLimitError
+from pycastle.errors import AgentTimeoutError, SetupPhaseError, UsageLimitError
 from pycastle.services import (
     GitCommandError,
     GithubAPIError,
@@ -3717,10 +3717,10 @@ def test_orchestrator_files_upstream_bug_and_exits_on_preflight_setup_failure(
     tmp_path,
 ):
     """Preflight setup failures abort before diagnosis and route through the upstream bug-report path."""
-    from pycastle.errors import DockerError
-
     github_svc = _make_github_svc()
-    runner = FakeAgentRunner(preflight_responses=[DockerError("pip install failed")])
+    runner = FakeAgentRunner(
+        preflight_responses=[SetupPhaseError("preflight", "pip install failed")]
+    )
     display = RecordingStatusDisplay()
 
     with pytest.raises(SystemExit) as exc_info:
@@ -3935,8 +3935,6 @@ def test_orchestrator_prints_setup_failure_details_locally(tmp_path):
 
 def test_orchestrator_handles_empty_preflight_setup_failure_message(tmp_path):
     """Setup-phase aborts must stay setup-specific even when the underlying error text is empty."""
-    from pycastle.errors import DockerError
-
     with patch(
         "pycastle.iteration.orchestrator.auto_file_issue",
         return_value="https://example.com/upstream/1",
@@ -3944,7 +3942,9 @@ def test_orchestrator_handles_empty_preflight_setup_failure_message(tmp_path):
         with pytest.raises(SystemExit) as exc_info:
             _run(
                 tmp_path,
-                agent_runner=FakeAgentRunner(preflight_responses=[DockerError("")]),
+                agent_runner=FakeAgentRunner(
+                    preflight_responses=[SetupPhaseError("preflight", "")]
+                ),
                 github_service=_make_github_svc(),
                 git_service=_make_git_svc(),
             )

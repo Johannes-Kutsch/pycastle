@@ -12,6 +12,7 @@ import shutil
 
 from pycastle.agents.output_protocol import CompletionOutput, IssueOutput
 from pycastle.config import Config, StageOverride
+from pycastle.errors import DockerError
 from pycastle.services import (
     GitCommandError,
     GitService,
@@ -558,6 +559,22 @@ def test_get_safe_sha_propagates_non_conflict_pull_error_without_spawning_agent(
         asyncio.run(cache.get_safe_sha(deps))
 
     assert len(fake.calls) == 0
+
+
+def test_get_safe_sha_does_not_reclassify_non_setup_runner_failures_as_setup(
+    tmp_path, git_svc, github_svc
+):
+    """Non-setup runner failures must keep their existing routing instead of being
+    coerced into SetupPhaseError at the cache boundary."""
+    fake = FakeAgentRunner(
+        [],
+        preflight_responses=[DockerError("preflight container stream broke")],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(DockerError, match="preflight container stream broke"):
+        asyncio.run(cache.get_safe_sha(deps))
 
 
 # ── get_safe_sha: unrelated histories auto-recovery ──────────────────────────
