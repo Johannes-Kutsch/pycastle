@@ -139,6 +139,17 @@ class AgentRunner:
             auto_overlay=auto_overlay,
         )
 
+    def _build_preflight_session(self, mount_path: Path) -> DockerSession:
+        volumes, auto_overlay = build_volume_spec(mount_path)
+        return DockerSession(
+            volumes=volumes,
+            container_env=dict(self._env),
+            image_name=image_name_for(self._cfg.docker_image_name, ""),
+            cfg=self._cfg,
+            docker_client=self._docker_client,
+            auto_overlay=auto_overlay,
+        )
+
     def _host_codex_auth_path(self) -> Path:
         host_auth = Path.home() / ".codex" / "auth.json"
         if not host_auth.exists():
@@ -400,7 +411,6 @@ class AgentRunner:
         if status_display is None:
             status_display = PlainStatusDisplay()
 
-        service = self._resolve_service()
         git_name = self._git_service.get_user_name()
         git_email = self._git_service.get_user_email()
         async with status_row(
@@ -411,13 +421,12 @@ class AgentRunner:
             work_body=work_body,
             color_key=None,
         ) as row:
-            session = self._build_session(mount_path, service)
+            session = self._build_preflight_session(mount_path)
             runner = ContainerRunner(
                 name,
                 session,
                 status_display=status_display,
                 cfg=self._cfg,
-                service=service,
             )
             try:
                 await runner.setup(git_name, git_email, work_body)

@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 import re
 from pathlib import Path
-from typing import Protocol, TypeAlias
+from typing import Protocol, TypeAlias, cast
 
 from ..agents.output_protocol import (
     AgentOutputProtocolError,
@@ -16,12 +16,14 @@ from ..services import (
     GitCommandError,
     GitService,
     GithubService,
+    ServiceRegistry,
     UnrelatedHistoriesError,
 )
 from ..session import RoleSession
 from ..agents.classifier import WellFormed, classify_slice, slice_labels
 from ..display.status_display import StatusDisplay
 from ._utils import _wait_for_clean_working_tree, is_well_formed_body
+from .. import _time as _time_module
 
 
 @dataclasses.dataclass(frozen=True)
@@ -170,6 +172,13 @@ class PreflightCache:
         self._lock: asyncio.Lock = asyncio.Lock()
         self._branch_refresh = BranchRefreshBoundary()
 
+    def _resolved_preflight_issue_override(self, deps: _PreflightDeps):
+        registry = cast(ServiceRegistry | None, getattr(deps, "service_registry", None))
+        override = deps.cfg.preflight_issue_override
+        if registry is None:
+            return override
+        return registry.resolve(override, _time_module.now_local())
+
     async def _handle_failure(
         self,
         failures: tuple[tuple[str, str, str], ...],
@@ -178,6 +187,7 @@ class PreflightCache:
         sha: str,
     ) -> PreflightHITL | PreflightAFK:
         check_name, command, output = failures[0]
+        override = self._resolved_preflight_issue_override(deps)
         agent_result = await deps.agent_runner.run(
             RunRequest(
                 name="Pre-Flight Reporter",
@@ -189,9 +199,9 @@ class PreflightCache:
                     "COMMAND": command,
                     "OUTPUT": output,
                 },
-                model=deps.cfg.preflight_issue_override.model,
-                effort=deps.cfg.preflight_issue_override.effort,
-                service=deps.cfg.preflight_issue_override.service,
+                model=override.model,
+                effort=override.effort,
+                service=override.service,
                 status_display=deps.status_display,
                 work_body=f"reporting {check_name} issue",
             )

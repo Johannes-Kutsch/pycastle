@@ -193,9 +193,6 @@ async def run(
                     ),
                     review_override=service_registry.resolve(cfg.review_override, _now),
                     merge_override=service_registry.resolve(cfg.merge_override, _now),
-                    preflight_issue_override=service_registry.resolve(
-                        cfg.preflight_issue_override, _now
-                    ),
                     improve_override=service_registry.resolve(
                         cfg.improve_override, _now
                     ),
@@ -224,6 +221,7 @@ async def run(
                 cfg=_iter_cfg,
                 logger=FileLogger(_iter_cfg.logs_dir),
                 status_display=status_display,  # type: ignore[arg-type]
+                service_registry=service_registry,
                 improve_mode=improve_mode,
                 slept_once=slept_once,
                 improve_dispatched_count=improve_dispatched_count,

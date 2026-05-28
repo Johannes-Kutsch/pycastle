@@ -177,6 +177,16 @@ class _FakeService:
         return iter([])
 
 
+class _RecordingServiceRegistry(ServiceRegistry):
+    def __init__(self, services):
+        super().__init__(services)
+        self.resolve_calls: list[tuple[str, str, str]] = []
+
+    def resolve(self, override: StageOverride, now: datetime) -> StageOverride:
+        self.resolve_calls.append((override.service, override.model, override.effort))
+        return super().resolve(override, now)
+
+
 def _write_config(tmp_path: Path, **kwargs) -> None:
     (tmp_path / "pycastle").mkdir(exist_ok=True)
     lines = ["from pycastle import StageOverride", "from pathlib import Path"]
@@ -3022,6 +3032,29 @@ def test_codex_auth_summary_printed_at_startup(tmp_path):
 
     msgs = [c[2] for c in recording.calls if c[0] == "print"]
     assert any("Codex auth: local auth available" in str(m) for m in msgs)
+
+
+def test_run_does_not_resolve_preflight_issue_override_before_failure_dispatch(
+    tmp_path,
+):
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.return_value = []
+    registry = _RecordingServiceRegistry({"codex": _FakeService()})
+    preflight_override = StageOverride(
+        service="codex",
+        model="gpt-5.2",
+        effort="low",
+    )
+
+    _run(
+        tmp_path,
+        agent_runner=FakeAgentRunner([], preflight_responses=[[]]),
+        github_service=mock_github,
+        service_registry=registry,
+        preflight_issue_override=preflight_override,
+    )
+
+    assert ("codex", "gpt-5.2", "low") not in registry.resolve_calls
 
 
 # ── ensure_session_excludes ───────────────────────────────────────────────────
