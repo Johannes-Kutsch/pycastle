@@ -174,6 +174,8 @@ def _cleanup_stale_sandbox(
     repo_path: Path,
     wt_path: Path,
     branch: str,
+    *,
+    replace_preserved_failure: bool,
 ) -> None:
     """Remove any stale worktree and/or branch for an ephemeral sandbox.
 
@@ -181,6 +183,8 @@ def _cleanup_stale_sandbox(
     fresh at the caller-supplied SHA, regardless of what a prior run left
     behind. Best-effort: subsequent _create_worktree surfaces real errors.
     """
+    if not replace_preserved_failure and is_failure_worktree_preserved(wt_path):
+        return
     try:
         registered = svc.list_worktrees(repo_path)
     except Exception:
@@ -200,11 +204,18 @@ async def managed_worktree(
     branch: str,
     sha: str | None,
     delete_branch_on_teardown: bool,
+    replace_preserved_failure: bool = False,
     deps: _WorktreeDeps,
 ):
     path = worktree_path(name, deps)
     if delete_branch_on_teardown:
-        _cleanup_stale_sandbox(deps.git_svc, deps.repo_root, path, branch)
+        _cleanup_stale_sandbox(
+            deps.git_svc,
+            deps.repo_root,
+            path,
+            branch,
+            replace_preserved_failure=replace_preserved_failure,
+        )
         _create_worktree(deps.git_svc, deps.repo_root, path, branch, sha)
     elif not is_worktree_reusable(path, branch, deps.git_svc):
         _create_worktree(deps.git_svc, deps.repo_root, path, branch, sha)

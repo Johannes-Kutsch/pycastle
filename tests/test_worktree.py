@@ -1664,8 +1664,8 @@ def test_ephemeral_sandbox_rebuilds_at_sha_when_stale_divergent_branch_exists(re
     )
 
 
-def test_ephemeral_sandbox_rebuilds_at_sha_when_stale_reusable_worktree_exists(repo):
-    """AC#2: delete_branch_on_teardown=True + reusable stale worktree → worktree HEAD is sha."""
+def test_ephemeral_sandbox_reuses_preserved_failure_worktree_by_default(repo):
+    """AC#2: preserved failure sandboxes stay intact on the default fresh-sandbox path."""
     cfg = Config(pycastle_dir=".pycastle")
     deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
 
@@ -1707,7 +1707,7 @@ def test_ephemeral_sandbox_rebuilds_at_sha_when_stale_reusable_worktree_exists(r
 
     assert sha_stale != sha_main
 
-    # Enter ephemeral sandbox with sha=sha_main — must rebuild at sha_main, not hand back stale
+    # Enter ephemeral sandbox with sha=sha_main — preserved failure evidence must survive.
     head_inside: list[str] = []
 
     async def _run():
@@ -1722,9 +1722,65 @@ def test_ephemeral_sandbox_rebuilds_at_sha_when_stale_reusable_worktree_exists(r
 
     asyncio.run(_run())
 
-    assert head_inside == [sha_main], (
-        f"worktree HEAD was {head_inside[0]!r}, expected sha_main={sha_main!r}"
+    assert head_inside == [sha_stale], (
+        f"worktree HEAD was {head_inside[0]!r}, expected preserved sha_stale={sha_stale!r}"
     )
+    assert (wt_dir / ".pycastle-session" / ".preserved-failure").is_file()
+
+
+def test_ephemeral_sandbox_can_replace_preserved_failure_worktree_when_requested(repo):
+    """AC#3: callers can explicitly request a fresh sandbox replacement."""
+    cfg = Config(pycastle_dir=".pycastle")
+    deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
+
+    sha_base = _git(repo, "rev-parse", "HEAD")
+
+    (repo / "main_extra_replace.txt").write_text("extra replace")
+    _git(repo, "add", "main_extra_replace.txt")
+    _git(repo, "commit", "-m", "main extra replace")
+    sha_main = _git(repo, "rev-parse", "HEAD")
+
+    wt_dir = repo / ".pycastle" / ".worktrees" / "merge-sandbox"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "worktree",
+            "add",
+            "-b",
+            "pycastle/merge-sandbox",
+            str(wt_dir),
+            sha_base,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    (wt_dir / "stale-replace.txt").write_text("stale replace")
+    _git(wt_dir, "add", "stale-replace.txt")
+    _git(wt_dir, "commit", "-m", "stale replace commit")
+    (wt_dir / ".pycastle-session" / "merger").mkdir(parents=True)
+    (wt_dir / ".pycastle-session" / ".preserved-failure").write_text("")
+
+    head_inside: list[str] = []
+
+    async def _run():
+        async with managed_worktree(
+            "merge-sandbox",
+            branch="pycastle/merge-sandbox",
+            sha=sha_main,
+            delete_branch_on_teardown=True,
+            replace_preserved_failure=True,
+            deps=deps,
+        ) as path:
+            head_inside.append(_git(path, "rev-parse", "HEAD"))
+
+    asyncio.run(_run())
+
+    assert head_inside == [sha_main], (
+        f"worktree HEAD was {head_inside[0]!r}, expected fresh sha_main={sha_main!r}"
+    )
+    assert not (wt_dir / ".pycastle-session" / ".preserved-failure").exists()
 
 
 def test_non_ephemeral_worktree_reuses_existing_branch_tip(repo):
