@@ -63,7 +63,10 @@ def test_check_refreshes_branch_runs_host_checks_and_cleans_up(tmp_path, monkeyp
         "text = Path('checked.txt').read_text(); "
         "assert text == 'fresh\\n', text"
     )
-    command = f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}"
+    if platform.system() == "Windows":
+        command = subprocess.list2cmdline([sys.executable, "-c", script])
+    else:
+        command = shlex.join([sys.executable, "-c", script])
     (pycastle_dir / "config.py").write_text(
         f'host_checks = (("freshness", {command!r}),)\n'
     )
