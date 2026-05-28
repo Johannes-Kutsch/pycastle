@@ -1,3 +1,5 @@
+Only work on the issue specified.
+
 Work on branch {{BRANCH}}.
 
 </task>

@@ -2,7 +2,7 @@
 
 Fix issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
-Only work on the issue specified. {{IMPLEMENT_REVIEW_SHARED_FRAMING}}
+{{IMPLEMENT_REVIEW_SHARED_FRAMING}}
 
 ## 1. Explore
 
