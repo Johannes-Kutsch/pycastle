@@ -208,12 +208,11 @@ class PromptRenderer:
         allowed_args: dict[str, str],
         required: bool,
     ) -> str:
-        path = self._prompt_source.resolve(relative_path)
-        if not path.exists():
+        content = self._prompt_source.maybe_read_text(relative_path)
+        if content is None:
             if required:
                 raise PromptRenderError(f"Missing prompt fragment: {relative_path}")
             return ""
-        content = path.read_text(encoding="utf-8")
         found = set(PLACEHOLDER.findall(content))
         found |= {m.group(1) for m in CONDITIONAL_BLOCK.finditer(content)}
         unknown = found - allowed_args.keys()
@@ -270,10 +269,9 @@ class PromptRenderer:
     def _validate_templates(self) -> None:
         global_keys = set(self._global_args.keys()) | set(self._DYNAMIC_SHARED_FILES)
         for template in PromptTemplate:
-            path = self._prompt_source.resolve(template.filename)
-            if not path.exists():
+            content = self._prompt_source.maybe_read_text(template.filename)
+            if content is None:
                 continue
-            content = path.read_text(encoding="utf-8")
             found = set(PLACEHOLDER.findall(content))
             found |= {m.group(1) for m in CONDITIONAL_BLOCK.finditer(content)}
             allowed = global_keys | template.scope.placeholders
@@ -312,8 +310,7 @@ class PromptRenderer:
                 f"scope_args mismatch for {template.name}: {'; '.join(parts)}"
             )
 
-        path = self._prompt_source.resolve(template.filename)
-        content = path.read_text(encoding="utf-8")
+        content = self._prompt_source.read_text(template.filename)
         preprocessed = await _preprocess(content, exec_fn)
         all_args = {**self._global_args, **scope_args}
         for key, filename in self._DYNAMIC_SHARED_FILES.items():

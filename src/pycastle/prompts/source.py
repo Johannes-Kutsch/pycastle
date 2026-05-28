@@ -32,3 +32,14 @@ class PromptSource:
             if bundled_path.exists():
                 return bundled_path
         return local_path
+
+    def exists(self, relative_path: str) -> bool:
+        return self.resolve(relative_path).exists()
+
+    def read_text(self, relative_path: str) -> str:
+        return self.resolve(relative_path).read_text(encoding="utf-8")
+
+    def maybe_read_text(self, relative_path: str) -> str | None:
+        if not self.exists(relative_path):
+            return None
+        return self.read_text(relative_path)
