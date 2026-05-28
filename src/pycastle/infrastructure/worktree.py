@@ -16,9 +16,10 @@ from ..errors import (
     WorktreeTimeoutError,
 )
 from ..services import GitCommandError, GitService, GitTimeoutError
-from ..session import any_role_dir_present
+from ..session import SESSION_DIR_NAME, any_role_dir_present
 
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
+PRESERVED_FAILURE_MARKER = ".preserved-failure"
 
 
 class _WorktreeDeps(Protocol):
@@ -53,6 +54,17 @@ def remove_worktrees_dir_if_empty(worktrees_dir: Path) -> None:
         worktrees_dir.rmdir()
 
 
+def is_failure_worktree_preserved(path: Path) -> bool:
+    marker = path / SESSION_DIR_NAME / PRESERVED_FAILURE_MARKER
+    return marker.is_file()
+
+
+def mark_failure_worktree_preserved(path: Path) -> None:
+    marker = path / SESSION_DIR_NAME / PRESERVED_FAILURE_MARKER
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("", encoding="utf-8")
+
+
 def prune_orphan_worktrees(
     repo_root: Path,
     cfg: Config | None = None,
@@ -66,6 +78,8 @@ def prune_orphan_worktrees(
     active = {str(p) for p in svc.list_worktrees(repo_root)}
     for child in list(worktrees_dir.iterdir()):
         if not child.is_dir():
+            continue
+        if is_failure_worktree_preserved(child):
             continue
         if str(child.resolve()) not in active:
             shutil.rmtree(child)
@@ -234,6 +248,7 @@ async def managed_worktree(
         yield path
     except (UsageLimitError, TransientAgentError, HardAgentError):
         _preservation_worthy_exc = True
+        mark_failure_worktree_preserved(path)
         raise
     finally:
         try:
@@ -260,6 +275,7 @@ async def transient_worktree(name: str, *, sha: str | None, deps: _WorktreeDeps)
         yield path
     except AgentFailedError:
         _preserve = True
+        mark_failure_worktree_preserved(path)
         raise
     finally:
         if not _preserve:
