@@ -133,6 +133,16 @@ async def _close_issues_parallel(
                 on_error(issue["number"], r)
 
 
+def _ensure_conflict_branches_are_merged(
+    issues: list[dict], sandbox_path: Path, deps: _MergeDeps
+) -> None:
+    for issue in issues:
+        branch = branch_for(issue["number"])
+        if deps.git_svc.is_ancestor(branch, sandbox_path):
+            continue
+        raise RuntimeError(f"{branch} is not a merged branch")
+
+
 async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
     async with status_row(
         deps.status_display,
@@ -228,6 +238,9 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                         stage="pre-merge",
                         work_body=f"Merging {len(conflict_issues)} Branches",
                     )
+                )
+                _ensure_conflict_branches_are_merged(
+                    conflict_issues, sandbox_path, deps
                 )
                 deps.git_svc.fast_forward_branch(
                     deps.repo_root, target_branch, MERGE_SANDBOX
