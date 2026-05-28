@@ -2284,6 +2284,50 @@ def test_refresh_does_not_print_config_py_or_env_even_when_present(
     assert ".env" not in out
 
 
+def test_refresh_reports_overwritten_managed_scaffold_but_ignores_service_dockerfile(
+    tmp_path, monkeypatch, capsys
+):
+    """Refresh reports managed overwrites and keeps stale service Dockerfiles out of ownership."""
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    refresh()
+    capsys.readouterr()
+
+    (pycastle_dir / "config.py.example").write_text("# stale example\n")
+    dockerfile = pycastle_dir / "Dockerfile.claude"
+    dockerfile.write_text("FROM stale\n")
+
+    refresh()
+    out = capsys.readouterr().out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert lines == ["overwrote config.py.example"]
+    assert dockerfile.read_text() == "FROM stale\n"
+
+
+def test_refresh_treats_crlf_config_example_as_unchanged(tmp_path, monkeypatch, capsys):
+    """Refresh does not report a text-identical config.py.example as overwritten."""
+    from pycastle.commands.init import _CONFIG_EXAMPLE_TEMPLATE, refresh
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    refresh()
+    capsys.readouterr()
+
+    (pycastle_dir / "config.py.example").write_bytes(
+        _CONFIG_EXAMPLE_TEMPLATE.replace("\n", "\r\n").encode()
+    )
+
+    refresh()
+    out = capsys.readouterr().out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert len(lines) == 1
+    assert "up to date" in lines[0].lower()
+
+
 @pytest.mark.parametrize(
     ("rel_path", "content"),
     [
