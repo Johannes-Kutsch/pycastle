@@ -45,6 +45,10 @@ def _make_cfg(tmp_path: Path, **kwargs) -> Config:
     return Config(logs_dir=tmp_path, prompts_dir=prompts_dir, **kwargs)
 
 
+def _run_request(*, service: str = "claude", **kwargs) -> RunRequest:
+    return RunRequest(service=service, **kwargs)
+
+
 _PLAN_TEMPLATE = PromptTemplate.PLAN
 _PLAN_SCOPE_ARGS = {"ALL_OPEN_ISSUES_JSON": "[]", "READY_FOR_AGENT_ISSUES_JSON": "[]"}
 
@@ -92,7 +96,7 @@ def test_fake_agent_runner_returns_queued_completion_output():
     fake = FakeAgentRunner([CompletionOutput()])
     result = asyncio.run(
         fake.run(
-            RunRequest(
+            _run_request(
                 name="Tester",
                 template=_PLAN_TEMPLATE,
                 mount_path=Path("/workspace"),
@@ -107,7 +111,7 @@ def test_fake_agent_runner_raises_queued_exception():
     with pytest.raises(RuntimeError, match="boom"):
         asyncio.run(
             fake.run(
-                RunRequest(
+                _run_request(
                     name="Tester",
                     template=_PLAN_TEMPLATE,
                     mount_path=Path("/workspace"),
@@ -121,7 +125,7 @@ def test_fake_agent_runner_raises_assertion_error_when_queue_exhausted():
     with pytest.raises(AssertionError, match="queue exhausted"):
         asyncio.run(
             fake.run(
-                RunRequest(
+                _run_request(
                     name="Unexpected",
                     template=_PLAN_TEMPLATE,
                     mount_path=Path("/workspace"),
@@ -135,7 +139,7 @@ def test_fake_agent_runner_exhaustion_error_includes_agent_name():
     with pytest.raises(AssertionError, match="MyAgent"):
         asyncio.run(
             fake.run(
-                RunRequest(
+                _run_request(
                     name="MyAgent",
                     template=_PLAN_TEMPLATE,
                     mount_path=Path("/workspace"),
@@ -152,9 +156,9 @@ def test_fake_agent_runner_pops_responses_in_order():
     async def _collect():
         m = Path("/w")
         return [
-            await run(RunRequest(name="A", template=_PLAN_TEMPLATE, mount_path=m)),
-            await run(RunRequest(name="B", template=_PLAN_TEMPLATE, mount_path=m)),
-            await run(RunRequest(name="C", template=_PLAN_TEMPLATE, mount_path=m)),
+            await run(_run_request(name="A", template=_PLAN_TEMPLATE, mount_path=m)),
+            await run(_run_request(name="B", template=_PLAN_TEMPLATE, mount_path=m)),
+            await run(_run_request(name="C", template=_PLAN_TEMPLATE, mount_path=m)),
         ]
 
     results = asyncio.run(_collect())
@@ -166,10 +170,10 @@ def test_fake_agent_runner_records_all_calls():
     mount = Path("/workspace")
 
     asyncio.run(
-        fake.run(RunRequest(name="X", template=_PLAN_TEMPLATE, mount_path=mount))
+        fake.run(_run_request(name="X", template=_PLAN_TEMPLATE, mount_path=mount))
     )
     asyncio.run(
-        fake.run(RunRequest(name="Y", template=_PLAN_TEMPLATE, mount_path=mount))
+        fake.run(_run_request(name="Y", template=_PLAN_TEMPLATE, mount_path=mount))
     )
 
     assert len(fake.calls) == 2
@@ -183,7 +187,7 @@ def test_fake_agent_runner_records_call_kwargs():
 
     asyncio.run(
         fake.run(
-            RunRequest(
+            _run_request(
                 name="Planner",
                 template=PromptTemplate.PLAN,
                 mount_path=mount,
@@ -230,7 +234,7 @@ def test_fake_agent_runner_side_effect_is_called_with_run_request():
     fake = FakeAgentRunner(side_effect=_effect)
     result = asyncio.run(
         fake.run(
-            RunRequest(
+            _run_request(
                 name="SideEffectAgent", template=_PLAN_TEMPLATE, mount_path=Path("/w")
             )
         )
@@ -248,7 +252,9 @@ def test_fake_agent_runner_side_effect_can_raise():
     with pytest.raises(ValueError, match="side effect error"):
         asyncio.run(
             fake.run(
-                RunRequest(name="Agent", template=_PLAN_TEMPLATE, mount_path=Path("/w"))
+                _run_request(
+                    name="Agent", template=_PLAN_TEMPLATE, mount_path=Path("/w")
+                )
             )
         )
 
@@ -260,7 +266,9 @@ def test_fake_agent_runner_side_effect_still_records_calls():
     fake = FakeAgentRunner(side_effect=_effect)
     asyncio.run(
         fake.run(
-            RunRequest(name="Recorded", template=_PLAN_TEMPLATE, mount_path=Path("/w"))
+            _run_request(
+                name="Recorded", template=_PLAN_TEMPLATE, mount_path=Path("/w")
+            )
         )
     )
 
@@ -277,7 +285,7 @@ def test_fake_agent_runner_side_effect_can_be_synchronous():
     fake = FakeAgentRunner(side_effect=_sync_effect)
     result = asyncio.run(
         fake.run(
-            RunRequest(name="Agent", template=_PLAN_TEMPLATE, mount_path=Path("/w"))
+            _run_request(name="Agent", template=_PLAN_TEMPLATE, mount_path=Path("/w"))
         )
     )
 
@@ -383,7 +391,7 @@ def test_agent_runner_run_returns_agent_output(tmp_path):
 
     result = asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -410,7 +418,7 @@ def test_agent_runner_uses_claude_when_request_service_is_empty(
 
     result = asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -437,7 +445,7 @@ def test_agent_runner_uses_requested_service_from_registry(tmp_path):
 
     result = asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -467,7 +475,7 @@ def test_agent_runner_does_not_fall_back_to_claude_for_unknown_requested_service
     with pytest.raises(ValueError, match="Unknown agent service 'codex'"):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -496,7 +504,7 @@ def test_agent_runner_uses_universal_image_for_requested_service(
 
     result = asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -511,7 +519,7 @@ def test_agent_runner_uses_universal_image_for_requested_service(
     assert docker_client.containers.run.call_args.args[0] == "pycastle-test"
 
 
-def test_agent_runner_uses_default_service_for_empty_request_service(tmp_path):
+def test_agent_runner_requires_explicit_resolved_service_for_dispatch(tmp_path):
     cfg = _make_cfg(tmp_path, docker_image_name="pycastle-test")
     object.__setattr__(cfg, "default_service", "codex")
     codex_service = _RecordingAgentService("codex")
@@ -525,23 +533,22 @@ def test_agent_runner_uses_default_service_for_empty_request_service(tmp_path):
         service_registry={"claude": claude_service, "codex": codex_service},
     )
 
-    result = asyncio.run(
-        runner.run(
-            RunRequest(
-                name="Test",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+    with pytest.raises(ValueError, match="resolved service"):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Test",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                )
             )
         )
-    )
 
-    assert isinstance(result, CommitMessageOutput)
-    assert codex_service.commands == ["codex exec"]
-    assert codex_service.env_state_dirs == [None]
+    assert codex_service.commands == []
+    assert codex_service.env_state_dirs == []
     assert claude_service.commands == []
-    docker_client.containers.run.assert_called_once()
-    assert docker_client.containers.run.call_args.args[0] == "pycastle-test"
+    docker_client.containers.run.assert_not_called()
 
 
 def test_agent_runner_uses_claude_when_default_service_is_empty(tmp_path):
@@ -560,7 +567,7 @@ def test_agent_runner_uses_claude_when_default_service_is_empty(tmp_path):
 
     result = asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -624,7 +631,7 @@ def test_agent_runner_mixed_services_use_service_command_env_and_parser(
 
     implement = asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Implement",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -638,7 +645,7 @@ def test_agent_runner_mixed_services_use_service_command_env_and_parser(
     )
     review = asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Review",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -681,7 +688,7 @@ def test_agent_runner_run_raises_usage_limit_error_when_token_pre_cancelled(tmp_
     with pytest.raises(UsageLimitError):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -709,7 +716,7 @@ def test_agent_runner_run_cancels_token_and_raises_on_usage_limit_in_stream(tmp_
     with pytest.raises(UsageLimitError):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -741,7 +748,7 @@ def test_agent_runner_run_raises_agent_timeout_error_when_retries_exhausted(tmp_
     with pytest.raises(AgentTimeoutError):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -755,7 +762,7 @@ def test_agent_runner_run_raises_agent_failed_error_for_non_typed_crash(tmp_path
     from unittest.mock import AsyncMock, patch
 
     runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
-    request = RunRequest(
+    request = _run_request(
         name="Test",
         template=_PLAN_TEMPLATE,
         scope_args=_PLAN_SCOPE_ARGS,
@@ -783,7 +790,7 @@ def test_agent_runner_run_raises_agent_failed_error_for_protocol_error(tmp_path)
     from unittest.mock import AsyncMock, patch
 
     runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
-    request = RunRequest(
+    request = _run_request(
         name="Test",
         template=_PLAN_TEMPLATE,
         scope_args=_PLAN_SCOPE_ARGS,
@@ -832,7 +839,7 @@ def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
 
     result = asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -853,7 +860,7 @@ def test_agent_runner_propagates_git_user_name_error(tmp_path):
     with pytest.raises(GitCommandError):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -875,7 +882,7 @@ def test_agent_runner_run_registers_and_removes_status_row_on_success(tmp_path):
 
     asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -898,7 +905,7 @@ def test_agent_runner_run_removes_status_row_when_setup_fails(tmp_path):
     with pytest.raises(RuntimeError, match="git failure"):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -922,7 +929,7 @@ def test_agent_runner_run_marks_failed_output_as_failed_in_status_row(tmp_path):
     with pytest.raises(AgentFailedError):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -1238,7 +1245,7 @@ def test_agent_runner_run_preflight_propagates_git_user_name_error(tmp_path):
 def test_run_request_stores_required_fields():
     from pycastle.agents.output_protocol import AgentRole
 
-    req = RunRequest(
+    req = _run_request(
         name="Agent",
         template=PromptTemplate.PLAN,
         mount_path=Path("/workspace"),
@@ -1259,7 +1266,7 @@ def test_run_request_stores_required_fields():
 
 
 def test_run_request_session_namespace_can_be_set():
-    req = RunRequest(
+    req = _run_request(
         name="Agent",
         template=PromptTemplate.PLAN,
         mount_path=Path("/workspace"),
@@ -1307,7 +1314,7 @@ def test_agent_runner_injects_picked_token_into_container_env(tmp_path):
 
     asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -1335,7 +1342,7 @@ def test_agent_runner_cancels_token_and_raises_on_transient_agent_error(tmp_path
     with pytest.raises(TransientAgentError):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Implement Agent #42",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -1370,7 +1377,7 @@ def test_agent_runner_does_not_call_mark_exhausted_on_transient_agent_error(tmp_
     with pytest.raises(TransientAgentError):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -1407,7 +1414,7 @@ def test_agent_runner_marks_picked_token_exhausted_on_usage_limit(tmp_path):
     with pytest.raises(UsageLimitError):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -1455,7 +1462,7 @@ def test_agent_runner_marks_picked_token_permanently_exhausted_on_subscription_a
     with pytest.raises(UsageLimitError) as exc_info:
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -1473,7 +1480,7 @@ def test_agent_runner_marks_picked_token_permanently_exhausted_on_subscription_a
 def test_fake_agent_runner_accepts_run_request_and_records_it():
     completion = CompletionOutput()
     fake = FakeAgentRunner([completion])
-    req = RunRequest(
+    req = _run_request(
         name="Planner",
         template=_PLAN_TEMPLATE,
         mount_path=Path("/w"),
@@ -1519,7 +1526,7 @@ def test_agent_runner_injects_claude_config_dir_for_implementer(tmp_path):
 
     asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -1571,7 +1578,7 @@ def test_agent_runner_injects_namespaced_claude_config_dir_when_session_namespac
 
     asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -1620,7 +1627,7 @@ def test_agent_runner_uses_namespace_subdir_for_resume_check(tmp_path):
 
     asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Impl",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -1670,7 +1677,7 @@ def test_agent_runner_uses_fresh_for_different_namespace_when_other_namespace_ha
 
     asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Impl",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -1717,7 +1724,7 @@ def test_agent_runner_passes_session_id_flag_to_claude_on_fresh_run(tmp_path):
 
     asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Impl",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -1769,7 +1776,7 @@ def test_agent_runner_passes_resume_flag_to_claude_when_session_exists(tmp_path)
 
     asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Impl",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -1826,7 +1833,7 @@ def test_resume_run_non_typed_exception_retries_same_session_and_succeeds(tmp_pa
 
     result = asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Impl",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -1855,7 +1862,7 @@ def test_resume_run_consecutive_non_typed_exceptions_raise_agent_failed_error(tm
     with pytest.raises(AgentFailedError) as exc_info:
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Impl",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -1888,7 +1895,7 @@ def test_resume_run_non_typed_exception_does_not_wipe_session(tmp_path):
     with pytest.raises(AgentFailedError):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Impl",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -1917,7 +1924,7 @@ def test_fresh_run_non_typed_exception_propagates(tmp_path):
     with pytest.raises(RuntimeError, match="docker failure"):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Impl",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -1970,7 +1977,7 @@ def test_agent_runner_injects_claude_config_dir_for_reviewer(tmp_path):
 
     asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Review",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -2019,7 +2026,7 @@ def test_agent_runner_passes_resume_flag_to_claude_when_reviewer_session_exists(
 
     asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Review",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -2075,7 +2082,7 @@ def test_agent_runner_passes_resume_flag_to_claude_when_merger_session_exists(tm
 
     asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Merge",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -2208,7 +2215,7 @@ def test_agent_runner_cancels_token_on_hard_agent_error(tmp_path):
     with pytest.raises(HardAgentError):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Implement Agent #42",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -2243,7 +2250,7 @@ def test_agent_runner_does_not_call_mark_exhausted_on_hard_agent_error(tmp_path)
     with pytest.raises(HardAgentError):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -2274,7 +2281,7 @@ def test_agent_runner_seeds_codex_auth_for_fresh_state_dir(tmp_path, monkeypatch
 
     asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Codex",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -2323,7 +2330,7 @@ def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
 
     result = asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Codex",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -2377,7 +2384,7 @@ def test_agent_runner_codex_resume_uses_thread_id_from_rollout(tmp_path):
 
     asyncio.run(
         runner.run(
-            RunRequest(
+            _run_request(
                 name="Codex",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
@@ -2409,7 +2416,7 @@ def test_agent_runner_codex_missing_host_auth_raises_hard_error(tmp_path, monkey
     ) as exc_info:
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Codex",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -2440,7 +2447,7 @@ def test_agent_runner_codex_missing_host_auth_leaves_no_done_session_state(
     with pytest.raises(HardAgentError, match="Codex authentication missing"):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Codex",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -2494,7 +2501,7 @@ def test_agent_runner_run_returns_success_after_protocol_error_on_first_attempt(
     with patch.object(ContainerRunner, "work", side_effect=_fake_work):
         result = asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -2534,7 +2541,7 @@ def test_agent_runner_run_raises_agent_failed_error_after_three_protocol_errors(
         with pytest.raises(AgentFailedError) as exc_info:
             asyncio.run(
                 runner.run(
-                    RunRequest(
+                    _run_request(
                         name="Test",
                         template=_PLAN_TEMPLATE,
                         scope_args=_PLAN_SCOPE_ARGS,
@@ -2569,7 +2576,7 @@ def test_agent_runner_run_does_not_reprompt_when_work_returns_failed_output(tmp_
         with pytest.raises(AgentFailedError):
             asyncio.run(
                 runner.run(
-                    RunRequest(
+                    _run_request(
                         name="Test",
                         template=_PLAN_TEMPLATE,
                         scope_args=_PLAN_SCOPE_ARGS,
@@ -2606,7 +2613,7 @@ def test_agent_runner_run_decrements_timeout_budget_when_protocol_error_precedes
         with pytest.raises(AgentTimeoutError):
             asyncio.run(
                 runner.run(
-                    RunRequest(
+                    _run_request(
                         name="Test",
                         template=_PLAN_TEMPLATE,
                         scope_args=_PLAN_SCOPE_ARGS,

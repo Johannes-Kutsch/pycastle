@@ -123,9 +123,9 @@ class AgentRunner:
         self._renderer = PromptRenderer(cfg)
 
     def _resolve_service(self, service_name: str = "") -> AgentService:
-        resolved_name = (
-            service_name or getattr(self._cfg, "default_service", "") or "claude"
-        )
+        resolved_name = service_name.strip()
+        if not resolved_name:
+            raise ValueError("Agent dispatch requires an explicit resolved service")
         service = self._service_registry.get(resolved_name)
         if service is not None:
             return service
