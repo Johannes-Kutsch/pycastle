@@ -520,12 +520,47 @@ def test_renderer_renders_issue_tracker_fragment(prompts_dir):
     assert result == "issue-tracker recipes"
 
 
+def test_renderer_renders_local_issue_tracker_override_through_bundled_prompt(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "_issue-tracker.md").write_text(
+        "local tracker for {{READY_FOR_AGENT_LABEL}}"
+    )
+    renderer = PromptRenderer(Config())
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPROVE_NO_CANDIDATE,
+            {"IMPROVE_SHORT_SID": "abc"},
+            _noop_exec,
+        )
+    )
+
+    assert "local tracker for ready-for-agent" in result
+    assert "{{READY_FOR_AGENT_LABEL}}" not in result
+
+
 def test_renderer_aborts_when_issue_tracker_referenced_but_absent(prompts_dir):
     (prompts_dir / "improve" / "01-scan.md").write_text("{{ISSUE_TRACKER}}")
     cfg = Config(prompts_dir=prompts_dir)
 
     with pytest.raises(PromptRenderError, match="ISSUE_TRACKER"):
         PromptRenderer(cfg)
+
+
+def test_renderer_aborts_on_broken_local_issue_tracker_override(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "_issue-tracker.md").write_text(
+        "{{#if UNKNOWN_KEY=value}}\nbroken\n{{/if}}"
+    )
+
+    with pytest.raises(PromptRenderError, match="UNKNOWN_KEY"):
+        PromptRenderer(Config())
 
 
 def test_renderer_uses_bundled_prompt_when_default_local_prompt_is_absent(

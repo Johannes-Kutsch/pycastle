@@ -198,22 +198,48 @@ class PromptRenderer:
         self._global_args = self._build_global_args(cfg)
         self._validate_templates()
 
-    def _load_standards(self) -> dict[str, str]:
+    def _render_effective_file(
+        self,
+        relative_path: str,
+        *,
+        allowed_args: dict[str, str],
+        required: bool,
+    ) -> str:
+        path = self._prompt_source.resolve(relative_path)
+        if not path.exists():
+            if required:
+                raise PromptRenderError(f"Missing prompt fragment: {relative_path}")
+            return ""
+        content = path.read_text(encoding="utf-8")
+        found = set(PLACEHOLDER.findall(content))
+        found |= {m.group(1) for m in CONDITIONAL_BLOCK.finditer(content)}
+        unknown = found - allowed_args.keys()
+        if unknown:
+            raise PromptRenderError(
+                f"Prompt fragment {relative_path!r} references unknown token(s): {unknown}"
+            )
+        return _render(content, allowed_args)
+
+    def _load_standards(self, base_args: dict[str, str]) -> dict[str, str]:
         result = {}
         for key, filename in self._STANDARDS_FILES.items():
             if filename.startswith("_"):
-                path = self._prompt_source.resolve(filename)
-                if path.exists():
-                    result[key] = path.read_text(encoding="utf-8")
+                rendered = self._render_effective_file(
+                    filename, allowed_args=base_args, required=False
+                )
+                if rendered:
+                    result[key] = rendered
             else:
-                path = self._prompt_source.resolve(f"coding-standards/{filename}")
-                result[key] = path.read_text(encoding="utf-8") if path.exists() else ""
+                result[key] = self._render_effective_file(
+                    f"coding-standards/{filename}",
+                    allowed_args=base_args,
+                    required=False,
+                )
         return result
 
     def _build_global_args(self, cfg: Config) -> dict[str, str]:
-        standards = self._load_standards()
         checks = " && ".join(cmd for _, cmd in cfg.preflight_checks)
-        return {
+        base_args = {
             "BUG_LABEL": cfg.bug_label,
             "READY_FOR_AGENT_LABEL": cfg.issue_label,
             "READY_FOR_HUMAN_LABEL": cfg.hitl_label,
@@ -226,8 +252,8 @@ class PromptRenderer:
             "DOCS_SLICE_LABEL": cfg.docs_slice_label,
             "FEEDBACK_COMMANDS": _format_feedback_commands(cfg.implement_checks),
             "CHECKS": checks,
-            **standards,
         }
+        return {**base_args, **self._load_standards(base_args)}
 
     def _validate_templates(self) -> None:
         global_keys = set(self._global_args.keys())
