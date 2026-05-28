@@ -8,7 +8,6 @@ from ..agents.output_protocol import AgentRole, CommitMessageOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..errors import (
-    AgentFailedError,
     AgentTimeoutError,
     HardAgentError,
     TransientAgentError,
@@ -324,14 +323,6 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                     HardAgentError,
                 ):
                     raise
-                except AgentFailedError as exc:
-                    deps.status_display.print(
-                        "Merge",
-                        f"Conflict branch {branch_for(active_issue['number'])} failed and remains pending: {exc}",
-                        "warning",
-                    )
-                    pending_conflicts = conflict_issues[idx:]
-                    break
                 except Exception as exc:
                     deps.status_display.print(
                         "Merge",
