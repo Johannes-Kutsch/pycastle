@@ -273,6 +273,28 @@ def test_build_command_uses_resolved_dockerfile_path(tmp_path, monkeypatch):
     ]
 
 
+def test_build_command_uses_local_universal_override_when_pycastle_dir_is_a_string(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.build import main
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "Dockerfile").write_text("FROM scratch\n")
+    svc = MagicMock()
+    svc.build_image.return_value = None
+
+    main(
+        docker_service=svc,
+        cfg=Config(docker_image_name="img", pycastle_dir="pycastle"),  # type: ignore[arg-type]
+    )
+
+    assert [call.args[1] for call in svc.build_image.call_args_list] == [
+        Path("pycastle/Dockerfile")
+    ]
+
+
 # ── Issue 938: universal image builds ────────────────────────────────────────
 
 

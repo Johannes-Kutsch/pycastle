@@ -155,7 +155,21 @@ def test_resolve_dockerfile_accepts_legacy_service_argument_order(tmp_path):
     assert resolve_dockerfile("codex", pycastle_dir) == bundled_default
 
 
-def test_resolve_dockerfile_requires_path_when_called_with_legacy_argument_order():
+def test_resolve_dockerfile_accepts_string_pycastle_dir(tmp_path):
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    bundled_default = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "pycastle"
+        / "defaults"
+        / "Dockerfile"
+    )
+
+    assert resolve_dockerfile(str(pycastle_dir)) == bundled_default
+
+
+def test_resolve_dockerfile_requires_path_for_legacy_two_string_argument_order():
     with pytest.raises(TypeError, match="expects a pycastle_dir Path"):
         resolve_dockerfile("codex", "pycastle")
 

@@ -175,6 +175,8 @@ def _resolve_dockerfile_dir(
         return pycastle_dir
     if isinstance(service, Path):
         return service
+    if isinstance(pycastle_dir, str) and service is None:
+        return Path(pycastle_dir)
     raise TypeError("resolve_dockerfile() expects a pycastle_dir Path")
 
 
