@@ -236,13 +236,24 @@ async def implement_phase(
     worktree_semaphore = asyncio.Semaphore(deps.cfg.max_parallel + 1)
     branch_locks: dict[str, asyncio.Lock] = {}
     total = len(issues)
-    implement_started = 0
-    review_started = 0
+
+    def _stage_done_count(role: AgentRole) -> int:
+        return sum(
+            is_stage_done_for(
+                worktree_path(
+                    worktree_name_for_branch(branch_for(issue["number"])), deps
+                ),
+                role,
+            )
+            for issue in issues
+        )
+
+    implement_started = _stage_done_count(AgentRole.IMPLEMENTER)
+    review_started = _stage_done_count(AgentRole.REVIEWER)
 
     def _progress_text() -> str:
         parts = [f"started implement Agents for {implement_started}/{total} issues"]
-        if review_started > 0:
-            parts.append(f"started review Agents for {review_started}/{total} issues")
+        parts.append(f"started review Agents for {review_started}/{total} issues")
         return "Running: " + " · ".join(parts)
 
     deps.status_display.update_phase("Implement", _progress_text())
