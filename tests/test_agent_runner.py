@@ -476,15 +476,18 @@ def test_agent_runner_does_not_fall_back_to_claude_for_unknown_requested_service
     assert claude_service.commands == []
 
 
-def test_agent_runner_uses_per_service_image_for_requested_service(tmp_path):
-    requested_service = _RecordingAgentService("codex")
+@pytest.mark.parametrize("service_name", ["claude", "codex"])
+def test_agent_runner_uses_per_service_image_for_requested_service(
+    tmp_path, service_name
+):
+    requested_service = _RecordingAgentService(service_name)
     docker_client = _make_docker_client([])
     runner = AgentRunner(
         {},
         _make_cfg(tmp_path, docker_image_name="pycastle-test"),
         _make_git_service(),
         docker_client=docker_client,
-        service_registry={"codex": requested_service},
+        service_registry={service_name: requested_service},
     )
 
     result = asyncio.run(
@@ -494,14 +497,17 @@ def test_agent_runner_uses_per_service_image_for_requested_service(tmp_path):
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
-                service="codex",
+                service=service_name,
             )
         )
     )
 
     assert isinstance(result, CommitMessageOutput)
     docker_client.containers.run.assert_called_once()
-    assert docker_client.containers.run.call_args.args[0] == "pycastle-test-codex"
+    assert (
+        docker_client.containers.run.call_args.args[0]
+        == f"pycastle-test-{service_name}"
+    )
 
 
 def test_agent_runner_uses_default_service_for_empty_request_service(tmp_path):
@@ -535,6 +541,38 @@ def test_agent_runner_uses_default_service_for_empty_request_service(tmp_path):
     assert claude_service.commands == []
     docker_client.containers.run.assert_called_once()
     assert docker_client.containers.run.call_args.args[0] == "pycastle-test-codex"
+
+
+def test_agent_runner_uses_claude_when_default_service_is_empty(tmp_path):
+    cfg = _make_cfg(tmp_path, docker_image_name="pycastle-test")
+    object.__setattr__(cfg, "default_service", "")
+    codex_service = _RecordingAgentService("codex")
+    claude_service = _RecordingAgentService("claude")
+    docker_client = _make_docker_client([])
+    runner = AgentRunner(
+        {},
+        cfg,
+        _make_git_service(),
+        docker_client=docker_client,
+        service_registry={"claude": claude_service, "codex": codex_service},
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Test",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert claude_service.commands == ["claude exec"]
+    assert codex_service.commands == []
+    docker_client.containers.run.assert_called_once()
+    assert docker_client.containers.run.call_args.args[0] == "pycastle-test-claude"
 
 
 def test_agent_runner_mixed_services_use_service_command_env_and_parser(
