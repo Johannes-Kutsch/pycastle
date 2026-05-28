@@ -4,13 +4,11 @@ import asyncio
 import enum
 import re
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from pathlib import Path
 
+from ..config import Config
 from ..session import RunKind
 from .source import PromptSource
-
-if TYPE_CHECKING:
-    from ..config import Config
 
 PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 SHELL_EXPR = re.compile(r"!`([^`]+)`")
@@ -197,7 +195,10 @@ class PromptRenderer:
     }
 
     def __init__(self, cfg: Config) -> None:
-        self._prompt_source = PromptSource.for_prompts_dir(cfg.prompts_dir)
+        prompts_dir = (
+            Path("pycastle/prompts") if isinstance(cfg, Config) else cfg.prompts_dir
+        )
+        self._prompt_source = PromptSource.for_prompts_dir(prompts_dir)
         self._global_args = self._build_global_args(cfg)
         self._validate_templates()
 
