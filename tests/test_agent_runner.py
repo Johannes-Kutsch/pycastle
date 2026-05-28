@@ -329,6 +329,39 @@ def _make_docker_client(chunks: list[bytes]) -> MagicMock:
     return mock_client
 
 
+def _make_docker_client_with_setup_failure(message: str) -> MagicMock:
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            result = MagicMock()
+            result.output = iter(_COMPLETE_STREAM)
+            return result
+        command = " ".join(args[0]) if args else ""
+        if "pip install" in command:
+            return MagicMock(exit_code=1, output=(b"", message.encode("utf-8")))
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    return mock_client
+
+
+def _make_docker_client_with_work_failure(message: str) -> MagicMock:
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            raise DockerError(message)
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    return mock_client
+
+
 def _make_git_service() -> MagicMock:
     svc = MagicMock(spec=GitService)
     svc.get_user_name.return_value = "Alice"
@@ -849,29 +882,64 @@ def test_agent_runner_run_raises_agent_failed_error_for_protocol_error(tmp_path)
     assert err.namespace == ""
 
 
-def test_agent_runner_run_raises_setup_phase_error_when_role_setup_fails(tmp_path):
-    from unittest.mock import AsyncMock, patch
-
+@pytest.mark.parametrize(
+    ("role", "template", "scope_args"),
+    [
+        (AgentRole.PLANNER, _PLAN_TEMPLATE, _PLAN_SCOPE_ARGS),
+        (
+            AgentRole.PREFLIGHT_ISSUE,
+            PromptTemplate.PREFLIGHT_ISSUE,
+            {"CHECK_NAME": "ruff", "COMMAND": "ruff check .", "OUTPUT": "missing"},
+        ),
+    ],
+)
+def test_agent_runner_run_raises_setup_phase_error_when_setup_fails_before_work(
+    tmp_path,
+    role,
+    template,
+    scope_args,
+):
     runner = AgentRunner(
-        {}, _make_cfg(tmp_path), _make_git_service(), docker_client=MagicMock()
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client_with_setup_failure("pip install failed"),
     )
     request = _run_request(
-        name="Plan Agent",
-        template=_PLAN_TEMPLATE,
-        scope_args=_PLAN_SCOPE_ARGS,
+        name="Role Agent",
+        template=template,
+        scope_args=scope_args,
         mount_path=tmp_path,
-        role=AgentRole.PLANNER,
+        role=role,
     )
 
-    with patch(
-        "pycastle.agents.runner.ContainerRunner.setup", new=AsyncMock()
-    ) as setup:
-        setup.side_effect = DockerError("pip install failed")
-        with pytest.raises(SetupPhaseError) as exc_info:
-            asyncio.run(runner.run(request))
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(runner.run(request))
 
-    assert exc_info.value.phase == AgentRole.PLANNER.value
-    assert str(exc_info.value) == "pip install failed"
+    assert exc_info.value.phase == role.value
+    assert "pip install failed" in str(exc_info.value)
+
+
+def test_agent_runner_run_propagates_work_failures_after_setup_starts(tmp_path):
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client_with_work_failure("stream broke"),
+    )
+
+    with pytest.raises(DockerError, match="stream broke"):
+        asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Plan Agent",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                )
+            )
+        )
 
 
 def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
@@ -1064,21 +1132,18 @@ def test_agent_runner_run_preflight_returns_empty_list_when_all_checks_pass(tmp_
 def test_agent_runner_run_preflight_raises_setup_phase_error_when_setup_fails(
     tmp_path,
 ):
-    from unittest.mock import AsyncMock, patch
-
     runner = AgentRunner(
-        {}, _make_cfg(tmp_path), _make_git_service(), docker_client=MagicMock()
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client_with_setup_failure("pip install failed"),
     )
 
-    with patch(
-        "pycastle.agents.runner.ContainerRunner.setup", new=AsyncMock()
-    ) as setup:
-        setup.side_effect = DockerError("pip install failed")
-        with pytest.raises(SetupPhaseError) as exc_info:
-            asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     assert exc_info.value.phase == "preflight"
-    assert str(exc_info.value) == "pip install failed"
+    assert "pip install failed" in str(exc_info.value)
 
 
 def test_agent_runner_run_preflight_returns_failure_tuple_when_check_fails(tmp_path):
