@@ -11,6 +11,11 @@ from ..agents.output_protocol import AgentOutput, AgentRole, process_stream_from
 from ..config import Config
 from .docker_session import DockerSession
 from ..errors import AgentTimeoutError, DockerError
+from .preflight_tool_classifier import (
+    PreflightCommandFailure,
+    PythonDependencyMetadata,
+    classify_preflight_tool_failure,
+)
 from ..services.agent_service import AgentService
 from ..session import RunKind
 from ..display.status_display import PlainStatusDisplay
@@ -80,11 +85,16 @@ class ContainerRunner:
         )
 
     async def preflight(
-        self, checks: list[tuple[str, str]]
+        self,
+        checks: list[tuple[str, str]],
+        python_dependency_metadata: PythonDependencyMetadata | None = None,
     ) -> list[tuple[str, str, str]]:
         loop = asyncio.get_running_loop()
         failures: list[tuple[str, str, str]] = []
         total = len(checks)
+        metadata = python_dependency_metadata or PythonDependencyMetadata(
+            declared_packages=frozenset()
+        )
         for i, (check_name, command) in enumerate(checks, 1):
             self._status_display.update_phase(
                 self.name, f"Running {check_name} ({i}/{total})"
@@ -92,6 +102,14 @@ class ContainerRunner:
             try:
                 await loop.run_in_executor(None, self._session.exec_simple, command)
             except DockerError as exc:
+                classify_preflight_tool_failure(
+                    metadata,
+                    PreflightCommandFailure(
+                        check_name=check_name,
+                        command=command,
+                        output=str(exc),
+                    ),
+                )
                 failures.append((check_name, command, str(exc)))
         return failures
 
