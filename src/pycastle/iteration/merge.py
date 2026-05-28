@@ -40,6 +40,7 @@ MERGE_SANDBOX = "pycastle/merge-sandbox"
 class MergeResult:
     clean: list[dict]
     conflicts: list[dict]
+    preflight_blocker: PreflightHITL | PreflightAFK | None = None
 
 
 async def _delete_merged_branches(
@@ -212,7 +213,11 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                             deps
                         ),
                     )
-                return MergeResult(clean=clean_issues, conflicts=conflict_issues)
+                return MergeResult(
+                    clean=clean_issues,
+                    conflicts=conflict_issues,
+                    preflight_blocker=verdict,
+                )
             async with managed_worktree(
                 "merge-sandbox",
                 branch=MERGE_SANDBOX,
