@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from pycastle.config import Config, StageOverride, load_config
+from pycastle.config import Config, StageOverride, load_config, resolve_dockerfile
 from pycastle.config.loader import describe_config_layers, resolve_global_dir
 from pycastle.errors import (
     ConfigValidationError,
@@ -15,6 +15,54 @@ def test_load_config_returns_defaults_when_no_local_file(tmp_path):
     cfg = load_config(repo_root=tmp_path)
     assert cfg.max_parallel == 1
     assert cfg.issue_label == "ready-for-agent"
+
+
+def test_resolve_dockerfile_returns_local_per_service_override(tmp_path):
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    dockerfile = pycastle_dir / "Dockerfile.claude"
+    dockerfile.write_text("FROM local\n")
+
+    assert resolve_dockerfile("claude", pycastle_dir) == dockerfile
+
+
+def test_resolve_dockerfile_returns_bundled_default_when_no_local_override(
+    tmp_path,
+):
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    bundled_default = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "pycastle"
+        / "defaults"
+        / "Dockerfile.claude"
+    )
+
+    assert resolve_dockerfile("claude", pycastle_dir) == bundled_default
+
+
+def test_resolve_dockerfile_returns_codex_bundled_default(tmp_path):
+    pycastle_dir = tmp_path / "pycastle"
+    bundled_default = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "pycastle"
+        / "defaults"
+        / "Dockerfile.codex"
+    )
+
+    assert resolve_dockerfile("codex", pycastle_dir) == bundled_default
+
+
+def test_resolve_dockerfile_unknown_service_raises_config_validation_error(
+    tmp_path,
+):
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+
+    with pytest.raises(ConfigValidationError):
+        resolve_dockerfile("unknown-service", pycastle_dir)
 
 
 def test_config_has_bug_label_default():
