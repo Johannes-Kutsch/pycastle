@@ -188,6 +188,18 @@ class CodexService:
             return False
         return any(sessions_dir.glob("rollout-*.jsonl"))
 
+    def valid_models(self) -> frozenset[str]:
+        return frozenset(
+            {
+                "gpt-5.5",
+                "gpt-5.4",
+                "gpt-5.4-mini",
+                "gpt-5.3-codex",
+                "gpt-5.3-codex-spark",
+                "gpt-5.2",
+            }
+        )
+
     def valid_efforts(self) -> frozenset[str]:
         return frozenset({"none", "minimal", "low", "medium", "high", "xhigh"})
 
