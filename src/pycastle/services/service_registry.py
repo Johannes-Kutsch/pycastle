@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from ..config.types import StageOverride
+from ..service_availability import iter_stage_chain
 from .agent_service import AgentService
 
 
@@ -15,15 +16,10 @@ class ServiceRegistry:
         return dict(self._services)
 
     def resolve(self, override: StageOverride, now: datetime) -> StageOverride:
-        primary_name = override.service
-        primary_svc = self._services.get(primary_name)
-        if primary_svc is None or primary_svc.is_available(now=now):
-            return override
-        if override.fallback is not None:
-            fallback_name = override.fallback.service
-            fallback_svc = self._services.get(fallback_name)
-            if fallback_svc is not None and fallback_svc.is_available(now=now):
-                return override.fallback
+        for node in iter_stage_chain(override):
+            svc = self._services.get(node.service)
+            if svc is None or svc.is_available(now=now):
+                return node
         return override
 
     def has_available(self, now: datetime) -> bool:
