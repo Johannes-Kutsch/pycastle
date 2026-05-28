@@ -285,6 +285,19 @@ def build_cmd(no_cache: bool) -> None:
         sys.exit(1)
 
 
+@main.command("check")
+def check_cmd() -> None:
+    from .commands.check import main as _check
+
+    _print_layer_summary()
+    cfg = _load_config_or_exit()
+    try:
+        _check(cfg=cfg)
+    except RuntimeError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+
+
 def _do_run(
     cfg: Config,
     no_improve: bool,
