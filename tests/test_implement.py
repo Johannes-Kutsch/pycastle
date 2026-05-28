@@ -911,7 +911,7 @@ def test_run_issue_removes_worktrees_after_successful_run(tmp_path):
 
 
 def test_run_issue_preserves_worktree_on_usage_limit(tmp_path):
-    """run_issue must not remove the Implementer worktree when usage limit is hit."""
+    """run_issue must clean up the Implementer worktree on a handled usage limit."""
 
     async def _side_effect(request: RunRequest):
         if "Implement Agent" in request.name:
@@ -932,7 +932,7 @@ def test_run_issue_preserves_worktree_on_usage_limit(tmp_path):
     with pytest.raises(UsageLimitError):
         asyncio.run(run_issue(issue, deps, "sha-abc"))
 
-    deps.git_svc.remove_worktree.assert_not_called()
+    deps.git_svc.remove_worktree.assert_called_once()
 
 
 def test_run_issue_preserves_worktree_when_dirty(tmp_path):
