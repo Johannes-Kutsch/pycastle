@@ -122,6 +122,21 @@ def test_renderer_uses_fixed_project_local_prompt_overrides_when_config_is_stale
     assert result == "Fixed local prompt override"
 
 
+def test_renderer_uses_bundled_prompt_when_config_is_stale_and_local_prompt_is_absent(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    renderer = PromptRenderer(Config(prompts_dir=Path("legacy-prompts")))
+    shipped_renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+
+    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
+    shipped_result = _run(
+        shipped_renderer.render(PromptTemplate.RESUME, {}, _noop_exec)
+    )
+
+    assert result == shipped_result
+
+
 # ── Scope enum has correct placeholder sets ───────────────────────────────────
 
 
