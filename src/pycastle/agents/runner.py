@@ -17,6 +17,7 @@ from .result import CancellationToken
 from ..config import Config, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
 from ..infrastructure.docker_session import DockerSession, build_volume_spec
+from ..infrastructure.preflight_tool_classifier import load_python_dependency_metadata
 from ..errors import (
     AgentFailedError,
     AgentTimeoutError,
@@ -433,6 +434,7 @@ class AgentRunner:
 
         git_name = self._git_service.get_user_name()
         git_email = self._git_service.get_user_email()
+        python_dependency_metadata = load_python_dependency_metadata(mount_path)
         async with status_row(
             status_display,
             name,
@@ -450,7 +452,10 @@ class AgentRunner:
             )
             try:
                 await runner.setup(git_name, git_email, work_body)
-                failures = await runner.preflight(list(self._cfg.preflight_checks))
+                failures = await runner.preflight(
+                    list(self._cfg.preflight_checks),
+                    python_dependency_metadata=python_dependency_metadata,
+                )
                 if not failures:
                     row.close("finished, all tests green")
                 return failures
