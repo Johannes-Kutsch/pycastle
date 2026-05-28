@@ -1186,6 +1186,42 @@ def test_init_refresh_copies_cron_uninstall_sh(tmp_path, monkeypatch):
     assert cron_uninstall.exists()
 
 
+@pytest.mark.parametrize(
+    "rel_path",
+    [
+        "setup/cron.sh",
+        "setup/cron-install.sh",
+        "setup/cron-uninstall.sh",
+    ],
+)
+def test_init_overwrites_stale_setup_scaffold_files_on_rerun(
+    tmp_path, monkeypatch, rel_path
+):
+    """Re-running init refreshes the setup scaffold files it owns."""
+    from importlib.resources import files
+
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    target = tmp_path / "pycastle" / rel_path
+    bundled_bytes = (files("pycastle").joinpath("defaults") / rel_path).read_bytes()
+    target.write_text("STALE LOCAL EDIT\n")
+
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert target.read_bytes() == bundled_bytes
+
+
 def test_init_refresh_leaves_local_config_unchanged(tmp_path, monkeypatch):
     """`pycastle init --refresh` does not touch local config.py."""
     from pycastle.commands.init import main, refresh

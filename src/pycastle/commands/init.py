@@ -11,14 +11,17 @@ from typing import Literal
 
 import click
 
-from ..agents.output_protocol import AgentRole
 from ..config.loader import (
     derive_docker_image_name,
     resolve_global_dir,
 )
-from ..session.resume import SESSION_DIR_NAME
 
 _SPECIAL_FILES = {"config.py", ".env", "Dockerfile.claude", "Dockerfile.codex"}
+_INIT_REFRESHED_FILES = {
+    "setup/cron.sh",
+    "setup/cron-install.sh",
+    "setup/cron-uninstall.sh",
+}
 
 
 def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
@@ -271,45 +274,6 @@ def refresh() -> None:
         print("pycastle directory is already up to date.")
 
 
-def _role_namespaces() -> list[tuple[AgentRole, str]]:
-    pairs: list[tuple[AgentRole, str]] = []
-    for role in AgentRole:
-        if role == AgentRole.IMPROVE:
-            pairs.extend([(role, "main"), (role, "issues")])
-        else:
-            pairs.append((role, ""))
-    return pairs
-
-
-def _seed_codex_credentials(project_root: Path) -> None:
-    host_auth = Path.home() / ".codex" / "auth.json"
-    if not host_auth.exists():
-        click.echo(
-            "No codex credentials found at ~/.codex/auth.json.\n"
-            "Install and log in to Codex, then re-run init:\n"
-            "1. npm install -g @openai/codex\n"
-            "2. codex login\n"
-            "3. pycastle init"
-        )
-        sys.exit(1)
-
-    auth_bytes = host_auth.read_bytes()
-    destinations: list[tuple[Path, Path]] = []
-    for role, namespace in _role_namespaces():
-        base = project_root / SESSION_DIR_NAME / role.value
-        codex_dir = (base / namespace if namespace else base) / "codex"
-        dest = codex_dir / "auth.json"
-        destinations.append((codex_dir, dest))
-
-    if any(dest.exists() for _, dest in destinations):
-        if not click.confirm("Overwrite existing codex credentials?", default=False):
-            return
-
-    for codex_dir, dest in destinations:
-        codex_dir.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(auth_bytes)
-
-
 def main(scope: Literal["global", "local"] | None = None) -> None:
     project_dir = Path("pycastle")
     pkg = files("pycastle").joinpath("defaults")
@@ -350,7 +314,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
 
     for rel in _discover_project_shaped_files(pkg):
         target = project_dir / rel
-        if target.exists():
+        if target.exists() and rel not in _INIT_REFRESHED_FILES:
             continue
         _copy_template(rel, target, pkg)
 
