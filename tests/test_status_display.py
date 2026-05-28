@@ -1,4 +1,5 @@
 import io
+import os
 import re
 
 from rich.console import Console
@@ -9,6 +10,14 @@ from pycastle.display.rich_status_display import RichStatusDisplay
 
 
 # ── RichStatusDisplay behaviour ───────────────────────────────────────────────
+
+
+def test_terminal_color_environment_is_normalized_for_status_tests() -> None:
+    assert os.environ["TERM"] != "dumb"
+    assert "NO_COLOR" not in os.environ
+    assert "FORCE_COLOR" not in os.environ
+    assert "COLORTERM" not in os.environ
+    assert "CI" not in os.environ
 
 
 def test_rich_stop_when_no_agents_added_is_safe() -> None:

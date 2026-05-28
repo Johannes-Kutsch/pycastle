@@ -17,6 +17,15 @@ def _hermetic_pycastle_home(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_terminal_color_env(monkeypatch):
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.delenv("COLORTERM", raising=False)
+    monkeypatch.delenv("CI", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _no_gh_token(monkeypatch):
     """Guard against tests accidentally hitting the real GitHub API.
 
