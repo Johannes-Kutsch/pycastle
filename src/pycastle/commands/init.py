@@ -67,9 +67,9 @@ timeout_retries = 1
 diagnose_on_failure = True
 
 # --- Docker ---
-# Name for the Docker image base built by `pycastle build`.
+# Local-only build artifact name used by `pycastle build`.
+# Defaults to a sanitised CWD name when left empty.
 docker_image_name = ""
-dockerfile = Path("pycastle/Dockerfile")
 
 # --- Labels ---
 bug_label = "bug"
@@ -84,12 +84,10 @@ behavior_slice_label = "behavior-slice"
 docs_slice_label = "docs-slice"
 needs_slice_type_label = "needs-slice-type"
 
-# --- Paths ---
-pycastle_dir = Path("pycastle")
-prompts_dir = Path("pycastle/prompts")
+# --- Logging ---
+# Local config uses logs_dir directly.
+# Global config treats logs_dir as a per-project parent directory.
 logs_dir = Path("pycastle/logs")
-worktrees_dir = Path("worktrees")
-env_file = Path("pycastle/.env")
 
 # --- Preflight checks ---
 # Run by pycastle before agent work; format: (name, command).
@@ -302,7 +300,10 @@ def refresh() -> None:
     project_dir = Path("pycastle")
     project_dir.mkdir(parents=True, exist_ok=True)
     pkg = files("pycastle").joinpath("defaults")
+    pycastle_home = resolve_global_dir(None, os.environ)
     _write_config_example(project_dir)
+    if (pycastle_home / "config.py.example").exists():
+        _write_config_example(pycastle_home)
 
     report: list[tuple[str, str]] = []
 

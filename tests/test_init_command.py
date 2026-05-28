@@ -224,11 +224,7 @@ def test_init_writes_local_config_example_with_all_supported_settings(
     tmp_path, monkeypatch
 ):
     """init always overwrites local config.py.example with the discoverable template."""
-    import dataclasses
-    import re
-
     from pycastle.commands.init import main
-    from pycastle.config import Config
 
     monkeypatch.chdir(tmp_path)
     example = tmp_path / "pycastle" / "config.py.example"
@@ -247,25 +243,61 @@ def test_init_writes_local_config_example_with_all_supported_settings(
         "Behaviour",
         "Docker",
         "Labels",
-        "Paths",
+        "Logging",
         "Preflight checks",
+        "Host checks",
         "Implement checks",
         "Improve",
         "Stage overrides",
     ):
         assert f"--- {section} ---" in content
 
-        expected_fields = {
-            field.name
-            for field in dataclasses.fields(Config)
-            if field.init and field.name not in {"auto_file_bugs", "bug_report_repo"}
-        }
-    for field_name in sorted(expected_fields):
-        assert re.search(rf"(^|\W){re.escape(field_name)}\s*=", content), field_name
+    for field_name in (
+        "max_iterations",
+        "max_parallel",
+        "worktree_timeout",
+        "idle_timeout",
+        "auto_push",
+        "timeout_retries",
+        "diagnose_on_failure",
+        "docker_image_name",
+        "bug_label",
+        "issue_label",
+        "hitl_label",
+        "enhancement_label",
+        "needs_triage_label",
+        "needs_info_label",
+        "wontfix_label",
+        "refactor_slice_label",
+        "behavior_slice_label",
+        "docs_slice_label",
+        "needs_slice_type_label",
+        "logs_dir",
+        "preflight_checks",
+        "host_checks",
+        "implement_checks",
+        "improve_mode",
+        "improve_max",
+        "plan_override",
+        "implement_override",
+        "review_override",
+        "merge_override",
+        "preflight_issue_override",
+        "improve_override",
+    ):
+        assert f"{field_name} =" in content, field_name
 
     assert "auto_file_bugs" not in content
     assert "bug_report_repo" not in content
     assert "bug reporter" not in content.lower()
+    for removed_key in (
+        "pycastle_dir",
+        "prompts_dir",
+        "worktrees_dir",
+        "env_file",
+        "dockerfile",
+    ):
+        assert f"{removed_key} =" not in content
 
     assert "Claude model shorthands: haiku, sonnet, opus" in content
     assert (
@@ -303,6 +335,39 @@ def test_init_writes_separate_host_checks_into_config_example(tmp_path, monkeypa
         '    ("pytest", "pytest"),\n'
         ")"
     ) in content
+
+
+def test_init_config_example_shows_behavioral_and_logging_config_only(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", side_effect=["claude", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    content = (tmp_path / "pycastle" / "config.py.example").read_text()
+
+    assert "# --- Logging ---" in content
+    assert 'logs_dir = Path("pycastle/logs")' in content
+    assert "Local config uses logs_dir directly." in content
+    assert "Global config treats logs_dir as a per-project parent directory." in content
+
+    assert "# --- Docker ---" in content
+    assert "Local-only build artifact name used by `pycastle build`." in content
+    assert 'docker_image_name = ""' in content
+
+    for removed_key in (
+        "pycastle_dir",
+        "prompts_dir",
+        "worktrees_dir",
+        "env_file",
+        "dockerfile",
+    ):
+        assert f"{removed_key} =" not in content
 
 
 def test_init_writes_config_example_to_existing_pycastle_home(tmp_path, monkeypatch):
@@ -2033,6 +2098,25 @@ def test_refresh_reports_unchanged_when_file_byte_equal(tmp_path, monkeypatch, c
     out = capsys.readouterr().out
     assert f"unchanged {rel}" not in out
     assert "up to date" in out.lower()
+
+
+def test_refresh_updates_config_example_in_existing_pycastle_home(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.init import refresh
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.py.example").write_text("# stale global example\n")
+    monkeypatch.setenv("PYCASTLE_HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+
+    refresh()
+
+    local_content = (tmp_path / "pycastle" / "config.py.example").read_text()
+    global_content = (home / "config.py.example").read_text()
+    assert global_content == local_content
+    assert global_content != "# stale global example\n"
 
 
 def test_refresh_reports_overwrote_and_replaces_content_when_file_differs(
