@@ -31,6 +31,11 @@ from pycastle import StageOverride
 #     ("pytest", "pytest"),
 # )
 
+# --- Host checks (run by `pycastle check`; format: (name, command)) ---
+# host_checks = (
+#     ("pytest", "pytest"),
+# )
+
 # --- Implement checks (run after each implement phase) ---
 # implement_checks = (
 #     "ruff check --fix",

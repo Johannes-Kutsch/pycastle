@@ -91,6 +91,12 @@ preflight_checks = (
     ("pytest", "pytest"),
 )
 
+# --- Host checks ---
+# Run by `pycastle check` on the current OS; format: (name, command).
+host_checks = (
+    ("pytest", "pytest"),
+)
+
 # --- Implement checks ---
 # injected via prompt - these commands appear in the agent's FEEDBACK LOOPS
 # section, they are not run directly by pycastle config.
