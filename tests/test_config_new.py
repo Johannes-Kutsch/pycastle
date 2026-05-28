@@ -623,6 +623,24 @@ def test_load_config_global_logs_dir_appends_sanitized_project_name(
     assert cfg.logs_dir == Path("shared-logs") / "my-project"
 
 
+def test_load_config_global_absolute_logs_dir_appends_sanitized_project_name(
+    tmp_path, monkeypatch
+):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    shared_logs = tmp_path / "shared-logs"
+    (global_dir / "config.py").write_text(
+        f"from pathlib import Path\nlogs_dir = Path({str(shared_logs)!r})\n"
+    )
+    project_dir = tmp_path / "My Project"
+    project_dir.mkdir()
+    monkeypatch.chdir(project_dir)
+
+    cfg = load_config(repo_root=project_dir, global_dir=global_dir)
+
+    assert cfg.logs_dir == shared_logs / "my-project"
+
+
 def test_load_config_local_logs_dir_overrides_global_without_project_suffix(
     tmp_path, monkeypatch
 ):
