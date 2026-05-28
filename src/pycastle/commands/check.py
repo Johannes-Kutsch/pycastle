@@ -228,5 +228,8 @@ def main(
 
     passed = asyncio.run(_run_checks())
     if passed:
-        print(f"Host checks passed on {platform.system()} at {sha}.")
+        print(
+            "Host checks passed on "
+            f"{platform.system()} ({platform.platform()}) at {sha}."
+        )
         sys.stdout.flush()
