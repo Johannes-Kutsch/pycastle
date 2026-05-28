@@ -212,24 +212,25 @@ def _do_run(
     from .services.service_registry import ServiceRegistry
 
     env = _load_env(cfg=cfg)
-    primary = env.get("CLAUDE_CODE_OAUTH_TOKEN")
-    if not primary:
-        click.echo(
-            "Error: CLAUDE_CODE_OAUTH_TOKEN is not set. "
-            "Run `claude setup-token` to generate a token, then add it to your .env file.",
-            err=True,
-        )
-        sys.exit(1)
-
-    accounts: list[tuple[str, str]] = []
-    secondary = env.get("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY")
-    if secondary:
-        accounts.append(("secondary", secondary))
-    accounts.append(("primary", primary))
-
     referenced = referenced_services(cfg)
+    if "both" in referenced:
+        referenced = (referenced - {"both"}) | {"claude", "codex"}
     service_registry: dict[str, AgentService] = {}
     if "claude" in referenced:
+        primary = env.get("CLAUDE_CODE_OAUTH_TOKEN")
+        if not primary:
+            click.echo(
+                "Error: CLAUDE_CODE_OAUTH_TOKEN is not set. "
+                "Run `claude setup-token` to generate a token, then add it to your .env file.",
+                err=True,
+            )
+            sys.exit(1)
+
+        accounts: list[tuple[str, str]] = []
+        secondary = env.get("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY")
+        if secondary:
+            accounts.append(("secondary", secondary))
+        accounts.append(("primary", primary))
         service_registry["claude"] = ClaudeService(accounts=accounts)
     if "codex" in referenced:
         service_registry["codex"] = CodexService()
