@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
 from ..session import SESSION_DIR_NAME, RunKind
 from .agent_service import (
@@ -17,6 +18,7 @@ from .agent_service import (
     TransientError,
     UsageLimit,
 )
+from ._wake_time import compute_wake_time
 
 _RESET_TIME_RE = re.compile(
     r"try again at\s+"
@@ -138,6 +140,7 @@ def _extract_error(event: dict[str, object]) -> HardError | TransientError | Non
 @dataclasses.dataclass
 class OpenCodeService:
     api_key: str | None = None
+    _exhausted_until: datetime | None = dataclasses.field(default=None, init=False)
 
     @property
     def name(self) -> str:
@@ -238,14 +241,26 @@ class OpenCodeService:
                 return
 
     def is_available(self, now: datetime | None = None) -> bool:
-        del now
-        return True
+        if self._exhausted_until is None:
+            return True
+        now = now or _time_module.now_local()
+        return now >= self._exhausted_until
 
     def next_wake_time(self) -> datetime:
-        return datetime.now(timezone.utc)
+        if self._exhausted_until is None:
+            raise RuntimeError(
+                "OpenCodeService.next_wake_time called when not exhausted"
+            )
+        return self._exhausted_until
 
-    def mark_exhausted(self, reset_time: datetime | None) -> None:
-        del reset_time
+    def mark_exhausted(
+        self, reset_time: datetime | None, *, _now: datetime | None = None
+    ) -> None:
+        now = _now or _time_module.now_local()
+        wake, _ = compute_wake_time(reset_time, now)
+        if wake.tzinfo is None:
+            wake = wake.replace(tzinfo=timezone.utc)
+        self._exhausted_until = wake
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         if namespace:

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from pycastle.config.types import StageOverride
 from pycastle.services.agent_service import AgentService
+from pycastle.services.opencode_service import OpenCodeService
 from pycastle.services.service_registry import ServiceRegistry
 
 
@@ -132,6 +133,26 @@ def test_resolve_returns_first_configured_candidate_when_all_configured_are_exha
     assert result.fallback is None
 
 
+def test_resolve_falls_through_exhausted_opencode_before_sleep() -> None:
+    opencode = OpenCodeService(api_key="go-key")
+    opencode.mark_exhausted(datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc))
+    fallback_svc = _make_svc(available=True)
+    registry = ServiceRegistry(
+        services={"opencode": opencode, "claude": fallback_svc},
+    )
+    override = StageOverride(
+        service="opencode",
+        model="kimi-k2.6",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
+    )
+
+    result = registry.resolve(override, _now())
+
+    assert result.service == "claude"
+    assert result.fallback is None
+
+
 # --- has_available ---
 
 
@@ -195,6 +216,24 @@ def test_next_wake_time_skips_available_services() -> None:
     assert registry.next_wake_time(_now()) == wake
 
 
+def test_next_wake_time_for_includes_configured_exhausted_opencode_only() -> None:
+    opencode = OpenCodeService(api_key="go-key")
+    opencode.mark_exhausted(datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc))
+    registry = ServiceRegistry(services={"opencode": opencode})
+    override = StageOverride(
+        service="missing",
+        fallback=StageOverride(
+            service="opencode",
+            model="kimi-k2.6",
+            effort="medium",
+        ),
+    )
+
+    assert registry.next_wake_time_for(override, _now()) == datetime(
+        2025, 1, 1, 13, 2, 0, tzinfo=timezone.utc
+    )
+
+
 # --- summary_lines ---
 
 
@@ -225,6 +264,12 @@ def test_summary_lines_prints_codex_auth_message() -> None:
     registry = ServiceRegistry(services={"codex": svc})
 
     assert registry.summary_lines() == ["Codex auth: local auth available"]
+
+
+def test_summary_lines_prints_opencode_auth_message_when_configured() -> None:
+    registry = ServiceRegistry(services={"opencode": OpenCodeService(api_key="go-key")})
+
+    assert registry.summary_lines() == ["OpenCode auth: API key configured"]
 
 
 def test_summary_lines_skips_services_with_empty_account_names() -> None:
