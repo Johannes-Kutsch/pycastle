@@ -102,28 +102,63 @@ def test_run_cmd_default_stage_override_requires_claude_token(tmp_path, monkeypa
     assert "claude setup-token" in result.output
 
 
-def test_stage_service_validation_rejects_empty_stage_override_service():
-    from pycastle.main import _validate_stage_overrides
+def test_run_cmd_rejects_empty_stage_override_service_before_credentials(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
 
-    cfg = Config(plan_override=StageOverride(service="", effort="low"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
 
-    violations = _validate_stage_overrides(
-        cfg, {"claude": frozenset({"low", "medium", "high"})}
+    cfg = Config(
+        docker_image_name="img", plan_override=StageOverride(service="", effort="low")
     )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
 
-    assert violations == ["  stage='plan': service is required"]
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "stage='plan': service is required" in result.output
+    assert "CLAUDE_CODE_OAUTH_TOKEN is not set" not in result.output
+    assert not build_called
 
 
-def test_stage_service_validation_rejects_empty_stage_override_effort():
-    from pycastle.main import _validate_stage_overrides
+def test_run_cmd_rejects_empty_stage_override_effort_before_credentials(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
 
-    cfg = Config(review_override=StageOverride(service="claude", effort=""))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
 
-    violations = _validate_stage_overrides(
-        cfg, {"claude": frozenset({"low", "medium", "high"})}
+    cfg = Config(
+        docker_image_name="img",
+        review_override=StageOverride(service="claude", effort=""),
     )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
 
-    assert violations == ["  stage='review': effort is required"]
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "stage='review': effort is required" in result.output
+    assert "CLAUDE_CODE_OAUTH_TOKEN is not set" not in result.output
+    assert not build_called
 
 
 # ── Issue 309: load_config() called at entry in CLI commands ──────────────────
@@ -1163,45 +1198,71 @@ def test_run_cmd_exits_nonzero_on_cross_service_model_with_valid_claude_list(
     assert not build_called
 
 
-def test_stage_service_validation_rejects_fallback_empty_service():
-    from pycastle.main import _validate_stage_overrides
+def test_run_cmd_rejects_fallback_empty_service(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
 
     cfg = Config(
+        docker_image_name="img",
         implement_override=StageOverride(
             service="claude",
             effort="medium",
             fallback=StageOverride(service="", effort="low"),
-        )
+        ),
     )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
 
-    violations = _validate_stage_overrides(
-        cfg, {"claude": frozenset({"low", "medium", "high"})}
-    )
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
 
-    assert violations == ["  stage='implement fallback': service is required"]
+    assert result.exit_code == 1
+    assert "stage='implement fallback': service is required" in result.output
+    assert not build_called
 
 
-def test_stage_service_validation_rejects_fallback_invalid_model():
-    from pycastle.main import _validate_stage_overrides
+def test_run_cmd_rejects_fallback_invalid_model(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
 
     cfg = Config(
+        docker_image_name="img",
         implement_override=StageOverride(
             service="claude",
             effort="medium",
             fallback=StageOverride(service="claude", model="gpt-5.4", effort="low"),
-        )
+        ),
     )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
 
-    violations = _validate_stage_overrides(
-        cfg,
-        {"claude": frozenset({"low", "medium", "high"})},
-        {"claude": frozenset({"haiku", "sonnet", "opus"})},
-    )
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
 
-    assert violations == [
+    assert result.exit_code == 1
+    assert (
         "  stage='implement fallback': model='gpt-5.4' is invalid"
-        " for service='claude'. (valid: ['haiku', 'opus', 'sonnet'])"
-    ]
+        " for service='claude'. (valid: ['haiku', 'opus', 'sonnet'])" in result.output
+    )
+    assert not build_called
 
 
 def test_run_cmd_reports_all_violations_in_single_message(tmp_path, monkeypatch):

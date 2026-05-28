@@ -242,6 +242,26 @@ def _do_run(
     from .services.codex_service import CodexService
     from .services.service_registry import ServiceRegistry
 
+    validation_services: dict[str, AgentService] = {
+        "claude": ClaudeService(),
+        "codex": CodexService(),
+    }
+    valid_efforts_by_service = {
+        name: svc.valid_efforts() for name, svc in validation_services.items()
+    }
+    valid_models_by_service = {
+        name: svc.valid_models() for name, svc in validation_services.items()
+    }
+    violations = _validate_stage_overrides(
+        cfg, valid_efforts_by_service, valid_models_by_service
+    )
+    if violations:
+        click.echo(
+            "Config validation errors:\n" + "\n".join(violations),
+            err=True,
+        )
+        sys.exit(1)
+
     env = _load_env(cfg=cfg)
     referenced = referenced_services(cfg)
     if "both" in referenced:
@@ -265,22 +285,6 @@ def _do_run(
         service_registry["claude"] = ClaudeService(accounts=accounts)
     if "codex" in referenced:
         service_registry["codex"] = CodexService()
-
-    valid_efforts_by_service = {
-        name: svc.valid_efforts() for name, svc in service_registry.items()
-    }
-    valid_models_by_service = {
-        name: svc.valid_models() for name, svc in service_registry.items()
-    }
-    violations = _validate_stage_overrides(
-        cfg, valid_efforts_by_service, valid_models_by_service
-    )
-    if violations:
-        click.echo(
-            "Config validation errors:\n" + "\n".join(violations),
-            err=True,
-        )
-        sys.exit(1)
 
     try:
         _build(stream=True, terse=True, cfg=cfg)

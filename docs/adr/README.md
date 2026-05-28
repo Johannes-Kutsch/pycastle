@@ -1,7 +1,7 @@
 # Architecture Decision Records
 
 - [0001 — Runtime dependency installation](0001-runtime-dependency-installation.md): Install dev tools at container startup via `pip install -e '.[dev]'`, not baked into the image, so tools always match the current `pyproject.toml`.
-- [0002 — CLI-native model shorthand resolution](0002-cli-native-model-shorthand-resolution.md): Pass model shorthands (e.g. `sonnet`) directly to the Claude CLI rather than resolving them at config load time, keeping `load_config` pure and testable.
+- [0002 — CLI-native model shorthand resolution](0002-cli-native-model-shorthand-resolution.md): Pass model shorthands (e.g. `sonnet`) directly to the selected service CLI while validating non-empty shorthands at `pycastle run` startup, keeping `load_config` pure and testable.
 - [0003 — Global user-scope config and env](0003-global-user-scope-config-and-env.md): Layer `defaults → global (~/.config/pycastle/) → local (pycastle/)` for `config.py` and `.env`, so credentials and preferences can be shared across projects without per-project re-entry.
 - [0004 — GitHub PAT as sole credential](0004-github-pat-as-sole-credential.md): Route all GitHub access through `GithubService` with a single `GH_TOKEN` PAT, eliminating the dual `gh`-CLI / PAT auth paths that could fail independently.
 - [0005 — Dual Claude account failover](0005-dual-claude-account-failover.md): Maintain an in-memory `AccountPool` of OAuth tokens; failover to a secondary account on usage-limit rather than sleeping, collapsing all auth onto `CLAUDE_CODE_OAUTH_TOKEN` vars.
