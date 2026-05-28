@@ -109,7 +109,7 @@ def test_init_keeps_credential_flow_but_only_manages_scaffold_files(
     assert not (pycastle_dir / ".pycastle-session").exists()
     assert not (pycastle_dir / "Dockerfile.claude").exists()
     assert not (pycastle_dir / "Dockerfile.codex").exists()
-    assert not (pycastle_dir / "Dockerfile").exists()
+    assert (pycastle_dir / "Dockerfile").exists()
 
 
 def test_init_both_services_skip_dockerfiles_and_runtime_state(tmp_path, monkeypatch):
@@ -135,7 +135,7 @@ def test_init_both_services_skip_dockerfiles_and_runtime_state(tmp_path, monkeyp
     assert not (tmp_path / SESSION_DIR_NAME).exists()
     assert not (pycastle_dir / "Dockerfile.claude").exists()
     assert not (pycastle_dir / "Dockerfile.codex").exists()
-    assert not (pycastle_dir / "Dockerfile").exists()
+    assert (pycastle_dir / "Dockerfile").exists()
 
 
 @pytest.mark.parametrize(
@@ -146,10 +146,10 @@ def test_init_both_services_skip_dockerfiles_and_runtime_state(tmp_path, monkeyp
         "both",
     ],
 )
-def test_init_service_selection_does_not_create_dockerfiles(
+def test_init_service_selection_creates_one_universal_dockerfile(
     tmp_path, monkeypatch, service
 ):
-    """Service selection affects prompts, not Dockerfile scaffolding."""
+    """Service selection affects prompts, but scaffolding stays universal."""
     from pycastle.commands.init import main
 
     fake_home = tmp_path / "fakehome"
@@ -167,9 +167,11 @@ def test_init_service_selection_does_not_create_dockerfiles(
     pycastle_dir = tmp_path / "pycastle"
     assert not (pycastle_dir / "Dockerfile.claude").exists()
     assert not (pycastle_dir / "Dockerfile.codex").exists()
-    assert not any(
-        path.name.startswith("Dockerfile") for path in pycastle_dir.iterdir()
-    )
+    assert sorted(
+        path.name
+        for path in pycastle_dir.iterdir()
+        if path.name.startswith("Dockerfile")
+    ) == ["Dockerfile"]
 
 
 def test_init_does_not_overwrite_existing_per_service_dockerfile(tmp_path, monkeypatch):
@@ -229,7 +231,7 @@ def test_init_creates_all_scaffold_files(tmp_path, monkeypatch):
     assert (scaffold / "config.py").exists()
     assert (scaffold / ".env").exists()
     assert (scaffold / "config.py.example").exists()
-    assert not (scaffold / "Dockerfile").exists()
+    assert (scaffold / "Dockerfile").exists()
     assert not (scaffold / "Dockerfile.claude").exists()
     assert not (scaffold / "Dockerfile.codex").exists()
     assert (scaffold / ".gitignore").exists()
@@ -638,7 +640,7 @@ def test_init_service_selection_changes_only_credential_collection(
     assert claude_example == codex_example == both_example
     for service in ("claude", "codex", "both"):
         pycastle_dir = tmp_path / service / "pycastle"
-        assert not (pycastle_dir / "Dockerfile").exists()
+        assert (pycastle_dir / "Dockerfile").exists()
         assert not (pycastle_dir / "Dockerfile.claude").exists()
         assert not (pycastle_dir / "Dockerfile.codex").exists()
 
@@ -749,7 +751,7 @@ def test_init_global_keeps_project_shaped_files_local(tmp_path, monkeypatch):
     assert (local / "setup" / "cron.sh").exists()
     assert not (local / "Dockerfile.claude").exists()
     assert not (local / "Dockerfile.codex").exists()
-    assert not (local / "Dockerfile").exists()
+    assert (local / "Dockerfile").exists()
 
 
 def test_init_global_skip_existing_config_with_message(tmp_path, monkeypatch, capsys):
@@ -1690,7 +1692,7 @@ def test_init_refresh_does_not_scaffold_dockerfiles_for_claude_config(
     refresh()
 
     assert dockerfile.read_text() == "FROM scratch\n"
-    assert not (tmp_path / "pycastle" / "Dockerfile").exists()
+    assert (tmp_path / "pycastle" / "Dockerfile").exists()
 
 
 @pytest.mark.parametrize(
@@ -1722,7 +1724,7 @@ def test_init_refresh_codex_config_does_not_create_dockerfile(
 
     dockerfile = tmp_path / "pycastle" / "Dockerfile.codex"
     assert not dockerfile.exists()
-    assert not (tmp_path / "pycastle" / "Dockerfile").exists()
+    assert (tmp_path / "pycastle" / "Dockerfile").exists()
 
 
 def test_init_refresh_adds_newly_referenced_codex_dockerfile_without_overwriting_claude(
@@ -1745,7 +1747,7 @@ def test_init_refresh_adds_newly_referenced_codex_dockerfile_without_overwriting
 
     assert claude_dockerfile.read_text() == "# customized claude Dockerfile\n"
     assert not (pycastle_dir / "Dockerfile.codex").exists()
-    assert not (pycastle_dir / "Dockerfile").exists()
+    assert (pycastle_dir / "Dockerfile").exists()
 
 
 def test_init_refresh_legacy_default_service_codex_creates_no_dockerfiles(
@@ -1768,7 +1770,7 @@ def test_init_refresh_legacy_default_service_codex_creates_no_dockerfiles(
 
     assert not (tmp_path / "pycastle" / "Dockerfile.claude").exists()
     assert not (tmp_path / "pycastle" / "Dockerfile.codex").exists()
-    assert not (tmp_path / "pycastle" / "Dockerfile").exists()
+    assert (tmp_path / "pycastle" / "Dockerfile").exists()
 
 
 def test_init_refresh_leaves_existing_role_codex_dirs_unmodified(tmp_path, monkeypatch):
@@ -1860,7 +1862,7 @@ def test_refresh_reports_created_for_every_copied_file_when_pycastle_dir_empty(
     assert (tmp_path / "pycastle" / "config.py.example").exists()
     assert not (tmp_path / "pycastle" / "Dockerfile.claude").exists()
     assert not (tmp_path / "pycastle" / "Dockerfile.codex").exists()
-    assert not (tmp_path / "pycastle" / "Dockerfile").exists()
+    assert (tmp_path / "pycastle" / "Dockerfile").exists()
 
 
 def test_refresh_reports_unchanged_when_file_byte_equal(tmp_path, monkeypatch, capsys):

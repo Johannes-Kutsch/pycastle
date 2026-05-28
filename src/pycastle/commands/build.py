@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..config import Config, image_name_for, load_config, resolve_dockerfile
-from ..config.loader import referenced_services
+from ..config import Config, load_config, resolve_dockerfile
 from ..errors import ConfigValidationError
 from ..services import DockerService
 from ..services.docker_service import BuildOutcome
@@ -33,21 +32,18 @@ def main(
         parts = version.split(".")
         python_version = ".".join(parts[:2]) if len(parts) >= 2 else version
 
-    outcomes: list[BuildOutcome | None] = []
-    for service in sorted(referenced_services(cfg)):
-        image_name = image_name_for(cfg.docker_image_name, service)
-        print(f"Building {image_name}...")
-        outcomes.append(
-            docker_service.build_image(
-                image_name,
-                resolve_dockerfile(service, cfg.pycastle_dir),
-                Path("."),
-                no_cache=no_cache,
-                stream=stream,
-                terse=terse,
-                python_version=python_version,
-            )
+    print(f"Building {cfg.docker_image_name}...")
+    outcomes = [
+        docker_service.build_image(
+            cfg.docker_image_name,
+            resolve_dockerfile(cfg.pycastle_dir),
+            Path("."),
+            no_cache=no_cache,
+            stream=stream,
+            terse=terse,
+            python_version=python_version,
         )
+    ]
 
     if not stream:
         print("Build complete.")

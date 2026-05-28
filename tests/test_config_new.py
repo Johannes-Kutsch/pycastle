@@ -57,13 +57,13 @@ def test_load_config_uses_universal_default_stage_priority_chains(tmp_path):
     )
 
 
-def test_resolve_dockerfile_returns_local_per_service_override(tmp_path):
+def test_resolve_dockerfile_returns_local_universal_override(tmp_path):
     pycastle_dir = tmp_path / "pycastle"
     pycastle_dir.mkdir()
-    dockerfile = pycastle_dir / "Dockerfile.claude"
+    dockerfile = pycastle_dir / "Dockerfile"
     dockerfile.write_text("FROM local\n")
 
-    assert resolve_dockerfile("claude", pycastle_dir) == dockerfile
+    assert resolve_dockerfile(pycastle_dir) == dockerfile
 
 
 def test_resolve_dockerfile_returns_bundled_default_when_no_local_override(
@@ -76,39 +76,42 @@ def test_resolve_dockerfile_returns_bundled_default_when_no_local_override(
         / "src"
         / "pycastle"
         / "defaults"
-        / "Dockerfile.claude"
+        / "Dockerfile"
     )
 
-    assert resolve_dockerfile("claude", pycastle_dir) == bundled_default
+    assert resolve_dockerfile(pycastle_dir) == bundled_default
 
 
-def test_resolve_dockerfile_returns_codex_bundled_default(tmp_path):
+def test_resolve_dockerfile_accepts_legacy_service_argument_order(tmp_path):
     pycastle_dir = tmp_path / "pycastle"
     bundled_default = (
         Path(__file__).resolve().parent.parent
         / "src"
         / "pycastle"
         / "defaults"
-        / "Dockerfile.codex"
+        / "Dockerfile"
     )
 
     assert resolve_dockerfile("codex", pycastle_dir) == bundled_default
 
 
-def test_resolve_dockerfile_unknown_service_raises_config_validation_error(
-    tmp_path,
+def test_resolve_dockerfile_without_bundled_default_raises_config_validation_error(
+    tmp_path, monkeypatch
 ):
+    import pycastle.config.loader as loader
+
     pycastle_dir = tmp_path / "pycastle"
     pycastle_dir.mkdir()
+    monkeypatch.setattr(loader, "_DEFAULTS_DIR", tmp_path / "missing-defaults")
 
     with pytest.raises(ConfigValidationError):
-        resolve_dockerfile("unknown-service", pycastle_dir)
+        resolve_dockerfile(pycastle_dir)
 
 
-def test_image_name_for_returns_per_service_image_name():
+def test_image_name_for_returns_universal_image_name():
     from pycastle.config import image_name_for
 
-    assert image_name_for("myproject", "claude") == "myproject-claude"
+    assert image_name_for("myproject", "claude") == "myproject"
 
 
 def test_config_has_bug_label_default():

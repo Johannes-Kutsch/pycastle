@@ -481,7 +481,7 @@ def test_agent_runner_does_not_fall_back_to_claude_for_unknown_requested_service
 
 
 @pytest.mark.parametrize("service_name", ["claude", "codex"])
-def test_agent_runner_uses_per_service_image_for_requested_service(
+def test_agent_runner_uses_universal_image_for_requested_service(
     tmp_path, service_name
 ):
     requested_service = _RecordingAgentService(service_name)
@@ -508,10 +508,7 @@ def test_agent_runner_uses_per_service_image_for_requested_service(
 
     assert isinstance(result, CommitMessageOutput)
     docker_client.containers.run.assert_called_once()
-    assert (
-        docker_client.containers.run.call_args.args[0]
-        == f"pycastle-test-{service_name}"
-    )
+    assert docker_client.containers.run.call_args.args[0] == "pycastle-test"
 
 
 def test_agent_runner_uses_default_service_for_empty_request_service(tmp_path):
@@ -544,7 +541,7 @@ def test_agent_runner_uses_default_service_for_empty_request_service(tmp_path):
     assert codex_service.env_state_dirs == [None]
     assert claude_service.commands == []
     docker_client.containers.run.assert_called_once()
-    assert docker_client.containers.run.call_args.args[0] == "pycastle-test-codex"
+    assert docker_client.containers.run.call_args.args[0] == "pycastle-test"
 
 
 def test_agent_runner_uses_claude_when_default_service_is_empty(tmp_path):
@@ -576,7 +573,7 @@ def test_agent_runner_uses_claude_when_default_service_is_empty(tmp_path):
     assert claude_service.commands == ["claude exec"]
     assert codex_service.commands == []
     docker_client.containers.run.assert_called_once()
-    assert docker_client.containers.run.call_args.args[0] == "pycastle-test-claude"
+    assert docker_client.containers.run.call_args.args[0] == "pycastle-test"
 
 
 def test_agent_runner_mixed_services_use_service_command_env_and_parser(
@@ -661,10 +658,10 @@ def test_agent_runner_mixed_services_use_service_command_env_and_parser(
     assert stream_commands[1].startswith("codex exec ")
     assert "--json" in stream_commands[1]
 
-    assert started[0][0] == "pycastle-test-claude"
+    assert started[0][0] == "pycastle-test"
     assert started[0][1]["CLAUDE_CODE_OAUTH_TOKEN"] == "tok-primary"
     assert "CODEX_HOME" not in started[0][1]
-    assert started[1][0] == "pycastle-test-codex"
+    assert started[1][0] == "pycastle-test"
     assert started[1][1]["TZ"] == "UTC"
     assert started[1][1]["CODEX_HOME"].endswith("/.pycastle-session/reviewer/codex/")
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in started[1][1]

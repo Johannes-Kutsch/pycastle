@@ -216,7 +216,7 @@ def test_main_creates_default_docker_service(tmp_path, monkeypatch):
 
 
 def test_build_command_uses_docker_image_name_from_cfg(tmp_path, monkeypatch):
-    """main(cfg=Config(docker_image_name='myimg', ...)) must pass a per-service image name to build_image."""
+    """main(cfg=Config(docker_image_name='myimg', ...)) must pass the universal image name to build_image."""
     from pycastle.commands.build import main
 
     monkeypatch.chdir(tmp_path)
@@ -228,20 +228,37 @@ def test_build_command_uses_docker_image_name_from_cfg(tmp_path, monkeypatch):
         cfg=Config(docker_image_name="myimg"),
     )
 
-    assert [call.args[0] for call in svc.build_image.call_args_list] == [
-        "myimg-claude",
-        "myimg-codex",
+    assert [call.args[0] for call in svc.build_image.call_args_list] == ["myimg"]
+
+
+def test_build_command_builds_one_universal_image_tagged_with_docker_image_name(
+    tmp_path, monkeypatch, capsys
+):
+    from pycastle.commands.build import main
+
+    monkeypatch.chdir(tmp_path)
+    svc = MagicMock()
+    svc.build_image.return_value = None
+
+    main(
+        docker_service=svc,
+        cfg=Config(docker_image_name="myimg"),
+    )
+
+    assert [call.args[:3] for call in svc.build_image.call_args_list] == [
+        ("myimg", resolve_dockerfile(Path("pycastle")), Path("."))
     ]
+    assert capsys.readouterr().out.count("Building myimg...") == 1
 
 
 def test_build_command_uses_resolved_dockerfile_path(tmp_path, monkeypatch):
-    """main(cfg=Config(...)) must pass the resolved per-service Dockerfile to build_image."""
+    """main(cfg=Config(...)) must pass the resolved universal Dockerfile to build_image."""
     from pycastle.commands.build import main
 
     monkeypatch.chdir(tmp_path)
     pycastle_dir = tmp_path / "pycastle"
     pycastle_dir.mkdir()
-    dockerfile = pycastle_dir / "Dockerfile.claude"
+    dockerfile = pycastle_dir / "Dockerfile"
     dockerfile.write_text("FROM scratch\n")
     svc = MagicMock()
     svc.build_image.return_value = None
@@ -252,15 +269,14 @@ def test_build_command_uses_resolved_dockerfile_path(tmp_path, monkeypatch):
     )
 
     assert [call.args[1] for call in svc.build_image.call_args_list] == [
-        Path("pycastle/Dockerfile.claude"),
-        resolve_dockerfile("codex", Path("pycastle")),
+        Path("pycastle/Dockerfile")
     ]
 
 
-# ── Issue 938: per-service image builds ──────────────────────────────────────
+# ── Issue 938: universal image builds ────────────────────────────────────────
 
 
-def test_build_command_builds_claude_service_image_from_resolved_dockerfile(
+def test_build_command_builds_universal_image_from_resolved_dockerfile(
     tmp_path, monkeypatch, capsys
 ):
     from pycastle.commands.build import main
@@ -268,32 +284,29 @@ def test_build_command_builds_claude_service_image_from_resolved_dockerfile(
     monkeypatch.chdir(tmp_path)
     pycastle_dir = tmp_path / "pycastle"
     pycastle_dir.mkdir()
-    dockerfile = pycastle_dir / "Dockerfile.claude"
+    dockerfile = pycastle_dir / "Dockerfile"
     dockerfile.write_text("FROM scratch\n")
     svc = MagicMock()
     svc.build_image.return_value = None
 
     main(docker_service=svc, cfg=Config(docker_image_name="myproject"))
 
-    assert svc.build_image.call_count == 2
+    assert svc.build_image.call_count == 1
     args, _kwargs = svc.build_image.call_args_list[0]
     assert args[:3] == (
-        "myproject-claude",
-        Path("pycastle/Dockerfile.claude"),
+        "myproject",
+        Path("pycastle/Dockerfile"),
         Path("."),
     )
-    assert "Building myproject-claude..." in capsys.readouterr().out
+    assert "Building myproject..." in capsys.readouterr().out
 
 
-def test_build_command_builds_codex_service_image_from_resolved_dockerfile(
+def test_build_command_builds_universal_image_with_default_dockerfile_when_local_override_is_missing(
     tmp_path, monkeypatch, capsys
 ):
     from pycastle.commands.build import main
 
     monkeypatch.chdir(tmp_path)
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    (pycastle_dir / "Dockerfile.codex").write_text("FROM scratch\n")
     svc = MagicMock()
     svc.build_image.return_value = None
 
@@ -302,14 +315,14 @@ def test_build_command_builds_codex_service_image_from_resolved_dockerfile(
     svc.build_image.assert_called_once()
     args, _kwargs = svc.build_image.call_args
     assert args[:3] == (
-        "myproject-codex",
-        Path("pycastle/Dockerfile.codex"),
+        "myproject",
+        resolve_dockerfile(Path("pycastle")),
         Path("."),
     )
-    assert "Building myproject-codex..." in capsys.readouterr().out
+    assert "Building myproject..." in capsys.readouterr().out
 
 
-def test_build_command_builds_each_service_referenced_by_fallback_chain(
+def test_build_command_ignores_stage_fallback_services_when_building_universal_image(
     tmp_path, monkeypatch, capsys
 ):
     from pycastle.commands.build import main
@@ -317,8 +330,7 @@ def test_build_command_builds_each_service_referenced_by_fallback_chain(
     monkeypatch.chdir(tmp_path)
     pycastle_dir = tmp_path / "pycastle"
     pycastle_dir.mkdir()
-    (pycastle_dir / "Dockerfile.claude").write_text("FROM scratch\n")
-    (pycastle_dir / "Dockerfile.codex").write_text("FROM scratch\n")
+    (pycastle_dir / "Dockerfile").write_text("FROM scratch\n")
     svc = MagicMock()
     svc.build_image.return_value = None
     cfg = Config(
@@ -333,12 +345,27 @@ def test_build_command_builds_each_service_referenced_by_fallback_chain(
     main(docker_service=svc, cfg=cfg)
 
     assert [call.args[:3] for call in svc.build_image.call_args_list] == [
-        ("myproject-claude", Path("pycastle/Dockerfile.claude"), Path(".")),
-        ("myproject-codex", Path("pycastle/Dockerfile.codex"), Path(".")),
+        ("myproject", Path("pycastle/Dockerfile"), Path(".")),
     ]
     out = capsys.readouterr().out
-    assert "Building myproject-claude..." in out
-    assert "Building myproject-codex..." in out
+    assert out.count("Building myproject...") == 1
+
+
+def test_packaging_includes_bundled_universal_dockerfile():
+    package_data = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert '"defaults/Dockerfile",' in package_data
+
+
+def test_bundled_universal_dockerfile_installs_supported_clis_and_baseline_tools():
+    dockerfile = Path("src/pycastle/defaults/Dockerfile").read_text(encoding="utf-8")
+
+    assert "@openai/codex@0.134.0" in dockerfile
+    assert "@anthropic-ai/claude-code@2.1.152" in dockerfile
+    for tool in ("gh", "git", "jq", "curl", "ripgrep"):
+        assert tool in dockerfile
+    assert "GH_TOKEN" not in dockerfile
+    assert "auth.json" not in dockerfile
 
 
 # ── Issue 222: empty docker_image_name guard ──────────────────────────────────
