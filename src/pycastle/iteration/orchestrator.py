@@ -371,19 +371,33 @@ async def run(
                         github_svc=github_service,
                     )
                     sys.exit(1)
-                case AbortedSetup(phase=phase, message=message):
+                case AbortedSetup(
+                    phase=phase,
+                    message=message,
+                    command=command,
+                    output=output,
+                ):
                     first_line = next(iter(message.splitlines()), "")
                     title = f"[pycastle] {phase} setup failure: {first_line}"
-                    body = (
-                        f"## Setup phase failure\n\n"
-                        f"Phase: {phase}\n\n"
-                        f"```\n{message}\n```\n"
-                    )
+                    body_parts = [
+                        "## Setup phase failure\n",
+                        f"Phase: {phase}\n",
+                        f"```\n{message}\n```\n",
+                    ]
+                    if command:
+                        body_parts.append(f"Command: `{command}`\n")
+                    if output:
+                        body_parts.append(f"Output:\n\n```\n{output}\n```\n")
+                    body = "\n".join(body_parts)
                     url = auto_file_issue(title, body, BUG_REPORT_LABEL_LIST, cfg=cfg)
+                    local_parts = [f"{phase} setup failed: {message}"]
+                    if command:
+                        local_parts.append(f"Command: {command}")
+                    if output:
+                        local_parts.append(f"Output: {output}")
                     status_display.print(  # type: ignore[union-attr]
                         "",
-                        f"{phase} setup failed: {message}"
-                        + (f" — {url}" if url else ""),
+                        "\n".join(local_parts) + (f"\nReport: {url}" if url else ""),
                     )
                     sys.exit(1)
                 case Continue():

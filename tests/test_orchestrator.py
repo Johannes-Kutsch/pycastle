@@ -3783,6 +3783,85 @@ def test_orchestrator_routes_missing_pyproject_declared_preflight_tool_as_setup_
     )
 
 
+def test_orchestrator_includes_command_and_output_in_upstream_setup_failure_report(
+    tmp_path,
+):
+    """Handled Setup/toolchain failures must report the relevant command and output upstream."""
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['ruff']\n",
+        encoding="utf-8",
+    )
+    runner = FakeAgentRunner(
+        [CompletionOutput()],
+        preflight_responses=[
+            [
+                (
+                    "ruff",
+                    "ruff check .",
+                    "Command failed (exit 127): bash: ruff: command not found",
+                )
+            ]
+        ],
+    )
+
+    with patch(
+        "pycastle.iteration.orchestrator.auto_file_issue",
+        return_value="https://example.com/upstream/1",
+    ) as mock_file:
+        with pytest.raises(SystemExit):
+            _run(
+                tmp_path,
+                agent_runner=runner,
+                github_service=_make_github_svc(),
+                git_service=_make_git_svc(),
+            )
+
+    body = mock_file.call_args.args[1]
+    assert "Command: `ruff check .`" in body
+    assert "bash: ruff: command not found" in body
+
+
+def test_orchestrator_prints_setup_failure_details_locally(tmp_path):
+    """Handled Setup/toolchain failures must print the failed step and captured output locally."""
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['ruff']\n",
+        encoding="utf-8",
+    )
+    runner = FakeAgentRunner(
+        [CompletionOutput()],
+        preflight_responses=[
+            [
+                (
+                    "ruff",
+                    "ruff check .",
+                    "Command failed (exit 127): bash: ruff: command not found",
+                )
+            ]
+        ],
+    )
+    display = RecordingStatusDisplay()
+
+    with patch(
+        "pycastle.iteration.orchestrator.auto_file_issue",
+        return_value="https://example.com/upstream/1",
+    ):
+        with pytest.raises(SystemExit):
+            _run(
+                tmp_path,
+                agent_runner=runner,
+                github_service=_make_github_svc(),
+                git_service=_make_git_svc(),
+                status_display=display,
+            )
+
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    final_message = str(print_calls[-1][2])
+    assert "preflight setup failed" in final_message
+    assert "Missing expected preflight tool 'ruff'" in final_message
+    assert "ruff check ." in final_message
+    assert "bash: ruff: command not found" in final_message
+
+
 def test_orchestrator_handles_empty_preflight_setup_failure_message(tmp_path):
     """Setup-phase aborts must stay setup-specific even when the underlying error text is empty."""
     from pycastle.errors import DockerError

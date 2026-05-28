@@ -89,6 +89,8 @@ class AbortedHardApiError:
 class AbortedSetup:
     phase: str
     message: str
+    command: str | None = None
+    output: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -340,4 +342,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
         return AbortedHardApiError(status_code=err.status_code)
     except SetupPhaseError as err:
-        return AbortedSetup(phase=err.phase, message=str(err))
+        return AbortedSetup(
+            phase=err.phase,
+            message=str(err),
+            command=err.command,
+            output=err.output,
+        )

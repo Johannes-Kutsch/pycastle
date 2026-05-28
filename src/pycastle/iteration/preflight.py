@@ -233,6 +233,8 @@ class PreflightCache:
                     "Missing expected preflight tool "
                     f"'{classification.tool}' declared in "
                     f"{classification.dependency_source}.",
+                    command=command,
+                    output=output,
                 )
 
     async def _handle_failure(
