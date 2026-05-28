@@ -47,7 +47,8 @@ def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
     )
 
 
-_ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\nOPENCODE_GO_API_KEY=\n"
+_ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
+_OPENCODE_ENV_TEMPLATE = "OPENCODE_GO_API_KEY=\n"
 
 _CONFIG_EXAMPLE_TEMPLATE = """from pathlib import Path
 
@@ -243,6 +244,12 @@ def _merge_env_template(env_file: Path, template: str) -> None:
     env_file.write_text(content)
 
 
+def _managed_env_template(service: str) -> str:
+    if service == "opencode":
+        return _ENV_TEMPLATE + _OPENCODE_ENV_TEMPLATE
+    return _ENV_TEMPLATE
+
+
 def _write_config_example(target_dir: Path) -> None:
     target_dir.mkdir(parents=True, exist_ok=True)
     (target_dir / "config.py.example").write_text(_CONFIG_EXAMPLE_TEMPLATE)
@@ -389,12 +396,13 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     gh_token = ""
     claude_token = ""
     if manage_env_file:
+        env_template = _managed_env_template(service)
         if env_file.exists():
-            _merge_env_template(env_file, _ENV_TEMPLATE)
+            _merge_env_template(env_file, env_template)
         else:
             env_file.parent.mkdir(parents=True, exist_ok=True)
             try:
-                env_file.write_text(_ENV_TEMPLATE)
+                env_file.write_text(env_template)
             except Exception as e:
                 click.echo(
                     click.style(f"Error: could not write {env_file} — {e}", fg="red"),

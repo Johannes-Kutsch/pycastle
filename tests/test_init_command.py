@@ -719,6 +719,67 @@ def test_init_opencode_selection_adds_env_key_without_changing_stage_policy(
     )
 
 
+@pytest.mark.parametrize("service", ["claude", "codex", "both"])
+def test_init_non_opencode_selection_keeps_managed_env_template_unchanged(
+    tmp_path, monkeypatch, service
+):
+    from pycastle.commands.init import main
+
+    workspace = tmp_path / service
+    workspace.mkdir()
+    monkeypatch.chdir(workspace)
+
+    def capture_prompt(message: str, *args: object, **kwargs: object) -> str:
+        if "agent services" in message.lower():
+            return service
+        return ""
+
+    with (
+        patch("click.prompt", side_effect=capture_prompt),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    env_content = (workspace / "pycastle" / ".env").read_text()
+
+    assert "CLAUDE_CODE_OAUTH_TOKEN=\n" in env_content
+    assert "GH_TOKEN=\n" in env_content
+    assert "OPENCODE_GO_API_KEY=\n" not in env_content
+
+
+def test_init_opencode_rerun_preserves_existing_credentials_without_overwrite(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.init import main
+
+    workspace = tmp_path / "opencode-rerun"
+    pycastle_dir = workspace / "pycastle"
+    pycastle_dir.mkdir(parents=True)
+    (pycastle_dir / ".env").write_text(
+        "GH_TOKEN=existing-gh\nOPENCODE_GO_API_KEY=existing-opencode\n"
+    )
+    monkeypatch.chdir(workspace)
+
+    def capture_prompt(message: str, *args: object, **kwargs: object) -> str:
+        if "agent services" in message.lower():
+            return "opencode"
+        return ""
+
+    prompt_mock = patch("click.prompt", side_effect=capture_prompt)
+    confirm_mock = patch("click.confirm", return_value=False)
+    with prompt_mock as pm, confirm_mock:
+        main(scope="local")
+
+    env_content = (pycastle_dir / ".env").read_text()
+    prompt_calls = [call.args[0] for call in pm.call_args_list]
+
+    assert "GH_TOKEN=existing-gh" in env_content
+    assert "OPENCODE_GO_API_KEY=existing-opencode" in env_content
+    assert "CLAUDE_CODE_OAUTH_TOKEN=\n" in env_content
+    assert not any("GitHub token" in prompt for prompt in prompt_calls)
+    assert not any("OpenCode Go API key" in prompt for prompt in prompt_calls)
+
+
 def test_init_config_example_documents_opencode_opt_in_stage_chain(
     tmp_path, monkeypatch
 ):
