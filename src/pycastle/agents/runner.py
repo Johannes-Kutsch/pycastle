@@ -21,7 +21,9 @@ from ..infrastructure.preflight_tool_classifier import load_python_dependency_me
 from ..errors import (
     AgentFailedError,
     AgentTimeoutError,
+    DockerError,
     HardAgentError,
+    SetupPhaseError,
     TransientAgentError,
     UsageLimitError,
 )
@@ -305,7 +307,10 @@ class AgentRunner:
             try:
                 git_name = self._git_service.get_user_name()
                 git_email = self._git_service.get_user_email()
-                await runner.setup(git_name, git_email, work_body)
+                try:
+                    await runner.setup(git_name, git_email, work_body)
+                except DockerError as exc:
+                    raise SetupPhaseError(role.value, str(exc)) from exc
 
                 if run_kind == RunKind.FRESH:
                     role_session.start_fresh()
@@ -451,7 +456,10 @@ class AgentRunner:
                 cfg=self._cfg,
             )
             try:
-                await runner.setup(git_name, git_email, work_body)
+                try:
+                    await runner.setup(git_name, git_email, work_body)
+                except DockerError as exc:
+                    raise SetupPhaseError("preflight", str(exc)) from exc
                 failures = await runner.preflight(
                     list(self._cfg.preflight_checks),
                     python_dependency_metadata=python_dependency_metadata,

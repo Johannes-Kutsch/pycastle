@@ -24,6 +24,7 @@ from pycastle.errors import (
     AgentTimeoutError,
     DockerError,
     HardAgentError,
+    SetupPhaseError,
     TransientAgentError,
     UsageLimitError,
 )
@@ -848,6 +849,31 @@ def test_agent_runner_run_raises_agent_failed_error_for_protocol_error(tmp_path)
     assert err.namespace == ""
 
 
+def test_agent_runner_run_raises_setup_phase_error_when_role_setup_fails(tmp_path):
+    from unittest.mock import AsyncMock, patch
+
+    runner = AgentRunner(
+        {}, _make_cfg(tmp_path), _make_git_service(), docker_client=MagicMock()
+    )
+    request = _run_request(
+        name="Plan Agent",
+        template=_PLAN_TEMPLATE,
+        scope_args=_PLAN_SCOPE_ARGS,
+        mount_path=tmp_path,
+        role=AgentRole.PLANNER,
+    )
+
+    with patch(
+        "pycastle.agents.runner.ContainerRunner.setup", new=AsyncMock()
+    ) as setup:
+        setup.side_effect = DockerError("pip install failed")
+        with pytest.raises(SetupPhaseError) as exc_info:
+            asyncio.run(runner.run(request))
+
+    assert exc_info.value.phase == AgentRole.PLANNER.value
+    assert str(exc_info.value) == "pip install failed"
+
+
 def test_agent_runner_run_retries_on_timeout_and_returns_output(tmp_path):
     mock_client = MagicMock()
     mock_container = MagicMock()
@@ -1035,6 +1061,26 @@ def test_agent_runner_run_preflight_returns_empty_list_when_all_checks_pass(tmp_
     assert result == []
 
 
+def test_agent_runner_run_preflight_raises_setup_phase_error_when_setup_fails(
+    tmp_path,
+):
+    from unittest.mock import AsyncMock, patch
+
+    runner = AgentRunner(
+        {}, _make_cfg(tmp_path), _make_git_service(), docker_client=MagicMock()
+    )
+
+    with patch(
+        "pycastle.agents.runner.ContainerRunner.setup", new=AsyncMock()
+    ) as setup:
+        setup.side_effect = DockerError("pip install failed")
+        with pytest.raises(SetupPhaseError) as exc_info:
+            asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert exc_info.value.phase == "preflight"
+    assert str(exc_info.value) == "pip install failed"
+
+
 def test_agent_runner_run_preflight_returns_failure_tuple_when_check_fails(tmp_path):
     mock_client = _make_preflight_docker_client(
         exit_code=1, stdout=b"E501 line too long"
@@ -1088,11 +1134,11 @@ def test_agent_runner_run_preflight_stops_container_when_check_fails(tmp_path):
     mock_client.containers.run.return_value.stop.assert_called()
 
 
-def test_agent_runner_run_preflight_propagates_docker_error_when_pip_install_fails(
+def test_agent_runner_run_preflight_raises_setup_phase_error_when_pip_install_fails(
     tmp_path,
 ):
-    # Reproduces the issue-342 silent-swallow bug: if pip install fails, DockerError
-    # must propagate out of run_preflight rather than continuing with ruff absent.
+    # If pip install fails during Setup, the preflight container must abort via
+    # the shared setup-failure path rather than continuing with ruff absent.
     mock_client = MagicMock()
     mock_container = MagicMock()
     mock_client.containers.run.return_value = mock_container
@@ -1111,8 +1157,10 @@ def test_agent_runner_run_preflight_propagates_docker_error_when_pip_install_fai
     cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    with pytest.raises(DockerError):
+    with pytest.raises(SetupPhaseError) as exc_info:
         asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert exc_info.value.phase == "preflight"
 
 
 def test_agent_runner_run_preflight_passes_checks_that_require_installed_tools(
