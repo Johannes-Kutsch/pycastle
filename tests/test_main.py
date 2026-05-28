@@ -241,7 +241,7 @@ def test_build_cmd_uses_config_docker_image_name(tmp_path, monkeypatch):
         with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
             CliRunner().invoke(cli, ["build"])
 
-    assert fake_svc.build_image.call_args[0][0] == "custom-img"
+    assert fake_svc.build_image.call_args[0][0] == "custom-img-claude"
 
 
 # ── Issue 757: CLI shim translates build_command outcomes to exit codes ──────

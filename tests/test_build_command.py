@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pycastle.config import Config
+from pycastle.config import Config, StageOverride
 from pycastle.services import DockerService
 from pycastle.errors import ConfigValidationError, DockerBuildError, DockerServiceError
 
@@ -65,6 +65,21 @@ def _subprocess_ok():
     result.returncode = 0
     result.stderr = ""
     return result
+
+
+def _cfg_referencing_only(
+    service: str, docker_image_name: str = "test-image"
+) -> Config:
+    override = StageOverride(service=service, effort="low")
+    return Config(
+        docker_image_name=docker_image_name,
+        plan_override=override,
+        implement_override=override,
+        review_override=override,
+        merge_override=override,
+        preflight_issue_override=override,
+        improve_override=override,
+    )
 
 
 # ── subprocess command flags ──────────────────────────────────────────────────
@@ -201,7 +216,7 @@ def test_main_creates_default_docker_service(tmp_path, monkeypatch):
 
 
 def test_build_command_uses_docker_image_name_from_cfg(tmp_path, monkeypatch):
-    """main(cfg=Config(docker_image_name='myimg', ...)) must pass 'myimg' to build_image."""
+    """main(cfg=Config(docker_image_name='myimg', ...)) must pass a per-service image name to build_image."""
     from pycastle.commands.build import main
 
     monkeypatch.chdir(tmp_path)
@@ -213,14 +228,18 @@ def test_build_command_uses_docker_image_name_from_cfg(tmp_path, monkeypatch):
         cfg=Config(docker_image_name="myimg"),
     )
 
-    assert svc.build_image.call_args[0][0] == "myimg"
+    assert svc.build_image.call_args[0][0] == "myimg-claude"
 
 
-def test_build_command_uses_default_dockerfile_path(tmp_path, monkeypatch):
-    """main(cfg=Config(...)) must pass the default Dockerfile path to build_image."""
+def test_build_command_uses_resolved_dockerfile_path(tmp_path, monkeypatch):
+    """main(cfg=Config(...)) must pass the resolved per-service Dockerfile to build_image."""
     from pycastle.commands.build import main
 
     monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    dockerfile = pycastle_dir / "Dockerfile.claude"
+    dockerfile.write_text("FROM scratch\n")
     svc = MagicMock()
     svc.build_image.return_value = None
 
@@ -229,7 +248,91 @@ def test_build_command_uses_default_dockerfile_path(tmp_path, monkeypatch):
         cfg=Config(docker_image_name="img"),
     )
 
-    assert svc.build_image.call_args[0][1] == Path("pycastle/Dockerfile")
+    assert svc.build_image.call_args[0][1] == Path("pycastle/Dockerfile.claude")
+
+
+# ── Issue 938: per-service image builds ──────────────────────────────────────
+
+
+def test_build_command_builds_claude_service_image_from_resolved_dockerfile(
+    tmp_path, monkeypatch, capsys
+):
+    from pycastle.commands.build import main
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    dockerfile = pycastle_dir / "Dockerfile.claude"
+    dockerfile.write_text("FROM scratch\n")
+    svc = MagicMock()
+    svc.build_image.return_value = None
+
+    main(docker_service=svc, cfg=Config(docker_image_name="myproject"))
+
+    svc.build_image.assert_called_once()
+    args, _kwargs = svc.build_image.call_args
+    assert args[:3] == (
+        "myproject-claude",
+        Path("pycastle/Dockerfile.claude"),
+        Path("."),
+    )
+    assert "Building myproject-claude..." in capsys.readouterr().out
+
+
+def test_build_command_builds_codex_service_image_from_resolved_dockerfile(
+    tmp_path, monkeypatch, capsys
+):
+    from pycastle.commands.build import main
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "Dockerfile.codex").write_text("FROM scratch\n")
+    svc = MagicMock()
+    svc.build_image.return_value = None
+
+    main(docker_service=svc, cfg=_cfg_referencing_only("codex", "myproject"))
+
+    svc.build_image.assert_called_once()
+    args, _kwargs = svc.build_image.call_args
+    assert args[:3] == (
+        "myproject-codex",
+        Path("pycastle/Dockerfile.codex"),
+        Path("."),
+    )
+    assert "Building myproject-codex..." in capsys.readouterr().out
+
+
+def test_build_command_builds_each_service_referenced_by_fallback_chain(
+    tmp_path, monkeypatch, capsys
+):
+    from pycastle.commands.build import main
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "Dockerfile.claude").write_text("FROM scratch\n")
+    (pycastle_dir / "Dockerfile.codex").write_text("FROM scratch\n")
+    svc = MagicMock()
+    svc.build_image.return_value = None
+    cfg = Config(
+        docker_image_name="myproject",
+        plan_override=StageOverride(
+            service="claude",
+            effort="low",
+            fallback=StageOverride(service="codex", effort="low"),
+        ),
+    )
+
+    main(docker_service=svc, cfg=cfg)
+
+    assert [call.args[:3] for call in svc.build_image.call_args_list] == [
+        ("myproject-claude", Path("pycastle/Dockerfile.claude"), Path(".")),
+        ("myproject-codex", Path("pycastle/Dockerfile.codex"), Path(".")),
+    ]
+    out = capsys.readouterr().out
+    assert "Building myproject-claude..." in out
+    assert "Building myproject-codex..." in out
 
 
 # ── Issue 222: empty docker_image_name guard ──────────────────────────────────

@@ -17,6 +17,7 @@ from pycastle.errors import ConfigValidationError
 __all__ = [
     "Config",
     "describe_config_layers",
+    "image_name_for",
     "load_config",
     "resolve_dockerfile",
     "resolve_global_dir",
@@ -43,6 +44,10 @@ _GLOBAL_FORBIDDEN_FIELDS = frozenset(
 
 def derive_docker_image_name(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def image_name_for(base: str, service: str) -> str:
+    return f"{base}-{service}"
 
 
 @dataclasses.dataclass(frozen=True)

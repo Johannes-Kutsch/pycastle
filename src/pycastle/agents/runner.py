@@ -14,7 +14,7 @@ from .output_protocol import (
     FailedOutput,
 )
 from .result import CancellationToken
-from ..config import Config
+from ..config import Config, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
 from ..infrastructure.docker_session import DockerSession, build_volume_spec
 from ..errors import (
@@ -131,7 +131,7 @@ class AgentRunner:
         return DockerSession(
             volumes=volumes,
             container_env=container_env,
-            image_name=f"{self._cfg.docker_image_name}-{service.name}",
+            image_name=image_name_for(self._cfg.docker_image_name, service.name),
             cfg=self._cfg,
             docker_client=self._docker_client,
             auto_overlay=auto_overlay,
