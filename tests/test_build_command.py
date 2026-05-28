@@ -1,5 +1,9 @@
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from zipfile import ZipFile
 
 import pytest
 
@@ -80,6 +84,38 @@ def _cfg_referencing_only(
         preflight_issue_override=override,
         improve_override=override,
     )
+
+
+def _shipped_defaults_in_wheel(tmp_path: Path) -> set[str]:
+    repo_root = Path(__file__).resolve().parents[1]
+    build_dir = repo_root / "build"
+    shutil.rmtree(build_dir, ignore_errors=True)
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "wheel",
+                ".",
+                "--no-deps",
+                "-w",
+                str(tmp_path),
+            ],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        wheel_path = next(tmp_path.glob("pycastle-*.whl"))
+        with ZipFile(wheel_path) as wheel:
+            return {
+                name[len("pycastle/") :]
+                for name in wheel.namelist()
+                if name.startswith("pycastle/defaults/") and not name.endswith("/")
+            }
+    finally:
+        shutil.rmtree(build_dir, ignore_errors=True)
 
 
 # ── subprocess command flags ──────────────────────────────────────────────────
@@ -380,6 +416,20 @@ def test_packaging_includes_bundled_universal_dockerfile():
     assert '"defaults/Dockerfile.claude",' not in package_data
     assert '"defaults/Dockerfile.codex",' not in package_data
     assert '"defaults/Dockerfile.opencode",' not in package_data
+
+
+def test_wheel_ships_current_bundled_runtime_defaults_tree_only(tmp_path):
+    shipped_defaults = _shipped_defaults_in_wheel(tmp_path)
+    bundled_defaults = {
+        str(path.relative_to(Path("src/pycastle")))
+        for path in Path("src/pycastle/defaults").rglob("*")
+        if path.is_file()
+    }
+
+    assert bundled_defaults <= shipped_defaults
+    assert "defaults/Dockerfile.claude" not in shipped_defaults
+    assert "defaults/Dockerfile.codex" not in shipped_defaults
+    assert "defaults/Dockerfile.opencode" not in shipped_defaults
 
 
 def test_bundled_universal_dockerfile_installs_supported_clis_and_baseline_tools():
