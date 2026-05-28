@@ -70,18 +70,10 @@ def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
     return result
 
 
-class PreflightCache:
-    """Single-slot, process-scoped cache for preflight verdicts.
-
-    Constructed once in orchestrator.run() outside the iteration loop so its slot
-    survives iteration reconstruction.  All callers serialise via the internal lock.
-    """
+class BranchRefreshBoundary:
+    """Refresh the current branch, preserving preflight's existing recovery flow."""
 
     _DIVERGE_SANDBOX = "pycastle/diverge-sandbox"
-
-    def __init__(self) -> None:
-        self._verdict: PreflightResult | None = None
-        self._lock: asyncio.Lock = asyncio.Lock()
 
     @staticmethod
     def _try_recover_unrelated_histories(deps: _PreflightDeps) -> bool:
@@ -122,6 +114,61 @@ class PreflightCache:
             style="error",
         )
         return False
+
+    async def pull_with_resolution(self, deps: _PreflightDeps) -> None:
+        """Pull from origin, escalating to the divergence-resolver agent on textual conflict."""
+        from ..infrastructure.worktree import managed_worktree
+
+        try:
+            deps.git_svc.pull_with_merge_fallback(deps.repo_root)
+        except UnrelatedHistoriesError:
+            if self._try_recover_unrelated_histories(deps):
+                return
+            raise
+        except GitCommandError as pull_exc:
+            if "conflict" not in str(pull_exc).lower():
+                raise
+            branch = deps.git_svc.get_current_branch(deps.repo_root)
+            current_sha = deps.git_svc.get_head_sha(deps.repo_root)
+            try:
+                async with managed_worktree(
+                    "diverge-sandbox",
+                    branch=self._DIVERGE_SANDBOX,
+                    sha=current_sha,
+                    delete_branch_on_teardown=True,
+                    deps=deps,
+                ) as sandbox_path:
+                    await deps.agent_runner.run(
+                        RunRequest(
+                            name="Divergence Resolver",
+                            template=PromptTemplate.DIVERGENCE_RESOLVE,
+                            mount_path=sandbox_path,
+                            role=AgentRole.DIVERGENCE_RESOLVER,
+                            scope_args={"BRANCH": branch},
+                            service=deps.cfg.merge_override.service,
+                            status_display=deps.status_display,
+                            work_body="Resolving divergence",
+                        )
+                    )
+                    deps.git_svc.fast_forward_branch(
+                        deps.repo_root, branch, self._DIVERGE_SANDBOX
+                    )
+                    RoleSession(sandbox_path, AgentRole.DIVERGENCE_RESOLVER).discard()
+            except Exception:
+                raise pull_exc from None
+
+
+class PreflightCache:
+    """Single-slot, process-scoped cache for preflight verdicts.
+
+    Constructed once in orchestrator.run() outside the iteration loop so its slot
+    survives iteration reconstruction.  All callers serialise via the internal lock.
+    """
+
+    def __init__(self) -> None:
+        self._verdict: PreflightResult | None = None
+        self._lock: asyncio.Lock = asyncio.Lock()
+        self._branch_refresh = BranchRefreshBoundary()
 
     async def _handle_failure(
         self,
@@ -172,46 +219,7 @@ class PreflightCache:
         return PreflightAFK(sha=sha, issue_number=agent_result.number)
 
     async def pull_with_resolution(self, deps: _PreflightDeps) -> None:
-        """Pull from origin, escalating to the divergence-resolver agent on textual conflict."""
-        from ..infrastructure.worktree import managed_worktree
-
-        try:
-            deps.git_svc.pull_with_merge_fallback(deps.repo_root)
-        except UnrelatedHistoriesError:
-            if self._try_recover_unrelated_histories(deps):
-                return
-            raise
-        except GitCommandError as pull_exc:
-            if "conflict" not in str(pull_exc).lower():
-                raise
-            branch = deps.git_svc.get_current_branch(deps.repo_root)
-            current_sha = deps.git_svc.get_head_sha(deps.repo_root)
-            try:
-                async with managed_worktree(
-                    "diverge-sandbox",
-                    branch=self._DIVERGE_SANDBOX,
-                    sha=current_sha,
-                    delete_branch_on_teardown=True,
-                    deps=deps,
-                ) as sandbox_path:
-                    await deps.agent_runner.run(
-                        RunRequest(
-                            name="Divergence Resolver",
-                            template=PromptTemplate.DIVERGENCE_RESOLVE,
-                            mount_path=sandbox_path,
-                            role=AgentRole.DIVERGENCE_RESOLVER,
-                            scope_args={"BRANCH": branch},
-                            service=deps.cfg.merge_override.service,
-                            status_display=deps.status_display,
-                            work_body="Resolving divergence",
-                        )
-                    )
-                    deps.git_svc.fast_forward_branch(
-                        deps.repo_root, branch, self._DIVERGE_SANDBOX
-                    )
-                    RoleSession(sandbox_path, AgentRole.DIVERGENCE_RESOLVER).discard()
-            except Exception:
-                raise pull_exc from None
+        await self._branch_refresh.pull_with_resolution(deps)
 
     async def get_safe_sha(self, deps: _PreflightDeps) -> PreflightResult:
         from ..infrastructure.worktree import transient_worktree
@@ -219,7 +227,7 @@ class PreflightCache:
         async with self._lock:
             await _wait_for_clean_working_tree(deps, "Preflight")
             try:
-                await self.pull_with_resolution(deps)
+                await self._branch_refresh.pull_with_resolution(deps)
             except UnrelatedHistoriesError:
                 raise
             except GitCommandError as pull_exc:
