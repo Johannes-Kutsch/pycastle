@@ -372,9 +372,8 @@ async def run(
                     )
                     sys.exit(1)
                 case AbortedSetup(phase=phase, message=message):
-                    title = (
-                        f"[pycastle] {phase} setup failure: {message.splitlines()[0]}"
-                    )
+                    first_line = next(iter(message.splitlines()), "")
+                    title = f"[pycastle] {phase} setup failure: {first_line}"
                     body = (
                         f"## Setup phase failure\n\n"
                         f"Phase: {phase}\n\n"

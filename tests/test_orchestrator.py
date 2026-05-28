@@ -3719,6 +3719,7 @@ def test_orchestrator_files_upstream_bug_and_exits_on_preflight_setup_failure(
     from pycastle.errors import DockerError
 
     github_svc = _make_github_svc()
+    runner = FakeAgentRunner(preflight_responses=[DockerError("pip install failed")])
 
     with patch(
         "pycastle.iteration.orchestrator.auto_file_issue",
@@ -3727,15 +3728,34 @@ def test_orchestrator_files_upstream_bug_and_exits_on_preflight_setup_failure(
         with pytest.raises(SystemExit) as exc_info:
             _run(
                 tmp_path,
-                agent_runner=FakeAgentRunner(
-                    preflight_responses=[DockerError("pip install failed")]
-                ),
+                agent_runner=runner,
                 github_service=github_svc,
                 git_service=_make_git_svc(),
             )
 
     assert exc_info.value.code == 1
     mock_file.assert_called_once()
+    assert runner.calls == []
+
+
+def test_orchestrator_handles_empty_preflight_setup_failure_message(tmp_path):
+    """Setup-phase aborts must stay setup-specific even when the underlying error text is empty."""
+    from pycastle.errors import DockerError
+
+    with patch(
+        "pycastle.iteration.orchestrator.auto_file_issue",
+        return_value="https://example.com/upstream/1",
+    ) as mock_file:
+        with pytest.raises(SystemExit) as exc_info:
+            _run(
+                tmp_path,
+                agent_runner=FakeAgentRunner(preflight_responses=[DockerError("")]),
+                github_service=_make_github_svc(),
+                git_service=_make_git_svc(),
+            )
+
+    assert exc_info.value.code == 1
+    assert mock_file.call_args.args[0] == "[pycastle] preflight setup failure: "
 
 
 # ── GithubAPIError: orchestrator exits non-zero on repo access failure ──────────
