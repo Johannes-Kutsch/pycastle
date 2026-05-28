@@ -231,10 +231,10 @@ def test_conflict_starts_merge_before_invoking_merger(
         ),
     )
 
-    with pytest.raises(RuntimeError, match="pycastle/issue-1 is not a merged branch"):
-        _run([{"number": 1, "title": "Conflict"}], deps)
+    result = _run([{"number": 1, "title": "Conflict"}], deps)
 
     assert seen_merge_head == [True]
+    assert result.pending_conflicts == [{"number": 1, "title": "Conflict"}]
 
 
 def test_conflict_creates_host_owned_merge_commit_from_merger_message(
@@ -380,6 +380,97 @@ def test_multiple_conflict_branches_recover_one_branch_per_sandbox(
     assert len(set(seen_mount_paths)) == 2
 
 
+def test_later_conflict_failure_returns_partial_success_for_earlier_verified_branch(
+    tmp_path, git_svc, github_svc
+):
+    git_svc.try_merge.return_value = False
+    git_svc.get_head_sha.side_effect = ["sha-1", "sha-2"]
+
+    async def _resolve_then_fail(request: RunRequest):
+        assert request.scope_args is not None
+        branch = request.scope_args["BRANCHES"].splitlines()[0].removeprefix("- ")
+        if branch == "pycastle/issue-1":
+            return CommitMessageOutput(message="resolve conflict one")
+        raise RuntimeError("agent crashed on issue 2")
+
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner(side_effect=_resolve_then_fail),
+        git_svc=git_svc,
+        github_svc=github_svc,
+    )
+
+    result = _run(
+        [
+            {"number": 1, "title": "Conflict one"},
+            {"number": 2, "title": "Conflict two"},
+        ],
+        deps,
+    )
+
+    assert result.completed_conflicts == [{"number": 1, "title": "Conflict one"}]
+    assert result.pending_conflicts == [{"number": 2, "title": "Conflict two"}]
+    closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
+    assert closed == [1]
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-1" in deleted
+    assert "pycastle/issue-2" not in deleted
+
+
+def test_later_conflict_failure_keeps_earlier_verified_merge_commit_on_target_branch(
+    two_conflicting_branches_repo, github_svc
+):
+    real_git = GitService(Config(pycastle_dir=".pycastle"))
+
+    async def _resolve_then_fail(request: RunRequest):
+        assert request.scope_args is not None
+        branch = request.scope_args["BRANCHES"].splitlines()[0].removeprefix("- ")
+        if branch == "pycastle/issue-1":
+            (request.mount_path / "conflict.txt").write_text("resolved one\n")
+            _git(request.mount_path, "add", "conflict.txt")
+            return CommitMessageOutput(message="resolve conflict one")
+        raise RuntimeError("agent crashed on issue 2")
+
+    deps = _make_deps(
+        two_conflicting_branches_repo,
+        FakeAgentRunner(side_effect=_resolve_then_fail),
+        git_svc=real_git,
+        github_svc=github_svc,
+        cfg=Config(pycastle_dir=".pycastle", auto_push=False),
+        preflight_cache=StubPreflightCache(
+            PreflightReady(sha=real_git.get_head_sha(two_conflicting_branches_repo))
+        ),
+    )
+
+    result = _run(
+        [
+            {"number": 1, "title": "Conflict one"},
+            {"number": 2, "title": "Conflict two"},
+        ],
+        deps,
+    )
+
+    head_subject = subprocess.run(
+        ["git", "log", "-1", "--pretty=%s"],
+        cwd=two_conflicting_branches_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    resolved_text = (two_conflicting_branches_repo / "conflict.txt").read_text()
+    preserved_marker = (
+        _merge_sandbox_path(two_conflicting_branches_repo, deps.cfg, 2)
+        / ".pycastle-session"
+        / ".preserved-failure"
+    )
+
+    assert result.completed_conflicts == [{"number": 1, "title": "Conflict one"}]
+    assert result.pending_conflicts == [{"number": 2, "title": "Conflict two"}]
+    assert head_subject == "resolve conflict one"
+    assert resolved_text == "resolved one\n"
+    assert preserved_marker.is_file()
+
+
 def test_each_conflict_recovery_uses_current_target_head(deps, git_svc):
     git_svc.try_merge.return_value = False
     git_svc.get_head_sha.side_effect = ["sha-1", "sha-2"]
@@ -476,19 +567,19 @@ def test_successful_merger_fast_forwards_target_branch(deps, git_svc):
     )
 
 
-def test_incomplete_merger_raises_and_does_not_fast_forward(
+def test_incomplete_merger_leaves_conflict_branch_pending_and_does_not_fast_forward(
     tmp_path, git_svc, github_svc
 ):
     git_svc.try_merge.return_value = False
     fake = FakeAgentRunner([PromiseParseError("no <promise>COMPLETE</promise> tag")])
     local_deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     issues = [{"number": 1, "title": "Conflict"}]
-    with pytest.raises(PromiseParseError):
-        _run(issues, local_deps)
+    result = _run(issues, local_deps)
     git_svc.fast_forward_branch.assert_not_called()
+    assert result.pending_conflicts == issues
 
 
-def test_merger_without_active_branch_ancestry_fails_closed_with_branch_name(
+def test_merger_without_active_branch_ancestry_leaves_branch_pending(
     tmp_path, git_svc, github_svc
 ):
     git_svc.try_merge.return_value = False
@@ -501,9 +592,9 @@ def test_merger_without_active_branch_ancestry_fails_closed_with_branch_name(
     local_deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     issues = [{"number": 1, "title": "Conflict"}]
 
-    with pytest.raises(RuntimeError, match="pycastle/issue-1 is not a merged branch"):
-        _run(issues, local_deps)
+    result = _run(issues, local_deps)
     git_svc.fast_forward_branch.assert_not_called()
+    assert result.pending_conflicts == issues
 
 
 def test_merger_without_active_branch_ancestry_keeps_conflict_issue_open(
@@ -522,11 +613,11 @@ def test_merger_without_active_branch_ancestry_keeps_conflict_issue_open(
         github_svc=github_svc,
     )
 
-    with pytest.raises(RuntimeError, match="pycastle/issue-1 is not a merged branch"):
-        _run([{"number": 1, "title": "Conflict"}], local_deps)
+    result = _run([{"number": 1, "title": "Conflict"}], local_deps)
 
     github_svc.close_issue.assert_not_called()
     github_svc.close_completed_parent_issues.assert_not_called()
+    assert result.pending_conflicts == [{"number": 1, "title": "Conflict"}]
 
 
 def test_merger_without_active_branch_ancestry_skips_conflict_branch_cleanup(
@@ -545,11 +636,11 @@ def test_merger_without_active_branch_ancestry_skips_conflict_branch_cleanup(
         github_svc=github_svc,
     )
 
-    with pytest.raises(RuntimeError, match="pycastle/issue-1 is not a merged branch"):
-        _run([{"number": 1, "title": "Conflict"}], local_deps)
+    result = _run([{"number": 1, "title": "Conflict"}], local_deps)
 
     deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
     assert "pycastle/issue-1" not in deleted
+    assert result.pending_conflicts == [{"number": 1, "title": "Conflict"}]
 
 
 # ── Merge-time preflight via cache ───────────────────────────────────────────
@@ -709,15 +800,17 @@ def test_preflight_skip_closes_parent_issues_for_clean_issues(
 # ── Exception safety ──────────────────────────────────────────────────────────
 
 
-def test_sandbox_branch_deleted_when_run_agent_raises(tmp_path, git_svc, github_svc):
+def test_sandbox_branch_not_deleted_when_run_agent_fails_pending(
+    tmp_path, git_svc, github_svc
+):
     git_svc.try_merge.return_value = False
     fake = FakeAgentRunner([RuntimeError("agent crashed")])
     local_deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     issues = [{"number": 1, "title": "Conflict"}]
-    with pytest.raises(RuntimeError, match="agent crashed"):
-        _run(issues, local_deps)
+    result = _run(issues, local_deps)
     deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
     assert _merge_sandbox_branch(1) not in deleted
+    assert result.pending_conflicts == issues
 
 
 # ── Worktree lifecycle ────────────────────────────────────────────────────────
@@ -754,17 +847,17 @@ def test_worktree_removed_after_merger(deps, git_svc):
     git_svc.remove_worktree.assert_called_once_with(deps.repo_root, expected_path)
 
 
-def test_worktree_removed_when_run_agent_raises(tmp_path, git_svc, github_svc):
+def test_worktree_preserved_when_run_agent_fails_pending(tmp_path, git_svc, github_svc):
     git_svc.try_merge.return_value = False
     fake = FakeAgentRunner([RuntimeError("agent crashed")])
     local_deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     issues = [{"number": 1, "title": "Conflict"}]
-    with pytest.raises(RuntimeError, match="agent crashed"):
-        _run(issues, local_deps)
+    result = _run(issues, local_deps)
     expected_path = _merge_sandbox_path(local_deps.repo_root, local_deps.cfg, 1)
     git_svc.remove_worktree.assert_not_called()
     marker = expected_path / ".pycastle-session" / ".preserved-failure"
     assert marker.is_file()
+    assert result.pending_conflicts == issues
 
 
 # ── Empty input ───────────────────────────────────────────────────────────────
@@ -868,7 +961,45 @@ def test_merge_phase_close_summary_lists_conflict_deleted_branches(
     shutdown_msg = remove_calls[-1][2]
     assert "Execution complete" in shutdown_msg
     assert "pycastle/issue-1" in shutdown_msg
-    assert "Branches merged" not in capsys.readouterr().out
+
+
+def test_merge_phase_close_summary_distinguishes_completed_and_pending_conflicts(
+    tmp_path, git_svc, github_svc
+):
+    recording = RecordingStatusDisplay()
+    git_svc.try_merge.return_value = False
+    git_svc.get_head_sha.side_effect = ["sha-1", "sha-2"]
+
+    async def _resolve_then_fail(request: RunRequest):
+        assert request.scope_args is not None
+        branch = request.scope_args["BRANCHES"].splitlines()[0].removeprefix("- ")
+        if branch == "pycastle/issue-1":
+            return CommitMessageOutput(message="resolve conflict one")
+        raise RuntimeError("agent crashed on issue 2")
+
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner(side_effect=_resolve_then_fail),
+        git_svc=git_svc,
+        github_svc=github_svc,
+        status_display=recording,
+    )
+
+    _run(
+        [
+            {"number": 1, "title": "Conflict one"},
+            {"number": 2, "title": "Conflict two"},
+        ],
+        deps,
+    )
+
+    remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
+    assert remove_calls, "Merge row must be removed"
+    shutdown_msg = remove_calls[-1][2]
+    assert "Completed conflict branches:" in shutdown_msg
+    assert "Pending conflict branches:" in shutdown_msg
+    assert "pycastle/issue-1" in shutdown_msg
+    assert "pycastle/issue-2" in shutdown_msg
 
 
 def test_close_message_combines_clean_and_conflict_deleted_branches(
