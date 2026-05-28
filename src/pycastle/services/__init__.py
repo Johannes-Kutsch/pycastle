@@ -26,6 +26,7 @@ from .github_service import (
     GithubService,
     GithubServiceError,
 )
+from .opencode_service import OpenCodeService
 from .service_registry import ServiceRegistry
 
 __all__ = [
@@ -46,6 +47,7 @@ __all__ = [
     "GithubNetworkError",
     "GithubService",
     "GithubServiceError",
+    "OpenCodeService",
     "ParsedTurn",
     "PromptTokens",
     "Result",
