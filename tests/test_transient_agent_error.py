@@ -11,7 +11,13 @@ import json
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole, process_stream
-from pycastle.errors import TransientAgentError
+from pycastle.errors import TransientAgentError, UsageLimitError
+
+_SUBSCRIPTION_ACCESS_DENIAL = (
+    "Your organization has disabled Claude subscription access for Claude Code. "
+    "Please use an Anthropic API key instead, or ask your admin to enable "
+    "Claude subscription access for Claude Code."
+)
 
 
 def _5xx_result_line(status: int = 529) -> str:
@@ -83,6 +89,20 @@ def _4xx_result_line(status: int) -> str:
             "result": f"API Error: {status}",
         }
     )
+
+
+def test_process_stream_treats_exact_subscription_access_denial_as_usage_limit():
+    line = json.dumps(
+        {
+            "type": "result",
+            "is_error": True,
+            "api_error_status": 403,
+            "result": _SUBSCRIPTION_ACCESS_DENIAL,
+        }
+    )
+
+    with pytest.raises(UsageLimitError):
+        process_stream([line], on_turn=lambda t: None, role=AgentRole.IMPLEMENTER)
 
 
 def test_process_stream_raises_hard_agent_error_on_400():
