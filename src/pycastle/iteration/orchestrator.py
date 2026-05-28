@@ -284,7 +284,7 @@ async def run(
                     stage_key=stage_key,
                 ):
                     now = _time_module.now_local()
-                    stage_override = _override_for_stage_key(_iter_cfg, stage_key)
+                    stage_override = _override_for_stage_key(cfg, stage_key)
                     registry = service_registry
                     use_stage_scope = (
                         registry is not None

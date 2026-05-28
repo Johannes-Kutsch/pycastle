@@ -177,6 +177,27 @@ class _FakeService:
         return iter([])
 
 
+class _SequencedAvailabilityService(_FakeService):
+    def __init__(
+        self,
+        availability: list[bool],
+        *,
+        wake_time=None,
+        names: list[str] | None = None,
+    ) -> None:
+        super().__init__(
+            available=availability[-1] if availability else True,
+            wake_time=wake_time,
+            names=names,
+        )
+        self._availability = list(availability)
+
+    def is_available(self, now=None) -> bool:
+        if self._availability:
+            self._available = self._availability.pop(0)
+        return self._available
+
+
 class _RecordingServiceRegistry(ServiceRegistry):
     def __init__(self, services):
         super().__init__(services)
@@ -3537,6 +3558,88 @@ def test_primary_takes_precedence_when_both_services_available(tmp_path):
     assert captured[0]["effort"] == "low", (
         "Primary available: dispatch must use primary effort, not fallback"
     )
+
+
+def test_usage_limit_on_resolved_fallback_rechecks_full_stage_chain_before_sleep(
+    tmp_path,
+):
+    """When a fallback candidate hits usage limit, the orchestrator must re-check the
+    full configured stage chain before sleeping so a recovered higher-priority
+    candidate is picked immediately."""
+    captured: list[str] = []
+    mock_github = _make_github_svc(numbers=[1])
+    mock_github.get_open_issues.side_effect = [
+        [
+            {
+                "number": 1,
+                "title": "Fix",
+                "body": "x" * 100,
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
+        ],
+        [
+            {
+                "number": 1,
+                "title": "Fix",
+                "body": "x" * 100,
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
+        ],
+    ]
+
+    primary = _SequencedAvailabilityService([False, True])
+    fallback = _SequencedAvailabilityService(
+        [True, False],
+        wake_time=datetime(2026, 1, 1, 15, 0, 0).astimezone(),
+    )
+    stable = _FakeService(available=True)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+            )
+        if "Implement Agent" in request.name:
+            captured.append(request.service)
+            if len(captured) == 1:
+                raise UsageLimitError(reset_time=None)
+            return CompletionOutput()
+        return CompletionOutput()
+
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            git_service=_make_git_svc(try_merge_side_effect=[True, True]),
+            service_registry=ServiceRegistry(
+                {"primary": primary, "fallback": fallback, "stable": stable}
+            ),
+            plan_override=StageOverride(service="stable", model="plan", effort="low"),
+            review_override=StageOverride(
+                service="stable", model="review", effort="low"
+            ),
+            merge_override=StageOverride(service="stable", model="merge", effort="low"),
+            improve_override=StageOverride(
+                service="stable", model="improve", effort="low"
+            ),
+            implement_override=StageOverride(
+                service="primary",
+                model="primary-model",
+                effort="low",
+                fallback=StageOverride(
+                    service="fallback",
+                    model="fallback-model",
+                    effort="high",
+                ),
+            ),
+            max_iterations=2,
+        )
+
+    assert captured == ["fallback", "primary"]
+    mock_sleep.assert_not_called()
 
 
 def test_stage_with_no_fallback_behaves_as_before(tmp_path):
