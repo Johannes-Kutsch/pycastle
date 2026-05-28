@@ -21,19 +21,22 @@ pip install pycastle
 
 ### `pycastle init`
 
-Copies the default `pycastle/` configuration directory into your project root. This directory contains the `Dockerfile`, `config.py`, prompt templates that drive the agents (`plan-prompt.md`, `implement/behavior.md`, `implement/refactor.md`, `implement/docs.md`, `review-prompt.md`, `merge-prompt.md`, plus coding standards under `prompts/coding-standards/`), and the cron wrappers (`setup/cron.sh`, `setup/cron-install.sh`, `setup/cron-uninstall.sh`). Run this once per repository, then customise the files to suit your project.
+Interactive bootstrap for a consuming project. `pycastle init` syncs the pycastle-owned scaffold files that stay under package control, refreshes `config.py.example`, then runs the init wizard to choose service/scope, merge missing `.env` keys, and offer GitHub label setup.
 
-Pass `--refresh` to re-copy every bundled default over the existing files, leaving `config.py` and `.env` untouched. `cron.sh` invokes this on every tick so bug fixes ship automatically when you upgrade pycastle.
+Use `pycastle init --refresh` for the non-interactive scaffold sync path. It bypasses the wizard and refreshes the bundled scaffold files and `config.py.example` without changing `config.py`, `.env`, or any runtime session state. `cron.sh` invokes this on every tick so scaffold updates ship automatically when you upgrade pycastle.
+
+Refresh behavior is asymmetric by design: `pycastle/config.py.example` is always refreshed, and `pycastle/setup/` is refreshed by both `pycastle init` and `pycastle init --refresh`. A global `config.py.example` is refreshed only if you already keep one in pycastle home.
 
 ```bash
-pycastle init                # asks once: scaffold config.py / .env globally or locally?
-pycastle init --local        # write everything to ./pycastle/ (legacy behaviour)
-pycastle init --global       # write config.py and .env to pycastle home; project-shaped files (Dockerfile, prompts/, .gitignore) still go local
+pycastle init                # interactive bootstrap; asks where config.py / .env should live
+pycastle init --local        # keep config.py and .env in ./pycastle/
+pycastle init --global       # keep config.py and .env in pycastle home
+pycastle init --refresh      # non-interactive scaffold sync; refreshes pycastle-owned files only
 ```
 
 ### `pycastle build`
 
-Builds the Docker image defined in `pycastle/Dockerfile`. Pass `--no-cache` to force a clean build. You must rebuild whenever you change the Dockerfile or install new dependencies.
+Builds the universal agent image. If your project provides `pycastle/Dockerfile`, pycastle uses that local override; otherwise it builds from the bundled default Dockerfile. Pass `--no-cache` to force a clean build.
 
 ```bash
 pycastle build [--no-cache]
@@ -70,9 +73,17 @@ Override the location with the `PYCASTLE_HOME` environment variable.
 
 For multi-machine sync, put your pycastle home under your own dotfiles repository (e.g. via `chezmoi` or a plain git checkout). Pycastle does not own remote sourcing.
 
+If `config.py.example` exists in pycastle home already, both `pycastle init` and `pycastle init --refresh` refresh it there as well. Otherwise the example file is only guaranteed locally at `pycastle/config.py.example`.
+
+## Runtime Session State
+
+`.pycastle-session/` is runtime-only state rooted at the mounted worktree, not inside `pycastle/`, and it is not created by `pycastle init`. Pycastle uses it for per-role resume state and provider-specific session data while runs are in progress.
+
+Codex authentication is seeded at runtime only: when a fresh Codex role state dir is missing `auth.json`, pycastle copies the host's `~/.codex/auth.json` into that role's `.pycastle-session/.../codex/` directory before launch.
+
 ## Configuration
 
-All runtime configuration lives in `pycastle/config.py`. Key settings:
+Runtime configuration lives in `config.py`, loaded from pycastle home first and then from local `pycastle/config.py` when present. Key settings:
 
 | Setting | Default | Description |
 |---|---|---|
@@ -87,7 +98,7 @@ All runtime configuration lives in `pycastle/config.py`. Key settings:
 | `improve_max` | `1` | Maximum improve-agent dispatches per run when improve mode is active |
 | `plan_override` / `implement_override` / `review_override` / `merge_override` | — | Per-stage model and effort overrides |
 
-Edit `pycastle/config.py` (created by `pycastle init`) to tailor these to your project.
+Edit local `pycastle/config.py` and/or global `config.py` in pycastle home to tailor these to your project.
 
 ### Minimal local `config.py`
 
@@ -134,7 +145,7 @@ Run these steps inside each consuming project on the host (e.g. over SSH on the 
    pycastle init --refresh
    ```
 
-   This re-copies the bundled `setup/` scripts, prompts, and Dockerfile, leaving your `config.py` and `.env` untouched.
+   This refreshes the bundled scaffold files that pycastle owns, including `setup/` and `config.py.example`, leaving your `config.py`, `.env`, and runtime session state untouched.
 
 4. **Remove the existing cronjob**
 
