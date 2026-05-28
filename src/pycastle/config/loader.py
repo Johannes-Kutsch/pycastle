@@ -28,16 +28,19 @@ _BUG_REPORT_REPO_RE = re.compile(r"^[^/]+/[^/]+$")
 _DEFAULTS_DIR = Path(__file__).resolve().parents[1] / "defaults"
 
 _IGNORED_CONFIG_KEYS = frozenset(
-    {"usage_limit_patterns", "default_service", "dockerfile"}
+    {
+        "usage_limit_patterns",
+        "default_service",
+        "dockerfile",
+        "pycastle_dir",
+        "prompts_dir",
+        "worktrees_dir",
+        "env_file",
+    }
 )
 
 _GLOBAL_FORBIDDEN_FIELDS = frozenset(
     {
-        "pycastle_dir",
-        "prompts_dir",
-        "logs_dir",
-        "worktrees_dir",
-        "env_file",
         "docker_image_name",
     }
 )

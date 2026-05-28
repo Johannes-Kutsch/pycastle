@@ -570,28 +570,32 @@ def test_load_config_local_overrides_global(tmp_path):
     assert cfg.bug_label == "global-bug"
 
 
-def test_load_config_global_path_field_pycastle_dir_raises(tmp_path):
+def test_load_config_global_removed_pycastle_dir_is_ignored(tmp_path):
     global_dir = tmp_path / "global"
     global_dir.mkdir()
     (global_dir / "config.py").write_text(
-        "from pathlib import Path\npycastle_dir = Path('elsewhere')\n"
+        "from pathlib import Path\npycastle_dir = Path('elsewhere')\nmax_parallel = 5\n"
     )
-    with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, global_dir=global_dir)
-    assert "pycastle_dir" in str(exc_info.value)
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert cfg.max_parallel == 5
+    assert cfg.pycastle_dir == Path("pycastle")
 
 
-def test_load_config_global_path_field_lists_all_offending(tmp_path):
+def test_load_config_global_removed_path_fields_do_not_block_allowed_settings(tmp_path):
     global_dir = tmp_path / "global"
     global_dir.mkdir()
     (global_dir / "config.py").write_text(
-        "from pathlib import Path\nprompts_dir = Path('p')\nlogs_dir = Path('l')\n"
+        "from pathlib import Path\n"
+        "prompts_dir = Path('p')\n"
+        "worktrees_dir = Path('w')\n"
+        "env_file = Path('e')\n"
+        "logs_dir = Path('global-logs')\n"
     )
-    with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, global_dir=global_dir)
-    msg = str(exc_info.value)
-    assert "prompts_dir" in msg
-    assert "logs_dir" in msg
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert cfg.prompts_dir == Path("pycastle/prompts")
+    assert cfg.worktrees_dir == Path("worktrees")
+    assert cfg.env_file == Path("pycastle/.env")
+    assert cfg.logs_dir == Path("global-logs")
 
 
 def test_load_config_silently_ignores_legacy_dockerfile_in_global_file(tmp_path):
@@ -605,13 +609,52 @@ def test_load_config_silently_ignores_legacy_dockerfile_in_global_file(tmp_path)
     assert not hasattr(cfg, "dockerfile")
 
 
-def test_load_config_local_path_fields_still_allowed(tmp_path):
+def test_load_config_ignores_removed_project_local_path_keys_in_all_layers(tmp_path):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text(
+        "from pathlib import Path\n"
+        "pycastle_dir = Path('global-pycastle')\n"
+        "prompts_dir = Path('global-prompts')\n"
+        "worktrees_dir = Path('global-worktrees')\n"
+        "env_file = Path('global.env')\n"
+        "dockerfile = Path('global.Dockerfile')\n"
+        "max_parallel = 7\n"
+    )
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(
-        "from pathlib import Path\nprompts_dir = Path('custom-prompts')\n"
+        "from pathlib import Path\n"
+        "pycastle_dir = Path('local-pycastle')\n"
+        "prompts_dir = Path('local-prompts')\n"
+        "worktrees_dir = Path('local-worktrees')\n"
+        "env_file = Path('local.env')\n"
+        "dockerfile = Path('local.Dockerfile')\n"
+        "bug_label = 'local-bug'\n"
+    )
+
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+
+    assert cfg.max_parallel == 7
+    assert cfg.bug_label == "local-bug"
+    assert cfg.pycastle_dir == Path("pycastle")
+    assert cfg.prompts_dir == Path("pycastle/prompts")
+    assert cfg.worktrees_dir == Path("worktrees")
+    assert cfg.env_file == Path("pycastle/.env")
+    assert not hasattr(cfg, "dockerfile")
+
+
+def test_load_config_local_removed_path_fields_are_ignored(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pathlib import Path\n"
+        "prompts_dir = Path('custom-prompts')\n"
+        "worktrees_dir = Path('custom-worktrees')\n"
+        "env_file = Path('custom.env')\n"
     )
     cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
-    assert cfg.prompts_dir == Path("custom-prompts")
+    assert cfg.prompts_dir == Path("pycastle/prompts")
+    assert cfg.worktrees_dir == Path("worktrees")
+    assert cfg.env_file == Path("pycastle/.env")
 
 
 def test_load_config_pycastle_home_env_resolves_global_dir(tmp_path, monkeypatch):

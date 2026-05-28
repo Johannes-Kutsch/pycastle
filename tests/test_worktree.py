@@ -65,14 +65,14 @@ def repo(git_repo):
 @pytest.fixture
 def real_branch_deps(repo):
     """Real deps backed by a repo that has pyproject.toml."""
-    cfg = Config(pycastle_dir=".pycastle")
+    cfg = Config()
     return SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
 
 
 @pytest.fixture
 def bare_branch_deps(git_repo):
     """Real deps backed by a repo with no pyproject.toml — for error cases."""
-    cfg = Config(pycastle_dir=".pycastle")
+    cfg = Config()
     return SimpleNamespace(repo_root=git_repo, cfg=cfg, git_svc=GitService(cfg))
 
 
@@ -80,7 +80,7 @@ def bare_branch_deps(git_repo):
 def branch_deps(tmp_path):
     """Mock-based deps for fast unit tests."""
     mock_svc = MagicMock(spec=GitService)
-    cfg = Config(pycastle_dir=".pycastle")
+    cfg = Config()
 
     def _fake_create(repo, wt, branch, sha=None):
         wt.mkdir(parents=True, exist_ok=True)
@@ -133,7 +133,7 @@ def test_managed_worktree_raises_when_registered_worktree_has_no_project_files(
     branch_deps,
 ):
     """A registered worktree with no project files must raise WorktreeError."""
-    wt_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
+    wt_path = branch_deps.repo_root / "pycastle" / ".worktrees" / "issue-42"
     wt_path.mkdir(parents=True)
     branch_deps.git_svc.verify_ref_exists.return_value = True
     branch_deps.git_svc.list_worktrees.return_value = [wt_path]
@@ -357,7 +357,7 @@ def test_managed_worktree_with_existing_branch(real_branch_deps):
 def test_managed_worktree_succeeds_after_stale_git_registration(real_branch_deps):
     """A stale worktree entry (dir removed without git) must not block a fresh create."""
     repo = real_branch_deps.repo_root
-    stale = repo / ".pycastle" / ".worktrees" / "stale"
+    stale = repo / "pycastle" / ".worktrees" / "stale"
 
     async def _create_stale():
         async with managed_worktree(
@@ -503,7 +503,7 @@ def test_managed_worktree_does_not_recreate_valid_ancestor_branch(git_repo):
         check=True,
     ).stdout.strip()
 
-    cfg = Config(pycastle_dir=".pycastle")
+    cfg = Config()
     deps = SimpleNamespace(repo_root=git_repo, cfg=cfg, git_svc=GitService(cfg))
 
     main_tip = subprocess.run(
@@ -607,7 +607,7 @@ def test_managed_worktree_raises_when_non_ancestor_branch_has_no_project_files(
         capture_output=True,
     )
 
-    cfg = Config(pycastle_dir=".pycastle")
+    cfg = Config()
     deps = SimpleNamespace(repo_root=git_repo, cfg=cfg, git_svc=GitService(cfg))
 
     async def _run():
@@ -643,7 +643,7 @@ def test_managed_worktree_recreates_stale_ancestor_branch(git_repo):
         capture_output=True,
     )
 
-    cfg = Config(pycastle_dir=".pycastle")
+    cfg = Config()
     deps = SimpleNamespace(repo_root=git_repo, cfg=cfg, git_svc=GitService(cfg))
 
     async def _run():
@@ -761,17 +761,17 @@ def test_worktree_name_for_branch_does_not_match_issue_number_in_non_pycastle_br
 
 
 def test_worktree_path_constructs_correct_path(tmp_path):
-    cfg = Config(pycastle_dir=".pycastle")
+    cfg = Config()
     deps = SimpleNamespace(repo_root=tmp_path, cfg=cfg)
     result = worktree_path("issue-42", deps)
-    assert result == tmp_path / ".pycastle" / ".worktrees" / "issue-42"
+    assert result == tmp_path / "pycastle" / ".worktrees" / "issue-42"
 
 
-def test_worktree_path_respects_configured_pycastle_dir(tmp_path):
+def test_worktree_path_uses_fixed_project_local_pycastle_dir(tmp_path):
     cfg = Config(pycastle_dir="custom-dir")
     deps = SimpleNamespace(repo_root=tmp_path, cfg=cfg)
     result = worktree_path("issue-99", deps)
-    assert result == tmp_path / "custom-dir" / ".worktrees" / "issue-99"
+    assert result == tmp_path / "pycastle" / ".worktrees" / "issue-99"
 
 
 # ── transient_worktree ────────────────────────────────────────────────────────
@@ -780,12 +780,12 @@ def test_worktree_path_respects_configured_pycastle_dir(tmp_path):
 @pytest.fixture
 def detached_deps(tmp_path):
     mock_svc = MagicMock(spec=GitService)
-    cfg = Config(pycastle_dir=".pycastle")
+    cfg = Config()
     return SimpleNamespace(repo_root=tmp_path, cfg=cfg, git_svc=mock_svc)
 
 
 def test_transient_worktree_creates_worktree_on_enter(detached_deps):
-    expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
+    expected_path = detached_deps.repo_root / "pycastle" / ".worktrees" / "sandbox"
 
     async def _run():
         async with transient_worktree("sandbox", sha="abc123", deps=detached_deps):
@@ -797,7 +797,7 @@ def test_transient_worktree_creates_worktree_on_enter(detached_deps):
 
 
 def test_transient_worktree_yields_correct_path(detached_deps):
-    expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
+    expected_path = detached_deps.repo_root / "pycastle" / ".worktrees" / "sandbox"
 
     async def _run():
         async with transient_worktree(
@@ -809,7 +809,7 @@ def test_transient_worktree_yields_correct_path(detached_deps):
 
 
 def test_transient_worktree_removes_worktree_on_clean_exit(detached_deps):
-    expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
+    expected_path = detached_deps.repo_root / "pycastle" / ".worktrees" / "sandbox"
 
     async def _run():
         async with transient_worktree("sandbox", sha="abc123", deps=detached_deps):
@@ -822,7 +822,7 @@ def test_transient_worktree_removes_worktree_on_clean_exit(detached_deps):
 
 
 def test_transient_worktree_removes_worktree_when_body_raises(detached_deps):
-    expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
+    expected_path = detached_deps.repo_root / "pycastle" / ".worktrees" / "sandbox"
 
     async def _run():
         with pytest.raises(RuntimeError, match="body error"):
@@ -837,7 +837,7 @@ def test_transient_worktree_removes_worktree_when_body_raises(detached_deps):
 
 def test_transient_worktree_removes_worktree_on_usage_limit_error(detached_deps):
     """transient_worktree must always tear down — even on UsageLimitError."""
-    expected_path = detached_deps.repo_root / ".pycastle" / ".worktrees" / "sandbox"
+    expected_path = detached_deps.repo_root / "pycastle" / ".worktrees" / "sandbox"
 
     async def _run():
         with pytest.raises(UsageLimitError):
@@ -881,7 +881,7 @@ def test_transient_worktree_marks_preserved_failure_on_agent_failed_error(
 ):
     marker = (
         detached_deps.repo_root
-        / ".pycastle"
+        / "pycastle"
         / ".worktrees"
         / "sandbox"
         / ".pycastle-session"
@@ -905,7 +905,7 @@ def test_transient_worktree_marks_preserved_failure_on_agent_failed_error(
 def test_managed_worktree_creates_worktree_on_enter_and_yields_correct_path(
     branch_deps,
 ):
-    expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
+    expected_path = branch_deps.repo_root / "pycastle" / ".worktrees" / "issue-42"
 
     async def _run():
         async with managed_worktree(
@@ -922,7 +922,7 @@ def test_managed_worktree_creates_worktree_on_enter_and_yields_correct_path(
 
 
 def test_managed_worktree_removes_worktree_and_branch_on_clean_exit(branch_deps):
-    expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
+    expected_path = branch_deps.repo_root / "pycastle" / ".worktrees" / "issue-42"
 
     async def _run():
         async with managed_worktree(
@@ -962,7 +962,7 @@ def test_managed_worktree_removes_worktree_but_not_branch_when_delete_branch_on_
 
 
 def test_managed_worktree_preserves_worktree_on_unexpected_exception(branch_deps):
-    expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
+    expected_path = branch_deps.repo_root / "pycastle" / ".worktrees" / "issue-42"
 
     async def _run():
         with pytest.raises(RuntimeError, match="body error"):
@@ -1027,7 +1027,7 @@ def test_managed_worktree_does_not_run_cleanup_when_create_fails(branch_deps):
 def test_managed_worktree_keeps_worktrees_dir_when_sibling_worktree_remains(
     real_branch_deps,
 ):
-    worktrees_dir = real_branch_deps.repo_root / ".pycastle" / ".worktrees"
+    worktrees_dir = real_branch_deps.repo_root / "pycastle" / ".worktrees"
 
     async def _run():
         async with managed_worktree(
@@ -1053,7 +1053,7 @@ def test_managed_worktree_keeps_worktrees_dir_when_sibling_worktree_remains(
 def test_managed_worktree_removes_worktrees_dir_when_last_worktree_exits(
     real_branch_deps,
 ):
-    worktrees_dir = real_branch_deps.repo_root / ".pycastle" / ".worktrees"
+    worktrees_dir = real_branch_deps.repo_root / "pycastle" / ".worktrees"
 
     async def _run():
         async with managed_worktree(
@@ -1072,7 +1072,7 @@ def test_managed_worktree_removes_worktrees_dir_when_last_worktree_exits(
 def test_transient_worktree_removes_worktrees_dir_when_last_worktree_exits(
     real_branch_deps,
 ):
-    worktrees_dir = real_branch_deps.repo_root / ".pycastle" / ".worktrees"
+    worktrees_dir = real_branch_deps.repo_root / "pycastle" / ".worktrees"
     sha = real_branch_deps.git_svc.get_head_sha(real_branch_deps.repo_root)
 
     async def _run():
@@ -1169,7 +1169,7 @@ def test_managed_worktree_preserves_worktree_and_branch_when_session_dir_has_fil
 
 def test_managed_worktree_cleans_up_on_usage_limit_error(branch_deps):
     """UsageLimitError stays on its handled path and must not preserve the worktree."""
-    expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
+    expected_path = branch_deps.repo_root / "pycastle" / ".worktrees" / "issue-42"
 
     async def _run():
         with pytest.raises(UsageLimitError):
@@ -1265,7 +1265,7 @@ def test_managed_worktree_preservation_predicate(
 
 def test_managed_worktree_cleans_up_on_transient_agent_error(branch_deps):
     """Transient provider failures stay non-preserving at the worktree boundary."""
-    expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
+    expected_path = branch_deps.repo_root / "pycastle" / ".worktrees" / "issue-42"
 
     async def _run():
         with pytest.raises(TransientAgentError):
@@ -1317,12 +1317,12 @@ def _make_prune_git_svc(active_paths: list[Path]) -> GitService:
     return mock_svc
 
 
-def test_prune_orphan_worktrees_respects_custom_pycastle_dir(tmp_path):
-    """With pycastle_dir='my-castle', orphans under my-castle/.worktrees/ are removed."""
+def test_prune_orphan_worktrees_uses_fixed_project_local_pycastle_dir(tmp_path):
+    """Orphans are swept from pycastle/.worktrees even when config carries a stale pycastle_dir."""
     from pycastle.infrastructure.worktree import prune_orphan_worktrees
 
     cfg = Config(pycastle_dir="my-castle")
-    worktrees_dir = tmp_path / "my-castle" / ".worktrees"
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
     worktrees_dir.mkdir(parents=True)
     orphan = worktrees_dir / "orphan-branch"
     orphan.mkdir()
@@ -1364,14 +1364,12 @@ def test_prune_orphan_worktrees_preserves_unregistered_failure_worktree(tmp_path
     assert preserved.exists()
 
 
-def test_prune_orphan_worktrees_removes_worktrees_parent_when_empty_custom_dir(
-    tmp_path,
-):
-    """Parent .worktrees dir is removed when empty after orphan sweep, custom pycastle_dir."""
+def test_prune_orphan_worktrees_removes_worktrees_parent_when_empty(tmp_path):
+    """Parent .worktrees dir is removed when empty after orphan sweep."""
     from pycastle.infrastructure.worktree import prune_orphan_worktrees
 
     cfg = Config(pycastle_dir="my-castle")
-    worktrees_dir = tmp_path / "my-castle" / ".worktrees"
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
     worktrees_dir.mkdir(parents=True)
     orphan = worktrees_dir / "orphan-branch"
     orphan.mkdir()
@@ -1381,12 +1379,13 @@ def test_prune_orphan_worktrees_removes_worktrees_parent_when_empty_custom_dir(
     assert not worktrees_dir.exists()
 
 
-def test_prune_orphan_worktrees_does_not_look_in_hardcoded_pycastle_dir(tmp_path):
-    """When pycastle_dir='my-castle', orphans under hardcoded 'pycastle/.worktrees' are NOT swept."""
+def test_prune_orphan_worktrees_sweeps_fixed_pycastle_dir_even_when_config_is_stale(
+    tmp_path,
+):
+    """The fixed pycastle/.worktrees location is swept even when config carries a stale pycastle_dir."""
     from pycastle.infrastructure.worktree import prune_orphan_worktrees
 
     cfg = Config(pycastle_dir="my-castle")
-    # put an orphan in the old hardcoded location
     old_worktrees_dir = tmp_path / "pycastle" / ".worktrees"
     old_worktrees_dir.mkdir(parents=True)
     orphan_in_old_location = old_worktrees_dir / "orphan"
@@ -1394,8 +1393,7 @@ def test_prune_orphan_worktrees_does_not_look_in_hardcoded_pycastle_dir(tmp_path
 
     prune_orphan_worktrees(tmp_path, cfg=cfg, git_service=_make_prune_git_svc([]))
 
-    # The function with custom dir must not touch the old location
-    assert orphan_in_old_location.exists()
+    assert not orphan_in_old_location.exists()
 
 
 # ── prune_orphan_worktrees: git-registered worktrees without role sessions ────
@@ -1406,8 +1404,8 @@ def registered_orphan(repo):
     """A git-registered worktree on pycastle/issue-99 with no role session."""
     from pycastle.infrastructure.worktree import prune_orphan_worktrees
 
-    cfg = Config(pycastle_dir=".pycastle")
-    worktrees_dir = repo / ".pycastle" / ".worktrees"
+    cfg = Config()
+    worktrees_dir = repo / "pycastle" / ".worktrees"
     worktrees_dir.mkdir(parents=True)
     wt_path = worktrees_dir / "issue-99"
     subprocess.run(
@@ -1602,7 +1600,7 @@ def _git(repo: Path, *args: str) -> str:
 
 def test_ephemeral_sandbox_rebuilds_at_sha_when_stale_divergent_branch_exists(repo):
     """AC#1: delete_branch_on_teardown=True + divergent stale branch → worktree HEAD is sha."""
-    cfg = Config(pycastle_dir=".pycastle")
+    cfg = Config()
     deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
 
     # sha_base: HEAD of the repo fixture (has pyproject.toml)
@@ -1666,7 +1664,7 @@ def test_ephemeral_sandbox_rebuilds_at_sha_when_stale_divergent_branch_exists(re
 
 def test_ephemeral_sandbox_reuses_preserved_failure_worktree_by_default(repo):
     """AC#2: preserved failure sandboxes stay intact on the default fresh-sandbox path."""
-    cfg = Config(pycastle_dir=".pycastle")
+    cfg = Config()
     deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
 
     # sha_base: HEAD of the repo fixture
@@ -1679,7 +1677,7 @@ def test_ephemeral_sandbox_reuses_preserved_failure_worktree_by_default(repo):
     sha_main = _git(repo, "rev-parse", "HEAD")
 
     # Simulate a stale sandbox worktree at sha_base with a role dir (is_worktree_reusable=True)
-    wt_dir = repo / ".pycastle" / ".worktrees" / "merge-sandbox"
+    wt_dir = repo / "pycastle" / ".worktrees" / "merge-sandbox"
     subprocess.run(
         [
             "git",
@@ -1730,7 +1728,7 @@ def test_ephemeral_sandbox_reuses_preserved_failure_worktree_by_default(repo):
 
 def test_ephemeral_sandbox_can_replace_preserved_failure_worktree_when_requested(repo):
     """AC#3: callers can explicitly request a fresh sandbox replacement."""
-    cfg = Config(pycastle_dir=".pycastle")
+    cfg = Config()
     deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
 
     sha_base = _git(repo, "rev-parse", "HEAD")
@@ -1740,7 +1738,7 @@ def test_ephemeral_sandbox_can_replace_preserved_failure_worktree_when_requested
     _git(repo, "commit", "-m", "main extra replace")
     sha_main = _git(repo, "rev-parse", "HEAD")
 
-    wt_dir = repo / ".pycastle" / ".worktrees" / "merge-sandbox"
+    wt_dir = repo / "pycastle" / ".worktrees" / "merge-sandbox"
     subprocess.run(
         [
             "git",
@@ -1785,7 +1783,7 @@ def test_ephemeral_sandbox_can_replace_preserved_failure_worktree_when_requested
 
 def test_non_ephemeral_worktree_reuses_existing_branch_tip(repo):
     """AC#3: delete_branch_on_teardown=False + existing branch → worktree HEAD is branch tip (sha ignored)."""
-    cfg = Config(pycastle_dir=".pycastle")
+    cfg = Config()
     deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
 
     sha_base = _git(repo, "rev-parse", "HEAD")

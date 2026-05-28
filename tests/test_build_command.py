@@ -273,7 +273,7 @@ def test_build_command_uses_resolved_dockerfile_path(tmp_path, monkeypatch):
     ]
 
 
-def test_build_command_uses_local_universal_override_when_pycastle_dir_is_a_string(
+def test_build_command_uses_fixed_project_local_dockerfile_override(
     tmp_path, monkeypatch
 ):
     from pycastle.commands.build import main
@@ -287,7 +287,7 @@ def test_build_command_uses_local_universal_override_when_pycastle_dir_is_a_stri
 
     main(
         docker_service=svc,
-        cfg=Config(docker_image_name="img", pycastle_dir="pycastle"),  # type: ignore[arg-type]
+        cfg=Config(docker_image_name="img", pycastle_dir="custom-dir"),  # type: ignore[arg-type]
     )
 
     assert [call.args[1] for call in svc.build_image.call_args_list] == [

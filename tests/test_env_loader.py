@@ -78,10 +78,13 @@ def test_both_files_absent_returns_only_process_env(repo: Path, tmp_path: Path) 
     assert env == {"GH_TOKEN": "p"}
 
 
-def test_custom_env_file_skips_global_fallback(repo: Path, tmp_path: Path) -> None:
+def test_custom_env_file_still_uses_fixed_project_local_env_with_global_layering(
+    repo: Path, tmp_path: Path
+) -> None:
     global_dir = tmp_path / "home"
     global_dir.mkdir()
-    (global_dir / ".env").write_text("GH_TOKEN=fromglobal\n")
+    (global_dir / ".env").write_text("CLAUDE_CODE_OAUTH_TOKEN=fromglobal\n")
+    (repo / "pycastle" / ".env").write_text("GH_TOKEN=fromlocal\n")
     custom = repo / "secrets.env"
     custom.write_text("OTHER=x\n")
     env = load_env(
@@ -89,5 +92,6 @@ def test_custom_env_file_skips_global_fallback(repo: Path, tmp_path: Path) -> No
         local_env_file=custom,
         process_env={},
     )
-    assert "GH_TOKEN" not in env
-    assert env["OTHER"] == "x"
+    assert env["GH_TOKEN"] == "fromlocal"
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "fromglobal"
+    assert "OTHER" not in env

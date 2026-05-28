@@ -20,6 +20,7 @@ from ..session import SESSION_DIR_NAME, any_role_dir_present
 
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
 PRESERVED_FAILURE_MARKER = ".preserved-failure"
+PROJECT_LOCAL_PYCASTLE_DIR = Path("pycastle")
 
 
 class _WorktreeDeps(Protocol):
@@ -35,8 +36,12 @@ def worktree_name_for_branch(branch: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
 
 
+def _project_local_worktrees_dir(repo_root: Path) -> Path:
+    return repo_root / PROJECT_LOCAL_PYCASTLE_DIR / ".worktrees"
+
+
 def worktree_path(name: str, deps: _WorktreeDeps) -> Path:
-    return deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / name
+    return _project_local_worktrees_dir(deps.repo_root) / name
 
 
 @contextmanager
@@ -72,7 +77,7 @@ def prune_orphan_worktrees(
 ) -> None:
     resolved_cfg = cfg or load_config()
     svc = git_service or GitService(resolved_cfg)
-    worktrees_dir = repo_root / resolved_cfg.pycastle_dir / ".worktrees"
+    worktrees_dir = _project_local_worktrees_dir(repo_root)
     if not worktrees_dir.exists():
         return
     active = {str(p) for p in svc.list_worktrees(repo_root)}

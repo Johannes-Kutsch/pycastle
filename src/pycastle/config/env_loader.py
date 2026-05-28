@@ -23,9 +23,9 @@ def load_env(
 ) -> dict[str, str]:
     merged: dict[str, str] = {}
 
-    if local_env_file == DEFAULT_ENV_FILE and global_dir is not None:
+    if global_dir is not None:
         merged.update(_read_env_file(global_dir / ".env"))
 
-    merged.update(_read_env_file(local_env_file))
+    merged.update(_read_env_file(DEFAULT_ENV_FILE))
     merged.update(process_env)
     return merged

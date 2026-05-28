@@ -70,7 +70,7 @@ def _merge_sandbox_branch(issue_number: int) -> str:
 def _merge_sandbox_path(repo_root, cfg, issue_number: int):
     return (
         repo_root
-        / cfg.pycastle_dir
+        / "pycastle"
         / ".worktrees"
         / worktree_name_for_branch(_merge_sandbox_branch(issue_number))
     )
@@ -876,7 +876,7 @@ def test_empty_completed_list_returns_empty_result(deps, github_svc, agent_runne
 
 
 def test_active_worktree_removed_when_merged_branch_is_cleaned_up(deps, git_svc):
-    worktree_path = deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "issue-1"
+    worktree_path = deps.repo_root / "pycastle" / ".worktrees" / "issue-1"
     git_svc.list_worktrees.return_value = [worktree_path]
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
@@ -886,7 +886,7 @@ def test_active_worktree_removed_when_merged_branch_is_cleaned_up(deps, git_svc)
 
 
 def test_worktree_unregistered_before_branch_deletion(deps, git_svc):
-    worktree_path = deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "issue-1"
+    worktree_path = deps.repo_root / "pycastle" / ".worktrees" / "issue-1"
     git_svc.list_worktrees.return_value = [worktree_path]
     call_order: list[str] = []
     git_svc.remove_worktree.side_effect = lambda *a, **kw: call_order.append("remove")
@@ -905,7 +905,7 @@ def test_merged_branch_without_active_worktree_is_deleted_without_worktree_remov
 
 
 def test_worktree_removal_failure_does_not_abort_branch_deletion(deps, git_svc):
-    worktree_path = deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "issue-1"
+    worktree_path = deps.repo_root / "pycastle" / ".worktrees" / "issue-1"
     git_svc.list_worktrees.return_value = [worktree_path]
     git_svc.remove_worktree.side_effect = RuntimeError("disk full")
     issues = [{"number": 1, "title": "Fix A"}]
@@ -1592,7 +1592,7 @@ def test_worktree_removal_warning_routed_to_status_display_not_stderr(
 ):
     """When worktree removal fails, warning must go to status_display.print, not stderr."""
     deps, recording = recording_deps
-    wt_path = deps.repo_root / deps.cfg.pycastle_dir / ".worktrees" / "issue-1"
+    wt_path = deps.repo_root / "pycastle" / ".worktrees" / "issue-1"
     git_svc.list_worktrees.return_value = [wt_path]
     git_svc.remove_worktree.side_effect = RuntimeError("disk full")
     issues = [{"number": 1, "title": "Fix A"}]
