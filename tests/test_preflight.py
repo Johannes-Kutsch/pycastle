@@ -16,8 +16,10 @@ from pycastle.services import (
     GitCommandError,
     GitService,
     GithubService,
+    ServiceRegistry,
     UnrelatedHistoriesError,
 )
+from pycastle.services.agent_service import AgentService
 from pycastle.iteration._deps import FakeAgentRunner
 from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.iteration.preflight import (
@@ -36,6 +38,7 @@ class _CacheDeps:
     status_display: PlainStatusDisplay
     agent_runner: FakeAgentRunner
     repo_root: Path
+    service_registry: ServiceRegistry | None = None
 
 
 @pytest.fixture
@@ -121,6 +124,48 @@ def test_get_safe_sha_preflight_issue_uses_preflight_issue_override_service(
 
     assert isinstance(result, PreflightHITL)
     assert fake.calls[0].service == "codex"
+
+
+def test_get_safe_sha_preflight_issue_resolves_override_at_failure_dispatch(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    unavailable = MagicMock(spec=AgentService)
+    unavailable.is_available.return_value = False
+    available = MagicMock(spec=AgentService)
+    available.is_available.return_value = True
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=Config(
+            max_parallel=4,
+            max_iterations=1,
+            preflight_issue_override=StageOverride(
+                service="claude",
+                model="opus",
+                effort="high",
+                fallback=StageOverride(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        ),
+    )
+    deps.service_registry = ServiceRegistry({"claude": unavailable, "codex": available})
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightHITL)
+    assert fake.calls[0].service == "codex"
+    assert fake.calls[0].model == "gpt-5.5"
+    assert fake.calls[0].effort == "medium"
 
 
 def test_get_safe_sha_returns_afk_when_checks_fail_with_afk_label(
