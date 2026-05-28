@@ -402,7 +402,7 @@ def test_sandbox_branch_deleted_when_run_agent_raises(tmp_path, git_svc, github_
     with pytest.raises(RuntimeError, match="agent crashed"):
         _run(issues, local_deps)
     deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
-    assert "pycastle/merge-sandbox" in deleted
+    assert "pycastle/merge-sandbox" not in deleted
 
 
 # ── Worktree lifecycle ────────────────────────────────────────────────────────
@@ -458,7 +458,9 @@ def test_worktree_removed_when_run_agent_raises(tmp_path, git_svc, github_svc):
         / ".worktrees"
         / "merge-sandbox"
     )
-    git_svc.remove_worktree.assert_called_once_with(local_deps.repo_root, expected_path)
+    git_svc.remove_worktree.assert_not_called()
+    marker = expected_path / ".pycastle-session" / ".preserved-failure"
+    assert marker.is_file()
 
 
 # ── Empty input ───────────────────────────────────────────────────────────────

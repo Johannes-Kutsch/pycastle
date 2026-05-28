@@ -296,6 +296,43 @@ def test_managed_worktree_preserves_when_resumable_session_present(real_branch_d
     assert "pycastle/issue-resumable" in branches
 
 
+def test_managed_worktree_preserves_clean_worktree_on_unexpected_agent_failure(
+    real_branch_deps,
+):
+    """Unexpected agent failures must preserve a clean worktree for debugging."""
+    captured: dict = {}
+
+    async def _run():
+        with pytest.raises(RuntimeError, match="unexpected crash"):
+            async with managed_worktree(
+                "issue-unexpected-failure",
+                branch="pycastle/issue-unexpected-failure",
+                sha=None,
+                delete_branch_on_teardown=True,
+                deps=real_branch_deps,
+            ) as path:
+                captured["path"] = path
+                raise RuntimeError("unexpected crash")
+
+    asyncio.run(_run())
+
+    assert captured["path"].exists()
+    assert (captured["path"] / ".pycastle-session" / ".preserved-failure").is_file()
+    branches = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(real_branch_deps.repo_root),
+            "branch",
+            "--list",
+            "pycastle/issue-unexpected-failure",
+        ],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "pycastle/issue-unexpected-failure" in branches
+
+
 def test_managed_worktree_with_existing_branch(real_branch_deps):
     """Entering managed_worktree for a branch that already exists must succeed."""
     subprocess.run(
@@ -924,7 +961,7 @@ def test_managed_worktree_removes_worktree_but_not_branch_when_delete_branch_on_
     branch_deps.git_svc.delete_branch.assert_not_called()
 
 
-def test_managed_worktree_cleans_up_on_exception(branch_deps):
+def test_managed_worktree_preserves_worktree_on_unexpected_exception(branch_deps):
     expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
 
     async def _run():
@@ -939,12 +976,10 @@ def test_managed_worktree_cleans_up_on_exception(branch_deps):
                 raise RuntimeError("body error")
 
     asyncio.run(_run())
-    branch_deps.git_svc.remove_worktree.assert_called_once_with(
-        branch_deps.repo_root, expected_path
-    )
-    branch_deps.git_svc.delete_branch.assert_called_once_with(
-        "pycastle/issue-42", branch_deps.repo_root
-    )
+    branch_deps.git_svc.remove_worktree.assert_not_called()
+    branch_deps.git_svc.delete_branch.assert_not_called()
+    marker = expected_path / ".pycastle-session" / ".preserved-failure"
+    assert marker.is_file()
 
 
 def test_managed_worktree_does_not_delete_branch_when_remove_worktree_raises(
@@ -1132,8 +1167,9 @@ def test_managed_worktree_preserves_worktree_and_branch_when_session_dir_has_fil
     branch_deps.git_svc.delete_branch.assert_not_called()
 
 
-def test_managed_worktree_preserves_worktree_on_usage_limit_error(branch_deps):
-    """managed_worktree must not teardown when UsageLimitError propagates from the body."""
+def test_managed_worktree_cleans_up_on_usage_limit_error(branch_deps):
+    """UsageLimitError stays on its handled path and must not preserve the worktree."""
+    expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
 
     async def _run():
         with pytest.raises(UsageLimitError):
@@ -1148,17 +1184,14 @@ def test_managed_worktree_preserves_worktree_on_usage_limit_error(branch_deps):
 
     asyncio.run(_run())
 
-    branch_deps.git_svc.remove_worktree.assert_not_called()
-    branch_deps.git_svc.delete_branch.assert_not_called()
-    marker = (
-        branch_deps.repo_root
-        / ".pycastle"
-        / ".worktrees"
-        / "issue-42"
-        / ".pycastle-session"
-        / ".preserved-failure"
+    branch_deps.git_svc.remove_worktree.assert_called_once_with(
+        branch_deps.repo_root, expected_path
     )
-    assert marker.is_file()
+    branch_deps.git_svc.delete_branch.assert_called_once_with(
+        "pycastle/issue-42", branch_deps.repo_root
+    )
+    marker = expected_path / ".pycastle-session" / ".preserved-failure"
+    assert not marker.exists()
 
 
 def test_managed_worktree_preserves_worktree_on_agent_failed_error(branch_deps):
@@ -1192,7 +1225,7 @@ def test_managed_worktree_preserves_worktree_on_agent_failed_error(branch_deps):
     [
         (False, False, False, True),
         (True, False, False, False),
-        (False, True, False, False),
+        (False, True, False, True),
         (False, False, True, False),
         (True, True, False, False),
         (True, False, True, False),
@@ -1203,7 +1236,7 @@ def test_managed_worktree_preserves_worktree_on_agent_failed_error(branch_deps):
 def test_managed_worktree_preservation_predicate(
     branch_deps, dirty, usage_limit_exc, has_resumable_session, expected_teardown
 ):
-    """preserve iff dirty OR usage_limit_exc OR has_resumable_session."""
+    """preserve iff dirty OR has_resumable_session for handled usage-limit exits."""
     branch_deps.git_svc.is_working_tree_clean.return_value = not dirty
 
     async def _run():
@@ -1230,8 +1263,9 @@ def test_managed_worktree_preservation_predicate(
         branch_deps.git_svc.remove_worktree.assert_not_called()
 
 
-def test_managed_worktree_preserves_worktree_on_transient_agent_error(branch_deps):
-    """managed_worktree must not teardown when TransientAgentError propagates from the body."""
+def test_managed_worktree_cleans_up_on_transient_agent_error(branch_deps):
+    """Transient provider failures stay non-preserving at the worktree boundary."""
+    expected_path = branch_deps.repo_root / ".pycastle" / ".worktrees" / "issue-42"
 
     async def _run():
         with pytest.raises(TransientAgentError):
@@ -1246,8 +1280,12 @@ def test_managed_worktree_preserves_worktree_on_transient_agent_error(branch_dep
 
     asyncio.run(_run())
 
-    branch_deps.git_svc.remove_worktree.assert_not_called()
-    branch_deps.git_svc.delete_branch.assert_not_called()
+    branch_deps.git_svc.remove_worktree.assert_called_once_with(
+        branch_deps.repo_root, expected_path
+    )
+    branch_deps.git_svc.delete_branch.assert_called_once_with(
+        "pycastle/issue-42", branch_deps.repo_root
+    )
 
 
 def test_managed_worktree_preserves_worktree_on_hard_agent_error(branch_deps):

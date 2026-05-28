@@ -211,7 +211,13 @@ async def managed_worktree(
     _preservation_worthy_exc = False
     try:
         yield path
-    except (AgentFailedError, UsageLimitError, TransientAgentError, HardAgentError):
+    except (UsageLimitError, TransientAgentError):
+        raise
+    except (AgentFailedError, HardAgentError):
+        _preservation_worthy_exc = True
+        mark_failure_worktree_preserved(path)
+        raise
+    except Exception:
         _preservation_worthy_exc = True
         mark_failure_worktree_preserved(path)
         raise
