@@ -448,6 +448,34 @@ def test_agent_runner_uses_requested_service_from_registry(tmp_path):
     assert claude_service.commands == []
 
 
+def test_agent_runner_does_not_fall_back_to_claude_for_unknown_requested_service(
+    tmp_path,
+):
+    claude_service = _RecordingAgentService("claude")
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client([]),
+        service_registry={"claude": claude_service},
+    )
+
+    with pytest.raises(ValueError, match="Unknown agent service 'codex'"):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Test",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    service="codex",
+                )
+            )
+        )
+
+    assert claude_service.commands == []
+
+
 def test_agent_runner_uses_per_service_image_for_requested_service(tmp_path):
     requested_service = _RecordingAgentService("codex")
     docker_client = _make_docker_client([])
@@ -474,6 +502,97 @@ def test_agent_runner_uses_per_service_image_for_requested_service(tmp_path):
     assert isinstance(result, CommitMessageOutput)
     docker_client.containers.run.assert_called_once()
     assert docker_client.containers.run.call_args.args[0] == "pycastle-test-codex"
+
+
+def test_agent_runner_mixed_services_use_service_command_env_and_parser(
+    tmp_path, monkeypatch
+):
+    from pycastle.services.claude_service import ClaudeService
+
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    started: list[tuple[str, dict[str, str]]] = []
+    stream_commands: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+
+    def _start_container(image_name: str, **kwargs):
+        started.append((image_name, dict(kwargs.get("environment") or {})))
+        return mock_container
+
+    def _exec_run(cmd, **kwargs):
+        if not kwargs.get("stream"):
+            return MagicMock(exit_code=0, output=(b"", b""))
+        command = cmd[2] if isinstance(cmd, list) and len(cmd) > 2 else ""
+        stream_commands.append(command)
+        chunks = (
+            _COMPLETE_STREAM
+            if command.startswith("claude ")
+            else _CODEX_COMPLETE_STREAM
+        )
+        return MagicMock(output=iter(chunks))
+
+    mock_client.containers.run.side_effect = _start_container
+    mock_container.exec_run.side_effect = _exec_run
+
+    runner = AgentRunner(
+        {"GH_TOKEN": "gh-token"},
+        _make_cfg(tmp_path, docker_image_name="pycastle-test"),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={
+            "claude": ClaudeService(accounts=[("primary", "tok-primary")]),
+            "codex": CodexService(),
+        },
+    )
+
+    implement = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Implement",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.IMPLEMENTER,
+                model="sonnet",
+                effort="medium",
+                service="claude",
+            )
+        )
+    )
+    review = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Review",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.REVIEWER,
+                model="gpt-5.3-codex",
+                effort="medium",
+                service="codex",
+            )
+        )
+    )
+
+    assert isinstance(implement, CommitMessageOutput)
+    assert isinstance(review, CommitMessageOutput)
+    assert stream_commands[0].startswith("claude ")
+    assert "--output-format stream-json" in stream_commands[0]
+    assert stream_commands[1].startswith("codex exec ")
+    assert "--json" in stream_commands[1]
+
+    assert started[0][0] == "pycastle-test-claude"
+    assert started[0][1]["CLAUDE_CODE_OAUTH_TOKEN"] == "tok-primary"
+    assert "CODEX_HOME" not in started[0][1]
+    assert started[1][0] == "pycastle-test-codex"
+    assert started[1][1]["TZ"] == "UTC"
+    assert started[1][1]["CODEX_HOME"].endswith("/.pycastle-session/reviewer/codex/")
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in started[1][1]
 
 
 # ── AgentRunner: error propagation ───────────────────────────────────────────

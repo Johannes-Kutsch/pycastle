@@ -114,7 +114,7 @@ class AgentRunner:
         service = self._service_registry.get(resolved_name)
         if service is not None:
             return service
-        return ClaudeService()
+        raise ValueError(f"Unknown agent service {resolved_name!r}")
 
     def _build_session(
         self,
