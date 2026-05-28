@@ -353,12 +353,38 @@ def test_init_config_example_shows_behavioral_and_logging_config_only(
 
     assert "# --- Logging ---" in content
     assert 'logs_dir = Path("pycastle/logs")' in content
-    assert "Local config uses logs_dir directly." in content
-    assert "Global config treats logs_dir as a per-project parent directory." in content
+    assert "In local config, logs_dir is used directly." in content
+    assert "In global config, logs_dir is the parent directory" in content
 
     assert "# --- Docker ---" in content
     assert "Local-only build artifact name used by `pycastle build`." in content
     assert 'docker_image_name = ""' in content
+
+    for removed_key in (
+        "pycastle_dir",
+        "prompts_dir",
+        "worktrees_dir",
+        "env_file",
+        "dockerfile",
+    ):
+        assert f"{removed_key} =" not in content
+
+
+def test_refresh_config_example_documents_logs_dir_as_global_parent_and_local_direct(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+
+    refresh()
+
+    content = (tmp_path / "pycastle" / "config.py.example").read_text()
+
+    assert "# --- Logging ---" in content
+    assert "In global config, logs_dir is the parent directory" in content
+    assert "In local config, logs_dir is used directly" in content
+    assert 'logs_dir = Path("pycastle/logs")' in content
 
     for removed_key in (
         "pycastle_dir",
