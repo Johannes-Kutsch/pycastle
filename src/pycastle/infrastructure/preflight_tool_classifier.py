@@ -47,6 +47,7 @@ def _configured_tool_name(command: str, check_name: str) -> str:
 class PythonDependencyMetadata:
     declared_packages: frozenset[str]
     source: str = ""
+    package_sources: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -71,6 +72,7 @@ PreflightToolFailureClassification = OrdinaryCheckFailure | MissingDeclaredTool
 
 
 def load_python_dependency_metadata(project_root: Path) -> PythonDependencyMetadata:
+    package_sources: dict[str, str] = {}
     pyproject_path = project_root / "pyproject.toml"
     if pyproject_path.exists():
         data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
@@ -89,31 +91,29 @@ def load_python_dependency_metadata(project_root: Path) -> PythonDependencyMetad
                             req for req in extra_requirements if isinstance(req, str)
                         )
 
-            declared_packages = frozenset(
-                name
-                for req in requirements
-                if (name := _requirement_name(req)) is not None
-            )
-            if declared_packages:
-                return PythonDependencyMetadata(
-                    declared_packages=declared_packages,
-                    source=pyproject_path.name,
-                )
+            for requirement in requirements:
+                name = _requirement_name(requirement)
+                if name is not None:
+                    package_sources[name] = pyproject_path.name
 
     requirements_path = project_root / "requirements.txt"
-    if not requirements_path.exists():
+    if requirements_path.exists():
+        for line in requirements_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.split("#", 1)[0].strip()
+            if not stripped:
+                continue
+            name = _requirement_name(stripped)
+            if name is not None:
+                package_sources.setdefault(name, requirements_path.name)
+
+    if not package_sources:
         return PythonDependencyMetadata(declared_packages=frozenset())
 
-    requirements = []
-    for line in requirements_path.read_text(encoding="utf-8").splitlines():
-        stripped = line.split("#", 1)[0].strip()
-        if stripped:
-            requirements.append(stripped)
+    sources = tuple(dict.fromkeys(package_sources.values()))
     return PythonDependencyMetadata(
-        declared_packages=frozenset(
-            name for req in requirements if (name := _requirement_name(req)) is not None
-        ),
-        source=requirements_path.name,
+        declared_packages=frozenset(package_sources),
+        source=sources[0] if len(sources) == 1 else ", ".join(sources),
+        package_sources=package_sources,
     )
 
 
@@ -131,6 +131,9 @@ def classify_preflight_tool_failure(
         missing_tool = _normalize_package_name(match.group("tool"))
         break
 
+    dependency_source = metadata.package_sources.get(tool)
+    if missing_tool == tool and dependency_source:
+        return MissingDeclaredTool(tool=tool, dependency_source=dependency_source)
     if (
         missing_tool == tool
         and tool in metadata.declared_packages
