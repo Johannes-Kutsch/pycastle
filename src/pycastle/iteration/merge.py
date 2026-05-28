@@ -223,6 +223,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 branch=MERGE_SANDBOX,
                 sha=verdict.sha,
                 delete_branch_on_teardown=True,
+                replace_preserved_failure=True,
                 deps=deps,
             ) as sandbox_path:
                 active_issue = conflict_issues[0]
