@@ -260,7 +260,7 @@ class AgentRunner:
             must_close=False,
             work_body=work_body,
             color_key=color_key,
-        ):
+        ) as row:
             session = self._build_session(mount_path, service, svc_state_relpath)
             runner = ContainerRunner(
                 name,
@@ -309,27 +309,33 @@ class AgentRunner:
                         for _ in range(3):
                             try:
                                 if service.name == "codex":
-                                    return await runner.work(
+                                    output = await runner.work(
                                         role,
                                         work_prompt,
                                         run_kind=work_run_kind,
                                         session_uuid=service_session_id,
                                         on_thread_id=remember_thread_id,
                                     )
-                                return await runner.work(
-                                    role,
-                                    work_prompt,
-                                    run_kind=work_run_kind,
-                                    session_uuid=service_session_id,
-                                )
+                                else:
+                                    output = await runner.work(
+                                        role,
+                                        work_prompt,
+                                        run_kind=work_run_kind,
+                                        session_uuid=service_session_id,
+                                    )
+                                if isinstance(output, FailedOutput):
+                                    row.close("failed", shutdown_style="error")
+                                return output
                             except AgentOutputProtocolError:
                                 if (
                                     service.name == "codex"
                                     and service_session_id is None
                                 ):
+                                    row.close("failed", shutdown_style="error")
                                     return FailedOutput(failure_class="protocol_error")
                                 work_prompt = REPROMPT_MESSAGE
                                 work_run_kind = RunKind.RESUME
+                        row.close("failed", shutdown_style="error")
                         return FailedOutput(failure_class="protocol_error")
                     except AgentTimeoutError:
                         if retries_left <= 0:
@@ -368,6 +374,7 @@ class AgentRunner:
                         if run_kind != RunKind.RESUME:
                             raise
                         if non_typed_retry_done:
+                            row.close("failed", shutdown_style="error")
                             return FailedOutput(failure_class="non_typed_crash")
                         non_typed_retry_done = True
             finally:
