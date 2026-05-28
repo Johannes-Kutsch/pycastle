@@ -420,7 +420,7 @@ def test_later_conflict_failure_returns_partial_success_for_earlier_verified_bra
 def test_later_conflict_failure_keeps_earlier_verified_merge_commit_on_target_branch(
     two_conflicting_branches_repo, github_svc
 ):
-    real_git = GitService(Config(pycastle_dir=".pycastle"))
+    real_git = GitService(Config())
 
     async def _resolve_then_fail(request: RunRequest):
         assert request.scope_args is not None
@@ -436,7 +436,7 @@ def test_later_conflict_failure_keeps_earlier_verified_merge_commit_on_target_br
         FakeAgentRunner(side_effect=_resolve_then_fail),
         git_svc=real_git,
         github_svc=github_svc,
-        cfg=Config(pycastle_dir=".pycastle", auto_push=False),
+        cfg=Config(auto_push=False),
         preflight_cache=StubPreflightCache(
             PreflightReady(sha=real_git.get_head_sha(two_conflicting_branches_repo))
         ),
@@ -1505,7 +1505,7 @@ def test_merge_phase_recreates_preserved_issue_sandbox_from_current_safe_sha(
     conflicting_repo, github_svc
 ):
     """A preserved failed issue sandbox must not resume from its obsolete branch tip."""
-    real_git = GitService(Config(pycastle_dir=".pycastle"))
+    real_git = GitService(Config())
     old_safe_sha = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=conflicting_repo,
@@ -1525,9 +1525,7 @@ def test_merge_phase_recreates_preserved_issue_sandbox_from_current_safe_sha(
         text=True,
     ).stdout.strip()
 
-    sandbox_path = _merge_sandbox_path(
-        conflicting_repo, Config(pycastle_dir=".pycastle"), 1
-    )
+    sandbox_path = _merge_sandbox_path(conflicting_repo, Config(), 1)
     _git(
         conflicting_repo,
         "worktree",
@@ -1574,7 +1572,7 @@ def test_merge_phase_recreates_preserved_issue_sandbox_from_current_safe_sha(
         FakeAgentRunner(side_effect=_resolve_conflict),
         git_svc=real_git,
         github_svc=github_svc,
-        cfg=Config(pycastle_dir=".pycastle", auto_push=False),
+        cfg=Config(auto_push=False),
         preflight_cache=StubPreflightCache(PreflightReady(sha=current_safe_sha)),
     )
 

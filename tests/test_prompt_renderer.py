@@ -1,6 +1,7 @@
 import asyncio
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -27,17 +28,42 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _cfg_for_prompts_dir(prompts_dir: Path) -> SimpleNamespace:
+    base = Config()
+    return SimpleNamespace(
+        prompts_dir=prompts_dir,
+        preflight_checks=base.preflight_checks,
+        bug_label=base.bug_label,
+        issue_label=base.issue_label,
+        hitl_label=base.hitl_label,
+        enhancement_label=base.enhancement_label,
+        needs_triage_label=base.needs_triage_label,
+        needs_info_label=base.needs_info_label,
+        wontfix_label=base.wontfix_label,
+        refactor_slice_label=base.refactor_slice_label,
+        behavior_slice_label=base.behavior_slice_label,
+        docs_slice_label=base.docs_slice_label,
+        implement_checks=base.implement_checks,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+
 @pytest.fixture
 def prompts_dir(tmp_path: Path) -> Path:
-    (tmp_path / "improve").mkdir()
-    (tmp_path / "coding-standards").mkdir()
-    (tmp_path / "implement").mkdir()
-    return tmp_path
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    (prompts_dir / "improve").mkdir(parents=True)
+    (prompts_dir / "coding-standards").mkdir()
+    (prompts_dir / "implement").mkdir()
+    return prompts_dir
 
 
 @pytest.fixture
 def cfg(prompts_dir: Path) -> Config:
-    return Config(prompts_dir=prompts_dir)
+    return Config()
 
 
 # ── Tracer bullet: renderer renders a global placeholder ──────────────────────
@@ -481,7 +507,7 @@ def test_renderer_loads_both_standards_keys(prompts_dir):
     (prompts_dir / "improve" / "01-scan.md").write_text(
         "{{DESIGN_STANDARDS}}|{{IMPLEMENTATION_STANDARDS}}"
     )
-    cfg = Config(prompts_dir=prompts_dir)
+    cfg = Config()
     renderer = PromptRenderer(cfg)
 
     result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
@@ -496,7 +522,7 @@ def test_renderer_returns_empty_string_for_missing_standards_file(prompts_dir):
     (prompts_dir / "improve" / "01-scan.md").write_text(
         "{{DESIGN_STANDARDS}}|{{IMPLEMENTATION_STANDARDS}}"
     )
-    cfg = Config(prompts_dir=prompts_dir)
+    cfg = _cfg_for_prompts_dir(prompts_dir)
     renderer = PromptRenderer(cfg)
 
     result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
@@ -505,12 +531,13 @@ def test_renderer_returns_empty_string_for_missing_standards_file(prompts_dir):
 
 
 def test_renderer_returns_all_empty_standards_when_dir_absent(tmp_path):
-    (tmp_path / "improve").mkdir()
-    (tmp_path / "improve" / "01-scan.md").write_text(
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    (prompts_dir / "improve").mkdir(parents=True)
+    (prompts_dir / "improve" / "01-scan.md").write_text(
         "{{DESIGN_STANDARDS}}|{{IMPLEMENTATION_STANDARDS}}"
     )
     # no coding-standards dir created
-    cfg = Config(prompts_dir=tmp_path)
+    cfg = _cfg_for_prompts_dir(prompts_dir)
     renderer = PromptRenderer(cfg)
 
     result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
@@ -521,7 +548,7 @@ def test_renderer_returns_all_empty_standards_when_dir_absent(tmp_path):
 def test_renderer_renders_issue_tracker_fragment(prompts_dir):
     (prompts_dir / "_issue-tracker.md").write_text("issue-tracker recipes")
     (prompts_dir / "improve" / "01-scan.md").write_text("{{ISSUE_TRACKER}}")
-    cfg = Config(prompts_dir=prompts_dir)
+    cfg = Config()
     renderer = PromptRenderer(cfg)
 
     result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
@@ -536,7 +563,7 @@ def test_renderer_renders_implement_review_shared_framing_fragment(prompts_dir):
     (prompts_dir / "review-prompt.md").write_text(
         "prefix {{IMPLEMENT_REVIEW_SHARED_FRAMING}} suffix"
     )
-    cfg = Config(prompts_dir=prompts_dir)
+    cfg = Config()
     renderer = PromptRenderer(cfg)
 
     result = _run(
@@ -622,7 +649,7 @@ def test_renderer_aborts_on_broken_local_shared_framing_override(tmp_path, monke
 
 def test_renderer_aborts_when_issue_tracker_referenced_but_absent(prompts_dir):
     (prompts_dir / "improve" / "01-scan.md").write_text("{{ISSUE_TRACKER}}")
-    cfg = Config(prompts_dir=prompts_dir)
+    cfg = _cfg_for_prompts_dir(prompts_dir)
 
     with pytest.raises(PromptRenderError, match="ISSUE_TRACKER"):
         PromptRenderer(cfg)
@@ -645,7 +672,7 @@ def test_renderer_uses_bundled_prompt_when_default_local_prompt_is_absent(
 ):
     monkeypatch.chdir(tmp_path)
     renderer = PromptRenderer(Config())
-    shipped_renderer = _make_shipped_prompt_renderer()
+    shipped_renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
 
     result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
     shipped_result = _run(
@@ -684,7 +711,7 @@ def test_renderer_mixes_local_and_bundled_shared_prompt_files(tmp_path, monkeypa
 
 
 def test_render_shipped_preflight_issue_prompt():
-    renderer = _make_shipped_prompt_renderer()
+    renderer = PromptRenderer(Config())
 
     result = _run(
         renderer.render(
@@ -705,7 +732,7 @@ def test_render_shipped_preflight_issue_prompt():
 
 
 def test_render_shipped_host_check_issue_prompt():
-    renderer = _make_shipped_prompt_renderer()
+    renderer = PromptRenderer(Config())
 
     result = _run(
         renderer.render(
@@ -885,15 +912,8 @@ _FAILURE_REPORT_SCOPE_ARGS_BASE = {
 }
 
 
-def _make_shipped_prompt_renderer() -> PromptRenderer:
-    from pycastle.config import Config
-
-    cfg = Config(prompts_dir=_SHIPPED_PROMPTS_DIR)
-    return PromptRenderer(cfg)
-
-
 def test_failure_report_renders_recovery_section_for_non_typed_crash():
-    renderer = _make_shipped_prompt_renderer()
+    renderer = PromptRenderer(Config())
 
     result = _run(
         renderer.render(
@@ -908,7 +928,7 @@ def test_failure_report_renders_recovery_section_for_non_typed_crash():
 
 
 def test_failure_report_omits_recovery_section_for_protocol_error():
-    renderer = _make_shipped_prompt_renderer()
+    renderer = PromptRenderer(Config())
 
     result = _run(
         renderer.render(

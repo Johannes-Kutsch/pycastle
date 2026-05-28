@@ -768,7 +768,7 @@ def test_worktree_path_constructs_correct_path(tmp_path):
 
 
 def test_worktree_path_uses_fixed_project_local_pycastle_dir(tmp_path):
-    cfg = Config(pycastle_dir="custom-dir")
+    cfg = Config()
     deps = SimpleNamespace(repo_root=tmp_path, cfg=cfg)
     result = worktree_path("issue-99", deps)
     assert result == tmp_path / "pycastle" / ".worktrees" / "issue-99"
@@ -1321,7 +1321,7 @@ def test_prune_orphan_worktrees_uses_fixed_project_local_pycastle_dir(tmp_path):
     """Orphans are swept from pycastle/.worktrees even when config carries a stale pycastle_dir."""
     from pycastle.infrastructure.worktree import prune_orphan_worktrees
 
-    cfg = Config(pycastle_dir="my-castle")
+    cfg = Config()
     worktrees_dir = tmp_path / "pycastle" / ".worktrees"
     worktrees_dir.mkdir(parents=True)
     orphan = worktrees_dir / "orphan-branch"
@@ -1336,7 +1336,7 @@ def test_prune_orphan_worktrees_default_pycastle_dir_still_works(tmp_path):
     """With the default pycastle_dir='pycastle', orphans under pycastle/.worktrees/ are removed."""
     from pycastle.infrastructure.worktree import prune_orphan_worktrees
 
-    cfg = Config(pycastle_dir="pycastle")
+    cfg = Config()
     worktrees_dir = tmp_path / "pycastle" / ".worktrees"
     worktrees_dir.mkdir(parents=True)
     orphan = worktrees_dir / "orphan-branch"
@@ -1350,7 +1350,7 @@ def test_prune_orphan_worktrees_default_pycastle_dir_still_works(tmp_path):
 def test_prune_orphan_worktrees_preserves_unregistered_failure_worktree(tmp_path):
     from pycastle.infrastructure.worktree import prune_orphan_worktrees
 
-    cfg = Config(pycastle_dir="pycastle")
+    cfg = Config()
     worktrees_dir = tmp_path / "pycastle" / ".worktrees"
     worktrees_dir.mkdir(parents=True)
     preserved = worktrees_dir / "issue-99"
@@ -1368,7 +1368,7 @@ def test_prune_orphan_worktrees_removes_worktrees_parent_when_empty(tmp_path):
     """Parent .worktrees dir is removed when empty after orphan sweep."""
     from pycastle.infrastructure.worktree import prune_orphan_worktrees
 
-    cfg = Config(pycastle_dir="my-castle")
+    cfg = Config()
     worktrees_dir = tmp_path / "pycastle" / ".worktrees"
     worktrees_dir.mkdir(parents=True)
     orphan = worktrees_dir / "orphan-branch"
@@ -1385,7 +1385,7 @@ def test_prune_orphan_worktrees_sweeps_fixed_pycastle_dir_even_when_config_is_st
     """The fixed pycastle/.worktrees location is swept even when config carries a stale pycastle_dir."""
     from pycastle.infrastructure.worktree import prune_orphan_worktrees
 
-    cfg = Config(pycastle_dir="my-castle")
+    cfg = Config()
     old_worktrees_dir = tmp_path / "pycastle" / ".worktrees"
     old_worktrees_dir.mkdir(parents=True)
     orphan_in_old_location = old_worktrees_dir / "orphan"

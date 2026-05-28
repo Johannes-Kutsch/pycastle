@@ -35,15 +35,20 @@ from pycastle.services import CodexService, GitCommandError, GitService, OpenCod
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 
 
+@pytest.fixture(autouse=True)
+def _project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+
 def _make_cfg(tmp_path: Path, **kwargs) -> Config:
-    """Create a Config with a minimal prompts_dir for AgentRunner tests."""
-    prompts_dir = tmp_path / "prompts"
-    prompts_dir.mkdir(exist_ok=True)
+    """Create a Config with minimal project-local prompt overrides for AgentRunner tests."""
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True, exist_ok=True)
     (prompts_dir / "plan-prompt.md").write_text(
         "{{ALL_OPEN_ISSUES_JSON}} {{READY_FOR_AGENT_ISSUES_JSON}}", encoding="utf-8"
     )
     (prompts_dir / "_resume-prompt.md").write_text("resume", encoding="utf-8")
-    return Config(logs_dir=tmp_path, prompts_dir=prompts_dir, **kwargs)
+    return Config(logs_dir=tmp_path, **kwargs)
 
 
 def _run_request(*, service: str = "claude", **kwargs) -> RunRequest:
@@ -2288,13 +2293,13 @@ async def _noop_exec(cmd: str) -> str:
 
 
 def _make_build_prompt_cfg(tmp_path: Path) -> Config:
-    prompts_dir = tmp_path / "prompts"
-    prompts_dir.mkdir(exist_ok=True)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True, exist_ok=True)
     (prompts_dir / "plan-prompt.md").write_text(
         "{{ALL_OPEN_ISSUES_JSON}} {{READY_FOR_AGENT_ISSUES_JSON}}", encoding="utf-8"
     )
     (prompts_dir / "_resume-prompt.md").write_text("resume-content", encoding="utf-8")
-    return Config(logs_dir=tmp_path, prompts_dir=prompts_dir)
+    return Config(logs_dir=tmp_path)
 
 
 def test_build_prompt_uses_resume_template_on_resume_without_role_flag(tmp_path):
@@ -2353,12 +2358,12 @@ def test_build_prompt_uses_role_template_on_fresh_run(tmp_path):
 
 def test_build_prompt_expands_shell_expressions_via_container_exec(tmp_path):
     """_build_prompt passes container_exec to the renderer for shell expression expansion."""
-    prompts_dir = tmp_path / "prompts"
-    prompts_dir.mkdir(exist_ok=True)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True, exist_ok=True)
     (prompts_dir / "_resume-prompt.md").write_text(
         "Result: !`echo hi`", encoding="utf-8"
     )
-    cfg = Config(logs_dir=tmp_path, prompts_dir=prompts_dir)
+    cfg = Config(logs_dir=tmp_path)
     runner = AgentRunner({}, cfg, _make_git_service())
 
     async def fake_exec(cmd: str) -> str:

@@ -706,7 +706,7 @@ def test_run_issue_omits_interrupted_work_for_resume_dirty_worktree(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = False
-    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / "issue-6"
+    wt_path = tmp_path / "pycastle" / ".worktrees" / "issue-6"
     impl_session_dir = wt_path / ".pycastle-session" / "implementer"
     original_create = deps.git_svc.create_worktree.side_effect
 
@@ -1574,7 +1574,7 @@ def test_run_issue_clears_implementer_session_dir_contents_after_commit(tmp_path
     deps.git_svc.is_working_tree_clean.return_value = False  # preserve worktree
 
     wt_name = "issue-50"
-    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
+    wt_path = tmp_path / "pycastle" / ".worktrees" / wt_name
     impl_session_dir = wt_path / ".pycastle-session" / "implementer"
 
     original_create = deps.git_svc.create_worktree.side_effect
@@ -1613,7 +1613,7 @@ def test_run_issue_clears_reviewer_session_dir_contents_after_commit(tmp_path):
     deps.git_svc.is_working_tree_clean.return_value = False  # preserve worktree
 
     wt_name = "issue-51"
-    wt_path = tmp_path / deps.cfg.pycastle_dir / ".worktrees" / wt_name
+    wt_path = tmp_path / "pycastle" / ".worktrees" / wt_name
     rev_session_dir = wt_path / ".pycastle-session" / "reviewer"
 
     original_create = deps.git_svc.create_worktree.side_effect

@@ -4490,7 +4490,7 @@ def test_worktree_with_role_session_dir_is_in_flight(
 
     cfg = Config(max_parallel=4, max_iterations=1)
     # Create worktree dir with a role session dir for issue #1
-    wt_dir = tmp_path / cfg.pycastle_dir / ".worktrees" / "issue-1"
+    wt_dir = tmp_path / "pycastle" / ".worktrees" / "issue-1"
     role_dir = wt_dir / SESSION_DIR_NAME / AgentRole.IMPLEMENTER.value
     role_dir.mkdir(parents=True)
 
@@ -4543,7 +4543,7 @@ def test_worktree_without_role_session_dir_is_not_in_flight(
 
     cfg = Config(max_parallel=4, max_iterations=1)
     # Worktree dir exists but has no role session dir inside
-    wt_dir = tmp_path / cfg.pycastle_dir / ".worktrees" / "issue-1"
+    wt_dir = tmp_path / "pycastle" / ".worktrees" / "issue-1"
     wt_dir.mkdir(parents=True)
 
     async def _fake_agent(request: RunRequest):

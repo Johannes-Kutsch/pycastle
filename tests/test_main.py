@@ -27,14 +27,12 @@ def test_load_env_uses_fixed_project_local_env_file_with_global_layering(
     pycastle_dir = tmp_path / "pycastle"
     pycastle_dir.mkdir()
     (pycastle_dir / ".env").write_text("GH_TOKEN=from-local-file\n")
-    custom_env = tmp_path / "custom.env"
-    custom_env.write_text("GH_TOKEN=from-custom-file\n")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(global_dir))
     monkeypatch.delenv("GH_TOKEN", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
 
-    env = _load_env(cfg=Config(env_file=custom_env))
+    env = _load_env(cfg=Config())
 
     assert env["GH_TOKEN"] == "from-local-file"
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "from-global"
@@ -44,8 +42,6 @@ def test_load_env_returns_only_known_keys(tmp_path, monkeypatch):
     """_load_env returns only known credential keys; never reads host fs."""
     from pycastle.main import _load_env
 
-    custom_env = tmp_path / "custom.env"
-    custom_env.write_text("CLAUDE_CODE_OAUTH_TOKEN=oauth-tok\nGH_TOKEN=gh-tok\n")
     pycastle_dir = tmp_path / "pycastle"
     pycastle_dir.mkdir()
     (pycastle_dir / ".env").write_text(
@@ -62,7 +58,7 @@ def test_load_env_returns_only_known_keys(tmp_path, monkeypatch):
 
     monkeypatch.setattr("pycastle.main.Path.home", _no_home)
 
-    env = _load_env(cfg=Config(env_file=custom_env))
+    env = _load_env(cfg=Config())
 
     assert env == {"CLAUDE_CODE_OAUTH_TOKEN": "oauth-tok", "GH_TOKEN": "gh-tok"}
 
@@ -70,12 +66,6 @@ def test_load_env_returns_only_known_keys(tmp_path, monkeypatch):
 def test_load_env_includes_secondary_oauth_token_when_present(tmp_path, monkeypatch):
     from pycastle.main import _load_env
 
-    custom_env = tmp_path / "custom.env"
-    custom_env.write_text(
-        "CLAUDE_CODE_OAUTH_TOKEN=primary-tok\n"
-        "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY=secondary-tok\n"
-        "GH_TOKEN=gh-tok\n"
-    )
     pycastle_dir = tmp_path / "pycastle"
     pycastle_dir.mkdir()
     (pycastle_dir / ".env").write_text(
@@ -89,7 +79,7 @@ def test_load_env_includes_secondary_oauth_token_when_present(tmp_path, monkeypa
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
     monkeypatch.delenv("PYCASTLE_HOME", raising=False)
 
-    env = _load_env(cfg=Config(env_file=custom_env))
+    env = _load_env(cfg=Config())
 
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "primary-tok"
     assert env["CLAUDE_CODE_OAUTH_TOKEN_SECONDARY"] == "secondary-tok"

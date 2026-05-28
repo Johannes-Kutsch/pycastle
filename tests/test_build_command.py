@@ -287,7 +287,7 @@ def test_build_command_uses_fixed_project_local_dockerfile_override(
 
     main(
         docker_service=svc,
-        cfg=Config(docker_image_name="img", pycastle_dir="custom-dir"),  # type: ignore[arg-type]
+        cfg=Config(docker_image_name="img"),
     )
 
     assert [call.args[1] for call in svc.build_image.call_args_list] == [

@@ -154,7 +154,7 @@ def test_branch_worktree_raises_worktree_error_on_git_failure(tmp_path):
         capture_output=True,
     )
 
-    cfg = Config(pycastle_dir=".pycastle")
+    cfg = Config()
     deps = SimpleNamespace(repo_root=tmp_path, cfg=cfg, git_svc=GitService(cfg))
 
     async def _run():
