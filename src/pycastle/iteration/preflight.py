@@ -201,6 +201,7 @@ class PreflightCache:
                             mount_path=sandbox_path,
                             role=AgentRole.DIVERGENCE_RESOLVER,
                             scope_args={"BRANCH": branch},
+                            service=deps.cfg.merge_override.service,
                             status_display=deps.status_display,
                             work_body="Resolving divergence",
                         )

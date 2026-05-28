@@ -13,7 +13,7 @@ from pycastle.errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from pycastle.config import Config
+from pycastle.config import Config, StageOverride
 from pycastle.services import GitService
 from pycastle.services import GithubService
 from pycastle.iteration import (
@@ -2851,7 +2851,9 @@ def test_run_iteration_failure_report_receives_correct_run_request(
             git_svc=git_svc,
             github_svc=github_svc,
             logger=logger,
-            cfg=Config(),
+            cfg=Config(
+                preflight_issue_override=StageOverride(service="codex", effort="medium")
+            ),
         ),
         improve_mode="endless",
     )
@@ -2860,6 +2862,7 @@ def test_run_iteration_failure_report_receives_correct_run_request(
     assert len(calls) == 2
     failure_req = calls[1]
     assert failure_req.role == AgentRole.FAILURE_REPORT
+    assert failure_req.service == "codex"
     expected_wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     assert failure_req.mount_path == expected_wt
     assert failure_req.scope_args is not None
