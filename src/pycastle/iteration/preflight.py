@@ -55,6 +55,32 @@ class _PreflightDeps(Protocol):
     repo_root: Path
 
 
+def validate_issue_report(
+    *,
+    caller: str,
+    issue_output: IssueOutput,
+    cfg: Config,
+    github_svc: GithubService,
+) -> str:
+    if cfg.hitl_label in issue_output.labels:
+        return "hitl"
+    result = classify_slice({"labels": list(issue_output.labels)}, cfg)
+    if not isinstance(result, WellFormed):
+        expected = slice_labels(cfg)
+        raise RuntimeError(
+            f"{caller} filed issue #{issue_output.number} on the AFK branch "
+            f"without exactly one slice-mode label — got labels={issue_output.labels!r}. "
+            f"Expected exactly one of {sorted(expected)!r}."
+        )
+    filed_issue = github_svc.get_issue(issue_output.number)
+    if not is_well_formed_body(filed_issue):
+        raise RuntimeError(
+            f"{caller} filed issue #{issue_output.number} whose body is "
+            f"below the minimum length floor — body too short to be valid."
+        )
+    return "afk"
+
+
 def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
     open_numbers = {i["number"] for i in issues}
     result = []
@@ -210,22 +236,14 @@ class PreflightCache:
             raise RuntimeError(
                 f"Preflight-issue agent returned unexpected output type: {type(agent_result).__name__}"
             )
-        if deps.cfg.hitl_label in agent_result.labels:
+        validation = validate_issue_report(
+            caller="Pre-Flight Reporter",
+            issue_output=agent_result,
+            cfg=deps.cfg,
+            github_svc=deps.github_svc,
+        )
+        if validation == "hitl":
             return PreflightHITL(sha=sha, issue_number=agent_result.number)
-        result = classify_slice({"labels": list(agent_result.labels)}, deps.cfg)
-        if not isinstance(result, WellFormed):
-            expected = slice_labels(deps.cfg)
-            raise RuntimeError(
-                f"Pre-Flight Reporter filed issue #{agent_result.number} on the AFK branch "
-                f"without exactly one slice-mode label — got labels={agent_result.labels!r}. "
-                f"Expected exactly one of {sorted(expected)!r}."
-            )
-        filed_issue = deps.github_svc.get_issue(agent_result.number)
-        if not is_well_formed_body(filed_issue):
-            raise RuntimeError(
-                f"Pre-Flight Reporter filed issue #{agent_result.number} whose body is "
-                f"below the minimum length floor — body too short to be valid."
-            )
         return PreflightAFK(sha=sha, issue_number=agent_result.number)
 
     async def pull_with_resolution(self, deps: _PreflightDeps) -> None:
