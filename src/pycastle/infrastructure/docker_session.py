@@ -14,6 +14,8 @@ from ..config import Config
 from ..errors import DockerError, DockerTimeoutError
 from .worktree import CONTAINER_PARENT_GIT, patch_gitdir_for_container
 
+_AGENT_USER_LOCAL_BIN = "/home/agent/.local/bin"
+
 
 def _parse_parent_git(git_file: Path) -> Path | None:
     m = re.search(r"gitdir:\s*(.+)", git_file.read_text(encoding="utf-8"))
@@ -127,15 +129,19 @@ class DockerSession:
                 pass
             self._container = None
 
+    def _with_agent_user_console_scripts(self, command: str) -> str:
+        return f'export PATH="{_AGENT_USER_LOCAL_BIN}:$PATH"; {command}'
+
     def exec_simple(self, command: str, timeout: float | None = None) -> str:
         container = self._active_container
         result_holder: list = [None]
         exc_holder: list = [None]
+        wrapped_command = self._with_agent_user_console_scripts(command)
 
         def _run() -> None:
             try:
                 result_holder[0] = container.exec_run(
-                    ["bash", "-c", command],
+                    ["bash", "-c", wrapped_command],
                     demux=True,
                     workdir="/home/agent/workspace",
                     environment=self._container_env,
@@ -166,9 +172,10 @@ class DockerSession:
 
     def exec_stream(self, command: str) -> Iterator[bytes]:
         result = self._active_container.exec_run(
-            ["bash", "-c", command],
+            ["bash", "-c", self._with_agent_user_console_scripts(command)],
             stream=True,
             workdir="/home/agent/workspace",
+            environment=self._container_env,
         )
         return cast(Iterator[bytes], result.output)
 

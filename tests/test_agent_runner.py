@@ -646,11 +646,7 @@ def test_agent_runner_mixed_services_use_service_command_env_and_parser(
             return MagicMock(exit_code=0, output=(b"", b""))
         command = cmd[2] if isinstance(cmd, list) and len(cmd) > 2 else ""
         stream_commands.append(command)
-        chunks = (
-            _COMPLETE_STREAM
-            if command.startswith("claude ")
-            else _CODEX_COMPLETE_STREAM
-        )
+        chunks = _COMPLETE_STREAM if "claude " in command else _CODEX_COMPLETE_STREAM
         return MagicMock(output=iter(chunks))
 
     mock_client.containers.run.side_effect = _start_container
@@ -698,9 +694,9 @@ def test_agent_runner_mixed_services_use_service_command_env_and_parser(
 
     assert isinstance(implement, CommitMessageOutput)
     assert isinstance(review, CommitMessageOutput)
-    assert stream_commands[0].startswith("claude ")
+    assert "claude " in stream_commands[0]
     assert "--output-format stream-json" in stream_commands[0]
-    assert stream_commands[1].startswith("codex exec ")
+    assert "codex exec " in stream_commands[1]
     assert "--json" in stream_commands[1]
 
     assert started[0][0] == "pycastle-test"
@@ -1147,6 +1143,42 @@ def test_agent_runner_run_preflight_passes_checks_that_require_installed_tools(
 
     mock_container.exec_run.side_effect = _exec_run
     cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == []
+
+
+def test_agent_runner_run_preflight_preserves_agent_user_console_script_path(
+    tmp_path,
+):
+    setup_installed_console_script = {"value": False}
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def _exec_run(cmd, **kwargs):
+        command_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+        if "git config" in command_str:
+            return MagicMock(exit_code=0, output=(b"", b""))
+        if "pip install" in command_str:
+            setup_installed_console_script["value"] = True
+            return MagicMock(exit_code=0, output=(b"", b""))
+        if "demo-tool --version" in command_str:
+            if not setup_installed_console_script["value"]:
+                return MagicMock(
+                    exit_code=127, output=(b"bash: demo-tool: command not found", b"")
+                )
+            if 'export PATH="/home/agent/.local/bin:$PATH";' not in command_str:
+                return MagicMock(
+                    exit_code=127, output=(b"bash: demo-tool: command not found", b"")
+                )
+            return MagicMock(exit_code=0, output=(b"demo-tool 1.0.0", b""))
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = _exec_run
+    cfg = _make_cfg(tmp_path, preflight_checks=(("demo-tool", "demo-tool --version"),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
@@ -2380,7 +2412,7 @@ def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
     )
 
     assert isinstance(result, PlannerOutput)
-    assert captured_cmds[0].startswith("codex exec ")
+    assert "codex exec " in captured_cmds[0]
     assert "resume" not in captured_cmds[0]
     assert "codex exec resume thread-from-fresh" in captured_cmds[1]
     saved = tmp_path / ".pycastle-session" / "planner" / "codex" / "thread_id"
@@ -2426,7 +2458,7 @@ def test_agent_runner_opencode_reprompt_resumes_with_persisted_session_id(tmp_pa
     )
 
     assert isinstance(result, PlannerOutput)
-    assert captured_cmds[0].startswith("opencode run --format json ")
+    assert "opencode run --format json " in captured_cmds[0]
     assert "--session" not in captured_cmds[0]
     assert "--session sess-from-fresh" in captured_cmds[1]
     saved = tmp_path / ".pycastle-session" / "planner" / "opencode" / "session_id"
@@ -2475,7 +2507,7 @@ def test_agent_runner_opencode_resume_uses_persisted_session_id_on_later_run(tmp
     )
 
     assert captured_cmds == [
-        'opencode run --format json --session sess-from-prior-run "$(cat /tmp/.pycastle_prompt)"'
+        'export PATH="/home/agent/.local/bin:$PATH"; opencode run --format json --session sess-from-prior-run "$(cat /tmp/.pycastle_prompt)"'
     ]
 
 
