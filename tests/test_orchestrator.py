@@ -3139,9 +3139,9 @@ def test_idle_iteration_skips_preflight_gate(tmp_path):
     mock_git.pull_with_merge_fallback.assert_not_called()
 
 
-def test_in_flight_only_iteration_planning_skips_preflight_gate(tmp_path):
-    """When all open issues are in-flight, planning_phase skips the preflight gate
-    entirely — no pull_with_merge_fallback is triggered by planning or run_issue."""
+def test_in_flight_only_iteration_planning_runs_preflight_gate_once(tmp_path):
+    """When all open issues are in-flight, planning runs the preflight gate once
+    and still skips spawning the Planner."""
     pull_call_count = [0]
     mock_git = _make_git_svc(try_merge_side_effect=[True])
     mock_git.verify_ref_exists.return_value = True  # branch exists → in-flight
@@ -3166,8 +3166,8 @@ def test_in_flight_only_iteration_planning_skips_preflight_gate(tmp_path):
         github_service=mock_github,
     )
 
-    assert pull_call_count[0] == 0, (
-        "In-flight planning path must not call pull_with_merge_fallback — no preflight during planning"
+    assert pull_call_count[0] == 1, (
+        "In-flight planning path must call pull_with_merge_fallback exactly once"
     )
 
 

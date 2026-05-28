@@ -1635,8 +1635,7 @@ def test_run_iteration_uses_only_in_flight_issues_when_some_have_existing_branch
 def test_run_iteration_in_flight_worktree_uses_existing_branch_path(
     tmp_path, git_svc, logger
 ):
-    """On the in-flight path, sha=None is threaded through so managed_worktree uses
-    the existing-branch path — no preflight pull, no sha pinning."""
+    """On the in-flight path, planning pins the current safe SHA before implementation."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
         {
@@ -1661,10 +1660,10 @@ def test_run_iteration_in_flight_worktree_uses_existing_branch_path(
     )
     asyncio.run(run_iteration(deps))
 
-    git_svc.pull_with_merge_fallback.assert_not_called()
+    git_svc.pull_with_merge_fallback.assert_called_once_with(tmp_path)
     implementer_sha = git_svc.create_worktree.call_args_list[0].args[3]
-    assert implementer_sha is None, (
-        "In-flight implementer worktree must use existing-branch path (sha=None)"
+    assert implementer_sha == "abc123", (
+        "In-flight implementer worktree must use the safe SHA returned by planning"
     )
 
 
