@@ -616,7 +616,7 @@ def test_valid_efforts_returns_frozenset():
 
 def test_valid_efforts_contains_expected_values():
     efforts = CodexService().valid_efforts()
-    assert efforts == frozenset({"none", "minimal", "low", "medium", "high", "xhigh"})
+    assert efforts == frozenset({"low", "medium", "high", "xhigh"})
 
 
 # ── CodexService.name ─────────────────────────────────────────────────────────

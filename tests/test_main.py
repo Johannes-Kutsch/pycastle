@@ -1,3 +1,4 @@
+import pytest
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -1097,6 +1098,86 @@ def test_run_cmd_exits_nonzero_on_invalid_effort_for_codex_stage(tmp_path, monke
     assert "implement" in result.output
     assert "max" in result.output
     assert "codex" in result.output
+    assert not build_called
+
+
+@pytest.mark.parametrize("effort", ["none", "minimal"])
+def test_run_cmd_exits_nonzero_on_unsupported_codex_effort_for_stage(
+    tmp_path, monkeypatch, effort
+):
+    from pycastle.config.types import StageOverride
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(
+        docker_image_name="img",
+        implement_override=StageOverride(service="codex", effort=effort),
+    )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "implement" in result.output
+    assert effort in result.output
+    assert "codex" in result.output
+    assert "low" in result.output
+    assert "medium" in result.output
+    assert "high" in result.output
+    assert "xhigh" in result.output
+    assert not build_called
+
+
+@pytest.mark.parametrize("effort", ["none", "minimal"])
+def test_run_cmd_exits_nonzero_on_unsupported_codex_effort_for_stage_fallback(
+    tmp_path, monkeypatch, effort
+):
+    from pycastle.config.types import StageOverride
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(
+        docker_image_name="img",
+        implement_override=StageOverride(
+            service="claude",
+            effort="medium",
+            fallback=StageOverride(service="codex", effort=effort),
+        ),
+    )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "implement fallback" in result.output
+    assert effort in result.output
+    assert "codex" in result.output
+    assert "low" in result.output
+    assert "medium" in result.output
+    assert "high" in result.output
+    assert "xhigh" in result.output
     assert not build_called
 
 
