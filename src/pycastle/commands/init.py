@@ -85,8 +85,8 @@ docs_slice_label = "docs-slice"
 needs_slice_type_label = "needs-slice-type"
 
 # --- Logging ---
-# Local config uses logs_dir directly.
-# Global config treats logs_dir as a per-project parent directory.
+# In local config, logs_dir is used directly.
+# In global config, logs_dir is the parent directory for per-project logs.
 logs_dir = Path("pycastle/logs")
 
 # --- Preflight checks ---
