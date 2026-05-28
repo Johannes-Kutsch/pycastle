@@ -27,7 +27,7 @@ _INIT_REFRESHED_FILES = {
 def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
     """Walk the bundled defaults/ tree and return every file path relative to it,
     minus the files init handles separately (scope-aware config.py/.env and the
-    service-selected Dockerfile templates).
+    user-owned prompt and Dockerfile overrides).
     """
 
     def _walk(node: Traversable, prefix: str) -> list[str]:
@@ -43,7 +43,10 @@ def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
     return sorted(
         p
         for p in _walk(pkg, "")
-        if p not in _SPECIAL_FILES and not Path(p).name.startswith("Dockerfile.")
+        if p not in _SPECIAL_FILES
+        and p != "Dockerfile"
+        and not p.startswith("prompts/")
+        and not Path(p).name.startswith("Dockerfile.")
     )
 
 
@@ -314,10 +317,11 @@ def refresh() -> None:
             report.append(("preserved", path))
 
     overwrote = [(verb, path) for verb, path in report if verb == "overwrote"]
+    created = any(verb == "created" for verb, _ in report)
     if overwrote:
         for verb, path in sorted(overwrote, key=lambda x: x[1]):
             print(f"{verb} {path}")
-    else:
+    elif not created:
         print("pycastle directory is already up to date.")
 
 
