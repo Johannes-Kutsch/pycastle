@@ -2307,6 +2307,27 @@ def test_refresh_reports_overwritten_managed_scaffold_but_ignores_service_docker
     assert dockerfile.read_text() == "FROM stale\n"
 
 
+def test_refresh_treats_crlf_config_example_as_unchanged(tmp_path, monkeypatch, capsys):
+    """Refresh does not report a text-identical config.py.example as overwritten."""
+    from pycastle.commands.init import _CONFIG_EXAMPLE_TEMPLATE, refresh
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    refresh()
+    capsys.readouterr()
+
+    (pycastle_dir / "config.py.example").write_bytes(
+        _CONFIG_EXAMPLE_TEMPLATE.replace("\n", "\r\n").encode()
+    )
+
+    refresh()
+    out = capsys.readouterr().out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert len(lines) == 1
+    assert "up to date" in lines[0].lower()
+
+
 @pytest.mark.parametrize(
     ("rel_path", "content"),
     [

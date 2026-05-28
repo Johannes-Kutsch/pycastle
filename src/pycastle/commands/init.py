@@ -296,11 +296,11 @@ def _refresh_status(rel: str, target: Path, pkg: Traversable) -> str:
     )
 
 
-def _refresh_status_bytes(target: Path, expected: bytes) -> str:
-    """Return the status verb for writing expected bytes to target."""
+def _refresh_status_text(target: Path, expected: str) -> str:
+    """Return the status verb for writing expected text to target."""
     if not target.exists():
         return "created"
-    return "unchanged" if target.read_bytes() == expected else "overwrote"
+    return "unchanged" if target.read_text() == expected else "overwrote"
 
 
 def refresh() -> None:
@@ -309,8 +309,8 @@ def refresh() -> None:
     pkg = files("pycastle").joinpath("defaults")
     pycastle_home = resolve_global_dir(None, os.environ)
     config_example_path = project_dir / "config.py.example"
-    config_example_verb = _refresh_status_bytes(
-        config_example_path, _CONFIG_EXAMPLE_TEMPLATE.encode()
+    config_example_verb = _refresh_status_text(
+        config_example_path, _CONFIG_EXAMPLE_TEMPLATE
     )
     _write_config_example(project_dir)
     if (pycastle_home / "config.py.example").exists():
