@@ -7,6 +7,13 @@ from typing import Protocol
 from ..agents.output_protocol import AgentRole, CommitMessageOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..errors import (
+    AgentFailedError,
+    AgentTimeoutError,
+    HardAgentError,
+    TransientAgentError,
+    UsageLimitError,
+)
 from ..prompts.pipeline import PromptTemplate
 from ..services import GitCommandError, GitService, GithubService
 from ..session import RoleSession
@@ -40,6 +47,8 @@ MERGE_SANDBOX_PREFIX = "pycastle/merge-sandbox"
 class MergeResult:
     clean: list[dict]
     conflicts: list[dict]
+    completed_conflicts: list[dict] = dataclasses.field(default_factory=list)
+    pending_conflicts: list[dict] = dataclasses.field(default_factory=list)
     preflight_blocker: PreflightHITL | PreflightAFK | None = None
 
 
@@ -101,12 +110,34 @@ async def _delete_merged_branches(
     return [s for s in slots if s is not None]
 
 
-def _build_close_message(deleted: list[str]) -> str:
+def _build_close_message(
+    deleted: list[str],
+    *,
+    completed_conflicts: list[dict] | None = None,
+    pending_conflicts: list[dict] | None = None,
+) -> str:
     if not deleted:
-        return "Execution complete, 0 branch(es) merged and deleted"
-    header = f"Execution complete, {len(deleted)} branch(es) merged and deleted:"
-    lines = "\n".join(f"  Deleted merged branch: {b}" for b in deleted)
-    return f"{header}\n{lines}"
+        message = "Execution complete, 0 branch(es) merged and deleted"
+    else:
+        header = f"Execution complete, {len(deleted)} branch(es) merged and deleted:"
+        lines = "\n".join(f"  Deleted merged branch: {b}" for b in deleted)
+        message = f"{header}\n{lines}"
+
+    completed_conflicts = completed_conflicts or []
+    pending_conflicts = pending_conflicts or []
+    if completed_conflicts:
+        completed_lines = "\n".join(
+            f"  Completed conflict branch: {branch_for(issue['number'])}"
+            for issue in completed_conflicts
+        )
+        message = f"{message}\nCompleted conflict branches:\n{completed_lines}"
+    if pending_conflicts:
+        pending_lines = "\n".join(
+            f"  Pending conflict branch: {branch_for(issue['number'])}"
+            for issue in pending_conflicts
+        )
+        message = f"{message}\nPending conflict branches:\n{pending_lines}"
+    return message
 
 
 async def _close_issues_parallel(
@@ -233,55 +264,82 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 return MergeResult(
                     clean=clean_issues,
                     conflicts=conflict_issues,
+                    pending_conflicts=conflict_issues,
                     preflight_blocker=verdict,
                 )
             conflict_deleted: list[str] = []
-            for active_issue in conflict_issues:
+            completed_conflicts: list[dict] = []
+            pending_conflicts: list[dict] = []
+            for idx, active_issue in enumerate(conflict_issues):
                 sandbox_branch = _merge_sandbox_branch(active_issue["number"])
                 target_branch = deps.git_svc.get_current_branch(deps.repo_root)
-                async with managed_worktree(
-                    _merge_sandbox_name(active_issue["number"]),
-                    branch=sandbox_branch,
-                    sha=deps.git_svc.get_head_sha(deps.repo_root),
-                    delete_branch_on_teardown=True,
-                    replace_preserved_failure=True,
-                    deps=deps,
-                ) as sandbox_path:
-                    deps.git_svc.start_merge(
-                        sandbox_path, branch_for(active_issue["number"])
-                    )
-                    result = await deps.agent_runner.run(
-                        RunRequest(
-                            name="Merge Agent",
-                            template=PromptTemplate.MERGE,
-                            mount_path=sandbox_path,
-                            role=AgentRole.MERGER,
-                            scope_args={
-                                "BRANCHES": _active_branch_scope(
-                                    conflict_issues, active_issue
-                                ),
-                            },
-                            model=deps.cfg.merge_override.model,
-                            status_display=deps.status_display,
-                            effort=deps.cfg.merge_override.effort,
-                            service=deps.cfg.merge_override.service,
-                            stage="pre-merge",
-                            work_body=f"Merging branch {branch_for(active_issue['number'])}",
+                try:
+                    async with managed_worktree(
+                        _merge_sandbox_name(active_issue["number"]),
+                        branch=sandbox_branch,
+                        sha=deps.git_svc.get_head_sha(deps.repo_root),
+                        delete_branch_on_teardown=True,
+                        replace_preserved_failure=True,
+                        deps=deps,
+                    ) as sandbox_path:
+                        deps.git_svc.start_merge(
+                            sandbox_path, branch_for(active_issue["number"])
                         )
-                    )
-                    if isinstance(result, CommitMessageOutput):
-                        deps.git_svc.commit(
-                            sandbox_path,
-                            deps.repo_root,
-                            result.message or active_issue["title"],
+                        result = await deps.agent_runner.run(
+                            RunRequest(
+                                name="Merge Agent",
+                                template=PromptTemplate.MERGE,
+                                mount_path=sandbox_path,
+                                role=AgentRole.MERGER,
+                                scope_args={
+                                    "BRANCHES": _active_branch_scope(
+                                        conflict_issues, active_issue
+                                    ),
+                                },
+                                model=deps.cfg.merge_override.model,
+                                status_display=deps.status_display,
+                                effort=deps.cfg.merge_override.effort,
+                                service=deps.cfg.merge_override.service,
+                                stage="pre-merge",
+                                work_body=f"Merging branch {branch_for(active_issue['number'])}",
+                            )
                         )
-                    _ensure_conflict_branches_are_merged(
-                        [active_issue], sandbox_path, deps
+                        if isinstance(result, CommitMessageOutput):
+                            deps.git_svc.commit(
+                                sandbox_path,
+                                deps.repo_root,
+                                result.message or active_issue["title"],
+                            )
+                        _ensure_conflict_branches_are_merged(
+                            [active_issue], sandbox_path, deps
+                        )
+                        deps.git_svc.fast_forward_branch(
+                            deps.repo_root, target_branch, sandbox_branch
+                        )
+                        RoleSession(sandbox_path, AgentRole.MERGER).discard()
+                except (
+                    AgentTimeoutError,
+                    UsageLimitError,
+                    TransientAgentError,
+                    HardAgentError,
+                ):
+                    raise
+                except AgentFailedError as exc:
+                    deps.status_display.print(
+                        "Merge",
+                        f"Conflict branch {branch_for(active_issue['number'])} failed and remains pending: {exc}",
+                        "warning",
                     )
-                    deps.git_svc.fast_forward_branch(
-                        deps.repo_root, target_branch, sandbox_branch
+                    pending_conflicts = conflict_issues[idx:]
+                    break
+                except Exception as exc:
+                    deps.status_display.print(
+                        "Merge",
+                        f"Conflict branch {branch_for(active_issue['number'])} failed and remains pending: {exc}",
+                        "warning",
                     )
-                    RoleSession(sandbox_path, AgentRole.MERGER).discard()
+                    pending_conflicts = conflict_issues[idx:]
+                    break
                 conflict_deleted.extend(
                     await _delete_merged_branches(
                         [branch_for(active_issue["number"])],
@@ -292,12 +350,29 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 await _close_issues_parallel(
                     [active_issue], deps.github_svc, _on_progress, _on_close_error
                 )
-            deps.github_svc.close_completed_parent_issues()
-            row.close(_build_close_message(clean_deleted + conflict_deleted))
+                completed_conflicts.append(active_issue)
+            if completed_conflicts:
+                deps.github_svc.close_completed_parent_issues()
+            row.close(
+                _build_close_message(
+                    clean_deleted + conflict_deleted,
+                    completed_conflicts=completed_conflicts,
+                    pending_conflicts=pending_conflicts,
+                )
+            )
 
-        if deps.cfg.auto_push and (clean_issues or conflict_issues):
+        if (
+            deps.cfg.auto_push
+            and (clean_issues or conflict_issues)
+            and not (conflict_issues and pending_conflicts)
+        ):
             await deps.git_svc.push(
                 deps.repo_root,
                 resolver=lambda: deps.preflight_cache.pull_with_resolution(deps),
             )
-        return MergeResult(clean=clean_issues, conflicts=conflict_issues)
+        return MergeResult(
+            clean=clean_issues,
+            conflicts=conflict_issues,
+            completed_conflicts=completed_conflicts if conflict_issues else [],
+            pending_conflicts=pending_conflicts if conflict_issues else [],
+        )
