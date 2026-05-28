@@ -132,72 +132,36 @@ def test_conflict_spawns_merger_with_conflict_branches_only(
     assert "pycastle/issue-1" not in branches_arg
 
 
-def test_conflict_starts_merge_before_invoking_merger(tmp_path, github_svc):
-    real_git = GitService(Config())
+def _git(cwd, *args):
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 
-    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
 
+@pytest.fixture
+def conflicting_repo(tmp_path):
+    """Repo with pycastle/issue-1 conflicting against main on conflict.txt."""
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "test@example.com")
+    _git(tmp_path, "config", "user.name", "Test User")
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'merge-test'\n")
     (tmp_path / "conflict.txt").write_text("base\n")
-    subprocess.run(
-        ["git", "add", "pyproject.toml", "conflict.txt"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "base"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-
-    subprocess.run(
-        ["git", "checkout", "-b", "pycastle/issue-1"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
+    _git(tmp_path, "add", "pyproject.toml", "conflict.txt")
+    _git(tmp_path, "commit", "-m", "base")
+    _git(tmp_path, "checkout", "-b", "pycastle/issue-1")
     (tmp_path / "conflict.txt").write_text("branch change\n")
-    subprocess.run(
-        ["git", "add", "conflict.txt"], cwd=tmp_path, check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "branch change"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-
-    subprocess.run(
-        ["git", "checkout", "master"], cwd=tmp_path, check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "branch", "-m", "main"], cwd=tmp_path, check=True, capture_output=True
-    )
+    _git(tmp_path, "add", "conflict.txt")
+    _git(tmp_path, "commit", "-m", "branch change")
+    _git(tmp_path, "checkout", "master")
+    _git(tmp_path, "branch", "-m", "main")
     (tmp_path / "conflict.txt").write_text("main change\n")
-    subprocess.run(
-        ["git", "add", "conflict.txt"], cwd=tmp_path, check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "main change"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
+    _git(tmp_path, "add", "conflict.txt")
+    _git(tmp_path, "commit", "-m", "main change")
+    return tmp_path
 
+
+def test_conflict_starts_merge_before_invoking_merger(
+    conflicting_repo, github_svc, tmp_path
+):
+    real_git = GitService(Config())
     seen_merge_head: list[bool] = []
 
     async def _assert_active_merge(request: RunRequest):
@@ -227,82 +191,14 @@ def test_conflict_starts_merge_before_invoking_merger(tmp_path, github_svc):
 
 
 def test_conflict_creates_host_owned_merge_commit_from_merger_message(
-    tmp_path, github_svc
+    conflicting_repo, github_svc, tmp_path
 ):
     real_git = GitService(Config())
-
-    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-
-    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'merge-test'\n")
-    (tmp_path / "conflict.txt").write_text("base\n")
-    subprocess.run(
-        ["git", "add", "pyproject.toml", "conflict.txt"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "base"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-
-    subprocess.run(
-        ["git", "checkout", "-b", "pycastle/issue-1"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-    (tmp_path / "conflict.txt").write_text("branch change\n")
-    subprocess.run(
-        ["git", "add", "conflict.txt"], cwd=tmp_path, check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "branch change"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-
-    subprocess.run(
-        ["git", "checkout", "master"], cwd=tmp_path, check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "branch", "-m", "main"], cwd=tmp_path, check=True, capture_output=True
-    )
-    (tmp_path / "conflict.txt").write_text("main change\n")
-    subprocess.run(
-        ["git", "add", "conflict.txt"], cwd=tmp_path, check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "main change"],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
 
     async def _resolve_conflict(request: RunRequest):
         if request.name == "Merge Agent":
             (request.mount_path / "conflict.txt").write_text("resolved\n")
-            subprocess.run(
-                ["git", "add", "conflict.txt"],
-                cwd=request.mount_path,
-                check=True,
-                capture_output=True,
-            )
+            _git(request.mount_path, "add", "conflict.txt")
         return CommitMessageOutput(message="resolve conflict")
 
     deps = _make_deps(
