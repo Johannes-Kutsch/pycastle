@@ -58,12 +58,12 @@ _REVIEWER_COMPLETE_STREAM = [
     b'{"type": "result", "result": "<commit_message>done</commit_message>", "is_error": false}\n'
 ]
 
-# A minimal NDJSON stream that process_stream accepts as CompletionOutput (MERGER/IMPROVE role)
+# A minimal NDJSON stream that process_stream accepts as CommitMessageOutput (MERGER role)
 _MERGER_COMPLETE_STREAM = [
-    b'{"type": "result", "result": "<promise>COMPLETE</promise>", "is_error": false}\n'
+    b'{"type": "result", "result": "<commit_message>done</commit_message>", "is_error": false}\n'
 ]
 
-_MERGER_FAILED_STREAM = [
+_DIVERGENCE_RESOLVER_FAILED_STREAM = [
     b'{"type": "result", "result": "<promise>FAILED</promise>", "is_error": false}\n'
 ]
 
@@ -913,7 +913,7 @@ def test_agent_runner_run_removes_status_row_when_setup_fails(tmp_path):
 
 
 def test_agent_runner_run_marks_failed_output_as_failed_in_status_row(tmp_path):
-    mock_client = _make_docker_client(_MERGER_FAILED_STREAM)
+    mock_client = _make_docker_client(_DIVERGENCE_RESOLVER_FAILED_STREAM)
     runner = AgentRunner(
         {}, _make_cfg(tmp_path), _make_git_service(), docker_client=mock_client
     )
@@ -927,7 +927,7 @@ def test_agent_runner_run_marks_failed_output_as_failed_in_status_row(tmp_path):
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
-                    role=AgentRole.MERGER,
+                    role=AgentRole.DIVERGENCE_RESOLVER,
                     status_display=display,
                 )
             )

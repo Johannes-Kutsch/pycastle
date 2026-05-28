@@ -897,7 +897,17 @@ def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
 
 # ── diverge-prompt.md contract ────────────────────────────────────────────────
 
+_MERGE_PROMPT = (_SHIPPED_PROMPTS_DIR / "merge-prompt.md").read_text()
 _DIVERGE_PROMPT = (_SHIPPED_PROMPTS_DIR / "diverge-prompt.md").read_text()
+
+
+def test_merge_prompt_uses_commit_message_contract():
+    assert "<commit_message>...</commit_message>" in _MERGE_PROMPT
+    assert "<promise>COMPLETE</promise>" not in _MERGE_PROMPT
+
+
+def test_merge_prompt_leaves_commit_creation_to_pycastle():
+    assert "pycastle to create the merge commit" in _MERGE_PROMPT
 
 
 def test_diverge_prompt_does_not_contain_checks_placeholder():

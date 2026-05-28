@@ -389,7 +389,7 @@ _HANDLERS: dict[AgentRole, _RoleHandler] = {
     AgentRole.PREFLIGHT_ISSUE: _preflight_issue_handler,
     AgentRole.FAILURE_REPORT: _preflight_issue_handler,
     AgentRole.IMPROVE: _ImproveHandler(),
-    AgentRole.MERGER: _merger_handler,
+    AgentRole.MERGER: _commit_message_handler,
     AgentRole.DIVERGENCE_RESOLVER: _merger_handler,
 }
 

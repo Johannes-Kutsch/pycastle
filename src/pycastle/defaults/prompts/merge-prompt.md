@@ -1,6 +1,6 @@
 <task>
 
-Merge the following branches into the current branch and make a single commit summarizing the merge.
+Merge the following branches into the current branch and summarize the resolution.
 
 </task>
 
@@ -19,12 +19,12 @@ For each branch:
 3. After resolving conflicts, run `{{CHECKS}}` to verify everything works
 4. If tests fail, fix the issues before proceeding to the next branch
 
-After all branches are merged, make a single commit summarizing the merge.
+After all branches are merged, leave the working tree ready for pycastle to create the merge commit.
 
 </workflow>
 
 <output>
 
-Once you've merged everything you can, output `<promise>COMPLETE</promise>`.
+Once you've merged everything you can, output `<commit_message>...</commit_message>` with a concise summary for the merge commit.
 
 </output>

@@ -12,6 +12,7 @@ from pycastle.agents.output_protocol import (
     BehaviorOutput,
     CommitMessageOutput,
     CompletionOutput,
+    FailedOutput,
     IssueOutput,
     IssueParseError,
     NoCandidateOutput,
@@ -394,10 +395,11 @@ def test_commit_message_output_accepts_none_message():
     assert out.message is None
 
 
-def test_process_stream_merger_returns_completion_output():
+def test_process_stream_merger_without_commit_message_returns_none():
     lines = [_result_line("<promise>COMPLETE</promise>")]
     result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.MERGER)
-    assert isinstance(result, CompletionOutput)
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message is None
 
 
 def test_process_stream_merger_returns_commit_message_output():
@@ -405,6 +407,22 @@ def test_process_stream_merger_returns_commit_message_output():
     result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.MERGER)
     assert isinstance(result, CommitMessageOutput)
     assert result.message == "resolve active conflict"
+
+
+def test_process_stream_divergence_resolver_returns_completion_output():
+    lines = [_result_line("<promise>COMPLETE</promise>")]
+    result = process_stream(
+        lines, on_turn=lambda t: None, role=AgentRole.DIVERGENCE_RESOLVER
+    )
+    assert isinstance(result, CompletionOutput)
+
+
+def test_process_stream_divergence_resolver_returns_failed_output():
+    lines = [_result_line("<promise>FAILED</promise>")]
+    result = process_stream(
+        lines, on_turn=lambda t: None, role=AgentRole.DIVERGENCE_RESOLVER
+    )
+    assert isinstance(result, FailedOutput)
 
 
 def test_process_stream_improve_complete_returns_completion_output():
@@ -597,13 +615,13 @@ def test_process_stream_raises_issue_parse_error_when_issue_tag_absent():
         )
 
 
-def test_process_stream_raises_promise_parse_error_when_completion_tag_absent():
+def test_process_stream_divergence_resolver_raises_when_completion_tag_absent():
     lines = [_result_line("work done but no tag")]
     with pytest.raises(PromiseParseError):
         process_stream(
             lines,
             on_turn=lambda t: None,
-            role=AgentRole.MERGER,
+            role=AgentRole.DIVERGENCE_RESOLVER,
         )
 
 
@@ -635,12 +653,18 @@ def test_process_stream_raises_usage_limit_immediately_before_end():
         )
 
 
-def test_process_stream_empty_stream_raises_promise_parse_error():
+def test_process_stream_empty_stream_returns_none_message_for_merger():
+    result = process_stream([], on_turn=lambda t: None, role=AgentRole.MERGER)
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message is None
+
+
+def test_process_stream_empty_stream_raises_promise_parse_error_for_divergence_resolver():
     with pytest.raises(PromiseParseError):
         process_stream(
             [],
             on_turn=lambda t: None,
-            role=AgentRole.MERGER,
+            role=AgentRole.DIVERGENCE_RESOLVER,
         )
 
 
@@ -1130,10 +1154,18 @@ def test_process_stream_from_events_empty_events_returns_none_message_for_implem
     assert result.message is None
 
 
-def test_process_stream_from_events_merger_raises_promise_parse_error_on_empty():
+def test_process_stream_from_events_merger_empty_events_returns_none_message():
+    result = process_stream_from_events(
+        iter([]), on_turn=lambda t: None, role=AgentRole.MERGER
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message is None
+
+
+def test_process_stream_from_events_divergence_resolver_raises_on_empty():
     with pytest.raises(PromiseParseError):
         process_stream_from_events(
-            iter([]), on_turn=lambda t: None, role=AgentRole.MERGER
+            iter([]), on_turn=lambda t: None, role=AgentRole.DIVERGENCE_RESOLVER
         )
 
 
