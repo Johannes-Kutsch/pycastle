@@ -26,7 +26,7 @@ def _make_svc(available: bool, wake: datetime | None = None) -> MagicMock:
 
 def test_resolve_returns_primary_when_primary_service_is_available() -> None:
     svc = _make_svc(available=True)
-    registry = ServiceRegistry(services={"claude": svc}, default_service="claude")
+    registry = ServiceRegistry(services={"claude": svc})
     override = StageOverride(service="claude")
 
     result = registry.resolve(override, _now())
@@ -41,7 +41,6 @@ def test_resolve_returns_fallback_when_primary_exhausted_and_fallback_available(
     fallback_svc = _make_svc(available=True)
     registry = ServiceRegistry(
         services={"primary": primary, "fallback": fallback_svc},
-        default_service="primary",
     )
     fallback_override = StageOverride(service="fallback")
     override = StageOverride(service="primary", fallback=fallback_override)
@@ -56,7 +55,6 @@ def test_resolve_returns_primary_when_both_exhausted() -> None:
     fallback_svc = _make_svc(available=False)
     registry = ServiceRegistry(
         services={"primary": primary, "fallback": fallback_svc},
-        default_service="primary",
     )
     fallback_override = StageOverride(service="fallback")
     override = StageOverride(service="primary", fallback=fallback_override)
@@ -68,7 +66,7 @@ def test_resolve_returns_primary_when_both_exhausted() -> None:
 
 def test_resolve_does_not_treat_empty_service_as_default() -> None:
     svc = _make_svc(available=True)
-    registry = ServiceRegistry(services={"claude": svc}, default_service="claude")
+    registry = ServiceRegistry(services={"claude": svc})
     override = StageOverride(service="")
 
     result = registry.resolve(override, _now())
@@ -78,7 +76,7 @@ def test_resolve_does_not_treat_empty_service_as_default() -> None:
 
 
 def test_resolve_returns_primary_when_service_not_registered() -> None:
-    registry = ServiceRegistry(services={}, default_service="claude")
+    registry = ServiceRegistry(services={})
     override = StageOverride(service="claude")
 
     result = registry.resolve(override, _now())
@@ -94,7 +92,6 @@ def test_has_available_returns_true_when_any_service_available() -> None:
     available = _make_svc(available=True)
     registry = ServiceRegistry(
         services={"exhausted": exhausted, "available": available},
-        default_service="available",
     )
 
     assert registry.has_available(_now()) is True
@@ -102,13 +99,13 @@ def test_has_available_returns_true_when_any_service_available() -> None:
 
 def test_has_available_returns_false_when_all_exhausted() -> None:
     svc = _make_svc(available=False)
-    registry = ServiceRegistry(services={"claude": svc}, default_service="claude")
+    registry = ServiceRegistry(services={"claude": svc})
 
     assert registry.has_available(_now()) is False
 
 
 def test_has_available_returns_false_on_empty_registry() -> None:
-    registry = ServiceRegistry(services={}, default_service="claude")
+    registry = ServiceRegistry(services={})
 
     assert registry.has_available(_now()) is False
 
@@ -121,20 +118,20 @@ def test_next_wake_time_returns_earliest_exhausted_wake_time() -> None:
     later = datetime(2025, 1, 1, 14, 0, 0, tzinfo=timezone.utc)
     svc_a = _make_svc(available=False, wake=earlier)
     svc_b = _make_svc(available=False, wake=later)
-    registry = ServiceRegistry(services={"a": svc_a, "b": svc_b}, default_service="a")
+    registry = ServiceRegistry(services={"a": svc_a, "b": svc_b})
 
     assert registry.next_wake_time(_now()) == earlier
 
 
 def test_next_wake_time_returns_none_when_all_available() -> None:
     svc = _make_svc(available=True)
-    registry = ServiceRegistry(services={"claude": svc}, default_service="claude")
+    registry = ServiceRegistry(services={"claude": svc})
 
     assert registry.next_wake_time(_now()) is None
 
 
 def test_next_wake_time_returns_none_on_empty_registry() -> None:
-    registry = ServiceRegistry(services={}, default_service="claude")
+    registry = ServiceRegistry(services={})
 
     assert registry.next_wake_time(_now()) is None
 
@@ -145,7 +142,6 @@ def test_next_wake_time_skips_available_services() -> None:
     available = _make_svc(available=True)
     registry = ServiceRegistry(
         services={"exhausted": exhausted, "available": available},
-        default_service="available",
     )
 
     assert registry.next_wake_time(_now()) == wake
@@ -162,14 +158,14 @@ def _make_svc_with_accounts(names: list[str]) -> MagicMock:
 
 def test_summary_lines_single_account() -> None:
     svc = _make_svc_with_accounts(["primary"])
-    registry = ServiceRegistry(services={"claude": svc}, default_service="claude")
+    registry = ServiceRegistry(services={"claude": svc})
 
     assert registry.summary_lines() == ["Claude accounts: primary (active)"]
 
 
 def test_summary_lines_multiple_accounts() -> None:
     svc = _make_svc_with_accounts(["primary", "secondary"])
-    registry = ServiceRegistry(services={"claude": svc}, default_service="claude")
+    registry = ServiceRegistry(services={"claude": svc})
 
     assert registry.summary_lines() == [
         "Claude accounts: primary (active), secondary (standby)"
@@ -178,14 +174,14 @@ def test_summary_lines_multiple_accounts() -> None:
 
 def test_summary_lines_skips_services_without_account_names() -> None:
     svc = MagicMock(spec=AgentService)
-    registry = ServiceRegistry(services={"codex": svc}, default_service="codex")
+    registry = ServiceRegistry(services={"codex": svc})
 
     assert registry.summary_lines() == []
 
 
 def test_summary_lines_skips_services_with_empty_account_names() -> None:
     svc = _make_svc_with_accounts([])
-    registry = ServiceRegistry(services={"claude": svc}, default_service="claude")
+    registry = ServiceRegistry(services={"claude": svc})
 
     assert registry.summary_lines() == []
 
@@ -195,19 +191,19 @@ def test_summary_lines_skips_services_with_empty_account_names() -> None:
 
 def test_lookup_known_key_returns_service() -> None:
     svc = _make_svc(available=True)
-    registry = ServiceRegistry(services={"claude": svc}, default_service="claude")
+    registry = ServiceRegistry(services={"claude": svc})
 
     assert registry["claude"] is svc
 
 
 def test_lookup_empty_string_returns_none() -> None:
     svc = _make_svc(available=True)
-    registry = ServiceRegistry(services={"claude": svc}, default_service="claude")
+    registry = ServiceRegistry(services={"claude": svc})
 
     assert registry[""] is None
 
 
 def test_lookup_unknown_key_returns_none() -> None:
-    registry = ServiceRegistry(services={}, default_service="claude")
+    registry = ServiceRegistry(services={})
 
     assert registry["codex"] is None

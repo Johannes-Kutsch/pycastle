@@ -84,7 +84,7 @@ def test_run_cmd_fails_fast_when_oauth_token_missing(tmp_path, monkeypatch):
     assert "claude setup-token" in result.output
 
 
-def test_run_cmd_both_default_service_requires_claude_token(tmp_path, monkeypatch):
+def test_run_cmd_default_stage_override_requires_claude_token(tmp_path, monkeypatch):
     from pycastle.config import Config
     from pycastle.main import main as cli
 
@@ -93,7 +93,7 @@ def test_run_cmd_both_default_service_requires_claude_token(tmp_path, monkeypatc
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
 
-    cfg = Config(default_service="both", docker_image_name="myimage")
+    cfg = Config(docker_image_name="myimage")
     with patch("pycastle.main.load_config", return_value=cfg):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -455,7 +455,7 @@ def test_init_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
 # ── Issue 504/691: service registry seeding from env ─────────────────────────
 
 
-def test_run_cmd_legacy_default_service_codex_still_requires_claude_token(
+def test_run_cmd_ignores_legacy_default_service_codex_and_requires_claude_token(
     tmp_path, monkeypatch
 ):
     from pycastle.config import Config
@@ -467,7 +467,7 @@ def test_run_cmd_legacy_default_service_codex_still_requires_claude_token(
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
     monkeypatch.setenv("GH_TOKEN", "gh")
 
-    cfg = Config(default_service="codex", docker_image_name="myimage")
+    cfg = Config(docker_image_name="myimage")
     fake_svc = MagicMock()
     fake_svc.build_image.return_value = None
 

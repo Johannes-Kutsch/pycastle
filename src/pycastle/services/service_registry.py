@@ -7,9 +7,7 @@ from .agent_service import AgentService
 
 
 class ServiceRegistry:
-    def __init__(
-        self, services: dict[str, AgentService], default_service: str = ""
-    ) -> None:
+    def __init__(self, services: dict[str, AgentService]) -> None:
         self._services = services
 
     @property

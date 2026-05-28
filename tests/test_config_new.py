@@ -649,11 +649,11 @@ def test_load_config_improve_mode_rejects_invalid(tmp_path, bad):
         )
 
 
-# ── Issue 783: per-stage service + fallback, top-level default_service ──────
+# ── Issue 783: per-stage service + fallback ─────────────────────────────────
 
 
-def test_config_default_service_defaults_to_claude():
-    assert Config().default_service == "claude"
+def test_config_does_not_expose_default_service():
+    assert not hasattr(Config(), "default_service")
 
 
 def test_stage_override_service_defaults_to_empty_string():
@@ -668,7 +668,7 @@ def test_load_config_ignores_legacy_default_service_from_local_file(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text('default_service = "codex"\n')
     cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
-    assert cfg.default_service == "claude"
+    assert not hasattr(cfg, "default_service")
 
 
 def test_load_config_ignores_legacy_default_service_from_global_file(tmp_path):
@@ -676,7 +676,7 @@ def test_load_config_ignores_legacy_default_service_from_global_file(tmp_path):
     global_dir.mkdir()
     (global_dir / "config.py").write_text('default_service = "codex"\n')
     cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
-    assert cfg.default_service == "claude"
+    assert not hasattr(cfg, "default_service")
 
 
 def test_legacy_default_service_does_not_select_referenced_services(tmp_path):
