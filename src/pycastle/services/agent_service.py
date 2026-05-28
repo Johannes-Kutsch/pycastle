@@ -16,8 +16,14 @@ class AssistantTurn:
 
 
 @dataclasses.dataclass
-class Tokens:
+class PromptTokens:
     count: int
+
+
+@dataclasses.dataclass
+class UnsupportedTokens:
+    count: int
+    source: str
 
 
 @dataclasses.dataclass
@@ -44,7 +50,15 @@ class HardError:
     raw_message: str
 
 
-ParsedTurn = AssistantTurn | Tokens | Result | UsageLimit | TransientError | HardError
+ParsedTurn = (
+    AssistantTurn
+    | PromptTokens
+    | UnsupportedTokens
+    | Result
+    | UsageLimit
+    | TransientError
+    | HardError
+)
 
 
 class AgentService(Protocol):

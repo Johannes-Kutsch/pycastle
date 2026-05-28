@@ -413,9 +413,10 @@ def process_stream_from_events(
     from ..services.agent_service import (
         AssistantTurn,
         HardError,
+        PromptTokens,
         Result,
-        Tokens,
         TransientError,
+        UnsupportedTokens,
         UsageLimit,
     )
 
@@ -440,9 +441,11 @@ def process_stream_from_events(
                 message=event.raw_message,
                 status_code=event.status_code,
             )
-        elif isinstance(event, Tokens):
+        elif isinstance(event, PromptTokens):
             if on_tokens is not None:
                 on_tokens(event.count)
+        elif isinstance(event, UnsupportedTokens):
+            continue
         elif isinstance(event, AssistantTurn):
             on_turn(event.text)
             collected_turns.append(event.text)

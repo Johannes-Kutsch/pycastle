@@ -2,8 +2,9 @@ from .agent_service import (
     AgentService,
     AssistantTurn,
     ParsedTurn,
+    PromptTokens,
     Result,
-    Tokens,
+    UnsupportedTokens,
     UsageLimit,
 )
 from .claude_service import ClaudeService
@@ -46,8 +47,9 @@ __all__ = [
     "GithubService",
     "GithubServiceError",
     "ParsedTurn",
+    "PromptTokens",
     "Result",
     "ServiceRegistry",
-    "Tokens",
+    "UnsupportedTokens",
     "UsageLimit",
 ]

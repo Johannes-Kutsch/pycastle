@@ -16,8 +16,8 @@ from .agent_service import (
     AssistantTurn,
     HardError,
     ParsedTurn,
+    PromptTokens,
     Result,
-    Tokens,
     TransientError,
     UsageLimit,
 )
@@ -241,7 +241,7 @@ def _classify_line(line: str) -> list[ParsedTurn]:
 
         events: list[ParsedTurn] = []
         if tokens is not None:
-            events.append(Tokens(count=tokens))
+            events.append(PromptTokens(count=tokens))
         if turn_text is not None:
             events.append(AssistantTurn(text=turn_text))
         return events

@@ -13,7 +13,12 @@ from pycastle.errors import (
     PycastleError,
 )
 from pycastle.services import ClaudeService
-from pycastle.services.agent_service import AssistantTurn, Result, Tokens, UsageLimit
+from pycastle.services.agent_service import (
+    AssistantTurn,
+    PromptTokens,
+    Result,
+    UsageLimit,
+)
 from pycastle.session import RunKind
 
 
@@ -320,7 +325,7 @@ def test_run_yields_assistant_turn_for_assistant_lines():
 
 def test_run_yields_tokens_when_usage_present():
     events = list(ClaudeService().run([_assistant_with_usage_line("hi", 1000)]))
-    assert any(isinstance(e, Tokens) and e.count == 1000 for e in events)
+    assert any(isinstance(e, PromptTokens) and e.count == 1000 for e in events)
 
 
 def test_run_yields_result_for_result_line():

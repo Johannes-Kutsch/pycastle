@@ -24,8 +24,9 @@ from pycastle.agents.output_protocol import (
 from pycastle.errors import UsageLimitError
 from pycastle.services.agent_service import (
     AssistantTurn,
+    PromptTokens,
     Result,
-    Tokens,
+    UnsupportedTokens,
     UsageLimit,
 )
 
@@ -1062,7 +1063,7 @@ def test_process_stream_from_events_propagates_raw_message_to_usage_limit_error(
 def test_process_stream_from_events_calls_on_tokens():
     token_counts: list[int] = []
     events = [
-        Tokens(count=42_000),
+        PromptTokens(count=42_000),
         AssistantTurn(text="<commit_message>done</commit_message>"),
     ]
     process_stream_from_events(
@@ -1072,6 +1073,21 @@ def test_process_stream_from_events_calls_on_tokens():
         on_tokens=token_counts.append,
     )
     assert token_counts == [42_000]
+
+
+def test_process_stream_from_events_ignores_unsupported_tokens():
+    token_counts: list[int] = []
+    events = [
+        UnsupportedTokens(count=42_000, source="codex.turn.completed.usage"),
+        AssistantTurn(text="<commit_message>done</commit_message>"),
+    ]
+    process_stream_from_events(
+        iter(events),
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        on_tokens=token_counts.append,
+    )
+    assert token_counts == []
 
 
 def test_process_stream_from_events_on_turn_called_for_each_assistant_turn():

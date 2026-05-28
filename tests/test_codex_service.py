@@ -3,13 +3,16 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+import pytest
+
 from pycastle import _time as _time_module
-from pycastle.agents.output_protocol import AgentRole
+from pycastle.agents.output_protocol import AgentOutputProtocolError, AgentRole
 from pycastle.services import CodexService
+from pycastle.services.codex_service import CodexPromptTokensContract
 from pycastle.services.agent_service import (
     AssistantTurn,
     HardError,
-    Tokens,
+    UnsupportedTokens,
     TransientError,
     UsageLimit,
 )
@@ -287,7 +290,7 @@ def test_run_yields_assistant_turn_from_current_agent_message_text_field():
     )
 
 
-def test_run_yields_tokens_from_turn_completed():
+def test_run_marks_turn_completed_usage_as_unsupported_tokens():
     lines = [
         _thread_started(),
         _item_completed("agent_message", "Hi"),
@@ -296,10 +299,10 @@ def test_run_yields_tokens_from_turn_completed():
         ),
     ]
     events = list(CodexService().run(lines))
-    assert any(isinstance(e, Tokens) and e.count == 360 for e in events)
+    assert any(isinstance(e, UnsupportedTokens) and e.count == 360 for e in events)
 
 
-def test_run_yields_tokens_from_current_turn_completed_usage_fields():
+def test_run_marks_current_turn_completed_usage_fields_as_unsupported_tokens():
     line = json.dumps(
         {
             "type": "turn.completed",
@@ -312,7 +315,23 @@ def test_run_yields_tokens_from_current_turn_completed_usage_fields():
         }
     )
     events = list(CodexService().run([line]))
-    assert any(isinstance(e, Tokens) and e.count == 360 for e in events)
+    assert any(isinstance(e, UnsupportedTokens) and e.count == 360 for e in events)
+
+
+def test_run_requires_exact_live_prompt_tokens_when_contract_promises_them():
+    service = CodexService(
+        prompt_tokens_contract=CodexPromptTokensContract(
+            exact_live_extractor=lambda event: event.get("exact_prompt_tokens"),
+            require_exact_live=True,
+        )
+    )
+    lines = [
+        _thread_started(),
+        _item_completed("agent_message", "Hi"),
+        _turn_completed(),
+    ]
+    with pytest.raises(AgentOutputProtocolError, match="telemetry missing"):
+        list(service.run(lines))
 
 
 def test_run_stops_after_turn_completed():
@@ -427,7 +446,7 @@ def test_run_thread_started_yields_no_event():
     ]
     events = list(CodexService().run(lines))
     assert not any(isinstance(e, AssistantTurn) for e in events)
-    tokens = [e for e in events if isinstance(e, Tokens)]
+    tokens = [e for e in events if isinstance(e, UnsupportedTokens)]
     assert len(tokens) == 1
 
 
