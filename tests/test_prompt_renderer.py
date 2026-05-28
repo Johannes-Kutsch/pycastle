@@ -520,6 +520,34 @@ def test_renderer_renders_issue_tracker_fragment(prompts_dir):
     assert result == "issue-tracker recipes"
 
 
+def test_renderer_renders_implement_review_shared_framing_fragment(prompts_dir):
+    (prompts_dir / "_implement-review-shared-framing.md").write_text(
+        "branch {{BRANCH}} body {{ISSUE_BODY}}"
+    )
+    (prompts_dir / "review-prompt.md").write_text(
+        "prefix {{IMPLEMENT_REVIEW_SHARED_FRAMING}} suffix"
+    )
+    cfg = Config(prompts_dir=prompts_dir)
+    renderer = PromptRenderer(cfg)
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.REVIEW,
+            {
+                "ISSUE_NUMBER": "1",
+                "ISSUE_TITLE": "t",
+                "ISSUE_BODY": "issue body",
+                "ISSUE_COMMENTS": "",
+                "BRANCH": "pycastle/issue-1",
+                "INTERRUPTED_WORK": "",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert result == "prefix branch pycastle/issue-1 body issue body suffix"
+
+
 def test_renderer_renders_local_issue_tracker_override_through_bundled_prompt(
     tmp_path, monkeypatch
 ):
@@ -541,6 +569,46 @@ def test_renderer_renders_local_issue_tracker_override_through_bundled_prompt(
 
     assert "local tracker for ready-for-agent" in result
     assert "{{READY_FOR_AGENT_LABEL}}" not in result
+
+
+def test_renderer_renders_local_shared_framing_override_through_bundled_prompt(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "_implement-review-shared-framing.md").write_text(
+        "shared branch {{BRANCH}}"
+    )
+    renderer = PromptRenderer(Config())
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.REVIEW,
+            {
+                "ISSUE_NUMBER": "1",
+                "ISSUE_TITLE": "t",
+                "ISSUE_BODY": "",
+                "ISSUE_COMMENTS": "",
+                "BRANCH": "pycastle/issue-1",
+                "INTERRUPTED_WORK": "",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert "shared branch pycastle/issue-1" in result
+    assert "{{BRANCH}}" not in result
+
+
+def test_renderer_aborts_on_broken_local_shared_framing_override(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "_implement-review-shared-framing.md").write_text("{{UNKNOWN_KEY}}")
+
+    with pytest.raises(PromptRenderError, match="UNKNOWN_KEY"):
+        PromptRenderer(Config())
 
 
 def test_renderer_aborts_when_issue_tracker_referenced_but_absent(prompts_dir):
@@ -754,7 +822,7 @@ def test_placeholder_info_global_tokens_match_code(cfg, prompts_dir):
     # ISSUE_TRACKER is conditional on its fragment file being present.
     (prompts_dir / "_issue-tracker.md").write_text("issue-tracker recipes")
     renderer = PromptRenderer(cfg)
-    expected = set(renderer._global_args.keys())
+    expected = set(renderer._global_args.keys()) | set(renderer._DYNAMIC_SHARED_FILES)
 
     global_tokens, _ = _parse_placeholder_info()
 
