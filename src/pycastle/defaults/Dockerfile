@@ -17,8 +17,8 @@ RUN apt-get update && apt-get install -y \
   && apt-get install -y nodejs \
   && rm -rf /var/lib/apt/lists/*
 
-# Install both supported agent CLIs at pinned versions.
-RUN npm install -g @openai/codex@0.134.0 @anthropic-ai/claude-code@2.1.152
+# Install supported agent CLIs at pinned versions.
+RUN npm install -g @openai/codex@0.134.0 @anthropic-ai/claude-code@2.1.152 opencode-ai@0.5.12
 
 # Create agent user with UID 1000 for compatibility with --userns=keep-id and --user 1000:1000
 RUN useradd -m -u 1000 -s /bin/bash agent
