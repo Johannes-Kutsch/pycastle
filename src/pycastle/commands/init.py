@@ -11,15 +11,17 @@ from typing import Literal
 
 import click
 
-from ..agents.output_protocol import AgentRole
 from ..config.loader import (
     derive_docker_image_name,
-    referenced_services,
     resolve_global_dir,
 )
-from ..session.resume import SESSION_DIR_NAME
 
 _SPECIAL_FILES = {"config.py", ".env", "Dockerfile.claude", "Dockerfile.codex"}
+_INIT_REFRESHED_FILES = {
+    "setup/cron.sh",
+    "setup/cron-install.sh",
+    "setup/cron-uninstall.sh",
+}
 
 
 def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
@@ -247,20 +249,10 @@ def _refresh_status(rel: str, target: Path, pkg: Traversable) -> str:
 
 
 def refresh() -> None:
-    from ..config.loader import load_config
-
     project_dir = Path("pycastle")
-    if not project_dir.is_dir():
-        click.echo(
-            click.style(
-                f"Error: no `pycastle/` directory found in {Path.cwd()}; "
-                "run `pycastle init` first.",
-                fg="red",
-            ),
-            err=True,
-        )
-        sys.exit(1)
+    project_dir.mkdir(parents=True, exist_ok=True)
     pkg = files("pycastle").joinpath("defaults")
+    _write_config_example(project_dir)
 
     report: list[tuple[str, str]] = []
 
@@ -269,15 +261,6 @@ def refresh() -> None:
         verb = _refresh_status(rel, target, pkg)
         _copy_template(rel, target, pkg)
         report.append((verb, rel))
-
-    for service in sorted(referenced_services(load_config())):
-        dockerfile_name = f"Dockerfile.{service}"
-        dockerfile_target = project_dir / dockerfile_name
-        if dockerfile_target.exists():
-            report.append(("preserved", dockerfile_name))
-            continue
-        _copy_template(dockerfile_name, dockerfile_target, pkg)
-        report.append(("created", dockerfile_name))
 
     for path in ("config.py", ".env"):
         if (project_dir / path).exists():
@@ -289,45 +272,6 @@ def refresh() -> None:
             print(f"{verb} {path}")
     else:
         print("pycastle directory is already up to date.")
-
-
-def _role_namespaces() -> list[tuple[AgentRole, str]]:
-    pairs: list[tuple[AgentRole, str]] = []
-    for role in AgentRole:
-        if role == AgentRole.IMPROVE:
-            pairs.extend([(role, "main"), (role, "issues")])
-        else:
-            pairs.append((role, ""))
-    return pairs
-
-
-def _seed_codex_credentials(project_root: Path) -> None:
-    host_auth = Path.home() / ".codex" / "auth.json"
-    if not host_auth.exists():
-        click.echo(
-            "No codex credentials found at ~/.codex/auth.json.\n"
-            "Install and log in to Codex, then re-run init:\n"
-            "1. npm install -g @openai/codex\n"
-            "2. codex login\n"
-            "3. pycastle init"
-        )
-        sys.exit(1)
-
-    auth_bytes = host_auth.read_bytes()
-    destinations: list[tuple[Path, Path]] = []
-    for role, namespace in _role_namespaces():
-        base = project_root / SESSION_DIR_NAME / role.value
-        codex_dir = (base / namespace if namespace else base) / "codex"
-        dest = codex_dir / "auth.json"
-        destinations.append((codex_dir, dest))
-
-    if any(dest.exists() for _, dest in destinations):
-        if not click.confirm("Overwrite existing codex credentials?", default=False):
-            return
-
-    for codex_dir, dest in destinations:
-        codex_dir.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(auth_bytes)
 
 
 def main(scope: Literal["global", "local"] | None = None) -> None:
@@ -370,20 +314,13 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
 
     for rel in _discover_project_shaped_files(pkg):
         target = project_dir / rel
-        if target.exists():
+        if target.exists() and rel not in _INIT_REFRESHED_FILES:
             continue
         _copy_template(rel, target, pkg)
 
     _write_config_example(project_dir)
     if pycastle_home.is_dir():
         _write_config_example(pycastle_home)
-
-    selected_services = ["claude", "codex"] if service == "both" else [service]
-    for selected_service in selected_services:
-        dockerfile_name = f"Dockerfile.{selected_service}"
-        dockerfile_target = project_dir / dockerfile_name
-        if not dockerfile_target.exists():
-            _copy_template(dockerfile_name, dockerfile_target, pkg)
 
     config_file = scoped_dir / "config.py"
     if config_file.exists():
@@ -452,6 +389,3 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         create_labels_interactive(gh_token)
 
     click.echo()
-
-    if service in ("codex", "both"):
-        _seed_codex_credentials(Path.cwd())

@@ -76,33 +76,46 @@ def test_default_agent_dockerfiles_install_ripgrep(service: str):
     assert "ripgrep" in content
 
 
-def test_init_claude_service_seeds_only_claude_dockerfile(tmp_path, monkeypatch):
-    """Selecting claude seeds only pycastle/Dockerfile.claude."""
-    from importlib.resources import files
-
+def test_init_keeps_credential_flow_but_only_manages_scaffold_files(
+    tmp_path, monkeypatch
+):
+    """Local init keeps the wizard for config.py/.env without scaffolding runtime files."""
     from pycastle.commands.init import main
 
     monkeypatch.chdir(tmp_path)
+    prompt_calls: list[str] = []
+
+    def capture_prompt(message: str, *args: object, **kwargs: object) -> str:
+        prompt_calls.append(message)
+        if "agent services" in message.lower():
+            return "claude"
+        return ""
+
     with (
-        patch("click.prompt", side_effect=["claude", "", ""]),
+        patch("click.prompt", side_effect=capture_prompt),
         patch("click.confirm", return_value=False),
     ):
         main(scope="local")
 
     pycastle_dir = tmp_path / "pycastle"
-    pkg = files("pycastle").joinpath("defaults")
-    assert (pycastle_dir / "Dockerfile.claude").read_bytes() == (
-        pkg / "Dockerfile.claude"
-    ).read_bytes()
+    assert any("GitHub token" in prompt for prompt in prompt_calls)
+    assert any("Claude OAuth token" in prompt for prompt in prompt_calls)
+    assert (pycastle_dir / "config.py.example").exists()
+    assert (pycastle_dir / "setup" / "cron.sh").exists()
+    assert (pycastle_dir / "setup" / "cron-install.sh").exists()
+    assert (pycastle_dir / "setup" / "cron-uninstall.sh").exists()
+    assert (pycastle_dir / "config.py").exists()
+    assert (pycastle_dir / ".env").exists()
+    assert not (pycastle_dir / ".pycastle-session").exists()
+    assert not (pycastle_dir / "Dockerfile.claude").exists()
     assert not (pycastle_dir / "Dockerfile.codex").exists()
     assert not (pycastle_dir / "Dockerfile").exists()
 
 
-def test_init_both_services_seeds_both_per_service_dockerfiles(tmp_path, monkeypatch):
-    """Selecting both seeds both per-service Dockerfiles."""
-    from importlib.resources import files
-
+def test_init_both_services_skip_dockerfiles_and_runtime_state(tmp_path, monkeypatch):
+    """Selecting both keeps the wizard flow but skips Dockerfiles and session state."""
     from pycastle.commands.init import main
+    from pycastle.session.resume import SESSION_DIR_NAME
 
     fake_home = tmp_path / "fakehome"
     (fake_home / ".codex").mkdir(parents=True)
@@ -117,30 +130,26 @@ def test_init_both_services_seeds_both_per_service_dockerfiles(tmp_path, monkeyp
         main(scope="local")
 
     pycastle_dir = tmp_path / "pycastle"
-    pkg = files("pycastle").joinpath("defaults")
-    assert (pycastle_dir / "Dockerfile.claude").read_bytes() == (
-        pkg / "Dockerfile.claude"
-    ).read_bytes()
-    assert (pycastle_dir / "Dockerfile.codex").read_bytes() == (
-        pkg / "Dockerfile.codex"
-    ).read_bytes()
+    assert (pycastle_dir / "config.py").exists()
+    assert (pycastle_dir / ".env").exists()
+    assert not (tmp_path / SESSION_DIR_NAME).exists()
+    assert not (pycastle_dir / "Dockerfile.claude").exists()
+    assert not (pycastle_dir / "Dockerfile.codex").exists()
     assert not (pycastle_dir / "Dockerfile").exists()
 
 
 @pytest.mark.parametrize(
-    ("service", "expected_files"),
+    "service",
     [
-        ("claude", ["Dockerfile.claude"]),
-        ("codex", ["Dockerfile.codex"]),
-        ("both", ["Dockerfile.claude", "Dockerfile.codex"]),
+        "claude",
+        "codex",
+        "both",
     ],
 )
-def test_init_service_selection_copies_matching_dockerfile(
-    tmp_path, monkeypatch, service, expected_files
+def test_init_service_selection_does_not_create_dockerfiles(
+    tmp_path, monkeypatch, service
 ):
-    """Service answer determines which per-service Dockerfiles are seeded."""
-    from importlib.resources import files
-
+    """Service selection affects prompts, not Dockerfile scaffolding."""
     from pycastle.commands.init import main
 
     fake_home = tmp_path / "fakehome"
@@ -155,18 +164,12 @@ def test_init_service_selection_copies_matching_dockerfile(
     ):
         main(scope="local")
 
-    pkg = files("pycastle").joinpath("defaults")
     pycastle_dir = tmp_path / "pycastle"
-    for dockerfile_name in expected_files:
-        assert (pycastle_dir / dockerfile_name).read_bytes() == (
-            pkg / dockerfile_name
-        ).read_bytes()
-    all_dockerfiles = {
-        path.name
-        for path in pycastle_dir.iterdir()
-        if path.name.startswith("Dockerfile")
-    }
-    assert all_dockerfiles == set(expected_files)
+    assert not (pycastle_dir / "Dockerfile.claude").exists()
+    assert not (pycastle_dir / "Dockerfile.codex").exists()
+    assert not any(
+        path.name.startswith("Dockerfile") for path in pycastle_dir.iterdir()
+    )
 
 
 def test_init_does_not_overwrite_existing_per_service_dockerfile(tmp_path, monkeypatch):
@@ -225,8 +228,10 @@ def test_init_creates_all_scaffold_files(tmp_path, monkeypatch):
     scaffold = tmp_path / "pycastle"
     assert (scaffold / "config.py").exists()
     assert (scaffold / ".env").exists()
-    assert (scaffold / "Dockerfile.claude").exists()
+    assert (scaffold / "config.py.example").exists()
     assert not (scaffold / "Dockerfile").exists()
+    assert not (scaffold / "Dockerfile.claude").exists()
+    assert not (scaffold / "Dockerfile.codex").exists()
     assert (scaffold / ".gitignore").exists()
     assert (scaffold / "setup" / "cron.sh").exists()
     assert (scaffold / "setup" / "cron-install.sh").exists()
@@ -520,7 +525,7 @@ def test_init_global_writes_config_and_env_to_pycastle_home(tmp_path, monkeypatc
 
 
 def test_init_global_keeps_project_shaped_files_local(tmp_path, monkeypatch):
-    """With --global, Dockerfile/prompts/.gitignore stay in local pycastle dir."""
+    """With --global, project-shaped scaffold files still land in local pycastle dir."""
     from pycastle.commands.init import main
 
     home = tmp_path / "home"
@@ -534,10 +539,13 @@ def test_init_global_keeps_project_shaped_files_local(tmp_path, monkeypatch):
         main(scope="global")
 
     local = tmp_path / "pycastle"
-    assert (local / "Dockerfile.claude").exists()
-    assert not (local / "Dockerfile").exists()
+    assert (local / "config.py.example").exists()
     assert (local / ".gitignore").exists()
     assert (local / "prompts" / "plan-prompt.md").exists()
+    assert (local / "setup" / "cron.sh").exists()
+    assert not (local / "Dockerfile.claude").exists()
+    assert not (local / "Dockerfile.codex").exists()
+    assert not (local / "Dockerfile").exists()
 
 
 def test_init_global_skip_existing_config_with_message(tmp_path, monkeypatch, capsys):
@@ -1188,6 +1196,42 @@ def test_init_refresh_copies_cron_uninstall_sh(tmp_path, monkeypatch):
     assert cron_uninstall.exists()
 
 
+@pytest.mark.parametrize(
+    "rel_path",
+    [
+        "setup/cron.sh",
+        "setup/cron-install.sh",
+        "setup/cron-uninstall.sh",
+    ],
+)
+def test_init_overwrites_stale_setup_scaffold_files_on_rerun(
+    tmp_path, monkeypatch, rel_path
+):
+    """Re-running init refreshes the setup scaffold files it owns."""
+    from importlib.resources import files
+
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    target = tmp_path / "pycastle" / rel_path
+    bundled_bytes = (files("pycastle").joinpath("defaults") / rel_path).read_bytes()
+    target.write_text("STALE LOCAL EDIT\n")
+
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert target.read_bytes() == bundled_bytes
+
+
 def test_init_refresh_leaves_local_config_unchanged(tmp_path, monkeypatch):
     """`pycastle init --refresh` does not touch local config.py."""
     from pycastle.commands.init import main, refresh
@@ -1226,16 +1270,31 @@ def test_init_refresh_leaves_local_env_unchanged(tmp_path, monkeypatch):
     assert env_file.read_text() == "GH_TOKEN=secret-value\n"
 
 
-def test_init_refresh_errors_when_no_pycastle_dir(tmp_path, monkeypatch):
-    """`pycastle init --refresh` exits non-zero when no local pycastle/ dir exists."""
+def test_init_refresh_creates_local_scaffold_without_wizard_or_runtime_state(
+    tmp_path, monkeypatch
+):
+    """`pycastle init --refresh` creates scaffold files only when pycastle/ is missing."""
     from pycastle.main import main as cli
 
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
-    result = runner.invoke(cli, ["init", "--refresh"])
-    assert result.exit_code != 0
-    assert "pycastle" in result.output.lower()
-    assert not (tmp_path / "pycastle").exists()
+    with (
+        patch("click.prompt") as prompt_mock,
+        patch("click.confirm") as confirm_mock,
+    ):
+        result = runner.invoke(cli, ["init", "--refresh"])
+
+    assert result.exit_code == 0, result.output
+    assert prompt_mock.call_count == 0
+    assert confirm_mock.call_count == 0
+
+    pycastle_dir = tmp_path / "pycastle"
+    assert pycastle_dir.is_dir()
+    assert (pycastle_dir / "config.py.example").exists()
+    assert (pycastle_dir / "setup" / "cron.sh").exists()
+    assert (pycastle_dir / "setup" / "cron-install.sh").exists()
+    assert (pycastle_dir / "setup" / "cron-uninstall.sh").exists()
+    assert not (pycastle_dir / ".pycastle-session").exists()
 
 
 def test_init_refresh_and_global_mutually_exclusive(tmp_path, monkeypatch):
@@ -1304,14 +1363,13 @@ def test_init_refresh_cli_prints_layer_summary(tmp_path, monkeypatch):
     assert "config:" in result.output.lower() or "layer" in result.output.lower()
 
 
-# ── Issue #788: codex credential verification and per-role auth.json seeding ──
+# ── Issue #788: init no longer seeds Codex runtime auth/session state ─────────
 
 
-def test_init_codex_exits_with_message_when_auth_json_absent(
-    tmp_path, monkeypatch, capsys
-):
-    """init with codex selected prints actionable message and exits non-zero when ~/.codex/auth.json is absent."""
+def test_init_codex_selection_succeeds_without_host_auth_json(tmp_path, monkeypatch):
+    """Selecting codex no longer requires ~/.codex/auth.json during init."""
     from pycastle.commands.init import main
+    from pycastle.session.resume import SESSION_DIR_NAME
 
     fake_home = tmp_path / "fakehome"
     fake_home.mkdir()
@@ -1320,253 +1378,52 @@ def test_init_codex_exits_with_message_when_auth_json_absent(
     monkeypatch.chdir(tmp_path)
 
     with (
-        patch("click.prompt", side_effect=["codex", "", ""]),
-        patch("click.confirm", return_value=False),
-        pytest.raises(SystemExit) as exc_info,
-    ):
-        main(scope="local")
-
-    assert exc_info.value.code != 0
-    captured = capsys.readouterr()
-    assert "No codex credentials found at ~/.codex/auth.json" in captured.out
-    install_step = "npm install -g @openai/codex"
-    login_step = "codex login"
-    rerun_step = "pycastle init"
-    assert install_step in captured.out
-    assert login_step in captured.out
-    assert rerun_step in captured.out
-    assert (
-        captured.out.index(install_step)
-        < captured.out.index(login_step)
-        < captured.out.index(rerun_step)
-    )
-
-
-def test_init_codex_seeds_auth_json_for_all_roles_when_present(tmp_path, monkeypatch):
-    """init with codex seeds byte-identical auth.json into every role × namespace state dir."""
-    from pycastle.agents.output_protocol import AgentRole
-    from pycastle.commands.init import main
-    from pycastle.session.resume import SESSION_DIR_NAME
-
-    fake_home = tmp_path / "fakehome"
-    (fake_home / ".codex").mkdir(parents=True)
-    host_auth = fake_home / ".codex" / "auth.json"
-    host_auth.write_bytes(b'{"access_token": "test-token"}')
-    monkeypatch.setenv("HOME", str(fake_home))
-    monkeypatch.setenv("USERPROFILE", str(fake_home))
-    monkeypatch.chdir(tmp_path)
-
-    def fail_on_confirm(prompt: str, default: bool = False) -> bool:
-        raise AssertionError(f"unexpected prompt: {prompt}")
-
-    with (
-        patch("click.prompt", side_effect=["codex", "", ""]),
-        patch("click.confirm", side_effect=fail_on_confirm),
-    ):
-        main(scope="local")
-
-    expected_bytes = host_auth.read_bytes()
-    for role in AgentRole:
-        namespaces = ["main", "issues"] if role == AgentRole.IMPROVE else [""]
-        for namespace in namespaces:
-            base = tmp_path / SESSION_DIR_NAME / role.value
-            role_state_dir = base / namespace if namespace else base
-            auth_file = role_state_dir / "codex" / "auth.json"
-            assert auth_file.exists(), f"Missing auth.json for {role.value}/{namespace}"
-            assert auth_file.read_bytes() == expected_bytes, (
-                f"auth.json content mismatch for {role.value}/{namespace}"
-            )
-
-
-def test_init_codex_seeds_only_auth_json_not_other_files(tmp_path, monkeypatch):
-    """init with codex copies only auth.json into role codex dirs, not config.toml or sessions/."""
-    from pycastle.agents.output_protocol import AgentRole
-    from pycastle.commands.init import main
-    from pycastle.session.resume import SESSION_DIR_NAME
-
-    fake_home = tmp_path / "fakehome"
-    codex_dir = fake_home / ".codex"
-    codex_dir.mkdir(parents=True)
-    (codex_dir / "auth.json").write_bytes(b'{"access_token": "tok"}')
-    (codex_dir / "config.toml").write_text('[model]\nname = "o3"\n')
-    (codex_dir / "sessions").mkdir()
-    (codex_dir / "sessions" / "rollout-abc.jsonl").write_text("{}\n")
-    monkeypatch.setenv("HOME", str(fake_home))
-    monkeypatch.setenv("USERPROFILE", str(fake_home))
-    monkeypatch.chdir(tmp_path)
-
-    with (
-        patch("click.prompt", side_effect=["codex", "", ""]),
+        patch("click.prompt", side_effect=["codex", "gh-token"]),
         patch("click.confirm", return_value=False),
     ):
         main(scope="local")
 
-    for role in AgentRole:
-        namespaces = ["main", "issues"] if role == AgentRole.IMPROVE else [""]
-        for namespace in namespaces:
-            base = tmp_path / SESSION_DIR_NAME / role.value
-            role_state_dir = base / namespace if namespace else base
-            codex_state = role_state_dir / "codex"
-            assert not (codex_state / "config.toml").exists(), (
-                f"config.toml should not be copied for {role.value}/{namespace}"
-            )
-            assert not (codex_state / "sessions").exists(), (
-                f"sessions/ should not be copied for {role.value}/{namespace}"
-            )
+    assert "GH_TOKEN=gh-token" in (tmp_path / "pycastle" / ".env").read_text()
+    assert not (tmp_path / SESSION_DIR_NAME).exists()
 
 
-def test_init_codex_rerun_does_not_overwrite_existing_role_auth_json(
+def test_init_codex_selection_creates_no_runtime_state_even_with_host_auth(
     tmp_path, monkeypatch
 ):
-    """Re-running pycastle init leaves existing role codex/auth.json untouched (mtime and content unchanged)."""
-    from pycastle.agents.output_protocol import AgentRole
-    from pycastle.commands.init import main
-    from pycastle.session.resume import SESSION_DIR_NAME
-
-    fake_home = tmp_path / "fakehome"
-    (fake_home / ".codex").mkdir(parents=True)
-    (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "first"}')
-    monkeypatch.setenv("HOME", str(fake_home))
-    monkeypatch.setenv("USERPROFILE", str(fake_home))
-    monkeypatch.chdir(tmp_path)
-
-    with (
-        patch("click.prompt", side_effect=["codex", "", ""]),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    # Record mtimes after first init
-    impl_auth = (
-        tmp_path
-        / SESSION_DIR_NAME
-        / AgentRole.IMPLEMENTER.value
-        / "codex"
-        / "auth.json"
-    )
-    mtime_before = impl_auth.stat().st_mtime
-
-    # Update host auth.json and re-run
-    (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "second"}')
-    with (
-        patch("click.prompt", side_effect=["codex", "", ""]),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    assert impl_auth.stat().st_mtime == mtime_before
-    assert impl_auth.read_bytes() == b'{"access_token": "first"}'
-
-
-def test_init_codex_rerun_overwrites_all_existing_role_auth_json_when_confirmed(
-    tmp_path, monkeypatch
-):
-    """Re-running pycastle init with codex refreshes every role codex/auth.json when confirmed."""
-    from pycastle.agents.output_protocol import AgentRole
-    from pycastle.commands.init import main
-    from pycastle.session.resume import SESSION_DIR_NAME
-
-    fake_home = tmp_path / "fakehome"
-    (fake_home / ".codex").mkdir(parents=True)
-    (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "first"}')
-    monkeypatch.setenv("HOME", str(fake_home))
-    monkeypatch.chdir(tmp_path)
-
-    with (
-        patch("click.prompt", side_effect=["codex", "", ""]),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "second"}')
-    confirm_prompts: list[str] = []
-
-    def confirm_once(prompt: str, default: bool = False) -> bool:
-        confirm_prompts.append(prompt)
-        return True
-
-    with (
-        patch("click.prompt", side_effect=["codex", "", ""]),
-        patch("click.confirm", side_effect=confirm_once),
-    ):
-        main(scope="local")
-
-    assert confirm_prompts == ["Overwrite existing codex credentials?"]
-
-    for role in AgentRole:
-        namespaces = ["main", "issues"] if role == AgentRole.IMPROVE else [""]
-        for namespace in namespaces:
-            base = tmp_path / SESSION_DIR_NAME / role.value
-            role_state_dir = base / namespace if namespace else base
-            auth_file = role_state_dir / "codex" / "auth.json"
-            assert auth_file.read_bytes() == b'{"access_token": "second"}'
-
-
-def test_init_codex_rerun_skips_all_role_auth_json_when_overwrite_declined(
-    tmp_path, monkeypatch
-):
-    """Declining codex credential overwrite leaves existing files untouched and creates no new copies."""
-    from pycastle.agents.output_protocol import AgentRole
-    from pycastle.commands.init import main
-    from pycastle.session.resume import SESSION_DIR_NAME
-
-    fake_home = tmp_path / "fakehome"
-    (fake_home / ".codex").mkdir(parents=True)
-    (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "host"}')
-    monkeypatch.setenv("HOME", str(fake_home))
-    monkeypatch.chdir(tmp_path)
-
-    existing_auth = (
-        tmp_path
-        / SESSION_DIR_NAME
-        / AgentRole.IMPLEMENTER.value
-        / "codex"
-        / "auth.json"
-    )
-    existing_auth.parent.mkdir(parents=True)
-    existing_auth.write_bytes(b'{"access_token": "stale"}')
-
-    confirm_prompts: list[str] = []
-
-    def decline(prompt: str, default: bool = False) -> bool:
-        confirm_prompts.append(prompt)
-        return False
-
-    with (
-        patch("click.prompt", side_effect=["codex", "", ""]),
-        patch("click.confirm", side_effect=decline),
-    ):
-        main(scope="local")
-
-    assert confirm_prompts == ["Overwrite existing codex credentials?"]
-    assert existing_auth.read_bytes() == b'{"access_token": "stale"}'
-
-    for role in AgentRole:
-        namespaces = ["main", "issues"] if role == AgentRole.IMPROVE else [""]
-        for namespace in namespaces:
-            base = tmp_path / SESSION_DIR_NAME / role.value
-            role_state_dir = base / namespace if namespace else base
-            auth_file = role_state_dir / "codex" / "auth.json"
-            if auth_file != existing_auth:
-                assert not auth_file.exists()
-
-
-def test_init_both_rerun_seeds_codex_without_disturbing_existing_env(
-    tmp_path, monkeypatch
-):
-    """Re-running init with both after claude-only init seeds codex auth without touching existing .env."""
-    from pycastle.agents.output_protocol import AgentRole
+    """Host Codex auth on disk is ignored by init; no runtime state is scaffolded."""
     from pycastle.commands.init import main
     from pycastle.session.resume import SESSION_DIR_NAME
 
     fake_home = tmp_path / "fakehome"
     (fake_home / ".codex").mkdir(parents=True)
     (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "tok"}')
+    (fake_home / ".codex" / "config.toml").write_text('[model]\nname = "o3"\n')
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
-    # First init: claude-only
+    with (
+        patch("click.prompt", side_effect=["codex", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert not (tmp_path / SESSION_DIR_NAME).exists()
+
+
+def test_init_both_rerun_keeps_existing_env_without_runtime_state(
+    tmp_path, monkeypatch
+):
+    """Re-running init with both preserves .env behavior and still creates no session state."""
+    from pycastle.commands.init import main
+    from pycastle.session.resume import SESSION_DIR_NAME
+
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
     with (
         patch("click.prompt", side_effect=["claude", "my-gh-token", ""]),
         patch("click.confirm", return_value=False),
@@ -1574,9 +1431,6 @@ def test_init_both_rerun_seeds_codex_without_disturbing_existing_env(
         main(scope="local")
 
     env_content = (tmp_path / "pycastle" / ".env").read_text()
-    assert "GH_TOKEN=my-gh-token" in env_content
-
-    # Second init: both — .env should stay unchanged, codex auth should be seeded
     with (
         patch("click.prompt", side_effect=["both", "", ""]),
         patch("click.confirm", return_value=False),
@@ -1584,27 +1438,16 @@ def test_init_both_rerun_seeds_codex_without_disturbing_existing_env(
         main(scope="local")
 
     assert (tmp_path / "pycastle" / ".env").read_text() == env_content
-
-    impl_auth = (
-        tmp_path
-        / SESSION_DIR_NAME
-        / AgentRole.IMPLEMENTER.value
-        / "codex"
-        / "auth.json"
-    )
-    assert impl_auth.exists()
-    assert impl_auth.read_bytes() == b'{"access_token": "tok"}'
+    assert not (tmp_path / SESSION_DIR_NAME).exists()
 
 
-def test_init_both_absent_codex_creds_exits_without_rolling_back_env(
-    tmp_path, monkeypatch, capsys
-):
-    """init with both selected and missing codex creds exits non-zero but keeps any .env written by the claude branch."""
+def test_init_both_without_host_codex_auth_keeps_written_env(tmp_path, monkeypatch):
+    """Selecting both with no host Codex auth keeps the normal .env flow and does not fail."""
     from pycastle.commands.init import main
+    from pycastle.session.resume import SESSION_DIR_NAME
 
     fake_home = tmp_path / "fakehome"
     fake_home.mkdir()
-    # No .codex/auth.json
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
@@ -1612,62 +1455,22 @@ def test_init_both_absent_codex_creds_exits_without_rolling_back_env(
     with (
         patch("click.prompt", side_effect=["both", "my-gh-token", ""]),
         patch("click.confirm", return_value=False),
-        pytest.raises(SystemExit) as exc_info,
     ):
         main(scope="local")
-
-    assert exc_info.value.code != 0
-    captured = capsys.readouterr()
-    assert "codex login" in captured.out
 
     env_file = tmp_path / "pycastle" / ".env"
     assert env_file.exists()
     assert "GH_TOKEN=my-gh-token" in env_file.read_text()
-
-
-def test_init_both_absent_codex_creds_on_rerun_keeps_existing_env(
-    tmp_path, monkeypatch, capsys
-):
-    """Re-running init with both when codex creds missing exits non-zero without rolling back a prior .env write."""
-    from pycastle.commands.init import main
-
-    fake_home = tmp_path / "fakehome"
-    fake_home.mkdir()
-    monkeypatch.setenv("HOME", str(fake_home))
-    monkeypatch.setenv("USERPROFILE", str(fake_home))
-    monkeypatch.chdir(tmp_path)
-
-    # First run: claude-only succeeds, .env written
-    with (
-        patch("click.prompt", side_effect=["claude", "prior-token", ""]),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    env_file = tmp_path / "pycastle" / ".env"
-    assert "GH_TOKEN=prior-token" in env_file.read_text()
-
-    # Second run: both, but no codex creds
-    with (
-        patch("click.prompt", side_effect=["both", "", ""]),
-        patch("click.confirm", return_value=False),
-        pytest.raises(SystemExit) as exc_info,
-    ):
-        main(scope="local")
-
-    assert exc_info.value.code != 0
-    assert "GH_TOKEN=prior-token" in env_file.read_text()
+    assert not (tmp_path / SESSION_DIR_NAME).exists()
 
 
 # ── Issue #790: --refresh picks Dockerfile template by config walk ─────────────
 
 
-def test_init_refresh_claude_only_config_writes_dockerfile_claude(
+def test_init_refresh_does_not_scaffold_dockerfiles_for_claude_config(
     tmp_path, monkeypatch
 ):
-    """`pycastle init --refresh` on a claude-only config creates Dockerfile.claude."""
-    from importlib.resources import files
-
+    """`pycastle init --refresh` leaves Dockerfile scaffolding out entirely."""
     from pycastle.commands.init import main, refresh
 
     monkeypatch.chdir(tmp_path)
@@ -1678,13 +1481,11 @@ def test_init_refresh_claude_only_config_writes_dockerfile_claude(
         main(scope="local")
 
     dockerfile = tmp_path / "pycastle" / "Dockerfile.claude"
-    dockerfile.unlink()
+    dockerfile.write_text("FROM scratch\n")
 
     refresh()
 
-    pkg = files("pycastle").joinpath("defaults")
-    expected = (pkg / "Dockerfile.claude").read_bytes()
-    assert dockerfile.read_bytes() == expected
+    assert dockerfile.read_text() == "FROM scratch\n"
     assert not (tmp_path / "pycastle" / "Dockerfile").exists()
 
 
@@ -1696,12 +1497,10 @@ def test_init_refresh_claude_only_config_writes_dockerfile_claude(
     ],
     ids=["stage_service", "fallback_service"],
 )
-def test_init_refresh_codex_config_writes_dockerfile_codex(
+def test_init_refresh_codex_config_does_not_create_dockerfile(
     tmp_path, monkeypatch, config_snippet
 ):
-    """`pycastle init --refresh` on a codex-referencing config creates Dockerfile.codex."""
-    from importlib.resources import files
-
+    """`pycastle init --refresh` does not scaffold Dockerfiles from config references."""
     from pycastle.commands.init import main, refresh
 
     monkeypatch.chdir(tmp_path)
@@ -1717,19 +1516,15 @@ def test_init_refresh_codex_config_writes_dockerfile_codex(
 
     refresh()
 
-    pkg = files("pycastle").joinpath("defaults")
-    expected = (pkg / "Dockerfile.codex").read_bytes()
     dockerfile = tmp_path / "pycastle" / "Dockerfile.codex"
-    assert dockerfile.read_bytes() == expected
+    assert not dockerfile.exists()
     assert not (tmp_path / "pycastle" / "Dockerfile").exists()
 
 
 def test_init_refresh_adds_newly_referenced_codex_dockerfile_without_overwriting_claude(
     tmp_path, monkeypatch
 ):
-    """Refresh adds Dockerfile.codex and preserves a customized Dockerfile.claude."""
-    from importlib.resources import files
-
+    """Refresh leaves customized Dockerfiles untouched and adds no new ones."""
     from pycastle.commands.init import refresh
 
     monkeypatch.chdir(tmp_path)
@@ -1744,20 +1539,15 @@ def test_init_refresh_adds_newly_referenced_codex_dockerfile_without_overwriting
 
     refresh()
 
-    pkg = files("pycastle").joinpath("defaults")
     assert claude_dockerfile.read_text() == "# customized claude Dockerfile\n"
-    assert (pycastle_dir / "Dockerfile.codex").read_bytes() == (
-        pkg / "Dockerfile.codex"
-    ).read_bytes()
+    assert not (pycastle_dir / "Dockerfile.codex").exists()
     assert not (pycastle_dir / "Dockerfile").exists()
 
 
-def test_init_refresh_legacy_default_service_codex_writes_dockerfile_claude(
+def test_init_refresh_legacy_default_service_codex_creates_no_dockerfiles(
     tmp_path, monkeypatch
 ):
-    """`default_service = "codex"` is ignored for Dockerfile selection."""
-    from importlib.resources import files
-
+    """Legacy `default_service` values do not trigger Dockerfile scaffolding."""
     from pycastle.commands.init import main, refresh
 
     monkeypatch.chdir(tmp_path)
@@ -1772,54 +1562,27 @@ def test_init_refresh_legacy_default_service_codex_writes_dockerfile_claude(
 
     refresh()
 
-    pkg = files("pycastle").joinpath("defaults")
-    expected = (pkg / "Dockerfile.claude").read_bytes()
-    dockerfile = tmp_path / "pycastle" / "Dockerfile.claude"
-    assert dockerfile.read_bytes() == expected
+    assert not (tmp_path / "pycastle" / "Dockerfile.claude").exists()
+    assert not (tmp_path / "pycastle" / "Dockerfile.codex").exists()
     assert not (tmp_path / "pycastle" / "Dockerfile").exists()
 
 
 def test_init_refresh_leaves_existing_role_codex_dirs_unmodified(tmp_path, monkeypatch):
-    """`pycastle init --refresh` leaves existing per-role codex/auth.json untouched."""
-    from pycastle.agents.output_protocol import AgentRole
-    from pycastle.commands.init import main, refresh
+    """`pycastle init --refresh` does not manage or mutate pre-existing runtime state."""
+    from pycastle.commands.init import refresh
     from pycastle.session.resume import SESSION_DIR_NAME
 
-    fake_home = tmp_path / "fakehome"
-    (fake_home / ".codex").mkdir(parents=True)
-    (fake_home / ".codex" / "auth.json").write_bytes(b'{"access_token": "tok"}')
-    monkeypatch.setenv("HOME", str(fake_home))
-    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
-
-    with (
-        patch("click.prompt", side_effect=["codex", "", ""]),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    # Record mtimes and content for all role codex auth files
-    role_auth_files: list[tuple[object, float, bytes]] = []
-    for role in AgentRole:
-        namespaces = ["main", "issues"] if role == AgentRole.IMPROVE else [""]
-        for namespace in namespaces:
-            base = tmp_path / SESSION_DIR_NAME / role.value
-            role_state_dir = base / namespace if namespace else base
-            auth_file = role_state_dir / "codex" / "auth.json"
-            assert auth_file.exists()
-            role_auth_files.append(
-                (auth_file, auth_file.stat().st_mtime, auth_file.read_bytes())
-            )
+    session_file = tmp_path / SESSION_DIR_NAME / "implementer" / "codex" / "auth.json"
+    session_file.parent.mkdir(parents=True)
+    session_file.write_bytes(b'{"access_token": "tok"}')
+    mtime_before = session_file.stat().st_mtime
+    content_before = session_file.read_bytes()
 
     refresh()
 
-    for auth_file, mtime_before, content_before in role_auth_files:
-        assert auth_file.stat().st_mtime == mtime_before, (
-            f"mtime changed for {auth_file}"
-        )
-        assert auth_file.read_bytes() == content_before, (
-            f"content changed for {auth_file}"
-        )
+    assert session_file.stat().st_mtime == mtime_before
+    assert session_file.read_bytes() == content_before
 
 
 def test_init_refresh_codex_config_without_existing_codex_dirs_does_not_create_them(
@@ -1890,7 +1653,9 @@ def test_refresh_reports_created_for_every_copied_file_when_pycastle_dir_empty(
         if p.is_file()
     )
     assert on_disk  # files were actually created
-    assert (tmp_path / "pycastle" / "Dockerfile.claude").exists()
+    assert (tmp_path / "pycastle" / "config.py.example").exists()
+    assert not (tmp_path / "pycastle" / "Dockerfile.claude").exists()
+    assert not (tmp_path / "pycastle" / "Dockerfile.codex").exists()
     assert not (tmp_path / "pycastle" / "Dockerfile").exists()
 
 

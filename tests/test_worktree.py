@@ -9,9 +9,15 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.config import Config
-from pycastle.errors import AgentFailedError, WorktreeError, WorktreeTimeoutError
+from pycastle.errors import (
+    AgentFailedError,
+    HardAgentError,
+    TransientAgentError,
+    UsageLimitError,
+    WorktreeError,
+    WorktreeTimeoutError,
+)
 from pycastle.services import GitCommandError, GitService, GitTimeoutError
-from pycastle.errors import HardAgentError, TransientAgentError, UsageLimitError
 from pycastle.infrastructure.worktree import (
     transient_worktree,
     managed_worktree,
@@ -833,6 +839,29 @@ def test_transient_worktree_propagates_cleanup_error(detached_deps):
     asyncio.run(_run())
 
 
+def test_transient_worktree_marks_preserved_failure_on_agent_failed_error(
+    detached_deps,
+):
+    marker = (
+        detached_deps.repo_root
+        / ".pycastle"
+        / ".worktrees"
+        / "sandbox"
+        / ".pycastle-session"
+        / ".preserved-failure"
+    )
+
+    async def _run():
+        with pytest.raises(AgentFailedError):
+            async with transient_worktree("sandbox", sha="abc123", deps=detached_deps):
+                raise AgentFailedError("planner", Path("sandbox"))
+
+    asyncio.run(_run())
+
+    detached_deps.git_svc.remove_worktree.assert_not_called()
+    assert marker.is_file()
+
+
 # ── managed_worktree ──────────────────────────────────────────────────────────
 
 
@@ -1121,6 +1150,15 @@ def test_managed_worktree_preserves_worktree_on_usage_limit_error(branch_deps):
 
     branch_deps.git_svc.remove_worktree.assert_not_called()
     branch_deps.git_svc.delete_branch.assert_not_called()
+    marker = (
+        branch_deps.repo_root
+        / ".pycastle"
+        / ".worktrees"
+        / "issue-42"
+        / ".pycastle-session"
+        / ".preserved-failure"
+    )
+    assert marker.is_file()
 
 
 def test_managed_worktree_preserves_worktree_on_agent_failed_error(branch_deps):
@@ -1271,6 +1309,23 @@ def test_prune_orphan_worktrees_default_pycastle_dir_still_works(tmp_path):
     assert not orphan.exists()
 
 
+def test_prune_orphan_worktrees_preserves_unregistered_failure_worktree(tmp_path):
+    from pycastle.infrastructure.worktree import prune_orphan_worktrees
+
+    cfg = Config(pycastle_dir="pycastle")
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+    preserved = worktrees_dir / "issue-99"
+    preserved.mkdir()
+    marker = preserved / ".pycastle-session" / ".preserved-failure"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("")
+
+    prune_orphan_worktrees(tmp_path, cfg=cfg, git_service=_make_prune_git_svc([]))
+
+    assert preserved.exists()
+
+
 def test_prune_orphan_worktrees_removes_worktrees_parent_when_empty_custom_dir(
     tmp_path,
 ):
@@ -1386,6 +1441,22 @@ def test_prune_orphan_worktrees_does_not_tear_down_worktree_with_role_session(
 ):
     (registered_orphan.wt_path / ".pycastle-session" / "implementer").mkdir(
         parents=True
+    )
+
+    registered_orphan.sweep()
+
+    assert registered_orphan.wt_path in registered_orphan.svc.list_worktrees(
+        registered_orphan.repo
+    )
+    assert registered_orphan.wt_path.exists()
+
+
+def test_prune_orphan_worktrees_preserves_failure_worktree_without_role_session(
+    registered_orphan,
+):
+    (registered_orphan.wt_path / ".pycastle-session").mkdir(parents=True)
+    (registered_orphan.wt_path / ".pycastle-session" / ".preserved-failure").write_text(
+        ""
     )
 
     registered_orphan.sweep()
@@ -1594,6 +1665,7 @@ def test_ephemeral_sandbox_rebuilds_at_sha_when_stale_reusable_worktree_exists(r
 
     # Plant a role dir so is_worktree_reusable returns True
     (wt_dir / ".pycastle-session" / "merger").mkdir(parents=True)
+    (wt_dir / ".pycastle-session" / ".preserved-failure").write_text("")
 
     assert sha_stale != sha_main
 
