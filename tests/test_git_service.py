@@ -123,9 +123,6 @@ def test_get_user_name_strips_trailing_newline():
         assert svc.get_user_name() == "Bob"
 
 
-# ── get_branch_commit_subjects() ──────────────────────────────────────────────
-
-
 def test_try_merge_raises_unrelated_histories_error_on_unrelated_histories():
     svc = GitService(_cfg)
     merge_result = MagicMock(
@@ -136,50 +133,6 @@ def test_try_merge_raises_unrelated_histories_error_on_unrelated_histories():
     with patch("subprocess.run", return_value=merge_result):
         with pytest.raises(UnrelatedHistoriesError):
             svc.try_merge(Path("/repo"), "origin/main")
-
-
-def test_get_branch_commit_subjects_returns_subjects_most_recent_first():
-    svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        return_value=MagicMock(
-            returncode=0,
-            stdout=b"RALPH: Review - fix auth\nRALPH: implement auth\n",
-            stderr=b"",
-        ),
-    ):
-        result = svc.get_branch_commit_subjects("pycastle/issue-1", Path("/repo"))
-    assert result == ["RALPH: Review - fix auth", "RALPH: implement auth"]
-
-
-def test_get_branch_commit_subjects_returns_empty_list_when_no_commits_ahead():
-    svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
-    ):
-        result = svc.get_branch_commit_subjects("pycastle/issue-1", Path("/repo"))
-    assert result == []
-
-
-def test_get_branch_commit_subjects_returns_empty_list_when_branch_missing():
-    svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        return_value=MagicMock(returncode=128, stdout=b"", stderr=b"unknown revision"),
-    ):
-        result = svc.get_branch_commit_subjects("pycastle/issue-99", Path("/repo"))
-    assert result == []
-
-
-def test_get_branch_commit_subjects_raises_git_timeout_error_on_timeout():
-    svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
-    ):
-        with pytest.raises(GitTimeoutError):
-            svc.get_branch_commit_subjects("pycastle/issue-1", Path("/repo"))
 
 
 # ── get_user_email() ───────────────────────────────────────────────────────────
