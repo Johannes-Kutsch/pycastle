@@ -26,6 +26,7 @@ from pycastle.services.agent_service import (
     AssistantTurn,
     PromptTokens,
     Result,
+    UnsupportedTokens,
     UsageLimit,
 )
 
@@ -1072,6 +1073,21 @@ def test_process_stream_from_events_calls_on_tokens():
         on_tokens=token_counts.append,
     )
     assert token_counts == [42_000]
+
+
+def test_process_stream_from_events_ignores_unsupported_tokens():
+    token_counts: list[int] = []
+    events = [
+        UnsupportedTokens(count=42_000, source="codex.turn.completed.usage"),
+        AssistantTurn(text="<commit_message>done</commit_message>"),
+    ]
+    process_stream_from_events(
+        iter(events),
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+        on_tokens=token_counts.append,
+    )
+    assert token_counts == []
 
 
 def test_process_stream_from_events_on_turn_called_for_each_assistant_turn():
