@@ -95,6 +95,9 @@ class ServiceRegistry:
             if name == "codex":
                 lines.append("Codex auth: local auth available")
                 continue
+            if name == "opencode":
+                lines.append("OpenCode auth: API key configured")
+                continue
             if not hasattr(svc, "account_names"):
                 continue
             names: list[str] = svc.account_names()  # type: ignore[attr-defined]
