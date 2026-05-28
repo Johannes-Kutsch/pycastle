@@ -1154,6 +1154,43 @@ def test_agent_runner_run_preflight_passes_checks_that_require_installed_tools(
     assert result == []
 
 
+def test_agent_runner_run_preflight_preserves_agent_user_console_script_path(
+    tmp_path,
+):
+    setup_installed_console_script = {"value": False}
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def _exec_run(cmd, **kwargs):
+        command_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+        env = kwargs.get("environment") or {}
+        if "git config" in command_str:
+            return MagicMock(exit_code=0, output=(b"", b""))
+        if "pip install" in command_str:
+            setup_installed_console_script["value"] = True
+            return MagicMock(exit_code=0, output=(b"", b""))
+        if "demo-tool --version" in command_str:
+            if not setup_installed_console_script["value"]:
+                return MagicMock(
+                    exit_code=127, output=(b"bash: demo-tool: command not found", b"")
+                )
+            if "/home/agent/.local/bin" not in env.get("PATH", ""):
+                return MagicMock(
+                    exit_code=127, output=(b"bash: demo-tool: command not found", b"")
+                )
+            return MagicMock(exit_code=0, output=(b"demo-tool 1.0.0", b""))
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = _exec_run
+    cfg = _make_cfg(tmp_path, preflight_checks=(("demo-tool", "demo-tool --version"),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == []
+
+
 # ── AgentRunner: run_preflight status_display ────────────────────────────────
 
 
