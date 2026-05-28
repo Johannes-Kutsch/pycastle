@@ -561,13 +561,16 @@ def test_renderer_loads_both_standards_keys(prompts_dir):
 
 
 def test_renderer_returns_empty_string_for_missing_standards_file(prompts_dir):
-    standards_dir = prompts_dir / "coding-standards"
+    custom_prompts_dir = prompts_dir.parent / "custom-prompts"
+    (custom_prompts_dir / "improve").mkdir(parents=True)
+    standards_dir = custom_prompts_dir / "coding-standards"
+    standards_dir.mkdir()
     (standards_dir / "design.md").write_text("design content")
     # implementation.md intentionally absent
-    (prompts_dir / "improve" / "01-scan.md").write_text(
+    (custom_prompts_dir / "improve" / "01-scan.md").write_text(
         "{{DESIGN_STANDARDS}}|{{IMPLEMENTATION_STANDARDS}}"
     )
-    cfg = _cfg_for_prompts_dir(prompts_dir)
+    cfg = _cfg_for_prompts_dir(custom_prompts_dir)
     renderer = PromptRenderer(cfg)
 
     result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
@@ -576,7 +579,7 @@ def test_renderer_returns_empty_string_for_missing_standards_file(prompts_dir):
 
 
 def test_renderer_returns_all_empty_standards_when_dir_absent(tmp_path):
-    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir = tmp_path / "custom-prompts"
     (prompts_dir / "improve").mkdir(parents=True)
     (prompts_dir / "improve" / "01-scan.md").write_text(
         "{{DESIGN_STANDARDS}}|{{IMPLEMENTATION_STANDARDS}}"
@@ -693,8 +696,10 @@ def test_renderer_aborts_on_broken_local_shared_framing_override(tmp_path, monke
 
 
 def test_renderer_aborts_when_issue_tracker_referenced_but_absent(prompts_dir):
-    (prompts_dir / "improve" / "01-scan.md").write_text("{{ISSUE_TRACKER}}")
-    cfg = _cfg_for_prompts_dir(prompts_dir)
+    custom_prompts_dir = prompts_dir.parent / "custom-prompts"
+    (custom_prompts_dir / "improve").mkdir(parents=True)
+    (custom_prompts_dir / "improve" / "01-scan.md").write_text("{{ISSUE_TRACKER}}")
+    cfg = _cfg_for_prompts_dir(custom_prompts_dir)
 
     with pytest.raises(PromptRenderError, match="ISSUE_TRACKER"):
         PromptRenderer(cfg)
@@ -727,6 +732,21 @@ def test_renderer_uses_bundled_prompt_when_default_local_prompt_is_absent(
     assert result == shipped_result
 
 
+def test_renderer_uses_bundled_prompt_when_absolute_local_prompts_dir_is_absent(
+    tmp_path,
+):
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    renderer = PromptRenderer(_cfg_for_prompts_dir(prompts_dir))
+    shipped_renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+
+    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
+    shipped_result = _run(
+        shipped_renderer.render(PromptTemplate.RESUME, {}, _noop_exec)
+    )
+
+    assert result == shipped_result
+
+
 def test_renderer_prefers_local_override_over_bundled_prompt(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
@@ -737,6 +757,50 @@ def test_renderer_prefers_local_override_over_bundled_prompt(tmp_path, monkeypat
     result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
 
     assert result == "local resume prompt"
+
+
+def test_renderer_prefers_absolute_local_role_prompt_override(tmp_path):
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "_resume-prompt.md").write_text("absolute local resume prompt")
+    renderer = PromptRenderer(_cfg_for_prompts_dir(prompts_dir))
+
+    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
+
+    assert result == "absolute local resume prompt"
+
+
+def test_renderer_falls_back_per_file_for_partial_absolute_local_role_tree(tmp_path):
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    (prompts_dir / "implement").mkdir(parents=True)
+    (prompts_dir / "implement" / "behavior.md").write_text(
+        "local behavior prompt {{ISSUE_NUMBER}}"
+    )
+    renderer = PromptRenderer(_cfg_for_prompts_dir(prompts_dir))
+
+    behavior_result = _run(
+        renderer.render(
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
+            {
+                "ISSUE_NUMBER": "1",
+                "ISSUE_TITLE": "title",
+                "ISSUE_BODY": "",
+                "ISSUE_COMMENTS": "",
+                "BRANCH": "pycastle/issue-1",
+                "INTERRUPTED_WORK": "",
+            },
+            _noop_exec,
+        )
+    )
+    resume_result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
+    shipped_resume = _run(
+        PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR)).render(
+            PromptTemplate.RESUME, {}, _noop_exec
+        )
+    )
+
+    assert behavior_result == "local behavior prompt 1"
+    assert resume_result == shipped_resume
 
 
 def test_renderer_mixes_local_and_bundled_shared_prompt_files(tmp_path, monkeypatch):

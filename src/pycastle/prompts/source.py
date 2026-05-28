@@ -6,6 +6,13 @@ _DEFAULT_LOCAL_PROMPTS_DIR = Path("pycastle/prompts")
 _BUNDLED_PROMPTS_DIR = Path(__file__).resolve().parents[1] / "defaults" / "prompts"
 
 
+def _is_local_prompts_dir(path: Path) -> bool:
+    return (
+        path.parts[-len(_DEFAULT_LOCAL_PROMPTS_DIR.parts) :]
+        == _DEFAULT_LOCAL_PROMPTS_DIR.parts
+    )
+
+
 class PromptSource:
     def __init__(
         self,
@@ -19,7 +26,7 @@ class PromptSource:
     @classmethod
     def for_prompts_dir(cls, prompts_dir: Path) -> PromptSource:
         bundled_dir = (
-            _BUNDLED_PROMPTS_DIR if prompts_dir == _DEFAULT_LOCAL_PROMPTS_DIR else None
+            _BUNDLED_PROMPTS_DIR if _is_local_prompts_dir(prompts_dir) else None
         )
         return cls(prompts_dir, bundled_dir=bundled_dir)
 
