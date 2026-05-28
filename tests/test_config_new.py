@@ -147,17 +147,11 @@ def test_resolve_dockerfile_ignores_legacy_per_service_overrides(tmp_path):
     assert resolve_dockerfile(pycastle_dir) == bundled_default
 
 
-def test_resolve_dockerfile_accepts_legacy_service_argument_order(tmp_path):
+def test_resolve_dockerfile_rejects_legacy_service_argument_order(tmp_path):
     pycastle_dir = tmp_path / "pycastle"
-    bundled_default = (
-        Path(__file__).resolve().parent.parent
-        / "src"
-        / "pycastle"
-        / "defaults"
-        / "Dockerfile"
-    )
 
-    assert resolve_dockerfile("codex", pycastle_dir) == bundled_default
+    with pytest.raises(TypeError, match="expects only a pycastle_dir Path"):
+        resolve_dockerfile("codex", pycastle_dir)
 
 
 def test_resolve_dockerfile_accepts_string_pycastle_dir(tmp_path):
@@ -186,7 +180,7 @@ def test_resolve_dockerfile_uses_local_universal_override_for_string_pycastle_di
 
 
 def test_resolve_dockerfile_requires_path_for_legacy_two_string_argument_order():
-    with pytest.raises(TypeError, match="expects a pycastle_dir Path"):
+    with pytest.raises(TypeError, match="expects only a pycastle_dir Path"):
         resolve_dockerfile("codex", "pycastle")
 
 
