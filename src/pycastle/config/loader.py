@@ -156,6 +156,9 @@ class Config:
     repo_root: Path = dataclasses.field(
         default_factory=Path.cwd, init=False, repr=False, compare=False
     )
+    _global_logs_dir_parent: bool = dataclasses.field(
+        default=False, init=False, repr=False, compare=False
+    )
 
 
 def referenced_services(cfg: Config) -> set[str]:
@@ -239,9 +242,12 @@ def describe_config_layers(
 
 
 def resolve_logs_dir(cfg: Config) -> Path:
-    if cfg.logs_dir.is_absolute():
-        return cfg.logs_dir
-    return (cfg.repo_root / cfg.logs_dir).resolve()
+    logs_dir = cfg.logs_dir
+    if not logs_dir.is_absolute():
+        logs_dir = (cfg.repo_root / logs_dir).resolve()
+    if cfg._global_logs_dir_parent:
+        return logs_dir / derive_docker_image_name(cfg.repo_root.name)
+    return logs_dir
 
 
 def load_config(
@@ -288,16 +294,17 @@ def load_config(
         cfg = dataclasses.replace(
             cfg, docker_image_name=derive_docker_image_name(root.name)
         )
-    if (
-        global_logs_dir_set
-        and not local_logs_dir_set
-        and "logs_dir" not in (overrides or {})
-    ):
-        cfg = dataclasses.replace(cfg, logs_dir=cfg.logs_dir / cfg.docker_image_name)
     _validate_bug_report_repo(cfg)
     _validate_improve_max(cfg)
     _validate_improve_mode(cfg)
     object.__setattr__(cfg, "repo_root", root)
+    object.__setattr__(
+        cfg,
+        "_global_logs_dir_parent",
+        global_logs_dir_set
+        and not local_logs_dir_set
+        and "logs_dir" not in (overrides or {}),
+    )
     return cfg
 
 

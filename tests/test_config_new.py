@@ -3,7 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from pycastle.config import Config, StageOverride, load_config, resolve_dockerfile
+from pycastle.config import (
+    Config,
+    StageOverride,
+    load_config,
+    resolve_dockerfile,
+    resolve_logs_dir,
+)
 from pycastle.config.loader import (
     derive_docker_image_name,
     describe_config_layers,
@@ -597,7 +603,13 @@ def test_load_config_global_removed_path_fields_do_not_block_allowed_settings(
     assert cfg.prompts_dir == Path("pycastle/prompts")
     assert cfg.worktrees_dir == Path("worktrees")
     assert cfg.env_file == Path("pycastle/.env")
-    assert cfg.logs_dir == Path("global-logs") / derive_docker_image_name(tmp_path.name)
+    assert cfg.logs_dir == Path("global-logs")
+    assert (
+        resolve_logs_dir(cfg)
+        == (
+            tmp_path / "global-logs" / derive_docker_image_name(tmp_path.name)
+        ).resolve()
+    )
 
 
 def test_load_config_global_logs_dir_appends_sanitized_project_name(
@@ -614,7 +626,30 @@ def test_load_config_global_logs_dir_appends_sanitized_project_name(
 
     cfg = load_config(repo_root=project_dir, global_dir=global_dir)
 
-    assert cfg.logs_dir == Path("shared-logs") / "my-project"
+    assert cfg.logs_dir == Path("shared-logs")
+    assert (
+        resolve_logs_dir(cfg) == (project_dir / "shared-logs" / "my-project").resolve()
+    )
+
+
+def test_load_config_global_logs_dir_keeps_configured_parent_and_resolves_effective_dir(
+    tmp_path, monkeypatch
+):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text(
+        "from pathlib import Path\nlogs_dir = Path('shared-logs')\n"
+    )
+    project_dir = tmp_path / "My Project"
+    project_dir.mkdir()
+    monkeypatch.chdir(project_dir)
+
+    cfg = load_config(repo_root=project_dir, global_dir=global_dir)
+
+    assert cfg.logs_dir == Path("shared-logs")
+    assert (
+        resolve_logs_dir(cfg) == (project_dir / "shared-logs" / "my-project").resolve()
+    )
 
 
 def test_load_config_global_absolute_logs_dir_appends_sanitized_project_name(
@@ -632,7 +667,47 @@ def test_load_config_global_absolute_logs_dir_appends_sanitized_project_name(
 
     cfg = load_config(repo_root=project_dir, global_dir=global_dir)
 
-    assert cfg.logs_dir == shared_logs / "my-project"
+    assert cfg.logs_dir == shared_logs
+    assert resolve_logs_dir(cfg) == shared_logs / "my-project"
+
+
+def test_load_config_global_logs_dir_uses_sanitized_project_name_not_docker_image_name(
+    tmp_path, monkeypatch
+):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text(
+        "from pathlib import Path\nlogs_dir = Path('shared-logs')\n"
+    )
+    project_dir = tmp_path / "My Project"
+    project_dir.mkdir()
+    (project_dir / "pycastle").mkdir()
+    (project_dir / "pycastle" / "config.py").write_text(
+        "docker_image_name = 'custom-image'\n"
+    )
+    monkeypatch.chdir(project_dir)
+
+    cfg = load_config(repo_root=project_dir, global_dir=global_dir)
+
+    assert cfg.docker_image_name == "custom-image"
+    assert (
+        resolve_logs_dir(cfg) == (project_dir / "shared-logs" / "my-project").resolve()
+    )
+
+
+def test_load_config_local_logs_dir_uses_local_value_directly(tmp_path, monkeypatch):
+    project_dir = tmp_path / "My Project"
+    project_dir.mkdir()
+    (project_dir / "pycastle").mkdir()
+    (project_dir / "pycastle" / "config.py").write_text(
+        "from pathlib import Path\nlogs_dir = Path('project-logs')\n"
+    )
+    monkeypatch.chdir(project_dir)
+
+    cfg = load_config(repo_root=project_dir)
+
+    assert cfg.logs_dir == Path("project-logs")
+    assert resolve_logs_dir(cfg) == (project_dir / "project-logs").resolve()
 
 
 def test_load_config_local_logs_dir_overrides_global_without_project_suffix(
@@ -654,6 +729,7 @@ def test_load_config_local_logs_dir_overrides_global_without_project_suffix(
     cfg = load_config(repo_root=project_dir, global_dir=global_dir)
 
     assert cfg.logs_dir == Path("project-logs")
+    assert resolve_logs_dir(cfg) == (project_dir / "project-logs").resolve()
 
 
 def test_load_config_silently_ignores_legacy_dockerfile_in_global_file(tmp_path):
