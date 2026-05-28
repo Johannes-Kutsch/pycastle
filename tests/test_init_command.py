@@ -66,18 +66,69 @@ def test_dockerfile_codex_installs_gh_from_github_apt():
     assert "apt-get install" in content and " gh" in content
 
 
+def test_init_claude_service_seeds_only_claude_dockerfile(tmp_path, monkeypatch):
+    """Selecting claude seeds only pycastle/Dockerfile.claude."""
+    from importlib.resources import files
+
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", side_effect=["claude", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    pycastle_dir = tmp_path / "pycastle"
+    pkg = files("pycastle").joinpath("defaults")
+    assert (pycastle_dir / "Dockerfile.claude").read_bytes() == (
+        pkg / "Dockerfile.claude"
+    ).read_bytes()
+    assert not (pycastle_dir / "Dockerfile.codex").exists()
+    assert not (pycastle_dir / "Dockerfile").exists()
+
+
+def test_init_both_services_seeds_both_per_service_dockerfiles(tmp_path, monkeypatch):
+    """Selecting both seeds both per-service Dockerfiles."""
+    from importlib.resources import files
+
+    from pycastle.commands.init import main
+
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_bytes(b"{}")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", side_effect=["both", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    pycastle_dir = tmp_path / "pycastle"
+    pkg = files("pycastle").joinpath("defaults")
+    assert (pycastle_dir / "Dockerfile.claude").read_bytes() == (
+        pkg / "Dockerfile.claude"
+    ).read_bytes()
+    assert (pycastle_dir / "Dockerfile.codex").read_bytes() == (
+        pkg / "Dockerfile.codex"
+    ).read_bytes()
+    assert not (pycastle_dir / "Dockerfile").exists()
+
+
 @pytest.mark.parametrize(
-    ("service", "expected_template"),
+    ("service", "expected_files"),
     [
-        ("claude", "Dockerfile.claude"),
-        ("codex", "Dockerfile.codex"),
-        ("both", "Dockerfile.codex"),
+        ("claude", ["Dockerfile.claude"]),
+        ("codex", ["Dockerfile.codex"]),
+        ("both", ["Dockerfile.claude", "Dockerfile.codex"]),
     ],
 )
 def test_init_service_selection_copies_matching_dockerfile(
-    tmp_path, monkeypatch, service, expected_template
+    tmp_path, monkeypatch, service, expected_files
 ):
-    """Service answer determines which bundled Dockerfile is copied to pycastle/Dockerfile."""
+    """Service answer determines which per-service Dockerfiles are seeded."""
     from importlib.resources import files
 
     from pycastle.commands.init import main
@@ -95,19 +146,27 @@ def test_init_service_selection_copies_matching_dockerfile(
         main(scope="local")
 
     pkg = files("pycastle").joinpath("defaults")
-    expected = (pkg / expected_template).read_bytes()
-    actual = (tmp_path / "pycastle" / "Dockerfile").read_bytes()
-    assert actual == expected
+    pycastle_dir = tmp_path / "pycastle"
+    for dockerfile_name in expected_files:
+        assert (pycastle_dir / dockerfile_name).read_bytes() == (
+            pkg / dockerfile_name
+        ).read_bytes()
+    all_dockerfiles = {
+        path.name
+        for path in pycastle_dir.iterdir()
+        if path.name.startswith("Dockerfile")
+    }
+    assert all_dockerfiles == set(expected_files)
 
 
-def test_init_does_not_overwrite_existing_dockerfile(tmp_path, monkeypatch):
-    """init must not overwrite an existing pycastle/Dockerfile."""
+def test_init_does_not_overwrite_existing_per_service_dockerfile(tmp_path, monkeypatch):
+    """init must not overwrite an existing pycastle/Dockerfile.<service>."""
     from pycastle.commands.init import main
 
     monkeypatch.chdir(tmp_path)
-    dockerfile = tmp_path / "pycastle" / "Dockerfile"
+    dockerfile = tmp_path / "pycastle" / "Dockerfile.claude"
     dockerfile.parent.mkdir(parents=True)
-    dockerfile.write_text("# user-owned Dockerfile\n")
+    dockerfile.write_text("# user-owned Claude Dockerfile\n")
 
     with (
         patch("click.prompt", side_effect=["claude", "", ""]),
@@ -115,7 +174,7 @@ def test_init_does_not_overwrite_existing_dockerfile(tmp_path, monkeypatch):
     ):
         main(scope="local")
 
-    assert dockerfile.read_text() == "# user-owned Dockerfile\n"
+    assert dockerfile.read_text() == "# user-owned Claude Dockerfile\n"
 
 
 def test_init_asks_service_selection_as_first_prompt(tmp_path, monkeypatch):
@@ -156,7 +215,8 @@ def test_init_creates_all_scaffold_files(tmp_path, monkeypatch):
     scaffold = tmp_path / "pycastle"
     assert (scaffold / "config.py").exists()
     assert (scaffold / ".env").exists()
-    assert (scaffold / "Dockerfile").exists()
+    assert (scaffold / "Dockerfile.claude").exists()
+    assert not (scaffold / "Dockerfile").exists()
     assert (scaffold / ".gitignore").exists()
     assert (scaffold / "setup" / "cron.sh").exists()
     assert (scaffold / "setup" / "cron-install.sh").exists()
@@ -464,7 +524,8 @@ def test_init_global_keeps_project_shaped_files_local(tmp_path, monkeypatch):
         main(scope="global")
 
     local = tmp_path / "pycastle"
-    assert (local / "Dockerfile").exists()
+    assert (local / "Dockerfile.claude").exists()
+    assert not (local / "Dockerfile").exists()
     assert (local / ".gitignore").exists()
     assert (local / "prompts" / "plan-prompt.md").exists()
 
@@ -1594,7 +1655,7 @@ def test_init_both_absent_codex_creds_on_rerun_keeps_existing_env(
 def test_init_refresh_claude_only_config_writes_dockerfile_claude(
     tmp_path, monkeypatch
 ):
-    """`pycastle init --refresh` on a claude-only config overwrites Dockerfile with Dockerfile.claude."""
+    """`pycastle init --refresh` on a claude-only config creates Dockerfile.claude."""
     from importlib.resources import files
 
     from pycastle.commands.init import main, refresh
@@ -1606,15 +1667,15 @@ def test_init_refresh_claude_only_config_writes_dockerfile_claude(
     ):
         main(scope="local")
 
-    # Corrupt the Dockerfile so we can detect it was overwritten
-    dockerfile = tmp_path / "pycastle" / "Dockerfile"
-    dockerfile.write_text("STALE DOCKERFILE\n")
+    dockerfile = tmp_path / "pycastle" / "Dockerfile.claude"
+    dockerfile.unlink()
 
     refresh()
 
     pkg = files("pycastle").joinpath("defaults")
     expected = (pkg / "Dockerfile.claude").read_bytes()
     assert dockerfile.read_bytes() == expected
+    assert not (tmp_path / "pycastle" / "Dockerfile").exists()
 
 
 @pytest.mark.parametrize(
@@ -1628,7 +1689,7 @@ def test_init_refresh_claude_only_config_writes_dockerfile_claude(
 def test_init_refresh_codex_config_writes_dockerfile_codex(
     tmp_path, monkeypatch, config_snippet
 ):
-    """`pycastle init --refresh` on a codex-referencing config writes Dockerfile.codex."""
+    """`pycastle init --refresh` on a codex-referencing config creates Dockerfile.codex."""
     from importlib.resources import files
 
     from pycastle.commands.init import main, refresh
@@ -1648,8 +1709,37 @@ def test_init_refresh_codex_config_writes_dockerfile_codex(
 
     pkg = files("pycastle").joinpath("defaults")
     expected = (pkg / "Dockerfile.codex").read_bytes()
-    dockerfile = tmp_path / "pycastle" / "Dockerfile"
+    dockerfile = tmp_path / "pycastle" / "Dockerfile.codex"
     assert dockerfile.read_bytes() == expected
+    assert not (tmp_path / "pycastle" / "Dockerfile").exists()
+
+
+def test_init_refresh_adds_newly_referenced_codex_dockerfile_without_overwriting_claude(
+    tmp_path, monkeypatch
+):
+    """Refresh adds Dockerfile.codex and preserves a customized Dockerfile.claude."""
+    from importlib.resources import files
+
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    claude_dockerfile = pycastle_dir / "Dockerfile.claude"
+    claude_dockerfile.write_text("# customized claude Dockerfile\n")
+    (pycastle_dir / "config.py").write_text(
+        "from pycastle import StageOverride\n"
+        'implement_override = StageOverride(service="codex")\n'
+    )
+
+    refresh()
+
+    pkg = files("pycastle").joinpath("defaults")
+    assert claude_dockerfile.read_text() == "# customized claude Dockerfile\n"
+    assert (pycastle_dir / "Dockerfile.codex").read_bytes() == (
+        pkg / "Dockerfile.codex"
+    ).read_bytes()
+    assert not (pycastle_dir / "Dockerfile").exists()
 
 
 def test_init_refresh_legacy_default_service_codex_writes_dockerfile_claude(
@@ -1674,8 +1764,9 @@ def test_init_refresh_legacy_default_service_codex_writes_dockerfile_claude(
 
     pkg = files("pycastle").joinpath("defaults")
     expected = (pkg / "Dockerfile.claude").read_bytes()
-    dockerfile = tmp_path / "pycastle" / "Dockerfile"
+    dockerfile = tmp_path / "pycastle" / "Dockerfile.claude"
     assert dockerfile.read_bytes() == expected
+    assert not (tmp_path / "pycastle" / "Dockerfile").exists()
 
 
 def test_init_refresh_leaves_existing_role_codex_dirs_unmodified(tmp_path, monkeypatch):
@@ -1789,7 +1880,8 @@ def test_refresh_reports_created_for_every_copied_file_when_pycastle_dir_empty(
         if p.is_file()
     )
     assert on_disk  # files were actually created
-    assert (tmp_path / "pycastle" / "Dockerfile").exists()
+    assert (tmp_path / "pycastle" / "Dockerfile.claude").exists()
+    assert not (tmp_path / "pycastle" / "Dockerfile").exists()
 
 
 def test_refresh_reports_unchanged_when_file_byte_equal(tmp_path, monkeypatch, capsys):
@@ -1973,8 +2065,10 @@ def test_refresh_does_not_print_config_py_or_env_even_when_present(
     assert ".env" not in out
 
 
-def test_refresh_shows_dockerfile_only_when_overwrote(tmp_path, monkeypatch, capsys):
-    """Dockerfile appears in stdout only when its content was modified."""
+def test_refresh_preserves_custom_per_service_dockerfile_without_output(
+    tmp_path, monkeypatch, capsys
+):
+    """Customized per-service Dockerfiles are preserved and omitted from stdout."""
     from pycastle.commands.init import refresh
 
     monkeypatch.chdir(tmp_path)
@@ -1983,8 +2077,9 @@ def test_refresh_shows_dockerfile_only_when_overwrote(tmp_path, monkeypatch, cap
     refresh()
     capsys.readouterr()
 
-    (pycastle_dir / "Dockerfile").write_bytes(b"FROM scratch\n")
+    (pycastle_dir / "Dockerfile.claude").write_bytes(b"FROM scratch\n")
 
     refresh()
     out = capsys.readouterr().out
-    assert "overwrote Dockerfile" in out
+    assert "Dockerfile.claude" not in out
+    assert (pycastle_dir / "Dockerfile.claude").read_bytes() == b"FROM scratch\n"

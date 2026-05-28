@@ -270,14 +270,14 @@ def refresh() -> None:
         _copy_template(rel, target, pkg)
         report.append((verb, rel))
 
-    referenced = referenced_services(load_config())
-    dockerfile_template = (
-        "Dockerfile.codex" if "codex" in referenced else "Dockerfile.claude"
-    )
-    dockerfile_target = project_dir / "Dockerfile"
-    dockerfile_verb = _refresh_status(dockerfile_template, dockerfile_target, pkg)
-    _copy_template(dockerfile_template, dockerfile_target, pkg)
-    report.append((dockerfile_verb, "Dockerfile"))
+    for service in sorted(referenced_services(load_config())):
+        dockerfile_name = f"Dockerfile.{service}"
+        dockerfile_target = project_dir / dockerfile_name
+        if dockerfile_target.exists():
+            report.append(("preserved", dockerfile_name))
+            continue
+        _copy_template(dockerfile_name, dockerfile_target, pkg)
+        report.append(("created", dockerfile_name))
 
     for path in ("config.py", ".env"):
         if (project_dir / path).exists():
@@ -338,6 +338,8 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         "Which agent services do you want to use? [claude/codex/both]",
         default="claude",
     )
+    if service not in {"claude", "codex", "both"}:
+        service = "claude"
 
     if scope is None:
         use_global = click.confirm(
@@ -376,12 +378,12 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     if pycastle_home.is_dir():
         _write_config_example(pycastle_home)
 
-    dockerfile_target = project_dir / "Dockerfile"
-    if not dockerfile_target.exists():
-        dockerfile_template = (
-            "Dockerfile.claude" if service == "claude" else "Dockerfile.codex"
-        )
-        _copy_template(dockerfile_template, dockerfile_target, pkg)
+    selected_services = ["claude", "codex"] if service == "both" else [service]
+    for selected_service in selected_services:
+        dockerfile_name = f"Dockerfile.{selected_service}"
+        dockerfile_target = project_dir / dockerfile_name
+        if not dockerfile_target.exists():
+            _copy_template(dockerfile_name, dockerfile_target, pkg)
 
     config_file = scoped_dir / "config.py"
     if config_file.exists():
