@@ -155,6 +155,23 @@ def _fill_fields(issues: list[dict]) -> list[dict]:
     ]
 
 
+def _planning_blocker_summary(
+    slice_malformed: list[dict], bad_body: list[dict]
+) -> str | None:
+    blocker_parts: list[str] = []
+    if slice_malformed:
+        noun = "label" if len(slice_malformed) == 1 else "labels"
+        blocker_parts.append(
+            f"{len(slice_malformed)} missing exactly one slice-mode {noun}"
+        )
+    if bad_body:
+        noun = "body is" if len(bad_body) == 1 else "bodies are"
+        blocker_parts.append(f"{len(bad_body)} {noun} below the minimum length floor")
+    if not blocker_parts:
+        return None
+    return "Planning blockers: " + "; ".join(blocker_parts) + "."
+
+
 async def planning_phase(
     deps: _PlanningDeps,
     open_issues: list[dict],
@@ -241,18 +258,20 @@ async def planning_phase(
                     f"Planner returned unexpected output type: {type(output).__name__}"
                 )
             if not output.issues:
+                blocker_summary = _planning_blocker_summary(slice_malformed, bad_body)
                 blocked_lines = [
                     f"  #{b['number']} blocked by #{b['blocked_by']}: {b['reason']}"
                     for b in output.blocked
                 ]
-                if blocked_lines:
-                    row.close(
-                        "\n".join(
-                            ["All ready-for-agent issues are blocked:"] + blocked_lines
-                        )
-                    )
-                else:
-                    row.close("All ready-for-agent issues are blocked.")
+                lines = [
+                    "All ready-for-agent issues are blocked:"
+                    if blocked_lines
+                    else "All ready-for-agent issues are blocked."
+                ]
+                if blocker_summary:
+                    lines.append(blocker_summary)
+                lines.extend(blocked_lines)
+                row.close("\n".join(lines))
                 return AllBlocked(blocked=output.blocked)
 
             plan = PlanReady(

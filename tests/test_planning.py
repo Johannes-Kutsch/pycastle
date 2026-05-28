@@ -931,6 +931,164 @@ def test_planning_phase_single_issue_with_short_body_excluded_from_short_circuit
     assert isinstance(result, AllBlocked)
 
 
+def test_planning_phase_all_blocked_summary_reports_missing_slice_mode_labels(
+    tmp_path, git_svc
+):
+    recording = RecordingStatusDisplay()
+    malformed_a = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["ready-for-agent"],
+    }
+    malformed_b = {
+        "number": 2,
+        "title": "B",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["ready-for-agent"],
+    }
+    fake = FakeAgentRunner([PlannerOutput(issues=[], blocked=[])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
+    asyncio.run(planning_phase(deps, [malformed_a, malformed_b], []))
+
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must be removed"
+    assert "missing exactly one slice-mode label" in plan_removes[0][2]
+
+
+def test_planning_phase_all_blocked_summary_reports_too_short_bodies(tmp_path, git_svc):
+    recording = RecordingStatusDisplay()
+    short_a = {
+        "number": 1,
+        "title": "A",
+        "body": "short",
+        "comments": [],
+        "labels": ["ready-for-agent", "behavior-slice"],
+    }
+    short_b = {
+        "number": 2,
+        "title": "B",
+        "body": "tiny",
+        "comments": [],
+        "labels": ["ready-for-agent", "docs-slice"],
+    }
+    fake = FakeAgentRunner([PlannerOutput(issues=[], blocked=[])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
+    asyncio.run(planning_phase(deps, [short_a, short_b], []))
+
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must be removed"
+    assert "bodies are below the minimum length floor" in plan_removes[0][2]
+
+
+def test_planning_phase_all_blocked_summary_uses_singular_short_body_wording(
+    tmp_path, git_svc
+):
+    recording = RecordingStatusDisplay()
+    short_body = {
+        "number": 1,
+        "title": "A",
+        "body": "short",
+        "comments": [],
+        "labels": ["ready-for-agent", "behavior-slice"],
+    }
+    fake = FakeAgentRunner([PlannerOutput(issues=[], blocked=[])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
+    asyncio.run(planning_phase(deps, [short_body], []))
+
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must be removed"
+    assert (
+        "Planning blockers: 1 body is below the minimum length floor."
+        in plan_removes[0][2]
+    )
+
+
+def test_planning_phase_all_blocked_summary_separates_blocker_classes_with_counts(
+    tmp_path, git_svc
+):
+    recording = RecordingStatusDisplay()
+    missing_slice = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["ready-for-agent"],
+    }
+    short_body_a = {
+        "number": 2,
+        "title": "B",
+        "body": "short",
+        "comments": [],
+        "labels": ["ready-for-agent", "behavior-slice"],
+    }
+    short_body_b = {
+        "number": 3,
+        "title": "C",
+        "body": "tiny",
+        "comments": [],
+        "labels": ["ready-for-agent", "docs-slice"],
+    }
+    fake = FakeAgentRunner([PlannerOutput(issues=[], blocked=[])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
+    asyncio.run(planning_phase(deps, [missing_slice, short_body_a, short_body_b], []))
+
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must be removed"
+    assert (
+        "Planning blockers: 1 missing exactly one slice-mode label; "
+        "2 bodies are below the minimum length floor."
+    ) in plan_removes[0][2]
+
+
+def test_planning_phase_all_blocked_summary_precedes_planner_blocked_lines(
+    tmp_path, git_svc
+):
+    recording = RecordingStatusDisplay()
+    missing_slice = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["ready-for-agent"],
+    }
+    blocked_issue = {
+        "number": 2,
+        "title": "B",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["ready-for-agent", "behavior-slice"],
+    }
+    blocked_issue_two = {
+        "number": 3,
+        "title": "C",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["ready-for-agent", "docs-slice"],
+    }
+    blocked = [{"number": 2, "blocked_by": 9, "reason": "depends on #9"}]
+    fake = FakeAgentRunner([PlannerOutput(issues=[], blocked=blocked)])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
+    asyncio.run(
+        planning_phase(deps, [missing_slice, blocked_issue, blocked_issue_two], [])
+    )
+
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must be removed"
+    assert (
+        plan_removes[0][2] == "All ready-for-agent issues are blocked:\n"
+        "Planning blockers: 1 missing exactly one slice-mode label.\n"
+        "  #2 blocked by #9: depends on #9"
+    )
+
+
 # ── planning_phase: in-flight sha=None ─────────────────────────────────────
 
 
