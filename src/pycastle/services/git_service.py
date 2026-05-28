@@ -234,6 +234,31 @@ class GitService(_SubprocessService):
             stderr=stderr,
         )
 
+    def start_merge(self, repo_path: Path, branch: str) -> bool:
+        result = self._run(
+            ["git", "merge", "--no-edit", branch],
+            cwd=repo_path,
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            return True
+        stdout = self._decode(result.stdout)
+        stderr = self._decode(result.stderr)
+        output = "\n".join(part for part in (stdout, stderr) if part)
+        if "refusing to merge unrelated histories" in output.lower():
+            raise UnrelatedHistoriesError(
+                f"git merge --no-edit {branch!r} failed",
+                returncode=result.returncode,
+                stderr=output,
+            )
+        if "conflict" in output.lower():
+            return False
+        raise GitCommandError(
+            f"git merge --no-edit {branch!r} failed",
+            returncode=result.returncode,
+            stderr=output,
+        )
+
     def count_commits_ahead(self, repo_path: Path, remote_ref: str) -> int:
         result = self._run_or_raise(
             ["git", "rev-list", "--count", f"{remote_ref}..HEAD"],
