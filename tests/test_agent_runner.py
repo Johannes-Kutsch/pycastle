@@ -63,6 +63,10 @@ _MERGER_COMPLETE_STREAM = [
     b'{"type": "result", "result": "<promise>COMPLETE</promise>", "is_error": false}\n'
 ]
 
+_MERGER_FAILED_STREAM = [
+    b'{"type": "result", "result": "<promise>FAILED</promise>", "is_error": false}\n'
+]
+
 _CODEX_COMPLETE_STREAM = [
     b'{"type":"item.completed","item":{"type":"agent_message",'
     b'"content":"<commit_message>done</commit_message>"}}\n'
@@ -902,6 +906,31 @@ def test_agent_runner_run_removes_status_row_when_setup_fails(tmp_path):
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
+                    status_display=display,
+                )
+            )
+        )
+
+    assert ("register", "Test", "agent", "started", "Setup") in display.calls
+    assert ("remove", "Test", "failed", "error") in display.calls
+
+
+def test_agent_runner_run_marks_failed_output_as_failed_in_status_row(tmp_path):
+    mock_client = _make_docker_client(_MERGER_FAILED_STREAM)
+    runner = AgentRunner(
+        {}, _make_cfg(tmp_path), _make_git_service(), docker_client=mock_client
+    )
+    display = RecordingStatusDisplay()
+
+    with pytest.raises(AgentFailedError):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Test",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.MERGER,
                     status_display=display,
                 )
             )
