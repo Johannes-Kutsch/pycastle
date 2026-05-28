@@ -1570,7 +1570,7 @@ def test_init_refresh_overwrites_stale_prompt_file(tmp_path, monkeypatch):
         "prompts/_issue-tracker.md",
         "prompts/coding-standards/implementation.md",
     ],
-    ids=["shared_fragment", "nested_prompt_fragment"],
+    ids=["shared_prompt_fragment", "nested_prompt_fragment"],
 )
 def test_init_and_refresh_preserve_existing_prompt_fragments(
     tmp_path, monkeypatch, rel_path
