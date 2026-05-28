@@ -571,6 +571,28 @@ def test_get_safe_sha_halts_with_guidance_when_unrelated_histories_and_local_com
     assert "fix: something" in output
 
 
+def test_get_safe_sha_reports_commit_count_when_unrelated_histories_has_no_subjects(
+    tmp_path, git_svc, github_svc, capsys
+):
+    """When local-only subjects are unavailable, the recovery guidance falls back
+    to the local commit count."""
+    git_svc.pull_with_merge_fallback.side_effect = _unrelated_histories_error()
+    git_svc.get_current_branch.return_value = "main"
+    git_svc.count_commits_ahead.return_value = 2
+    git_svc.get_local_only_commit_subjects.return_value = []
+
+    fake = FakeAgentRunner([], preflight_responses=[])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(UnrelatedHistoriesError):
+        asyncio.run(cache.get_safe_sha(deps))
+
+    output = capsys.readouterr().out
+    assert "Local-only commits:" in output
+    assert "(2 commit(s))" in output
+
+
 def test_get_safe_sha_does_not_spawn_divergence_resolver_on_unrelated_histories(
     tmp_path, git_svc, github_svc
 ):
