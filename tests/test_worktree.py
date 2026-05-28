@@ -1286,6 +1286,23 @@ def test_prune_orphan_worktrees_default_pycastle_dir_still_works(tmp_path):
     assert not orphan.exists()
 
 
+def test_prune_orphan_worktrees_preserves_unregistered_failure_worktree(tmp_path):
+    from pycastle.infrastructure.worktree import prune_orphan_worktrees
+
+    cfg = Config(pycastle_dir="pycastle")
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+    preserved = worktrees_dir / "issue-99"
+    preserved.mkdir()
+    marker = preserved / ".pycastle-session" / ".preserved-failure"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("")
+
+    prune_orphan_worktrees(tmp_path, cfg=cfg, git_service=_make_prune_git_svc([]))
+
+    assert preserved.exists()
+
+
 def test_prune_orphan_worktrees_removes_worktrees_parent_when_empty_custom_dir(
     tmp_path,
 ):
