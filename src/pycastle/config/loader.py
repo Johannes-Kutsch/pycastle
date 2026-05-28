@@ -96,23 +96,51 @@ class Config:
     bug_report_repo: str = "Johannes-Kutsch/pycastle"
     timeout_retries: int = 1
     plan_override: StageOverride = dataclasses.field(
-        default_factory=lambda: StageOverride(service="claude", effort="low")
+        default_factory=lambda: StageOverride(
+            service="codex",
+            model="gpt-5.4-mini",
+            effort="low",
+            fallback=StageOverride(service="claude", model="haiku", effort="low"),
+        )
     )
     implement_override: StageOverride = dataclasses.field(
-        default_factory=lambda: StageOverride(service="claude", effort="medium")
+        default_factory=lambda: StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+            fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
+        )
     )
     review_override: StageOverride = dataclasses.field(
-        default_factory=lambda: StageOverride(service="claude", effort="medium")
+        default_factory=lambda: StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+            fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
+        )
     )
     merge_override: StageOverride = dataclasses.field(
-        default_factory=lambda: StageOverride(service="claude", effort="high")
+        default_factory=lambda: StageOverride(
+            service="codex",
+            model="gpt-5.5",
+            effort="medium",
+            fallback=StageOverride(service="claude", model="opus", effort="high"),
+        )
     )
     preflight_issue_override: StageOverride = dataclasses.field(
-        default_factory=lambda: StageOverride(service="claude", effort="high")
+        default_factory=lambda: StageOverride(
+            service="codex",
+            model="gpt-5.5",
+            effort="medium",
+            fallback=StageOverride(service="claude", model="opus", effort="high"),
+        )
     )
     improve_override: StageOverride = dataclasses.field(
         default_factory=lambda: StageOverride(
-            service="claude", model="opus", effort="high"
+            service="codex",
+            model="gpt-5.5",
+            effort="high",
+            fallback=StageOverride(service="claude", model="opus", effort="high"),
         )
     )
     improve_max: int | None = None

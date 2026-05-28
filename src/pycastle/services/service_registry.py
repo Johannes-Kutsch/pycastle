@@ -17,8 +17,12 @@ class ServiceRegistry:
 
     def resolve(self, override: StageOverride, now: datetime) -> StageOverride:
         for node in iter_stage_chain(override):
+            if not node.service:
+                return node
             svc = self._services.get(node.service)
-            if svc is None or svc.is_available(now=now):
+            if svc is None:
+                continue
+            if svc.is_available(now=now):
                 return node
         return override
 

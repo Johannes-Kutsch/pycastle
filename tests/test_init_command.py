@@ -378,7 +378,7 @@ def test_init_writes_commented_docker_image_name_hint_from_cwd(tmp_path, monkeyp
 
 
 def test_init_config_contains_stage_override_import_and_defaults(tmp_path, monkeypatch):
-    """Scaffolded config.py must import StageOverride and define all four stage overrides."""
+    """Scaffolded config.py must import StageOverride and define the default stage chains."""
     from pycastle.commands.init import main
 
     monkeypatch.chdir(tmp_path)
@@ -390,22 +390,81 @@ def test_init_config_contains_stage_override_import_and_defaults(tmp_path, monke
 
     content = (tmp_path / "pycastle" / "config.py").read_text()
     assert "from pycastle import StageOverride" in content
+    assert 'service="codex"' in content
+    assert 'model="gpt-5.4-mini"' in content
     assert (
-        'plan_override = StageOverride(service="claude", model="haiku", effort="low")'
+        'fallback=StageOverride(service="claude", model="haiku", effort="low")'
         in content
     )
-    assert (
-        'implement_override = StageOverride(service="claude", '
-        'model="sonnet", effort="medium")' in content
-    )
-    assert (
-        'review_override = StageOverride(service="claude", model="opus", '
-        'effort="medium")' in content
-    )
-    assert (
-        'merge_override = StageOverride(service="claude", model="opus", '
-        'effort="high")' in content
-    )
+    assert "implement_override = StageOverride(" in content
+    assert "review_override = StageOverride(" in content
+    assert "preflight_issue_override = StageOverride(" in content
+    assert "improve_override = StageOverride(" in content
+
+
+def test_init_scaffolds_universal_stage_priority_chains_into_config_files(
+    tmp_path, monkeypatch
+):
+    from pycastle import StageOverride
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main()
+
+    config_content = (tmp_path / "pycastle" / "config.py").read_text()
+    example_content = (tmp_path / "pycastle" / "config.py.example").read_text()
+
+    config_ns: dict[str, object] = {}
+    example_ns: dict[str, object] = {}
+    exec(config_content, config_ns)
+    exec(example_content, example_ns)
+
+    expected = {
+        "plan_override": StageOverride(
+            service="codex",
+            model="gpt-5.4-mini",
+            effort="low",
+            fallback=StageOverride(service="claude", model="haiku", effort="low"),
+        ),
+        "implement_override": StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+            fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
+        ),
+        "review_override": StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+            fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
+        ),
+        "merge_override": StageOverride(
+            service="codex",
+            model="gpt-5.5",
+            effort="medium",
+            fallback=StageOverride(service="claude", model="opus", effort="high"),
+        ),
+        "preflight_issue_override": StageOverride(
+            service="codex",
+            model="gpt-5.5",
+            effort="medium",
+            fallback=StageOverride(service="claude", model="opus", effort="high"),
+        ),
+        "improve_override": StageOverride(
+            service="codex",
+            model="gpt-5.5",
+            effort="high",
+            fallback=StageOverride(service="claude", model="opus", effort="high"),
+        ),
+    }
+
+    for key, value in expected.items():
+        assert config_ns[key] == value
+        assert example_ns[key] == value
 
 
 # ── Cycle 6: load_config from scaffolded project returns correct StageOverride values ──
@@ -427,17 +486,161 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
 
     cfg = load_config(repo_root=tmp_path)
     assert cfg.plan_override == StageOverride(
-        service="claude", model="haiku", effort="low"
+        service="codex",
+        model="gpt-5.4-mini",
+        effort="low",
+        fallback=StageOverride(service="claude", model="haiku", effort="low"),
     )
     assert cfg.implement_override == StageOverride(
-        service="claude", model="sonnet", effort="medium"
+        service="codex",
+        model="gpt-5.4",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
     )
     assert cfg.review_override == StageOverride(
-        service="claude", model="opus", effort="medium"
+        service="claude",
+        model="sonnet",
+        effort="medium",
+        fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
     )
     assert cfg.merge_override == StageOverride(
-        service="claude", model="opus", effort="high"
+        service="codex",
+        model="gpt-5.5",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="opus", effort="high"),
     )
+    assert cfg.preflight_issue_override == StageOverride(
+        service="codex",
+        model="gpt-5.5",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="opus", effort="high"),
+    )
+    assert cfg.improve_override == StageOverride(
+        service="codex",
+        model="gpt-5.5",
+        effort="high",
+        fallback=StageOverride(service="claude", model="opus", effort="high"),
+    )
+
+
+@pytest.mark.parametrize("service", ["claude", "codex", "both"])
+def test_init_service_selection_writes_same_stage_chains(
+    tmp_path, monkeypatch, service
+):
+    from pycastle import StageOverride
+    from pycastle.config import load_config
+    from pycastle.commands.init import main
+
+    workspace = tmp_path / service
+    workspace.mkdir()
+    monkeypatch.chdir(workspace)
+
+    prompt_values = [service, ""]
+    if service != "codex":
+        prompt_values.append("")
+
+    with (
+        patch("click.prompt", side_effect=prompt_values),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    cfg = load_config(repo_root=workspace)
+    assert cfg.plan_override == StageOverride(
+        service="codex",
+        model="gpt-5.4-mini",
+        effort="low",
+        fallback=StageOverride(service="claude", model="haiku", effort="low"),
+    )
+    assert cfg.implement_override == StageOverride(
+        service="codex",
+        model="gpt-5.4",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
+    )
+    assert cfg.review_override == StageOverride(
+        service="claude",
+        model="sonnet",
+        effort="medium",
+        fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
+    )
+    assert cfg.merge_override == StageOverride(
+        service="codex",
+        model="gpt-5.5",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="opus", effort="high"),
+    )
+    assert cfg.preflight_issue_override == StageOverride(
+        service="codex",
+        model="gpt-5.5",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="opus", effort="high"),
+    )
+    assert cfg.improve_override == StageOverride(
+        service="codex",
+        model="gpt-5.5",
+        effort="high",
+        fallback=StageOverride(service="claude", model="opus", effort="high"),
+    )
+
+
+def test_init_service_selection_changes_only_credential_collection(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.init import main
+
+    def strip_docker_image_hint(content: str) -> str:
+        return "\n".join(
+            line for line in content.splitlines() if "docker_image_name" not in line
+        )
+
+    def run_init(service: str) -> tuple[list[str], str, str]:
+        workspace = tmp_path / service
+        workspace.mkdir()
+        monkeypatch.chdir(workspace)
+        prompt_calls: list[str] = []
+
+        def capture_prompt(message: str, *args: object, **kwargs: object) -> str:
+            prompt_calls.append(message)
+            if "agent services" in message.lower():
+                return service
+            return ""
+
+        with (
+            patch("click.prompt", side_effect=capture_prompt),
+            patch("click.confirm", return_value=False),
+        ):
+            main(scope="local")
+
+        pycastle_dir = workspace / "pycastle"
+        return (
+            prompt_calls,
+            (pycastle_dir / "config.py").read_text(),
+            (pycastle_dir / "config.py.example").read_text(),
+        )
+
+    claude_prompts, claude_config, claude_example = run_init("claude")
+    codex_prompts, codex_config, codex_example = run_init("codex")
+    both_prompts, both_config, both_example = run_init("both")
+
+    assert any("GitHub token" in prompt for prompt in claude_prompts)
+    assert any("Claude OAuth token" in prompt for prompt in claude_prompts)
+    assert any("GitHub token" in prompt for prompt in codex_prompts)
+    assert not any("Claude OAuth token" in prompt for prompt in codex_prompts)
+    assert any("GitHub token" in prompt for prompt in both_prompts)
+    assert any("Claude OAuth token" in prompt for prompt in both_prompts)
+
+    assert (
+        strip_docker_image_hint(claude_config)
+        == strip_docker_image_hint(codex_config)
+        == strip_docker_image_hint(both_config)
+    )
+    assert claude_example == codex_example == both_example
+    for service in ("claude", "codex", "both"):
+        pycastle_dir = tmp_path / service / "pycastle"
+        assert not (pycastle_dir / "Dockerfile").exists()
+        assert not (pycastle_dir / "Dockerfile.claude").exists()
+        assert not (pycastle_dir / "Dockerfile.codex").exists()
 
 
 # ── Cycle 4: init does not overwrite other existing files ─────────────────────

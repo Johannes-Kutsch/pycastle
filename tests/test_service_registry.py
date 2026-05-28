@@ -76,8 +76,19 @@ def test_resolve_does_not_treat_empty_service_as_default() -> None:
 
 
 def test_resolve_returns_primary_when_service_not_registered() -> None:
+    fallback_svc = _make_svc(available=True)
+    registry = ServiceRegistry(services={"claude": fallback_svc})
+    fallback_override = StageOverride(service="claude")
+    override = StageOverride(service="codex", fallback=fallback_override)
+
+    result = registry.resolve(override, _now())
+
+    assert result is fallback_override
+
+
+def test_resolve_returns_primary_when_no_stage_candidate_is_registered() -> None:
     registry = ServiceRegistry(services={})
-    override = StageOverride(service="claude")
+    override = StageOverride(service="codex", fallback=StageOverride(service="claude"))
 
     result = registry.resolve(override, _now())
 
