@@ -102,8 +102,7 @@ def test_renderer_uses_fixed_project_local_prompt_overrides_when_config_is_stale
     (prompts_dir / "implement" / "behavior.md").write_text(
         "Fixed local prompt override"
     )
-    stale_cfg = Config(prompts_dir=Path("legacy-prompts"))
-    renderer = PromptRenderer(stale_cfg)
+    renderer = PromptRenderer(Config())
 
     result = _run(
         renderer.render(
@@ -127,7 +126,7 @@ def test_renderer_uses_bundled_prompt_when_config_is_stale_and_local_prompt_is_a
     tmp_path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
-    renderer = PromptRenderer(Config(prompts_dir=Path("legacy-prompts")))
+    renderer = PromptRenderer(Config())
     shipped_renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
 
     result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))

@@ -73,13 +73,7 @@ class Config:
     behavior_slice_label: str = "behavior-slice"
     docs_slice_label: str = "docs-slice"
     needs_slice_type_label: str = "needs-slice-type"
-    pycastle_dir: Path = dataclasses.field(default_factory=lambda: Path("pycastle"))
-    prompts_dir: Path = dataclasses.field(
-        default_factory=lambda: Path("pycastle/prompts")
-    )
     logs_dir: Path = dataclasses.field(default_factory=lambda: Path("pycastle/logs"))
-    worktrees_dir: Path = dataclasses.field(default_factory=lambda: Path("worktrees"))
-    env_file: Path = dataclasses.field(default_factory=lambda: Path("pycastle/.env"))
     preflight_checks: tuple[tuple[str, str], ...] = dataclasses.field(
         default_factory=lambda: (
             ("ruff", "ruff check ."),

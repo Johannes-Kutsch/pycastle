@@ -238,6 +238,15 @@ def test_config_has_bug_report_repo_default():
     assert Config().bug_report_repo == "Johannes-Kutsch/pycastle"
 
 
+def test_config_public_surface_does_not_expose_removed_project_local_path_fields():
+    cfg = Config()
+
+    for name in ("pycastle_dir", "prompts_dir", "worktrees_dir", "env_file"):
+        assert not hasattr(cfg, name)
+
+    assert cfg.logs_dir == Path("pycastle/logs")
+
+
 @pytest.mark.parametrize("bad", ["justonename", "a/b/c", "", "/x", "x/"])
 def test_load_config_rejects_malformed_bug_report_repo(tmp_path, bad):
     (tmp_path / "pycastle").mkdir()
@@ -583,7 +592,7 @@ def test_load_config_global_removed_pycastle_dir_is_ignored(tmp_path):
     )
     cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
     assert cfg.max_parallel == 5
-    assert cfg.pycastle_dir == Path("pycastle")
+    assert not hasattr(cfg, "pycastle_dir")
 
 
 def test_load_config_global_removed_path_fields_do_not_block_allowed_settings(
@@ -600,9 +609,9 @@ def test_load_config_global_removed_path_fields_do_not_block_allowed_settings(
     )
     monkeypatch.chdir(tmp_path)
     cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
-    assert cfg.prompts_dir == Path("pycastle/prompts")
-    assert cfg.worktrees_dir == Path("worktrees")
-    assert cfg.env_file == Path("pycastle/.env")
+    assert not hasattr(cfg, "prompts_dir")
+    assert not hasattr(cfg, "worktrees_dir")
+    assert not hasattr(cfg, "env_file")
     assert cfg.logs_dir == Path("global-logs")
     assert (
         resolve_logs_dir(cfg)
@@ -792,10 +801,10 @@ def test_load_config_ignores_removed_project_local_path_keys_in_all_layers(tmp_p
 
     assert cfg.max_parallel == 7
     assert cfg.bug_label == "local-bug"
-    assert cfg.pycastle_dir == Path("pycastle")
-    assert cfg.prompts_dir == Path("pycastle/prompts")
-    assert cfg.worktrees_dir == Path("worktrees")
-    assert cfg.env_file == Path("pycastle/.env")
+    assert not hasattr(cfg, "pycastle_dir")
+    assert not hasattr(cfg, "prompts_dir")
+    assert not hasattr(cfg, "worktrees_dir")
+    assert not hasattr(cfg, "env_file")
     assert not hasattr(cfg, "dockerfile")
 
 
@@ -808,9 +817,9 @@ def test_load_config_local_removed_path_fields_are_ignored(tmp_path):
         "env_file = Path('custom.env')\n"
     )
     cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
-    assert cfg.prompts_dir == Path("pycastle/prompts")
-    assert cfg.worktrees_dir == Path("worktrees")
-    assert cfg.env_file == Path("pycastle/.env")
+    assert not hasattr(cfg, "prompts_dir")
+    assert not hasattr(cfg, "worktrees_dir")
+    assert not hasattr(cfg, "env_file")
 
 
 def test_load_config_pycastle_home_env_resolves_global_dir(tmp_path, monkeypatch):
