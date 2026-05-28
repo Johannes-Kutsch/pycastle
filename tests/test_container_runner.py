@@ -11,7 +11,7 @@ import pytest
 
 import pycastle._time as _time_module
 from pycastle.agents.output_protocol import AgentRole, CommitMessageOutput
-from pycastle.config import Config
+from pycastle.config import Config, load_config
 from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.infrastructure.docker_session import DockerSession
 from pycastle.errors import AgentTimeoutError, DockerError, UsageLimitError
@@ -357,6 +357,23 @@ def test_work_uses_custom_logs_dir_from_cfg(tmp_path):
     custom_logs = tmp_path / "my_logs"
     runner, _ = _make_runner(name="my-task", cfg=Config(logs_dir=custom_logs))
     assert runner.log_path.parent == custom_logs
+
+
+def test_container_runner_global_logs_dir_uses_project_root_effective_path(tmp_path):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text(
+        "from pathlib import Path\nlogs_dir = Path('shared-logs')\n"
+    )
+    project_dir = tmp_path / "My Project"
+    project_dir.mkdir()
+
+    cfg = load_config(repo_root=project_dir, global_dir=global_dir)
+    runner, _ = _make_runner(name="my-task", cfg=cfg)
+
+    expected_dir = project_dir / "shared-logs" / "my-project"
+    assert runner.log_path.parent.resolve() == expected_dir.resolve()
+    assert runner.log_path.exists()
 
 
 def _result_line(content: str) -> bytes:

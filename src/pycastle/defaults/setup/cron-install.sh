@@ -22,9 +22,8 @@ fi
 
 LOG_DIR=$("$PYTHON" -c "
 from pathlib import Path
-from pycastle.config.loader import load_config
-p = load_config().logs_dir
-print(p if p.is_absolute() else (Path.cwd() / p).resolve())
+from pycastle.config.loader import load_config, resolve_logs_dir
+print(resolve_logs_dir(load_config()))
 ") || { echo "Error: failed to resolve logs_dir from pycastle config" >&2; exit 1; }
 
 mkdir -p "$LOG_DIR"

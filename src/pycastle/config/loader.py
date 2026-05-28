@@ -20,6 +20,7 @@ __all__ = [
     "describe_config_layers",
     "image_name_for",
     "load_config",
+    "resolve_logs_dir",
     "resolve_dockerfile",
     "resolve_global_dir",
 ]
@@ -152,6 +153,9 @@ class Config:
     improve_max: int | None = None
     improve_mode: Literal["until_sleep", "endless"] | None = None
     diagnose_on_failure: bool = True
+    repo_root: Path = dataclasses.field(
+        default_factory=Path.cwd, init=False, repr=False, compare=False
+    )
 
 
 def referenced_services(cfg: Config) -> set[str]:
@@ -241,13 +245,20 @@ def describe_config_layers(
     return "Config: " + " + ".join(parts)
 
 
+def resolve_logs_dir(cfg: Config) -> Path:
+    if cfg.logs_dir.is_absolute():
+        return cfg.logs_dir
+    return (cfg.repo_root / cfg.logs_dir).resolve()
+
+
 def load_config(
     repo_root: Path | None = None,
     overrides: dict[str, Any] | None = None,
     global_dir: Path | None = None,
 ) -> Config:
     kwargs: dict[str, Any] = {}
-    valid_fields = {f.name for f in dataclasses.fields(Config)}
+    valid_fields = {f.name for f in dataclasses.fields(Config) if f.init}
+    global_logs_dir_set = False
 
     resolved_global = resolve_global_dir(global_dir, os.environ)
     global_file = resolved_global / "config.py"
@@ -262,12 +273,16 @@ def load_config(
                 f"offending field(s): {forbidden}",
                 invalid_value=", ".join(forbidden),
             )
+        global_logs_dir_set = "logs_dir" in global_kwargs
         kwargs.update(global_kwargs)
 
     root = repo_root if repo_root is not None else Path.cwd()
     local = root / "pycastle" / "config.py"
+    local_logs_dir_set = False
     if local.exists():
-        kwargs.update(_read_config_file(local, "_pycastle_local_config", valid_fields))
+        local_kwargs = _read_config_file(local, "_pycastle_local_config", valid_fields)
+        local_logs_dir_set = "logs_dir" in local_kwargs
+        kwargs.update(local_kwargs)
 
     if overrides is not None:
         for k, v in overrides.items():
@@ -278,11 +293,18 @@ def load_config(
     cfg = Config(**kwargs)
     if cfg.docker_image_name == "":
         cfg = dataclasses.replace(
-            cfg, docker_image_name=derive_docker_image_name(Path.cwd().name)
+            cfg, docker_image_name=derive_docker_image_name(root.name)
         )
+    if (
+        global_logs_dir_set
+        and not local_logs_dir_set
+        and "logs_dir" not in (overrides or {})
+    ):
+        cfg = dataclasses.replace(cfg, logs_dir=cfg.logs_dir / cfg.docker_image_name)
     _validate_bug_report_repo(cfg)
     _validate_improve_max(cfg)
     _validate_improve_mode(cfg)
+    object.__setattr__(cfg, "repo_root", root)
     return cfg
 
 

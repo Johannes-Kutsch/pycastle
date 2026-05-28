@@ -255,11 +255,11 @@ def test_init_writes_local_config_example_with_all_supported_settings(
     ):
         assert f"--- {section} ---" in content
 
-    expected_fields = {
-        field.name
-        for field in dataclasses.fields(Config)
-        if field.name not in {"auto_file_bugs", "bug_report_repo"}
-    }
+        expected_fields = {
+            field.name
+            for field in dataclasses.fields(Config)
+            if field.init and field.name not in {"auto_file_bugs", "bug_report_repo"}
+        }
     for field_name in sorted(expected_fields):
         assert re.search(rf"(^|\W){re.escape(field_name)}\s*=", content), field_name
 

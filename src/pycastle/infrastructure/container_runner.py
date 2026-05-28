@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..agents.output_protocol import AgentOutput, AgentRole, process_stream_from_events
-from ..config import Config
+from ..config import Config, resolve_logs_dir
 from .docker_session import DockerSession
 from ..errors import AgentTimeoutError, DockerError
 from .preflight_tool_classifier import (
@@ -39,6 +39,7 @@ class ContainerRunner:
         self.model = model
         self.effort = effort
         self._cfg = cfg
+        self._logs_dir = resolve_logs_dir(cfg)
         self._service = service
         self._status_display = (
             status_display if status_display is not None else PlainStatusDisplay()
@@ -48,10 +49,10 @@ class ContainerRunner:
         self._log_path = self._reserve_log_path(slug, ts)
 
     def _reserve_log_path(self, slug: str, ts: str) -> Path:
-        self._cfg.logs_dir.mkdir(parents=True, exist_ok=True)
+        self._logs_dir.mkdir(parents=True, exist_ok=True)
         stem = f"{slug}-{ts}"
         for suffix in ["", *[f"-{n}" for n in range(2, 10_000)]]:
-            path = self._cfg.logs_dir / f"{stem}{suffix}.log"
+            path = self._logs_dir / f"{stem}{suffix}.log"
             try:
                 with open(path, "xb"):
                     pass
@@ -65,7 +66,7 @@ class ContainerRunner:
         return self._log_path
 
     async def setup(self, git_name: str, git_email: str, work_body: str = "") -> None:
-        self._cfg.logs_dir.mkdir(parents=True, exist_ok=True)
+        self._logs_dir.mkdir(parents=True, exist_ok=True)
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._session.__enter__)
         await loop.run_in_executor(

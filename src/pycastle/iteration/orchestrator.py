@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..agents.runner import AgentRunner, AgentRunnerProtocol
-from ..config import load_config
+from ..config import load_config, resolve_logs_dir
 from . import (
     AbortedAgentFailure,
     AbortedHardApiError,
@@ -237,7 +237,7 @@ async def run(
                 github_svc=github_service,
                 agent_runner=_agent_runner,
                 cfg=_iter_cfg,
-                logger=FileLogger(_iter_cfg.logs_dir),
+                logger=FileLogger(resolve_logs_dir(_iter_cfg)),
                 status_display=status_display,  # type: ignore[arg-type]
                 service_registry=service_registry,
                 improve_mode=improve_mode,
@@ -405,6 +405,6 @@ async def run(
 
         status_display.print("", "All done.")  # type: ignore[union-attr]
     finally:
-        maintain_logs(cfg.logs_dir, 10_000, 30)
+        maintain_logs(resolve_logs_dir(cfg), 10_000, 30)
         if _owned_display is not None:
             _owned_display.stop()

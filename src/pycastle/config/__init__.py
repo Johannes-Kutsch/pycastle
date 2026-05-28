@@ -6,6 +6,7 @@ from pycastle.config.loader import (
     Config,
     image_name_for,
     load_config,
+    resolve_logs_dir,
     resolve_dockerfile,
     resolve_global_dir,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "image_name_for",
     "load_config",
     "load_env",
+    "resolve_logs_dir",
     "resolve_dockerfile",
     "resolve_global_dir",
 ]

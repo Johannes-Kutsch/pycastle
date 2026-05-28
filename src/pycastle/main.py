@@ -14,6 +14,7 @@ from .config import (
     StageOverride,
     load_config,
     load_env,
+    resolve_logs_dir,
     resolve_global_dir,
 )
 from .config.loader import describe_config_layers, referenced_services
@@ -486,12 +487,7 @@ def cron_cmd(no_improve: bool) -> None:
         _refresh()
         _do_run(cfg, no_improve=no_improve, improve_mode_flag=None)
 
-    logs_dir = (
-        cfg.logs_dir
-        if cfg.logs_dir.is_absolute()
-        else (Path.cwd() / cfg.logs_dir).resolve()
-    )
-    maintain_logs(logs_dir, max_lines=10000, retention_days=30)
+    maintain_logs(resolve_logs_dir(cfg), max_lines=10000, retention_days=30)
 
 
 if __name__ == "__main__":

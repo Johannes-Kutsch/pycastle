@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from pycastle.config.loader import derive_docker_image_name
+
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32", reason="bash/crontab not available on Windows"
 )
@@ -105,6 +107,27 @@ def test_install_creates_logs_dir(cron_env):
     _run(cron_env["install_sh"], cron_env["env"])
 
     assert (cron_env["project_dir"] / "pycastle" / "logs").is_dir()
+
+
+def test_install_global_logs_dir_appends_sanitized_project_name(cron_env):
+    global_dir = cron_env["project_dir"] / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text(
+        "from pathlib import Path\nlogs_dir = Path('shared-logs')\n"
+    )
+    cron_env["env"]["PYCASTLE_HOME"] = str(global_dir)
+
+    result = _run(cron_env["install_sh"], cron_env["env"])
+
+    assert result.returncode == 0, result.stderr
+    expected_log = (
+        cron_env["project_dir"]
+        / "shared-logs"
+        / derive_docker_image_name(cron_env["project_dir"].name)
+        / "cron.log"
+    )
+    assert f">> {expected_log} 2>&1" in cron_env["data_file"].read_text()
+    assert expected_log.parent.is_dir()
 
 
 def test_install_marker_remains_end_of_line(cron_env):
