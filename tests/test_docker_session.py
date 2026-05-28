@@ -362,6 +362,33 @@ def test_docker_session_exec_simple_returns_stdout_on_success():
     assert result == "hello\n"
 
 
+def test_docker_session_exec_simple_preserves_container_path_override():
+    """exec_simple keeps caller PATH while exposing agent user console scripts."""
+    mock_client = _mock_client(exit_code=0, stdout=b"demo-tool 1.0.0\n")
+    session = DockerSession(
+        volumes={},
+        container_env={"PATH": "/custom/bin"},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+    session.__enter__()
+
+    result = session.exec_simple("demo-tool --version")
+
+    assert result == "demo-tool 1.0.0\n"
+    mock_client.containers.run.return_value.exec_run.assert_called_once_with(
+        [
+            "bash",
+            "-c",
+            'export PATH="/home/agent/.local/bin:$PATH"; demo-tool --version',
+        ],
+        demux=True,
+        workdir="/home/agent/workspace",
+        environment={"PATH": "/custom/bin"},
+    )
+
+
 def test_docker_session_exec_simple_raises_docker_error_on_nonzero_exit():
     """exec_simple raises DockerError when command exits with non-zero code."""
     mock_client = _mock_client(exit_code=1, stderr=b"something went wrong")
