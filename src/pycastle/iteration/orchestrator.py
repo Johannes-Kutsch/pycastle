@@ -12,6 +12,7 @@ from . import (
     AbortedHardApiError,
     AbortedHITL,
     AbortedOperatorActionable,
+    AbortedSetup,
     AbortedTimeout,
     AbortedUsageLimit,
     Continue,
@@ -19,6 +20,7 @@ from . import (
     NoCandidate,
     run_iteration,
 )
+from ..bug_reporter import BUG_REPORT_LABEL_LIST, auto_file_issue
 from ..bug_reporter import file_operator_actionable_git_issue
 from ._deps import Deps as IterationDeps, ImproveMode
 from .preflight import PreflightCache
@@ -367,6 +369,21 @@ async def run(
                         stderr=stderr,
                         attempt_count=cnt,
                         github_svc=github_service,
+                    )
+                    sys.exit(1)
+                case AbortedSetup(phase=phase, message=message):
+                    first_line = next(iter(message.splitlines()), "")
+                    title = f"[pycastle] {phase} setup failure: {first_line}"
+                    body = (
+                        f"## Setup phase failure\n\n"
+                        f"Phase: {phase}\n\n"
+                        f"```\n{message}\n```\n"
+                    )
+                    url = auto_file_issue(title, body, BUG_REPORT_LABEL_LIST, cfg=cfg)
+                    status_display.print(  # type: ignore[union-attr]
+                        "",
+                        f"{phase} setup failed: {message}"
+                        + (f" — {url}" if url else ""),
                     )
                     sys.exit(1)
                 case Continue():

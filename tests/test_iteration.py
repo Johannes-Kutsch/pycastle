@@ -20,6 +20,7 @@ from pycastle.iteration import (
     AbortedAgentFailure,
     AbortedHardApiError,
     AbortedHITL,
+    AbortedSetup,
     AbortedTimeout,
     AbortedUsageLimit,
     Continue,
@@ -233,6 +234,29 @@ def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, l
 
     assert isinstance(result, AbortedHITL)
     assert result.issue_number == 42
+
+
+def test_run_iteration_returns_setup_abort_when_preflight_setup_fails(
+    tmp_path, git_svc, github_svc, logger
+):
+    """A Setup-phase preflight failure aborts before check diagnosis begins."""
+    from pycastle.errors import DockerError
+
+    deps = _make_deps(
+        tmp_path,
+        lambda request: CompletionOutput(),
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[DockerError("pip install failed")],
+    )
+
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedSetup)
+    assert result.phase == "preflight"
+    assert "pip install failed" in result.message
+    assert deps.agent_runner.calls == []
 
 
 def test_run_iteration_aborted_hitl_carries_issue_number(tmp_path, git_svc, logger):

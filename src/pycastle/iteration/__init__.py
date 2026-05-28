@@ -12,6 +12,7 @@ from ..errors import (
     AgentFailedError,
     AgentTimeoutError,
     HardAgentError,
+    SetupPhaseError,
     TransientAgentError,
     UsageLimitError,
 )
@@ -85,6 +86,12 @@ class AbortedHardApiError:
 
 
 @dataclasses.dataclass(frozen=True)
+class AbortedSetup:
+    phase: str
+    message: str
+
+
+@dataclasses.dataclass(frozen=True)
 class Done:
     improve_cap_reached: bool = False
 
@@ -105,6 +112,7 @@ IterationOutcome: TypeAlias = (
     | AbortedAgentFailure
     | AbortedTimeout
     | AbortedHardApiError
+    | AbortedSetup
     | AbortedOperatorActionable
 )
 
@@ -331,3 +339,5 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             f"hard API error: status {status_code_str}" + (f" — {url}" if url else ""),
         )
         return AbortedHardApiError(status_code=err.status_code)
+    except SetupPhaseError as err:
+        return AbortedSetup(phase=err.phase, message=str(err))
