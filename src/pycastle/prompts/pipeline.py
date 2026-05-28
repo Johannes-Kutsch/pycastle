@@ -4,10 +4,10 @@ import asyncio
 import enum
 import re
 from collections.abc import Sequence
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..session import RunKind
+from .source import PromptSource
 
 if TYPE_CHECKING:
     from ..config import Config
@@ -194,25 +194,24 @@ class PromptRenderer:
     }
 
     def __init__(self, cfg: Config) -> None:
-        self._prompts_dir: Path = cfg.prompts_dir
+        self._prompt_source = PromptSource.for_prompts_dir(cfg.prompts_dir)
         self._global_args = self._build_global_args(cfg)
         self._validate_templates()
 
-    def _load_standards(self, prompts_dir: Path) -> dict[str, str]:
-        standards_dir = prompts_dir / "coding-standards"
+    def _load_standards(self) -> dict[str, str]:
         result = {}
         for key, filename in self._STANDARDS_FILES.items():
             if filename.startswith("_"):
-                path = prompts_dir / filename
+                path = self._prompt_source.resolve(filename)
                 if path.exists():
                     result[key] = path.read_text(encoding="utf-8")
             else:
-                path = standards_dir / filename
+                path = self._prompt_source.resolve(f"coding-standards/{filename}")
                 result[key] = path.read_text(encoding="utf-8") if path.exists() else ""
         return result
 
     def _build_global_args(self, cfg: Config) -> dict[str, str]:
-        standards = self._load_standards(cfg.prompts_dir)
+        standards = self._load_standards()
         checks = " && ".join(cmd for _, cmd in cfg.preflight_checks)
         return {
             "BUG_LABEL": cfg.bug_label,
@@ -233,7 +232,7 @@ class PromptRenderer:
     def _validate_templates(self) -> None:
         global_keys = set(self._global_args.keys())
         for template in PromptTemplate:
-            path = self._prompts_dir / template.filename
+            path = self._prompt_source.resolve(template.filename)
             if not path.exists():
                 continue
             content = path.read_text(encoding="utf-8")
@@ -266,7 +265,7 @@ class PromptRenderer:
                 f"scope_args mismatch for {template.name}: {'; '.join(parts)}"
             )
 
-        path = self._prompts_dir / template.filename
+        path = self._prompt_source.resolve(template.filename)
         content = path.read_text(encoding="utf-8")
         preprocessed = await _preprocess(content, exec_fn)
         all_args = {**self._global_args, **scope_args}
