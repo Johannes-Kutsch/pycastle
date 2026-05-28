@@ -234,8 +234,7 @@ async def run(
             except GithubAPIError as exc:
                 status_display.print(  # type: ignore[union-attr]
                     "",
-                    "GitHub repository access failed:"
-                    f" {exc}",
+                    f"GitHub repository access failed: {exc}",
                 )
                 sys.exit(1)
             improve_dispatched_count = deps.improve_dispatched_count
@@ -263,18 +262,34 @@ async def run(
                     sys.exit(1)
                 case AbortedHardApiError():
                     sys.exit(1)
-                case AbortedUsageLimit(reset_time=reset_time):
+                case AbortedUsageLimit(
+                    reset_time=reset_time,
+                    provider=provider,
+                    account_label=account_label,
+                    is_permanent=is_permanent,
+                ):
                     now = _time_module.now_local()
                     if service_registry is not None and service_registry.has_available(
                         now
                     ):
-                        exhausted_wake = service_registry.next_wake_time(now)
-                        if exhausted_wake is not None:
+                        if (
+                            is_permanent
+                            and provider is not None
+                            and account_label is not None
+                        ):
                             status_display.print(  # type: ignore[union-attr]
                                 "",
-                                f"Account exhausted until {_fmt_wake(exhausted_wake, now)}, "
+                                f"{provider} {account_label} account exhausted permanently, "
                                 "switching to next available.",
                             )
+                        else:
+                            exhausted_wake = service_registry.next_wake_time(now)
+                            if exhausted_wake is not None:
+                                status_display.print(  # type: ignore[union-attr]
+                                    "",
+                                    f"Account exhausted until {_fmt_wake(exhausted_wake, now)}, "
+                                    "switching to next available.",
+                                )
                         continue
                     next_wake = (
                         service_registry.next_wake_time(now)

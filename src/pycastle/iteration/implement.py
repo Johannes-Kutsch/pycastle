@@ -69,6 +69,9 @@ class ImplementResult:
     errors: list[tuple[dict, Exception]]
     usage_limit_hit: bool = False
     usage_limit_reset_time: datetime | None = None
+    usage_limit_provider: str | None = None
+    usage_limit_account_label: str | None = None
+    usage_limit_is_permanent: bool = False
 
 
 async def run_issue(
@@ -299,6 +302,7 @@ async def implement_phase(
         (e.reset_time for e in usage_limit_errors if e.reset_time is not None),
         None,
     )
+    first_usage_limit_error = usage_limit_errors[0] if usage_limit_errors else None
     completed: list[dict] = []
     errors: list[tuple[dict, Exception]] = []
     for issue, result in zip(issues, results):
@@ -314,4 +318,13 @@ async def implement_phase(
         errors=errors,
         usage_limit_hit=usage_limit_hit,
         usage_limit_reset_time=usage_limit_reset_time,
+        usage_limit_provider=(
+            first_usage_limit_error.provider if first_usage_limit_error else None
+        ),
+        usage_limit_account_label=(
+            first_usage_limit_error.account_label if first_usage_limit_error else None
+        ),
+        usage_limit_is_permanent=(
+            first_usage_limit_error.is_permanent if first_usage_limit_error else False
+        ),
     )

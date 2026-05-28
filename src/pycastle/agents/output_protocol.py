@@ -428,6 +428,7 @@ def process_stream_from_events(
                 reset_time=event.reset_time,
                 raw_message=event.raw_message,
                 provider=provider,
+                is_permanent=event.is_permanent,
             )
         elif isinstance(event, TransientError):
             raise TransientAgentError(
