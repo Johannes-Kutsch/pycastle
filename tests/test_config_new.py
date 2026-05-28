@@ -17,6 +17,46 @@ def test_load_config_returns_defaults_when_no_local_file(tmp_path):
     assert cfg.issue_label == "ready-for-agent"
 
 
+def test_load_config_uses_universal_default_stage_priority_chains(tmp_path):
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.plan_override == StageOverride(
+        service="codex",
+        model="gpt-5.4-mini",
+        effort="low",
+        fallback=StageOverride(service="claude", model="haiku", effort="low"),
+    )
+    assert cfg.implement_override == StageOverride(
+        service="codex",
+        model="gpt-5.4",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
+    )
+    assert cfg.review_override == StageOverride(
+        service="claude",
+        model="sonnet",
+        effort="medium",
+        fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
+    )
+    assert cfg.merge_override == StageOverride(
+        service="codex",
+        model="gpt-5.5",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="opus", effort="high"),
+    )
+    assert cfg.preflight_issue_override == StageOverride(
+        service="codex",
+        model="gpt-5.5",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="opus", effort="high"),
+    )
+    assert cfg.improve_override == StageOverride(
+        service="codex",
+        model="gpt-5.5",
+        effort="high",
+        fallback=StageOverride(service="claude", model="opus", effort="high"),
+    )
+
+
 def test_resolve_dockerfile_returns_local_per_service_override(tmp_path):
     pycastle_dir = tmp_path / "pycastle"
     pycastle_dir.mkdir()
@@ -370,7 +410,10 @@ def test_load_config_applies_auto_push_false_from_local_file(tmp_path):
 def test_config_has_preflight_issue_override_field_with_default_effort():
     cfg = Config()
     assert cfg.preflight_issue_override == StageOverride(
-        service="claude", effort="high"
+        service="codex",
+        model="gpt-5.5",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="opus", effort="high"),
     )
 
 
@@ -640,19 +683,25 @@ def test_describe_config_layers_uses_appdata_form_on_windows(tmp_path, monkeypat
     assert summary == r"Config: defaults + %APPDATA%\pycastle\config.py"
 
 
-# ── Issue 613: improve_override defaults to opus/high ─────────────────────
+# ── Issue 613: improve_override defaults to gpt-5.5/high -> opus/high ─────
 
 
 def test_config_improve_override_default_is_opus_high():
     cfg = Config()
-    assert cfg.improve_override.model == "opus"
+    assert cfg.improve_override.model == "gpt-5.5"
     assert cfg.improve_override.effort == "high"
+    assert cfg.improve_override.fallback == StageOverride(
+        service="claude", model="opus", effort="high"
+    )
 
 
 def test_load_config_improve_override_default_is_opus_high(tmp_path):
     cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
-    assert cfg.improve_override.model == "opus"
+    assert cfg.improve_override.model == "gpt-5.5"
     assert cfg.improve_override.effort == "high"
+    assert cfg.improve_override.fallback == StageOverride(
+        service="claude", model="opus", effort="high"
+    )
 
 
 def test_load_config_project_improve_override_takes_precedence(tmp_path):
@@ -763,7 +812,7 @@ def test_legacy_default_service_does_not_select_referenced_services(tmp_path):
     (tmp_path / "pycastle" / "config.py").write_text('default_service = "codex"\n')
     cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
 
-    assert referenced_services(cfg) == {"claude"}
+    assert referenced_services(cfg) == {"claude", "codex"}
 
 
 def test_load_config_round_trips_stage_override_service_and_fallback(tmp_path):

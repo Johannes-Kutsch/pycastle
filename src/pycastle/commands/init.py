@@ -114,22 +114,42 @@ improve_max = None
 # Codex model names: gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.3-codex, gpt-5.3-codex-spark, gpt-5.2
 # Claude effort values: low, medium, high, xhigh, max
 # Codex effort values: low, medium, high, xhigh
-plan_override = StageOverride(service="claude", model="haiku", effort="low")
-implement_override = StageOverride(
-    service="claude",
-    model="sonnet",
-    effort="medium",
-    fallback=StageOverride(service="codex", model="gpt-5.3-codex", effort="medium"),
-)
-review_override = StageOverride(service="claude", model="opus", effort="medium")
-merge_override = StageOverride(service="claude", model="opus", effort="high")
-preflight_issue_override = StageOverride(
+plan_override = StageOverride(
     service="codex",
     model="gpt-5.4-mini",
     effort="low",
     fallback=StageOverride(service="claude", model="haiku", effort="low"),
 )
-improve_override = StageOverride(service="claude", model="opus", effort="high")
+implement_override = StageOverride(
+    service="codex",
+    model="gpt-5.4",
+    effort="medium",
+    fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
+)
+review_override = StageOverride(
+    service="claude",
+    model="sonnet",
+    effort="medium",
+    fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
+)
+merge_override = StageOverride(
+    service="codex",
+    model="gpt-5.5",
+    effort="medium",
+    fallback=StageOverride(service="claude", model="opus", effort="high"),
+)
+preflight_issue_override = StageOverride(
+    service="codex",
+    model="gpt-5.5",
+    effort="medium",
+    fallback=StageOverride(service="claude", model="opus", effort="high"),
+)
+improve_override = StageOverride(
+    service="codex",
+    model="gpt-5.5",
+    effort="high",
+    fallback=StageOverride(service="claude", model="opus", effort="high"),
+)
 """
 
 

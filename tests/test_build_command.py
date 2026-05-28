@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pycastle.config import Config, StageOverride
+from pycastle.config import Config, StageOverride, resolve_dockerfile
 from pycastle.services import DockerService
 from pycastle.errors import ConfigValidationError, DockerBuildError, DockerServiceError
 
@@ -228,7 +228,10 @@ def test_build_command_uses_docker_image_name_from_cfg(tmp_path, monkeypatch):
         cfg=Config(docker_image_name="myimg"),
     )
 
-    assert svc.build_image.call_args[0][0] == "myimg-claude"
+    assert [call.args[0] for call in svc.build_image.call_args_list] == [
+        "myimg-claude",
+        "myimg-codex",
+    ]
 
 
 def test_build_command_uses_resolved_dockerfile_path(tmp_path, monkeypatch):
@@ -248,7 +251,10 @@ def test_build_command_uses_resolved_dockerfile_path(tmp_path, monkeypatch):
         cfg=Config(docker_image_name="img"),
     )
 
-    assert svc.build_image.call_args[0][1] == Path("pycastle/Dockerfile.claude")
+    assert [call.args[1] for call in svc.build_image.call_args_list] == [
+        Path("pycastle/Dockerfile.claude"),
+        resolve_dockerfile("codex", Path("pycastle")),
+    ]
 
 
 # ── Issue 938: per-service image builds ──────────────────────────────────────
@@ -269,8 +275,8 @@ def test_build_command_builds_claude_service_image_from_resolved_dockerfile(
 
     main(docker_service=svc, cfg=Config(docker_image_name="myproject"))
 
-    svc.build_image.assert_called_once()
-    args, _kwargs = svc.build_image.call_args
+    assert svc.build_image.call_count == 2
+    args, _kwargs = svc.build_image.call_args_list[0]
     assert args[:3] == (
         "myproject-claude",
         Path("pycastle/Dockerfile.claude"),
