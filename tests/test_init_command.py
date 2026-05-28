@@ -304,6 +304,29 @@ def test_init_writes_local_config_example_with_all_supported_settings(
     assert "not run directly by pycastle config" in content
 
 
+def test_init_writes_separate_host_checks_into_config_example(tmp_path, monkeypatch):
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", side_effect=["claude", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    content = (tmp_path / "pycastle" / "config.py.example").read_text()
+
+    assert "--- Host checks ---" in content
+    assert 'host_checks = (\n    ("pytest", "pytest"),\n)' in content
+    assert (
+        "preflight_checks = (\n"
+        '    ("ruff", "ruff check ."),\n'
+        '    ("mypy", "mypy ."),\n'
+        '    ("pytest", "pytest"),\n'
+        ")"
+    ) in content
+
+
 def test_init_writes_config_example_to_existing_pycastle_home(tmp_path, monkeypatch):
     """init also writes config.py.example to pycastle home when that directory exists."""
     from pycastle.commands.init import main

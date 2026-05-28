@@ -83,6 +83,9 @@ class Config:
             ("pytest", "pytest"),
         )
     )
+    host_checks: tuple[tuple[str, str], ...] = dataclasses.field(
+        default_factory=lambda: (("pytest", "pytest"),)
+    )
     implement_checks: tuple[str, ...] = dataclasses.field(
         default_factory=lambda: (
             "ruff check --fix",

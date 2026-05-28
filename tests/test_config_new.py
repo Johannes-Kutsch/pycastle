@@ -17,6 +17,32 @@ def test_load_config_returns_defaults_when_no_local_file(tmp_path):
     assert cfg.issue_label == "ready-for-agent"
 
 
+def test_load_config_exposes_separate_default_host_checks(tmp_path):
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.host_checks == (("pytest", "pytest"),)
+    assert cfg.preflight_checks == (
+        ("ruff", "ruff check ."),
+        ("mypy", "mypy ."),
+        ("pytest", "pytest"),
+    )
+
+
+def test_load_config_overrides_host_checks_without_changing_preflight_checks(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        'host_checks = (("pytest-host", "pytest tests/host"),)\n'
+    )
+
+    cfg = load_config(repo_root=tmp_path)
+
+    assert cfg.host_checks == (("pytest-host", "pytest tests/host"),)
+    assert cfg.preflight_checks == (
+        ("ruff", "ruff check ."),
+        ("mypy", "mypy ."),
+        ("pytest", "pytest"),
+    )
+
+
 def test_load_config_uses_universal_default_stage_priority_chains(tmp_path):
     cfg = load_config(repo_root=tmp_path)
     assert cfg.plan_override == StageOverride(
