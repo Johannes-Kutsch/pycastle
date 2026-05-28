@@ -19,7 +19,6 @@ from .agent_service import (
     ParsedTurn,
     PromptTokens,
     TransientError,
-    UnsupportedTokens,
     UsageLimit,
 )
 from ._wake_time import compute_wake_time
@@ -142,14 +141,6 @@ def _extract_usage_limit(message: str) -> UsageLimit | None:
     reset_time = _parse_reset_time(message)
     raw = message if reset_time is None else None
     return UsageLimit(reset_time=reset_time, raw_message=raw)
-
-
-def _usage_value(usage: dict, *names: str) -> int:
-    for name in names:
-        value = usage.get(name)
-        if isinstance(value, int):
-            return value
-    return 0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -300,18 +291,6 @@ class CodexService:
                 continue
 
             if event_type == "turn.completed":
-                usage = obj.get("usage") or {}
-                count = (
-                    _usage_value(usage, "input_tokens")
-                    + _usage_value(usage, "cached_input_tokens", "cached_tokens")
-                    + _usage_value(usage, "output_tokens")
-                    + _usage_value(usage, "reasoning_output_tokens", "reasoning_tokens")
-                )
-                if count > 0:
-                    yield UnsupportedTokens(
-                        count=count,
-                        source="codex.turn.completed.usage",
-                    )
                 if (
                     self.prompt_tokens_contract.require_exact_live
                     and not saw_exact_live_prompt_tokens
