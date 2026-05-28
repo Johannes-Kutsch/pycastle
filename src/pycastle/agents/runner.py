@@ -139,22 +139,19 @@ class AgentRunner:
             auto_overlay=auto_overlay,
         )
 
-    def _seed_codex_auth_if_needed(
-        self, service: AgentService, state_dir: Path
-    ) -> None:
-        if service.name != "codex":
-            return
-
-        dest = state_dir / "auth.json"
-        if dest.exists():
-            return
-
+    def _host_codex_auth_path(self) -> Path:
         host_auth = Path.home() / ".codex" / "auth.json"
         if not host_auth.exists():
             raise HardAgentError(
                 "Codex authentication missing: run `codex login` on the host.",
                 status_code=401,
             )
+        return host_auth
+
+    def _seed_codex_auth(self, state_dir: Path, host_auth: Path) -> None:
+        dest = state_dir / "auth.json"
+        if dest.exists():
+            return
 
         state_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(host_auth, dest)
@@ -244,6 +241,11 @@ class AgentRunner:
                     role_session.save_service_session_id("codex", service_session_id)
                 else:
                     run_kind = RunKind.FRESH
+        host_codex_auth: Path | None = None
+        if state_dir is not None and service.name == "codex":
+            auth_missing_from_state_dir = not (state_dir / "auth.json").exists()
+            if run_kind == RunKind.FRESH or auth_missing_from_state_dir:
+                host_codex_auth = self._host_codex_auth_path()
 
         non_typed_retry_done = False
 
@@ -281,7 +283,8 @@ class AgentRunner:
 
                 if state_dir is not None:
                     state_dir.mkdir(parents=True, exist_ok=True)
-                    self._seed_codex_auth_if_needed(service, state_dir)
+                    if host_codex_auth is not None:
+                        self._seed_codex_auth(state_dir, host_codex_auth)
 
                 def remember_thread_id(thread_id: str) -> None:
                     nonlocal service_session_id

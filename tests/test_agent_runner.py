@@ -28,7 +28,7 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.session import RunKind
+from pycastle.session import RoleSession, RunKind
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
@@ -2377,6 +2377,39 @@ def test_agent_runner_codex_missing_host_auth_raises_hard_error(tmp_path, monkey
         )
 
     assert exc_info.value.status_code == 401
+
+
+def test_agent_runner_codex_missing_host_auth_leaves_no_done_session_state(
+    tmp_path, monkeypatch
+):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client(_CODEX_COMPLETE_STREAM),
+        service_registry={"codex": CodexService()},
+    )
+
+    with pytest.raises(HardAgentError, match="Codex authentication missing"):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Codex",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    service="codex",
+                )
+            )
+        )
+
+    session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    assert session.is_done() is False
+    assert not session.path.exists()
 
 
 # ── AgentRunner: protocol-error retry semantics ───────────────────────────────
