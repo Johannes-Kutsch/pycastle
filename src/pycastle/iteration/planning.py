@@ -263,21 +263,15 @@ async def planning_phase(
                     f"  #{b['number']} blocked by #{b['blocked_by']}: {b['reason']}"
                     for b in output.blocked
                 ]
-                if blocked_lines:
-                    row.close(
-                        "\n".join(
-                            ["All ready-for-agent issues are blocked:"]
-                            + ([blocker_summary] if blocker_summary else [])
-                            + blocked_lines
-                        )
-                    )
-                else:
-                    row.close(
-                        "\n".join(
-                            ["All ready-for-agent issues are blocked."]
-                            + ([blocker_summary] if blocker_summary else [])
-                        )
-                    )
+                lines = [
+                    "All ready-for-agent issues are blocked:"
+                    if blocked_lines
+                    else "All ready-for-agent issues are blocked."
+                ]
+                if blocker_summary:
+                    lines.append(blocker_summary)
+                lines.extend(blocked_lines)
+                row.close("\n".join(lines))
                 return AllBlocked(blocked=output.blocked)
 
             plan = PlanReady(
