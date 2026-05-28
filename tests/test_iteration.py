@@ -3128,6 +3128,60 @@ def test_run_iteration_aborted_agent_failure_without_recovery_when_diagnose_disa
     assert len(calls) == 1
 
 
+def test_run_iteration_cleans_planner_transient_worktree_when_diagnosis_disabled(
+    tmp_path, git_svc, logger
+):
+    """A planner failure inside transient_worktree must not leak plan-sandbox
+    when Failure-Report is disabled."""
+    calls: list[RunRequest] = []
+
+    async def agent_fn(req: RunRequest):
+        calls.append(req)
+        raise _make_agent_failed_error(AgentRole.PLANNER, req.mount_path)
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+
+    expected_path = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+
+    def checkout_detached(repo: Path, path: Path, sha: str) -> None:
+        assert repo == tmp_path
+        assert sha == "abc123"
+        path.mkdir(parents=True)
+        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+
+    git_svc.checkout_detached.side_effect = checkout_detached
+
+    deps = _make_deps(
+        tmp_path,
+        agent_fn,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        cfg=Config(diagnose_on_failure=False),
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentFailure)
+    assert len(calls) == 1
+    assert not expected_path.exists()
+
+
 # ── AbortedTimeout: centralized AgentTimeoutError catch ──────────────────────
 
 
