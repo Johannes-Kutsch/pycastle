@@ -3738,6 +3738,51 @@ def test_orchestrator_files_upstream_bug_and_exits_on_preflight_setup_failure(
     assert runner.calls == []
 
 
+def test_orchestrator_routes_missing_pyproject_declared_preflight_tool_as_setup_failure(
+    tmp_path,
+):
+    """A missing pyproject-declared check tool is a Setup/toolchain failure, not a preflight issue."""
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['ruff']\n",
+        encoding="utf-8",
+    )
+    runner = FakeAgentRunner(
+        [CompletionOutput()],
+        preflight_responses=[
+            [
+                (
+                    "ruff",
+                    "ruff check .",
+                    "Command failed (exit 127): bash: ruff: command not found",
+                )
+            ]
+        ],
+    )
+
+    with patch(
+        "pycastle.iteration.orchestrator.auto_file_issue",
+        return_value="https://example.com/upstream/1",
+    ) as mock_file:
+        with pytest.raises(SystemExit) as exc_info:
+            _run(
+                tmp_path,
+                agent_runner=runner,
+                github_service=_make_github_svc(),
+                git_service=_make_git_svc(),
+            )
+
+    assert exc_info.value.code == 1
+    assert runner.calls == []
+    assert mock_file.call_args.args[0] == (
+        "[pycastle] preflight setup failure: "
+        "Missing expected preflight tool 'ruff' declared in pyproject.toml."
+    )
+    assert (
+        "Missing expected preflight tool 'ruff' declared in pyproject.toml."
+        in (mock_file.call_args.args[1])
+    )
+
+
 def test_orchestrator_handles_empty_preflight_setup_failure_message(tmp_path):
     """Setup-phase aborts must stay setup-specific even when the underlying error text is empty."""
     from pycastle.errors import DockerError
