@@ -42,6 +42,19 @@ def test_resolve_dockerfile_returns_bundled_default_when_no_local_override(
     assert resolve_dockerfile("claude", pycastle_dir) == bundled_default
 
 
+def test_resolve_dockerfile_returns_codex_bundled_default(tmp_path):
+    pycastle_dir = tmp_path / "pycastle"
+    bundled_default = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "pycastle"
+        / "defaults"
+        / "Dockerfile.codex"
+    )
+
+    assert resolve_dockerfile("codex", pycastle_dir) == bundled_default
+
+
 def test_resolve_dockerfile_unknown_service_raises_config_validation_error(
     tmp_path,
 ):
