@@ -3349,7 +3349,9 @@ def test_run_iteration_returns_aborted_timeout_for_each_single_agent_phase(
             preflight_responses=[[]],
         )
         expected_role = AgentRole.MERGER.value
-        expected_wt = tmp_path / "pycastle" / ".worktrees" / "merge-sandbox"
+        expected_wt = (
+            tmp_path / "pycastle" / ".worktrees" / "pycastle-merge-sandbox-issue-1"
+        )
 
     result = asyncio.run(run_iteration(deps))
 

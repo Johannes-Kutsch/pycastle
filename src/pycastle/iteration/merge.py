@@ -33,7 +33,7 @@ class _MergeDeps(Protocol):
     preflight_cache: PreflightCache
 
 
-MERGE_SANDBOX = "pycastle/merge-sandbox"
+MERGE_SANDBOX_PREFIX = "pycastle/merge-sandbox"
 
 
 @dataclasses.dataclass
@@ -144,6 +144,24 @@ def _ensure_conflict_branches_are_merged(
         raise RuntimeError(f"{branch} is not a merged branch")
 
 
+def _merge_sandbox_branch(issue_number: int) -> str:
+    return f"{MERGE_SANDBOX_PREFIX}-issue-{issue_number}"
+
+
+def _merge_sandbox_name(issue_number: int) -> str:
+    return worktree_name_for_branch(_merge_sandbox_branch(issue_number))
+
+
+def _active_branch_scope(conflict_issues: list[dict], active_issue: dict) -> str:
+    branches = [branch_for(active_issue["number"])]
+    branches.extend(
+        branch_for(issue["number"])
+        for issue in conflict_issues
+        if issue["number"] != active_issue["number"]
+    )
+    return "\n".join(f"- {branch}" for branch in branches)
+
+
 async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
     async with status_row(
         deps.status_display,
@@ -197,7 +215,6 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         if not conflict_issues:
             row.close(_build_close_message(clean_deleted))
         else:
-            target_branch = deps.git_svc.get_current_branch(deps.repo_root)
             verdict = await deps.preflight_cache.get_safe_sha(deps)
             if isinstance(verdict, (PreflightHITL, PreflightAFK)):
                 deps.status_display.print(
@@ -218,57 +235,62 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                     conflicts=conflict_issues,
                     preflight_blocker=verdict,
                 )
-            async with managed_worktree(
-                "merge-sandbox",
-                branch=MERGE_SANDBOX,
-                sha=verdict.sha,
-                delete_branch_on_teardown=True,
-                deps=deps,
-            ) as sandbox_path:
-                active_issue = conflict_issues[0]
-                deps.git_svc.start_merge(
-                    sandbox_path, branch_for(active_issue["number"])
-                )
-                result = await deps.agent_runner.run(
-                    RunRequest(
-                        name="Merge Agent",
-                        template=PromptTemplate.MERGE,
-                        mount_path=sandbox_path,
-                        role=AgentRole.MERGER,
-                        scope_args={
-                            "BRANCHES": "\n".join(
-                                f"- {branch_for(i['number'])}" for i in conflict_issues
-                            ),
-                        },
-                        model=deps.cfg.merge_override.model,
-                        status_display=deps.status_display,
-                        effort=deps.cfg.merge_override.effort,
-                        service=deps.cfg.merge_override.service,
-                        stage="pre-merge",
-                        work_body=f"Merging {len(conflict_issues)} Branches",
+            conflict_deleted: list[str] = []
+            for active_issue in conflict_issues:
+                sandbox_branch = _merge_sandbox_branch(active_issue["number"])
+                target_branch = deps.git_svc.get_current_branch(deps.repo_root)
+                async with managed_worktree(
+                    _merge_sandbox_name(active_issue["number"]),
+                    branch=sandbox_branch,
+                    sha=deps.git_svc.get_head_sha(deps.repo_root),
+                    delete_branch_on_teardown=True,
+                    deps=deps,
+                ) as sandbox_path:
+                    deps.git_svc.start_merge(
+                        sandbox_path, branch_for(active_issue["number"])
+                    )
+                    result = await deps.agent_runner.run(
+                        RunRequest(
+                            name="Merge Agent",
+                            template=PromptTemplate.MERGE,
+                            mount_path=sandbox_path,
+                            role=AgentRole.MERGER,
+                            scope_args={
+                                "BRANCHES": _active_branch_scope(
+                                    conflict_issues, active_issue
+                                ),
+                            },
+                            model=deps.cfg.merge_override.model,
+                            status_display=deps.status_display,
+                            effort=deps.cfg.merge_override.effort,
+                            service=deps.cfg.merge_override.service,
+                            stage="pre-merge",
+                            work_body=f"Merging branch {branch_for(active_issue['number'])}",
+                        )
+                    )
+                    if isinstance(result, CommitMessageOutput):
+                        deps.git_svc.commit(
+                            sandbox_path,
+                            deps.repo_root,
+                            result.message or active_issue["title"],
+                        )
+                    _ensure_conflict_branches_are_merged(
+                        [active_issue], sandbox_path, deps
+                    )
+                    deps.git_svc.fast_forward_branch(
+                        deps.repo_root, target_branch, sandbox_branch
+                    )
+                    RoleSession(sandbox_path, AgentRole.MERGER).discard()
+                conflict_deleted.extend(
+                    await _delete_merged_branches(
+                        [branch_for(active_issue["number"])],
+                        deps,
+                        _on_teardown_progress,
                     )
                 )
-                if isinstance(result, CommitMessageOutput):
-                    deps.git_svc.commit(
-                        sandbox_path,
-                        deps.repo_root,
-                        result.message or active_issue["title"],
-                    )
-                _ensure_conflict_branches_are_merged(
-                    conflict_issues, sandbox_path, deps
+                await _close_issues_parallel(
+                    [active_issue], deps.github_svc, _on_progress, _on_close_error
                 )
-                deps.git_svc.fast_forward_branch(
-                    deps.repo_root, target_branch, MERGE_SANDBOX
-                )
-                RoleSession(sandbox_path, AgentRole.MERGER).discard()
-            conflict_deleted = await _delete_merged_branches(
-                [branch_for(i["number"]) for i in conflict_issues],
-                deps,
-                _on_teardown_progress,
-            )
-            await _close_issues_parallel(
-                conflict_issues, deps.github_svc, _on_progress, _on_close_error
-            )
             deps.github_svc.close_completed_parent_issues()
             row.close(_build_close_message(clean_deleted + conflict_deleted))
 
