@@ -34,7 +34,7 @@ def main(
 
     outcome = docker_service.build_image(
         cfg.docker_image_name,
-        cfg.dockerfile,
+        Path("pycastle/Dockerfile"),
         Path("."),
         no_cache=no_cache,
         stream=stream,

@@ -4,7 +4,11 @@ from pathlib import Path
 import pytest
 
 from pycastle.config import Config, StageOverride, load_config
-from pycastle.config.loader import describe_config_layers, resolve_global_dir
+from pycastle.config.loader import (
+    _GLOBAL_FORBIDDEN_FIELDS,
+    describe_config_layers,
+    resolve_global_dir,
+)
 from pycastle.errors import (
     ConfigValidationError,
     PycastleError,
@@ -94,6 +98,16 @@ def test_load_config_silently_ignores_usage_limit_patterns_in_local_file(tmp_pat
     cfg = load_config(repo_root=tmp_path)
     assert cfg.max_parallel == 3
     assert not hasattr(cfg, "usage_limit_patterns")
+
+
+def test_load_config_silently_ignores_legacy_dockerfile_in_local_file(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pathlib import Path\ndockerfile = Path('some/path')\nmax_parallel = 3\n"
+    )
+    cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
+    assert cfg.max_parallel == 3
+    assert not hasattr(cfg, "dockerfile")
 
 
 def test_load_config_applies_in_process_overrides(tmp_path):
@@ -390,6 +404,10 @@ def test_load_config_global_path_field_lists_all_offending(tmp_path):
     msg = str(exc_info.value)
     assert "prompts_dir" in msg
     assert "logs_dir" in msg
+
+
+def test_global_forbidden_fields_excludes_legacy_dockerfile():
+    assert "dockerfile" not in _GLOBAL_FORBIDDEN_FIELDS
 
 
 def test_load_config_local_path_fields_still_allowed(tmp_path):

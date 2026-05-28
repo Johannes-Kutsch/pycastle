@@ -210,27 +210,26 @@ def test_build_command_uses_docker_image_name_from_cfg(tmp_path, monkeypatch):
 
     main(
         docker_service=svc,
-        cfg=Config(docker_image_name="myimg", dockerfile=Path("Dockerfile")),
+        cfg=Config(docker_image_name="myimg"),
     )
 
     assert svc.build_image.call_args[0][0] == "myimg"
 
 
-def test_build_command_uses_dockerfile_from_cfg(tmp_path, monkeypatch):
-    """main(cfg=Config(..., dockerfile=Path('custom/Df'))) must pass that path to build_image."""
+def test_build_command_uses_default_dockerfile_path(tmp_path, monkeypatch):
+    """main(cfg=Config(...)) must pass the default Dockerfile path to build_image."""
     from pycastle.commands.build import main
 
     monkeypatch.chdir(tmp_path)
     svc = MagicMock()
     svc.build_image.return_value = None
-    custom_df = Path("custom/Dockerfile")
 
     main(
         docker_service=svc,
-        cfg=Config(docker_image_name="img", dockerfile=custom_df),
+        cfg=Config(docker_image_name="img"),
     )
 
-    assert svc.build_image.call_args[0][1] == custom_df
+    assert svc.build_image.call_args[0][1] == Path("pycastle/Dockerfile")
 
 
 # ── Issue 222: empty docker_image_name guard ──────────────────────────────────
@@ -245,7 +244,7 @@ def test_build_command_raises_when_docker_image_name_is_empty(tmp_path, monkeypa
     with pytest.raises(ConfigValidationError):
         main(
             docker_service=svc,
-            cfg=Config(docker_image_name="", dockerfile=Path("Dockerfile")),
+            cfg=Config(docker_image_name=""),
         )
 
 
@@ -260,7 +259,7 @@ def test_build_command_empty_docker_image_name_prints_helpful_message(
     with pytest.raises(ConfigValidationError) as exc_info:
         main(
             docker_service=svc,
-            cfg=Config(docker_image_name="", dockerfile=Path("Dockerfile")),
+            cfg=Config(docker_image_name=""),
         )
 
     msg = str(exc_info.value)
@@ -279,7 +278,7 @@ def test_build_command_empty_docker_image_name_does_not_call_docker(
     with pytest.raises(ConfigValidationError):
         main(
             docker_service=svc,
-            cfg=Config(docker_image_name="", dockerfile=Path("Dockerfile")),
+            cfg=Config(docker_image_name=""),
         )
 
     svc.build_image.assert_not_called()
