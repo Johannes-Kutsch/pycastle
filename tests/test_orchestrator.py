@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -3715,27 +3716,31 @@ def test_orchestrator_exits_nonzero_on_hard_api_error(tmp_path):
 def test_orchestrator_files_upstream_bug_and_exits_on_preflight_setup_failure(
     tmp_path,
 ):
-    """Preflight setup failures abort before diagnosis and route through auto_file_issue."""
+    """Preflight setup failures abort before diagnosis and route through the upstream bug-report path."""
     from pycastle.errors import DockerError
 
     github_svc = _make_github_svc()
     runner = FakeAgentRunner(preflight_responses=[DockerError("pip install failed")])
+    display = RecordingStatusDisplay()
 
-    with patch(
-        "pycastle.iteration.orchestrator.auto_file_issue",
-        return_value="https://example.com/upstream/1",
-    ) as mock_file:
-        with pytest.raises(SystemExit) as exc_info:
-            _run(
-                tmp_path,
-                agent_runner=runner,
-                github_service=github_svc,
-                git_service=_make_git_svc(),
-            )
+    with pytest.raises(SystemExit) as exc_info:
+        _run(
+            tmp_path,
+            agent_runner=runner,
+            github_service=github_svc,
+            git_service=_make_git_svc(),
+            status_display=display,
+            auto_file_bugs=False,
+        )
 
     assert exc_info.value.code == 1
-    mock_file.assert_called_once()
     assert runner.calls == []
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    final_message = str(print_calls[-1][2])
+    assert "preflight setup failed: pip install failed" in final_message
+    assert "Report: https://github.com/Johannes-Kutsch/pycastle/issues/new?" in (
+        final_message
+    )
 
 
 def test_orchestrator_routes_missing_pyproject_declared_preflight_tool_as_setup_failure(
@@ -3759,27 +3764,35 @@ def test_orchestrator_routes_missing_pyproject_declared_preflight_tool_as_setup_
         ],
     )
 
-    with patch(
-        "pycastle.iteration.orchestrator.auto_file_issue",
-        return_value="https://example.com/upstream/1",
-    ) as mock_file:
-        with pytest.raises(SystemExit) as exc_info:
-            _run(
-                tmp_path,
-                agent_runner=runner,
-                github_service=_make_github_svc(),
-                git_service=_make_git_svc(),
-            )
+    display = RecordingStatusDisplay()
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run(
+            tmp_path,
+            agent_runner=runner,
+            github_service=_make_github_svc(),
+            git_service=_make_git_svc(),
+            status_display=display,
+            auto_file_bugs=False,
+        )
 
     assert exc_info.value.code == 1
     assert runner.calls == []
-    assert mock_file.call_args.args[0] == (
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    final_message = str(print_calls[-1][2])
+    report_url = next(
+        line.removeprefix("Report: ")
+        for line in final_message.splitlines()
+        if line.startswith("Report: ")
+    )
+    title = parse_qs(urlparse(report_url).query)["title"][0]
+    assert title == (
         "[pycastle] preflight setup failure: "
         "Missing expected preflight tool 'ruff' declared in pyproject.toml."
     )
     assert (
         "Missing expected preflight tool 'ruff' declared in pyproject.toml."
-        in (mock_file.call_args.args[1])
+        in final_message
     )
 
 
@@ -3804,21 +3817,82 @@ def test_orchestrator_includes_command_and_output_in_upstream_setup_failure_repo
         ],
     )
 
+    display = RecordingStatusDisplay()
+
+    with pytest.raises(SystemExit):
+        _run(
+            tmp_path,
+            agent_runner=runner,
+            github_service=_make_github_svc(),
+            git_service=_make_git_svc(),
+            status_display=display,
+            auto_file_bugs=False,
+        )
+
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    final_message = str(print_calls[-1][2])
+    report_url = next(
+        line.removeprefix("Report: ")
+        for line in final_message.splitlines()
+        if line.startswith("Report: ")
+    )
+    body = parse_qs(urlparse(report_url).query)["body"][0]
+    assert "Command: `ruff check .`" in body
+    assert "bash: ruff: command not found" in body
+
+
+def test_orchestrator_files_setup_failure_via_api_when_auto_file_bugs_is_enabled(
+    tmp_path,
+    monkeypatch,
+):
+    """Handled Setup/toolchain failures use the API filing path when upstream auto filing is enabled."""
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['ruff']\n",
+        encoding="utf-8",
+    )
+    runner = FakeAgentRunner(
+        [CompletionOutput()],
+        preflight_responses=[
+            [
+                (
+                    "ruff",
+                    "ruff check .",
+                    "Command failed (exit 127): bash: ruff: command not found",
+                )
+            ]
+        ],
+    )
+    display = RecordingStatusDisplay()
+    monkeypatch.setenv("GH_TOKEN", "test-token")
+
     with patch(
-        "pycastle.iteration.orchestrator.auto_file_issue",
-        return_value="https://example.com/upstream/1",
-    ) as mock_file:
+        "pycastle.services.github_service.GithubService.create_issue_in",
+        return_value=321,
+    ) as mock_create:
         with pytest.raises(SystemExit):
             _run(
                 tmp_path,
                 agent_runner=runner,
                 github_service=_make_github_svc(),
                 git_service=_make_git_svc(),
+                status_display=display,
+                auto_file_bugs=True,
             )
 
-    body = mock_file.call_args.args[1]
+    mock_create.assert_called_once()
+    _, title, body, labels = mock_create.call_args.args
+    assert title == (
+        "[pycastle] preflight setup failure: "
+        "Missing expected preflight tool 'ruff' declared in pyproject.toml."
+    )
     assert "Command: `ruff check .`" in body
     assert "bash: ruff: command not found" in body
+    assert labels == ["bug", "needs-triage"]
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    final_message = str(print_calls[-1][2])
+    assert "Report: https://github.com/Johannes-Kutsch/pycastle/issues/321" in (
+        final_message
+    )
 
 
 def test_orchestrator_prints_setup_failure_details_locally(tmp_path):
@@ -3841,18 +3915,15 @@ def test_orchestrator_prints_setup_failure_details_locally(tmp_path):
     )
     display = RecordingStatusDisplay()
 
-    with patch(
-        "pycastle.iteration.orchestrator.auto_file_issue",
-        return_value="https://example.com/upstream/1",
-    ):
-        with pytest.raises(SystemExit):
-            _run(
-                tmp_path,
-                agent_runner=runner,
-                github_service=_make_github_svc(),
-                git_service=_make_git_svc(),
-                status_display=display,
-            )
+    with pytest.raises(SystemExit):
+        _run(
+            tmp_path,
+            agent_runner=runner,
+            github_service=_make_github_svc(),
+            git_service=_make_git_svc(),
+            status_display=display,
+            auto_file_bugs=False,
+        )
 
     print_calls = [c for c in display.calls if c[0] == "print"]
     final_message = str(print_calls[-1][2])
