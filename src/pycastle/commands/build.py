@@ -33,23 +33,17 @@ def main(
         python_version = ".".join(parts[:2]) if len(parts) >= 2 else version
 
     print(f"Building {cfg.docker_image_name}...")
-    outcomes = [
-        docker_service.build_image(
-            cfg.docker_image_name,
-            resolve_dockerfile(cfg.pycastle_dir),
-            Path("."),
-            no_cache=no_cache,
-            stream=stream,
-            terse=terse,
-            python_version=python_version,
-        )
-    ]
+    outcome = docker_service.build_image(
+        cfg.docker_image_name,
+        resolve_dockerfile(cfg.pycastle_dir),
+        Path("."),
+        no_cache=no_cache,
+        stream=stream,
+        terse=terse,
+        python_version=python_version,
+    )
 
     if not stream:
         print("Build complete.")
-    elif (
-        outcomes
-        and all(outcome == BuildOutcome.FULL_CACHE_HIT for outcome in outcomes)
-        and not terse
-    ):
+    elif outcome == BuildOutcome.FULL_CACHE_HIT and not terse:
         print("Image up to date.")
