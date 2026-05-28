@@ -2,33 +2,13 @@
 
 Fix issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
-Only work on the issue specified. Work on branch {{BRANCH}}.
-
-</task>
-
-<context>
-
-<issue>
-
-{{ISSUE_BODY}}
-
-</issue>
-
-<comments>
-
-{{ISSUE_COMMENTS}}
-
-</comments>
-{{INTERRUPTED_WORK}}
-</context>
-
-<workflow>
+Only work on the issue specified. {{IMPLEMENT_REVIEW_SHARED_FRAMING}}
 
 ## 1. Explore
 
 Read the issue's **What to build** and acceptance criteria to identify the exact structural change requested. Explore only the files named in the issue and any files those directly import. Do not survey the full repository.
 
-Use the domain glossary in `CONTEXT.md` so that symbol names and vocabulary match the project's language.
+Use symbol names and vocabulary from `CONTEXT.md`.
 
 ## 2. Refactor
 

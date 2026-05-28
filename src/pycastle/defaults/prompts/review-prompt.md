@@ -1,28 +1,10 @@
 <task>
 
-Review the code changes on branch {{BRANCH}} for issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
+Review the code changes for issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
 **Constraint**: Never change what the code does — only how it does it. All original features, outputs, and behaviors must remain intact.
 
-</task>
-
-<context>
-
-<issue>
-
-{{ISSUE_BODY}}
-
-</issue>
-
-<comments>
-
-{{ISSUE_COMMENTS}}
-
-</comments>
-{{INTERRUPTED_WORK}}
-</context>
-
-<workflow>
+Only work on the issue specified. {{IMPLEMENT_REVIEW_SHARED_FRAMING}}
 
 ## 1. Confirm baseline
 

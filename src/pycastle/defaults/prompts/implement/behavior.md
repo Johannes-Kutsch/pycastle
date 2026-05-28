@@ -2,27 +2,7 @@
 
 Fix issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
-Only work on the issue specified. Work on branch {{BRANCH}}.
-
-</task>
-
-<context>
-
-<issue>
-
-{{ISSUE_BODY}}
-
-</issue>
-
-<comments>
-
-{{ISSUE_COMMENTS}}
-
-</comments>
-{{INTERRUPTED_WORK}}
-</context>
-
-<workflow>
+Only work on the issue specified. {{IMPLEMENT_REVIEW_SHARED_FRAMING}}
 
 ---
 
@@ -30,7 +10,7 @@ Only work on the issue specified. Work on branch {{BRANCH}}.
 
 Explore only the files mentioned in the issue and the test files that directly touch those files. Do not survey the full repository.
 
-Use the domain glossary in `CONTEXT.md` so that test names and interface vocabulary match the project's language. Consult `docs/adr/README.md` if present, then read any ADRs that touch the area you're changing.
+Check that test names and interface vocabulary match the project's language in `CONTEXT.md`. Consult `docs/adr/README.md` if present, then read any ADRs that touch the area you're changing.
 
 From the issue's acceptance criteria, derive an ordered list of behaviors to implement. Most critical paths first, edge cases last.
 

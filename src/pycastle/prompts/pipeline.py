@@ -186,11 +186,14 @@ def _format_feedback_commands(checks: Sequence[str]) -> str:
 
 
 class PromptRenderer:
-    _STANDARDS_FILES: dict[str, str] = {
+    _STATIC_SHARED_FILES: dict[str, str] = {
         "DESIGN_STANDARDS": "design.md",
         "IMPLEMENTATION_STANDARDS": "implementation.md",
         "IMPLEMENT_OUTPUT_RULES": "implement-output-rules.md",
         "ISSUE_TRACKER": "_issue-tracker.md",
+    }
+    _DYNAMIC_SHARED_FILES: dict[str, str] = {
+        "IMPLEMENT_REVIEW_SHARED_FRAMING": "_implement-review-shared-framing.md",
     }
 
     def __init__(self, cfg: Config) -> None:
@@ -220,9 +223,9 @@ class PromptRenderer:
             )
         return _render(content, allowed_args)
 
-    def _load_standards(self, base_args: dict[str, str]) -> dict[str, str]:
+    def _load_static_shared_files(self, base_args: dict[str, str]) -> dict[str, str]:
         result = {}
-        for key, filename in self._STANDARDS_FILES.items():
+        for key, filename in self._STATIC_SHARED_FILES.items():
             if filename.startswith("_"):
                 rendered = self._render_effective_file(
                     filename, allowed_args=base_args, required=False
@@ -253,10 +256,10 @@ class PromptRenderer:
             "FEEDBACK_COMMANDS": _format_feedback_commands(cfg.implement_checks),
             "CHECKS": checks,
         }
-        return {**base_args, **self._load_standards(base_args)}
+        return {**base_args, **self._load_static_shared_files(base_args)}
 
     def _validate_templates(self) -> None:
-        global_keys = set(self._global_args.keys())
+        global_keys = set(self._global_args.keys()) | set(self._DYNAMIC_SHARED_FILES)
         for template in PromptTemplate:
             path = self._prompt_source.resolve(template.filename)
             if not path.exists():
@@ -295,4 +298,12 @@ class PromptRenderer:
         content = path.read_text(encoding="utf-8")
         preprocessed = await _preprocess(content, exec_fn)
         all_args = {**self._global_args, **scope_args}
+        for key, filename in self._DYNAMIC_SHARED_FILES.items():
+            if key not in preprocessed:
+                continue
+            rendered = self._render_effective_file(
+                filename, allowed_args=all_args, required=False
+            )
+            if rendered:
+                all_args[key] = rendered
         return _render(preprocessed, all_args)
