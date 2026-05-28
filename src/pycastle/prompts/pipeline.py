@@ -240,6 +240,15 @@ class PromptRenderer:
                 )
         return result
 
+    @staticmethod
+    def _validation_args(
+        global_args: dict[str, str], scope_placeholders: frozenset[str]
+    ) -> dict[str, str]:
+        return {
+            **global_args,
+            **{placeholder: "" for placeholder in scope_placeholders},
+        }
+
     def _build_global_args(self, cfg: Config) -> dict[str, str]:
         checks = " && ".join(cmd for _, cmd in cfg.preflight_checks)
         base_args = {
@@ -272,6 +281,15 @@ class PromptRenderer:
             if unknown:
                 raise PromptRenderError(
                     f"Template {template.filename!r} references unknown token(s): {unknown}"
+                )
+            validation_args = self._validation_args(
+                self._global_args, template.scope.placeholders
+            )
+            for key, filename in self._DYNAMIC_SHARED_FILES.items():
+                if key not in found:
+                    continue
+                self._render_effective_file(
+                    filename, allowed_args=validation_args, required=False
                 )
 
     async def render(

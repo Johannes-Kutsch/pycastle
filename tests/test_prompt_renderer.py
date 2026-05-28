@@ -601,6 +601,16 @@ def test_renderer_renders_local_shared_framing_override_through_bundled_prompt(
     assert "{{BRANCH}}" not in result
 
 
+def test_renderer_aborts_on_broken_local_shared_framing_override(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "_implement-review-shared-framing.md").write_text("{{UNKNOWN_KEY}}")
+
+    with pytest.raises(PromptRenderError, match="UNKNOWN_KEY"):
+        PromptRenderer(Config())
+
+
 def test_renderer_aborts_when_issue_tracker_referenced_but_absent(prompts_dir):
     (prompts_dir / "improve" / "01-scan.md").write_text("{{ISSUE_TRACKER}}")
     cfg = Config(prompts_dir=prompts_dir)
