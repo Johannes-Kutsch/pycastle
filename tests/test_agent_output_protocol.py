@@ -239,6 +239,19 @@ def test_process_stream_planner_accepts_custom_blocked_entries():
     assert result.blocked == [{"number": 5, "note": "waiting on maintainer"}]
 
 
+def test_process_stream_planner_accepts_number_only_blocked_entries():
+    payload = json.dumps(
+        {
+            "issues": [],
+            "blocked": [{"number": 5}],
+        }
+    )
+    lines = [_result_line(f"<plan>{payload}</plan>")]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.blocked == [{"number": 5}]
+
+
 def test_process_stream_planner_defaults_blocked_to_empty_when_absent():
     lines = [_result_line('<plan>{"issues": [{"number": 1, "title": "A"}]}</plan>')]
     result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
@@ -250,7 +263,7 @@ def test_process_stream_planner_raises_plan_parse_error_for_malformed_blocked():
     payload = json.dumps(
         {
             "issues": [],
-            "blocked": [{"number": 5}],
+            "blocked": [{"blocked_by": 5}],
         }
     )
     lines = [_result_line(f"<plan>{payload}</plan>")]
