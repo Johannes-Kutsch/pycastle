@@ -191,7 +191,7 @@ def test_template_resume_has_correct_scope():
     assert PromptTemplate.RESUME.scope == Scope.RESUME
 
 
-def test_template_enum_has_fourteen_variants():
+def test_template_enum_has_fifteen_variants():
     assert len(list(PromptTemplate)) == 15
 
 
@@ -528,8 +528,29 @@ def test_renderer_aborts_when_issue_tracker_referenced_but_absent(prompts_dir):
         PromptRenderer(cfg)
 
 
+def test_render_shipped_preflight_issue_prompt():
+    renderer = _make_shipped_prompt_renderer()
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.PREFLIGHT_ISSUE,
+            {
+                "CHECK_NAME": "pytest suite",
+                "COMMAND": "pytest",
+                "OUTPUT": "boom",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert "outside the agent container" not in result
+    assert "pytest suite" in result
+    assert "pytest" in result
+    assert "boom" in result
+
+
 def test_render_shipped_host_check_issue_prompt():
-    renderer = _make_failure_report_renderer()
+    renderer = _make_shipped_prompt_renderer()
 
     result = _run(
         renderer.render(
@@ -709,7 +730,7 @@ _FAILURE_REPORT_SCOPE_ARGS_BASE = {
 }
 
 
-def _make_failure_report_renderer() -> PromptRenderer:
+def _make_shipped_prompt_renderer() -> PromptRenderer:
     from pycastle.config import Config
 
     cfg = Config(prompts_dir=_SHIPPED_PROMPTS_DIR)
@@ -717,7 +738,7 @@ def _make_failure_report_renderer() -> PromptRenderer:
 
 
 def test_failure_report_renders_recovery_section_for_non_typed_crash():
-    renderer = _make_failure_report_renderer()
+    renderer = _make_shipped_prompt_renderer()
 
     result = _run(
         renderer.render(
@@ -732,7 +753,7 @@ def test_failure_report_renders_recovery_section_for_non_typed_crash():
 
 
 def test_failure_report_omits_recovery_section_for_protocol_error():
-    renderer = _make_failure_report_renderer()
+    renderer = _make_shipped_prompt_renderer()
 
     result = _run(
         renderer.render(
