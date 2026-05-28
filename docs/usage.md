@@ -23,9 +23,9 @@ pip install pycastle
 
 Interactive bootstrap for a consuming project. `pycastle init` syncs the pycastle-owned scaffold files that stay under package control, refreshes `config.py.example`, then runs the init wizard to choose service/scope, merge missing `.env` keys, and offer GitHub label setup.
 
-Use `pycastle init --refresh` for the non-interactive scaffold sync path. It bypasses the wizard and refreshes the bundled scaffold files and `config.py.example` without changing `config.py`, `.env`, or any runtime session state. `cron.sh` invokes this on every tick so scaffold updates ship automatically when you upgrade pycastle.
+Use `pycastle init --refresh` for the non-interactive scaffold sync path. It bypasses the wizard and refreshes the bundled scaffold files and `config.py.example` without changing `config.py`, `.env`, prompt overrides, Dockerfile overrides, or any runtime session state. `cron.sh` invokes this on every tick so scaffold updates ship automatically when you upgrade pycastle.
 
-Refresh behavior is asymmetric by design: `pycastle/config.py.example` is always refreshed, and `pycastle/setup/` is refreshed by both `pycastle init` and `pycastle init --refresh`. A global `config.py.example` is refreshed only if you already keep one in pycastle home.
+Refresh behavior is asymmetric by design: `pycastle/config.py.example` is always refreshed, and `pycastle/setup/` is refreshed by both `pycastle init` and `pycastle init --refresh`. Local prompt files and `pycastle/Dockerfile` are user-owned overrides, so init never creates, overwrites, or deletes them. A global `config.py.example` is refreshed only if you already keep one in pycastle home.
 
 ```bash
 pycastle init                # interactive bootstrap; asks where config.py / .env should live
@@ -36,7 +36,7 @@ pycastle init --refresh      # non-interactive scaffold sync; refreshes pycastle
 
 ### `pycastle build`
 
-Builds the universal agent image. If your project provides `pycastle/Dockerfile`, pycastle uses that local override; otherwise it builds from the bundled default Dockerfile. Pass `--no-cache` to force a clean build.
+Builds the universal agent image. If your project provides `pycastle/Dockerfile`, pycastle uses that local override; otherwise it builds from the bundled default Dockerfile. `pycastle init` does not create a local Dockerfile copy. Pass `--no-cache` to force a clean build.
 
 ```bash
 pycastle build [--no-cache]
@@ -91,6 +91,7 @@ Runtime configuration lives in `config.py`, loaded from pycastle home first and 
 | `max_parallel` | `1` | Maximum concurrent implementer agents |
 | `issue_label` | `ready-for-agent` | Label the planner filters on |
 | `hitl_label` | `ready-for-human` | Label that triggers a human-intervention exit |
+| `logs_dir` | `pycastle/logs` | Log directory. In global config this is a parent directory and pycastle appends the sanitised project name; in local config it is used directly |
 | `preflight_checks` | ruff, mypy, pytest | Commands run before planning |
 | `implement_checks` | ruff fix, mypy, pytest | Commands the implementer must pass |
 | `skip_preflight` | `False` | Set to `True` to bypass preflight entirely |
@@ -98,7 +99,15 @@ Runtime configuration lives in `config.py`, loaded from pycastle home first and 
 | `improve_max` | `1` | Maximum improve-agent dispatches per run when improve mode is active |
 | `plan_override` / `implement_override` / `review_override` / `merge_override` | — | Per-stage model and effort overrides |
 
-Edit local `pycastle/config.py` and/or global `config.py` in pycastle home to tailor these to your project.
+Edit local `pycastle/config.py` and/or global `config.py` in pycastle home to tailor these to your project. Project-local layout paths are fixed: local config lives at `pycastle/config.py`, local `.env` at `pycastle/.env`, prompt overrides at `pycastle/prompts/`, worktrees under `pycastle/.worktrees/`, setup scaffold under `pycastle/setup/`, and the optional Dockerfile override at `pycastle/Dockerfile`.
+
+### Prompt overrides
+
+Bundled prompts live in pycastle's installed defaults and are used automatically. To customize one prompt or shared prompt fragment, create a matching file under `pycastle/prompts/` using the same relative path as the bundled default. Missing local files fall back to bundled defaults per file, so you do not need to copy the whole prompt tree.
+
+`pycastle init` and `pycastle init --refresh` do not create `pycastle/prompts/` or copy prompt files. Existing local prompt files are user-owned overrides and shadow bundled prompt improvements until you update or remove them.
+
+To inspect the current bundled prompts before creating an override, check the installed package's `pycastle/defaults/prompts/` directory or the source tree under `src/pycastle/defaults/prompts/`.
 
 ### Minimal local `config.py`
 
@@ -145,7 +154,7 @@ Run these steps inside each consuming project on the host (e.g. over SSH on the 
    pycastle init --refresh
    ```
 
-   This refreshes the bundled scaffold files that pycastle owns, including `setup/` and `config.py.example`, leaving your `config.py`, `.env`, and runtime session state untouched.
+   This refreshes the bundled scaffold files that pycastle owns, including `setup/` and `config.py.example`, leaving your `config.py`, `.env`, prompt overrides, Dockerfile override, and runtime session state untouched.
 
 4. **Remove the existing cronjob**
 

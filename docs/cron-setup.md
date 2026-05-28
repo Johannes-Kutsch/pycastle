@@ -100,7 +100,7 @@ Have the credentials for the services your repo uses ready before running `pycas
    .venv/bin/pycastle init
    ```
    Paste the credentials relevant to the services you selected when prompted.
-   Expected: `pycastle/` directory created with your local config files plus pycastle-managed scaffold such as `config.py.example` and `setup/`.
+   Expected: `pycastle/` directory created with your local config files plus pycastle-managed scaffold such as `config.py.example` and `setup/`. Prompt files and `pycastle/Dockerfile` are not copied; pycastle uses bundled defaults unless you create local overrides.
 
 9. Build the agent image:
    ```bash
@@ -112,7 +112,7 @@ Have the credentials for the services your repo uses ready before running `pycas
 
 ## 6. Cron entry
 
-The cron helpers under `pycastle/setup/` manage unattended operation. `pycastle init` and `pycastle init --refresh` keep this directory in sync with the bundled scaffold:
+The cron helpers under `pycastle/setup/` manage unattended operation. `pycastle init` and `pycastle init --refresh` keep this directory in sync with the bundled scaffold. When `logs_dir` comes from global config, pycastle treats it as a parent directory and appends the sanitised project name. When `logs_dir` comes from local config, pycastle uses it directly.
 
 - **`setup/cron.sh`** — bootstrap-and-run wrapper. Acquires a global flock at `$PYCASTLE_HOME/.cron.lock` (6-hour timeout) so multiple repos on the same host serialize cleanly, asserts `.venv/` exists, upgrades pycastle (the host venv only needs pycastle itself — consuming-project deps are installed inside the agent container per ADR 0001), runs `pycastle init --refresh`, invokes `pycastle run` (which rebuilds the agent image internally via layer cache), then trims `cron.log` to the last 10000 lines so it cannot grow unbounded.
 - **`setup/cron-install.sh`** — idempotently installs a daily entry (`0 1 * * *`) into your user crontab, tagged `# pycastle:<absolute-repo-path>` so multiple repos coexist. The crontab line redirects stdout+stderr into `<logs_dir>/cron.log` (resolved from the project's `pycastle/config.py` at install time), so cron output lands alongside the per-agent logs and is captured from second 0 — including bootstrap failures like a missing `.venv/` or pip errors.
@@ -191,7 +191,7 @@ Run these steps inside each consuming project on the host:
    pycastle init --refresh
    ```
 
-   This refreshes bundled scaffold files such as `setup/` and `config.py.example`, leaving your `config.py`, `.env`, and runtime session state untouched.
+   This refreshes bundled scaffold files such as `setup/` and `config.py.example`, leaving your `config.py`, `.env`, prompt overrides, Dockerfile override, and runtime session state untouched.
 
 4. **Remove the existing cronjob**
 
