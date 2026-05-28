@@ -19,14 +19,28 @@ def test_dockerfile_claude_template_exists_with_claude_cli():
 
 
 def test_dockerfile_codex_template_exists_with_node_and_codex():
-    """Dockerfile.codex must install Node.js and @openai/codex."""
+    """Dockerfile.codex must install only the Codex per-service Dockerfile runtime."""
     from importlib.resources import files
 
     pkg = files("pycastle").joinpath("defaults")
     content = (pkg / "Dockerfile.codex").read_text()
-    assert "claude.ai/install.sh" not in content
+    assert "FROM python:" in content
+    assert "git" in content
+    assert "cli.github.com/packages" in content
+    assert "apt-get install" in content and " gh" in content
     assert "nodejs" in content
     assert "@openai/codex" in content
+    assert "claude.ai/install.sh" not in content
+    assert "Claude Code CLI" not in content
+    assert ".local/bin" not in content
+
+
+def test_dockerfile_claude_codex_template_is_not_bundled():
+    """Dockerfile.claude-codex must not exist in bundled defaults."""
+    from importlib.resources import files
+
+    pkg = files("pycastle").joinpath("defaults")
+    assert not (pkg / "Dockerfile.claude-codex").is_file()
 
 
 # ── Issue #801: gh CLI must be installed in both Dockerfile templates ──────────
