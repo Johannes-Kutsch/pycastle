@@ -24,6 +24,9 @@ RUN npm install -g @openai/codex@0.134.0 @anthropic-ai/claude-code@2.1.152
 RUN useradd -m -u 1000 -s /bin/bash agent
 USER agent
 
+# Make console scripts installed by runtime `pip install --user` visible.
+ENV PATH="/home/agent/.local/bin:$PATH"
+
 # Trust any bind-mounted directory regardless of host ownership.
 RUN git config --global --add safe.directory '*'
 
