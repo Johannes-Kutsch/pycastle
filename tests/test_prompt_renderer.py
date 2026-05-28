@@ -275,6 +275,14 @@ def test_shipped_plan_prompt_requests_concise_blocked_entries():
     assert "`reason`" not in text
 
 
+def test_context_glossary_describes_concise_planner_blocked_entries():
+    text = (Path(__file__).parent.parent / "CONTEXT.md").read_text(encoding="utf-8")
+
+    assert "`<plan>` tag" in text
+    assert "{number, title}" in text
+    assert "{number, blocked_by, reason}" not in text
+
+
 # ── Ctor validates: unknown token raises ─────────────────────────────────────
 
 

@@ -179,7 +179,7 @@
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **agent output protocol** | Contract between prompts and orchestrator: XML tags (`<plan>`, `<issue>`, `<commit_message>`, `<promise>`), plus the module owning the NDJSON → typed output pipeline. `<behavior>`, `<reviewed_diff>`, and `<checks_passed>` remain in prompts as workflow scaffolding but are not parsed or required by the host | output format, agent tags, agent signals |
-| **`<plan>` tag** | XML tag from Planner with JSON payload `{issues, blocked}`; `issues` lists unblocked AFK issues; `blocked` is prompt-level reasoning scaffold for held-back AFK candidates with `{number, blocked_by, reason}` where `reason` is a **blocker reason** and invalid/out-of-scope entries are ignored | plan output, plan block |
+| **`<plan>` tag** | XML tag from Planner with JSON payload `{issues, blocked}`; `issues` lists unblocked AFK issues; `blocked` is prompt-level reasoning scaffold for held-back AFK candidates, documented as concise `{number, title}` entries while the host parser still tolerates legacy/custom detail fields and ignores invalid/out-of-scope entries | plan output, plan block |
 | **`<issue>` tag** | XML tag from preflight-issue agent containing the filed GitHub issue number | issue output, issue number tag |
 | **`<promise>COMPLETE</promise>`** | XML tag from preflight-issue and support-style agents declaring work phase complete; Implementer, Reviewer, and Merger use `<commit_message>` when pycastle owns the commit | done signal, completion tag |
 | **`AgentOutputProtocolError`** | Base exception when a required tag is missing or malformed; subclassed by `PlanParseError`, `IssueParseError`, `PromiseParseError` | parse error, protocol error |
