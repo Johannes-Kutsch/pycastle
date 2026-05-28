@@ -296,16 +296,27 @@ def _refresh_status(rel: str, target: Path, pkg: Traversable) -> str:
     )
 
 
+def _refresh_status_bytes(target: Path, expected: bytes) -> str:
+    """Return the status verb for writing expected bytes to target."""
+    if not target.exists():
+        return "created"
+    return "unchanged" if target.read_bytes() == expected else "overwrote"
+
+
 def refresh() -> None:
     project_dir = Path("pycastle")
     project_dir.mkdir(parents=True, exist_ok=True)
     pkg = files("pycastle").joinpath("defaults")
     pycastle_home = resolve_global_dir(None, os.environ)
+    config_example_path = project_dir / "config.py.example"
+    config_example_verb = _refresh_status_bytes(
+        config_example_path, _CONFIG_EXAMPLE_TEMPLATE.encode()
+    )
     _write_config_example(project_dir)
     if (pycastle_home / "config.py.example").exists():
         _write_config_example(pycastle_home)
 
-    report: list[tuple[str, str]] = []
+    report: list[tuple[str, str]] = [(config_example_verb, "config.py.example")]
 
     for rel in _discover_project_shaped_files(pkg):
         target = project_dir / rel
