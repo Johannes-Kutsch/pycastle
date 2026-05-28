@@ -1098,7 +1098,7 @@ def test_merge_row_not_removed_with_failed_style_after_row_already_removed(
 # ── Merger work_body ──────────────────────────────────────────────────────────
 
 
-def test_merger_run_call_passes_work_body_with_conflict_count(
+def test_merger_run_call_passes_work_body_with_branch_name(
     tmp_path, git_svc, github_svc
 ):
     git_svc.try_merge.return_value = False
