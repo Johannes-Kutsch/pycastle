@@ -57,6 +57,9 @@ class AbortedHITL:
 @dataclasses.dataclass(frozen=True)
 class AbortedUsageLimit:
     reset_time: datetime | None = None
+    provider: str | None = None
+    account_label: str | None = None
+    is_permanent: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -133,7 +136,12 @@ async def _run_implement_and_merge(
 
         if impl_result.usage_limit_hit:
             row.close("finished")
-            return AbortedUsageLimit(reset_time=impl_result.usage_limit_reset_time)
+            return AbortedUsageLimit(
+                reset_time=impl_result.usage_limit_reset_time,
+                provider=impl_result.usage_limit_provider,
+                account_label=impl_result.usage_limit_account_label,
+                is_permanent=impl_result.usage_limit_is_permanent,
+            )
 
         for issue, error in impl_result.errors:
             deps.status_display.print(
@@ -279,7 +287,12 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             title = f"[pycastle] failed to parse usage-limit reset time ({provider})"
             body = f"## Failed message\n\n```\n{err.raw_message}\n```\n\nProvider: {provider}; failure: usage-limit reset time parse failure\n"
             auto_file_issue(title, body, BUG_REPORT_LABEL_LIST, cfg=deps.cfg)
-        return AbortedUsageLimit(reset_time=err.reset_time)
+        return AbortedUsageLimit(
+            reset_time=err.reset_time,
+            provider=err.provider,
+            account_label=err.account_label,
+            is_permanent=err.is_permanent,
+        )
     except AgentTimeoutError as err:
         return AbortedTimeout(
             failed_role=err.role_value,

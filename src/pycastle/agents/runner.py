@@ -342,7 +342,10 @@ class AgentRunner:
                         )
                         retries_left -= 1
                     except UsageLimitError as err:
-                        service.mark_exhausted(err.reset_time)
+                        if err.is_permanent and isinstance(service, ClaudeService):
+                            err.account_label = service.mark_permanently_exhausted()
+                        else:
+                            service.mark_exhausted(err.reset_time)
                         _token.cancel()
                         raise
                     except TransientAgentError as err:

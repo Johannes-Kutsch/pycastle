@@ -62,6 +62,13 @@ class _AccountPool:
                 acc.exhausted_until = wake
                 return
 
+    def mark_permanently_exhausted(self, token: str) -> str | None:
+        for acc in self._accounts:
+            if acc.token == token:
+                acc.exhausted_until = _PERMANENT_EXHAUSTION_WAKE
+                return acc.name
+        return None
+
     def has_available(self, now: datetime | None = None) -> bool:
         now = now or _time_module.now_local()
         return any(not self._is_exhausted(a, now) for a in self._accounts)
@@ -112,6 +119,13 @@ _MONTHS = {
     "dec": 12,
 }
 
+_SUBSCRIPTION_ACCESS_DENIAL = (
+    "Your organization has disabled Claude subscription access for Claude Code. "
+    "Please use an Anthropic API key instead, or ask your admin to enable "
+    "Claude subscription access for Claude Code."
+)
+_PERMANENT_EXHAUSTION_WAKE = datetime(9999, 12, 31, 23, 59, tzinfo=timezone.utc)
+
 
 def _parse_reset_time(result: object) -> datetime | None:
     if not isinstance(result, str):
@@ -161,6 +175,17 @@ def _parse_reset_time(result: object) -> datetime | None:
     return local_dt
 
 
+def _is_subscription_access_denial(
+    status: object, result: object, is_error: object
+) -> bool:
+    return (
+        is_error is True
+        and status == 403
+        and isinstance(result, str)
+        and result == _SUBSCRIPTION_ACCESS_DENIAL
+    )
+
+
 def _classify_line(line: str) -> list[ParsedTurn]:
     try:
         obj = json.loads(line)
@@ -173,6 +198,11 @@ def _classify_line(line: str) -> list[ParsedTurn]:
         reset_time = _parse_reset_time(obj.get("result"))
         raw = line if reset_time is None else None
         return [UsageLimit(reset_time=reset_time, raw_message=raw)]
+
+    if _is_subscription_access_denial(
+        obj.get("api_error_status"), obj.get("result"), obj.get("is_error")
+    ):
+        return [UsageLimit(reset_time=None, raw_message=None, is_permanent=True)]
 
     if obj.get("is_error") and obj.get("type") == "result":
         status = obj.get("api_error_status")
@@ -250,6 +280,11 @@ class ClaudeService:
     ) -> None:
         if self._pool is not None and self._current_token is not None:
             self._pool.mark_exhausted(self._current_token, reset_time, now=_now)
+
+    def mark_permanently_exhausted(self) -> str | None:
+        if self._pool is None or self._current_token is None:
+            return None
+        return self._pool.mark_permanently_exhausted(self._current_token)
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         if namespace:

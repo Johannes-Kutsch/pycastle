@@ -1379,6 +1379,54 @@ def test_agent_runner_marks_picked_token_exhausted_on_usage_limit(tmp_path):
     assert env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok-primary"
 
 
+def test_agent_runner_marks_picked_token_permanently_exhausted_on_subscription_access_denial(
+    tmp_path,
+):
+    from pycastle.services.claude_service import ClaudeService
+
+    denial = (
+        "Your organization has disabled Claude subscription access for Claude Code. "
+        "Please use an Anthropic API key instead, or ask your admin to enable "
+        "Claude subscription access for Claude Code."
+    )
+    mock_client = _make_docker_client(
+        [
+            (
+                b'{"type":"result","is_error":true,"api_error_status":403,'
+                b'"result":"' + denial.encode() + b'"}\n'
+            )
+        ]
+    )
+
+    svc = ClaudeService(
+        accounts=[("secondary", "tok-secondary"), ("primary", "tok-primary")]
+    )
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"claude": svc},
+    )
+
+    with pytest.raises(UsageLimitError) as exc_info:
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Test",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                )
+            )
+        )
+
+    assert exc_info.value.is_permanent is True
+    assert exc_info.value.account_label == "secondary"
+    env = svc.build_env()
+    assert env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok-primary"
+
+
 def test_fake_agent_runner_accepts_run_request_and_records_it():
     completion = CompletionOutput()
     fake = FakeAgentRunner([completion])

@@ -2082,6 +2082,64 @@ def test_usage_limit_pool_switch_message_cross_day_shows_date(tmp_path, capsys):
     assert "exhausted until Jan 2, 06:02" in out
 
 
+def test_subscription_access_denial_switch_message_names_service_and_account(
+    tmp_path, capsys
+):
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.side_effect = [
+        [
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "x" * 100,
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            {
+                "number": 2,
+                "title": "Default Issue 2",
+                "body": "x" * 100,
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+        ],
+        [],
+    ]
+
+    svc_available = _FakeService(available=True)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+            )
+        raise UsageLimitError(
+            reset_time=None,
+            provider="claude",
+            is_permanent=True,
+            account_label="secondary",
+        )
+
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            service_registry=ServiceRegistry(
+                {"secondary": _FakeService(available=False), "primary": svc_available}
+            ),
+            max_iterations=2,
+        )
+
+    mock_sleep.assert_not_called()
+    out = capsys.readouterr().out
+    assert (
+        "claude secondary account exhausted permanently, switching to next available."
+        in out
+    )
+    assert "Usage limit reached. Sleeping until " not in out
+
+
 # ── Preflight-phase usage-limit handling ─────────────────────────────────────
 
 

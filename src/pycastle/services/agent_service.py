@@ -29,6 +29,7 @@ class Result:
 class UsageLimit:
     reset_time: datetime | None
     raw_message: str | None = None
+    is_permanent: bool = False
 
 
 @dataclasses.dataclass
