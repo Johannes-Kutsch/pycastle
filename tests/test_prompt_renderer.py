@@ -99,6 +99,19 @@ def test_scope_preflight_placeholders():
     )
 
 
+def test_scope_host_check_placeholders():
+    assert Scope.HOST_CHECK.placeholders == frozenset(
+        {
+            "HOST_OS",
+            "HOST_PLATFORM",
+            "CHECKED_SHA",
+            "CHECK_NAME",
+            "COMMAND",
+            "OUTPUT",
+        }
+    )
+
+
 def test_scope_improve_scan_is_empty():
     assert Scope.IMPROVE_SCAN.placeholders == frozenset()
 
@@ -127,7 +140,7 @@ def test_scopes_are_distinct_members():
     # Regression: empty-frozenset values were aliased by Enum, collapsing
     # IMPROVE_SCAN and RESUME into a single member.
     assert Scope.IMPROVE_SCAN is not Scope.RESUME
-    assert len(list(Scope)) == 10
+    assert len(list(Scope)) == 11
 
 
 # ── PromptTemplate enum has correct filename and scope ────────────────────────
@@ -158,6 +171,11 @@ def test_template_preflight_issue_has_correct_scope():
     assert PromptTemplate.PREFLIGHT_ISSUE.scope == Scope.PREFLIGHT
 
 
+def test_template_host_check_issue_has_correct_scope():
+    assert PromptTemplate.HOST_CHECK_ISSUE.filename == "host-check-issue.md"
+    assert PromptTemplate.HOST_CHECK_ISSUE.scope == Scope.HOST_CHECK
+
+
 def test_template_improve_scan_has_correct_scope():
     assert PromptTemplate.IMPROVE_SCAN.filename == "improve/01-scan.md"
     assert PromptTemplate.IMPROVE_SCAN.scope == Scope.IMPROVE_SCAN
@@ -173,8 +191,8 @@ def test_template_resume_has_correct_scope():
     assert PromptTemplate.RESUME.scope == Scope.RESUME
 
 
-def test_template_enum_has_fourteen_variants():
-    assert len(list(PromptTemplate)) == 14
+def test_template_enum_has_fifteen_variants():
+    assert len(list(PromptTemplate)) == 15
 
 
 # ── Ctor validates: unknown token raises ─────────────────────────────────────
@@ -510,6 +528,55 @@ def test_renderer_aborts_when_issue_tracker_referenced_but_absent(prompts_dir):
         PromptRenderer(cfg)
 
 
+def test_render_shipped_preflight_issue_prompt():
+    renderer = _make_shipped_prompt_renderer()
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.PREFLIGHT_ISSUE,
+            {
+                "CHECK_NAME": "pytest suite",
+                "COMMAND": "pytest",
+                "OUTPUT": "boom",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert "outside the agent container" not in result
+    assert "pytest suite" in result
+    assert "pytest" in result
+    assert "boom" in result
+
+
+def test_render_shipped_host_check_issue_prompt():
+    renderer = _make_shipped_prompt_renderer()
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.HOST_CHECK_ISSUE,
+            {
+                "HOST_OS": "Windows",
+                "HOST_PLATFORM": "win32",
+                "CHECKED_SHA": "abc123",
+                "CHECK_NAME": "pytest host suite",
+                "COMMAND": "pytest tests/host",
+                "OUTPUT": "boom",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert "outside the agent container" in result
+    assert "deduplicate" in result.lower()
+    assert "Windows" in result
+    assert "win32" in result
+    assert "abc123" in result
+    assert "pytest host suite" in result
+    assert "pytest tests/host" in result
+    assert "boom" in result
+
+
 # ── No legacy standards placeholders in defaults-tree prompts ────────────────
 
 _LEGACY_STANDARDS_NAMES = {
@@ -663,7 +730,7 @@ _FAILURE_REPORT_SCOPE_ARGS_BASE = {
 }
 
 
-def _make_failure_report_renderer() -> PromptRenderer:
+def _make_shipped_prompt_renderer() -> PromptRenderer:
     from pycastle.config import Config
 
     cfg = Config(prompts_dir=_SHIPPED_PROMPTS_DIR)
@@ -671,7 +738,7 @@ def _make_failure_report_renderer() -> PromptRenderer:
 
 
 def test_failure_report_renders_recovery_section_for_non_typed_crash():
-    renderer = _make_failure_report_renderer()
+    renderer = _make_shipped_prompt_renderer()
 
     result = _run(
         renderer.render(
@@ -686,7 +753,7 @@ def test_failure_report_renders_recovery_section_for_non_typed_crash():
 
 
 def test_failure_report_omits_recovery_section_for_protocol_error():
-    renderer = _make_failure_report_renderer()
+    renderer = _make_shipped_prompt_renderer()
 
     result = _run(
         renderer.render(
