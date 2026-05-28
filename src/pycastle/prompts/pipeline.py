@@ -208,12 +208,12 @@ class PromptRenderer:
         *,
         allowed_args: dict[str, str],
         required: bool,
-    ) -> str:
+    ) -> str | None:
         content = self._prompt_source.maybe_read_text(relative_path)
         if content is None:
             if required:
                 raise PromptRenderError(f"Missing prompt fragment: {relative_path}")
-            return ""
+            return None
         found = set(PLACEHOLDER.findall(content))
         found |= {m.group(1) for m in CONDITIONAL_BLOCK.finditer(content)}
         unknown = found - allowed_args.keys()
@@ -230,14 +230,15 @@ class PromptRenderer:
                 rendered = self._render_effective_file(
                     filename, allowed_args=base_args, required=False
                 )
-                if rendered:
+                if rendered is not None:
                     result[key] = rendered
             else:
-                result[key] = self._render_effective_file(
+                rendered = self._render_effective_file(
                     f"coding-standards/{filename}",
                     allowed_args=base_args,
                     required=False,
                 )
+                result[key] = rendered or ""
         return result
 
     @staticmethod
@@ -287,9 +288,11 @@ class PromptRenderer:
             for key, filename in self._DYNAMIC_SHARED_FILES.items():
                 if key not in found:
                     continue
-                self._render_effective_file(
+                rendered = self._render_effective_file(
                     filename, allowed_args=validation_args, required=False
                 )
+                if rendered is None:
+                    raise PromptRenderError(f"Missing prompt fragment: {filename}")
 
     async def render(
         self,
@@ -320,6 +323,7 @@ class PromptRenderer:
             rendered = self._render_effective_file(
                 filename, allowed_args=all_args, required=False
             )
-            if rendered:
-                all_args[key] = rendered
+            if rendered is None:
+                raise PromptRenderError(f"Missing prompt fragment: {filename}")
+            all_args[key] = rendered
         return _render(preprocessed, all_args)

@@ -655,6 +655,28 @@ def test_renderer_renders_local_issue_tracker_override_through_bundled_prompt(
     assert "{{READY_FOR_AGENT_LABEL}}" not in result
 
 
+def test_renderer_allows_empty_local_issue_tracker_override(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "_issue-tracker.md").write_text("")
+    renderer = PromptRenderer(Config())
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPROVE_NO_CANDIDATE,
+            {"IMPROVE_SHORT_SID": "abc"},
+            _noop_exec,
+        )
+    )
+
+    bundled_tracker = (_SHIPPED_PROMPTS_DIR / "_issue-tracker.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert bundled_tracker not in result
+
+
 def test_renderer_renders_local_shared_framing_override_through_bundled_prompt(
     tmp_path, monkeypatch
 ):
