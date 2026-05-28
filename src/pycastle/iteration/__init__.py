@@ -166,7 +166,9 @@ async def _run_implement_and_merge(
             )
         )
 
-    await merge_phase(completed, deps)
+    merge_result = await merge_phase(completed, deps)
+    if merge_result.preflight_blocker is not None:
+        return await _handle_preflight_outcome(merge_result.preflight_blocker, deps)
     return Continue()
 
 

@@ -3494,6 +3494,294 @@ def test_run_iteration_preflight_fix_uses_planner_sha_not_second_call(
     )
 
 
+def test_run_iteration_routes_merge_time_preflight_afk_at_iteration_boundary(
+    tmp_path, git_svc, logger
+):
+    """When merge-time preflight files an AFK repair issue, run_iteration must preserve
+    clean merge work, then implement only the filed preflight issue from the merge-time
+    SHA and return Continue so conflict branches resume in a later iteration."""
+    from pycastle.iteration.preflight import PreflightAFK, PreflightReady
+
+    action_log: list[tuple[str, object]] = []
+    implemented_issue_numbers: list[int] = []
+    call_count = 0
+
+    class _SequentialCache:
+        async def get_safe_sha(self, deps):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return PreflightReady(sha="plan-sha")
+            return PreflightAFK(sha="merge-sha", issue_number=181)
+
+        async def pull_with_resolution(self, deps):
+            return None
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Clean branch",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Conflict branch",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    def _get_issue(issue_number: int):
+        action_log.append(("get_issue", issue_number))
+        assert issue_number == 181
+        return {
+            "number": 181,
+            "title": "Fix merge-time preflight failure",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+
+    github_svc.get_issue.side_effect = _get_issue
+
+    def _close_issue(issue_number: int):
+        action_log.append(("close_issue", issue_number))
+
+    github_svc.close_issue.side_effect = _close_issue
+
+    def _delete_branch(branch: str, repo_root: Path):
+        action_log.append(("delete_branch", branch))
+
+    git_svc.delete_branch.side_effect = _delete_branch
+    git_svc.try_merge.side_effect = [True, False, True]
+
+    async def _fake_agent(request: RunRequest):
+        action_log.append(("agent", request.name))
+        if request.name == "Plan Agent":
+            return _plan_output(github_svc.get_open_issues.return_value)
+        if request.name.startswith("Implement Agent #"):
+            implemented_issue_numbers.append(int(request.name.split("#")[1]))
+        return CompletionOutput()
+
+    def _push(repo_root: Path, resolver):
+        action_log.append(("push", repo_root))
+
+    git_svc.push.side_effect = _push
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(max_parallel=4, max_iterations=1, auto_push=True),
+        ),
+        preflight_cache=_SequentialCache(),  # type: ignore[arg-type]
+    )
+
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    assert call_count == 2
+    assert implemented_issue_numbers == [1, 2, 181]
+    pinned_shas_by_branch = {
+        call.args[2]: call.args[3]
+        for call in git_svc.create_worktree.call_args_list
+        if call.args[3] is not None
+    }
+    assert pinned_shas_by_branch["pycastle/issue-1"] == "plan-sha"
+    assert pinned_shas_by_branch["pycastle/issue-2"] == "plan-sha"
+    assert pinned_shas_by_branch["pycastle/issue-181"] == "merge-sha"
+    closed_issue_numbers = [
+        call.args[0] for call in github_svc.close_issue.call_args_list
+    ]
+    assert closed_issue_numbers == [1, 181]
+    deleted_branches = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert deleted_branches == ["pycastle/issue-1", "pycastle/issue-181"]
+    assert ("push", tmp_path) in action_log
+    assert action_log.index(("push", tmp_path)) < action_log.index(("get_issue", 181))
+
+
+def test_run_iteration_aborts_on_merge_time_preflight_hitl_at_iteration_boundary(
+    tmp_path, git_svc, logger
+):
+    """When merge-time preflight returns HITL, run_iteration must preserve the clean
+    merge, push it when enabled, and abort with the HITL issue number."""
+    from pycastle.iteration.preflight import PreflightHITL, PreflightReady
+
+    action_log: list[tuple[str, object]] = []
+    implemented_issue_numbers: list[int] = []
+    call_count = 0
+
+    class _SequentialCache:
+        async def get_safe_sha(self, deps):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return PreflightReady(sha="plan-sha")
+            return PreflightHITL(sha="merge-sha", issue_number=182)
+
+        async def pull_with_resolution(self, deps):
+            return None
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Clean branch",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Conflict branch",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+    github_svc.get_all_open_issues_lightweight.return_value = []
+    github_svc.close_issue.side_effect = lambda issue_number: action_log.append(
+        ("close_issue", issue_number)
+    )
+
+    git_svc.delete_branch.side_effect = lambda branch, repo_root: action_log.append(
+        ("delete_branch", branch)
+    )
+    git_svc.push.side_effect = lambda repo_root, resolver: action_log.append(
+        ("push", repo_root)
+    )
+    git_svc.try_merge.side_effect = [True, False]
+
+    async def _fake_agent(request: RunRequest):
+        action_log.append(("agent", request.name))
+        if request.name == "Plan Agent":
+            return _plan_output(github_svc.get_open_issues.return_value)
+        if request.name.startswith("Implement Agent #"):
+            implemented_issue_numbers.append(int(request.name.split("#")[1]))
+        return CompletionOutput()
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(max_parallel=4, max_iterations=1, auto_push=True),
+        ),
+        preflight_cache=_SequentialCache(),  # type: ignore[arg-type]
+    )
+
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedHITL)
+    assert result.issue_number == 182
+    assert call_count == 2
+    assert implemented_issue_numbers == [1, 2]
+    closed_issue_numbers = [
+        call.args[0] for call in github_svc.close_issue.call_args_list
+    ]
+    assert closed_issue_numbers == [1]
+    deleted_branches = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert deleted_branches == ["pycastle/issue-1"]
+    assert ("push", tmp_path) in action_log
+
+
+def test_run_iteration_merge_time_preflight_issue_agent_failure_aborts_normally(
+    tmp_path, git_svc, logger
+):
+    """If the preflight-issue agent fails during merge-time preflight, run_iteration
+    must follow the normal AbortedAgentFailure path and not continue conflict merges."""
+    from pycastle.agents.output_protocol import AgentRole
+    from pycastle.iteration.preflight import PreflightReady
+
+    action_log: list[tuple[str, object]] = []
+    implemented_issue_numbers: list[int] = []
+    call_count = 0
+    preflight_path = tmp_path / "pycastle" / ".worktrees" / "preflight-sandbox"
+
+    class _SequentialCache:
+        async def get_safe_sha(self, deps):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return PreflightReady(sha="plan-sha")
+            preflight_path.mkdir(parents=True, exist_ok=True)
+            (preflight_path / "pyproject.toml").write_text("[project]\nname='t'\n")
+            raise _make_agent_failed_error(AgentRole.PREFLIGHT_ISSUE, preflight_path)
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Clean branch",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Conflict branch",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+    github_svc.get_all_open_issues_lightweight.return_value = []
+    github_svc.close_issue.side_effect = lambda issue_number: action_log.append(
+        ("close_issue", issue_number)
+    )
+
+    git_svc.delete_branch.side_effect = lambda branch, repo_root: action_log.append(
+        ("delete_branch", branch)
+    )
+    git_svc.try_merge.side_effect = [True, False]
+
+    async def _fake_agent(request: RunRequest):
+        action_log.append(("agent", request.name))
+        if request.name == "Plan Agent":
+            return _plan_output(github_svc.get_open_issues.return_value)
+        if request.name.startswith("Implement Agent #"):
+            implemented_issue_numbers.append(int(request.name.split("#")[1]))
+            return CompletionOutput()
+        if request.name == "Failure Report Agent":
+            return IssueOutput(number=222, labels=["bug"])
+        return CompletionOutput()
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(max_parallel=4, max_iterations=1, auto_push=True),
+        ),
+        preflight_cache=_SequentialCache(),  # type: ignore[arg-type]
+    )
+
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentFailure)
+    assert result.failed_role == "preflight_issue"
+    assert result.issue_number == 222
+    assert call_count == 2
+    assert implemented_issue_numbers == [1, 2]
+    assert ("agent", "Failure Report Agent") in action_log
+    closed_issue_numbers = [
+        call.args[0] for call in github_svc.close_issue.call_args_list
+    ]
+    assert closed_issue_numbers == [1]
+
+
 # ── improve_max slot consumption on abort ────────────────────────────────────
 
 
