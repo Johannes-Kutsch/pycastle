@@ -14,9 +14,16 @@ import platformdirs
 from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
 
-__all__ = ["Config", "describe_config_layers", "load_config", "resolve_global_dir"]
+__all__ = [
+    "Config",
+    "describe_config_layers",
+    "load_config",
+    "resolve_dockerfile",
+    "resolve_global_dir",
+]
 
 _BUG_REPORT_REPO_RE = re.compile(r"^[^/]+/[^/]+$")
+_DEFAULTS_DIR = Path(__file__).resolve().parents[1] / "defaults"
 
 _IGNORED_CONFIG_KEYS = frozenset({"usage_limit_patterns", "default_service"})
 
@@ -127,6 +134,19 @@ def referenced_services(cfg: Config) -> set[str]:
                 names.add(node.service)
             node = node.fallback
     return names
+
+
+def resolve_dockerfile(service: str, pycastle_dir: Path) -> Path:
+    local = pycastle_dir / f"Dockerfile.{service}"
+    if local.exists():
+        return local
+    bundled = _DEFAULTS_DIR / f"Dockerfile.{service}"
+    if bundled.exists():
+        return bundled
+    raise ConfigValidationError(
+        f"Unknown service {service!r}; no bundled Dockerfile default exists",
+        invalid_value=service,
+    )
 
 
 def resolve_global_dir(explicit: Path | None, env: Mapping[str, str]) -> Path:

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pycastle.config.types import StageOverride
 from pycastle.config.env_loader import DEFAULT_ENV_FILE, load_env
-from pycastle.config.loader import Config, load_config, resolve_global_dir
+from pycastle.config.loader import (
+    Config,
+    load_config,
+    resolve_dockerfile,
+    resolve_global_dir,
+)
 
 __all__ = [
     "Config",
@@ -10,5 +15,6 @@ __all__ = [
     "StageOverride",
     "load_config",
     "load_env",
+    "resolve_dockerfile",
     "resolve_global_dir",
 ]
