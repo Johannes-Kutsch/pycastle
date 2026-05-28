@@ -71,36 +71,92 @@ def test_load_env_includes_secondary_oauth_token_when_present(tmp_path, monkeypa
     assert env["CLAUDE_CODE_OAUTH_TOKEN_SECONDARY"] == "secondary-tok"
 
 
-def test_run_cmd_fails_fast_when_oauth_token_missing(tmp_path, monkeypatch):
+def test_run_cmd_uses_remaining_known_services_when_oauth_token_missing(
+    tmp_path, monkeypatch
+):
     from pycastle.main import main as cli
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("GH_TOKEN", "gh")
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
 
-    result = CliRunner().invoke(cli, ["run"])
+    with (
+        patch("pycastle.commands.build.main"),
+        patch("pycastle.iteration.orchestrator.run"),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
 
-    assert result.exit_code == 1
-    assert "CLAUDE_CODE_OAUTH_TOKEN" in result.output
-    assert "claude setup-token" in result.output
+    assert result.exit_code == 0, result.output
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in result.output
 
 
-def test_run_cmd_default_stage_override_requires_claude_token(tmp_path, monkeypatch):
+def test_run_cmd_default_stage_override_seeds_codex_without_claude_token(
+    tmp_path, monkeypatch
+):
     from pycastle.config import Config
     from pycastle.main import main as cli
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("GH_TOKEN", "gh")
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
 
     cfg = Config(docker_image_name="myimage")
-    with patch("pycastle.main.load_config", return_value=cfg):
+    captured: dict = {}
+
+    async def _fake_run(env, repo_root, **kwargs):
+        captured["registry"] = kwargs.get("service_registry")
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.main"),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
+    ):
         result = CliRunner().invoke(cli, ["run"])
 
-    assert result.exit_code == 1
-    assert "Error: CLAUDE_CODE_OAUTH_TOKEN is not set." in result.output
-    assert "claude setup-token" in result.output
+    assert result.exit_code == 0, result.output
+    assert captured["registry"]["codex"].name == "codex"
+    assert captured["registry"]["claude"] is None
+
+
+def test_run_cmd_allows_known_unconfigured_primary_service_in_stage_chain(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    codex_only = StageOverride(service="codex", model="gpt-5.4", effort="medium")
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=codex_only,
+        implement_override=StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+            fallback=codex_only,
+        ),
+        review_override=codex_only,
+        merge_override=codex_only,
+        preflight_issue_override=codex_only,
+        improve_override=codex_only,
+    )
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.main"),
+        patch("pycastle.iteration.orchestrator.run"),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in result.output
 
 
 def test_run_cmd_rejects_empty_stage_override_service_before_credentials(
@@ -518,10 +574,9 @@ def test_init_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
 # ── Issue 504/691: service registry seeding from env ─────────────────────────
 
 
-def test_run_cmd_ignores_legacy_default_service_codex_and_requires_claude_token(
+def test_run_cmd_ignores_legacy_default_service_codex_for_service_registry(
     tmp_path, monkeypatch
 ):
-    from pycastle.config import Config
     from pycastle.main import main as cli
 
     monkeypatch.chdir(tmp_path)
@@ -529,19 +584,23 @@ def test_run_cmd_ignores_legacy_default_service_codex_and_requires_claude_token(
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
     monkeypatch.setenv("GH_TOKEN", "gh")
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text('default_service = "codex"\n')
 
-    cfg = Config(docker_image_name="myimage")
-    fake_svc = MagicMock()
-    fake_svc.build_image.return_value = None
+    captured: dict = {}
+
+    async def _fake_run(env, repo_root, **kwargs):
+        captured["registry"] = kwargs.get("service_registry")
 
     with (
-        patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+        patch("pycastle.commands.build.main"),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
-    assert result.exit_code == 1
-    assert "CLAUDE_CODE_OAUTH_TOKEN is not set" in result.output
+    assert result.exit_code == 0, result.output
+    assert captured["registry"]["codex"].name == "codex"
+    assert captured["registry"]["claude"] is None
 
 
 def test_run_cmd_explicit_codex_only_does_not_require_claude_token(
@@ -650,20 +709,25 @@ def test_run_cmd_seeds_pool_with_secondary_first_when_present(tmp_path, monkeypa
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "secondary-tok"
 
 
-def test_run_cmd_fails_fast_when_primary_token_missing_even_with_secondary(
+def test_run_cmd_skips_claude_when_primary_token_missing_even_with_secondary(
     tmp_path, monkeypatch
 ):
     from pycastle.main import main as cli
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("GH_TOKEN", "gh")
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", "secondary-tok")
 
-    result = CliRunner().invoke(cli, ["run"])
+    with (
+        patch("pycastle.commands.build.main"),
+        patch("pycastle.iteration.orchestrator.run"),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
 
-    assert result.exit_code == 1
-    assert "CLAUDE_CODE_OAUTH_TOKEN" in result.output
+    assert result.exit_code == 0, result.output
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in result.output
 
 
 # ── Issue 670: improve_mode config field / CLI precedence matrix ──────────────

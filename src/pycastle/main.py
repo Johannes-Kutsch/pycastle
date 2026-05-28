@@ -4,12 +4,12 @@ import difflib
 import os
 import sys
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import click
 
 from .config import Config, StageOverride, load_config, load_env, resolve_global_dir
-from .config.loader import describe_config_layers
+from .config.loader import describe_config_layers, referenced_services
 from .errors import (
     ClaudeCliNotFoundError,
     ConfigValidationError,
@@ -19,6 +19,9 @@ from .display.status_display import PlainStatusDisplay
 from .service_availability import iter_stage_chain
 
 _KNOWN_SERVICES: frozenset[str] = frozenset({"claude", "codex"})
+
+if TYPE_CHECKING:
+    from .services.agent_service import AgentService
 
 
 def _stage_overrides(cfg: Config) -> list[tuple[str, StageOverride]]:
@@ -97,6 +100,31 @@ def _load_env(cfg: Config | None = None) -> dict[str, str]:
         process_env=os.environ,
     )
     return {k: v for k in _ENV_KEYS if (v := resolved.get(k))}
+
+
+def _configured_service_registry(
+    cfg: Config, env: dict[str, str]
+) -> dict[str, "AgentService"]:
+    from .services.agent_service import AgentService
+    from .services.claude_service import ClaudeService
+    from .services.codex_service import CodexService
+
+    service_registry: dict[str, AgentService] = {"codex": CodexService()}
+
+    if "claude" not in referenced_services(cfg):
+        return service_registry
+
+    primary = env.get("CLAUDE_CODE_OAUTH_TOKEN")
+    if not primary:
+        return service_registry
+
+    accounts: list[tuple[str, str]] = []
+    secondary = env.get("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY")
+    if secondary:
+        accounts.append(("secondary", secondary))
+    accounts.append(("primary", primary))
+    service_registry["claude"] = ClaudeService(accounts=accounts)
+    return service_registry
 
 
 def _print_layer_summary() -> None:
@@ -231,7 +259,6 @@ def _do_run(
     from typing import cast
 
     from .commands.build import main as _build
-    from .config.loader import referenced_services
     from .iteration._deps import ImproveMode
     from .iteration.orchestrator import run
     from .services.agent_service import AgentService
@@ -260,28 +287,7 @@ def _do_run(
         sys.exit(1)
 
     env = _load_env(cfg=cfg)
-    referenced = referenced_services(cfg)
-    if "both" in referenced:
-        referenced = (referenced - {"both"}) | {"claude", "codex"}
-    service_registry: dict[str, AgentService] = {}
-    if "claude" in referenced:
-        primary = env.get("CLAUDE_CODE_OAUTH_TOKEN")
-        if not primary:
-            click.echo(
-                "Error: CLAUDE_CODE_OAUTH_TOKEN is not set. "
-                "Run `claude setup-token` to generate a token, then add it to your .env file.",
-                err=True,
-            )
-            sys.exit(1)
-
-        accounts: list[tuple[str, str]] = []
-        secondary = env.get("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY")
-        if secondary:
-            accounts.append(("secondary", secondary))
-        accounts.append(("primary", primary))
-        service_registry["claude"] = ClaudeService(accounts=accounts)
-    if "codex" in referenced:
-        service_registry["codex"] = CodexService()
+    service_registry = _configured_service_registry(cfg, env)
 
     try:
         _build(stream=True, terse=True, cfg=cfg)
