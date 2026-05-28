@@ -1370,6 +1370,89 @@ def test_merge_phase_rebuilds_sandbox_at_sha_even_when_merger_session_dir_presen
     )
 
 
+def test_merge_phase_recreates_preserved_issue_sandbox_from_current_safe_sha(
+    conflicting_repo, github_svc
+):
+    """A preserved failed issue sandbox must not resume from its obsolete branch tip."""
+    real_git = GitService(Config(pycastle_dir=".pycastle"))
+    old_safe_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=conflicting_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    (conflicting_repo / "repair.txt").write_text("manual repair\n")
+    _git(conflicting_repo, "add", "repair.txt")
+    _git(conflicting_repo, "commit", "-m", "manual repair")
+    current_safe_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=conflicting_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    sandbox_path = _merge_sandbox_path(
+        conflicting_repo, Config(pycastle_dir=".pycastle"), 1
+    )
+    _git(
+        conflicting_repo,
+        "worktree",
+        "add",
+        "-b",
+        _merge_sandbox_branch(1),
+        str(sandbox_path),
+        old_safe_sha,
+    )
+    (sandbox_path / "stale.txt").write_text("stale preserved merger state\n")
+    _git(sandbox_path, "add", "stale.txt")
+    _git(sandbox_path, "commit", "-m", "stale merge sandbox")
+    stale_sandbox_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=sandbox_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    merger_dir = sandbox_path / ".pycastle-session" / "merger"
+    merger_dir.mkdir(parents=True, exist_ok=True)
+    (merger_dir / "session.json").write_text("{}")
+    (sandbox_path / ".pycastle-session" / ".preserved-failure").write_text("")
+
+    seen_head: list[str] = []
+
+    async def _resolve_conflict(request: RunRequest):
+        if request.name == "Merge Agent":
+            seen_head.append(
+                subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=request.mount_path,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+            )
+            (request.mount_path / "conflict.txt").write_text("resolved\n")
+            _git(request.mount_path, "add", "conflict.txt")
+        return CommitMessageOutput(message="resolve conflict")
+
+    deps = _make_deps(
+        conflicting_repo,
+        FakeAgentRunner(side_effect=_resolve_conflict),
+        git_svc=real_git,
+        github_svc=github_svc,
+        cfg=Config(pycastle_dir=".pycastle", auto_push=False),
+        preflight_cache=StubPreflightCache(PreflightReady(sha=current_safe_sha)),
+    )
+
+    _run([{"number": 1, "title": "Conflict"}], deps)
+
+    assert stale_sandbox_sha != current_safe_sha
+    assert seen_head == [current_safe_sha]
+
+
 # ── Parallel branch teardown: warning routing ─────────────────────────────────
 
 

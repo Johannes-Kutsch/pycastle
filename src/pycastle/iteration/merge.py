@@ -244,6 +244,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                     branch=sandbox_branch,
                     sha=deps.git_svc.get_head_sha(deps.repo_root),
                     delete_branch_on_teardown=True,
+                    replace_preserved_failure=True,
                     deps=deps,
                 ) as sandbox_path:
                     deps.git_svc.start_merge(
