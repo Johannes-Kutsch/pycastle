@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.config import Config
-from pycastle.errors import WorktreeError, WorktreeTimeoutError
+from pycastle.errors import AgentFailedError, WorktreeError, WorktreeTimeoutError
 from pycastle.services import GitCommandError, GitService, GitTimeoutError
 from pycastle.errors import HardAgentError, TransientAgentError, UsageLimitError
 from pycastle.infrastructure.worktree import (
@@ -1123,6 +1123,29 @@ def test_managed_worktree_preserves_worktree_on_usage_limit_error(branch_deps):
     branch_deps.git_svc.delete_branch.assert_not_called()
 
 
+def test_managed_worktree_preserves_worktree_on_agent_failed_error(branch_deps):
+    """managed_worktree must not teardown when AgentFailedError propagates."""
+
+    async def _run():
+        with pytest.raises(AgentFailedError):
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha=None,
+                delete_branch_on_teardown=True,
+                deps=branch_deps,
+            ) as wt_path:
+                raise AgentFailedError(
+                    role_value="implementer",
+                    worktree_path=wt_path,
+                )
+
+    asyncio.run(_run())
+
+    branch_deps.git_svc.remove_worktree.assert_not_called()
+    branch_deps.git_svc.delete_branch.assert_not_called()
+
+
 # ── managed_worktree: parametrised preservation predicate ────────────────────
 
 
@@ -1320,21 +1343,23 @@ def _branch_exists(repo: Path, branch: str) -> bool:
     return branch in out
 
 
-def test_prune_orphan_worktrees_tears_down_registered_worktree_with_no_role_session(
+def test_prune_orphan_worktrees_preserves_registered_worktree_with_no_role_session(
     registered_orphan,
 ):
     registered_orphan.sweep()
 
-    assert registered_orphan.wt_path not in registered_orphan.svc.list_worktrees(
+    assert registered_orphan.wt_path in registered_orphan.svc.list_worktrees(
         registered_orphan.repo
     )
-    assert not registered_orphan.wt_path.exists()
+    assert registered_orphan.wt_path.exists()
 
 
-def test_prune_orphan_worktrees_deletes_empty_branch_after_teardown(registered_orphan):
+def test_prune_orphan_worktrees_keeps_empty_branch_for_registered_worktree_without_role_session(
+    registered_orphan,
+):
     registered_orphan.sweep()
 
-    assert not _branch_exists(registered_orphan.repo, registered_orphan.branch)
+    assert _branch_exists(registered_orphan.repo, registered_orphan.branch)
 
 
 def test_prune_orphan_worktrees_preserves_branch_with_commits_ahead_of_main(
