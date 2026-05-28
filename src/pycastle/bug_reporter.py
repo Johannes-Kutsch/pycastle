@@ -112,11 +112,11 @@ def _safe_resolve_token(cfg: Config | None) -> str | None:
     if cfg is None:
         return None
     try:
-        from .config import load_env, resolve_global_dir
+        from .config import DEFAULT_ENV_FILE, load_env, resolve_global_dir
 
         env = load_env(
             global_dir=resolve_global_dir(None, os.environ),
-            local_env_file=cfg.env_file,
+            local_env_file=DEFAULT_ENV_FILE,
             process_env=os.environ,
         )
         return env.get("GH_TOKEN")

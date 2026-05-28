@@ -3,7 +3,7 @@ import sys
 
 import click
 
-from ..config import Config, load_config, load_env, resolve_global_dir
+from ..config import DEFAULT_ENV_FILE, Config, load_config, load_env, resolve_global_dir
 from ..services import (
     GithubAPIError,
     GithubAuthError,
@@ -158,7 +158,7 @@ def main(cfg: Config | None = None) -> None:
     cfg = cfg or load_config()
     resolved = load_env(
         global_dir=resolve_global_dir(None, os.environ),
-        local_env_file=cfg.env_file,
+        local_env_file=DEFAULT_ENV_FILE,
         process_env=os.environ,
     )
 

@@ -8,7 +8,14 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import click
 
-from .config import Config, StageOverride, load_config, load_env, resolve_global_dir
+from .config import (
+    DEFAULT_ENV_FILE,
+    Config,
+    StageOverride,
+    load_config,
+    load_env,
+    resolve_global_dir,
+)
 from .config.loader import describe_config_layers, referenced_services
 from .errors import (
     ClaudeCliNotFoundError,
@@ -97,7 +104,7 @@ def _load_env(cfg: Config | None = None) -> dict[str, str]:
         cfg = load_config()
     resolved = load_env(
         global_dir=resolve_global_dir(None, os.environ),
-        local_env_file=cfg.env_file,
+        local_env_file=DEFAULT_ENV_FILE,
         process_env=os.environ,
     )
     return {k: v for k in _ENV_KEYS if (v := resolved.get(k))}

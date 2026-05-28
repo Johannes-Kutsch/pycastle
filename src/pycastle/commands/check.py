@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
-from ..config import Config, load_config
+from ..config import DEFAULT_ENV_FILE, Config, load_config
 from ..config import load_env, resolve_global_dir
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
 from ..infrastructure.worktree import transient_worktree
@@ -77,7 +77,7 @@ def _resolve_github_service(
 ) -> GithubService:
     resolved = load_env(
         global_dir=resolve_global_dir(None, os.environ),
-        local_env_file=cfg.env_file,
+        local_env_file=DEFAULT_ENV_FILE,
         process_env=os.environ,
     )
     token = resolved.get("GH_TOKEN", "").strip()
@@ -102,7 +102,7 @@ def _resolve_agent_runner(
         key: value
         for key, value in load_env(
             global_dir=resolve_global_dir(None, os.environ),
-            local_env_file=cfg.env_file,
+            local_env_file=DEFAULT_ENV_FILE,
             process_env=os.environ,
         ).items()
         if value
