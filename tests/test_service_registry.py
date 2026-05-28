@@ -216,6 +216,24 @@ def test_next_wake_time_skips_available_services() -> None:
     assert registry.next_wake_time(_now()) == wake
 
 
+def test_next_wake_time_for_includes_configured_exhausted_opencode_only() -> None:
+    opencode = OpenCodeService(api_key="go-key")
+    opencode.mark_exhausted(datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc))
+    registry = ServiceRegistry(services={"opencode": opencode})
+    override = StageOverride(
+        service="missing",
+        fallback=StageOverride(
+            service="opencode",
+            model="kimi-k2.6",
+            effort="medium",
+        ),
+    )
+
+    assert registry.next_wake_time_for(override, _now()) == datetime(
+        2025, 1, 1, 13, 2, 0, tzinfo=timezone.utc
+    )
+
+
 # --- summary_lines ---
 
 

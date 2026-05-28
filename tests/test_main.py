@@ -91,6 +91,51 @@ def test_run_cmd_uses_remaining_known_services_when_oauth_token_missing(
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in result.output
 
 
+def test_run_cmd_skips_unconfigured_opencode_when_claude_fallback_available(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "claude-token")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+    monkeypatch.delenv("OPENCODE_GO_API_KEY", raising=False)
+
+    opencode_then_claude = StageOverride(
+        service="opencode",
+        model="kimi-k2.6",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
+    )
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=opencode_then_claude,
+        implement_override=opencode_then_claude,
+        review_override=opencode_then_claude,
+        merge_override=opencode_then_claude,
+        preflight_issue_override=opencode_then_claude,
+        improve_override=opencode_then_claude,
+    )
+    captured: dict = {}
+
+    async def _fake_run(env, repo_root, **kwargs):
+        captured["registry"] = kwargs.get("service_registry")
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.main"),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    registry = captured["registry"]
+    assert registry["opencode"] is None
+    assert registry["claude"].name == "claude"
+
+
 def test_run_cmd_default_stage_override_seeds_codex_without_claude_token(
     tmp_path, monkeypatch
 ):
