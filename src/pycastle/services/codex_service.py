@@ -222,7 +222,7 @@ class CodexService:
         )
 
     def valid_efforts(self) -> frozenset[str]:
-        return frozenset({"none", "minimal", "low", "medium", "high", "xhigh"})
+        return frozenset({"low", "medium", "high", "xhigh"})
 
     def build_command(
         self,

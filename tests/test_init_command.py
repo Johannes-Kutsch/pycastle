@@ -295,7 +295,8 @@ def test_init_writes_local_config_example_with_all_supported_settings(
         "gpt-5.3-codex, gpt-5.3-codex-spark, gpt-5.2"
     ) in content
     assert "Claude effort values: low, medium, high, xhigh, max" in content
-    assert "Codex effort values: none, minimal, low, medium, high, xhigh" in content
+    assert "Codex effort values: low, medium, high, xhigh" in content
+    assert "Codex effort values: none, minimal" not in content
     assert "default_service" not in content
     assert 'StageOverride(service="codex"' in content
     assert "fallback=StageOverride(" in content
