@@ -28,8 +28,11 @@ print(resolve_logs_dir(load_config()))
 
 mkdir -p "$LOG_DIR"
 LOG_PATH="$LOG_DIR/cron.log"
+CRON_SCRIPT="$REPO_ROOT/pycastle/setup/cron.sh"
+printf -v CRON_SCRIPT_ESCAPED '%q' "$CRON_SCRIPT"
+printf -v LOG_PATH_ESCAPED '%q' "$LOG_PATH"
 MARKER="# pycastle:$REPO_ROOT"
-CRON_LINE="0 1 * * * $REPO_ROOT/pycastle/setup/cron.sh >> $LOG_PATH 2>&1 $MARKER"
+CRON_LINE="0 1 * * * $CRON_SCRIPT_ESCAPED >> $LOG_PATH_ESCAPED 2>&1 $MARKER"
 
 kept=""
 while IFS= read -r line || [ -n "$line" ]; do

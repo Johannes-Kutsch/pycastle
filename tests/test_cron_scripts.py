@@ -130,6 +130,58 @@ def test_install_global_logs_dir_appends_sanitized_project_name(cron_env):
     assert expected_log.parent.is_dir()
 
 
+def test_install_local_logs_dir_entry_runs_through_effective_logs_dir_with_spaces(
+    tmp_path, fake_crontab
+):
+    project_dir = tmp_path / "My Project"
+    project_dir.mkdir()
+    pycastle_dir = project_dir / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "config.py").write_text(
+        "from pathlib import Path\nlogs_dir = Path('custom logs')\n"
+    )
+
+    setup_dir = pycastle_dir / "setup"
+    setup_dir.mkdir()
+    install_sh = setup_dir / "cron-install.sh"
+    install_sh.write_bytes((SETUP_DIR / "cron-install.sh").read_bytes())
+    install_sh.chmod(
+        install_sh.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+    cron_sh = setup_dir / "cron.sh"
+    cron_sh.write_text("#!/usr/bin/env bash\necho cron tick\n")
+    cron_sh.chmod(cron_sh.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    bin_dir, data_file = fake_crontab
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [_BASH, str(install_sh)],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    cron_line = data_file.read_text().strip()
+    cron_command = cron_line.split(maxsplit=5)[5]
+
+    run_result = subprocess.run(
+        [_BASH, "-lc", cron_command],
+        cwd=project_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    expected_log = project_dir / "custom logs" / "cron.log"
+    assert run_result.returncode == 0, run_result.stderr
+    assert expected_log.read_text().strip() == "cron tick"
+
+
 def test_install_marker_remains_end_of_line(cron_env):
     """The marker must stay at end-of-line so cron-uninstall.sh can still match it."""
     _run(cron_env["install_sh"], cron_env["env"])
