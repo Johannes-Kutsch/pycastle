@@ -69,6 +69,7 @@ def test_clean_merge_returns_all_issues_as_clean(deps):
     result = _run(issues, deps)
     assert result.clean == issues
     assert result.conflicts == []
+    assert result.preflight_blocker is None
 
 
 def test_clean_merge_closes_each_issue(deps, github_svc):
@@ -117,6 +118,7 @@ def test_conflict_branch_is_in_conflicts(deps, git_svc):
     result = _run(issues, deps)
     assert result.conflicts == [{"number": 2, "title": "Conflict"}]
     assert result.clean == [{"number": 1, "title": "Clean"}]
+    assert result.preflight_blocker is None
 
 
 def test_conflict_spawns_merger_with_conflict_branches_only(
@@ -458,6 +460,7 @@ def test_preflight_afk_returns_soft_skip_merge_result(tmp_path, git_svc, github_
     assert isinstance(result, MergeResult)
     assert result.conflicts == [{"number": 1, "title": "Conflict"}]
     assert result.clean == []
+    assert result.preflight_blocker == verdict
 
 
 def test_preflight_hitl_returns_soft_skip_merge_result(tmp_path, git_svc, github_svc):
@@ -469,6 +472,7 @@ def test_preflight_hitl_returns_soft_skip_merge_result(tmp_path, git_svc, github
     assert isinstance(result, MergeResult)
     assert result.conflicts == [{"number": 1, "title": "Conflict"}]
     assert result.clean == []
+    assert result.preflight_blocker == verdict
 
 
 def test_preflight_skip_does_not_spawn_merger(tmp_path, git_svc, github_svc):
@@ -544,6 +548,7 @@ def test_preflight_skip_separates_clean_and_conflict_issues(
     result = _run(issues, local_deps)
     assert result.clean == [{"number": 1, "title": "Clean"}]
     assert result.conflicts == [{"number": 2, "title": "Conflict"}]
+    assert result.preflight_blocker == verdict
 
 
 def test_preflight_skip_closes_parent_issues_for_clean_issues(
