@@ -130,6 +130,7 @@ def test_resolve_dockerfile_ignores_legacy_per_service_overrides(tmp_path):
     pycastle_dir.mkdir()
     (pycastle_dir / "Dockerfile.claude").write_text("FROM legacy-claude\n")
     (pycastle_dir / "Dockerfile.codex").write_text("FROM legacy-codex\n")
+    (pycastle_dir / "Dockerfile.opencode").write_text("FROM legacy-opencode\n")
 
     bundled_default = (
         Path(__file__).resolve().parent.parent
