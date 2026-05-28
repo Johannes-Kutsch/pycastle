@@ -16,6 +16,7 @@ from .errors import (
     DockerServiceError,
 )
 from .display.status_display import PlainStatusDisplay
+from .service_availability import iter_stage_chain
 
 _KNOWN_SERVICES: frozenset[str] = frozenset({"claude", "codex"})
 
@@ -40,9 +41,7 @@ def _validate_stage_overrides(
         valid_models_by_service = {}
     violations: list[str] = []
     for stage_name, override in _stage_overrides(cfg):
-        node: StageOverride | None = override
-        fallback_depth = 0
-        while node is not None:
+        for fallback_depth, node in enumerate(iter_stage_chain(override)):
             stage_label = (
                 stage_name if fallback_depth == 0 else f"{stage_name} fallback"
             )
@@ -79,8 +78,6 @@ def _validate_stage_overrides(
                         f"  stage={stage_label!r}: model={node.model!r} is invalid"
                         f" for service={svc_name!r}.{detail}"
                     )
-            node = node.fallback
-            fallback_depth += 1
     return violations
 
 

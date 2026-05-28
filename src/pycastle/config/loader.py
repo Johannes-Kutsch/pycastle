@@ -13,6 +13,7 @@ import platformdirs
 
 from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
+from pycastle.service_availability import iter_stage_chain
 
 __all__ = [
     "Config",
@@ -130,11 +131,9 @@ def referenced_services(cfg: Config) -> set[str]:
         cfg.preflight_issue_override,
         cfg.improve_override,
     ):
-        node: StageOverride | None = override
-        while node is not None:
+        for node in iter_stage_chain(override):
             if node.service:
                 names.add(node.service)
-            node = node.fallback
     return names
 
 
