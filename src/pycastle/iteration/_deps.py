@@ -9,7 +9,7 @@ from ..agents.runner import AgentRunnerProtocol, RunRequest, translate_run_outco
 from ..config import Config
 from ..errors import HardAgentError
 from ..services import GitService
-from ..services import GithubService
+from ..services import GithubService, ServiceRegistry
 from ..display.status_display import StatusDisplay
 from .preflight import PreflightCache, PreflightReady, PreflightResult
 
@@ -171,6 +171,7 @@ class Deps:
     cfg: Config
     logger: Logger
     status_display: StatusDisplay
+    service_registry: ServiceRegistry | None = None
     improve_mode: ImproveMode = None
     slept_once: bool = False
     improve_dispatched_count: int = 0
@@ -187,6 +188,7 @@ def _make_deps(
     logger: Logger | None = None,
     status_display: StatusDisplay | None = None,
     preflight_cache: "PreflightCache | StubPreflightCache | None" = None,
+    service_registry: ServiceRegistry | None = None,
 ) -> Deps:
     """Factory for building a Deps with sensible test defaults for any unspecified field."""
     from unittest.mock import MagicMock
@@ -203,6 +205,7 @@ def _make_deps(
         status_display=status_display
         if status_display is not None
         else RecordingStatusDisplay(),
+        service_registry=service_registry,
         preflight_cache=preflight_cache
         if preflight_cache is not None
         else StubPreflightCache(),  # type: ignore[arg-type]

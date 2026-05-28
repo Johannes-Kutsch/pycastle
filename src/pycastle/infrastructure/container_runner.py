@@ -27,7 +27,7 @@ class ContainerRunner:
         status_display=None,
         *,
         cfg: Config,
-        service: AgentService,
+        service: AgentService | None = None,
     ) -> None:
         self.name = name
         self._session = session
@@ -105,6 +105,8 @@ class ContainerRunner:
         on_thread_id: Callable[[str], None] | None = None,
     ) -> AgentOutput:
         self._status_display.update_phase(self.name, "Work")
+        if self._service is None:
+            raise RuntimeError("ContainerRunner.work requires an agent service")
         loop = asyncio.get_running_loop()
 
         def on_turn(turn: str) -> None:
@@ -130,8 +132,11 @@ class ContainerRunner:
         session_uuid: str | None = None,
         on_thread_id: Callable[[str], None] | None = None,
     ) -> AgentOutput:
+        service = self._service
+        if service is None:
+            raise RuntimeError("ContainerRunner.work requires an agent service")
         self._session.write_file(prompt, "/tmp/.pycastle_prompt")
-        command = self._service.build_command(
+        command = service.build_command(
             role=role,
             model=self.model,
             effort=self.effort,
@@ -189,11 +194,11 @@ class ContainerRunner:
                             yield line
 
                 return process_stream_from_events(
-                    self._service.run(_lines(), on_thread_id=on_thread_id),
+                    service.run(_lines(), on_thread_id=on_thread_id),
                     on_turn,
                     role,
                     on_tokens,
-                    provider=self._service.name,
+                    provider=service.name,
                 )
         finally:
             try:

@@ -967,6 +967,23 @@ def test_agent_runner_run_preflight_returns_empty_list_when_no_checks_configured
     assert result == []
 
 
+def test_agent_runner_run_preflight_does_not_require_resolved_service(tmp_path):
+    mock_client = _make_preflight_docker_client(exit_code=0)
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    object.__setattr__(cfg, "default_service", "claude")
+    runner = AgentRunner(
+        {},
+        cfg,
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"codex": CodexService()},
+    )
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == []
+
+
 def test_agent_runner_run_preflight_returns_empty_list_when_all_checks_pass(tmp_path):
     mock_client = _make_preflight_docker_client(exit_code=0)
     cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
