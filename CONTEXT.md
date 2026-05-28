@@ -368,6 +368,8 @@
 
 | Term | Definition | Why it's a problem |
 | --- | --- | --- |
+| **parent-env-dependent test** | Test whose expected result depends on terminal or parent-process environment inherited from the runner, such as `TERM`, `NO_COLOR`, `FORCE_COLOR`, `COLORTERM`, or `CI` | Preflight and agent-invoked checks may legitimately have different parents; assertions then report runner shape rather than product behavior |
+| **platform-dependent test** | Test whose expected result changes because of host OS shape, such as path separators, shell semantics, line endings, filesystem locking, executable names, or platform-specific defaults | Windows host tests and Linux container checks cover different product boundaries; failures then report OS assumptions rather than behavior |
 | **Verifying through external means** | Tests calling subprocess, querying DBs, or checking external state directly instead of testing through the service interface | Requires external tools in test env; failures reflect environment, not code bugs |
 | **Mocking internal collaborators** | Tests mocking classes/functions within the same codebase rather than using DI | Brittle tests coupled to implementation; breaks on refactoring |
 | **Testing private methods** | Tests calling `_`-prefixed functions or accessing private attributes | Private methods are implementation details; test public behavior |
@@ -393,6 +395,9 @@
 - Each phase module declares its own per-phase dependency protocol listing only its actual field accesses; `Deps` satisfies all structurally.
 - Rich markup must never be embedded in a `StatusDisplay.print` message; colouring is via the `style` parameter only.
 - All orchestrator-level terminal output is routed through `StatusDisplay.print()`; bare `print()` is not used while a `StatusDisplay` is active.
+- Test setup normalises terminal/colour environment at the Python test boundary for the whole suite, so **parent-env-dependent tests** are treated as invalid regardless of whether pytest is launched by trusted preflight, an agent CLI, CI, cron, or a developer shell.
+- **Parent-env-dependent test** prevention is a test-suite invariant, not pycastle's user-facing colour policy; support for honouring `NO_COLOR` in real CLI output is separate product behaviour.
+- Windows host tests are first-class for host-side pycastle behaviour; Linux container checks remain canonical for agent/container behaviour. **Platform-dependent tests** need explicit boundary marking rather than leaving either side red.
 - During Work, the container runner injects the pre-rendered prompt (built upstream by `AgentRunner._build_prompt`, ADR 0012); passes decoded NDJSON + `on_turn` to `process_stream`, which raises `UsageLimitError(reset_time)` on 429. Setup and Pre-flight produce no console output — activity reflected only in body column.
 - **Auto bug reporter** is *outside* the iteration layer and does not depend on `Deps`, `Logger`, or `StatusDisplay` — must function during config-load crashes. Cross-repo POST goes through `GithubService.create_issue_in(owner_repo, ...)`. The reporter is the *only* feature that talks to a GitHub repo other than the consumer's `origin`.
 - **`AgentRunner`** constructs a `DockerSession` (via `build_volume_spec`) and a `ContainerRunner`, then orchestrates the three lifecycle phases. At session-build time it asks `AccountPool` for the active OAuth token and injects it as `CLAUDE_CODE_OAUTH_TOKEN`. On `UsageLimitError` it calls `pool.mark_exhausted(token, reset_time)` before re-raising.
