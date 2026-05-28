@@ -12,6 +12,7 @@ import shutil
 
 from pycastle.agents.output_protocol import CompletionOutput, IssueOutput
 from pycastle.config import Config, StageOverride
+from pycastle.errors import SetupPhaseError
 from pycastle.services import (
     GitCommandError,
     GitService,
@@ -184,6 +185,38 @@ def test_get_safe_sha_returns_afk_when_checks_fail_with_afk_label(
     assert isinstance(result, PreflightAFK)
     assert result.issue_number == 42
     assert result.sha == "abc123"
+
+
+def test_get_safe_sha_routes_requirements_declared_missing_tool_to_setup_failure(
+    tmp_path, git_svc, github_svc
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\ndependencies = ['click']\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "requirements.txt").write_text("ruff==0.6.9\n", encoding="utf-8")
+    fake = FakeAgentRunner(
+        [],
+        preflight_responses=[
+            [
+                (
+                    "ruff",
+                    "ruff check .",
+                    "Command failed (exit 127): bash: ruff: command not found",
+                )
+            ]
+        ],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(
+        SetupPhaseError,
+        match=r"Missing expected preflight tool 'ruff' declared in requirements\.txt\.",
+    ):
+        asyncio.run(cache.get_safe_sha(deps))
+
+    assert fake.calls == []
 
 
 # ── get_safe_sha: same-SHA cache hit ─────────────────────────────────────────
