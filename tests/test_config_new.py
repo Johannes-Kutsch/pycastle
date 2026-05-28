@@ -732,6 +732,28 @@ def test_load_config_local_logs_dir_overrides_global_without_project_suffix(
     assert resolve_logs_dir(cfg) == (project_dir / "project-logs").resolve()
 
 
+def test_load_config_override_logs_dir_uses_override_directly_without_project_suffix(
+    tmp_path, monkeypatch
+):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text(
+        "from pathlib import Path\nlogs_dir = Path('shared-logs')\n"
+    )
+    project_dir = tmp_path / "My Project"
+    project_dir.mkdir()
+    monkeypatch.chdir(project_dir)
+
+    cfg = load_config(
+        repo_root=project_dir,
+        global_dir=global_dir,
+        overrides={"logs_dir": Path("override-logs")},
+    )
+
+    assert cfg.logs_dir == Path("override-logs")
+    assert resolve_logs_dir(cfg) == (project_dir / "override-logs").resolve()
+
+
 def test_load_config_silently_ignores_legacy_dockerfile_in_global_file(tmp_path):
     global_dir = tmp_path / "global"
     global_dir.mkdir()
