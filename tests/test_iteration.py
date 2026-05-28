@@ -2921,16 +2921,24 @@ def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
     """Planner FailedOutput with two ready-for-agent issues spawns failure-report and
     returns AbortedAgentFailure(failed_role='planner') with the filed issue number."""
     calls: list[RunRequest] = []
+    expected_path = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
     response_queue = [
-        _make_agent_failed_error(
-            AgentRole.PLANNER, tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
-        ),
+        _make_agent_failed_error(AgentRole.PLANNER, expected_path),
         IssueOutput(number=55, labels=["bug"]),
     ]
 
     async def agent_fn(req: RunRequest):
         calls.append(req)
+        if req.role == AgentRole.FAILURE_REPORT:
+            assert req.mount_path == expected_path
+            assert (req.mount_path / "pyproject.toml").exists()
         return response_queue.pop(0)
+
+    def checkout_detached(repo: Path, path: Path, sha: str) -> None:
+        assert repo == tmp_path
+        assert sha == "abc123"
+        path.mkdir(parents=True)
+        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
@@ -2949,6 +2957,7 @@ def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
             "labels": ["behavior-slice"],
         },
     ]
+    git_svc.checkout_detached.side_effect = checkout_detached
 
     deps = _make_deps(
         tmp_path,
@@ -2967,12 +2976,11 @@ def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
     assert len(calls) == 2
     failure_req = calls[1]
     assert failure_req.role == AgentRole.FAILURE_REPORT
-    assert (
-        failure_req.mount_path == tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
-    )
+    assert failure_req.mount_path == expected_path
     assert failure_req.scope_args is not None
     assert failure_req.scope_args["FAILED_ROLE"] == "planner"
     assert "SESSION_DIR" in failure_req.scope_args
+    assert not expected_path.exists()
 
 
 def test_run_iteration_returns_aborted_agent_failure_when_implementer_agent_fails(
