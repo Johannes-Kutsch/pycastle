@@ -7,6 +7,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..session import RunKind
+
 if TYPE_CHECKING:
     from ..config import Config
 
@@ -60,7 +62,7 @@ class Scope(enum.Enum):
                 "ISSUE_BODY",
                 "ISSUE_COMMENTS",
                 "BRANCH",
-                "WIP_COMMITS",
+                "INTERRUPTED_WORK",
             }
         ),
     )
@@ -150,27 +152,15 @@ def build_issue_scope_args(
     }
 
 
-def build_wip_clause(
-    wip_subjects: list[str],
-    is_resumable: bool,
-    *,
-    role: str,
-    issue_number: int,
-) -> str:
-    """Return WIP narrative when both conditions hold: WIP commits exist and service is not resumable."""
-    if is_resumable:
+def build_interrupted_work_clause(run_kind: RunKind, is_dirty: bool) -> str:
+    """Return interrupted-work instructions for fresh dispatches on dirty worktrees."""
+    if run_kind != RunKind.FRESH or not is_dirty:
         return ""
-    prefix = f"WIP: {role} #{issue_number} -"
-    matching = [s for s in wip_subjects if s.startswith(prefix)]
-    if not matching:
-        return ""
-    items = "\n".join(f"- {s}" for s in matching)
     return (
-        "\n# WIP Context\n\n"
-        "This branch carries interrupted work from a previous agent run. "
-        "Inspect these WIP commits to understand where the previous run left off "
-        "and continue from that point:\n\n"
-        f"{items}\n"
+        "\n# Interrupted Work\n\n"
+        "This worktree has uncommitted changes from a previous agent run. "
+        "Run `git diff` and `git status` to understand the current state, "
+        "then continue from where the previous agent left off.\n"
     )
 
 

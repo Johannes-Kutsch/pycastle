@@ -28,7 +28,7 @@ Used by: implement/behavior.md, implement/refactor.md, implement/docs.md, review
 - `{{ISSUE_BODY}}` — The issue body markdown.
 - `{{ISSUE_COMMENTS}}` — Formatted issue comments.
 - `{{BRANCH}}` — The working branch name.
-- `{{WIP_COMMITS}}` — WIP-aware clause rendered only when WIP commits for this role+issue exist on the branch and the picked service is not resumable; empty string otherwise.
+- `{{INTERRUPTED_WORK}}` — Interrupted-work clause rendered only for FRESH dispatch on a dirty working tree; tells the agent to inspect `git diff` and `git status`; empty string otherwise.
 
 ## Scope: MERGE
 

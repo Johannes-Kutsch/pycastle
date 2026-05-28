@@ -10,8 +10,9 @@ from pycastle.prompts.pipeline import (
     PromptRenderer,
     PromptTemplate,
     Scope,
-    build_wip_clause,
+    build_interrupted_work_clause,
 )
+from pycastle.session import RunKind
 
 _SHIPPED_PROMPTS_DIR = (
     Path(__file__).parent.parent / "src" / "pycastle" / "defaults" / "prompts"
@@ -57,7 +58,7 @@ def test_renderer_renders_global_placeholder(cfg, prompts_dir):
                 "ISSUE_BODY": "",
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "pycastle/issue-1",
-                "WIP_COMMITS": "",
+                "INTERRUPTED_WORK": "",
             },
             _noop_exec,
         )
@@ -77,7 +78,7 @@ def test_scope_per_issue_placeholders():
             "ISSUE_BODY",
             "ISSUE_COMMENTS",
             "BRANCH",
-            "WIP_COMMITS",
+            "INTERRUPTED_WORK",
         }
     )
 
@@ -389,7 +390,7 @@ def test_render_implement_output_rules_available_in_per_issue_template(
                 "ISSUE_BODY": "",
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "b",
-                "WIP_COMMITS": "",
+                "INTERRUPTED_WORK": "",
             },
             _noop_exec,
         )
@@ -420,7 +421,7 @@ def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
                 "ISSUE_BODY": "context\n!`shell`\nmore",
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "b",
-                "WIP_COMMITS": "",
+                "INTERRUPTED_WORK": "",
             },
             recording_exec,
         )
@@ -436,7 +437,7 @@ def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
                 "ISSUE_BODY": "context\n!`shell`\nmore",
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "b",
-                "WIP_COMMITS": "",
+                "INTERRUPTED_WORK": "",
             },
             _noop_exec,
         )
@@ -559,7 +560,7 @@ def test_template_shell_expr_runs_arg_shell_token_stays_inert(cfg, prompts_dir):
                 "ISSUE_BODY": "evil payload !`evil`",
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "b",
-                "WIP_COMMITS": "",
+                "INTERRUPTED_WORK": "",
             },
             recording_exec,
         )
@@ -756,11 +757,34 @@ def test_renderer_ctor_rejects_out_of_scope_conditional_key(cfg, prompts_dir):
         PromptRenderer(cfg)
 
 
-# ── WIP_COMMITS scope placeholder ────────────────────────────────────────────
+# ── INTERRUPTED_WORK scope placeholder ───────────────────────────────────────
 
 
-def test_scope_per_issue_includes_wip_commits():
-    assert "WIP_COMMITS" in Scope.PER_ISSUE.placeholders
+def test_scope_per_issue_includes_interrupted_work():
+    assert "INTERRUPTED_WORK" in Scope.PER_ISSUE.placeholders
+
+
+def test_render_includes_interrupted_work_clause_for_fresh_dirty_worktree(
+    cfg, prompts_dir
+):
+    (prompts_dir / "implement" / "behavior.md").write_text(
+        "Context:{{INTERRUPTED_WORK}}Done"
+    )
+    renderer = PromptRenderer(cfg)
+    interrupted_work = build_interrupted_work_clause(RunKind.FRESH, is_dirty=True)
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
+            {**_PER_ISSUE_BASE, "INTERRUPTED_WORK": interrupted_work},
+            _noop_exec,
+        )
+    )
+
+    assert "Interrupted Work" in result
+    assert "git diff" in result
+    assert "git status" in result
+    assert "diff --git" not in result
 
 
 _PER_ISSUE_BASE = {
@@ -772,93 +796,35 @@ _PER_ISSUE_BASE = {
 }
 
 
-# ── build_wip_clause: four combinations ──────────────────────────────────────
+@pytest.mark.parametrize(
+    ("run_kind", "is_dirty", "expected"),
+    [
+        (RunKind.FRESH, True, True),
+        (RunKind.FRESH, False, False),
+        (RunKind.RESUME, True, False),
+        (RunKind.RESUME, False, False),
+    ],
+)
+def test_interrupted_work_clause_matrix(run_kind, is_dirty, expected):
+    result = build_interrupted_work_clause(run_kind, is_dirty=is_dirty)
+    assert ("Interrupted Work" in result) is expected
 
 
-def test_wip_clause_present_when_commits_exist_and_service_not_resumable():
-    subjects = ["WIP: implementer #42 - interrupted"]
-    result = build_wip_clause(subjects, False, role="implementer", issue_number=42)
-    assert "WIP Context" in result
-    assert "WIP: implementer #42 - interrupted" in result
-
-
-def test_wip_clause_absent_when_commits_exist_but_service_is_resumable():
-    subjects = ["WIP: implementer #42 - interrupted"]
-    result = build_wip_clause(subjects, True, role="implementer", issue_number=42)
-    assert result == ""
-
-
-def test_wip_clause_absent_when_no_commits_and_service_not_resumable():
-    result = build_wip_clause([], False, role="implementer", issue_number=42)
-    assert result == ""
-
-
-def test_wip_clause_absent_when_no_commits_and_service_is_resumable():
-    result = build_wip_clause([], True, role="implementer", issue_number=42)
-    assert result == ""
-
-
-# ── build_wip_clause: commit filtering ───────────────────────────────────────
-
-
-def test_wip_clause_filters_by_role():
-    subjects = [
-        "WIP: reviewer #42 - interrupted",
-        "WIP: implementer #42 - interrupted",
-    ]
-    result = build_wip_clause(subjects, False, role="implementer", issue_number=42)
-    assert "WIP: implementer #42 - interrupted" in result
-    assert "WIP: reviewer #42 - interrupted" not in result
-
-
-def test_wip_clause_filters_by_issue_number():
-    subjects = [
-        "WIP: implementer #99 - interrupted",
-        "WIP: implementer #42 - interrupted",
-    ]
-    result = build_wip_clause(subjects, False, role="implementer", issue_number=42)
-    assert "WIP: implementer #42 - interrupted" in result
-    assert "WIP: implementer #99 - interrupted" not in result
-
-
-# ── WIP_COMMITS rendered in prompt ────────────────────────────────────────────
-
-
-def test_render_includes_wip_clause_when_wip_commits_non_empty(cfg, prompts_dir):
+def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
     (prompts_dir / "implement" / "behavior.md").write_text(
-        "Context:{{WIP_COMMITS}}Done"
-    )
-    renderer = PromptRenderer(cfg)
-    wip = build_wip_clause(
-        ["WIP: implementer #1 - interrupted"], False, role="implementer", issue_number=1
-    )
-
-    result = _run(
-        renderer.render(
-            PromptTemplate.IMPLEMENT_BEHAVIOR,
-            {**_PER_ISSUE_BASE, "ISSUE_NUMBER": "1", "WIP_COMMITS": wip},
-            _noop_exec,
-        )
-    )
-
-    assert "WIP Context" in result
-
-
-def test_render_omits_wip_clause_when_wip_commits_empty(cfg, prompts_dir):
-    (prompts_dir / "implement" / "behavior.md").write_text(
-        "Context:{{WIP_COMMITS}}Done"
+        "Context:{{INTERRUPTED_WORK}}Done"
     )
     renderer = PromptRenderer(cfg)
 
     result = _run(
         renderer.render(
             PromptTemplate.IMPLEMENT_BEHAVIOR,
-            {**_PER_ISSUE_BASE, "WIP_COMMITS": ""},
+            {**_PER_ISSUE_BASE, "INTERRUPTED_WORK": ""},
             _noop_exec,
         )
     )
 
-    assert "WIP Context" not in result
+    assert "Interrupted Work" not in result
     assert result == "Context:Done"
 
 
