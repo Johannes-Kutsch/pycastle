@@ -234,8 +234,7 @@ async def run(
             except GithubAPIError as exc:
                 status_display.print(  # type: ignore[union-attr]
                     "",
-                    "GitHub repository access failed:"
-                    f" {exc}",
+                    f"GitHub repository access failed: {exc}",
                 )
                 sys.exit(1)
             improve_dispatched_count = deps.improve_dispatched_count

@@ -69,42 +69,7 @@ def prune_orphan_worktrees(
             continue
         if str(child.resolve()) not in active:
             shutil.rmtree(child)
-        elif not any_role_dir_present(child):
-            _teardown_registered_orphan(svc, repo_root, child)
     remove_worktrees_dir_if_empty(worktrees_dir)
-
-
-def _teardown_registered_orphan(svc: GitService, repo_root: Path, path: Path) -> None:
-    """Tear down a git-registered worktree that never produced a role session.
-
-    Such worktrees indicate a hard crash between creation and the agent's first
-    turn. After teardown, if the branch has no commits ahead of main, delete it
-    too. Failures while inspecting the worktree must not abort the sweep.
-    """
-    branch = _current_branch_or_none(svc, path)
-    delete_empty_branch = (
-        branch is not None and branch != "HEAD" and _branch_is_empty(svc, path)
-    )
-    teardown_worktree(svc, repo_root, path)
-    if delete_empty_branch and branch is not None:
-        try:
-            svc.delete_branch(branch, repo_root)
-        except Exception:
-            pass
-
-
-def _current_branch_or_none(svc: GitService, path: Path) -> str | None:
-    try:
-        return svc.get_current_branch(path)
-    except Exception:
-        return None
-
-
-def _branch_is_empty(svc: GitService, path: Path) -> bool:
-    try:
-        return not svc.has_commits_ahead_of_main(path)
-    except Exception:
-        return False
 
 
 def teardown_worktree(svc: GitService, repo_root: Path, path: Path) -> None:
@@ -232,7 +197,7 @@ async def managed_worktree(
     _preservation_worthy_exc = False
     try:
         yield path
-    except (UsageLimitError, TransientAgentError, HardAgentError):
+    except (AgentFailedError, UsageLimitError, TransientAgentError, HardAgentError):
         _preservation_worthy_exc = True
         raise
     finally:

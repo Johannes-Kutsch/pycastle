@@ -18,7 +18,6 @@ from ..errors import (
 from ..services import OperatorActionableGitError
 from ..prompts.pipeline import PromptTemplate
 from ..infrastructure.worktree import (
-    teardown_worktree,
     worktree_name_for_branch,
     worktree_path,
 )
@@ -232,40 +231,36 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
     except AgentFailedError as err:
         issue_number: int | None = None
-        try:
-            if deps.cfg.diagnose_on_failure:
-                try:
-                    result = await deps.agent_runner.run(
-                        RunRequest(
-                            name="Failure Report Agent",
-                            template=PromptTemplate.FAILURE_REPORT,
-                            mount_path=err.worktree_path,
-                            role=AgentRole.FAILURE_REPORT,
-                            scope_args={
-                                "FAILED_ROLE": err.role_value,
-                                "SESSION_DIR": err.session_dir,
-                                "FAILURE_CLASS": err.failure_class,
-                            },
-                            service=deps.cfg.preflight_issue_override.service,
-                            status_display=deps.status_display,
-                        )
+        if deps.cfg.diagnose_on_failure:
+            try:
+                result = await deps.agent_runner.run(
+                    RunRequest(
+                        name="Failure Report Agent",
+                        template=PromptTemplate.FAILURE_REPORT,
+                        mount_path=err.worktree_path,
+                        role=AgentRole.FAILURE_REPORT,
+                        scope_args={
+                            "FAILED_ROLE": err.role_value,
+                            "SESSION_DIR": err.session_dir,
+                            "FAILURE_CLASS": err.failure_class,
+                        },
+                        service=deps.cfg.preflight_issue_override.service,
+                        status_display=deps.status_display,
                     )
-                    if isinstance(result, IssueOutput):
-                        issue_number = result.number
-                except Exception as report_err:
-                    deps.status_display.print(
-                        "Failure Report",
-                        "Failure-Report agent crashed — no issue filed",
-                        "warning",
-                    )
-                    deps.logger.log_internal_error(
-                        f"Failure-Report agent crashed (original failure: role={err.role_value})",
-                        report_err,
-                        cause=err,
-                    )
-        finally:
-            if err.worktree_path != deps.repo_root:
-                teardown_worktree(deps.git_svc, deps.repo_root, err.worktree_path)
+                )
+                if isinstance(result, IssueOutput):
+                    issue_number = result.number
+            except Exception as report_err:
+                deps.status_display.print(
+                    "Failure Report",
+                    "Failure-Report agent crashed — no issue filed",
+                    "warning",
+                )
+                deps.logger.log_internal_error(
+                    f"Failure-Report agent crashed (original failure: role={err.role_value})",
+                    report_err,
+                    cause=err,
+                )
         return AbortedAgentFailure(
             failed_role=err.role_value, issue_number=issue_number
         )
