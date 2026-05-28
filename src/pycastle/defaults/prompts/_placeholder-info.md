@@ -51,6 +51,17 @@ Used by: preflight-issue.md
 - `{{COMMAND}}` — The preflight check command that failed.
 - `{{OUTPUT}}` — Output produced by the failing check.
 
+## Scope: HOST_CHECK
+
+Used by: host-check-issue.md
+
+- `{{HOST_OS}}` — Host operating system where the failing host check was observed.
+- `{{HOST_PLATFORM}}` — Host platform identifier where the failing host check was observed.
+- `{{CHECKED_SHA}}` — Git SHA checked by `pycastle check`.
+- `{{CHECK_NAME}}` — Name of the failing host check.
+- `{{COMMAND}}` — The host check command that failed.
+- `{{OUTPUT}}` — Output produced by the failing host check.
+
 ## Scope: IMPROVE_SCAN
 
 Used by: improve/01-scan.md

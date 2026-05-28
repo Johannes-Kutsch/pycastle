@@ -69,6 +69,19 @@ class Scope(enum.Enum):
     MERGE = ("MERGE", frozenset({"BRANCHES"}))
     PLAN = ("PLAN", frozenset({"ALL_OPEN_ISSUES_JSON", "READY_FOR_AGENT_ISSUES_JSON"}))
     PREFLIGHT = ("PREFLIGHT", frozenset({"CHECK_NAME", "COMMAND", "OUTPUT"}))
+    HOST_CHECK = (
+        "HOST_CHECK",
+        frozenset(
+            {
+                "HOST_OS",
+                "HOST_PLATFORM",
+                "CHECKED_SHA",
+                "CHECK_NAME",
+                "COMMAND",
+                "OUTPUT",
+            }
+        ),
+    )
     IMPROVE_SCAN = ("IMPROVE_SCAN", frozenset[str]())
     IMPROVE_SESSION = ("IMPROVE_SESSION", frozenset({"IMPROVE_SHORT_SID"}))
     IMPROVE_ISSUES = (
@@ -103,6 +116,7 @@ class PromptTemplate(enum.Enum):
     MERGE = ("merge-prompt.md", Scope.MERGE)
     PLAN = ("plan-prompt.md", Scope.PLAN)
     PREFLIGHT_ISSUE = ("preflight-issue.md", Scope.PREFLIGHT)
+    HOST_CHECK_ISSUE = ("host-check-issue.md", Scope.HOST_CHECK)
     IMPROVE_SCAN = ("improve/01-scan.md", Scope.IMPROVE_SCAN)
     IMPROVE_PRD = ("improve/02-prd.md", Scope.IMPROVE_SESSION)
     IMPROVE_ISSUES = ("improve/03-issues.md", Scope.IMPROVE_ISSUES)
