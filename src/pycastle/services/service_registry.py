@@ -42,7 +42,10 @@ class ServiceRegistry:
 
     def summary_lines(self) -> list[str]:
         lines = []
-        for svc in self._services.values():
+        for name, svc in self._services.items():
+            if name == "codex":
+                lines.append("Codex auth: local auth available")
+                continue
             if not hasattr(svc, "account_names"):
                 continue
             names: list[str] = svc.account_names()  # type: ignore[attr-defined]

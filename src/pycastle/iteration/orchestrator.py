@@ -166,7 +166,7 @@ async def run(
         )
         sys.exit(1)
 
-    status_display.print("", f"Authenticated as @{login}")  # type: ignore[union-attr]
+    status_display.print("", f"GitHub auth: authenticated as @{login}")  # type: ignore[union-attr]
 
     if service_registry:
         for line in service_registry.summary_lines():

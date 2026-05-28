@@ -172,11 +172,11 @@ def test_summary_lines_multiple_accounts() -> None:
     ]
 
 
-def test_summary_lines_skips_services_without_account_names() -> None:
+def test_summary_lines_prints_codex_auth_message() -> None:
     svc = MagicMock(spec=AgentService)
     registry = ServiceRegistry(services={"codex": svc})
 
-    assert registry.summary_lines() == []
+    assert registry.summary_lines() == ["Codex auth: local auth available"]
 
 
 def test_summary_lines_skips_services_with_empty_account_names() -> None:
