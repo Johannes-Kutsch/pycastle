@@ -578,6 +578,36 @@ def test_merger_receives_merge_stage_model_and_effort(tmp_path):
     assert merger_call["effort"] == "low"
 
 
+def test_cross_service_config_threads_service_to_core_phase_requests(tmp_path):
+    """Implementer, Reviewer, and Merger must each receive their stage override service."""
+    captured: list[dict] = []
+
+    async def _fake_run_agent(request: RunRequest):
+        captured.append({"name": request.name, "service": request.service})
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+            )
+        return CompletionOutput()
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=_make_git_svc(try_merge_side_effect=[False]),
+        github_service=_make_github_svc(),
+        implement_override=StageOverride(service="codex", model="", effort="medium"),
+        review_override=StageOverride(service="claude", model="", effort="medium"),
+        merge_override=StageOverride(service="codex", model="", effort="medium"),
+    )
+
+    impl_call = next(c for c in captured if "Implement Agent" in c["name"])
+    rev_call = next(c for c in captured if "Review Agent" in c["name"])
+    merger_call = next(c for c in captured if c["name"] == "Merge Agent")
+    assert impl_call["service"] == "codex"
+    assert rev_call["service"] == "claude"
+    assert merger_call["service"] == "codex"
+
+
 def test_empty_stage_override_passes_empty_strings(tmp_path):
     """Empty model and effort in stage override must pass empty strings to run_agent."""
     captured: list[dict] = []

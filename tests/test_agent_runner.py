@@ -448,6 +448,34 @@ def test_agent_runner_uses_requested_service_from_registry(tmp_path):
     assert default_service.commands == []
 
 
+def test_agent_runner_uses_per_service_image_for_requested_service(tmp_path):
+    requested_service = _RecordingAgentService("codex")
+    docker_client = _make_docker_client([])
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path, docker_image_name="pycastle-test"),
+        _make_git_service(),
+        docker_client=docker_client,
+        service_registry={"codex": requested_service},
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Test",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                service="codex",
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    docker_client.containers.run.assert_called_once()
+    assert docker_client.containers.run.call_args.args[0] == "pycastle-test-codex"
+
+
 # ── AgentRunner: error propagation ───────────────────────────────────────────
 
 

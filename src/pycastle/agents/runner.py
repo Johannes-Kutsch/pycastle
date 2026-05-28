@@ -131,7 +131,7 @@ class AgentRunner:
         return DockerSession(
             volumes=volumes,
             container_env=container_env,
-            image_name=self._cfg.docker_image_name,
+            image_name=f"{self._cfg.docker_image_name}-{service.name}",
             cfg=self._cfg,
             docker_client=self._docker_client,
             auto_overlay=auto_overlay,
