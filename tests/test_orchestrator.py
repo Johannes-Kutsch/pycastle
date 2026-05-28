@@ -2014,7 +2014,7 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
             _fake_run_agent,
             github_service=mock_github,
             service_registry=ServiceRegistry(
-                {"secondary": svc_exhausted, "primary": svc_available}, "claude"
+                {"secondary": svc_exhausted, "primary": svc_available}
             ),
             max_iterations=2,
         )
@@ -2072,7 +2072,7 @@ def test_usage_limit_pool_switch_message_cross_day_shows_date(tmp_path, capsys):
             _fake_run_agent,
             github_service=mock_github,
             service_registry=ServiceRegistry(
-                {"secondary": svc_exhausted, "primary": svc_available}, "claude"
+                {"secondary": svc_exhausted, "primary": svc_available}
             ),
             max_iterations=2,
         )
@@ -2837,7 +2837,7 @@ def test_usage_limit_with_service_available_does_not_sleep(tmp_path):
             tmp_path,
             _fake_run_agent,
             github_service=mock_github,
-            service_registry=ServiceRegistry({"claude": svc}, "claude"),
+            service_registry=ServiceRegistry({"claude": svc}),
             max_iterations=2,
         )
 
@@ -2887,7 +2887,7 @@ def test_usage_limit_with_all_services_exhausted_sleeps_until_earliest_wake(tmp_
             tmp_path,
             _fake_run_agent,
             github_service=mock_github,
-            service_registry=ServiceRegistry({"claude": svc}, "claude"),
+            service_registry=ServiceRegistry({"claude": svc}),
             max_iterations=2,
         )
 
@@ -2911,7 +2911,7 @@ def test_pool_summary_printed_at_startup_with_both_accounts(tmp_path):
         tmp_path,
         _fake_run_agent,
         github_service=mock_github,
-        service_registry=ServiceRegistry({"claude": svc}, "claude"),
+        service_registry=ServiceRegistry({"claude": svc}),
         status_display=recording,
     )
 
@@ -2937,7 +2937,7 @@ def test_pool_summary_printed_at_startup_with_primary_only(tmp_path):
         tmp_path,
         _fake_run_agent,
         github_service=mock_github,
-        service_registry=ServiceRegistry({"claude": svc}, "claude"),
+        service_registry=ServiceRegistry({"claude": svc}),
         status_display=recording,
     )
 
@@ -3231,9 +3231,7 @@ def test_exhausted_primary_dispatches_with_fallback_triple(tmp_path):
         _fake_run_agent,
         github_service=_make_github_svc(),
         git_service=_make_git_svc(try_merge_side_effect=[True]),
-        service_registry=ServiceRegistry(
-            {"claude": claude_svc, "codex": codex_svc}, "claude"
-        ),
+        service_registry=ServiceRegistry({"claude": claude_svc, "codex": codex_svc}),
         implement_override=StageOverride(
             service="claude",
             model="primary-model",
@@ -3296,7 +3294,7 @@ def test_dual_exhaustion_sleeps_until_earliest_of_primary_and_fallback(tmp_path)
             _fake_run_agent,
             github_service=mock_github,
             service_registry=ServiceRegistry(
-                {"claude": claude_svc, "codex": codex_svc}, "claude"
+                {"claude": claude_svc, "codex": codex_svc}
             ),
             implement_override=StageOverride(
                 service="claude",
@@ -3342,9 +3340,7 @@ def test_primary_takes_precedence_when_both_services_available(tmp_path):
         _fake_run_agent,
         github_service=_make_github_svc(),
         git_service=_make_git_svc(try_merge_side_effect=[True]),
-        service_registry=ServiceRegistry(
-            {"claude": claude_svc, "codex": codex_svc}, "claude"
-        ),
+        service_registry=ServiceRegistry({"claude": claude_svc, "codex": codex_svc}),
         implement_override=StageOverride(
             service="claude",
             model="primary-model",
@@ -3395,7 +3391,7 @@ def test_stage_with_no_fallback_behaves_as_before(tmp_path):
         _fake_run_agent,
         github_service=_make_github_svc(),
         git_service=_make_git_svc(try_merge_side_effect=[True]),
-        service_registry=ServiceRegistry({"claude": claude_svc}, "claude"),
+        service_registry=ServiceRegistry({"claude": claude_svc}),
         implement_override=StageOverride(
             service="claude", model="my-model", effort="medium"
         ),

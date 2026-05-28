@@ -128,9 +128,6 @@ preflight_issue_override = StageOverride(
     fallback=StageOverride(service="claude", model="haiku", effort="low"),
 )
 improve_override = StageOverride(service="claude", model="opus", effort="high")
-
-# --- Service ---
-default_service = "claude"  # options: "claude", "codex"
 """
 
 

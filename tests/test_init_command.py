@@ -199,7 +199,6 @@ def test_init_writes_local_config_example_with_all_supported_settings(
         "Implement checks",
         "Improve",
         "Stage overrides",
-        "Service",
     ):
         assert f"--- {section} ---" in content
 
@@ -222,7 +221,7 @@ def test_init_writes_local_config_example_with_all_supported_settings(
     ) in content
     assert "Claude effort values: low, medium, high, xhigh, max" in content
     assert "Codex effort values: none, minimal, low, medium, high, xhigh" in content
-    assert 'default_service = "claude"  # options: "claude", "codex"' in content
+    assert "default_service" not in content
     assert 'StageOverride(service="codex"' in content
     assert "fallback=StageOverride(" in content
     assert "injected via prompt" in content
