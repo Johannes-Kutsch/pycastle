@@ -62,19 +62,18 @@ The JSON must have two fields:
 - `issues`: unblocked {{READY_FOR_AGENT_LABEL}} issues to implement. Use an **empty list** if every candidate is blocked.
 - `blocked`: {{READY_FOR_AGENT_LABEL}} issues held back because of a blocker. Each entry must have:
   - `number`: the blocked issue's number
-  - `blocked_by`: the issue number that is blocking it
-  - `reason`: the offending label string (e.g., `"{{READY_FOR_HUMAN_LABEL}}"`, `"{{NEEDS_INFO_LABEL}}"`, `"{{NEEDS_TRIAGE_LABEL}}"`)
+  - `title`: the blocked issue's title
 
 Example — some unblocked, some blocked:
 
 <plan>
-{"issues": [{"number": 42, "title": "Fix auth bug"}], "blocked": [{"number": 43, "blocked_by": 42, "reason": "{{NEEDS_INFO_LABEL}}"}]}
+{"issues": [{"number": 42, "title": "Fix auth bug"}], "blocked": [{"number": 43, "title": "Update auth session handling"}]}
 </plan>
 
 Example — all issues are blocked:
 
 <plan>
-{"issues": [], "blocked": [{"number": 5, "blocked_by": 3, "reason": "{{READY_FOR_HUMAN_LABEL}}"}]}
+{"issues": [], "blocked": [{"number": 5, "title": "Refresh setup scaffold docs"}]}
 </plan>
 
 </output>
