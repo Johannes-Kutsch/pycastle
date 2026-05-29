@@ -168,9 +168,9 @@ def test_build_command_planner_includes_tools_read_glob():
     assert "--tools Read,Glob" in cmd
 
 
-def test_build_command_divergence_resolver_includes_tools_read_edit_bash():
+def test_build_command_divergence_resolver_includes_disallowed_tools():
     cmd = ClaudeService().build_command(role=AgentRole.DIVERGENCE_RESOLVER)
-    assert "--tools Read,Edit,Bash" in cmd
+    assert '--disallowedTools "Edit Write NotebookEdit"' in cmd
 
 
 def test_build_command_implementer_excludes_tools():
@@ -194,14 +194,17 @@ def test_build_command_includes_disallowed_tools_for_improve_role():
     assert '--disallowedTools "Edit Write NotebookEdit"' in cmd
 
 
+def test_build_command_includes_disallowed_tools_for_failure_report_role():
+    cmd = ClaudeService().build_command(role=AgentRole.FAILURE_REPORT)
+    assert '--disallowedTools "Edit Write NotebookEdit"' in cmd
+
+
 def test_build_command_excludes_disallowed_tools_for_other_roles():
     for role in (
         AgentRole.PLANNER,
         AgentRole.IMPLEMENTER,
         AgentRole.REVIEWER,
         AgentRole.MERGER,
-        AgentRole.FAILURE_REPORT,
-        AgentRole.DIVERGENCE_RESOLVER,
     ):
         cmd = ClaudeService().build_command(role=role)
         assert "--disallowedTools" not in cmd, (
