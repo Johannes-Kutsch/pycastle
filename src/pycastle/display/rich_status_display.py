@@ -83,12 +83,20 @@ def _token_text(current: int, peak: int) -> Text:
     return text
 
 
+def _model_text(model_display: ModelDisplayMetadata | None) -> Text:
+    if model_display is None:
+        return Text("")
+    model = model_display.model or "(default)"
+    return Text(f"{model_display.service}/{model}/{model_display.effort}")
+
+
 class _AgentRow:
     __slots__ = (
         "name",
         "color_key",
         "phase",
         "work_body",
+        "model_display",
         "started_at",
         "last_update",
         "current_tokens",
@@ -96,12 +104,18 @@ class _AgentRow:
     )
 
     def __init__(
-        self, name: str, phase: str, work_body: str = "", color_key: int | None = None
+        self,
+        name: str,
+        phase: str,
+        work_body: str = "",
+        color_key: int | None = None,
+        model_display: ModelDisplayMetadata | None = None,
     ) -> None:
         self.name = name
         self.color_key = color_key
         self.phase = phase
         self.work_body = work_body
+        self.model_display = model_display
         now = time.monotonic()
         self.started_at = now
         self.last_update = now
@@ -140,6 +154,7 @@ class RichStatusDisplay:
 
         table = Table(show_header=False, expand=False, box=None)
         table.add_column(justify="right")  # elapsed
+        table.add_column()  # model
         table.add_column()  # tokens
         table.add_column()  # name
         table.add_column()  # idle
@@ -154,6 +169,7 @@ class RichStatusDisplay:
 
             table.add_row(
                 Text(_format_duration(row.elapsed_seconds()), style="dim"),
+                _model_text(row.model_display),
                 _token_text(row.current_tokens, row.peak_tokens),
                 name_text,
                 Text(_format_duration(row.idle_seconds()), style="dim"),
@@ -200,7 +216,13 @@ class RichStatusDisplay:
         model_display: ModelDisplayMetadata | None = None,
     ) -> None:
         with self._lock:
-            self._rows[caller] = _AgentRow(caller, initial_phase, work_body, color_key)
+            self._rows[caller] = _AgentRow(
+                caller,
+                initial_phase,
+                work_body,
+                color_key,
+                model_display,
+            )
             if caller != "":
                 self._kinds[caller] = kind
                 self._color_keys[caller] = color_key

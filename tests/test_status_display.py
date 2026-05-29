@@ -448,6 +448,84 @@ def test_rich_tokens_column_appears_before_name() -> None:
     assert output.index("78.3k") < output.index("Plan Agent")
 
 
+def test_rich_service_dispatched_row_renders_model_column_between_elapsed_and_tokens() -> (
+    None
+):
+    d = RichStatusDisplay()
+    d.register(
+        "Plan Agent",
+        "agent",
+        model_display=ModelDisplayMetadata(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+        ),
+    )
+    d.update_tokens("Plan Agent", 78_300)
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "claude/sonnet/medium" in output
+    assert re.search(r"\d+s\s+claude/sonnet/medium\s+78\.3k", output)
+    assert output.index("claude/sonnet/medium") < output.index("78.3k")
+    assert output.index("78.3k") < output.index("Plan Agent")
+
+
+def test_rich_service_dispatched_row_renders_default_model_when_shorthand_empty() -> (
+    None
+):
+    d = RichStatusDisplay()
+    d.register(
+        "Plan Agent",
+        "agent",
+        model_display=ModelDisplayMetadata(
+            service="codex",
+            model="",
+            effort="low",
+        ),
+    )
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "codex/(default)/low" in output
+
+
+def test_rich_phase_row_leaves_model_column_blank() -> None:
+    d = RichStatusDisplay()
+    d.register("Preflight", "phase")
+    d.update_tokens("Preflight", 78_300)
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "claude/" not in output
+    assert "codex/" not in output
+    assert re.search(r"\d+s\s+78\.3k.*Preflight", output)
+
+
+def test_rich_preflight_agent_leaves_model_column_blank() -> None:
+    d = RichStatusDisplay()
+    d.register("Preflight Agent", "agent")
+    d.update_tokens("Preflight Agent", 78_300)
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "claude/" not in output
+    assert "codex/" not in output
+    assert re.search(r"\d+s\s+78\.3k.*Preflight Agent", output)
+
+
 # ── Token column tests ────────────────────────────────────────────────────────
 
 
