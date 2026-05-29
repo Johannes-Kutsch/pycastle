@@ -774,6 +774,11 @@ def test_worktree_path_uses_fixed_project_local_pycastle_dir(tmp_path):
     assert result == tmp_path / "pycastle" / ".worktrees" / "issue-99"
 
 
+def test_worktree_path_accepts_repo_root_directly(tmp_path):
+    result = worktree_path("issue-100", tmp_path)
+    assert result == tmp_path / "pycastle" / ".worktrees" / "issue-100"
+
+
 # ── transient_worktree ────────────────────────────────────────────────────────
 
 

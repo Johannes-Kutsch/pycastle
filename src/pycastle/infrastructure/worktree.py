@@ -25,8 +25,11 @@ PROJECT_LOCAL_PYCASTLE_DIR = Path("pycastle")
 
 class _WorktreeDeps(Protocol):
     repo_root: Path
-    cfg: Config
     git_svc: GitService
+
+
+class _RepoRootDeps(Protocol):
+    repo_root: Path
 
 
 def worktree_name_for_branch(branch: str) -> str:
@@ -40,8 +43,13 @@ def _project_local_worktrees_dir(repo_root: Path) -> Path:
     return repo_root / PROJECT_LOCAL_PYCASTLE_DIR / ".worktrees"
 
 
-def worktree_path(name: str, deps: _WorktreeDeps) -> Path:
-    return _project_local_worktrees_dir(deps.repo_root) / name
+def worktree_path(name: str, repo_root_or_deps: Path | _RepoRootDeps) -> Path:
+    repo_root = (
+        repo_root_or_deps
+        if isinstance(repo_root_or_deps, Path)
+        else repo_root_or_deps.repo_root
+    )
+    return _project_local_worktrees_dir(repo_root) / name
 
 
 @contextmanager
@@ -212,7 +220,7 @@ async def managed_worktree(
     replace_preserved_failure: bool = False,
     deps: _WorktreeDeps,
 ):
-    path = worktree_path(name, deps)
+    path = worktree_path(name, deps.repo_root)
     if delete_branch_on_teardown:
         _cleanup_stale_sandbox(
             deps.git_svc,
@@ -254,7 +262,7 @@ async def managed_worktree(
 
 @asynccontextmanager
 async def transient_worktree(name: str, *, sha: str | None, deps: _WorktreeDeps):
-    path = worktree_path(name, deps)
+    path = worktree_path(name, deps.repo_root)
     if sha is not None:
         deps.git_svc.checkout_detached(deps.repo_root, path, sha)
     _preserve = False

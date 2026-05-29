@@ -126,7 +126,7 @@ async def run_issue(
 
     try:
         _wt_name = worktree_name_for_branch(_branch)
-        _wt_path = worktree_path(_wt_name, deps)
+        _wt_path = worktree_path(_wt_name, deps.repo_root)
 
         implement_done = is_stage_done_for(_wt_path, AgentRole.IMPLEMENTER)
         review_done = is_stage_done_for(_wt_path, AgentRole.REVIEWER)
@@ -246,7 +246,8 @@ async def implement_phase(
         return sum(
             is_stage_done_for(
                 worktree_path(
-                    worktree_name_for_branch(branch_for(issue["number"])), deps
+                    worktree_name_for_branch(branch_for(issue["number"])),
+                    deps.repo_root,
                 ),
                 role,
             )
