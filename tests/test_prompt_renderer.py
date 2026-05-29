@@ -919,7 +919,7 @@ def test_prompt_source_ignores_unknown_local_file_when_bundled_fallback_is_enabl
     assert source.maybe_read_text("unknown.md") is None
 
 
-def test_renderer_ctor_ignores_broken_unknown_local_prompt_file(
+def test_renderer_ctor_rejects_broken_unknown_local_prompt_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.chdir(tmp_path)
@@ -969,7 +969,7 @@ def test_renderer_startup_rejects_unknown_local_prompt_notes(tmp_path: Path):
         PromptRenderer(_cfg_for_prompts_dir(prompts_dir))
 
 
-def test_renderer_startup_ignores_unknown_local_prompt_notes_in_default_local_dir(
+def test_renderer_startup_rejects_unknown_local_prompt_notes_in_default_local_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.chdir(tmp_path)
@@ -981,7 +981,7 @@ def test_renderer_startup_ignores_unknown_local_prompt_notes_in_default_local_di
         PromptRenderer(Config())
 
 
-def test_renderer_ignores_stale_local_prompt_file_for_removed_bundled_default(
+def test_renderer_rejects_stale_local_prompt_file_not_in_bundled_set(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.chdir(tmp_path)
