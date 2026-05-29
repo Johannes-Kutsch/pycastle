@@ -51,6 +51,7 @@ def test_load_env_returns_only_known_keys(tmp_path, monkeypatch):
     monkeypatch.delenv("GH_TOKEN", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+    monkeypatch.delenv("OPENCODE_GO_API_KEY", raising=False)
     monkeypatch.delenv("PYCASTLE_HOME", raising=False)
 
     def _no_home() -> None:

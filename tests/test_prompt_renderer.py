@@ -29,6 +29,15 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _symlink_to_or_skip(path: Path, target: Path) -> None:
+    try:
+        path.symlink_to(target)
+    except OSError as error:
+        if getattr(error, "winerror", None) == 1314:
+            pytest.skip("Windows symlink privilege is unavailable (winerror 1314)")
+        raise
+
+
 def _cfg_for_prompts_dir(prompts_dir: Path) -> SimpleNamespace:
     base = Config()
     return SimpleNamespace(
@@ -1023,6 +1032,27 @@ def test_prompt_source_only_shadows_for_known_bundled_relative_paths(
     assert source.read_text("shared/resume.md") == "local resume prompt"
 
 
+def test_prompt_source_normalizes_windows_style_bundled_relative_paths(
+    tmp_path: Path,
+):
+    local_dir = tmp_path / "pycastle" / "prompts"
+    bundled_dir = tmp_path / "bundled-prompts"
+    (local_dir / "shared").mkdir(parents=True)
+    (bundled_dir / "shared").mkdir(parents=True)
+    (local_dir / "shared" / "resume.md").write_text("local resume prompt")
+    (bundled_dir / "shared" / "resume.md").write_text("bundled resume prompt")
+    (local_dir / "work").mkdir()
+    (bundled_dir / "work").mkdir()
+    (local_dir / "work" / "scratch.md").write_text("stale local prompt")
+    (bundled_dir / "work" / "behavior.md").write_text("bundled behavior prompt")
+
+    source = PromptSource(local_dir, bundled_dir=bundled_dir)
+    source._bundled_relative_paths = {"shared\\resume.md", "work\\behavior.md"}
+
+    assert source.read_text("shared/resume.md") == "local resume prompt"
+    assert source.unknown_local_relative_paths() == ("work/scratch.md",)
+
+
 def test_renderer_startup_rejects_unknown_local_prompt_notes(tmp_path: Path):
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
@@ -1100,7 +1130,7 @@ def test_renderer_falls_back_to_bundled_prompt_when_local_override_path_is_symli
     (prompts_dir / "shared").mkdir()
     target = tmp_path / "override.md"
     target.write_text("symlinked local resume prompt")
-    (prompts_dir / "shared/resume.md").symlink_to(target)
+    _symlink_to_or_skip(prompts_dir / "shared/resume.md", target)
     renderer = PromptRenderer(Config())
     shipped_renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
 
@@ -1110,6 +1140,20 @@ def test_renderer_falls_back_to_bundled_prompt_when_local_override_path_is_symli
     )
 
     assert result == shipped_result
+
+
+def test_symlink_helper_skips_when_windows_symlink_privilege_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    def _raise_winerror(path: Path, target: Path) -> None:
+        error = OSError("missing symlink privilege")
+        setattr(error, "winerror", 1314)
+        raise error
+
+    monkeypatch.setattr(Path, "symlink_to", _raise_winerror)
+
+    with pytest.raises(pytest.skip.Exception, match="1314"):
+        _symlink_to_or_skip(tmp_path / "link.md", tmp_path / "target.md")
 
 
 def test_renderer_prefers_absolute_local_role_prompt_override(tmp_path):
