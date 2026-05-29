@@ -190,32 +190,30 @@ def test_get_safe_sha_returns_afk_when_checks_fail_with_afk_label(
 def test_get_safe_sha_routes_requirements_declared_missing_tool_to_setup_failure(
     tmp_path, git_svc, github_svc
 ):
-    (tmp_path / "pyproject.toml").write_text(
-        "[project]\ndependencies = ['click']\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "requirements.txt").write_text("ruff==0.6.9\n", encoding="utf-8")
     fake = FakeAgentRunner(
         [],
         preflight_responses=[
-            [
-                (
-                    "ruff",
-                    "ruff check .",
-                    "Command failed (exit 127): bash: ruff: command not found",
-                )
-            ]
+            SetupPhaseError(
+                "preflight",
+                "Missing expected preflight tool 'ruff' declared in requirements.txt.",
+                command="ruff check .",
+                output="Command failed (exit 127): bash: ruff: command not found",
+            )
         ],
     )
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 
-    with pytest.raises(
-        SetupPhaseError,
-        match=r"Missing expected preflight tool 'ruff' declared in requirements\.txt\.",
-    ):
+    with pytest.raises(SetupPhaseError) as exc_info:
         asyncio.run(cache.get_safe_sha(deps))
 
+    err = exc_info.value
+    assert (
+        str(err)
+        == "Missing expected preflight tool 'ruff' declared in requirements.txt."
+    )
+    assert err.command == "ruff check ."
+    assert err.output == "Command failed (exit 127): bash: ruff: command not found"
     assert fake.calls == []
 
 

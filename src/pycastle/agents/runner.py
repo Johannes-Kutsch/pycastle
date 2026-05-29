@@ -17,9 +17,6 @@ from ..config import Config, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
 from ..infrastructure.docker_session import DockerSession, build_volume_spec
 from ..infrastructure.preflight_tool_classifier import (
-    MissingDeclaredTool,
-    PreflightCommandFailure,
-    classify_preflight_tool_failure,
     load_python_dependency_metadata,
 )
 from ..errors import (
@@ -457,24 +454,6 @@ class AgentRunner:
                     list(self._cfg.preflight_checks),
                     python_dependency_metadata=python_dependency_metadata,
                 )
-                for check_name, command, output in failures:
-                    classification = classify_preflight_tool_failure(
-                        python_dependency_metadata,
-                        PreflightCommandFailure(
-                            check_name=check_name,
-                            command=command,
-                            output=output,
-                        ),
-                    )
-                    if isinstance(classification, MissingDeclaredTool):
-                        raise SetupPhaseError(
-                            "preflight",
-                            "Missing expected preflight tool "
-                            f"'{classification.tool}' declared in "
-                            f"{classification.dependency_source}.",
-                            command=command,
-                            output=output,
-                        )
                 if not failures:
                     row.close("finished, all tests green")
                 return failures

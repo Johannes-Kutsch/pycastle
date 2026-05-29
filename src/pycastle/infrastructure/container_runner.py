@@ -10,8 +10,9 @@ from pathlib import Path
 from ..agents.output_protocol import AgentOutput, AgentRole, process_stream_from_events
 from ..config import Config, resolve_logs_dir
 from .docker_session import DockerSession
-from ..errors import AgentTimeoutError, DockerError
+from ..errors import AgentTimeoutError, DockerError, SetupPhaseError
 from .preflight_tool_classifier import (
+    MissingDeclaredTool,
     PreflightCommandFailure,
     PythonDependencyMetadata,
     classify_preflight_tool_failure,
@@ -103,15 +104,25 @@ class ContainerRunner:
             try:
                 await loop.run_in_executor(None, self._session.exec_simple, command)
             except DockerError as exc:
-                classify_preflight_tool_failure(
+                output = str(exc)
+                classification = classify_preflight_tool_failure(
                     metadata,
                     PreflightCommandFailure(
                         check_name=check_name,
                         command=command,
-                        output=str(exc),
+                        output=output,
                     ),
                 )
-                failures.append((check_name, command, str(exc)))
+                if isinstance(classification, MissingDeclaredTool):
+                    raise SetupPhaseError(
+                        "preflight",
+                        "Missing expected preflight tool "
+                        f"'{classification.tool}' declared in "
+                        f"{classification.dependency_source}.",
+                        command=command,
+                        output=output,
+                    ) from exc
+                failures.append((check_name, command, output))
         return failures
 
     async def work(

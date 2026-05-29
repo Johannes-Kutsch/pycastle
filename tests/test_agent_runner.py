@@ -1381,9 +1381,12 @@ def test_agent_runner_run_preflight_raises_setup_phase_error_for_missing_pyproje
     with pytest.raises(SetupPhaseError) as exc_info:
         asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
-    assert exc_info.value.phase == "preflight"
-    assert "ruff" in str(exc_info.value)
-    assert "pyproject.toml" in str(exc_info.value)
+    err = exc_info.value
+    assert err.phase == "preflight"
+    assert "ruff" in str(err)
+    assert "pyproject.toml" in str(err)
+    assert err.command == "ruff check ."
+    assert err.output == "Command failed (exit 127): bash: ruff: command not found"
 
 
 def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_undeclared_tool(
