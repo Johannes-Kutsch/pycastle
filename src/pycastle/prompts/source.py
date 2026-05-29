@@ -93,15 +93,6 @@ class PromptSource:
     ) -> EffectivePromptFile | None:
         return self.maybe_lookup(prompt.relative_path)
 
-    def exists_reference(self, prompt: PromptReference) -> bool:
-        return self.exists(prompt.relative_path)
-
-    def read_reference_text(self, prompt: PromptReference) -> str:
-        return self.read_text(prompt.relative_path)
-
-    def maybe_read_reference_text(self, prompt: PromptReference) -> str | None:
-        return self.maybe_read_text(prompt.relative_path)
-
 
 @dataclass(frozen=True)
 class EffectivePromptFile:
