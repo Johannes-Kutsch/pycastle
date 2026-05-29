@@ -153,56 +153,76 @@ def _git(cwd, *args):
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 
 
-@pytest.fixture
-def conflicting_repo(tmp_path):
-    """Repo with pycastle/issue-1 conflicting against main on conflict.txt."""
-    _git(tmp_path, "init")
+def _init_conflicting_merge_repo(tmp_path, issue_branches: list[tuple[str, str]]):
+    _git(tmp_path, "init", "--initial-branch", "main")
     _git(tmp_path, "config", "user.email", "test@example.com")
     _git(tmp_path, "config", "user.name", "Test User")
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'merge-test'\n")
     (tmp_path / "conflict.txt").write_text("base\n")
     _git(tmp_path, "add", "pyproject.toml", "conflict.txt")
     _git(tmp_path, "commit", "-m", "base")
-    _git(tmp_path, "checkout", "-b", "pycastle/issue-1")
-    (tmp_path / "conflict.txt").write_text("branch change\n")
-    _git(tmp_path, "add", "conflict.txt")
-    _git(tmp_path, "commit", "-m", "branch change")
-    _git(tmp_path, "checkout", "master")
-    _git(tmp_path, "branch", "-m", "main")
+
+    for branch, content in issue_branches:
+        _git(tmp_path, "checkout", "-b", branch)
+        (tmp_path / "conflict.txt").write_text(content)
+        _git(tmp_path, "add", "conflict.txt")
+        _git(tmp_path, "commit", "-m", content.strip())
+        _git(tmp_path, "checkout", "main")
+
     (tmp_path / "conflict.txt").write_text("main change\n")
     _git(tmp_path, "add", "conflict.txt")
     _git(tmp_path, "commit", "-m", "main change")
     return tmp_path
+
+
+def test_merge_repo_setup_does_not_assume_master_default_branch(tmp_path, monkeypatch):
+    real_run = subprocess.run
+
+    def _guard_master_checkout(cmd, **kwargs):
+        if cmd == ["git", "checkout", "master"]:
+            raise subprocess.CalledProcessError(
+                1,
+                cmd,
+                stderr=b"error: pathspec 'master' did not match any file(s) known to git\n",
+            )
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", _guard_master_checkout)
+
+    repo = _init_conflicting_merge_repo(
+        tmp_path,
+        [("pycastle/issue-1", "branch change\n")],
+    )
+    current_branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert current_branch.stdout.strip() == "main"
+
+
+@pytest.fixture
+def conflicting_repo(tmp_path):
+    """Repo with pycastle/issue-1 conflicting against main on conflict.txt."""
+    return _init_conflicting_merge_repo(
+        tmp_path,
+        [("pycastle/issue-1", "branch change\n")],
+    )
 
 
 @pytest.fixture
 def two_conflicting_branches_repo(tmp_path):
     """Repo with two issue branches that both conflict against main on one file."""
-    _git(tmp_path, "init")
-    _git(tmp_path, "config", "user.email", "test@example.com")
-    _git(tmp_path, "config", "user.name", "Test User")
-    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'merge-test'\n")
-    (tmp_path / "conflict.txt").write_text("base\n")
-    _git(tmp_path, "add", "pyproject.toml", "conflict.txt")
-    _git(tmp_path, "commit", "-m", "base")
-
-    _git(tmp_path, "checkout", "-b", "pycastle/issue-1")
-    (tmp_path / "conflict.txt").write_text("branch one\n")
-    _git(tmp_path, "add", "conflict.txt")
-    _git(tmp_path, "commit", "-m", "branch one")
-
-    _git(tmp_path, "checkout", "master")
-    _git(tmp_path, "branch", "-m", "main")
-    _git(tmp_path, "checkout", "-b", "pycastle/issue-2")
-    (tmp_path / "conflict.txt").write_text("branch two\n")
-    _git(tmp_path, "add", "conflict.txt")
-    _git(tmp_path, "commit", "-m", "branch two")
-
-    _git(tmp_path, "checkout", "main")
-    (tmp_path / "conflict.txt").write_text("main change\n")
-    _git(tmp_path, "add", "conflict.txt")
-    _git(tmp_path, "commit", "-m", "main change")
-    return tmp_path
+    return _init_conflicting_merge_repo(
+        tmp_path,
+        [
+            ("pycastle/issue-1", "branch one\n"),
+            ("pycastle/issue-2", "branch two\n"),
+        ],
+    )
 
 
 def test_conflict_starts_merge_before_invoking_merger(
