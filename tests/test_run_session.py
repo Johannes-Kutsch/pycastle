@@ -21,12 +21,13 @@ from pycastle.services.agent_service import AgentService
 class _FakeAgentService:
     relpath: str | None
     name: str = "fake"
+    resumable: bool = False
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         return self.relpath
 
     def is_resumable(self, state_dir: Path) -> bool:
-        return False
+        return self.resumable
 
 
 def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: Path):
@@ -51,6 +52,40 @@ def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: P
         provider_session_id=None,
         auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
         recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
+    )
+
+
+def test_run_session_plan_uses_selected_codex_service_state_dir_for_rollout_recovery(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService("custom/codex-state", name="codex", resumable=True),
+    )
+    state_dir = tmp_path / "custom" / "codex-state"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-custom-state"}\n',
+        encoding="utf-8",
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.service_state_dir == state_dir
+    assert plan.provider_session_id == "thread-from-custom-state"
+    assert (
+        plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
+    )
+    assert (
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex")
+        == "thread-from-custom-state"
     )
 
 
