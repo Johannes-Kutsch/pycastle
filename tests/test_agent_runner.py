@@ -1,6 +1,7 @@
 """Tests for AgentRunner and FakeAgentRunner."""
 
 import asyncio
+import json
 import threading
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
@@ -1668,8 +1669,6 @@ def test_agent_runner_marks_picked_token_permanently_exhausted_on_subscription_a
 def test_agent_runner_treats_subscription_access_denial_variant_as_permanent_exhaustion(
     tmp_path,
 ):
-    import json
-
     from pycastle.services.claude_service import ClaudeService
 
     denial = (
@@ -1718,6 +1717,37 @@ def test_agent_runner_treats_subscription_access_denial_variant_as_permanent_exh
     assert exc_info.value.account_label == "secondary"
     env = svc.build_env()
     assert env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok-primary"
+
+
+def test_agent_runner_treats_unrelated_403_as_hard_error(tmp_path):
+    mock_client = _make_docker_client(
+        [
+            json.dumps(
+                {
+                    "type": "result",
+                    "is_error": True,
+                    "api_error_status": 403,
+                    "result": "Forbidden: your IP address is not allowed.",
+                }
+            ).encode()
+            + b"\n"
+        ]
+    )
+    runner = AgentRunner(
+        {}, _make_cfg(tmp_path), _make_git_service(), docker_client=mock_client
+    )
+
+    with pytest.raises(HardAgentError):
+        asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Test",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                )
+            )
+        )
 
 
 def test_fake_agent_runner_accepts_run_request_and_records_it():
