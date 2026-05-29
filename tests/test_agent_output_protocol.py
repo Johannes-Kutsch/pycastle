@@ -207,9 +207,27 @@ def test_process_stream_planner_extracts_blocked_when_present():
     lines = [_result_line(f"<plan>{payload}</plan>")]
     result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
     assert isinstance(result, PlannerOutput)
-    assert result.blocked == [
-        {"number": 5, "blocked_by": 3, "reason": "needs fix first"}
-    ]
+    assert result.blocked == [{"number": 5}]
+
+
+def test_process_stream_planner_accepts_legacy_blocked_entries_with_extra_fields():
+    payload = json.dumps(
+        {
+            "issues": [],
+            "blocked": [
+                {
+                    "number": 5,
+                    "title": "Unblock planner parsing",
+                    "blocked_by": 3,
+                    "reason": "needs fix first",
+                }
+            ],
+        }
+    )
+    lines = [_result_line(f"<plan>{payload}</plan>")]
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.blocked == [{"number": 5, "title": "Unblock planner parsing"}]
 
 
 def test_process_stream_planner_accepts_concise_blocked_entries():
@@ -236,7 +254,7 @@ def test_process_stream_planner_accepts_custom_blocked_entries():
     lines = [_result_line(f"<plan>{payload}</plan>")]
     result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
     assert isinstance(result, PlannerOutput)
-    assert result.blocked == [{"number": 5, "note": "waiting on maintainer"}]
+    assert result.blocked == [{"number": 5}]
 
 
 def test_process_stream_planner_defaults_blocked_to_empty_when_absent():

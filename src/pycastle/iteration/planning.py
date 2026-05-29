@@ -53,6 +53,19 @@ class AllBlocked:
     blocked: list[dict]
 
 
+def _hydrate_blocked_issues(blocked: list[dict], open_issues: list[dict]) -> list[dict]:
+    titles_by_number = {issue["number"]: issue["title"] for issue in open_issues}
+    hydrated: list[dict] = []
+    for blocked_issue in blocked:
+        number = blocked_issue["number"]
+        title = blocked_issue.get("title") or titles_by_number.get(number)
+        if title is None:
+            hydrated.append({"number": number})
+            continue
+        hydrated.append({"number": number, "title": title})
+    return hydrated
+
+
 def hydrate_planned_issues(
     plan_result: "PlanReady", open_issues: list[dict]
 ) -> "PlanReady":
@@ -262,10 +275,11 @@ async def planning_phase(
                     f"Planner returned unexpected output type: {type(output).__name__}"
                 )
             if not output.issues:
+                blocked = _hydrate_blocked_issues(output.blocked, well_formed)
                 blocker_summary = _planning_blocker_summary(slice_malformed, bad_body)
                 blocked_lines = [
                     _format_blocked_issue_line(blocked_issue)
-                    for blocked_issue in output.blocked
+                    for blocked_issue in blocked
                 ]
                 lines = [
                     "All ready-for-agent issues are blocked:"
@@ -276,7 +290,7 @@ async def planning_phase(
                     lines.append(blocker_summary)
                 lines.extend(blocked_lines)
                 row.close("\n".join(lines))
-                return AllBlocked(blocked=output.blocked)
+                return AllBlocked(blocked=blocked)
 
             plan = PlanReady(
                 issues=sorted(output.issues, key=lambda i: i["number"]),
@@ -302,9 +316,4 @@ def _format_blocked_issue_line(blocked_issue: dict) -> str:
     number = blocked_issue["number"]
     if "title" in blocked_issue:
         return f"  #{number}: {blocked_issue['title']}"
-    if "blocked_by" in blocked_issue and "reason" in blocked_issue:
-        return (
-            f"  #{number} blocked by #{blocked_issue['blocked_by']}: "
-            f"{blocked_issue['reason']}"
-        )
     return f"  #{number}"
