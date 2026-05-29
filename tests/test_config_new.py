@@ -259,7 +259,13 @@ def test_config_has_bug_report_repo_default():
 def test_config_public_surface_does_not_expose_removed_project_local_path_fields():
     cfg = Config()
 
-    for name in ("pycastle_dir", "prompts_dir", "worktrees_dir", "env_file"):
+    for name in (
+        "pycastle_dir",
+        "prompts_dir",
+        "worktrees_dir",
+        "env_file",
+        "dockerfile",
+    ):
         assert not hasattr(cfg, name)
 
     assert cfg.logs_dir == Path("pycastle/logs")

@@ -29,10 +29,8 @@ __all__ = [
 _BUG_REPORT_REPO_RE = re.compile(r"^[^/]+/[^/]+$")
 _DEFAULTS_DIR = Path(__file__).resolve().parents[1] / "defaults"
 
-_IGNORED_CONFIG_KEYS = frozenset(
+_REMOVED_PROJECT_LOCAL_PATH_KEYS = frozenset(
     {
-        "usage_limit_patterns",
-        "default_service",
         "dockerfile",
         "pycastle_dir",
         "prompts_dir",
@@ -40,6 +38,15 @@ _IGNORED_CONFIG_KEYS = frozenset(
         "env_file",
     }
 )
+
+_LEGACY_IGNORED_CONFIG_KEYS = frozenset(
+    {
+        "usage_limit_patterns",
+        "default_service",
+    }
+)
+
+_IGNORED_CONFIG_KEYS = _REMOVED_PROJECT_LOCAL_PATH_KEYS | _LEGACY_IGNORED_CONFIG_KEYS
 
 _GLOBAL_FORBIDDEN_FIELDS = frozenset(
     {
