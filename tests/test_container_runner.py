@@ -17,13 +17,9 @@ from pycastle.infrastructure.docker_session import DockerSession
 from pycastle.errors import (
     AgentTimeoutError,
     DockerError,
-    SetupPhaseError,
     UsageLimitError,
 )
 from pycastle.iteration._deps import RecordingStatusDisplay
-from pycastle.infrastructure.preflight_tool_classifier import (
-    PythonDependencyMetadata,
-)
 from pycastle.session import RunKind
 from pycastle.services.claude_service import ClaudeService
 
@@ -253,37 +249,25 @@ def test_preflight_runs_all_checks_when_one_fails(tmp_path):
     assert any("pytest" in c for c in session.exec_calls)
 
 
-def test_preflight_raises_setup_phase_error_with_command_and_output_for_missing_declared_tool(
-    tmp_path,
-):
+def test_preflight_collects_raw_failures_without_classifying_missing_tools(tmp_path):
     session = FakeDockerSession(
         exec_handlers={
-            "ruff check": DockerError(
-                "Command failed (exit 127): bash: ruff: command not found"
-            )
+            "ruff check": DockerError("bash: ruff: command not found"),
+            "mypy .": DockerError("src/app.py:1: error: boom"),
         }
     )
     runner, _ = _make_runner(session=session, tmp_path=tmp_path)
 
-    with pytest.raises(SetupPhaseError) as exc_info:
-        asyncio.run(
-            runner.preflight(
-                [("ruff", "ruff check .")],
-                python_dependency_metadata=PythonDependencyMetadata(
-                    declared_packages=frozenset({"ruff"}),
-                    source="pyproject.toml",
-                    package_sources={"ruff": "pyproject.toml"},
-                ),
-            )
-        )
-
-    err = exc_info.value
-    assert err.phase == "preflight"
-    assert (
-        str(err) == "Missing expected preflight tool 'ruff' declared in pyproject.toml."
+    result = asyncio.run(
+        runner.preflight([("ruff", "ruff check ."), ("mypy", "mypy .")])
     )
-    assert err.command == "ruff check ."
-    assert err.output == "Command failed (exit 127): bash: ruff: command not found"
+
+    assert result == [
+        ("ruff", "ruff check .", "bash: ruff: command not found"),
+        ("mypy", "mypy .", "src/app.py:1: error: boom"),
+    ]
+    assert any("ruff check" in c for c in session.exec_calls)
+    assert any("mypy" in c for c in session.exec_calls)
 
 
 def test_preflight_with_empty_checks_returns_empty(tmp_path):
