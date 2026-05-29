@@ -1043,6 +1043,9 @@ def test_prompt_source_normalizes_windows_style_bundled_relative_paths(
     (bundled_dir / "shared" / "resume.md").write_text("bundled resume prompt")
     (local_dir / "work").mkdir()
     (bundled_dir / "work").mkdir()
+    (local_dir / "work" / "behavior.md").write_text(
+        "local behavior prompt {{ISSUE_NUMBER}}"
+    )
     (local_dir / "work" / "scratch.md").write_text("stale local prompt")
     (bundled_dir / "work" / "behavior.md").write_text("bundled behavior prompt")
 
@@ -1050,6 +1053,9 @@ def test_prompt_source_normalizes_windows_style_bundled_relative_paths(
     source._bundled_relative_paths = {"shared\\resume.md", "work\\behavior.md"}
 
     assert source.read_text("shared/resume.md") == "local resume prompt"
+    assert (
+        source.read_text("work/behavior.md") == "local behavior prompt {{ISSUE_NUMBER}}"
+    )
     assert source.unknown_local_relative_paths() == ("work/scratch.md",)
 
 

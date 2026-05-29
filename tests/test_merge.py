@@ -189,10 +189,19 @@ def test_merge_repo_setup_does_not_assume_master_default_branch(tmp_path, monkey
 
     monkeypatch.setattr(subprocess, "run", _guard_master_checkout)
 
-    _init_conflicting_merge_repo(
+    repo = _init_conflicting_merge_repo(
         tmp_path,
         [("pycastle/issue-1", "branch change\n")],
     )
+    current_branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert current_branch.stdout.strip() == "main"
 
 
 @pytest.fixture
