@@ -39,6 +39,22 @@ def test_load_python_dependency_metadata_falls_back_to_requirements_when_pyproje
     assert metadata.source == "requirements.txt"
 
 
+def test_load_python_dependency_metadata_tracks_requirements_source_per_package(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\ndependencies = ['click']\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "requirements.txt").write_text("ruff==0.6.0\n", encoding="utf-8")
+
+    metadata = load_python_dependency_metadata(tmp_path)
+
+    assert metadata.declared_packages == frozenset({"click", "ruff"})
+    assert metadata.package_sources["click"] == "pyproject.toml"
+    assert metadata.package_sources["ruff"] == "requirements.txt"
+
+
 def test_classify_preflight_tool_failure_marks_declared_python_module_as_missing_tool() -> (
     None
 ):
