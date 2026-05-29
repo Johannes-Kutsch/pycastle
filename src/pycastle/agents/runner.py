@@ -243,11 +243,6 @@ class AgentRunner:
             worktree=mount_path,
             namespace=session_namespace,
             service=service,
-            recovered_session_id_persistence=(
-                RecoveredSessionIdPersistence.PERSIST
-                if service.name == "codex"
-                else RecoveredSessionIdPersistence.SKIP
-            ),
         )
         run_kind = plan.run_kind
         state_dir = plan.service_state_dir
@@ -263,7 +258,6 @@ class AgentRunner:
         host_codex_auth: Path | None = None
         if (
             state_dir is not None
-            and service.name == "codex"
             and plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
         ):
             host_codex_auth = self._host_codex_auth_path()
@@ -341,21 +335,13 @@ class AgentRunner:
                         work_run_kind = run_kind
                         for _ in range(3):
                             try:
-                                if service.name in {"codex", "opencode"}:
-                                    output = await runner.work(
-                                        role,
-                                        work_prompt,
-                                        run_kind=work_run_kind,
-                                        session_uuid=service_session_id,
-                                        on_thread_id=remember_thread_id,
-                                    )
-                                else:
-                                    output = await runner.work(
-                                        role,
-                                        work_prompt,
-                                        run_kind=work_run_kind,
-                                        session_uuid=service_session_id,
-                                    )
+                                output = await runner.work(
+                                    role,
+                                    work_prompt,
+                                    run_kind=work_run_kind,
+                                    session_uuid=service_session_id,
+                                    on_thread_id=remember_thread_id,
+                                )
                                 if (
                                     not isinstance(output, FailedOutput)
                                     and service_session_id is not None

@@ -2837,7 +2837,7 @@ def test_agent_runner_uses_run_session_plan_for_claude_resume_dispatch(
             service_state_dir=planned_state_dir,
             provider_session_id="planned-session-id",
             auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
-            recovered_session_id_persistence=kwargs["recovered_session_id_persistence"],
+            recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
         )
 
     monkeypatch.setattr(
@@ -2903,7 +2903,7 @@ def test_agent_runner_uses_run_session_plan_state_dir_for_claude_env(
             service_state_dir=planned_state_dir,
             provider_session_id="planned-session-id",
             auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
-            recovered_session_id_persistence=kwargs["recovered_session_id_persistence"],
+            recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
         )
 
     monkeypatch.setattr(
@@ -3777,7 +3777,7 @@ def test_agent_runner_run_returns_success_after_protocol_error_on_first_attempt(
     success_output = CommitMessageOutput(message="done")
     work_calls: list[tuple[str, RunKind]] = []
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid):
+    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
         work_calls.append((prompt, run_kind))
         if len(work_calls) == 1:
             raise PlanParseError("no tag")
@@ -3817,7 +3817,7 @@ def test_agent_runner_run_raises_agent_failed_error_after_three_protocol_errors(
 
     call_count = 0
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid):
+    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
         nonlocal call_count
         call_count += 1
         raise PromiseParseError("no tag")
@@ -3852,7 +3852,7 @@ def test_agent_runner_run_does_not_reprompt_when_work_returns_failed_output(tmp_
 
     call_count = 0
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid):
+    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
         nonlocal call_count
         call_count += 1
         return FailedOutput(failure_class="agent_failed")
@@ -3889,7 +3889,7 @@ def test_agent_runner_run_decrements_timeout_budget_when_protocol_error_precedes
 
     call_count = 0
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid):
+    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
         nonlocal call_count
         call_count += 1
         if call_count == 1:

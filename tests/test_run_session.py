@@ -39,9 +39,6 @@ def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: P
         worktree=tmp_path,
         namespace="main",
         service=service,
-        provider_session_id="thread-123",
-        auth_seeding_requirement=AuthSeedingRequirement.REQUIRED,
-        recovered_session_id_persistence=RecoveredSessionIdPersistence.PERSIST,
     )
 
     assert plan == RunSessionPlan(
@@ -51,9 +48,9 @@ def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: P
         service=service,
         run_kind=RunKind.FRESH,
         service_state_dir=tmp_path / ".pycastle-session/improve/main/codex",
-        provider_session_id="thread-123",
-        auth_seeding_requirement=AuthSeedingRequirement.REQUIRED,
-        recovered_session_id_persistence=RecoveredSessionIdPersistence.PERSIST,
+        provider_session_id=None,
+        auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
+        recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
     )
 
 
@@ -67,9 +64,6 @@ def test_run_session_plan_keeps_none_service_state_dir_when_service_has_no_state
         worktree=tmp_path,
         namespace="",
         service=service,
-        provider_session_id=None,
-        auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
-        recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
     )
 
     assert plan.service_state_dir is None
