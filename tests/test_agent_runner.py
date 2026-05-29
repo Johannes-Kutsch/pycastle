@@ -1366,6 +1366,49 @@ def test_agent_runner_run_preflight_raises_setup_phase_error_when_pip_install_fa
     assert exc_info.value.phase == "preflight"
 
 
+def test_agent_runner_run_preflight_raises_setup_phase_error_for_missing_pyproject_declared_tool(
+    tmp_path,
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 't'\ndependencies = ['ruff>=0.5']\n", encoding="utf-8"
+    )
+    mock_client = _make_preflight_docker_client(
+        exit_code=127, stdout=b"bash: ruff: command not found"
+    )
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert exc_info.value.phase == "preflight"
+    assert "ruff" in str(exc_info.value)
+    assert "pyproject.toml" in str(exc_info.value)
+
+
+def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_undeclared_tool(
+    tmp_path,
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 't'\ndependencies = ['ruff>=0.5']\n", encoding="utf-8"
+    )
+    mock_client = _make_preflight_docker_client(
+        exit_code=127, stdout=b"bash: black: command not found"
+    )
+    cfg = _make_cfg(tmp_path, preflight_checks=(("black", "black --check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == [
+        (
+            "black",
+            "black --check .",
+            "Command failed (exit 127): bash: black: command not found",
+        )
+    ]
+
+
 def test_agent_runner_run_preflight_passes_checks_that_require_installed_tools(
     tmp_path,
 ):
