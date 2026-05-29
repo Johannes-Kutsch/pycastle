@@ -7,6 +7,7 @@ from typing import cast
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services import ClaudeService
 from pycastle.services.codex_service import CodexService
+from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session.run_session import (
     AuthSeedingRequirement,
     RecoveredSessionIdPersistence,
@@ -286,6 +287,27 @@ def test_run_session_plan_never_generates_pycastle_uuid_for_fresh_codex(
 
     assert plan.run_kind is RunKind.FRESH
     assert plan.provider_session_id is None
+
+
+def test_run_session_plan_reads_namespaced_opencode_session_id_for_resume(
+    tmp_path: Path,
+):
+    service = OpenCodeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    role_session.save_service_session_id("opencode", "sess-from-sidecar")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == "sess-from-sidecar"
+    assert plan.service_state_dir == (
+        tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
+    )
 
 
 def test_run_session_plan_requires_auth_seeding_for_fresh_codex_without_auth_json(
