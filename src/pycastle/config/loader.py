@@ -250,7 +250,11 @@ def resolve_logs_dir(cfg: Config) -> Path:
 
 def replace_config_runtime_fields(cfg: Config, updated: Config) -> Config:
     object.__setattr__(updated, "repo_root", cfg.repo_root)
-    object.__setattr__(updated, "_global_logs_dir_parent", cfg._global_logs_dir_parent)
+    object.__setattr__(
+        updated,
+        "_global_logs_dir_parent",
+        cfg._global_logs_dir_parent and updated.logs_dir == cfg.logs_dir,
+    )
     return updated
 
 

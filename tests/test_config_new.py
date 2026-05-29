@@ -384,6 +384,26 @@ def test_replace_config_runtime_fields_preserves_global_logs_dir_semantics(
     )
 
 
+def test_replace_config_runtime_fields_uses_runtime_logs_dir_override_directly(
+    tmp_path, monkeypatch
+):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text(
+        "from pathlib import Path\nlogs_dir = Path('shared-logs')\n"
+    )
+    project_dir = tmp_path / "my-project"
+    project_dir.mkdir()
+    monkeypatch.chdir(project_dir)
+
+    cfg = load_config(repo_root=project_dir, global_dir=global_dir)
+    updated = dataclasses.replace(cfg, logs_dir=Path("runtime-logs"))
+    result = replace_config_runtime_fields(cfg, updated)
+
+    assert result.logs_dir == Path("runtime-logs")
+    assert resolve_logs_dir(result) == (project_dir / "runtime-logs").resolve()
+
+
 def test_overrides_take_precedence_over_local_file(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text("max_parallel = 4\n")
