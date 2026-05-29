@@ -658,8 +658,8 @@ def test_empty_stage_override_model_uses_cli_default(tmp_path):
     )
 
     planner_call = next(c for c in captured if c["name"] == "Plan Agent")
-    assert planner_call["model"] == "gpt-5.4-mini"
-    assert planner_call["effort"] == "low"
+    assert planner_call["model"] == "deepseek-v4-flash"
+    assert planner_call["effort"] == "medium"
 
 
 def test_stage_overrides_are_independent(tmp_path):

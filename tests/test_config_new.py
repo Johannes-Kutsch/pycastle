@@ -74,10 +74,15 @@ def test_load_config_layers_host_checks_independently_from_preflight_checks(tmp_
 def test_load_config_uses_universal_default_stage_priority_chains(tmp_path):
     cfg = load_config(repo_root=tmp_path)
     assert cfg.plan_override == StageOverride(
-        service="codex",
-        model="gpt-5.4-mini",
-        effort="low",
-        fallback=StageOverride(service="claude", model="haiku", effort="low"),
+        service="opencode",
+        model="deepseek-v4-flash",
+        effort="medium",
+        fallback=StageOverride(
+            service="codex",
+            model="gpt-5.4-mini",
+            effort="low",
+            fallback=StageOverride(service="claude", model="haiku", effort="low"),
+        ),
     )
     assert cfg.implement_override == StageOverride(
         service="codex",
@@ -1192,7 +1197,7 @@ def test_legacy_default_service_does_not_select_referenced_services(tmp_path):
     (tmp_path / "pycastle" / "config.py").write_text('default_service = "codex"\n')
     cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
 
-    assert referenced_services(cfg) == {"claude", "codex"}
+    assert referenced_services(cfg) == {"claude", "codex", "opencode"}
 
 
 def test_load_config_round_trips_stage_override_service_and_fallback(tmp_path):
