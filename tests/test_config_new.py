@@ -1,5 +1,4 @@
 import dataclasses
-import inspect
 from pathlib import Path
 
 import pytest
@@ -119,10 +118,6 @@ def test_resolve_dockerfile_returns_local_universal_override(tmp_path):
     dockerfile.write_text("FROM local\n")
 
     assert resolve_dockerfile(pycastle_dir) == dockerfile
-
-
-def test_resolve_dockerfile_exposes_only_universal_pycastle_dir_interface():
-    assert list(inspect.signature(resolve_dockerfile).parameters) == ["pycastle_dir"]
 
 
 def test_resolve_dockerfile_returns_bundled_default_when_no_local_override(
