@@ -327,14 +327,27 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             parsed = json.loads(raw)
             if isinstance(parsed, dict) and parsed.get("result"):
                 error_text = str(parsed["result"])
+            elif isinstance(parsed, dict):
+                error = parsed.get("error")
+                if isinstance(error, dict):
+                    data = error.get("data")
+                    if isinstance(data, dict) and data.get("message"):
+                        error_text = str(data["message"])
         except (json.JSONDecodeError, TypeError):
             pass
         first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"
-        title = f"[pycastle] Claude API {err.status_code}: {first_line}"
+        service_name = getattr(err, "service_name", "claude") or "claude"
+        service_label = {
+            "claude": "Claude",
+            "codex": "Codex",
+            "opencode": "OpenCode",
+        }.get(service_name, service_name)
+        title = f"[pycastle] {service_label} API {err.status_code}: {first_line}"
         body = (
             f"## Raw result envelope\n\n```json\n{raw}\n```\n\n"
             f"Status: {err.status_code}\n"
             f"Agent: {err.caller or '<unknown>'}\n"
+            f"Service: {service_name}\n"
         )
         url = auto_file_issue(title, body, BUG_REPORT_LABEL_LIST, cfg=deps.cfg)
         status_code_str = (

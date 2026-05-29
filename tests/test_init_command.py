@@ -1046,7 +1046,7 @@ def test_init_config_example_documents_opencode_opt_in_stage_chain(
 
     content = (tmp_path / "pycastle" / "config.py.example").read_text()
 
-    assert "OpenCode model ids:" in content
+    assert "OpenCode Go model ids:" in content
     assert "kimi-k2.6" in content
     assert "OpenCode effort values: medium" in content
     assert (

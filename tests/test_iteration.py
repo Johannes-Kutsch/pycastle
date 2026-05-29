@@ -4089,7 +4089,7 @@ def test_run_iteration_returns_aborted_hard_api_error_on_hard_agent_error_from_i
 def test_run_iteration_calls_auto_file_issue_with_correct_title_and_labels_on_hard_agent_error(
     tmp_path, git_svc, github_svc, logger
 ):
-    """HardAgentError causes auto_file_issue to be called with [pycastle] Claude API <status>: <first line> title."""
+    """HardAgentError defaults to a Claude-scoped auto-file title."""
     raw_line = '{"type": "result", "is_error": true, "api_error_status": 401, "result": "Unauthorized: invalid token"}'
 
     async def agent_fn(req: RunRequest):
@@ -4113,6 +4113,39 @@ def test_run_iteration_calls_auto_file_issue_with_correct_title_and_labels_on_ha
     assert result.status_code == 401
     assert labels == ["bug", "needs-triage"]
     assert raw_line in body
+    assert "Service: claude" in body
+
+
+def test_run_iteration_uses_service_name_in_hard_agent_error_title(
+    tmp_path, git_svc, github_svc, logger
+):
+    raw_line = (
+        '{"type": "error", "error": {"data": {"message": '
+        '"Model not found: deepseek-v4-flash/."}}}'
+    )
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
+            )
+        raise HardAgentError(
+            message=raw_line, status_code=400, service_name="opencode"
+        )
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedHardApiError)
+    title, body, labels = mock_file.call_args[0]
+    assert title == (
+        "[pycastle] OpenCode API 400: Model not found: deepseek-v4-flash/."
+    )
+    assert "Service: opencode" in body
+    assert labels == ["bug", "needs-triage"]
 
 
 def test_run_iteration_returns_aborted_hard_api_error_on_hard_agent_error_from_plan_agent(

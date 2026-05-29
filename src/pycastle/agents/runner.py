@@ -423,6 +423,7 @@ class AgentRunner:
                     except HardAgentError as err:
                         _token.cancel()
                         err.caller = name
+                        err.service_name = service.name
                         raise
                     except Exception:
                         if run_kind != RunKind.RESUME:

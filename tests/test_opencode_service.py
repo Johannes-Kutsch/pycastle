@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from datetime import timezone
 
@@ -32,18 +33,28 @@ def test_opencode_service_builds_json_commands_and_go_api_env() -> None:
     env = service.build_env("/workspace/.pycastle-session/implementer/opencode")
 
     assert fresh == (
-        "opencode run --format json --model kimi-k2.6 "
+        "opencode run --format json --model opencode-go/kimi-k2.6 "
         '"$(cat /tmp/.pycastle_prompt)"'
     )
     assert resume == (
         "opencode run --format json --session session-123 "
-        '--model kimi-k2.6 "$(cat /tmp/.pycastle_prompt)"'
+        '--model opencode-go/kimi-k2.6 "$(cat /tmp/.pycastle_prompt)"'
     )
-    assert env == {
-        "TZ": "UTC",
-        "OPENCODE_HOME": "/workspace/.pycastle-session/implementer/opencode",
-        "OPENCODE_GO_API_KEY": "go-key",
+    assert env["TZ"] == "UTC"
+    assert (
+        env["OPENCODE_HOME"]
+        == "/workspace/.pycastle-session/implementer/opencode"
+    )
+    assert env["OPENCODE_GO_API_KEY"] == "go-key"
+    config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
+    provider = config["provider"]["opencode-go"]
+    assert provider["npm"] == "@ai-sdk/openai-compatible"
+    assert provider["options"] == {
+        "baseURL": "https://opencode.ai/zen/go/v1",
+        "apiKey": "{env:OPENCODE_GO_API_KEY}",
     }
+    assert "kimi-k2.6" in provider["models"]
+    assert "deepseek-v4-flash" in provider["models"]
 
 
 def test_opencode_service_surfaces_assistant_turns_final_result_and_session_id() -> (

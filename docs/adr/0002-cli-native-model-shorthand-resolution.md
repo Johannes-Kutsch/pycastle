@@ -1,6 +1,6 @@
 # CLI-native model shorthand resolution
 
-Model shorthands (e.g. `sonnet`) pass directly to the selected service CLI at stage execution; `load_config` stays pure (file I/O only) and stores the string as-is. `pycastle run` validates each non-empty model shorthand against the selected `AgentService.valid_models()` allowlist before credential checks, image builds, or agent dispatch.
+Model shorthands (e.g. `sonnet`) stay service-specific and are validated before agent dispatch; `load_config` stays pure (file I/O only) and stores the string as-is. For Claude and Codex, the shorthand is also the CLI argument. For OpenCode Go, pycastle config stores bare Go ids such as `deepseek-v4-flash`, while `OpenCodeService` maps the value to the provider-qualified OpenCode CLI ref `opencode-go/deepseek-v4-flash`.
 
 ## Reasons
 
@@ -12,6 +12,7 @@ Model shorthands (e.g. `sonnet`) pass directly to the selected service CLI at st
 ## Consequences
 
 - `Config.<stage>_override.model` may hold the empty string (CLI default) or a known service-specific shorthand.
+- OpenCode provider-qualified refs are an adapter concern, not user config. Config validation rejects arbitrary OpenCode provider strings while `OpenCodeService` emits the `opencode-go/<id>` CLI shape required by OpenCode.
 - Bad non-empty model strings surface during `pycastle run` startup, not at config load.
 - Effort validation (set-membership) stays inline in `load_config`; `validator.py`'s `_fetch_models` / `_resolve_shorthand` machinery is removed.
 - `load_config` no longer accepts a `claude_service` argument.

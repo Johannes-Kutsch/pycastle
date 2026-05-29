@@ -54,6 +54,56 @@ _MONTHS = {
     "dec": 12,
 }
 
+_OPENCODE_GO_PROVIDER_ID = "opencode-go"
+_OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1"
+_OPENCODE_GO_MODELS = (
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+    "glm-5",
+    "glm-5.1",
+    "hy3-preview",
+    "kimi-k2.5",
+    "kimi-k2.6",
+    "mimo-v2-omni",
+    "mimo-v2-pro",
+    "mimo-v2.5",
+    "mimo-v2.5-pro",
+    "minimax-m2.5",
+    "minimax-m2.7",
+    "qwen3.5-plus",
+    "qwen3.6-plus",
+    "qwen3.7-max",
+)
+
+
+def _opencode_go_model_ref(model: str) -> str:
+    if "/" in model:
+        return model
+    return f"{_OPENCODE_GO_PROVIDER_ID}/{model}"
+
+
+def _opencode_go_config_content() -> str:
+    return json.dumps(
+        {
+            "$schema": "https://opencode.ai/config.json",
+            "provider": {
+                _OPENCODE_GO_PROVIDER_ID: {
+                    "npm": "@ai-sdk/openai-compatible",
+                    "name": "OpenCode Go",
+                    "options": {
+                        "baseURL": _OPENCODE_GO_BASE_URL,
+                        "apiKey": "{env:OPENCODE_GO_API_KEY}",
+                    },
+                    "models": {
+                        model: {"name": model} for model in _OPENCODE_GO_MODELS
+                    },
+                }
+            },
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
 
 def _parse_reset_time(message: str) -> datetime | None:
     match = _RESET_TIME_RE.search(message)
@@ -162,7 +212,7 @@ class OpenCodeService:
         if run_kind == RunKind.RESUME and session_uuid:
             parts.append(f"--session {session_uuid}")
         if model:
-            parts.append(f"--model {model}")
+            parts.append(f"--model {_opencode_go_model_ref(model)}")
         parts.append('"$(cat /tmp/.pycastle_prompt)"')
         return " ".join(parts)
 
@@ -177,6 +227,7 @@ class OpenCodeService:
             env["OPENCODE_HOME"] = state_dir_container_path
         if self.api_key:
             env["OPENCODE_GO_API_KEY"] = self.api_key
+            env["OPENCODE_CONFIG_CONTENT"] = _opencode_go_config_content()
         return env
 
     def run(
@@ -274,26 +325,7 @@ class OpenCodeService:
         return (state_dir / "session_id").is_file()
 
     def valid_models(self) -> frozenset[str]:
-        return frozenset(
-            {
-                "deepseek-v4-flash",
-                "deepseek-v4-pro",
-                "glm-5",
-                "glm-5.1",
-                "hy3-preview",
-                "kimi-k2.5",
-                "kimi-k2.6",
-                "mimo-v2-omni",
-                "mimo-v2-pro",
-                "mimo-v2.5",
-                "mimo-v2.5-pro",
-                "minimax-m2.5",
-                "minimax-m2.7",
-                "qwen3.5-plus",
-                "qwen3.6-plus",
-                "qwen3.7-max",
-            }
-        )
+        return frozenset(_OPENCODE_GO_MODELS)
 
     def valid_efforts(self) -> frozenset[str]:
         return frozenset({"medium"})

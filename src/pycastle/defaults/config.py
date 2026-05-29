@@ -68,7 +68,8 @@ from pycastle import StageOverride
 # --- Stage overrides ---
 # Claude model shorthands: haiku, sonnet, opus
 # Codex model names: gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.3-codex, gpt-5.3-codex-spark, gpt-5.2
-# OpenCode model ids: deepseek-v4-flash, deepseek-v4-pro, glm-5, glm-5.1, hy3-preview, kimi-k2.5, kimi-k2.6, mimo-v2-omni, mimo-v2-pro, mimo-v2.5, mimo-v2.5-pro, minimax-m2.5, minimax-m2.7, qwen3.5-plus, qwen3.6-plus, qwen3.7-max
+# OpenCode Go model ids: bare ids in config; pycastle passes opencode-go/<id> to the OpenCode CLI.
+# Supported: deepseek-v4-flash, deepseek-v4-pro, glm-5, glm-5.1, hy3-preview, kimi-k2.5, kimi-k2.6, mimo-v2-omni, mimo-v2-pro, mimo-v2.5, mimo-v2.5-pro, minimax-m2.5, minimax-m2.7, qwen3.5-plus, qwen3.6-plus, qwen3.7-max
 # Claude effort values: low, medium, high, xhigh, max
 # Codex effort values: low, medium, high, xhigh
 # OpenCode effort values: medium

@@ -121,9 +121,15 @@ class TransientAgentError(PycastleError):
 
 
 class HardAgentError(PycastleError):
-    def __init__(self, message: str = "", status_code: int | None = None) -> None:
+    def __init__(
+        self,
+        message: str = "",
+        status_code: int | None = None,
+        service_name: str = "claude",
+    ) -> None:
         self.status_code = status_code
         self.caller = ""
+        self.service_name = service_name or "claude"
         super().__init__(message)
 
 
