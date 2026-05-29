@@ -1177,6 +1177,18 @@ def test_plain_register_with_custom_startup_message(capsys) -> None:
     assert capsys.readouterr().out == "\n[X] custom\n"
 
 
+def test_plain_register_ignores_model_display(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.register(
+        "X",
+        "agent",
+        model_display=ModelDisplayMetadata(
+            service="claude", model="sonnet", effort="medium"
+        ),
+    )
+    assert capsys.readouterr().out == "\n[X] started\n"
+
+
 def test_plain_remove_defaults_print_finished(capsys) -> None:
     d = PlainStatusDisplay()
     d.remove("X")
