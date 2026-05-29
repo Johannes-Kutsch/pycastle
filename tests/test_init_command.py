@@ -558,6 +558,27 @@ def test_init_writes_config_example_to_existing_pycastle_home(tmp_path, monkeypa
     assert global_content != "# stale global example\n"
 
 
+def test_init_does_not_create_global_config_example_unless_one_exists(
+    tmp_path, monkeypatch
+):
+    """init keeps the global config.py.example refresh conditional on an existing file."""
+    from pycastle.commands.init import main
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("PYCASTLE_HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=["claude", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert (tmp_path / "pycastle" / "config.py.example").exists()
+    assert not (home / "config.py.example").exists()
+
+
 @pytest.mark.skipif(
     sys.platform == "win32",
     reason="POSIX executable bit not meaningful on Windows",
