@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..config import Config
 from ..session import RunKind
-from .source import EffectivePromptFile, PromptSource
+from .source import EffectivePromptFile, PromptReference, PromptSource
 
 PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 SHELL_EXPR = re.compile(r"!`([^`]+)`")
@@ -131,6 +131,10 @@ class PromptTemplate(enum.Enum):
     def scope(self) -> Scope:
         return self.value[1]  # type: ignore[index]
 
+    @property
+    def reference(self) -> PromptReference:
+        return PromptReference(self.name, self.filename)
+
 
 _ISSUE_PLACEHOLDER_KEYS = frozenset(
     {"ISSUE_NUMBER", "ISSUE_TITLE", "ISSUE_BODY", "ISSUE_COMMENTS"}
@@ -184,15 +188,23 @@ def _format_feedback_commands(checks: Sequence[str]) -> str:
 
 
 class PromptRenderer:
-    _OPTIONAL_SHARED_FILES: dict[str, str] = {
-        "DESIGN_STANDARDS": "coding-standards/design.md",
-        "IMPLEMENTATION_STANDARDS": "coding-standards/implementation.md",
-        "IMPLEMENT_OUTPUT_RULES": "coding-standards/implement-output-rules.md",
+    _OPTIONAL_SHARED_FILES: dict[str, PromptReference] = {
+        "DESIGN_STANDARDS": PromptReference(
+            "DESIGN_STANDARDS", "coding-standards/design.md"
+        ),
+        "IMPLEMENTATION_STANDARDS": PromptReference(
+            "IMPLEMENTATION_STANDARDS", "coding-standards/implementation.md"
+        ),
+        "IMPLEMENT_OUTPUT_RULES": PromptReference(
+            "IMPLEMENT_OUTPUT_RULES", "coding-standards/implement-output-rules.md"
+        ),
     }
-    _SHARED_FILES: dict[str, str] = {
+    _SHARED_FILES: dict[str, PromptReference] = {
         **_OPTIONAL_SHARED_FILES,
-        "ISSUE_TRACKER": "_issue-tracker.md",
-        "IMPLEMENT_REVIEW_SHARED_FRAMING": "_implement-review-shared-framing.md",
+        "ISSUE_TRACKER": PromptReference("ISSUE_TRACKER", "_issue-tracker.md"),
+        "IMPLEMENT_REVIEW_SHARED_FRAMING": PromptReference(
+            "IMPLEMENT_REVIEW_SHARED_FRAMING", "_implement-review-shared-framing.md"
+        ),
     }
 
     def __init__(self, cfg: Config) -> None:
@@ -244,17 +256,18 @@ class PromptRenderer:
             cycle = " -> ".join((*stack, key))
             raise PromptRenderError(f"Prompt fragment cycle detected: {cycle}")
 
-        prompt_file = self._prompt_source.maybe_lookup(self._SHARED_FILES[key])
+        reference = self._SHARED_FILES[key]
+        prompt_file = self._prompt_source.maybe_lookup_reference(reference)
         if prompt_file is None:
             if key in self._OPTIONAL_SHARED_FILES:
                 cache[key] = ""
                 return ""
             if key == "ISSUE_TRACKER":
                 raise PromptRenderError(
-                    f"Missing prompt fragment for {key}: {self._SHARED_FILES[key]}"
+                    f"Missing prompt fragment for {key}: {reference.relative_path}"
                 )
             raise PromptRenderError(
-                f"Missing prompt fragment: {self._SHARED_FILES[key]}"
+                f"Missing prompt fragment: {reference.relative_path}"
             )
 
         content = prompt_file.read_text()
@@ -307,7 +320,7 @@ class PromptRenderer:
         shared_cache: dict[str, str] = {}
         global_keys = set(self._global_args.keys()) | set(self._SHARED_FILES)
         for template in PromptTemplate:
-            prompt_file = self._prompt_source.maybe_lookup(template.filename)
+            prompt_file = self._prompt_source.maybe_lookup_reference(template.reference)
             if prompt_file is None:
                 continue
             content = prompt_file.read_text()
@@ -348,7 +361,7 @@ class PromptRenderer:
                 f"scope_args mismatch for {template.name}: {'; '.join(parts)}"
             )
 
-        content = self._prompt_source.lookup(template.filename).read_text()
+        content = self._prompt_source.lookup_reference(template.reference).read_text()
         preprocessed = await _preprocess(content, exec_fn)
         all_args = {**self._global_args, **scope_args}
         shared_cache: dict[str, str] = {}
