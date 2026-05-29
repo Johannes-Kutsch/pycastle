@@ -166,6 +166,30 @@ def test_run_session_plan_reports_resume_for_claude_with_populated_state_dir(
     assert plan.provider_session_id == expected_session_id
 
 
+def test_run_session_plan_reports_fresh_for_claude_with_metadata_only_role_dir(
+    tmp_path: Path,
+):
+    service = ClaudeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    expected_state_dir = tmp_path / ".pycastle-session/implementer/claude"
+    expected_session_id = role_session.session_uuid()
+    role_session.save_service_session_metadata("claude", expected_session_id)
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert role_session.is_done() is True
+    assert role_session.is_resumable() is False
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.service_state_dir == expected_state_dir
+    assert plan.provider_session_id == expected_session_id
+    assert plan.exact_transcript_match is False
+
+
 def test_run_session_plan_reports_exact_transcript_match_for_claude_only_with_matching_metadata_and_resumable_state(
     tmp_path: Path,
 ):
@@ -365,6 +389,44 @@ def test_run_session_plan_namespaces_claude_provider_session_identity_only_when_
     assert (
         base_plan.provider_session_id
         == RoleSession(tmp_path, AgentRole.IMPLEMENTER, "").session_uuid()
+    )
+
+
+def test_run_session_plan_uses_namespaced_claude_provider_state_dir_paths(
+    tmp_path: Path,
+):
+    service = ClaudeService()
+
+    main_plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+    issues_plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="issues",
+        service=service,
+    )
+
+    assert (
+        main_plan.provider_state_dir_relpath == ".pycastle-session/improve/main/claude/"
+    )
+    assert main_plan.host_provider_state_dir == (
+        tmp_path / ".pycastle-session" / "improve" / "main" / "claude"
+    )
+    assert main_plan.provider_session_id == (
+        RoleSession(tmp_path, AgentRole.IMPROVE, "main").session_uuid()
+    )
+    assert issues_plan.provider_state_dir_relpath == (
+        ".pycastle-session/improve/issues/claude/"
+    )
+    assert issues_plan.host_provider_state_dir == (
+        tmp_path / ".pycastle-session" / "improve" / "issues" / "claude"
+    )
+    assert issues_plan.provider_session_id == (
+        RoleSession(tmp_path, AgentRole.IMPROVE, "issues").session_uuid()
     )
 
 
