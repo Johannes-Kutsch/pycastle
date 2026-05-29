@@ -16,40 +16,12 @@ from ..config.loader import (
     resolve_global_dir,
 )
 
-_SPECIAL_FILES = {"config.py", ".env"}
 _INIT_REFRESHED_FILES = {
     ".gitignore",
     "setup/cron.sh",
     "setup/cron-install.sh",
     "setup/cron-uninstall.sh",
 }
-
-
-def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
-    """Walk the bundled defaults/ tree and return every file path relative to it,
-    minus the files init handles separately (scope-aware config.py/.env and the
-    user-owned prompt and Dockerfile overrides).
-    """
-
-    def _walk(node: Traversable, prefix: str) -> list[str]:
-        out: list[str] = []
-        for child in node.iterdir():
-            rel = f"{prefix}{child.name}"
-            if child.is_dir():
-                out.extend(_walk(child, f"{rel}/"))
-            else:
-                out.append(rel)
-        return out
-
-    return sorted(
-        p
-        for p in _walk(pkg, "")
-        if p not in _SPECIAL_FILES
-        and p != "Dockerfile"
-        and not p.startswith("prompts/")
-        and not Path(p).name.startswith("Dockerfile.")
-    )
-
 
 _ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
 _OPENCODE_ENV_TEMPLATE = "OPENCODE_GO_API_KEY=\n"
@@ -247,7 +219,7 @@ def refresh() -> None:
 
     report: list[tuple[str, str]] = [(config_example_verb, "config.py.example")]
 
-    for rel in _discover_project_shaped_files(pkg):
+    for rel in sorted(_INIT_REFRESHED_FILES):
         target = project_dir / rel
         verb = _refresh_status(rel, target, pkg)
         _copy_template(rel, target, pkg)
@@ -304,10 +276,8 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             default=False,
         )
 
-    for rel in _discover_project_shaped_files(pkg):
+    for rel in sorted(_INIT_REFRESHED_FILES):
         target = project_dir / rel
-        if target.exists() and rel not in _INIT_REFRESHED_FILES:
-            continue
         _copy_template(rel, target, pkg)
 
     config_example_template = _load_config_example_template(pkg)

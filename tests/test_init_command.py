@@ -508,11 +508,17 @@ def test_refresh_config_example_uses_bundled_behavioral_contract(tmp_path, monke
     monkeypatch.chdir(tmp_path)
     bundled_pkg = tmp_path / "bundled-pycastle"
     defaults_dir = bundled_pkg / "defaults"
-    defaults_dir.mkdir(parents=True)
+    (defaults_dir / "setup").mkdir(parents=True)
     (defaults_dir / "config.py").write_text(
         "from pycastle import StageOverride\n\n"
         "# --- Behaviour ---\n"
         '# bug_label = "bug-from-bundle"\n'
+    )
+    (defaults_dir / ".gitignore").write_text("managed-ignore\n")
+    (defaults_dir / "setup" / "cron.sh").write_text("#!/bin/sh\necho bundled\n")
+    (defaults_dir / "setup" / "cron-install.sh").write_text("#!/bin/sh\necho install\n")
+    (defaults_dir / "setup" / "cron-uninstall.sh").write_text(
+        "#!/bin/sh\necho uninstall\n"
     )
     monkeypatch.setattr("pycastle.commands.init.files", lambda _pkg: bundled_pkg)
 
@@ -522,6 +528,65 @@ def test_refresh_config_example_uses_bundled_behavioral_contract(tmp_path, monke
 
     assert 'bug_label = "bug-from-bundle"' in content
     assert 'bug_label = "bug"' not in content
+
+
+def test_refresh_only_manages_allowlisted_scaffold_files(tmp_path, monkeypatch, capsys):
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    bundled_pkg = tmp_path / "bundled-pycastle"
+    defaults_dir = bundled_pkg / "defaults"
+    (defaults_dir / "setup").mkdir(parents=True)
+    (defaults_dir / "__pycache__").mkdir()
+    (defaults_dir / "setup" / "__pycache__").mkdir()
+    (defaults_dir / "config.py").write_text(
+        "from pycastle import StageOverride\n\n"
+        "# --- Behaviour ---\n"
+        '# bug_label = "bug-from-bundle"\n'
+    )
+    (defaults_dir / ".gitignore").write_text("managed-ignore\n")
+    (defaults_dir / "setup" / "cron.sh").write_text("#!/bin/sh\necho bundled\n")
+    (defaults_dir / "setup" / "cron-install.sh").write_text("#!/bin/sh\necho install\n")
+    (defaults_dir / "setup" / "cron-uninstall.sh").write_text(
+        "#!/bin/sh\necho uninstall\n"
+    )
+    (defaults_dir / "extra.txt").write_text("bundled extra\n")
+    (defaults_dir / "__pycache__" / "ignored.cpython-313.pyc").write_bytes(b"bundle")
+    (defaults_dir / "setup" / "__pycache__" / "cron.cpython-313.pyc").write_bytes(
+        b"bundle"
+    )
+    monkeypatch.setattr("pycastle.commands.init.files", lambda _pkg: bundled_pkg)
+
+    pycastle_dir = tmp_path / "pycastle"
+    (pycastle_dir / "setup" / "__pycache__").mkdir(parents=True)
+    (pycastle_dir / ".gitignore").write_text("stale ignore\n")
+    (pycastle_dir / "extra.txt").write_text("local extra\n")
+    (pycastle_dir / "setup" / "__pycache__" / "cron.cpython-313.pyc").write_bytes(
+        b"local"
+    )
+
+    refresh()
+
+    captured = capsys.readouterr()
+    assert (pycastle_dir / "config.py.example").exists()
+    assert (pycastle_dir / ".gitignore").read_text() == "managed-ignore\n"
+    assert (
+        pycastle_dir / "setup" / "cron.sh"
+    ).read_text() == "#!/bin/sh\necho bundled\n"
+    assert (pycastle_dir / "setup" / "cron-install.sh").read_text() == (
+        "#!/bin/sh\necho install\n"
+    )
+    assert (pycastle_dir / "setup" / "cron-uninstall.sh").read_text() == (
+        "#!/bin/sh\necho uninstall\n"
+    )
+    assert (pycastle_dir / "extra.txt").read_text() == "local extra\n"
+    assert not (pycastle_dir / "__pycache__" / "ignored.cpython-313.pyc").exists()
+    assert (
+        pycastle_dir / "setup" / "__pycache__" / "cron.cpython-313.pyc"
+    ).read_bytes() == b"local"
+    assert "overwrote .gitignore" in captured.out
+    assert "extra.txt" not in captured.out
+    assert "__pycache__" not in captured.out
 
 
 def test_init_writes_config_example_to_existing_pycastle_home(tmp_path, monkeypatch):
