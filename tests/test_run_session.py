@@ -130,6 +130,29 @@ def test_run_session_plan_reports_resume_for_claude_with_populated_state_dir(
     assert plan.provider_session_id == expected_session_id
 
 
+def test_run_session_plan_reports_exact_transcript_match_for_claude_only_with_matching_metadata_and_resumable_state(
+    tmp_path: Path,
+):
+    service = ClaudeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    expected_session_id = role_session.session_uuid()
+
+    role_session.save_service_session_metadata("claude", expected_session_id)
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.provider_session_id == expected_session_id
+    assert plan.exact_transcript_match is True
+
+
 def test_run_session_plan_namespaces_claude_provider_session_identity_only_when_non_empty(
     tmp_path: Path,
 ):
