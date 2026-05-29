@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 _DEFAULT_LOCAL_PROMPTS_DIR = Path("pycastle/prompts")
@@ -57,13 +58,35 @@ class PromptSource:
             return self._bundled_dir / relative_path
         return self._local_dir / relative_path
 
+    def lookup(self, relative_path: str) -> EffectivePromptFile:
+        return EffectivePromptFile(relative_path, self.resolve(relative_path))
+
+    def maybe_lookup(self, relative_path: str) -> EffectivePromptFile | None:
+        prompt_file = self.lookup(relative_path)
+        if not prompt_file.exists():
+            return None
+        return prompt_file
+
     def exists(self, relative_path: str) -> bool:
-        return self.resolve(relative_path).exists()
+        return self.lookup(relative_path).exists()
 
     def read_text(self, relative_path: str) -> str:
-        return self.resolve(relative_path).read_text(encoding="utf-8")
+        return self.lookup(relative_path).read_text()
 
     def maybe_read_text(self, relative_path: str) -> str | None:
-        if not self.exists(relative_path):
+        prompt_file = self.maybe_lookup(relative_path)
+        if prompt_file is None:
             return None
-        return self.read_text(relative_path)
+        return prompt_file.read_text()
+
+
+@dataclass(frozen=True)
+class EffectivePromptFile:
+    relative_path: str
+    path: Path
+
+    def exists(self) -> bool:
+        return self.path.exists()
+
+    def read_text(self) -> str:
+        return self.path.read_text(encoding="utf-8")

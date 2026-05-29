@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..config import Config
 from ..session import RunKind
-from .source import PromptSource
+from .source import EffectivePromptFile, PromptSource
 
 PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 SHELL_EXPR = re.compile(r"!`([^`]+)`")
@@ -204,22 +204,23 @@ class PromptRenderer:
 
     def _render_effective_file(
         self,
-        relative_path: str,
+        prompt_file: EffectivePromptFile | None,
         *,
         allowed_args: dict[str, str],
         required: bool,
     ) -> str | None:
-        content = self._prompt_source.maybe_read_text(relative_path)
-        if content is None:
+        if prompt_file is None:
             if required:
-                raise PromptRenderError(f"Missing prompt fragment: {relative_path}")
+                raise PromptRenderError("Missing prompt fragment")
             return None
+        content = prompt_file.read_text()
         found = set(PLACEHOLDER.findall(content))
         found |= {m.group(1) for m in CONDITIONAL_BLOCK.finditer(content)}
         unknown = found - allowed_args.keys()
         if unknown:
             raise PromptRenderError(
-                f"Prompt fragment {relative_path!r} references unknown token(s): {unknown}"
+                "Prompt fragment "
+                f"{prompt_file.relative_path!r} references unknown token(s): {unknown}"
             )
         return _render(content, allowed_args)
 
@@ -228,13 +229,15 @@ class PromptRenderer:
         for key, filename in self._STATIC_SHARED_FILES.items():
             if filename.startswith("_"):
                 rendered = self._render_effective_file(
-                    filename, allowed_args=base_args, required=False
+                    self._prompt_source.maybe_lookup(filename),
+                    allowed_args=base_args,
+                    required=False,
                 )
                 if rendered is not None:
                     result[key] = rendered
             else:
                 rendered = self._render_effective_file(
-                    f"coding-standards/{filename}",
+                    self._prompt_source.maybe_lookup(f"coding-standards/{filename}"),
                     allowed_args=base_args,
                     required=False,
                 )
@@ -271,9 +274,10 @@ class PromptRenderer:
     def _validate_templates(self) -> None:
         global_keys = set(self._global_args.keys()) | set(self._DYNAMIC_SHARED_FILES)
         for template in PromptTemplate:
-            content = self._prompt_source.maybe_read_text(template.filename)
-            if content is None:
+            prompt_file = self._prompt_source.maybe_lookup(template.filename)
+            if prompt_file is None:
                 continue
+            content = prompt_file.read_text()
             found = set(PLACEHOLDER.findall(content))
             found |= {m.group(1) for m in CONDITIONAL_BLOCK.finditer(content)}
             allowed = global_keys | template.scope.placeholders
@@ -289,7 +293,9 @@ class PromptRenderer:
                 if key not in found:
                     continue
                 rendered = self._render_effective_file(
-                    filename, allowed_args=validation_args, required=False
+                    self._prompt_source.maybe_lookup(filename),
+                    allowed_args=validation_args,
+                    required=False,
                 )
                 if rendered is None:
                     raise PromptRenderError(f"Missing prompt fragment: {filename}")
@@ -314,14 +320,16 @@ class PromptRenderer:
                 f"scope_args mismatch for {template.name}: {'; '.join(parts)}"
             )
 
-        content = self._prompt_source.read_text(template.filename)
+        content = self._prompt_source.lookup(template.filename).read_text()
         preprocessed = await _preprocess(content, exec_fn)
         all_args = {**self._global_args, **scope_args}
         for key, filename in self._DYNAMIC_SHARED_FILES.items():
             if key not in preprocessed:
                 continue
             rendered = self._render_effective_file(
-                filename, allowed_args=all_args, required=False
+                self._prompt_source.maybe_lookup(filename),
+                allowed_args=all_args,
+                required=False,
             )
             if rendered is None:
                 raise PromptRenderError(f"Missing prompt fragment: {filename}")
