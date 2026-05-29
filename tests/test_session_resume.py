@@ -217,6 +217,53 @@ def test_provider_identity_treats_duplicate_codex_rollout_thread_ids_as_one_reco
     )
 
 
+def test_provider_identity_is_unrecoverable_when_codex_rollouts_have_two_distinct_thread_ids(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    dir_a = rs.path / "codex" / "sessions" / "a"
+    dir_b = rs.path / "codex" / "sessions" / "b"
+    dir_a.mkdir(parents=True, exist_ok=True)
+    dir_b.mkdir(parents=True, exist_ok=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-alpha"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-beta"}\n',
+        encoding="utf-8",
+    )
+
+    assert rs.provider_identity("codex", has_resumable_provider_state=True) == (
+        ProviderIdentity(
+            kind=ProviderIdentityKind.UNRECOVERABLE,
+            run_kind=RunKind.FRESH,
+            provider_session_id=None,
+        )
+    )
+
+
+def test_provider_identity_does_not_scan_rollouts_when_codex_has_no_resumable_provider_state(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    rollout_dir = rs.path / "codex" / "sessions" / "2026" / "05" / "29"
+    rollout_dir.mkdir(parents=True, exist_ok=True)
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-should-be-ignored"}\n',
+        encoding="utf-8",
+    )
+
+    assert rs.provider_identity("codex", has_resumable_provider_state=False) == (
+        ProviderIdentity(
+            kind=ProviderIdentityKind.FRESH,
+            run_kind=RunKind.FRESH,
+            provider_session_id=None,
+        )
+    )
+    assert rs.service_session_id("codex") is None
+
+
 def test_provider_identity_is_fresh_when_service_has_no_resumable_provider_state(
     worktree,
 ):
