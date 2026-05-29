@@ -29,6 +29,11 @@ from ..errors import (
 )
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session import RoleSession, RunKind
+from ..session.run_session import (
+    AuthSeedingRequirement,
+    RecoveredSessionIdPersistence,
+    RunSessionPlan,
+)
 from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
@@ -256,17 +261,26 @@ class AgentRunner:
 
         session_namespace = request.session_namespace
         role_session = RoleSession(mount_path, role, session_namespace)
-        session_uuid = role_session.session_uuid()
-        svc_state_relpath = service.state_dir_relpath(role, session_namespace)
-        state_dir = mount_path / svc_state_relpath if svc_state_relpath else None
-        run_kind = (
-            RunKind.RESUME
-            if svc_state_relpath
-            and state_dir is not None
-            and service.is_resumable(state_dir)
-            else RunKind.FRESH
+        plan = RunSessionPlan.for_service(
+            role=role,
+            worktree=mount_path,
+            namespace=session_namespace,
+            service=service,
+            auth_seeding_requirement=(
+                AuthSeedingRequirement.REQUIRED
+                if service.name == "codex"
+                else AuthSeedingRequirement.NOT_REQUIRED
+            ),
+            recovered_session_id_persistence=(
+                RecoveredSessionIdPersistence.PERSIST
+                if service.name == "codex"
+                else RecoveredSessionIdPersistence.SKIP
+            ),
         )
-        service_session_id: str | None = session_uuid
+        svc_state_relpath = service.state_dir_relpath(role, session_namespace)
+        run_kind = plan.run_kind
+        state_dir = plan.service_state_dir
+        service_session_id: str | None = plan.provider_session_id
         if service.name == "codex":
             service_session_id = None
             if run_kind == RunKind.RESUME and state_dir is not None:

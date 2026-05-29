@@ -38,6 +38,7 @@ from pycastle.services import CodexService, GitCommandError, GitService, OpenCod
 from pycastle.services.claude_service import ClaudeService
 from pycastle.display.status_display import ModelDisplayMetadata
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
+from pycastle.session.run_session import RunSessionPlan
 
 
 @pytest.fixture(autouse=True)
@@ -2799,6 +2800,69 @@ def test_build_prompt_uses_resume_template_on_resume_without_role_flag(tmp_path)
     )
 
     assert result == "resume-content"
+
+
+def test_agent_runner_uses_run_session_plan_for_claude_resume_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            r = MagicMock()
+            r.output = iter(_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    planned_state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+
+    def planned_run_session(**kwargs):
+        return RunSessionPlan(
+            role=AgentRole.IMPLEMENTER,
+            worktree=tmp_path,
+            namespace="",
+            service=kwargs["service"],
+            run_kind=RunKind.RESUME,
+            service_state_dir=planned_state_dir,
+            provider_session_id="planned-session-id",
+            auth_seeding_requirement=kwargs["auth_seeding_requirement"],
+            recovered_session_id_persistence=kwargs["recovered_session_id_persistence"],
+        )
+
+    monkeypatch.setattr(
+        "pycastle.session.run_session.RunSessionPlan.for_service",
+        planned_run_session,
+    )
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Impl",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                service="claude",
+            )
+        )
+    )
+
+    assert captured_cmds, "No streaming exec recorded"
+    assert any("--resume planned-session-id" in c for c in captured_cmds)
+    assert all("--session-id" not in c for c in captured_cmds)
 
 
 def test_build_prompt_uses_role_template_on_resume_with_send_role_prompt(tmp_path):
