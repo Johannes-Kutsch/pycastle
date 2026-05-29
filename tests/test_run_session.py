@@ -302,3 +302,50 @@ def test_run_session_plan_requires_auth_seeding_for_fresh_codex_without_auth_jso
 
     assert plan.run_kind is RunKind.FRESH
     assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
+
+
+def test_run_session_plan_requires_auth_seeding_for_resume_codex_without_auth_json(
+    tmp_path: Path,
+):
+    service = CodexService()
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
+
+
+def test_run_session_plan_does_not_require_auth_seeding_for_resume_codex_with_auth_json(
+    tmp_path: Path,
+):
+    service = CodexService()
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.auth_seeding_requirement is AuthSeedingRequirement.NOT_REQUIRED
