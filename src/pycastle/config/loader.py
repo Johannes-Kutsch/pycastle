@@ -182,10 +182,10 @@ def resolve_dockerfile(
     elif not isinstance(pycastle_dir, Path):
         raise TypeError("resolve_dockerfile() expects only a pycastle_dir Path")
     local = pycastle_dir / "Dockerfile"
-    if local.exists():
+    if local.is_file():
         return local
     bundled = _DEFAULTS_DIR / "Dockerfile"
-    if bundled.exists():
+    if bundled.is_file():
         return bundled
     raise ConfigValidationError(
         "No bundled universal Dockerfile default exists",
