@@ -2262,6 +2262,92 @@ def test_init_all_without_host_codex_auth_keeps_written_env(tmp_path, monkeypatc
     assert not (tmp_path / SESSION_DIR_NAME).exists()
 
 
+@pytest.mark.parametrize(
+    ("selection", "prompts"),
+    [
+        ("codex", ["codex", "my-gh-token"]),
+        ("all", ["all", "my-gh-token", "", ""]),
+    ],
+    ids=["codex", "all"],
+)
+def test_init_warns_when_host_codex_auth_is_missing_but_keeps_env_collection(
+    tmp_path, monkeypatch, capsys, selection, prompts
+):
+    """Missing host Codex auth should be warning-only during init."""
+    from pycastle.commands.init import main
+
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=prompts),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    out = capsys.readouterr().out.lower()
+    assert "codex authentication missing" in out
+    assert "run `codex login` on the host" in out
+    assert (
+        "gh_token=my-gh-token" in (tmp_path / "pycastle" / ".env").read_text().lower()
+    )
+
+
+def test_init_opencode_only_warns_when_bundled_stage_chains_are_uncovered(
+    tmp_path, monkeypatch, capsys
+):
+    """Selecting opencode alone should warn that bundled default stage chains need config.py overrides."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=["opencode", "my-gh-token", "go-key"]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    out = capsys.readouterr().out
+    out_lower = out.lower()
+    assert (
+        "selected services do not cover every bundled default stage priority chain"
+        in out_lower
+    )
+    assert (
+        "define your own stage overrides in config.py before running pycastle"
+        in out_lower
+    )
+
+
+def test_init_codex_only_does_not_warn_when_bundled_stage_chains_are_covered(
+    tmp_path, monkeypatch, capsys
+):
+    """Selecting codex alone should not print the bundled-stage runtime coverage warning."""
+    from pycastle.commands.init import main
+
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_bytes(b"{}")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=["codex", "my-gh-token"]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    out = capsys.readouterr().out.lower()
+    assert (
+        "selected services do not cover every bundled default stage priority chain"
+        not in out
+    )
+
+
 @pytest.mark.parametrize("selection", ["both", "unknown"])
 def test_init_invalid_service_selection_exits_with_clear_error(
     tmp_path, monkeypatch, selection
