@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -385,6 +386,45 @@ def test_refresh_config_example_documents_logs_dir_as_global_parent_and_local_di
     assert "In global config, logs_dir is the parent directory" in content
     assert "In local config, logs_dir is used directly" in content
     assert 'logs_dir = Path("pycastle/logs")' in content
+
+    for removed_key in (
+        "pycastle_dir",
+        "prompts_dir",
+        "worktrees_dir",
+        "env_file",
+        "dockerfile",
+    ):
+        assert f"{removed_key} =" not in content
+
+
+def test_bundled_config_example_is_behavioral_only_with_logging_guidance():
+    """The bundled example source must match the behavioral-only config example contract."""
+    content = (Path("src/pycastle/defaults/config.py")).read_text()
+
+    for section in (
+        "Behaviour",
+        "Docker",
+        "Labels",
+        "Logging",
+        "Preflight checks",
+        "Host checks",
+        "Implement checks",
+        "Improve",
+        "Stage overrides",
+    ):
+        assert f"--- {section} ---" in content
+
+    assert "--- Paths ---" not in content
+    assert 'logs_dir = Path("pycastle/logs")' in content
+    assert "In local config, logs_dir is used directly." in content
+    assert "In global config, logs_dir is the parent directory" in content
+    assert "Local-only build artifact name used by `pycastle build`." in content
+    assert '# docker_image_name = ""' in content
+    assert "timeout_retries" in content
+    assert "diagnose_on_failure" in content
+    assert "behavior_slice_label" in content
+    assert "docs_slice_label" in content
+    assert "needs_slice_type_label" in content
 
     for removed_key in (
         "pycastle_dir",
