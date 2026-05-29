@@ -194,6 +194,11 @@ def test_build_command_includes_disallowed_tools_for_improve_role():
     assert '--disallowedTools "Edit Write NotebookEdit"' in cmd
 
 
+def test_build_command_includes_disallowed_tools_for_failure_report_role():
+    cmd = ClaudeService().build_command(role=AgentRole.FAILURE_REPORT)
+    assert '--disallowedTools "Edit Write NotebookEdit"' in cmd
+
+
 def test_build_command_excludes_disallowed_tools_for_other_roles():
     for role in (
         AgentRole.PLANNER,
