@@ -822,6 +822,27 @@ def test_renderer_aborts_on_broken_local_issue_tracker_override(tmp_path, monkey
         PromptRenderer(Config())
 
 
+def test_renderer_aborts_on_broken_local_coding_standards_override(prompts_dir):
+    (prompts_dir / "improve" / "01-scan.md").write_text("{{DESIGN_STANDARDS}}")
+    (prompts_dir / "coding-standards" / "design.md").write_text("{{UNKNOWN_KEY}}")
+
+    with pytest.raises(PromptRenderError, match="UNKNOWN_KEY"):
+        PromptRenderer(Config())
+
+
+def test_renderer_aborts_on_fragment_cycle(prompts_dir):
+    (prompts_dir / "_issue-tracker.md").write_text(
+        "{{IMPLEMENT_REVIEW_SHARED_FRAMING}}"
+    )
+    (prompts_dir / "_implement-review-shared-framing.md").write_text(
+        "{{ISSUE_TRACKER}}"
+    )
+    (prompts_dir / "improve" / "01-scan.md").write_text("{{ISSUE_TRACKER}}")
+
+    with pytest.raises(PromptRenderError, match="cycle"):
+        PromptRenderer(Config())
+
+
 def test_renderer_uses_bundled_prompt_when_default_local_prompt_is_absent(
     tmp_path, monkeypatch
 ):
