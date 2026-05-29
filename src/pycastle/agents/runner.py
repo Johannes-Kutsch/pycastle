@@ -248,13 +248,12 @@ class AgentRunner:
         state_dir = plan.service_state_dir
         service_session_id: str | None = plan.provider_session_id
         if (
-            service.name == "codex"
-            and run_kind == RunKind.RESUME
+            run_kind == RunKind.RESUME
             and service_session_id is not None
             and plan.recovered_session_id_persistence
             is RecoveredSessionIdPersistence.PERSIST
         ):
-            role_session.save_service_session_id("codex", service_session_id)
+            role_session.save_service_session_id(service.name, service_session_id)
         host_codex_auth: Path | None = None
         if (
             state_dir is not None
