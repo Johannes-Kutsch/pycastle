@@ -10,6 +10,7 @@ import pytest
 from click.testing import CliRunner
 
 from pycastle.config import Config
+from pycastle.config.loader import derive_docker_image_name
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -260,6 +261,55 @@ def test_cron_cmd_sweeps_old_logs_after_run(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert not old_log.exists()
     assert recent_log.exists()
+
+
+def test_cron_cmd_sweeps_logs_in_effective_dir_after_refresh_updates_logs_dir(
+    tmp_path, monkeypatch
+):
+    """cron_cmd must maintain the effective logs_dir that agent runs see after refresh."""
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    home = tmp_path / "home"
+    monkeypatch.setenv("PYCASTLE_HOME", str(home))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    home.mkdir()
+    (home / "config.py").write_text(
+        "from pathlib import Path\nlogs_dir = Path('old-logs')\n"
+    )
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "config.py").write_text("docker_image_name = 'img'\n")
+
+    refreshed_logs_dir = tmp_path / "new-logs" / derive_docker_image_name(tmp_path.name)
+    refreshed_logs_dir.mkdir(parents=True)
+    old_log = refreshed_logs_dir / "old.log"
+    old_log.write_text("ancient\n")
+    old_mtime = time.time() - 31 * 24 * 3600
+    os.utime(old_log, (old_mtime, old_mtime))
+
+    fake_svc = _make_docker_svc()
+
+    def _refresh():
+        (home / "config.py").write_text(
+            "from pathlib import Path\nlogs_dir = Path('new-logs')\n"
+        )
+
+    async def _fake_run(*args, **kwargs):
+        pass
+
+    with (
+        patch("pycastle.commands.init.refresh", _refresh),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["cron", "--no-improve"])
+
+    assert result.exit_code == 0, result.output
+    assert not old_log.exists()
 
 
 def test_cron_cmd_without_flags_uses_none_when_config_improve_mode_not_set(
