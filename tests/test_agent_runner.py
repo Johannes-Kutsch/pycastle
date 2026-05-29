@@ -1,6 +1,7 @@
 """Tests for AgentRunner and FakeAgentRunner."""
 
 import asyncio
+import docker
 import json
 import threading
 from collections.abc import Callable, Iterable, Iterator
@@ -355,6 +356,12 @@ def _make_docker_client_with_setup_failure(message: str) -> MagicMock:
         return MagicMock(exit_code=0, output=(b"", b""))
 
     mock_container.exec_run.side_effect = exec_side_effect
+    return mock_client
+
+
+def _make_docker_client_with_start_failure(message: str) -> MagicMock:
+    mock_client = MagicMock()
+    mock_client.containers.run.side_effect = docker.errors.APIError(message)
     return mock_client
 
 
@@ -930,6 +937,40 @@ def test_agent_runner_run_raises_setup_phase_error_when_setup_fails_before_work(
     assert "pip install failed" in str(exc_info.value)
 
 
+def test_agent_runner_run_raises_setup_phase_error_when_container_start_fails(
+    tmp_path,
+):
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path, docker_image_name="pycastle-test"),
+        _make_git_service(),
+        docker_client=_make_docker_client_with_start_failure(
+            "exec: sleep: executable file not found in $PATH"
+        ),
+    )
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Host-Check Reporter",
+                    template=PromptTemplate.PREFLIGHT_ISSUE,
+                    scope_args={
+                        "CHECK_NAME": "[PREFLIGHT] reporter",
+                        "COMMAND": "pytest",
+                        "OUTPUT": "docker start failed",
+                    },
+                    mount_path=tmp_path,
+                    role=AgentRole.PREFLIGHT_ISSUE,
+                )
+            )
+        )
+
+    assert exc_info.value.phase == AgentRole.PREFLIGHT_ISSUE.value
+    assert "pycastle-test" in str(exc_info.value)
+    assert "sleep: executable file not found in $PATH" in str(exc_info.value)
+
+
 def test_agent_runner_run_propagates_work_failures_after_setup_starts(tmp_path):
     runner = AgentRunner(
         {},
@@ -1181,6 +1222,26 @@ def test_agent_runner_run_preflight_raises_setup_phase_error_when_setup_fails(
 
     assert exc_info.value.phase == "preflight"
     assert "pip install failed" in str(exc_info.value)
+
+
+def test_agent_runner_run_preflight_raises_setup_phase_error_when_container_start_fails(
+    tmp_path,
+):
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path, docker_image_name="pycastle-test"),
+        _make_git_service(),
+        docker_client=_make_docker_client_with_start_failure(
+            "exec: sleep: executable file not found in $PATH"
+        ),
+    )
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert exc_info.value.phase == "preflight"
+    assert "pycastle-test" in str(exc_info.value)
+    assert "sleep: executable file not found in $PATH" in str(exc_info.value)
 
 
 def test_agent_runner_run_preflight_returns_failure_tuple_when_check_fails(tmp_path):

@@ -3,6 +3,7 @@ import threading
 from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock, patch
 
+import docker
 import pytest
 
 from pycastle.config import Config
@@ -343,6 +344,53 @@ def test_docker_session_enter_starts_container_with_volumes_and_env():
         environment=env,
         working_dir="/home/agent/workspace",
     )
+
+
+def test_docker_session_enter_wraps_container_start_failure_with_image_context():
+    """__enter__ wraps Docker SDK start failures as DockerError with image context and a hint."""
+    mock_client = MagicMock()
+    mock_client.containers.run.side_effect = docker.errors.APIError(
+        "exec: sleep: executable file not found in $PATH"
+    )
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="pycastle-test",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+
+    with pytest.raises(DockerError) as exc_info:
+        session.__enter__()
+
+    message = str(exc_info.value)
+    assert "pycastle-test" in message
+    assert "sleep: executable file not found in $PATH" in message
+    assert "image contract" in message
+    assert "entrypoint" in message
+
+
+def test_docker_session_enter_wraps_generic_container_start_failure_without_hint():
+    """__enter__ wraps non-tooling Docker start failures without the missing-tools hint."""
+    mock_client = MagicMock()
+    mock_client.containers.run.side_effect = docker.errors.APIError(
+        "network sandbox join failed"
+    )
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="pycastle-test",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+
+    with pytest.raises(DockerError) as exc_info:
+        session.__enter__()
+
+    message = str(exc_info.value)
+    assert "pycastle-test" in message
+    assert "network sandbox join failed" in message
+    assert "image contract" not in message
 
 
 def test_docker_session_exec_simple_returns_stdout_on_success():
