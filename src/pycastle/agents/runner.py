@@ -453,10 +453,7 @@ class AgentRunner:
                     await runner.setup(git_name, git_email, work_body)
                 except DockerError as exc:
                     raise SetupPhaseError("preflight", str(exc)) from exc
-                failures = await runner.preflight(
-                    list(self._cfg.preflight_checks),
-                    python_dependency_metadata=python_dependency_metadata,
-                )
+                failures = await runner.preflight(list(self._cfg.preflight_checks))
                 for check_name, command, output in failures:
                     classification = classify_preflight_tool_failure(
                         python_dependency_metadata,

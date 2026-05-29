@@ -245,6 +245,27 @@ def test_preflight_runs_all_checks_when_one_fails(tmp_path):
     assert any("pytest" in c for c in session.exec_calls)
 
 
+def test_preflight_collects_raw_failures_without_classifying_missing_tools(tmp_path):
+    session = FakeDockerSession(
+        exec_handlers={
+            "ruff check": DockerError("bash: ruff: command not found"),
+            "mypy .": DockerError("src/app.py:1: error: boom"),
+        }
+    )
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+
+    result = asyncio.run(
+        runner.preflight([("ruff", "ruff check ."), ("mypy", "mypy .")])
+    )
+
+    assert result == [
+        ("ruff", "ruff check .", "bash: ruff: command not found"),
+        ("mypy", "mypy .", "src/app.py:1: error: boom"),
+    ]
+    assert any("ruff check" in c for c in session.exec_calls)
+    assert any("mypy" in c for c in session.exec_calls)
+
+
 def test_preflight_with_empty_checks_returns_empty(tmp_path):
     runner, _ = _make_runner(tmp_path=tmp_path)
     assert asyncio.run(runner.preflight([])) == []
