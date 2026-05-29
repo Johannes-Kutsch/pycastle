@@ -217,6 +217,55 @@ def test_get_safe_sha_routes_requirements_declared_missing_tool_to_setup_failure
     assert fake.calls == []
 
 
+def test_get_safe_sha_propagates_setup_phase_error_metadata_unchanged(
+    tmp_path, git_svc, github_svc
+):
+    err = SetupPhaseError(
+        "setup",
+        "pip install failed",
+        command="pip install -e '.[dev]'",
+        output="No matching distribution found",
+    )
+    fake = FakeAgentRunner([], preflight_responses=[err])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(cache.get_safe_sha(deps))
+
+    assert exc_info.value is err
+    assert exc_info.value.phase == "setup"
+    assert exc_info.value.command == "pip install -e '.[dev]'"
+    assert exc_info.value.output == "No matching distribution found"
+    assert fake.calls == []
+
+
+def test_get_safe_sha_treats_runner_failure_tuple_as_ordinary_pre_flight_failure(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
+        preflight_responses=[
+            [
+                (
+                    "ruff",
+                    "ruff check .",
+                    "Command failed (exit 127): bash: ruff: command not found",
+                )
+            ]
+        ],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightHITL)
+    assert result.issue_number == 55
+    assert len(fake.preflight_calls) == 1
+    assert len(fake.calls) == 1
+
+
 # ── get_safe_sha: same-SHA cache hit ─────────────────────────────────────────
 
 
