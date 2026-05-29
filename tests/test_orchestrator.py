@@ -1324,6 +1324,39 @@ def test_failed_agent_uses_effective_global_logs_dir_for_errors_log(
     assert (project_dir / "shared-logs" / "my-project" / "errors.log").exists()
 
 
+def test_failed_agent_with_service_registry_uses_effective_global_logs_dir_for_errors_log(
+    tmp_path, monkeypatch
+):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text(
+        "from pathlib import Path\nlogs_dir = Path('shared-logs')\n"
+    )
+    monkeypatch.setenv("PYCASTLE_HOME", str(global_dir))
+    project_dir = tmp_path / "My Project"
+    project_dir.mkdir()
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+            )
+        raise RuntimeError("agent failed")
+
+    asyncio.run(
+        run(
+            {},
+            project_dir,
+            agent_runner=FakeAgentRunner(side_effect=_fake_run_agent),
+            git_service=_make_git_svc(),
+            github_service=_make_github_svc(),
+            service_registry=ServiceRegistry({"claude": _FakeService()}),
+        )
+    )
+
+    assert (project_dir / "shared-logs" / "my-project" / "errors.log").exists()
+
+
 # ── Issue-175: safe SHA pinning and skip-preflight logic ──────────────────────
 
 

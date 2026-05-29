@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..agents.runner import AgentRunner, AgentRunnerProtocol
-from ..config import load_config, resolve_logs_dir
+from ..config import load_config, replace_config_runtime_fields, resolve_logs_dir
 from . import (
     AbortedAgentFailure,
     AbortedHardApiError,
@@ -203,16 +203,23 @@ async def run(
 
             _now = _time_module.now_local()
             _iter_cfg = (
-                dataclasses.replace(
+                replace_config_runtime_fields(
                     cfg,
-                    plan_override=service_registry.resolve(cfg.plan_override, _now),
-                    implement_override=service_registry.resolve(
-                        cfg.implement_override, _now
-                    ),
-                    review_override=service_registry.resolve(cfg.review_override, _now),
-                    merge_override=service_registry.resolve(cfg.merge_override, _now),
-                    improve_override=service_registry.resolve(
-                        cfg.improve_override, _now
+                    dataclasses.replace(
+                        cfg,
+                        plan_override=service_registry.resolve(cfg.plan_override, _now),
+                        implement_override=service_registry.resolve(
+                            cfg.implement_override, _now
+                        ),
+                        review_override=service_registry.resolve(
+                            cfg.review_override, _now
+                        ),
+                        merge_override=service_registry.resolve(
+                            cfg.merge_override, _now
+                        ),
+                        improve_override=service_registry.resolve(
+                            cfg.improve_override, _now
+                        ),
                     ),
                 )
                 if service_registry

@@ -20,6 +20,7 @@ __all__ = [
     "describe_config_layers",
     "image_name_for",
     "load_config",
+    "replace_config_runtime_fields",
     "resolve_logs_dir",
     "resolve_dockerfile",
     "resolve_global_dir",
@@ -242,6 +243,12 @@ def resolve_logs_dir(cfg: Config) -> Path:
     if cfg._global_logs_dir_parent:
         return logs_dir / derive_docker_image_name(cfg.repo_root.name)
     return logs_dir
+
+
+def replace_config_runtime_fields(cfg: Config, updated: Config) -> Config:
+    object.__setattr__(updated, "repo_root", cfg.repo_root)
+    object.__setattr__(updated, "_global_logs_dir_parent", cfg._global_logs_dir_parent)
+    return updated
 
 
 def load_config(
