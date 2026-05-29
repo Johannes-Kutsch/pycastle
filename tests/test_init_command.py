@@ -221,6 +221,22 @@ def test_init_creates_only_pycastle_managed_scaffold_files(tmp_path, monkeypatch
     assert not (scaffold / "prompts").exists()
 
 
+def test_init_writes_canonical_managed_pycastle_gitignore(tmp_path, monkeypatch):
+    """init writes the canonical managed ignore file into pycastle/."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert (tmp_path / "pycastle" / ".gitignore").read_text() == (
+        ".env\n.worktrees/\nlogs/\nconfig.py\nconfig.py.example\nsetup/\n"
+    )
+
+
 @pytest.mark.parametrize("command_name", ["init", "refresh"])
 def test_init_commands_leave_bundled_prompts_as_runtime_defaults(
     tmp_path, monkeypatch, command_name
@@ -1790,6 +1806,31 @@ def test_init_refresh_copies_cron_uninstall_sh(tmp_path, monkeypatch):
     assert cron_uninstall.exists()
 
 
+def test_init_overwrites_stale_pycastle_gitignore_on_rerun(tmp_path, monkeypatch):
+    """Re-running init replaces a stale managed pycastle/.gitignore."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    gitignore = tmp_path / "pycastle" / ".gitignore"
+    gitignore.write_text("# stale local edit\n")
+
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert gitignore.read_text() == (
+        ".env\n.worktrees/\nlogs/\nconfig.py\nconfig.py.example\nsetup/\n"
+    )
+
+
 @pytest.mark.parametrize(
     "rel_path",
     [
@@ -2465,6 +2506,36 @@ def test_refresh_shows_only_overwrote_file_when_one_mutated(
     out = capsys.readouterr().out
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert lines == [f"overwrote {rel}"]
+
+
+def test_refresh_reports_and_replaces_stale_pycastle_gitignore(
+    tmp_path, monkeypatch, capsys
+):
+    """Refresh reports pycastle/.gitignore only when it differs, then goes back to up-to-date."""
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    refresh()
+    capsys.readouterr()
+
+    gitignore = pycastle_dir / ".gitignore"
+    gitignore.write_text("# stale local edit\n")
+
+    refresh()
+    out = capsys.readouterr().out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert lines == ["overwrote .gitignore"]
+    assert gitignore.read_text() == (
+        ".env\n.worktrees/\nlogs/\nconfig.py\nconfig.py.example\nsetup/\n"
+    )
+
+    refresh()
+    out = capsys.readouterr().out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert len(lines) == 1
+    assert "up to date" in lines[0].lower()
 
 
 def test_refresh_does_not_print_created_files(tmp_path, monkeypatch, capsys):

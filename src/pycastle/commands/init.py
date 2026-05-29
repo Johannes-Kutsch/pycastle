@@ -18,6 +18,7 @@ from ..config.loader import (
 
 _SPECIAL_FILES = {"config.py", ".env"}
 _INIT_REFRESHED_FILES = {
+    ".gitignore",
     "setup/cron.sh",
     "setup/cron-install.sh",
     "setup/cron-uninstall.sh",
