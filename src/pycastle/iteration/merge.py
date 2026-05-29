@@ -203,6 +203,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         initial_phase="Merging",
     ) as row:
         await _wait_for_clean_working_tree(deps, "Merge")
+        completed_total = len(completed)
 
         clean_issues: list[dict] = []
         conflict_issues: list[dict] = []
@@ -212,20 +213,21 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             else:
                 conflict_issues.append(issue)
 
+        merge_done = len(clean_issues)
         close_done = 0
-        close_total = 0
+        remove_done: int | None = None
 
-        def _on_progress(done: int, total: int) -> None:
-            nonlocal close_done, close_total
-            close_done = done
-            close_total = total
-            deps.status_display.update_phase("Merge", f"Closing {done}/{total} issues")
+        def _render_phase_status() -> None:
+            message = f"merging {merge_done}/{completed_total} branches"
+            if close_done or remove_done is not None:
+                message = f"{message}, closing {close_done}/{completed_total} issues"
+            if remove_done is not None:
+                message = (
+                    f"{message}, removing {remove_done}/{completed_total} worktrees"
+                )
+            deps.status_display.update_phase("Merge", message)
 
-        def _on_teardown_progress(done: int, total: int) -> None:
-            deps.status_display.update_phase(
-                "Merge",
-                f"Closing {close_done}/{close_total} issues, removing {done}/{total} worktrees",
-            )
+        _render_phase_status()
 
         def _on_close_error(issue_number: int, exc: BaseException) -> None:
             deps.status_display.print(
@@ -234,14 +236,40 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 "warning",
             )
 
-        if clean_issues:
+        async def _close_issues(issues: list[dict]) -> None:
+            nonlocal close_done
+            batch_start = close_done
+
+            def _on_progress(done: int, total: int) -> None:
+                nonlocal close_done
+                close_done = batch_start + done
+                _render_phase_status()
+
             await _close_issues_parallel(
-                clean_issues, deps.github_svc, _on_progress, _on_close_error
+                issues, deps.github_svc, _on_progress, _on_close_error
             )
+
+        async def _delete_branches(branches: list[str]) -> list[str]:
+            nonlocal remove_done
+            batch_start = remove_done or 0
+
+            def _on_teardown_progress(done: int, total: int) -> None:
+                nonlocal remove_done
+                remove_done = batch_start + done
+                _render_phase_status()
+
+            deleted = await _delete_merged_branches(
+                branches, deps, _on_teardown_progress
+            )
+            remove_done = None
+            return deleted
+
+        if clean_issues:
+            await _close_issues(clean_issues)
             deps.github_svc.close_completed_parent_issues()
 
-        clean_deleted = await _delete_merged_branches(
-            [branch_for(i["number"]) for i in clean_issues], deps, _on_teardown_progress
+        clean_deleted = await _delete_branches(
+            [branch_for(i["number"]) for i in clean_issues]
         )
 
         if not conflict_issues:
@@ -334,15 +362,9 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                     pending_conflicts = conflict_issues[idx:]
                     break
                 conflict_deleted.extend(
-                    await _delete_merged_branches(
-                        [branch_for(active_issue["number"])],
-                        deps,
-                        _on_teardown_progress,
-                    )
+                    await _delete_branches([branch_for(active_issue["number"])])
                 )
-                await _close_issues_parallel(
-                    [active_issue], deps.github_svc, _on_progress, _on_close_error
-                )
+                await _close_issues([active_issue])
                 completed_conflicts.append(active_issue)
             if completed_conflicts:
                 deps.github_svc.close_completed_parent_issues()

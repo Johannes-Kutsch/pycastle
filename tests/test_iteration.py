@@ -29,6 +29,7 @@ from pycastle.iteration import (
     NoCandidate,
     run_iteration,
 )
+from pycastle.iteration.merge import merge_phase
 from pycastle.agents.runner import RunRequest
 from pycastle.iteration._deps import (
     Deps,
@@ -3073,10 +3074,7 @@ def test_run_iteration_failure_report_uses_failed_planner_service_session_dir(
     failure_req = calls[1]
     assert failure_req.mount_path == expected_path
     assert failure_req.scope_args is not None
-    assert (
-        failure_req.scope_args["SESSION_DIR"]
-        == ".pycastle-session/planner/opencode"
-    )
+    assert failure_req.scope_args["SESSION_DIR"] == ".pycastle-session/planner/opencode"
 
 
 def test_run_iteration_returns_aborted_agent_failure_when_implementer_agent_fails(
@@ -4129,9 +4127,7 @@ def test_run_iteration_uses_service_name_in_hard_agent_error_title(
             return _plan_output(
                 [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(
-            message=raw_line, status_code=400, service_name="opencode"
-        )
+        raise HardAgentError(message=raw_line, status_code=400, service_name="opencode")
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         deps = _make_deps(
@@ -4461,6 +4457,107 @@ def test_run_iteration_max_parallel_1_all_issues_in_one_iteration(
     assert git_svc.try_merge.call_count == 3, (
         f"Expected 3 merges (all issues), got {git_svc.try_merge.call_count}"
     )
+
+
+def test_merge_phase_reports_merging_counter_for_all_clean_branches(
+    tmp_path, git_svc, logger
+):
+    completed = [
+        {"number": 1, "title": "Fix A"},
+        {"number": 2, "title": "Fix B"},
+    ]
+    github_svc = MagicMock(spec=GithubService)
+    status_display = RecordingStatusDisplay()
+
+    git_svc.try_merge.side_effect = [True, True]
+
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner(),
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=status_display,
+    )
+
+    asyncio.run(merge_phase(completed, deps))
+
+    merge_updates = [
+        call[2]
+        for call in status_display.calls
+        if call[0] == "update_phase" and call[1] == "Merge"
+    ]
+    assert "merging 2/2 branches" in merge_updates
+
+
+def test_merge_phase_reports_closing_counter_without_replacing_merging(
+    tmp_path, git_svc, logger
+):
+    completed = [
+        {"number": 1, "title": "Fix A"},
+        {"number": 2, "title": "Fix B"},
+    ]
+    github_svc = MagicMock(spec=GithubService)
+    status_display = RecordingStatusDisplay()
+
+    git_svc.try_merge.side_effect = [True, True]
+
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner(),
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=status_display,
+    )
+
+    asyncio.run(merge_phase(completed, deps))
+
+    merge_updates = [
+        call[2]
+        for call in status_display.calls
+        if call[0] == "update_phase" and call[1] == "Merge"
+    ]
+    assert "merging 2/2 branches, closing 1/2 issues" in merge_updates
+    assert "merging 2/2 branches, closing 2/2 issues" in merge_updates
+
+
+def test_merge_phase_only_shows_removing_counter_during_active_deletion(
+    tmp_path, git_svc, logger
+):
+    completed = [
+        {"number": 1, "title": "Clean fix"},
+        {"number": 2, "title": "Conflict fix"},
+    ]
+    github_svc = MagicMock(spec=GithubService)
+    status_display = RecordingStatusDisplay()
+
+    git_svc.try_merge.side_effect = [True, False]
+    git_svc.get_current_branch.return_value = "main"
+
+    async def _agent(request: RunRequest):
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        status_display=status_display,
+    )
+
+    asyncio.run(merge_phase(completed, deps))
+
+    merge_updates = [
+        call[2]
+        for call in status_display.calls
+        if call[0] == "update_phase" and call[1] == "Merge"
+    ]
+    assert "merging 1/2 branches, closing 1/2 issues, removing 1/2 worktrees" in (
+        merge_updates
+    )
+    assert "merging 1/2 branches, closing 2/2 issues" in merge_updates
 
 
 # ── In-flight classification ──────────────────────────────────────────────────

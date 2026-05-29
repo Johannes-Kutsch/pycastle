@@ -1687,8 +1687,10 @@ def test_merge_phase_shows_closing_progress_during_clean_merge(recording_deps):
     update_calls = [
         c for c in recording.calls if c[0] == "update_phase" and c[1] == "Merge"
     ]
-    closing_calls = [c for c in update_calls if "Closing" in c[2]]
-    assert closing_calls, "update_phase must be called with 'Closing X/N issues' text"
+    closing_calls = [c for c in update_calls if "closing" in c[2]]
+    assert closing_calls, (
+        "update_phase must include 'closing X/N issues' once issue cleanup starts"
+    )
 
 
 def test_merge_phase_shows_closing_progress_during_conflict_path(
@@ -1701,8 +1703,10 @@ def test_merge_phase_shows_closing_progress_during_conflict_path(
     update_calls = [
         c for c in recording.calls if c[0] == "update_phase" and c[1] == "Merge"
     ]
-    closing_calls = [c for c in update_calls if "Closing" in c[2]]
-    assert closing_calls, "update_phase must be called with 'Closing X/N issues' text"
+    closing_calls = [c for c in update_calls if "closing" in c[2]]
+    assert closing_calls, (
+        "update_phase must include 'closing X/N issues' on the conflict path too"
+    )
 
 
 def test_merge_phase_progress_counter_reaches_total(recording_deps):
@@ -1712,8 +1716,8 @@ def test_merge_phase_progress_counter_reaches_total(recording_deps):
     update_calls = [
         c for c in recording.calls if c[0] == "update_phase" and c[1] == "Merge"
     ]
-    closing_texts = [c[2] for c in update_calls if "Closing" in c[2]]
-    assert "Closing 2/2 issues" in closing_texts
+    closing_texts = [c[2] for c in update_calls if "closing" in c[2]]
+    assert "merging 2/2 branches, closing 2/2 issues" in closing_texts
 
 
 # ── Teardown on_progress and input-order preservation ─────────────────────────
@@ -1840,7 +1844,7 @@ def test_uncaught_exception_in_teardown_forwarded_to_status_display(
 
 
 def test_phase_row_shows_removing_progress_during_clean_teardown(recording_deps):
-    """During clean branch teardown, phase row reads 'Closing X/N issues, removing Y/M worktrees'."""
+    """During clean branch teardown, phase row keeps closing visible and adds removing progress."""
     deps, recording = recording_deps
     issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
     _run(issues, deps)
@@ -1853,14 +1857,14 @@ def test_phase_row_shows_removing_progress_during_clean_teardown(recording_deps)
         "Phase row must show 'removing Y/M worktrees' during teardown"
     )
     assert all(
-        "Closing" in t and "issues" in t and "removing" in t for t in removing_texts
+        "closing" in t and "issues" in t and "removing" in t for t in removing_texts
     )
 
 
 def test_phase_row_shows_removing_progress_during_conflict_teardown(
     recording_deps, git_svc
 ):
-    """During conflict branch teardown, phase row reads 'Closing X/N issues, removing Y/M worktrees'."""
+    """During conflict branch teardown, phase row keeps closing visible and adds removing progress."""
     deps, recording = recording_deps
     git_svc.try_merge.return_value = False
     issues = [{"number": 1, "title": "Conflict"}]
@@ -1873,7 +1877,7 @@ def test_phase_row_shows_removing_progress_during_conflict_teardown(
     assert removing_texts, (
         "Phase row must show 'removing Y/M worktrees' during conflict teardown"
     )
-    assert all("Closing" in t and "removing" in t for t in removing_texts)
+    assert all("closing" in t and "removing" in t for t in removing_texts)
 
 
 # ── Close-failure resilience ──────────────────────────────────────────────────
