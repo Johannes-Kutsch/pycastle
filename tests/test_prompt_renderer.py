@@ -951,6 +951,25 @@ def test_renderer_startup_ignores_unknown_local_prompt_notes(tmp_path: Path):
     assert result == shipped_result
 
 
+def test_renderer_startup_ignores_unknown_local_prompt_notes_in_default_local_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "notes.md").write_text("scratchpad {{UNKNOWN_KEY}}")
+
+    renderer = PromptRenderer(Config())
+    shipped_renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+
+    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
+    shipped_result = _run(
+        shipped_renderer.render(PromptTemplate.RESUME, {}, _noop_exec)
+    )
+
+    assert result == shipped_result
+
+
 def test_renderer_ignores_stale_local_prompt_file_for_removed_bundled_default(
     tmp_path: Path,
 ):
