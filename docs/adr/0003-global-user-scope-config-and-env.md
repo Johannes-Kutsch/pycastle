@@ -1,7 +1,7 @@
 # Global user-scope config and env layered with project-local
 
 1. **Global = user-scope** via `platformdirs` (`~/.config/pycastle/` on Linux/Mac, `%APPDATA%\pycastle\` on Windows). Overridable via `PYCASTLE_HOME`. No machine-scope.
-2. **`config.py` and `.env` are globalizable.** `Dockerfile`, `prompts/`, `.gitignore` always scaffold locally — project-shaped.
+2. **`config.py` and `.env` are globalizable.** The fixed local `pycastle/Dockerfile` override path, fixed local `pycastle/prompts/` override path, and pycastle-managed `.gitignore` remain project-shaped; prompt overrides stay local and are not scaffolded.
 3. **Layered merge.** `defaults → global → local`, field-by-field for `config.py`, per-key for `.env`. Process env tops `.env`.
 4. **`pycastle init`** asks once ("global or local?"); accepts `--global` / `--local`. Never clobbers existing global files.
 5. **Path fields forbidden globally.** `pycastle_dir`, `prompts_dir`, `logs_dir`, `worktrees_dir`, `env_file`, `dockerfile` raise `ConfigValidationError` if set globally.
