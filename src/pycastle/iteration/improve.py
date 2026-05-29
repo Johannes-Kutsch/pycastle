@@ -105,10 +105,12 @@ class ImprovePhaseDriver:
         )
 
         # Orphan-reset: process restarted after phase 02 wrote progress but
-        # before phase 03 recorded its in-flight marker.  The in-memory
-        # prd_number is gone; there is no recovery path.  Clear progress and
-        # restart from phase 01 (leaves a dead PRD on GitHub with no label).
-        if last_id == "02-prd" and in_flight_id != "03-issues":
+        # before phase 03 recorded its in-flight marker. The only recoverable
+        # phase-02 states are a true mid-phase retry ("02-prd") and a phase-03
+        # continuation ("03-issues"). Any other state lost the in-memory
+        # prd_number, so restart from phase 01 (leaves a dead PRD on GitHub
+        # with no label).
+        if last_id == "02-prd" and in_flight_id not in {"02-prd", "03-issues"}:
             self._progress_file.unlink(missing_ok=True)
             return None, None
 
@@ -124,6 +126,13 @@ class ImprovePhaseDriver:
         if last_id == "02-prd":
             return "03-issues.md"
         return None
+
+    def _resume_prompt_key(
+        self, last_id: str | None, in_flight_id: str | None
+    ) -> str | None:
+        if last_id == "02-prd" and in_flight_id == "02-prd":
+            return "02-prd.md"
+        return self._next_prompt_key(last_id)
 
     def _compute_phase_id(self, prompt_key: str, output: AgentOutput) -> str:
         if prompt_key == "01-scan.md":
@@ -167,7 +176,7 @@ class ImprovePhaseDriver:
     def start(self) -> "Step | None":
         last_id, in_flight_id = self._load()
         self._last_id = last_id
-        prompt_key = self._next_prompt_key(last_id)
+        prompt_key = self._resume_prompt_key(last_id, in_flight_id)
         if prompt_key is None:
             return None
         step = self._make_step(prompt_key, last_id, in_flight_id)
