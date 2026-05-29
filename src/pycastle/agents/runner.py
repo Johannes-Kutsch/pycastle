@@ -361,6 +361,13 @@ class AgentRunner:
                                         run_kind=work_run_kind,
                                         session_uuid=service_session_id,
                                     )
+                                if (
+                                    not isinstance(output, FailedOutput)
+                                    and service_session_id is not None
+                                ):
+                                    role_session.save_service_session_metadata(
+                                        service.name, service_session_id
+                                    )
                                 if isinstance(output, FailedOutput):
                                     row.close("failed", shutdown_style="error")
                                 return output
