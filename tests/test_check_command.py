@@ -531,6 +531,62 @@ def test_check_passes_raw_failed_command_output_to_host_check_issue_agent(
     assert call.scope_args["OUTPUT"] == "traceback line 1\ntraceback line 2"
 
 
+def test_check_preserves_failed_host_check_context_when_host_check_reporter_setup_fails(
+    tmp_path, monkeypatch
+):
+    import pycastle.commands.check as check_mod
+    from pycastle.config import Config
+    from pycastle.errors import SetupPhaseError
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "abc123def456"
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        raise check_mod.HostCheckFailedError(
+            name=name,
+            command=command,
+            output="traceback line 1\ntraceback line 2",
+        )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _SetupFailingAgentRunner:
+        async def run(self, request):
+            raise SetupPhaseError(
+                "preflight-issue",
+                "pip install failed",
+            )
+
+    github_svc = MagicMock()
+
+    monkeypatch.setattr(check_mod, "_run_host_check", fake_run_host_check)
+    monkeypatch.setattr(
+        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+    )
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        check_mod.main(
+            cfg=Config(host_checks=(("lint", "python -c lint"),)),
+            git_service=git_svc,
+            github_service=github_svc,
+            agent_runner=_SetupFailingAgentRunner(),
+        )
+
+    err = exc_info.value
+    assert "pip install failed" in str(err)
+    assert "lint" in str(err)
+    assert err.command == "python -c lint"
+    assert err.output == "traceback line 1\ntraceback line 2"
+    assert err.phase == "preflight-issue"
+    github_svc.create_issue.assert_not_called()
+
+
 def test_check_rejects_afk_host_check_issue_without_slice_mode_label(
     tmp_path, monkeypatch
 ):

@@ -18,6 +18,7 @@ from ..config import (
     resolve_global_dir,
 )
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
+from ..errors import SetupPhaseError
 from ..infrastructure.worktree import transient_worktree
 from ..iteration import status_row
 from ..iteration.preflight import validate_issue_report
@@ -87,6 +88,18 @@ def _run_host_check(name: str, command: str, cwd: Path) -> None:
         return
     output = (result.stdout + result.stderr).strip()
     raise HostCheckFailedError(name=name, command=command, output=output)
+
+
+def _preserve_host_check_context(
+    exc: SetupPhaseError, failure: _HostCheckFailure
+) -> SetupPhaseError:
+    return SetupPhaseError(
+        exc.phase,
+        "Host-Check Reporter setup failed while reporting "
+        f"failed host check {failure.name!r}: {exc}",
+        command=exc.command or failure.command,
+        output=exc.output or failure.output,
+    )
 
 
 def _resolve_github_service(
@@ -233,18 +246,21 @@ def main(
                     )
                     issue_numbers = []
                     for failure in failures:
-                        issue_numbers.append(
-                            await _file_host_check_issue(
-                                failure=failure,
-                                mount_path=path,
-                                sha=sha,
-                                cfg=resolved_cfg,
-                                github_svc=resolved_github_service,
-                                agent_runner=resolved_agent_runner,
-                                status_display=resolved_status_display,
-                                service_registry=resolved_service_registry,
+                        try:
+                            issue_numbers.append(
+                                await _file_host_check_issue(
+                                    failure=failure,
+                                    mount_path=path,
+                                    sha=sha,
+                                    cfg=resolved_cfg,
+                                    github_svc=resolved_github_service,
+                                    agent_runner=resolved_agent_runner,
+                                    status_display=resolved_status_display,
+                                    service_registry=resolved_service_registry,
+                                )
                             )
-                        )
+                        except SetupPhaseError as exc:
+                            raise _preserve_host_check_context(exc, failure) from exc
                     row.close(
                         f"failed {failures[0].name}",
                         shutdown_style="error",
