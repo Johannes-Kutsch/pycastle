@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
-from .resume import RoleSession, RunKind
+from .resume import ProviderIdentityKind, RoleSession, RunKind
 
 if TYPE_CHECKING:
     from ..services.agent_service import AgentService
@@ -99,16 +99,20 @@ class RunSessionPlan:
         service_state_dir = (
             worktree / state_dir_relpath if state_dir_relpath is not None else None
         )
-        run_kind = (
-            RunKind.RESUME
-            if service_state_dir is not None and service.is_resumable(service_state_dir)
-            else RunKind.FRESH
+        has_resumable_provider_state = (
+            service_state_dir is not None and service.is_resumable(service_state_dir)
         )
+        run_kind = RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH
         role_session = RoleSession(worktree, role, namespace)
         if provider_session_id is None and service.name == "claude":
             provider_session_id = role_session.session_uuid()
         if provider_session_id is None and service.name == "codex":
-            provider_session_id = role_session.service_session_id("codex")
+            provider_identity = role_session.provider_identity(
+                "codex",
+                has_resumable_provider_state=has_resumable_provider_state,
+            )
+            if provider_identity.kind is ProviderIdentityKind.RESUME:
+                provider_session_id = provider_identity.provider_session_id
             if provider_session_id is None and run_kind == RunKind.RESUME:
                 if service_state_dir is not None:
                     provider_session_id = _codex_thread_id_from_rollouts(
@@ -121,9 +125,12 @@ class RunSessionPlan:
                 if provider_session_id is None:
                     run_kind = RunKind.FRESH
         if provider_session_id is None and service.name == "opencode":
-            provider_session_id = role_session.service_session_id("opencode")
-            if provider_session_id is None and run_kind is RunKind.RESUME:
-                run_kind = RunKind.FRESH
+            provider_identity = role_session.provider_identity(
+                "opencode",
+                has_resumable_provider_state=has_resumable_provider_state,
+            )
+            provider_session_id = provider_identity.provider_session_id
+            run_kind = provider_identity.run_kind
         if service.name == "codex":
             auth_seeding_requirement = _codex_auth_seeding_requirement(
                 service_state_dir, run_kind

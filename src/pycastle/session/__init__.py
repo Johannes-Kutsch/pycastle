@@ -1,4 +1,6 @@
 from .resume import (
+    ProviderIdentity,
+    ProviderIdentityKind,
     SESSION_DIR_NAME,
     RunKind,
     RoleSession,
@@ -7,6 +9,8 @@ from .resume import (
 )
 
 __all__ = [
+    "ProviderIdentity",
+    "ProviderIdentityKind",
     "SESSION_DIR_NAME",
     "RunKind",
     "RoleSession",

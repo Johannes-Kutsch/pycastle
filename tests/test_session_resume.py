@@ -8,6 +8,8 @@ import pytest
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.session import (
+    ProviderIdentity,
+    ProviderIdentityKind,
     RoleSession,
     RunKind,
     any_role_dir_present,
@@ -139,6 +141,41 @@ def test_service_session_ids_are_isolated_by_role_and_worktree(tmp_path):
     assert planner_a.service_session_id("opencode") == "sess-a"
     assert planner_b.service_session_id("opencode") == "sess-b"
     assert reviewer_a.service_session_id("opencode") == "sess-review"
+
+
+def test_service_session_id_filenames_remain_byte_compatible(worktree):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+
+    assert rs.service_session_id_path("codex").name == "thread_id"
+    assert rs.service_session_id_path("opencode").name == "session_id"
+    assert rs.service_session_id_path("unknown-service").name == "thread_id"
+
+
+def test_provider_identity_resumes_from_saved_codex_thread_id(worktree):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    rs.save_service_session_id("codex", "thread-from-sidecar")
+
+    assert rs.provider_identity("codex", has_resumable_provider_state=True) == (
+        ProviderIdentity(
+            kind=ProviderIdentityKind.RESUME,
+            run_kind=RunKind.RESUME,
+            provider_session_id="thread-from-sidecar",
+        )
+    )
+
+
+def test_provider_identity_is_unrecoverable_when_opencode_sidecar_session_id_is_missing(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+
+    assert rs.provider_identity("opencode", has_resumable_provider_state=True) == (
+        ProviderIdentity(
+            kind=ProviderIdentityKind.UNRECOVERABLE,
+            run_kind=RunKind.FRESH,
+            provider_session_id=None,
+        )
+    )
 
 
 def test_mark_done_preserves_service_session_metadata_without_counting_as_resumable(rs):

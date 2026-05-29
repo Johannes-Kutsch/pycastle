@@ -3,6 +3,7 @@ import os
 import shutil
 import stat
 import uuid
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
@@ -27,6 +28,19 @@ def _force_remove_readonly(func, path, _exc_info):
 class RunKind(Enum):
     FRESH = "fresh"
     RESUME = "resume"
+
+
+class ProviderIdentityKind(Enum):
+    FRESH = "fresh"
+    RESUME = "resume"
+    UNRECOVERABLE = "unrecoverable"
+
+
+@dataclass(frozen=True)
+class ProviderIdentity:
+    kind: ProviderIdentityKind
+    run_kind: RunKind
+    provider_session_id: str | None
 
 
 def is_stage_done_for(worktree: Path, role: AgentRole) -> bool:
@@ -80,6 +94,22 @@ class RoleSession:
         path = self.service_session_id_path(service_name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(session_id, encoding="utf-8")
+
+    def provider_identity(
+        self, service_name: str, *, has_resumable_provider_state: bool
+    ) -> ProviderIdentity:
+        if not has_resumable_provider_state:
+            return ProviderIdentity(ProviderIdentityKind.FRESH, RunKind.FRESH, None)
+
+        provider_session_id = self.service_session_id(service_name)
+        if provider_session_id is None:
+            return ProviderIdentity(
+                ProviderIdentityKind.UNRECOVERABLE, RunKind.FRESH, None
+            )
+
+        return ProviderIdentity(
+            ProviderIdentityKind.RESUME, RunKind.RESUME, provider_session_id
+        )
 
     def service_session_metadata(self, service_name: str) -> dict[str, str] | None:
         path = self.service_session_metadata_path
