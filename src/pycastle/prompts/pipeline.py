@@ -5,6 +5,7 @@ import enum
 import re
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Protocol
 
 from ..config import Config
 from ..session import RunKind
@@ -141,6 +142,22 @@ _ISSUE_PLACEHOLDER_KEYS = frozenset(
 )
 
 
+class PromptRendererConfig(Protocol):
+    prompts_dir: Path
+    preflight_checks: Sequence[tuple[str, str]]
+    bug_label: str
+    issue_label: str
+    hitl_label: str
+    enhancement_label: str
+    needs_triage_label: str
+    needs_info_label: str
+    wontfix_label: str
+    refactor_slice_label: str
+    behavior_slice_label: str
+    docs_slice_label: str
+    implement_checks: Sequence[str]
+
+
 def _format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
     parts: list[str] = []
     for c in comments:
@@ -207,7 +224,7 @@ class PromptRenderer:
         ),
     }
 
-    def __init__(self, cfg: Config) -> None:
+    def __init__(self, cfg: Config | PromptRendererConfig) -> None:
         prompts_dir = (
             Path("pycastle/prompts") if isinstance(cfg, Config) else cfg.prompts_dir
         )
@@ -299,7 +316,7 @@ class PromptRenderer:
             **{placeholder: "" for placeholder in scope_placeholders},
         }
 
-    def _build_global_args(self, cfg: Config) -> dict[str, str]:
+    def _build_global_args(self, cfg: Config | PromptRendererConfig) -> dict[str, str]:
         checks = " && ".join(cmd for _, cmd in cfg.preflight_checks)
         return {
             "BUG_LABEL": cfg.bug_label,

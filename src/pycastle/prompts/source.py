@@ -41,10 +41,12 @@ class PromptSource:
 
     def _resolve_local_override(self, relative_path: str) -> Path | None:
         local_path = self._local_dir / relative_path
-        if not local_path.is_file():
-            return None
         if self._bundled_relative_paths is None:
+            if not local_path.is_file():
+                return None
             return local_path
+        if local_path.is_symlink() or not local_path.is_file():
+            return None
         if relative_path in self._bundled_relative_paths:
             return local_path
         return None
