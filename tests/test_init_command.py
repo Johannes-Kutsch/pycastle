@@ -468,6 +468,7 @@ def test_bundled_config_example_is_behavioral_only_with_logging_guidance():
     assert "In local config, logs_dir is used directly." in content
     assert "In global config, logs_dir is the parent directory" in content
     assert "Local-only build artifact name used by `pycastle build`." in content
+    assert "Rejected in global config.py." in content
     assert '# docker_image_name = ""' in content
     assert "timeout_retries" in content
     assert "diagnose_on_failure" in content
