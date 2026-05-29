@@ -7,6 +7,7 @@ from pycastle.config import (
     Config,
     StageOverride,
     load_config,
+    replace_config_runtime_fields,
     resolve_dockerfile,
     resolve_logs_dir,
 )
@@ -352,6 +353,29 @@ def test_config_is_frozen():
     cfg = Config()
     with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
         cfg.max_parallel = 99  # type: ignore[misc]
+
+
+def test_replace_config_runtime_fields_preserves_global_logs_dir_semantics(
+    tmp_path, monkeypatch
+):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text(
+        "from pathlib import Path\nlogs_dir = Path('shared-logs')\n"
+    )
+    project_dir = tmp_path / "my-project"
+    project_dir.mkdir()
+    monkeypatch.chdir(project_dir)
+
+    cfg = load_config(repo_root=project_dir, global_dir=global_dir)
+    updated = dataclasses.replace(cfg, max_parallel=8)
+    result = replace_config_runtime_fields(cfg, updated)
+
+    assert result.max_parallel == 8
+    assert (
+        resolve_logs_dir(result)
+        == (project_dir / "shared-logs" / "my-project").resolve()
+    )
 
 
 def test_overrides_take_precedence_over_local_file(tmp_path):
