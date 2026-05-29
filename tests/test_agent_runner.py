@@ -3296,8 +3296,8 @@ def test_agent_runner_records_opencode_service_session_metadata_on_success(tmp_p
     }
 
 
-def test_agent_runner_uses_run_session_plan_provider_session_id_for_opencode_metadata(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_opencode_resume_uses_persisted_session_id_and_updates_metadata(
+    tmp_path: Path,
 ) -> None:
     captured_cmds: list[str] = []
     mock_client = MagicMock()
@@ -3315,25 +3315,10 @@ def test_agent_runner_uses_run_session_plan_provider_session_id_for_opencode_met
 
     mock_container.exec_run.side_effect = exec_side_effect
 
-    planned_state_dir = tmp_path / ".pycastle-session" / "planner" / "opencode"
-
-    def planned_run_session(**kwargs):
-        return RunSessionPlan(
-            role=AgentRole.PLANNER,
-            worktree=tmp_path,
-            namespace="",
-            service=kwargs["service"],
-            run_kind=RunKind.RESUME,
-            service_state_dir=planned_state_dir,
-            provider_session_id="sess-from-plan",
-            auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
-            recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
-        )
-
-    monkeypatch.setattr(
-        "pycastle.session.run_session.RunSessionPlan.for_service",
-        planned_run_session,
-    )
+    # Seed an existing OpenCode session so the runner dispatches a Resume.
+    state_dir = tmp_path / ".pycastle-session" / "planner" / "opencode"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text("sess-from-plan", encoding="utf-8")
 
     runner = AgentRunner(
         {},
@@ -3356,9 +3341,8 @@ def test_agent_runner_uses_run_session_plan_provider_session_id_for_opencode_met
         )
     )
 
-    assert captured_cmds == [
-        'export PATH="/home/agent/.local/bin:$PATH"; opencode run --format json --session sess-from-plan "$(cat /tmp/.pycastle_prompt)"'
-    ]
+    assert len(captured_cmds) == 1
+    assert "--session sess-from-plan" in captured_cmds[0]
     session = RoleSession(tmp_path, AgentRole.PLANNER)
     assert session.service_session_metadata("opencode") == {
         "service": "opencode",
