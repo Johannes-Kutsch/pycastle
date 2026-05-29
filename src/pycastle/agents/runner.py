@@ -32,7 +32,7 @@ from ..session import RoleSession, RunKind
 from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
-from ..display.status_display import PlainStatusDisplay
+from ..display.status_display import ModelDisplayMetadata, PlainStatusDisplay
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
 
@@ -294,6 +294,11 @@ class AgentRunner:
             must_close=False,
             work_body=work_body,
             color_key=color_key,
+            model_display=ModelDisplayMetadata(
+                service=service.name,
+                model=model,
+                effort=effort,
+            ),
         ) as row:
             session = self._build_session(mount_path, service, svc_state_relpath)
             runner = ContainerRunner(

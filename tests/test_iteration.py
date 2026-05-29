@@ -1414,6 +1414,7 @@ def test_run_iteration_registers_plan_row_with_planning_phase(
         "phase",
         "started planning for 2 issue(s) labeled ready-for-agent",
         "Planning",
+        None,
     ) in recording.calls
 
 
@@ -1472,6 +1473,7 @@ def test_run_iteration_plan_row_startup_message_uses_configured_issue_label(
         "phase",
         "started planning for 2 issue(s) labeled my-custom-label",
         "Planning",
+        None,
     ) in recording.calls
 
 
@@ -1506,7 +1508,14 @@ def test_run_iteration_registers_implement_row_with_running_phase(
     )
     asyncio.run(run_iteration(deps))
 
-    assert ("register", "Implement", "phase", "started", "Running") in recording.calls
+    assert (
+        "register",
+        "Implement",
+        "phase",
+        "started",
+        "Running",
+        None,
+    ) in recording.calls
 
 
 # ── Planning skip when in-flight branches or worktrees exist ─────────────────

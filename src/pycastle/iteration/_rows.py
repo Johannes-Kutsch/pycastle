@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from typing import Literal
 
 from ..errors import AgentTimeoutError, UsageLimitError
-from ..display.status_display import StatusDisplay
+from ..display.status_display import ModelDisplayMetadata, StatusDisplay
 
 
 class StatusRow:
@@ -30,6 +30,7 @@ async def status_row(
     work_body: str = "",
     initial_phase: str = "Setup",
     startup_message: str = "started",
+    model_display: ModelDisplayMetadata | None = None,
 ) -> AsyncGenerator[StatusRow, None]:
     status_display.register(
         caller,
@@ -38,6 +39,7 @@ async def status_row(
         work_body=work_body,
         initial_phase=initial_phase,
         color_key=color_key,
+        model_display=model_display,
     )
     row = StatusRow(status_display, caller)
     try:

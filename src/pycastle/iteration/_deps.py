@@ -10,7 +10,7 @@ from ..config import Config
 from ..errors import HardAgentError
 from ..services import GitService
 from ..services import GithubService, ServiceRegistry
-from ..display.status_display import StatusDisplay
+from ..display.status_display import ModelDisplayMetadata, StatusDisplay
 from .preflight import PreflightCache, PreflightReady, PreflightResult
 
 ImproveMode: TypeAlias = Literal["until_sleep", "endless"] | None
@@ -54,8 +54,11 @@ class RecordingStatusDisplay:
         work_body: str = "",
         initial_phase: str = "Setup",
         color_key: int | None = None,
+        model_display: ModelDisplayMetadata | None = None,
     ) -> None:
-        self.calls.append(("register", caller, kind, startup_message, initial_phase))
+        self.calls.append(
+            ("register", caller, kind, startup_message, initial_phase, model_display)
+        )
 
     def update_phase(self, name: str, phase: str) -> None:
         self.calls.append(("update_phase", name, phase))

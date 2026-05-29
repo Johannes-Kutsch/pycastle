@@ -5,7 +5,11 @@ import re
 from rich.console import Console
 
 from pycastle.iteration._deps import RecordingStatusDisplay
-from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
+from pycastle.display.status_display import (
+    ModelDisplayMetadata,
+    PlainStatusDisplay,
+    StatusDisplay,
+)
 from pycastle.display.rich_status_display import RichStatusDisplay
 
 
@@ -1173,6 +1177,18 @@ def test_plain_register_with_custom_startup_message(capsys) -> None:
     assert capsys.readouterr().out == "\n[X] custom\n"
 
 
+def test_plain_register_ignores_model_display(capsys) -> None:
+    d = PlainStatusDisplay()
+    d.register(
+        "X",
+        "agent",
+        model_display=ModelDisplayMetadata(
+            service="claude", model="sonnet", effort="medium"
+        ),
+    )
+    assert capsys.readouterr().out == "\n[X] started\n"
+
+
 def test_plain_remove_defaults_print_finished(capsys) -> None:
     d = PlainStatusDisplay()
     d.remove("X")
@@ -1332,13 +1348,36 @@ def test_recording_starts_empty() -> None:
 def test_recording_captures_register() -> None:
     d = RecordingStatusDisplay()
     d.register("Plan", "phase")
-    assert d.calls == [("register", "Plan", "phase", "started", "Setup")]
+    assert d.calls == [("register", "Plan", "phase", "started", "Setup", None)]
 
 
 def test_recording_captures_register_with_initial_phase() -> None:
     d = RecordingStatusDisplay()
-    d.register("Plan", "phase", startup_message="running", initial_phase="Planning")
-    assert d.calls == [("register", "Plan", "phase", "running", "Planning")]
+    d.register(
+        "Plan",
+        "phase",
+        startup_message="running",
+        initial_phase="Planning",
+        model_display=ModelDisplayMetadata(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+        ),
+    )
+    assert d.calls == [
+        (
+            "register",
+            "Plan",
+            "phase",
+            "running",
+            "Planning",
+            ModelDisplayMetadata(
+                service="claude",
+                model="sonnet",
+                effort="medium",
+            ),
+        )
+    ]
 
 
 def test_recording_captures_remove() -> None:
@@ -1406,7 +1445,7 @@ def test_recording_accumulates_multiple_new_api_calls() -> None:
     d.remove("Plan")
 
     assert d.calls == [
-        ("register", "Plan", "phase", "started", "Setup"),
+        ("register", "Plan", "phase", "started", "Setup", None),
         ("update_phase", "Plan", "Work"),
         ("remove", "Plan", "finished", "success"),
     ]
