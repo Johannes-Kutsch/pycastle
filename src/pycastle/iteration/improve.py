@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -239,6 +240,41 @@ def _build_issues_scope_args(
     )
 
 
+def _codex_thread_id_from_rollouts(state_dir: Path) -> str | None:
+    sessions_dir = state_dir / "sessions"
+    if not sessions_dir.is_dir():
+        return None
+
+    found: set[str] = set()
+    for rollout in sessions_dir.rglob("rollout-*.jsonl"):
+        try:
+            lines = rollout.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("type") != "thread.started":
+                continue
+            thread_id = event.get("thread_id")
+            if isinstance(thread_id, str) and thread_id.strip():
+                found.add(thread_id.strip())
+
+    return next(iter(found)) if len(found) == 1 else None
+
+
+def _is_exact_resumable_provider_session(
+    service_name: str,
+    provider_session_id: str,
+    state_dir: Path,
+) -> bool:
+    if service_name == "codex":
+        return _codex_thread_id_from_rollouts(state_dir) == provider_session_id
+    return True
+
+
 def _has_exact_phase_1_main_transcript(deps: _ImproveDeps, worktree_path: Path) -> bool:
     registry = deps.service_registry
     if registry is None:
@@ -256,15 +292,20 @@ def _has_exact_phase_1_main_transcript(deps: _ImproveDeps, worktree_path: Path) 
     metadata = main_session.service_session_metadata(service_name)
     provider_session_id = main_session.service_session_id(service_name)
     state_dir_relpath = service.state_dir_relpath(AgentRole.IMPROVE, "main")
+    state_dir = worktree_path / state_dir_relpath if state_dir_relpath else None
     if (
         metadata is None
         or provider_session_id is None
-        or state_dir_relpath is None
+        or state_dir is None
         or metadata["provider_session_id"] != provider_session_id
+        or not service.is_resumable(state_dir)
+        or not _is_exact_resumable_provider_session(
+            service_name, provider_session_id, state_dir
+        )
     ):
         return False
 
-    return service.is_resumable(worktree_path / state_dir_relpath)
+    return True
 
 
 async def improve_phase(

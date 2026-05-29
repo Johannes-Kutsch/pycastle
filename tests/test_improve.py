@@ -552,6 +552,39 @@ def test_improve_clean_phase_2_entry_with_conflicting_main_session_state_does_no
     assert runner.calls == []
 
 
+def test_improve_clean_phase_2_entry_with_conflicting_codex_rollout_state_does_not_dispatch_prd(
+    tmp_path, git_svc
+):
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_progress(wt, "01-scan:picked")
+    _seed_main_codex_transcript(wt, provider_session_id="thread-from-sidecar")
+    sessions_dir = wt / ".pycastle-session" / "improve" / "main" / "codex" / "sessions"
+    (sessions_dir / "rollout-1.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
+    )
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {"number": 17, "title": "PRD", "body": "body"}
+    github_svc.get_issue_comments.return_value = []
+    runner = FakeAgentRunner(
+        [IssueOutput(number=17, labels=[]), CompletionOutput()],
+        preflight_responses=[[]],
+    )
+    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=cfg,
+        service_registry=ServiceRegistry({"codex": CodexService()}),
+    )
+
+    _run(deps)
+
+    assert runner.calls == []
+
+
 def test_improve_gate_failure_restarts_next_entry_from_scan_phase(tmp_path, git_svc):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
