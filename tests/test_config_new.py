@@ -203,6 +203,23 @@ def test_resolve_dockerfile_without_bundled_default_raises_config_validation_err
         resolve_dockerfile(pycastle_dir)
 
 
+def test_resolve_dockerfile_falls_back_to_bundled_when_local_override_path_is_a_directory(
+    tmp_path,
+):
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "Dockerfile").mkdir()
+    bundled_default = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "pycastle"
+        / "defaults"
+        / "Dockerfile"
+    )
+
+    assert resolve_dockerfile(pycastle_dir) == bundled_default
+
+
 def test_image_name_for_returns_universal_image_name():
     from pycastle.config import image_name_for
 
