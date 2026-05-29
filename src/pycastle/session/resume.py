@@ -56,6 +56,28 @@ def _codex_thread_id_from_rollouts(state_dir: Path) -> str | None:
     return next(iter(found)) if len(found) == 1 else None
 
 
+def _provider_session_id_from_state_dir(
+    service_name: str,
+    state_dir: Path | None,
+) -> str | None:
+    if state_dir is None:
+        return None
+    if service_name == "codex":
+        return _codex_thread_id_from_rollouts(state_dir)
+
+    session_id_path = state_dir / _SERVICE_SESSION_ID_FILENAMES.get(
+        service_name,
+        "thread_id",
+    )
+    if not session_id_path.is_file():
+        return None
+    try:
+        value = session_id_path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    return value or None
+
+
 class RunKind(Enum):
     FRESH = "fresh"
     RESUME = "resume"
@@ -180,9 +202,11 @@ class RoleSession:
             return ProviderIdentity(ProviderIdentityKind.FRESH, RunKind.FRESH, None)
 
         provider_session_id: str | None = self.service_session_id(service_name)
-        if provider_session_id is None and service_name == "codex":
-            codex_state_dir = provider_state_dir or (self.path / "codex")
-            provider_session_id = _codex_thread_id_from_rollouts(codex_state_dir)
+        if provider_session_id is None:
+            provider_session_id = _provider_session_id_from_state_dir(
+                service_name,
+                provider_state_dir or (self.path / service_name),
+            )
             if provider_session_id is not None:
                 self.save_service_session_id(service_name, provider_session_id)
                 return ProviderIdentity(

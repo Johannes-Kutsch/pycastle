@@ -148,6 +148,40 @@ def test_run_session_plan_recovers_namespaced_codex_rollout_from_custom_state_di
     )
 
 
+def test_run_session_plan_recovers_opencode_session_id_from_selected_service_state_dir_while_preserving_provider_layout(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
+    )
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text(
+        "sess-from-custom-state",
+        encoding="utf-8",
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.service_state_dir == state_dir
+    assert plan.provider_state_dir_relpath == ".pycastle-session/improve/main/opencode/"
+    assert plan.host_provider_state_dir == (
+        tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
+    )
+    assert plan.provider_session_id == "sess-from-custom-state"
+    assert (
+        RoleSession(tmp_path, AgentRole.IMPROVE, "main").service_session_id("opencode")
+        == "sess-from-custom-state"
+    )
+
+
 def test_run_session_plan_keeps_none_service_state_dir_when_service_has_no_state_dir(
     tmp_path: Path,
 ):

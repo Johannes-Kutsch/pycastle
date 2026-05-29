@@ -42,6 +42,10 @@ def _role_provider_state_dir_relpath(
     return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
 
 
+def _preserves_role_provider_layout(service_name: str) -> bool:
+    return service_name in {"codex", "opencode"}
+
+
 @dataclasses.dataclass(frozen=True)
 class RunSessionPlan:
     role: AgentRole
@@ -77,7 +81,7 @@ class RunSessionPlan:
         run_kind = provider_identity.run_kind
         provider_state_dir_relpath = service.state_dir_relpath(role, namespace)
         host_provider_state_dir = service_state_dir
-        if service.name == "codex":
+        if _preserves_role_provider_layout(service.name):
             provider_state_dir_relpath = _role_provider_state_dir_relpath(
                 role, namespace, service.name
             )
