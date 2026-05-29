@@ -837,6 +837,18 @@ def test_renderer_aborts_on_broken_local_coding_standards_override(prompts_dir):
         PromptRenderer(Config())
 
 
+def test_renderer_validates_shared_fragment_against_each_referencing_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts" / "coding-standards"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "implementation.md").write_text("branch {{BRANCH}}")
+
+    with pytest.raises(PromptRenderError, match="BRANCH"):
+        PromptRenderer(Config())
+
+
 def test_renderer_aborts_on_fragment_cycle(prompts_dir):
     (prompts_dir / "_issue-tracker.md").write_text(
         "{{IMPLEMENT_REVIEW_SHARED_FRAMING}}"
