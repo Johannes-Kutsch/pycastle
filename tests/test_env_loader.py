@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from pycastle.config import DEFAULT_ENV_FILE, load_env
+from pycastle.config import (
+    DEFAULT_ENV_FILE,
+    KNOWN_CREDENTIAL_ENV_KEYS,
+    load_credential_env,
+    load_env,
+)
 
 
 @pytest.fixture
@@ -96,3 +101,71 @@ def test_stale_local_env_path_does_not_relocate_fixed_local_env_layer(
 
     assert env["GH_TOKEN"] == "fromlocal"
     assert env["OTHER"] == "fromglobal"
+
+
+# ── load_credential_env tests ──────────────────────────────────────────────────
+
+
+def test_credential_env_excludes_unrelated_process_env_variables(repo: Path) -> None:
+    (repo / "pycastle" / ".env").write_text("GH_TOKEN=tok\n")
+    env = load_credential_env(
+        global_dir=None,
+        local_env_file=DEFAULT_ENV_FILE,
+        process_env={
+            "GH_TOKEN": "tok",
+            "PATH": "/usr/bin",
+            "SHELL": "/bin/bash",
+            "VIRTUAL_ENV": "/venv",
+        },
+    )
+    assert set(env.keys()).issubset(set(KNOWN_CREDENTIAL_ENV_KEYS))
+    assert "PATH" not in env
+    assert "SHELL" not in env
+    assert "VIRTUAL_ENV" not in env
+
+
+def test_credential_env_contains_only_known_credential_keys(
+    repo: Path, tmp_path: Path
+) -> None:
+    global_dir = tmp_path / "home"
+    global_dir.mkdir()
+    (global_dir / ".env").write_text(
+        "GH_TOKEN=gh\nCLAUDE_CODE_OAUTH_TOKEN=claude\nCLAUDE_CODE_OAUTH_TOKEN_SECONDARY=sec\nOPENCODE_GO_API_KEY=oc\n"
+    )
+    env = load_credential_env(
+        global_dir=global_dir,
+        local_env_file=DEFAULT_ENV_FILE,
+        process_env={},
+    )
+    assert set(env.keys()) == {
+        "GH_TOKEN",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY",
+        "OPENCODE_GO_API_KEY",
+    }
+
+
+def test_credential_env_honours_process_env_wins_precedence(
+    repo: Path, tmp_path: Path
+) -> None:
+    global_dir = tmp_path / "home"
+    global_dir.mkdir()
+    (global_dir / ".env").write_text("GH_TOKEN=fromglobal\n")
+    (repo / "pycastle" / ".env").write_text("GH_TOKEN=fromlocal\n")
+    env = load_credential_env(
+        global_dir=global_dir,
+        local_env_file=DEFAULT_ENV_FILE,
+        process_env={"GH_TOKEN": "fromprocess"},
+    )
+    assert env["GH_TOKEN"] == "fromprocess"
+
+
+def test_credential_env_returns_empty_when_no_credential_keys_present(
+    repo: Path,
+) -> None:
+    env = load_credential_env(
+        global_dir=None,
+        local_env_file=DEFAULT_ENV_FILE,
+        process_env={"PATH": "/usr/bin", "HOME": "/home/user"},
+    )
+    assert env == {}
