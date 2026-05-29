@@ -79,14 +79,10 @@ class RunSessionPlan:
         worktree: Path,
         namespace: str,
         service: AgentService,
-        provider_session_id: str | None = None,
-        auth_seeding_requirement: AuthSeedingRequirement = (
-            AuthSeedingRequirement.NOT_REQUIRED
-        ),
-        recovered_session_id_persistence: RecoveredSessionIdPersistence = (
-            RecoveredSessionIdPersistence.SKIP
-        ),
     ) -> RunSessionPlan:
+        provider_session_id: str | None = None
+        auth_seeding_requirement = AuthSeedingRequirement.NOT_REQUIRED
+        recovered_session_id_persistence = RecoveredSessionIdPersistence.SKIP
         state_dir_relpath = service.state_dir_relpath(role, namespace)
         service_state_dir = (
             worktree / state_dir_relpath if state_dir_relpath is not None else None
