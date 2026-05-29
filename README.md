@@ -4,7 +4,9 @@ pycastle is a label-driven orchestrator for agentic coding work: label a GitHub 
 
 ## Supported agents
 
-Currently ships with Claude Code support; Codex planned.
+pycastle supports Claude Code, Codex, and OpenCode as agent services.
+
+The bundled defaults are service-aware: OpenCode is first for planning, Codex is first for most execution stages, and Claude is first for review while also serving as fallback elsewhere.
 
 ## Why pycastle
 
