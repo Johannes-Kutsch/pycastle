@@ -182,6 +182,62 @@ def test_run_session_plan_recovers_opencode_session_id_from_selected_service_sta
     )
 
 
+def test_run_session_plan_reports_fresh_for_selected_opencode_service_state_without_session_id_while_preserving_provider_layout(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
+    )
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.service_state_dir == state_dir
+    assert plan.provider_state_dir_relpath == ".pycastle-session/improve/main/opencode/"
+    assert plan.host_provider_state_dir == (
+        tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
+    )
+    assert plan.provider_session_id is None
+    assert (
+        RoleSession(tmp_path, AgentRole.IMPROVE, "main").service_session_id("opencode")
+        is None
+    )
+
+
+def test_run_session_plan_reports_fresh_for_selected_opencode_service_state_with_whitespace_only_session_id(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
+    )
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text("   \n", encoding="utf-8")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.provider_session_id is None
+    assert (
+        RoleSession(tmp_path, AgentRole.IMPROVE, "main").service_session_id("opencode")
+        is None
+    )
+
+
 def test_run_session_plan_keeps_none_service_state_dir_when_service_has_no_state_dir(
     tmp_path: Path,
 ):
@@ -679,6 +735,22 @@ def test_run_session_plan_fresh_opencode_when_sidecar_session_id_is_missing(
         role=AgentRole.IMPROVE,
         worktree=tmp_path,
         namespace="main",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.provider_session_id is None
+
+
+def test_run_session_plan_never_generates_pycastle_uuid_for_fresh_opencode(
+    tmp_path: Path,
+):
+    service = OpenCodeService()
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
         service=service,
     )
 
