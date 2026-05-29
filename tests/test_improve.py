@@ -473,6 +473,30 @@ def test_improve_clean_phase_2_entry_without_phase_1_metadata_does_not_dispatch_
     assert runner.calls == []
 
 
+def test_improve_handoff_failure_prints_phase_1_restart_notice(tmp_path, git_svc):
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_progress(wt, "01-scan:picked")
+    status_display = MagicMock()
+    runner = FakeAgentRunner([], preflight_responses=[[]])
+    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        cfg=cfg,
+        status_display=status_display,
+        service_registry=ServiceRegistry({"codex": CodexService()}),
+    )
+
+    _run(deps)
+
+    assert runner.calls == []
+    status_display.print.assert_any_call(
+        "Improve",
+        "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
+    )
+
+
 def test_improve_clean_phase_2_entry_with_different_selected_service_does_not_dispatch_prd(
     tmp_path, git_svc
 ):

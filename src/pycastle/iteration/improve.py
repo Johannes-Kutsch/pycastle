@@ -353,7 +353,7 @@ async def improve_phase(
             ):
                 deps.status_display.print(
                     "Improve",
-                    "Restarting improve from phase 1: exact phase 1 main transcript unavailable for clean phase 2 entry.",
+                    "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
                 )
                 role_session.discard()
                 row.close("restarting from phase 1")
