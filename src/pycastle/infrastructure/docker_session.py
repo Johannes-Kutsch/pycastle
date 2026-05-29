@@ -15,6 +15,11 @@ from ..errors import DockerError, DockerTimeoutError
 from .worktree import CONTAINER_PARENT_GIT, patch_gitdir_for_container
 
 _AGENT_USER_LOCAL_BIN = "/home/agent/.local/bin"
+_MISSING_TOOL_PATTERNS = (
+    "executable file not found",
+    "no such file or directory",
+    "command not found",
+)
 
 
 def _parse_parent_git(git_file: Path) -> Path | None:
@@ -102,13 +107,22 @@ class DockerSession:
         return self._container
 
     def __enter__(self) -> "DockerSession":
-        self._container = self._client.containers.run(
-            self._image_name,
-            detach=True,
-            volumes=self._volumes,
-            environment=self._container_env,
-            working_dir="/home/agent/workspace",
-        )
+        try:
+            self._container = self._client.containers.run(
+                self._image_name,
+                detach=True,
+                volumes=self._volumes,
+                environment=self._container_env,
+                working_dir="/home/agent/workspace",
+            )
+        except docker.errors.DockerException as exc:
+            message = f"Failed to start Docker container from image {self._image_name!r}: {exc}"
+            if any(pattern in str(exc).lower() for pattern in _MISSING_TOOL_PATTERNS):
+                message += (
+                    " Rebuild or check the image contract; its entrypoint, shell, "
+                    "or required core tools may be missing."
+                )
+            raise DockerError(message) from exc
         return self
 
     def __exit__(self, *_) -> None:
