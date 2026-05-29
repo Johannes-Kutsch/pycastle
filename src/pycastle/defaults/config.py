@@ -72,6 +72,8 @@ from pycastle import StageOverride
 # Claude effort values: low, medium, high, xhigh, max
 # Codex effort values: low, medium, high, xhigh
 # OpenCode effort values: medium
+# Harder-planning OpenCode alternative:
+# plan_override = StageOverride(service="opencode", model="kimi-k2.6", effort="medium")
 # Opt-in example:
 # opencode_review_override = StageOverride(service="opencode", model="kimi-k2.6", effort="medium")
 # opencode_implement_override = StageOverride(
@@ -81,10 +83,15 @@ from pycastle import StageOverride
 #     fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
 # )
 plan_override = StageOverride(
-    service="codex",
-    model="gpt-5.4-mini",
-    effort="low",
-    fallback=StageOverride(service="claude", model="haiku", effort="low"),
+    service="opencode",
+    model="deepseek-v4-flash",
+    effort="medium",
+    fallback=StageOverride(
+        service="codex",
+        model="gpt-5.4-mini",
+        effort="low",
+        fallback=StageOverride(service="claude", model="haiku", effort="low"),
+    ),
 )
 implement_override = StageOverride(
     service="codex",

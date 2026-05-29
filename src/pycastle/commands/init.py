@@ -78,7 +78,11 @@ def _render_config_example(defaults_text: str) -> str:
                     preserve_commented_block = False
                 continue
             if _CONFIG_FIELD_RE.match(body):
-                if body.startswith("opencode_"):
+                if body.startswith("opencode_") or (
+                    body.startswith("plan_override")
+                    and 'model="kimi-k2.6"' in body
+                    and 'service="opencode"' in body
+                ):
                     out.append(line)
                     preserve_commented_block = body.rstrip().endswith("(")
                 else:

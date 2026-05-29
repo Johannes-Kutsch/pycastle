@@ -645,10 +645,15 @@ def test_init_scaffolds_universal_stage_priority_chains_into_config_files(
 
     expected = {
         "plan_override": StageOverride(
-            service="codex",
-            model="gpt-5.4-mini",
-            effort="low",
-            fallback=StageOverride(service="claude", model="haiku", effort="low"),
+            service="opencode",
+            model="deepseek-v4-flash",
+            effort="medium",
+            fallback=StageOverride(
+                service="codex",
+                model="gpt-5.4-mini",
+                effort="low",
+                fallback=StageOverride(service="claude", model="haiku", effort="low"),
+            ),
         ),
         "implement_override": StageOverride(
             service="codex",
@@ -706,10 +711,15 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
 
     cfg = load_config(repo_root=tmp_path)
     assert cfg.plan_override == StageOverride(
-        service="codex",
-        model="gpt-5.4-mini",
-        effort="low",
-        fallback=StageOverride(service="claude", model="haiku", effort="low"),
+        service="opencode",
+        model="deepseek-v4-flash",
+        effort="medium",
+        fallback=StageOverride(
+            service="codex",
+            model="gpt-5.4-mini",
+            effort="low",
+            fallback=StageOverride(service="claude", model="haiku", effort="low"),
+        ),
     )
     assert cfg.implement_override == StageOverride(
         service="codex",
@@ -767,10 +777,15 @@ def test_init_service_selection_writes_same_stage_chains(
 
     cfg = load_config(repo_root=workspace)
     assert cfg.plan_override == StageOverride(
-        service="codex",
-        model="gpt-5.4-mini",
-        effort="low",
-        fallback=StageOverride(service="claude", model="haiku", effort="low"),
+        service="opencode",
+        model="deepseek-v4-flash",
+        effort="medium",
+        fallback=StageOverride(
+            service="codex",
+            model="gpt-5.4-mini",
+            effort="low",
+            fallback=StageOverride(service="claude", model="haiku", effort="low"),
+        ),
     )
     assert cfg.implement_override == StageOverride(
         service="codex",
@@ -896,10 +911,15 @@ def test_init_opencode_selection_adds_env_key_without_changing_stage_policy(
     assert not any("Claude OAuth token" in prompt for prompt in prompt_calls)
     assert "OPENCODE_GO_API_KEY=\n" in env_content
     assert cfg.plan_override == StageOverride(
-        service="codex",
-        model="gpt-5.4-mini",
-        effort="low",
-        fallback=StageOverride(service="claude", model="haiku", effort="low"),
+        service="opencode",
+        model="deepseek-v4-flash",
+        effort="medium",
+        fallback=StageOverride(
+            service="codex",
+            model="gpt-5.4-mini",
+            effort="low",
+            fallback=StageOverride(service="claude", model="haiku", effort="low"),
+        ),
     )
     assert cfg.implement_override == StageOverride(
         service="codex",
@@ -997,6 +1017,38 @@ def test_init_config_example_documents_opencode_opt_in_stage_chain(
         'StageOverride(service="opencode", model="kimi-k2.6", effort="medium")'
         in content
     )
+
+
+def test_init_config_example_shows_opencode_planner_default_and_kimi_override(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("click.prompt", side_effect=["claude", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    content = (tmp_path / "pycastle" / "config.py.example").read_text()
+
+    assert (
+        "plan_override = StageOverride(\n"
+        '    service="opencode",\n'
+        '    model="deepseek-v4-flash",\n'
+        '    effort="medium",\n'
+        "    fallback=StageOverride(\n"
+        '        service="codex",\n'
+        '        model="gpt-5.4-mini",\n'
+        '        effort="low",\n'
+        '        fallback=StageOverride(service="claude", model="haiku", effort="low"),\n'
+        "    ),\n"
+    ) in content
+    assert (
+        '# plan_override = StageOverride(service="opencode", model="kimi-k2.6", '
+        'effort="medium")'
+    ) in content
 
 
 # ── Cycle 4: init does not overwrite other existing files ─────────────────────

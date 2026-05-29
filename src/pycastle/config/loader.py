@@ -106,10 +106,15 @@ class Config:
     timeout_retries: int = 1
     plan_override: StageOverride = dataclasses.field(
         default_factory=lambda: StageOverride(
-            service="codex",
-            model="gpt-5.4-mini",
-            effort="low",
-            fallback=StageOverride(service="claude", model="haiku", effort="low"),
+            service="opencode",
+            model="deepseek-v4-flash",
+            effort="medium",
+            fallback=StageOverride(
+                service="codex",
+                model="gpt-5.4-mini",
+                effort="low",
+                fallback=StageOverride(service="claude", model="haiku", effort="low"),
+            ),
         )
     )
     implement_override: StageOverride = dataclasses.field(
