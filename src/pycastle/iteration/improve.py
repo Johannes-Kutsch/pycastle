@@ -14,7 +14,6 @@ from ..prompts.pipeline import PromptTemplate, Scope, build_issue_scope_args
 from ..services import GitService, ServiceRegistry
 from ..services.github_service import GithubService
 from ..session import RoleSession
-from ..session.run_session import RunSessionPlan
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import managed_worktree
 from ._rows import status_row
@@ -262,13 +261,8 @@ def _has_exact_phase_1_main_transcript(deps: _ImproveDeps, worktree_path: Path) 
     if service is None:
         return False
 
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPROVE,
-        worktree=worktree_path,
-        namespace="main",
-        service=service,
-    )
-    return plan.exact_transcript_match
+    role_session = RoleSession(worktree_path, AgentRole.IMPROVE, "main")
+    return role_session.exact_transcript_handoff_for_service(service).is_eligible
 
 
 async def improve_phase(

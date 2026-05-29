@@ -6,8 +6,12 @@ import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
+
+if TYPE_CHECKING:
+    from ..services.agent_service import AgentService
 
 _NAMESPACE = uuid.NAMESPACE_DNS
 
@@ -75,6 +79,12 @@ class ProviderIdentity:
 class ExactTranscriptHandoff:
     provider_identity: ProviderIdentity
     is_eligible: bool
+
+
+@dataclass(frozen=True)
+class ServiceSessionState:
+    state_dir: Path | None
+    has_resumable_provider_state: bool
 
 
 def _is_exact_resumable_provider_session(
@@ -243,6 +253,20 @@ class RoleSession:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
 
+    def service_session_state(self, service: "AgentService") -> ServiceSessionState:
+        state_dir_relpath = service.state_dir_relpath(self._role, self._namespace)
+        state_dir = (
+            self._worktree / state_dir_relpath
+            if state_dir_relpath is not None
+            else None
+        )
+        return ServiceSessionState(
+            state_dir=state_dir,
+            has_resumable_provider_state=(
+                state_dir is not None and service.is_resumable(state_dir)
+            ),
+        )
+
     def exact_transcript_handoff(
         self,
         service_name: str,
@@ -283,6 +307,16 @@ class RoleSession:
         return ExactTranscriptHandoff(
             provider_identity=provider_identity,
             is_eligible=is_eligible,
+        )
+
+    def exact_transcript_handoff_for_service(
+        self, service: "AgentService"
+    ) -> ExactTranscriptHandoff:
+        state = self.service_session_state(service)
+        return self.exact_transcript_handoff(
+            service.name,
+            state_dir=state.state_dir,
+            has_resumable_provider_state=state.has_resumable_provider_state,
         )
 
     def is_resumable(self) -> bool:

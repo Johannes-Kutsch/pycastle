@@ -56,19 +56,10 @@ class RunSessionPlan:
     ) -> RunSessionPlan:
         auth_seeding_requirement = AuthSeedingRequirement.NOT_REQUIRED
         recovered_session_id_persistence = RecoveredSessionIdPersistence.SKIP
-        state_dir_relpath = service.state_dir_relpath(role, namespace)
-        service_state_dir = (
-            worktree / state_dir_relpath if state_dir_relpath is not None else None
-        )
-        has_resumable_provider_state = (
-            service_state_dir is not None and service.is_resumable(service_state_dir)
-        )
         role_session = RoleSession(worktree, role, namespace)
-        handoff = role_session.exact_transcript_handoff(
-            service.name,
-            state_dir=service_state_dir,
-            has_resumable_provider_state=has_resumable_provider_state,
-        )
+        service_state = role_session.service_session_state(service)
+        service_state_dir = service_state.state_dir
+        handoff = role_session.exact_transcript_handoff_for_service(service)
         provider_identity = handoff.provider_identity
         provider_session_id = provider_identity.provider_session_id
         run_kind = provider_identity.run_kind
