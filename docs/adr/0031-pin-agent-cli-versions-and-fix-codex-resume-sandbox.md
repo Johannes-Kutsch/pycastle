@@ -1,6 +1,6 @@
-# Pin agent CLI versions and fix codex resume --sandbox rejection
+# Pin agent CLI versions and codex sandbox policy
 
-The Codex CLI's `exec resume` subcommand does not accept `--sandbox` - sessions inherit sandbox config from the original run. `build_command` appended `--sandbox danger-full-access` unconditionally, so every codex resume attempt failed immediately. Fixed by emitting `--sandbox` only on `RunKind.FRESH`.
+The Codex CLI's `exec resume` subcommand does not accept `--sandbox` - sessions inherit sandbox config from the original run. `build_command` appended `--sandbox danger-full-access` unconditionally, so every codex resume attempt failed immediately. Fixed by emitting `--sandbox` only on `RunKind.FRESH`, while keeping pycastle's role-scoped sandbox policy explicit for fresh vs resumed Codex sessions.
 
 Separately, the supported agent CLIs (`@openai/codex`, Claude Code, and OpenCode) were installed unpinned (`npm install -g @openai/codex`, `curl ... | bash`, or latest-equivalent), meaning any upstream release could silently break agent runs. The default Dockerfiles now pin tested versions: codex-cli 0.134.0, Claude Code 2.1.152, OpenCode CLI 1.15.12.
 
