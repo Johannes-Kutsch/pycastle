@@ -299,7 +299,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
 
     config_example_template = _load_config_example_template(pkg)
     _write_config_example(project_dir, config_example_template)
-    if pycastle_home.is_dir():
+    if (pycastle_home / "config.py.example").exists():
         _write_config_example(pycastle_home, config_example_template)
 
     config_file = scoped_dir / "config.py"
