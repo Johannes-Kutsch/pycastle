@@ -290,6 +290,23 @@ def test_context_glossary_describes_concise_planner_blocked_entries():
     assert "{number, blocked_by, reason}" not in text
 
 
+def test_context_glossary_prompt_scope_matches_scope_enum():
+    text = (Path(__file__).parent.parent / "CONTEXT.md").read_text(encoding="utf-8")
+
+    assert "| **prompt scope** |" in text
+    assert "Seven scopes" not in text
+    for expected in (
+        "Ten scopes",
+        "`PER_ISSUE`",
+        "`INTERRUPTED_WORK`",
+        "`HOST_CHECK`",
+        "`IMPROVE_ISSUES`",
+        "`DIVERGE`",
+        "`FAILURE_REPORT`",
+    ):
+        assert expected in text
+
+
 # ── Ctor validates: unknown token raises ─────────────────────────────────────
 
 
