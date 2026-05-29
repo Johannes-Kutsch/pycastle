@@ -21,11 +21,11 @@ pip install pycastle
 
 ### `pycastle init`
 
-Interactive bootstrap for a consuming project. `pycastle init` syncs the managed scaffold allowlist that stays under package control (`.gitignore` plus the cron helpers under `setup/`), refreshes `config.py.example`, then runs the init wizard to choose service/scope, merge missing `.env` keys, and offer GitHub label setup.
+Interactive bootstrap for a consuming project. `pycastle init` refreshes the managed scaffold allowlist that stays under package control (`.gitignore` plus the cron helpers under `setup/`), refreshes `config.py.example`, then runs the init wizard to choose service/scope, merge missing `.env` keys, and offer GitHub label setup.
 
-Use `pycastle init --refresh` for the non-interactive scaffold sync path. It bypasses the wizard and refreshes the managed scaffold allowlist and `config.py.example` without changing `config.py`, `.env`, prompt overrides, Dockerfile overrides, or any runtime session state. `cron.sh` invokes this on every tick so scaffold updates ship automatically when you upgrade pycastle.
+Use `pycastle init --refresh` for the non-interactive scaffold sync path. It bypasses the wizard and refreshes only the managed scaffold allowlist and `config.py.example`; it preserves `config.py`, `.env`, prompt overrides, Dockerfile overrides, and all runtime session state. `cron.sh` invokes this on every tick so scaffold updates ship automatically when you upgrade pycastle.
 
-Refresh behavior is asymmetric by design: `pycastle/config.py.example` is always refreshed from a rendered template, while the copied scaffold allowlist is exactly `pycastle/.gitignore`, `pycastle/setup/cron.sh`, `pycastle/setup/cron-install.sh`, and `pycastle/setup/cron-uninstall.sh`. Those paths are pycastle-owned scaffold; `pycastle/.gitignore` is always overwritten and ignores local secrets, runtime directories, local `config.py`, `config.py.example`, and `setup/`. Bundled prompts and the bundled universal Dockerfile remain the defaults unless you create local overrides. Local prompt files under `pycastle/prompts/` and `pycastle/Dockerfile` are user-owned overrides, so init never creates, overwrites, or deletes them. Your `config.py`, `.env`, prompt overrides, Dockerfile override, and `.pycastle-session/` runtime state stay yours across refreshes. Files outside the allowlist, including `__pycache__/` and `*.pyc`, are never copied. A global `config.py.example` is refreshed only if you already keep one in pycastle home.
+Refresh behavior is asymmetric by design: `pycastle/config.py.example` is always refreshed from a rendered template, while the copied scaffold allowlist is exactly `pycastle/.gitignore`, `pycastle/setup/cron.sh`, `pycastle/setup/cron-install.sh`, and `pycastle/setup/cron-uninstall.sh`. Those paths are pycastle-owned scaffold; `pycastle/.gitignore` is always overwritten and ignores local secrets, runtime directories, local `config.py`, `config.py.example`, and `setup/`. Bundled prompts and the bundled universal Dockerfile remain the defaults unless you create local overrides. Local prompt files under `pycastle/prompts/` and `pycastle/Dockerfile` are user-owned overrides, so init and refresh never create, overwrite, or delete them. Your `config.py`, `.env`, prompt overrides, Dockerfile override, and `.pycastle-session/` runtime state stay yours across refreshes. Files outside the allowlist, including `__pycache__/` and `*.pyc`, are never copied. A global `config.py.example` is refreshed only if you already keep one in pycastle home.
 
 ```bash
 pycastle init                # interactive bootstrap; asks where config.py / .env should live
@@ -162,7 +162,7 @@ Run these steps inside each consuming project on the host (e.g. over SSH on the 
    pycastle init --refresh
    ```
 
-   This refreshes the pycastle-managed scaffold files, including `setup/` and `config.py.example`, leaving your `config.py`, `.env`, prompt overrides, Dockerfile override, and runtime session state untouched.
+   This refreshes only the pycastle-managed scaffold files: `pycastle/.gitignore`, `pycastle/setup/cron.sh`, `pycastle/setup/cron-install.sh`, `pycastle/setup/cron-uninstall.sh`, and the separately rendered `pycastle/config.py.example`. It leaves `config.py`, `.env`, prompt overrides, the Dockerfile override, runtime session state, and files outside the allowlist untouched.
 
 4. **Remove the existing cronjob**
 
