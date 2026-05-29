@@ -15,5 +15,6 @@ The command exists because Windows host-suite drift is real, but a hard Windows 
 ## Consequences
 
 - `HOST_CHECKS` becomes a separate config surface from `PREFLIGHT_CHECKS`.
+- Host-check execution is operator-visible progress, using one aggregate `Host Check` phase row in the same style as preflight checks. The row covers branch refresh, clean-tree validation, transient worktree setup, and configured check execution. It names the current check and explicitly reports a failed check before the host-check issue agent starts; command stdout/stderr remains captured diagnostic payload rather than live terminal output. The final pass/failure summary remains separate from the status row, and the terminal ordering is a regression-tested contract.
 - Passing host checks are report-only; `pycastle check` does not auto-close or relabel earlier host-check issues.
 - Preflight prompt behaviour remains independent; the host-check prompt stays minimal and host-boundary-specific rather than forcing a shared prompt refactor.
