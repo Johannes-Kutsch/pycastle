@@ -108,21 +108,21 @@ class Scope(enum.Enum):
 
 
 class PromptTemplate(enum.Enum):
-    IMPLEMENT_BEHAVIOR = ("implement/behavior.md", Scope.PER_ISSUE)
-    IMPLEMENT_REFACTOR = ("implement/refactor.md", Scope.PER_ISSUE)
-    IMPLEMENT_DOCS = ("implement/docs.md", Scope.PER_ISSUE)
-    REVIEW = ("review-prompt.md", Scope.PER_ISSUE)
-    MERGE = ("merge-prompt.md", Scope.MERGE)
-    PLAN = ("plan-prompt.md", Scope.PLAN)
-    PREFLIGHT_ISSUE = ("preflight-issue.md", Scope.PREFLIGHT)
-    HOST_CHECK_ISSUE = ("host-check-issue.md", Scope.HOST_CHECK)
+    IMPLEMENT_BEHAVIOR = ("work/behavior.md", Scope.PER_ISSUE)
+    IMPLEMENT_REFACTOR = ("work/refactor.md", Scope.PER_ISSUE)
+    IMPLEMENT_DOCS = ("work/docs.md", Scope.PER_ISSUE)
+    REVIEW = ("work/review.md", Scope.PER_ISSUE)
+    MERGE = ("coordination/merge.md", Scope.MERGE)
+    PLAN = ("coordination/plan.md", Scope.PLAN)
+    PREFLIGHT_ISSUE = ("diagnostics/preflight-issue.md", Scope.PREFLIGHT)
+    HOST_CHECK_ISSUE = ("diagnostics/host-check-issue.md", Scope.HOST_CHECK)
     IMPROVE_SCAN = ("improve/01-scan.md", Scope.IMPROVE_SCAN)
     IMPROVE_PRD = ("improve/02-prd.md", Scope.IMPROVE_SESSION)
     IMPROVE_ISSUES = ("improve/03-issues.md", Scope.IMPROVE_ISSUES)
     IMPROVE_NO_CANDIDATE = ("improve/04-no-candidate-report.md", Scope.IMPROVE_SESSION)
-    RESUME = ("_resume-prompt.md", Scope.RESUME)
-    DIVERGENCE_RESOLVE = ("diverge-prompt.md", Scope.DIVERGE)
-    FAILURE_REPORT = ("failure-report.md", Scope.FAILURE_REPORT)
+    RESUME = ("shared/resume.md", Scope.RESUME)
+    DIVERGENCE_RESOLVE = ("coordination/diverge.md", Scope.DIVERGE)
+    FAILURE_REPORT = ("diagnostics/failure-report.md", Scope.FAILURE_REPORT)
 
     @property
     def filename(self) -> str:
@@ -207,20 +207,20 @@ def _format_feedback_commands(checks: Sequence[str]) -> str:
 class PromptRenderer:
     _OPTIONAL_SHARED_FILES: dict[str, PromptReference] = {
         "DESIGN_STANDARDS": PromptReference(
-            "DESIGN_STANDARDS", "coding-standards/design.md"
+            "DESIGN_STANDARDS", "shared/standards/_design.md"
         ),
         "IMPLEMENTATION_STANDARDS": PromptReference(
-            "IMPLEMENTATION_STANDARDS", "coding-standards/implementation.md"
+            "IMPLEMENTATION_STANDARDS", "shared/standards/_implementation.md"
         ),
         "IMPLEMENT_OUTPUT_RULES": PromptReference(
-            "IMPLEMENT_OUTPUT_RULES", "coding-standards/implement-output-rules.md"
+            "IMPLEMENT_OUTPUT_RULES", "shared/standards/_output-rules.md"
         ),
     }
     _SHARED_FILES: dict[str, PromptReference] = {
         **_OPTIONAL_SHARED_FILES,
-        "ISSUE_TRACKER": PromptReference("ISSUE_TRACKER", "_issue-tracker.md"),
-        "IMPLEMENT_REVIEW_SHARED_FRAMING": PromptReference(
-            "IMPLEMENT_REVIEW_SHARED_FRAMING", "_implement-review-shared-framing.md"
+        "ISSUE_TRACKER": PromptReference("ISSUE_TRACKER", "shared/_issue-tracker.md"),
+        "WORK_SHARED_INSTRUCTIONS": PromptReference(
+            "WORK_SHARED_INSTRUCTIONS", "work/_shared-instructions.md"
         ),
     }
 
@@ -229,8 +229,16 @@ class PromptRenderer:
             Path("pycastle/prompts") if isinstance(cfg, Config) else cfg.prompts_dir
         )
         self._prompt_source = PromptSource.for_prompts_dir(prompts_dir)
+        self._validate_local_override_paths()
         self._global_args = self._build_global_args(cfg)
         self._validate_templates()
+
+    def _validate_local_override_paths(self) -> None:
+        unknown = self._prompt_source.unknown_local_relative_paths()
+        if unknown:
+            raise PromptRenderError(
+                f"Unknown local prompt override(s): {', '.join(unknown)}"
+            )
 
     @staticmethod
     def _referenced_tokens(content: str) -> set[str]:

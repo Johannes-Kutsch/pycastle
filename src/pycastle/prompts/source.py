@@ -39,6 +39,19 @@ class PromptSource:
             else None
         )
 
+    def unknown_local_relative_paths(self) -> tuple[str, ...]:
+        if self._bundled_relative_paths is None or not self._local_dir.exists():
+            return ()
+        return tuple(
+            sorted(
+                str(path.relative_to(self._local_dir))
+                for path in self._local_dir.rglob("*")
+                if (path.is_file() or path.is_symlink())
+                and str(path.relative_to(self._local_dir))
+                not in self._bundled_relative_paths
+            )
+        )
+
     def _resolve_local_override(self, relative_path: str) -> Path | None:
         local_path = self._local_dir / relative_path
         if self._bundled_relative_paths is None:

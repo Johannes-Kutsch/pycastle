@@ -45,10 +45,12 @@ def _make_cfg(tmp_path: Path, **kwargs) -> Config:
     """Create a Config with minimal project-local prompt overrides for AgentRunner tests."""
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True, exist_ok=True)
-    (prompts_dir / "plan-prompt.md").write_text(
+    (prompts_dir / "coordination").mkdir(exist_ok=True)
+    (prompts_dir / "shared").mkdir(exist_ok=True)
+    (prompts_dir / "coordination/plan.md").write_text(
         "{{ALL_OPEN_ISSUES_JSON}} {{READY_FOR_AGENT_ISSUES_JSON}}", encoding="utf-8"
     )
-    (prompts_dir / "_resume-prompt.md").write_text("resume", encoding="utf-8")
+    (prompts_dir / "shared/resume.md").write_text("resume", encoding="utf-8")
     return Config(logs_dir=tmp_path, **kwargs)
 
 
@@ -2444,10 +2446,12 @@ async def _noop_exec(cmd: str) -> str:
 def _make_build_prompt_cfg(tmp_path: Path) -> Config:
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True, exist_ok=True)
-    (prompts_dir / "plan-prompt.md").write_text(
+    (prompts_dir / "coordination").mkdir(exist_ok=True)
+    (prompts_dir / "shared").mkdir(exist_ok=True)
+    (prompts_dir / "coordination/plan.md").write_text(
         "{{ALL_OPEN_ISSUES_JSON}} {{READY_FOR_AGENT_ISSUES_JSON}}", encoding="utf-8"
     )
-    (prompts_dir / "_resume-prompt.md").write_text("resume-content", encoding="utf-8")
+    (prompts_dir / "shared/resume.md").write_text("resume-content", encoding="utf-8")
     return Config(logs_dir=tmp_path)
 
 
@@ -2509,7 +2513,8 @@ def test_build_prompt_expands_shell_expressions_via_container_exec(tmp_path):
     """_build_prompt passes container_exec to the renderer for shell expression expansion."""
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True, exist_ok=True)
-    (prompts_dir / "_resume-prompt.md").write_text(
+    (prompts_dir / "shared").mkdir(exist_ok=True)
+    (prompts_dir / "shared/resume.md").write_text(
         "Result: !`echo hi`", encoding="utf-8"
     )
     cfg = Config(logs_dir=tmp_path)

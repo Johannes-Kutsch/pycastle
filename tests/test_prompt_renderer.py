@@ -57,8 +57,10 @@ def _project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def prompts_dir(tmp_path: Path) -> Path:
     prompts_dir = tmp_path / "pycastle" / "prompts"
     (prompts_dir / "improve").mkdir(parents=True)
-    (prompts_dir / "coding-standards").mkdir()
-    (prompts_dir / "implement").mkdir()
+    (prompts_dir / "shared/standards").mkdir(parents=True)
+    (prompts_dir / "work").mkdir()
+    (prompts_dir / "coordination").mkdir()
+    (prompts_dir / "diagnostics").mkdir()
     return prompts_dir
 
 
@@ -71,7 +73,7 @@ def cfg(prompts_dir: Path) -> Config:
 
 
 def test_renderer_renders_global_placeholder(cfg, prompts_dir):
-    (prompts_dir / "implement" / "behavior.md").write_text(
+    (prompts_dir / "work" / "behavior.md").write_text(
         "Label: {{READY_FOR_AGENT_LABEL}}"
     )
     renderer = PromptRenderer(cfg)
@@ -98,10 +100,8 @@ def test_renderer_uses_fixed_project_local_prompt_overrides_when_config_is_stale
     tmp_path: Path,
 ):
     prompts_dir = tmp_path / "pycastle" / "prompts"
-    (prompts_dir / "implement").mkdir(parents=True)
-    (prompts_dir / "implement" / "behavior.md").write_text(
-        "Fixed local prompt override"
-    )
+    (prompts_dir / "work").mkdir(parents=True)
+    (prompts_dir / "work" / "behavior.md").write_text("Fixed local prompt override")
     renderer = PromptRenderer(Config())
 
     result = _run(
@@ -217,32 +217,32 @@ def test_scopes_are_distinct_members():
 
 
 def test_template_implement_behavior_has_correct_filename_and_scope():
-    assert PromptTemplate.IMPLEMENT_BEHAVIOR.filename == "implement/behavior.md"
+    assert PromptTemplate.IMPLEMENT_BEHAVIOR.filename == "work/behavior.md"
     assert PromptTemplate.IMPLEMENT_BEHAVIOR.scope == Scope.PER_ISSUE
 
 
 def test_template_review_has_per_issue_scope():
-    assert PromptTemplate.REVIEW.filename == "review-prompt.md"
+    assert PromptTemplate.REVIEW.filename == "work/review.md"
     assert PromptTemplate.REVIEW.scope == Scope.PER_ISSUE
 
 
 def test_template_merge_has_correct_scope():
-    assert PromptTemplate.MERGE.filename == "merge-prompt.md"
+    assert PromptTemplate.MERGE.filename == "coordination/merge.md"
     assert PromptTemplate.MERGE.scope == Scope.MERGE
 
 
 def test_template_plan_has_correct_scope():
-    assert PromptTemplate.PLAN.filename == "plan-prompt.md"
+    assert PromptTemplate.PLAN.filename == "coordination/plan.md"
     assert PromptTemplate.PLAN.scope == Scope.PLAN
 
 
 def test_template_preflight_issue_has_correct_scope():
-    assert PromptTemplate.PREFLIGHT_ISSUE.filename == "preflight-issue.md"
+    assert PromptTemplate.PREFLIGHT_ISSUE.filename == "diagnostics/preflight-issue.md"
     assert PromptTemplate.PREFLIGHT_ISSUE.scope == Scope.PREFLIGHT
 
 
 def test_template_host_check_issue_has_correct_scope():
-    assert PromptTemplate.HOST_CHECK_ISSUE.filename == "host-check-issue.md"
+    assert PromptTemplate.HOST_CHECK_ISSUE.filename == "diagnostics/host-check-issue.md"
     assert PromptTemplate.HOST_CHECK_ISSUE.scope == Scope.HOST_CHECK
 
 
@@ -257,7 +257,7 @@ def test_template_improve_issues_has_correct_scope():
 
 
 def test_template_resume_has_correct_scope():
-    assert PromptTemplate.RESUME.filename == "_resume-prompt.md"
+    assert PromptTemplate.RESUME.filename == "shared/resume.md"
     assert PromptTemplate.RESUME.scope == Scope.RESUME
 
 
@@ -273,7 +273,7 @@ def test_template_enum_has_fifteen_variants():
 
 
 def test_shipped_plan_prompt_requests_concise_blocked_entries():
-    text = (_SHIPPED_PROMPTS_DIR / "plan-prompt.md").read_text(encoding="utf-8")
+    text = (_SHIPPED_PROMPTS_DIR / "coordination/plan.md").read_text(encoding="utf-8")
 
     assert "Each entry should include only:" in text
     assert "`number`: the blocked issue's number" in text
@@ -294,7 +294,7 @@ def test_context_glossary_describes_concise_planner_blocked_entries():
 
 
 def test_renderer_ctor_rejects_unknown_token(cfg, prompts_dir):
-    (prompts_dir / "plan-prompt.md").write_text(
+    (prompts_dir / "coordination/plan.md").write_text(
         "Issues: {{ALL_OPEN_ISSUES_JSON}}\nUnknown: {{XYZZY}}"
     )
     with pytest.raises(PromptRenderError, match="XYZZY"):
@@ -323,8 +323,8 @@ def test_renderer_ctor_accepts_improve_issues_template(cfg, prompts_dir):
 
 
 def test_renderer_ctor_rejects_out_of_scope_token(cfg, prompts_dir):
-    # merge-prompt.md is MERGE scope; ISSUE_NUMBER is PER_ISSUE scope only
-    (prompts_dir / "merge-prompt.md").write_text(
+    # coordination/merge.md is MERGE scope; ISSUE_NUMBER is PER_ISSUE scope only
+    (prompts_dir / "coordination/merge.md").write_text(
         "Branches: {{BRANCHES}}\nWrong: {{ISSUE_NUMBER}}"
     )
     with pytest.raises(PromptRenderError, match="ISSUE_NUMBER"):
@@ -337,7 +337,8 @@ def test_renderer_ctor_rejects_broken_effective_local_role_prompt_override(
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
-    (prompts_dir / "_resume-prompt.md").write_text("Broken: {{ISSUE_NUMBER}}")
+    (prompts_dir / "shared").mkdir()
+    (prompts_dir / "shared/resume.md").write_text("Broken: {{ISSUE_NUMBER}}")
 
     with pytest.raises(PromptRenderError, match="ISSUE_NUMBER"):
         PromptRenderer(Config())
@@ -356,7 +357,7 @@ def test_renderer_ctor_succeeds_when_template_files_absent(cfg, prompts_dir):
 
 def test_renderer_ctor_accepts_global_token_in_merge_template(cfg, prompts_dir):
     # CHECKS is a global placeholder; it must be valid in MERGE scope
-    (prompts_dir / "merge-prompt.md").write_text(
+    (prompts_dir / "coordination/merge.md").write_text(
         "Branches: {{BRANCHES}}\nRun: {{CHECKS}}"
     )
     PromptRenderer(cfg)  # must not raise
@@ -366,7 +367,7 @@ def test_renderer_ctor_accepts_global_token_in_merge_template(cfg, prompts_dir):
 
 
 def test_render_rejects_missing_scope_arg(cfg, prompts_dir):
-    (prompts_dir / "plan-prompt.md").write_text(
+    (prompts_dir / "coordination/plan.md").write_text(
         "Issues: {{ALL_OPEN_ISSUES_JSON}} {{READY_FOR_AGENT_ISSUES_JSON}}"
     )
     renderer = PromptRenderer(cfg)
@@ -376,7 +377,7 @@ def test_render_rejects_missing_scope_arg(cfg, prompts_dir):
 
 
 def test_render_rejects_extra_scope_arg(cfg, prompts_dir):
-    (prompts_dir / "merge-prompt.md").write_text("Branches: {{BRANCHES}}")
+    (prompts_dir / "coordination/merge.md").write_text("Branches: {{BRANCHES}}")
     renderer = PromptRenderer(cfg)
 
     with pytest.raises(PromptRenderError, match="extra"):
@@ -390,7 +391,7 @@ def test_render_rejects_extra_scope_arg(cfg, prompts_dir):
 
 
 def test_render_rejects_typo_in_scope_arg(cfg, prompts_dir):
-    (prompts_dir / "plan-prompt.md").write_text(
+    (prompts_dir / "coordination/plan.md").write_text(
         "Issues: {{ALL_OPEN_ISSUES_JSON}} {{READY_FOR_AGENT_ISSUES_JSON}}"
     )
     renderer = PromptRenderer(cfg)
@@ -413,7 +414,7 @@ def test_render_rejects_typo_in_scope_arg(cfg, prompts_dir):
 
 def test_render_does_not_warn_for_unused_global_args(cfg, prompts_dir, capsys):
     # Template uses only scope args; global args are unused and must be silent.
-    (prompts_dir / "plan-prompt.md").write_text(
+    (prompts_dir / "coordination/plan.md").write_text(
         "All: {{ALL_OPEN_ISSUES_JSON}} Ready: {{READY_FOR_AGENT_ISSUES_JSON}}"
     )
     renderer = PromptRenderer(cfg)
@@ -433,7 +434,7 @@ def test_render_does_not_warn_for_unused_global_args(cfg, prompts_dir, capsys):
 
 
 def test_render_substitutes_scope_arg(cfg, prompts_dir):
-    (prompts_dir / "plan-prompt.md").write_text(
+    (prompts_dir / "coordination/plan.md").write_text(
         "All: {{ALL_OPEN_ISSUES_JSON}} Ready: {{READY_FOR_AGENT_ISSUES_JSON}}"
     )
     renderer = PromptRenderer(cfg)
@@ -450,7 +451,7 @@ def test_render_substitutes_scope_arg(cfg, prompts_dir):
 
 
 def test_render_resume_scope_accepts_empty_scope_args(cfg, prompts_dir):
-    (prompts_dir / "_resume-prompt.md").write_text("Resume.")
+    (prompts_dir / "shared/resume.md").write_text("Resume.")
     renderer = PromptRenderer(cfg)
 
     result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
@@ -462,8 +463,8 @@ def test_render_resume_scope_accepts_empty_scope_args(cfg, prompts_dir):
 
 
 def test_render_implementation_standards_available_in_improve_scan(cfg, prompts_dir):
-    standards_dir = prompts_dir / "coding-standards"
-    (standards_dir / "implementation.md").write_text("implementation guidelines")
+    standards_dir = prompts_dir / "shared/standards"
+    (standards_dir / "_implementation.md").write_text("implementation guidelines")
     (prompts_dir / "improve" / "01-scan.md").write_text("{{IMPLEMENTATION_STANDARDS}}")
     renderer = PromptRenderer(cfg)
 
@@ -473,8 +474,8 @@ def test_render_implementation_standards_available_in_improve_scan(cfg, prompts_
 
 
 def test_render_design_standards_available_in_improve_scan(cfg, prompts_dir):
-    standards_dir = prompts_dir / "coding-standards"
-    (standards_dir / "design.md").write_text("design guidelines")
+    standards_dir = prompts_dir / "shared/standards"
+    (standards_dir / "_design.md").write_text("design guidelines")
     (prompts_dir / "improve" / "01-scan.md").write_text("{{DESIGN_STANDARDS}}")
     renderer = PromptRenderer(cfg)
 
@@ -484,8 +485,8 @@ def test_render_design_standards_available_in_improve_scan(cfg, prompts_dir):
 
 
 def test_render_design_standards_available_in_improve_prd(cfg, prompts_dir):
-    standards_dir = prompts_dir / "coding-standards"
-    (standards_dir / "design.md").write_text("design guidelines")
+    standards_dir = prompts_dir / "shared/standards"
+    (standards_dir / "_design.md").write_text("design guidelines")
     (prompts_dir / "improve" / "02-prd.md").write_text("{{DESIGN_STANDARDS}}")
     renderer = PromptRenderer(cfg)
 
@@ -501,9 +502,9 @@ def test_render_design_standards_available_in_improve_prd(cfg, prompts_dir):
 def test_render_implement_output_rules_available_in_per_issue_template(
     cfg, prompts_dir
 ):
-    standards_dir = prompts_dir / "coding-standards"
-    (standards_dir / "implement-output-rules.md").write_text("output rules content")
-    (prompts_dir / "implement" / "behavior.md").write_text("{{IMPLEMENT_OUTPUT_RULES}}")
+    standards_dir = prompts_dir / "shared/standards"
+    (standards_dir / "_output-rules.md").write_text("output rules content")
+    (prompts_dir / "work" / "behavior.md").write_text("{{IMPLEMENT_OUTPUT_RULES}}")
     renderer = PromptRenderer(cfg)
 
     result = _run(
@@ -528,7 +529,7 @@ def test_render_implement_output_rules_available_in_per_issue_template(
 
 
 def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
-    (prompts_dir / "implement" / "behavior.md").write_text("Diff:\n{{ISSUE_BODY}}\n")
+    (prompts_dir / "work" / "behavior.md").write_text("Diff:\n{{ISSUE_BODY}}\n")
     renderer = PromptRenderer(cfg)
 
     calls: list[str] = []
@@ -573,9 +574,9 @@ def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
 
 
 def test_renderer_loads_both_standards_keys(prompts_dir):
-    standards_dir = prompts_dir / "coding-standards"
-    (standards_dir / "design.md").write_text("design content")
-    (standards_dir / "implementation.md").write_text("implementation content")
+    standards_dir = prompts_dir / "shared/standards"
+    (standards_dir / "_design.md").write_text("design content")
+    (standards_dir / "_implementation.md").write_text("implementation content")
     (prompts_dir / "improve" / "01-scan.md").write_text(
         "{{DESIGN_STANDARDS}}|{{IMPLEMENTATION_STANDARDS}}"
     )
@@ -590,10 +591,10 @@ def test_renderer_loads_both_standards_keys(prompts_dir):
 def test_renderer_returns_empty_string_for_missing_standards_file(prompts_dir):
     custom_prompts_dir = prompts_dir.parent / "custom-prompts"
     (custom_prompts_dir / "improve").mkdir(parents=True)
-    standards_dir = custom_prompts_dir / "coding-standards"
-    standards_dir.mkdir()
-    (standards_dir / "design.md").write_text("design content")
-    # implementation.md intentionally absent
+    standards_dir = custom_prompts_dir / "shared/standards"
+    standards_dir.mkdir(parents=True)
+    (standards_dir / "_design.md").write_text("design content")
+    # _implementation.md intentionally absent
     (custom_prompts_dir / "improve" / "01-scan.md").write_text(
         "{{DESIGN_STANDARDS}}|{{IMPLEMENTATION_STANDARDS}}"
     )
@@ -611,7 +612,7 @@ def test_renderer_returns_all_empty_standards_when_dir_absent(tmp_path):
     (prompts_dir / "improve" / "01-scan.md").write_text(
         "{{DESIGN_STANDARDS}}|{{IMPLEMENTATION_STANDARDS}}"
     )
-    # no coding-standards dir created
+    # no shared/standards dir created
     cfg = _cfg_for_prompts_dir(prompts_dir)
     renderer = PromptRenderer(cfg)
 
@@ -624,12 +625,10 @@ def test_renderer_ignores_broken_unreferenced_local_shared_file_in_custom_prompt
     prompts_dir,
 ):
     custom_prompts_dir = prompts_dir.parent / "custom-prompts"
-    (custom_prompts_dir / "implement").mkdir(parents=True)
-    (custom_prompts_dir / "coding-standards").mkdir()
-    (custom_prompts_dir / "implement" / "behavior.md").write_text(
-        "issue {{ISSUE_NUMBER}}"
-    )
-    (custom_prompts_dir / "coding-standards" / "design.md").write_text(
+    (custom_prompts_dir / "work").mkdir(parents=True)
+    (custom_prompts_dir / "shared/standards").mkdir(parents=True)
+    (custom_prompts_dir / "work" / "behavior.md").write_text("issue {{ISSUE_NUMBER}}")
+    (custom_prompts_dir / "shared/standards" / "_design.md").write_text(
         "{{UNKNOWN_KEY}}"
     )
     cfg = _cfg_for_prompts_dir(custom_prompts_dir)
@@ -655,7 +654,7 @@ def test_renderer_ignores_broken_unreferenced_local_shared_file_in_custom_prompt
 
 
 def test_renderer_renders_issue_tracker_fragment(prompts_dir):
-    (prompts_dir / "_issue-tracker.md").write_text("issue-tracker recipes")
+    (prompts_dir / "shared/_issue-tracker.md").write_text("issue-tracker recipes")
     (prompts_dir / "improve" / "01-scan.md").write_text("{{ISSUE_TRACKER}}")
     cfg = Config()
     renderer = PromptRenderer(cfg)
@@ -666,11 +665,11 @@ def test_renderer_renders_issue_tracker_fragment(prompts_dir):
 
 
 def test_renderer_renders_implement_review_shared_framing_fragment(prompts_dir):
-    (prompts_dir / "_implement-review-shared-framing.md").write_text(
+    (prompts_dir / "work/_shared-instructions.md").write_text(
         "branch {{BRANCH}} body {{ISSUE_BODY}}"
     )
-    (prompts_dir / "review-prompt.md").write_text(
-        "prefix {{IMPLEMENT_REVIEW_SHARED_FRAMING}} suffix"
+    (prompts_dir / "work/review.md").write_text(
+        "prefix {{WORK_SHARED_INSTRUCTIONS}} suffix"
     )
     cfg = Config()
     renderer = PromptRenderer(cfg)
@@ -699,7 +698,8 @@ def test_renderer_renders_local_issue_tracker_override_through_bundled_prompt(
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
-    (prompts_dir / "_issue-tracker.md").write_text(
+    (prompts_dir / "shared").mkdir()
+    (prompts_dir / "shared/_issue-tracker.md").write_text(
         "local tracker for {{READY_FOR_AGENT_LABEL}}"
     )
     renderer = PromptRenderer(Config())
@@ -720,7 +720,8 @@ def test_renderer_allows_empty_local_issue_tracker_override(tmp_path, monkeypatc
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
-    (prompts_dir / "_issue-tracker.md").write_text("")
+    (prompts_dir / "shared").mkdir()
+    (prompts_dir / "shared/_issue-tracker.md").write_text("")
     renderer = PromptRenderer(Config())
 
     result = _run(
@@ -731,7 +732,7 @@ def test_renderer_allows_empty_local_issue_tracker_override(tmp_path, monkeypatc
         )
     )
 
-    bundled_tracker = (_SHIPPED_PROMPTS_DIR / "_issue-tracker.md").read_text(
+    bundled_tracker = (_SHIPPED_PROMPTS_DIR / "shared/_issue-tracker.md").read_text(
         encoding="utf-8"
     )
 
@@ -744,7 +745,8 @@ def test_renderer_renders_local_shared_framing_override_through_bundled_prompt(
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
-    (prompts_dir / "_implement-review-shared-framing.md").write_text(
+    (prompts_dir / "work").mkdir()
+    (prompts_dir / "work/_shared-instructions.md").write_text(
         "shared branch {{BRANCH}}"
     )
     renderer = PromptRenderer(Config())
@@ -772,7 +774,8 @@ def test_renderer_aborts_on_broken_local_shared_framing_override(tmp_path, monke
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
-    (prompts_dir / "_implement-review-shared-framing.md").write_text("{{UNKNOWN_KEY}}")
+    (prompts_dir / "work").mkdir()
+    (prompts_dir / "work/_shared-instructions.md").write_text("{{UNKNOWN_KEY}}")
 
     with pytest.raises(PromptRenderError, match="UNKNOWN_KEY"):
         PromptRenderer(Config())
@@ -782,7 +785,8 @@ def test_renderer_allows_empty_local_shared_framing_override(tmp_path, monkeypat
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
-    (prompts_dir / "_implement-review-shared-framing.md").write_text("")
+    (prompts_dir / "work").mkdir()
+    (prompts_dir / "work/_shared-instructions.md").write_text("")
     renderer = PromptRenderer(Config())
 
     result = _run(
@@ -800,22 +804,20 @@ def test_renderer_allows_empty_local_shared_framing_override(tmp_path, monkeypat
         )
     )
 
-    bundled_framing = (
-        _SHIPPED_PROMPTS_DIR / "_implement-review-shared-framing.md"
-    ).read_text(encoding="utf-8")
+    bundled_framing = (_SHIPPED_PROMPTS_DIR / "work/_shared-instructions.md").read_text(
+        encoding="utf-8"
+    )
 
     assert bundled_framing not in result
 
 
 def test_renderer_aborts_when_shared_framing_referenced_but_absent(prompts_dir):
     custom_prompts_dir = prompts_dir.parent / "custom-prompts"
-    custom_prompts_dir.mkdir(parents=True)
-    (custom_prompts_dir / "review-prompt.md").write_text(
-        "{{IMPLEMENT_REVIEW_SHARED_FRAMING}}"
-    )
+    (custom_prompts_dir / "work").mkdir(parents=True)
+    (custom_prompts_dir / "work/review.md").write_text("{{WORK_SHARED_INSTRUCTIONS}}")
     cfg = _cfg_for_prompts_dir(custom_prompts_dir)
 
-    with pytest.raises(PromptRenderError, match="_implement-review-shared-framing"):
+    with pytest.raises(PromptRenderError, match="work/_shared-instructions"):
         PromptRenderer(cfg)
 
 
@@ -833,7 +835,8 @@ def test_renderer_aborts_on_broken_local_issue_tracker_override(tmp_path, monkey
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
-    (prompts_dir / "_issue-tracker.md").write_text(
+    (prompts_dir / "shared").mkdir()
+    (prompts_dir / "shared/_issue-tracker.md").write_text(
         "{{#if UNKNOWN_KEY=value}}\nbroken\n{{/if}}"
     )
 
@@ -843,7 +846,7 @@ def test_renderer_aborts_on_broken_local_issue_tracker_override(tmp_path, monkey
 
 def test_renderer_aborts_on_broken_local_coding_standards_override(prompts_dir):
     (prompts_dir / "improve" / "01-scan.md").write_text("{{DESIGN_STANDARDS}}")
-    (prompts_dir / "coding-standards" / "design.md").write_text("{{UNKNOWN_KEY}}")
+    (prompts_dir / "shared/standards" / "_design.md").write_text("{{UNKNOWN_KEY}}")
 
     with pytest.raises(PromptRenderError, match="UNKNOWN_KEY"):
         PromptRenderer(Config())
@@ -853,21 +856,19 @@ def test_renderer_validates_shared_fragment_against_each_referencing_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.chdir(tmp_path)
-    prompts_dir = tmp_path / "pycastle" / "prompts" / "coding-standards"
+    prompts_dir = tmp_path / "pycastle" / "prompts" / "shared/standards"
     prompts_dir.mkdir(parents=True)
-    (prompts_dir / "implementation.md").write_text("branch {{BRANCH}}")
+    (prompts_dir / "_implementation.md").write_text("branch {{BRANCH}}")
 
     with pytest.raises(PromptRenderError, match="BRANCH"):
         PromptRenderer(Config())
 
 
 def test_renderer_aborts_on_fragment_cycle(prompts_dir):
-    (prompts_dir / "_issue-tracker.md").write_text(
-        "{{IMPLEMENT_REVIEW_SHARED_FRAMING}}"
+    (prompts_dir / "shared/_issue-tracker.md").write_text(
+        "{{WORK_SHARED_INSTRUCTIONS}}"
     )
-    (prompts_dir / "_implement-review-shared-framing.md").write_text(
-        "{{ISSUE_TRACKER}}"
-    )
+    (prompts_dir / "work/_shared-instructions.md").write_text("{{ISSUE_TRACKER}}")
     (prompts_dir / "improve" / "01-scan.md").write_text("{{ISSUE_TRACKER}}")
 
     with pytest.raises(PromptRenderError, match="cycle"):
@@ -926,15 +927,8 @@ def test_renderer_ctor_ignores_broken_unknown_local_prompt_file(
     prompts_dir.mkdir(parents=True)
     (prompts_dir / "unknown.md").write_text("stale {{UNKNOWN_TOKEN}}")
 
-    renderer = PromptRenderer(Config())
-    shipped_renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
-
-    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
-    shipped_result = _run(
-        shipped_renderer.render(PromptTemplate.RESUME, {}, _noop_exec)
-    )
-
-    assert result == shipped_result
+    with pytest.raises(PromptRenderError, match="unknown.md"):
+        PromptRenderer(Config())
 
 
 def test_prompt_source_ignores_stale_local_file_for_removed_bundled_default(
@@ -942,14 +936,14 @@ def test_prompt_source_ignores_stale_local_file_for_removed_bundled_default(
 ):
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
-    (prompts_dir / "coding-standards").mkdir(parents=True)
-    (prompts_dir / "coding-standards" / "testing.md").write_text(
+    (prompts_dir / "shared/standards").mkdir(parents=True)
+    (prompts_dir / "shared/standards" / "testing.md").write_text(
         "stale local testing standards"
     )
 
     source = PromptSource.for_prompts_dir(prompts_dir)
 
-    assert source.maybe_read_text("coding-standards/testing.md") is None
+    assert source.maybe_read_text("shared/standards/testing.md") is None
 
 
 def test_prompt_source_only_shadows_for_known_bundled_relative_paths(
@@ -958,28 +952,21 @@ def test_prompt_source_only_shadows_for_known_bundled_relative_paths(
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
-    (prompts_dir / "_resume-prompt.md").write_text("local resume prompt")
+    (prompts_dir / "shared").mkdir()
+    (prompts_dir / "shared/resume.md").write_text("local resume prompt")
 
     source = PromptSource.for_prompts_dir(prompts_dir)
 
-    assert source.read_text("_resume-prompt.md") == "local resume prompt"
+    assert source.read_text("shared/resume.md") == "local resume prompt"
 
 
-def test_renderer_startup_ignores_unknown_local_prompt_notes(tmp_path: Path):
+def test_renderer_startup_rejects_unknown_local_prompt_notes(tmp_path: Path):
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
     (prompts_dir / "notes.md").write_text("scratchpad {{UNKNOWN_KEY}}")
 
-    renderer = PromptRenderer(_cfg_for_prompts_dir(prompts_dir))
-
-    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
-    shipped_result = _run(
-        PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR)).render(
-            PromptTemplate.RESUME, {}, _noop_exec
-        )
-    )
-
-    assert result == shipped_result
+    with pytest.raises(PromptRenderError, match="notes.md"):
+        PromptRenderer(_cfg_for_prompts_dir(prompts_dir))
 
 
 def test_renderer_startup_ignores_unknown_local_prompt_notes_in_default_local_dir(
@@ -990,44 +977,31 @@ def test_renderer_startup_ignores_unknown_local_prompt_notes_in_default_local_di
     prompts_dir.mkdir(parents=True)
     (prompts_dir / "notes.md").write_text("scratchpad {{UNKNOWN_KEY}}")
 
-    renderer = PromptRenderer(Config())
-    shipped_renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
-
-    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
-    shipped_result = _run(
-        shipped_renderer.render(PromptTemplate.RESUME, {}, _noop_exec)
-    )
-
-    assert result == shipped_result
+    with pytest.raises(PromptRenderError, match="notes.md"):
+        PromptRenderer(Config())
 
 
 def test_renderer_ignores_stale_local_prompt_file_for_removed_bundled_default(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
-    (prompts_dir / "coding-standards").mkdir()
-    (prompts_dir / "coding-standards" / "testing.md").write_text(
+    (prompts_dir / "shared/standards").mkdir(parents=True)
+    (prompts_dir / "shared/standards" / "testing.md").write_text(
         "stale testing notes {{UNKNOWN_KEY}}"
     )
 
-    renderer = PromptRenderer(_cfg_for_prompts_dir(prompts_dir))
-
-    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
-    shipped_result = _run(
-        PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR)).render(
-            PromptTemplate.RESUME, {}, _noop_exec
-        )
-    )
-
-    assert result == shipped_result
+    with pytest.raises(PromptRenderError, match="shared/standards/testing.md"):
+        PromptRenderer(Config())
 
 
 def test_renderer_prefers_local_override_over_bundled_prompt(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
-    (prompts_dir / "_resume-prompt.md").write_text("local resume prompt")
+    (prompts_dir / "shared").mkdir()
+    (prompts_dir / "shared/resume.md").write_text("local resume prompt")
     renderer = PromptRenderer(Config())
 
     result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
@@ -1041,7 +1015,8 @@ def test_renderer_falls_back_to_bundled_prompt_when_local_override_path_is_direc
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
-    (prompts_dir / "_resume-prompt.md").mkdir()
+    (prompts_dir / "shared").mkdir()
+    (prompts_dir / "shared/resume.md").mkdir()
     renderer = PromptRenderer(Config())
     shipped_renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
 
@@ -1059,9 +1034,10 @@ def test_renderer_falls_back_to_bundled_prompt_when_local_override_path_is_symli
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
+    (prompts_dir / "shared").mkdir()
     target = tmp_path / "override.md"
     target.write_text("symlinked local resume prompt")
-    (prompts_dir / "_resume-prompt.md").symlink_to(target)
+    (prompts_dir / "shared/resume.md").symlink_to(target)
     renderer = PromptRenderer(Config())
     shipped_renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
 
@@ -1076,7 +1052,8 @@ def test_renderer_falls_back_to_bundled_prompt_when_local_override_path_is_symli
 def test_renderer_prefers_absolute_local_role_prompt_override(tmp_path):
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
-    (prompts_dir / "_resume-prompt.md").write_text("absolute local resume prompt")
+    (prompts_dir / "shared").mkdir()
+    (prompts_dir / "shared/resume.md").write_text("absolute local resume prompt")
     renderer = PromptRenderer(_cfg_for_prompts_dir(prompts_dir))
 
     result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
@@ -1086,8 +1063,8 @@ def test_renderer_prefers_absolute_local_role_prompt_override(tmp_path):
 
 def test_renderer_falls_back_per_file_for_partial_absolute_local_role_tree(tmp_path):
     prompts_dir = tmp_path / "pycastle" / "prompts"
-    (prompts_dir / "implement").mkdir(parents=True)
-    (prompts_dir / "implement" / "behavior.md").write_text(
+    (prompts_dir / "work").mkdir(parents=True)
+    (prompts_dir / "work" / "behavior.md").write_text(
         "local behavior prompt {{ISSUE_NUMBER}}"
     )
     renderer = PromptRenderer(_cfg_for_prompts_dir(prompts_dir))
@@ -1119,14 +1096,14 @@ def test_renderer_falls_back_per_file_for_partial_absolute_local_role_tree(tmp_p
 
 def test_renderer_mixes_local_and_bundled_shared_prompt_files(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    standards_dir = tmp_path / "pycastle" / "prompts" / "coding-standards"
+    standards_dir = tmp_path / "pycastle" / "prompts" / "shared/standards"
     standards_dir.mkdir(parents=True)
-    (standards_dir / "design.md").write_text("local design guidance")
+    (standards_dir / "_design.md").write_text("local design guidance")
     renderer = PromptRenderer(Config())
 
     result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
     bundled_implementation = (
-        _SHIPPED_PROMPTS_DIR / "coding-standards" / "implementation.md"
+        _SHIPPED_PROMPTS_DIR / "shared/standards" / "_implementation.md"
     ).read_text(encoding="utf-8")
 
     assert "local design guidance" in result
@@ -1212,7 +1189,7 @@ def test_no_legacy_standards_placeholder_in_defaults_prompts():
 
 
 def test_template_shell_expr_runs_arg_shell_token_stays_inert(cfg, prompts_dir):
-    (prompts_dir / "implement" / "behavior.md").write_text(
+    (prompts_dir / "work" / "behavior.md").write_text(
         "Header: !`echo hi`\nBody: {{ISSUE_BODY}}\n"
     )
     renderer = PromptRenderer(cfg)
@@ -1253,7 +1230,9 @@ def _parse_placeholder_info() -> tuple[set[str], dict[str, tuple[set[str], set[s
 
     Returns (global_tokens, {scope_name: (tokens, used_by_filenames)}).
     """
-    text = (_SHIPPED_PROMPTS_DIR / "_placeholder-info.md").read_text(encoding="utf-8")
+    text = (_SHIPPED_PROMPTS_DIR / "shared/_placeholder-info.md").read_text(
+        encoding="utf-8"
+    )
     global_tokens: set[str] = set()
     scopes: dict[str, tuple[set[str], set[str]]] = {}
 
@@ -1279,7 +1258,7 @@ def _parse_placeholder_info() -> tuple[set[str], dict[str, tuple[set[str], set[s
 
 def test_placeholder_info_global_tokens_match_code(cfg, prompts_dir):
     # ISSUE_TRACKER is conditional on its fragment file being present.
-    (prompts_dir / "_issue-tracker.md").write_text("issue-tracker recipes")
+    (prompts_dir / "shared/_issue-tracker.md").write_text("issue-tracker recipes")
     renderer = PromptRenderer(cfg)
     expected = set(renderer._global_args.keys()) | set(renderer._SHARED_FILES)
 
@@ -1327,7 +1306,7 @@ def test_scope_failure_report_placeholders():
     )
 
 
-# ── failure-report.md conditional rendering ───────────────────────────────────
+# ── diagnostics/failure-report.md conditional rendering ───────────────────────────────────
 
 _FAILURE_REPORT_SCOPE_ARGS_BASE = {
     "FAILED_ROLE": "implementer",
@@ -1369,7 +1348,7 @@ def test_failure_report_omits_recovery_section_for_protocol_error():
 
 
 def test_conditional_block_renders_when_condition_matches(cfg, prompts_dir):
-    (prompts_dir / "failure-report.md").write_text(
+    (prompts_dir / "diagnostics/failure-report.md").write_text(
         "Before\n{{#if FAILURE_CLASS=non_typed_crash}}\nSection\n{{/if}}\nAfter"
     )
     renderer = PromptRenderer(cfg)
@@ -1392,7 +1371,7 @@ def test_conditional_block_renders_when_condition_matches(cfg, prompts_dir):
 
 
 def test_conditional_block_omitted_when_condition_does_not_match(cfg, prompts_dir):
-    (prompts_dir / "failure-report.md").write_text(
+    (prompts_dir / "diagnostics/failure-report.md").write_text(
         "Before\n{{#if FAILURE_CLASS=non_typed_crash}}\nSection\n{{/if}}\nAfter"
     )
     renderer = PromptRenderer(cfg)
@@ -1415,7 +1394,7 @@ def test_conditional_block_omitted_when_condition_does_not_match(cfg, prompts_di
 
 
 def test_renderer_ctor_rejects_out_of_scope_conditional_key(cfg, prompts_dir):
-    (prompts_dir / "failure-report.md").write_text(
+    (prompts_dir / "diagnostics/failure-report.md").write_text(
         "{{#if UNKNOWN_KEY=value}}\nContent\n{{/if}}"
     )
     with pytest.raises(PromptRenderError, match="UNKNOWN_KEY"):
@@ -1432,7 +1411,7 @@ def test_scope_per_issue_includes_interrupted_work():
 def test_render_includes_interrupted_work_clause_for_fresh_dirty_worktree(
     cfg, prompts_dir
 ):
-    (prompts_dir / "implement" / "behavior.md").write_text(
+    (prompts_dir / "work" / "behavior.md").write_text(
         "Context:{{INTERRUPTED_WORK}}Done"
     )
     renderer = PromptRenderer(cfg)
@@ -1476,7 +1455,7 @@ def test_interrupted_work_clause_matrix(run_kind, is_dirty, expected):
 
 
 def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
-    (prompts_dir / "implement" / "behavior.md").write_text(
+    (prompts_dir / "work" / "behavior.md").write_text(
         "Context:{{INTERRUPTED_WORK}}Done"
     )
     renderer = PromptRenderer(cfg)
@@ -1493,10 +1472,10 @@ def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
     assert result == "Context:Done"
 
 
-# ── diverge-prompt.md contract ────────────────────────────────────────────────
+# ── coordination/diverge.md contract ────────────────────────────────────────────────
 
-_MERGE_PROMPT = (_SHIPPED_PROMPTS_DIR / "merge-prompt.md").read_text()
-_DIVERGE_PROMPT = (_SHIPPED_PROMPTS_DIR / "diverge-prompt.md").read_text()
+_MERGE_PROMPT = (_SHIPPED_PROMPTS_DIR / "coordination/merge.md").read_text()
+_DIVERGE_PROMPT = (_SHIPPED_PROMPTS_DIR / "coordination/diverge.md").read_text()
 
 
 def test_merge_prompt_uses_commit_message_contract():
