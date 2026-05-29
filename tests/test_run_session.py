@@ -113,6 +113,41 @@ def test_run_session_plan_preserves_codex_provider_state_dir_layout_when_service
     )
 
 
+def test_run_session_plan_recovers_namespaced_codex_rollout_from_custom_state_dir_while_preserving_provider_layout(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService("custom/codex-state", name="codex", resumable=True),
+    )
+    state_dir = tmp_path / "custom" / "codex-state"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-custom-state"}\n',
+        encoding="utf-8",
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.service_state_dir == state_dir
+    assert plan.provider_state_dir_relpath == ".pycastle-session/improve/main/codex/"
+    assert plan.host_provider_state_dir == (
+        tmp_path / ".pycastle-session" / "improve" / "main" / "codex"
+    )
+    assert plan.provider_session_id == "thread-from-custom-state"
+    assert (
+        RoleSession(tmp_path, AgentRole.IMPROVE, "main").service_session_id("codex")
+        == "thread-from-custom-state"
+    )
+
+
 def test_run_session_plan_keeps_none_service_state_dir_when_service_has_no_state_dir(
     tmp_path: Path,
 ):
