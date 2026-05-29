@@ -428,6 +428,24 @@ def test_refresh_config_example_documents_logs_dir_as_global_parent_and_local_di
         assert f"{removed_key} =" not in content
 
 
+def test_init_config_example_marks_docker_image_name_as_rejected_in_global_config(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=["claude", "", ""]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    content = (tmp_path / "pycastle" / "config.py.example").read_text()
+
+    assert "Rejected in global config.py." in content
+
+
 def test_bundled_config_example_is_behavioral_only_with_logging_guidance():
     """The bundled example source must match the behavioral-only config example contract."""
     content = (Path("src/pycastle/defaults/config.py")).read_text()

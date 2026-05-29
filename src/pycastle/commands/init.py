@@ -68,6 +68,7 @@ diagnose_on_failure = True
 
 # --- Docker ---
 # Local-only build artifact name used by `pycastle build`.
+# Rejected in global config.py.
 # Defaults to a sanitised CWD name when left empty.
 docker_image_name = ""
 
