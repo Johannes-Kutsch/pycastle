@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import dataclasses
-import json
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
-from .resume import ProviderIdentityKind, RoleSession, RunKind
+from .resume import (
+    ProviderIdentityKind,
+    RoleSession,
+    RunKind,
+    _codex_thread_id_from_rollouts,
+)
 
 if TYPE_CHECKING:
     from ..services.agent_service import AgentService
@@ -21,31 +25,6 @@ class AuthSeedingRequirement(Enum):
 class RecoveredSessionIdPersistence(Enum):
     PERSIST = "persist"
     SKIP = "skip"
-
-
-def _codex_thread_id_from_rollouts(state_dir: Path) -> str | None:
-    sessions_dir = state_dir / "sessions"
-    if not sessions_dir.is_dir():
-        return None
-    found: set[str] = set()
-    for rollout in sessions_dir.rglob("rollout-*.jsonl"):
-        try:
-            lines = rollout.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            continue
-        for line in lines:
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(obj, dict):
-                continue
-            if obj.get("type") != "thread.started":
-                continue
-            thread_id = obj.get("thread_id")
-            if isinstance(thread_id, str) and thread_id.strip():
-                found.add(thread_id.strip())
-    return next(iter(found)) if len(found) == 1 else None
 
 
 def _codex_auth_seeding_requirement(
@@ -107,23 +86,24 @@ class RunSessionPlan:
         if provider_session_id is None and service.name == "claude":
             provider_session_id = role_session.session_uuid()
         if provider_session_id is None and service.name == "codex":
+            saved_provider_session_id = role_session.service_session_id("codex")
             provider_identity = role_session.provider_identity(
                 "codex",
                 has_resumable_provider_state=has_resumable_provider_state,
             )
             if provider_identity.kind is ProviderIdentityKind.RESUME:
                 provider_session_id = provider_identity.provider_session_id
-            if provider_session_id is None and run_kind == RunKind.RESUME:
-                if service_state_dir is not None:
-                    provider_session_id = _codex_thread_id_from_rollouts(
-                        service_state_dir
-                    )
-                if provider_session_id is not None:
+            if provider_identity.kind is ProviderIdentityKind.UNRECOVERABLE:
+                run_kind = RunKind.FRESH
+            elif provider_identity.kind is ProviderIdentityKind.RESUME:
+                if saved_provider_session_id is None:
                     recovered_session_id_persistence = (
                         RecoveredSessionIdPersistence.PERSIST
                     )
-                if provider_session_id is None:
-                    run_kind = RunKind.FRESH
+                else:
+                    recovered_session_id_persistence = (
+                        RecoveredSessionIdPersistence.SKIP
+                    )
         if provider_session_id is None and service.name == "opencode":
             provider_identity = role_session.provider_identity(
                 "opencode",

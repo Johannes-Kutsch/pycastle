@@ -164,6 +164,59 @@ def test_provider_identity_resumes_from_saved_codex_thread_id(worktree):
     )
 
 
+def test_provider_identity_recovers_single_nested_codex_rollout_thread_id_and_persists_sidecar(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    rollout_dir = rs.path / "codex" / "sessions" / "2026" / "05" / "29"
+    rollout_dir.mkdir(parents=True, exist_ok=True)
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
+    )
+
+    assert rs.provider_identity("codex", has_resumable_provider_state=True) == (
+        ProviderIdentity(
+            kind=ProviderIdentityKind.RESUME,
+            run_kind=RunKind.RESUME,
+            provider_session_id="thread-from-rollout",
+        )
+    )
+    assert rs.service_session_id("codex") == "thread-from-rollout"
+
+
+def test_provider_identity_treats_duplicate_codex_rollout_thread_ids_as_one_recoverable_id(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    dir_a = rs.path / "codex" / "sessions" / "2026" / "05" / "28"
+    dir_b = rs.path / "codex" / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True, exist_ok=True)
+    dir_b.mkdir(parents=True, exist_ok=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"thread-same-id"}',
+                '{"type":"thread.started","thread_id":"thread-same-id"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
+        encoding="utf-8",
+    )
+
+    assert rs.provider_identity("codex", has_resumable_provider_state=True) == (
+        ProviderIdentity(
+            kind=ProviderIdentityKind.RESUME,
+            run_kind=RunKind.RESUME,
+            provider_session_id="thread-same-id",
+        )
+    )
+
+
 def test_provider_identity_is_fresh_when_service_has_no_resumable_provider_state(
     worktree,
 ):

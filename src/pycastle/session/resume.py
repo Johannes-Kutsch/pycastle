@@ -25,6 +25,33 @@ def _force_remove_readonly(func, path, _exc_info):
     func(path)
 
 
+def _codex_thread_id_from_rollouts(state_dir: Path) -> str | None:
+    sessions_dir = state_dir / "sessions"
+    if not sessions_dir.is_dir():
+        return None
+
+    found: set[str] = set()
+    for rollout in sessions_dir.rglob("rollout-*.jsonl"):
+        try:
+            lines = rollout.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            if obj.get("type") != "thread.started":
+                continue
+            thread_id = obj.get("thread_id")
+            if isinstance(thread_id, str) and thread_id.strip():
+                found.add(thread_id.strip())
+
+    return next(iter(found)) if len(found) == 1 else None
+
+
 class RunKind(Enum):
     FRESH = "fresh"
     RESUME = "resume"
@@ -102,6 +129,10 @@ class RoleSession:
             return ProviderIdentity(ProviderIdentityKind.FRESH, RunKind.FRESH, None)
 
         provider_session_id = self.service_session_id(service_name)
+        if provider_session_id is None and service_name == "codex":
+            provider_session_id = _codex_thread_id_from_rollouts(self.path / "codex")
+            if provider_session_id is not None:
+                self.save_service_session_id(service_name, provider_session_id)
         if provider_session_id is None:
             return ProviderIdentity(
                 ProviderIdentityKind.UNRECOVERABLE, RunKind.FRESH, None
