@@ -200,6 +200,7 @@ def main(
             ) as path:
                 failures: list[_HostCheckFailure] = []
                 for name, command in resolved_cfg.host_checks:
+                    resolved_status_display.update_phase("Host Check", name)
                     try:
                         _run_host_check(name, command, path)
                     except RuntimeError as exc:

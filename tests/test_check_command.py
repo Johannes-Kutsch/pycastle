@@ -175,6 +175,80 @@ def test_check_surfaces_host_check_phase_row_before_orchestration_steps(
     assert ("remove", "Host Check", "finished", "success") in events
 
 
+def test_check_names_current_host_check_through_host_check_status_surface(
+    tmp_path, monkeypatch
+):
+    import pycastle.commands.check as check_mod
+    from pycastle.config import Config
+
+    events: list[tuple[object, ...]] = []
+
+    class RecordingStatusDisplay:
+        def register(
+            self,
+            caller: str,
+            kind: str,
+            startup_message: str = "started",
+            work_body: str = "",
+            initial_phase: str = "Setup",
+            color_key: int | None = None,
+            model_display=None,
+        ) -> None:
+            events.append(
+                ("register", caller, kind, startup_message, work_body, initial_phase)
+            )
+
+        def update_phase(self, name: str, phase: str) -> None:
+            events.append(("phase", name, phase))
+
+        def reset_idle_timer(self, name: str) -> None:
+            return None
+
+        def update_tokens(self, name: str, current_tokens: int) -> None:
+            return None
+
+        def remove(
+            self,
+            caller: str,
+            shutdown_message: str = "finished",
+            shutdown_style: str = "success",
+        ) -> None:
+            events.append(("remove", caller, shutdown_message, shutdown_style))
+
+        def print(self, caller: str, message: object, style: str | None = None) -> None:
+            return None
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "abc123def456"
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    monkeypatch.setattr(
+        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+    )
+    monkeypatch.setattr(check_mod, "_run_host_check", lambda *a, **kw: None)
+
+    check_mod.main(
+        cfg=Config(
+            host_checks=(
+                ("lint", "python -c lint"),
+                ("tests", "python -c tests"),
+            )
+        ),
+        git_service=git_svc,
+        status_display=RecordingStatusDisplay(),
+    )
+
+    assert ("phase", "Host Check", "lint") in events
+    assert ("phase", "Host Check", "tests") in events
+
+
 def test_check_keeps_clean_tree_abort_behavior_with_host_check_phase_row(
     monkeypatch, capsys
 ):
