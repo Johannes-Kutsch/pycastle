@@ -943,7 +943,11 @@ def test_merge_phase_routes_deleted_branch_through_status_display(
     remove_messages = [
         c[2] for c in recording.calls if c[0] == "remove" and c[1] == "Merge"
     ]
-    assert any("Deleted merged branch" in msg for msg in remove_messages)
+    assert all("Deleted merged branch" not in msg for msg in remove_messages)
+    print_messages = [
+        c[2] for c in recording.calls if c[0] == "print" and c[1] == "Merge"
+    ]
+    assert any("Deleted merged branch" in str(msg) for msg in print_messages)
     assert "Deleted merged branch" not in capsys.readouterr().out
 
 
@@ -959,8 +963,11 @@ def test_merge_phase_close_summary_lists_conflict_deleted_branches(
     remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
     assert remove_calls, "Merge row must be removed"
     shutdown_msg = remove_calls[-1][2]
-    assert "Execution complete" in shutdown_msg
-    assert "pycastle/issue-1" in shutdown_msg
+    print_calls = [c for c in recording.calls if c[0] == "print" and c[1] == "Merge"]
+    summary_msg = str(print_calls[-1][2])
+    assert shutdown_msg == "finished"
+    assert "Execution complete" in summary_msg
+    assert "pycastle/issue-1" in summary_msg
 
 
 def test_merge_phase_close_summary_distinguishes_completed_and_pending_conflicts(
@@ -995,11 +1002,13 @@ def test_merge_phase_close_summary_distinguishes_completed_and_pending_conflicts
 
     remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
     assert remove_calls, "Merge row must be removed"
-    shutdown_msg = remove_calls[-1][2]
-    assert "Completed conflict branches:" in shutdown_msg
-    assert "Pending conflict branches:" in shutdown_msg
-    assert "pycastle/issue-1" in shutdown_msg
-    assert "pycastle/issue-2" in shutdown_msg
+    print_calls = [c for c in recording.calls if c[0] == "print" and c[1] == "Merge"]
+    summary_msg = str(print_calls[-1][2])
+    assert remove_calls[-1][2] == "finished"
+    assert "Completed conflict branches:" in summary_msg
+    assert "Pending conflict branches:" in summary_msg
+    assert "pycastle/issue-1" in summary_msg
+    assert "pycastle/issue-2" in summary_msg
 
 
 def test_close_message_combines_clean_and_conflict_deleted_branches(
@@ -1013,10 +1022,12 @@ def test_close_message_combines_clean_and_conflict_deleted_branches(
 
     remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
     assert remove_calls, "Merge row must be removed"
-    shutdown_msg = remove_calls[-1][2]
-    assert "pycastle/issue-1" in shutdown_msg
-    assert "pycastle/issue-2" in shutdown_msg
-    assert "2 branch(es) merged and deleted" in shutdown_msg
+    print_calls = [c for c in recording.calls if c[0] == "print" and c[1] == "Merge"]
+    summary_msg = str(print_calls[-1][2])
+    assert remove_calls[-1][2] == "finished"
+    assert "pycastle/issue-1" in summary_msg
+    assert "pycastle/issue-2" in summary_msg
+    assert "2 branch(es) merged and deleted" in summary_msg
 
 
 def test_merge_phase_routes_dirty_tree_message_through_status_display(
@@ -1145,10 +1156,29 @@ def test_merge_row_removed_after_clean_merges(recording_deps):
     _run(issues, deps)
     remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
     assert remove_calls, "Merge row must be removed"
-    shutdown_msg = remove_calls[-1][2]
-    assert "Execution complete" in shutdown_msg
-    assert "pycastle/issue-1" in shutdown_msg
+    assert remove_calls[-1][2] == "finished"
     assert remove_calls[-1][3] == "success"
+
+
+def test_merge_phase_emits_clean_close_summary_separately_from_row_close(
+    recording_deps,
+):
+    """Clean merge summary should be emitted separately from the row close verdict."""
+    deps, recording = recording_deps
+    issues = [{"number": 1, "title": "Fix A"}]
+
+    _run(issues, deps)
+
+    remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
+    assert remove_calls, "Merge row must be removed"
+    assert remove_calls[-1][2] == "finished"
+
+    print_calls = [c for c in recording.calls if c[0] == "print" and c[1] == "Merge"]
+    assert any(
+        "Execution complete, 1 branch(es) merged and deleted:" in str(call[2])
+        and "Deleted merged branch: pycastle/issue-1" in str(call[2])
+        for call in print_calls
+    )
 
 
 def test_merge_row_removed_when_completed_is_empty(recording_deps):
@@ -1166,9 +1196,11 @@ def test_close_message_shows_zero_branches_merged_when_no_issues(recording_deps)
     _run([], deps)
     remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
     assert remove_calls
-    shutdown_msg = remove_calls[-1][2]
-    assert "Execution complete" in shutdown_msg
-    assert "0 branch(es) merged and deleted" in shutdown_msg
+    print_calls = [c for c in recording.calls if c[0] == "print" and c[1] == "Merge"]
+    summary_msg = str(print_calls[-1][2])
+    assert remove_calls[-1][2] == "finished"
+    assert "Execution complete" in summary_msg
+    assert "0 branch(es) merged and deleted" in summary_msg
 
 
 def test_merge_phase_shows_no_misleading_nonzero_progress_when_completed_is_empty(
@@ -1792,8 +1824,8 @@ def test_deleted_branches_preserve_input_order(recording_deps, git_svc):
     ]
     _run(issues, deps)
 
-    remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
-    msg = remove_calls[-1][2]
+    print_calls = [c for c in recording.calls if c[0] == "print" and c[1] == "Merge"]
+    msg = str(print_calls[-1][2])
     assert msg.index("issue-3") < msg.index("issue-1") < msg.index("issue-2")
 
 
@@ -1816,8 +1848,8 @@ def test_deleted_branches_preserve_input_order_under_staggered_completion(
     issues = [{"number": 3, "title": "C"}, {"number": 2, "title": "B"}]
     _run(issues, deps)
 
-    remove_calls = [c for c in recording.calls if c[0] == "remove" and c[1] == "Merge"]
-    msg = remove_calls[-1][2]
+    print_calls = [c for c in recording.calls if c[0] == "print" and c[1] == "Merge"]
+    msg = str(print_calls[-1][2])
     assert msg.index("issue-3") < msg.index("issue-2"), (
         "issue-3 (first in input) must appear before issue-2 even though issue-2 completed first"
     )

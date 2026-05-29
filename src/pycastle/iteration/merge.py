@@ -236,6 +236,10 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 "warning",
             )
 
+        def _close_merge_row(summary: str) -> None:
+            row.close("finished")
+            deps.status_display.print("Merge", summary, "success")
+
         async def _close_issues(issues: list[dict]) -> None:
             nonlocal close_done
             batch_start = close_done
@@ -274,7 +278,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         )
 
         if not conflict_issues:
-            row.close(_build_close_message(clean_deleted))
+            _close_merge_row(_build_close_message(clean_deleted))
         else:
             verdict = await deps.preflight_cache.get_safe_sha(deps)
             if isinstance(verdict, (PreflightHITL, PreflightAFK)):
@@ -283,7 +287,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                     "Merge-time preflight failed; skipping conflict branch merge. "
                     "Conflict issues remain open for recovery in the next iteration.",
                 )
-                row.close(_build_close_message(clean_deleted))
+                _close_merge_row(_build_close_message(clean_deleted))
                 if deps.cfg.auto_push and clean_issues:
                     await deps.git_svc.push(
                         deps.repo_root,
@@ -374,7 +378,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 completed_conflicts.append(active_issue)
             if completed_conflicts:
                 deps.github_svc.close_completed_parent_issues()
-            row.close(
+            _close_merge_row(
                 _build_close_message(
                     clean_deleted + conflict_deleted,
                     completed_conflicts=completed_conflicts,
