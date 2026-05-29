@@ -7,6 +7,7 @@ import uuid
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session import (
     ExactTranscriptHandoff,
     ProviderIdentity,
@@ -417,6 +418,27 @@ def test_exact_transcript_handoff_is_eligible_with_matching_metadata_provider_id
         state_dir=state_dir,
         has_resumable_provider_state=True,
     ) == ExactTranscriptHandoff(
+        provider_identity=ProviderIdentity(
+            kind=ProviderIdentityKind.RESUME,
+            run_kind=RunKind.RESUME,
+            provider_session_id="sess-opencode-123",
+        ),
+        is_eligible=True,
+    )
+
+
+def test_exact_transcript_handoff_for_service_uses_role_session_provider_state(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    service = OpenCodeService()
+    state_dir = rs.path / "opencode"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text("sess-opencode-123", encoding="utf-8")
+    rs.save_service_session_id("opencode", "sess-opencode-123")
+    rs.save_service_session_metadata("opencode", "sess-opencode-123")
+
+    assert rs.exact_transcript_handoff_for_service(service) == ExactTranscriptHandoff(
         provider_identity=ProviderIdentity(
             kind=ProviderIdentityKind.RESUME,
             run_kind=RunKind.RESUME,
