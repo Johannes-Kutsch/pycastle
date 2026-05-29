@@ -310,6 +310,25 @@ def test_run_session_plan_reads_namespaced_opencode_session_id_for_resume(
     )
 
 
+def test_run_session_plan_fresh_opencode_when_sidecar_session_id_is_missing(
+    tmp_path: Path,
+):
+    service = OpenCodeService()
+    state_dir = tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text("", encoding="utf-8")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.provider_session_id is None
+
+
 def test_run_session_plan_requires_auth_seeding_for_fresh_codex_without_auth_json(
     tmp_path: Path,
 ):

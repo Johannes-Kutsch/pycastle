@@ -111,6 +111,10 @@ class RunSessionPlan:
                     )
                 if provider_session_id is None:
                     run_kind = RunKind.FRESH
+        if provider_session_id is None and service.name == "opencode":
+            provider_session_id = role_session.service_session_id("opencode")
+            if provider_session_id is None and run_kind is RunKind.RESUME:
+                run_kind = RunKind.FRESH
         if service.name == "codex":
             auth_seeding_requirement = _codex_auth_seeding_requirement(
                 service_state_dir, run_kind
