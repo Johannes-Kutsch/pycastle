@@ -25,6 +25,12 @@ _INIT_REFRESHED_FILES = {
 
 _ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
 _OPENCODE_ENV_TEMPLATE = "OPENCODE_GO_API_KEY=\n"
+_SUPPORTED_SERVICE_SELECTIONS: dict[str, tuple[str, ...]] = {
+    "claude": ("claude",),
+    "codex": ("codex",),
+    "opencode": ("opencode",),
+    "all": ("claude", "codex", "opencode"),
+}
 
 _CONFIG_FIELD_RE = re.compile(r"[a-z_]+\s*=")
 
@@ -145,10 +151,22 @@ def _merge_env_template(env_file: Path, template: str) -> None:
     env_file.write_text(content)
 
 
-def _managed_env_template(service: str) -> str:
-    if service == "opencode":
-        return _ENV_TEMPLATE + _OPENCODE_ENV_TEMPLATE
-    return _ENV_TEMPLATE
+def _parse_service_selection(selection: str) -> tuple[str, ...]:
+    normalized = selection.strip().lower() or "all"
+    service_set = _SUPPORTED_SERVICE_SELECTIONS.get(normalized)
+    if service_set is None:
+        choices = "/".join(_SUPPORTED_SERVICE_SELECTIONS)
+        raise click.ClickException(
+            f"Invalid service selection {selection!r}. Choose one of: {choices}."
+        )
+    return service_set
+
+
+def _managed_env_template(service_set: tuple[str, ...]) -> str:
+    template = _ENV_TEMPLATE
+    if "opencode" in service_set:
+        template += _OPENCODE_ENV_TEMPLATE
+    return template
 
 
 def _write_config_example(target_dir: Path, content: str) -> None:
@@ -242,12 +260,11 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     project_dir = Path("pycastle")
     pkg = files("pycastle").joinpath("defaults")
 
-    service = click.prompt(
-        "Which agent services do you want to use? [claude/codex/opencode/both]",
-        default="claude",
+    service_selection = click.prompt(
+        "Which agent services do you want to use? [claude/codex/opencode/all]",
+        default="all",
     )
-    if service not in {"claude", "codex", "opencode", "both"}:
-        service = "claude"
+    service_set = _parse_service_selection(service_selection)
 
     if scope is None:
         use_global = click.confirm(
@@ -312,7 +329,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     gh_token = ""
     claude_token = ""
     if manage_env_file:
-        env_template = _managed_env_template(service)
+        env_template = _managed_env_template(service_set)
         if env_file.exists():
             _merge_env_template(env_file, env_template)
         else:
@@ -332,14 +349,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             env_file, "GH_TOKEN", "GitHub token (press Enter to skip)", existing_env
         )
 
-        if service == "opencode":
-            _prompt_credential_with_overwrite(
-                env_file,
-                "OPENCODE_GO_API_KEY",
-                "OpenCode Go API key (press Enter to skip)",
-                existing_env,
-            )
-        elif service != "codex":
+        if "claude" in service_set:
             claude_token = _prompt_credential_with_overwrite(
                 env_file,
                 "CLAUDE_CODE_OAUTH_TOKEN",
@@ -352,6 +362,14 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
                     f"Set CLAUDE_CODE_OAUTH_TOKEN in {env_file} before running pycastle. "
                     "Run `claude setup-token` to generate a token."
                 )
+
+        if "opencode" in service_set:
+            _prompt_credential_with_overwrite(
+                env_file,
+                "OPENCODE_GO_API_KEY",
+                "OpenCode Go API key (press Enter to skip)",
+                existing_env,
+            )
 
     click.echo()
     if gh_token and click.confirm("Create GitHub labels?", default=False):
