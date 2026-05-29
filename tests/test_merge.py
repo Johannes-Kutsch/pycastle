@@ -935,7 +935,7 @@ def recording_deps(tmp_path, git_svc, github_svc, agent_runner):
 def test_merge_phase_routes_deleted_branch_through_status_display(
     recording_deps, git_svc, capsys
 ):
-    """merge_phase must route 'Deleted merged branch' via the Merge row close summary."""
+    """merge_phase must route 'Deleted merged branch' via a separate print call, not the row close verdict."""
     deps, recording = recording_deps
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
@@ -1150,7 +1150,7 @@ def test_merge_row_added_at_start_of_merge_phase(recording_deps):
 
 
 def test_merge_row_removed_after_clean_merges(recording_deps):
-    """merge_phase must remove the 'Merge' row with a branch-list summary after clean merges."""
+    """merge_phase must remove the 'Merge' row with verdict 'finished' after clean merges."""
     deps, recording = recording_deps
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
