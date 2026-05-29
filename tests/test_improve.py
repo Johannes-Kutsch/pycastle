@@ -22,8 +22,7 @@ from pycastle.iteration.improve import (
     improve_phase,
 )
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.services import CodexService, GitService, ServiceRegistry
-from pycastle.session import RoleSession
+from pycastle.services import GitService
 
 
 @pytest.fixture
@@ -371,49 +370,34 @@ def _seed_progress(worktree_path: Path, phase_id: str) -> None:
     (role_session_dir / "_phase_progress").write_text(phase_id, encoding="utf-8")
 
 
-def _seed_main_codex_transcript(
-    worktree_path: Path,
-    *,
-    provider_session_id: str = "thread-phase-1",
-) -> None:
-    main_session = RoleSession(worktree_path, AgentRole.IMPROVE, "main")
-    main_session.start_fresh()
-    main_session.save_service_session_metadata("codex", provider_session_id)
-    main_session.save_service_session_id("codex", provider_session_id)
-    sessions_dir = main_session.path / "codex" / "sessions"
-    sessions_dir.mkdir(parents=True, exist_ok=True)
-    (sessions_dir / "rollout-1.jsonl").write_text(
-        f'{{"type":"thread.started","thread_id":"{provider_session_id}"}}\n',
-        encoding="utf-8",
-    )
-
-
-def test_improve_resumes_at_prd_after_scan_picked(tmp_path, git_svc):
+def test_improve_resumes_at_prd_after_scan_picked(
+    tmp_path, git_svc, monkeypatch: pytest.MonkeyPatch
+):
     """Resume from '01-scan:picked' starts at phase 2 (PRD)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
-    _seed_main_codex_transcript(wt)
+    monkeypatch.setattr(
+        "pycastle.iteration.improve._has_exact_phase_1_main_transcript",
+        lambda deps, worktree_path: True,
+    )
     runner = FakeAgentRunner(
         [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
     )
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
-        cfg=Config(improve_override=StageOverride(service="codex", effort="medium")),
-    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert runner.calls[0].template == PromptTemplate.IMPROVE_PRD
     assert len(runner.calls) == 2
 
 
 def test_improve_clean_phase_2_entry_requires_matching_resumable_main_transcript(
-    tmp_path, git_svc
+    tmp_path, git_svc, monkeypatch: pytest.MonkeyPatch
 ):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
-    _seed_main_codex_transcript(wt)
+    monkeypatch.setattr(
+        "pycastle.iteration.improve._has_exact_phase_1_main_transcript",
+        lambda deps, worktree_path: True,
+    )
     github_svc = MagicMock()
     github_svc.get_issue.return_value = {"number": 17, "title": "PRD", "body": "body"}
     github_svc.get_issue_comments.return_value = []
@@ -421,15 +405,7 @@ def test_improve_clean_phase_2_entry_requires_matching_resumable_main_transcript
         [IssueOutput(number=17, labels=[]), CompletionOutput()],
         preflight_responses=[[]],
     )
-    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        cfg=cfg,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
-    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
 
     _run(deps)
 
@@ -438,54 +414,22 @@ def test_improve_clean_phase_2_entry_requires_matching_resumable_main_transcript
     assert len(runner.calls) == 2
 
 
-def test_improve_clean_phase_2_entry_without_phase_1_metadata_does_not_dispatch_prd(
-    tmp_path, git_svc
+def test_improve_handoff_failure_prints_phase_1_restart_notice(
+    tmp_path, git_svc, monkeypatch: pytest.MonkeyPatch
 ):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
-    main_session = RoleSession(wt, AgentRole.IMPROVE, "main")
-    main_session.start_fresh()
-    sessions_dir = main_session.path / "codex" / "sessions"
-    sessions_dir.mkdir(parents=True, exist_ok=True)
-    (sessions_dir / "rollout-1.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-phase-1"}\n',
-        encoding="utf-8",
+    monkeypatch.setattr(
+        "pycastle.iteration.improve._has_exact_phase_1_main_transcript",
+        lambda deps, worktree_path: False,
     )
-    github_svc = MagicMock()
-    github_svc.get_issue.return_value = {"number": 17, "title": "PRD", "body": "body"}
-    github_svc.get_issue_comments.return_value = []
-    runner = FakeAgentRunner(
-        [IssueOutput(number=17, labels=[]), CompletionOutput()],
-        preflight_responses=[[]],
-    )
-    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        cfg=cfg,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
-    )
-
-    _run(deps)
-
-    assert runner.calls == []
-
-
-def test_improve_handoff_failure_prints_phase_1_restart_notice(tmp_path, git_svc):
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_progress(wt, "01-scan:picked")
     status_display = MagicMock()
     runner = FakeAgentRunner([], preflight_responses=[[]])
-    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
     deps = _make_deps(
         tmp_path,
         runner,
         git_svc=git_svc,
-        cfg=cfg,
         status_display=status_display,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
     )
 
     _run(deps)
@@ -497,28 +441,17 @@ def test_improve_handoff_failure_prints_phase_1_restart_notice(tmp_path, git_svc
     )
 
 
-def test_improve_handoff_failure_wipes_stale_improve_session_state(tmp_path, git_svc):
+def test_improve_handoff_failure_wipes_stale_improve_session_state(
+    tmp_path, git_svc, monkeypatch: pytest.MonkeyPatch
+):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
-    main_session = RoleSession(wt, AgentRole.IMPROVE, "main")
-    main_session.start_fresh()
-    main_session.save_service_session_metadata("codex", "thread-phase-1")
-    main_session.save_service_session_id("codex", "thread-phase-1")
-    sessions_dir = main_session.path / "codex" / "sessions"
-    sessions_dir.mkdir(parents=True, exist_ok=True)
-    (sessions_dir / "rollout-1.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"different-thread"}\n',
-        encoding="utf-8",
+    monkeypatch.setattr(
+        "pycastle.iteration.improve._has_exact_phase_1_main_transcript",
+        lambda deps, worktree_path: False,
     )
     runner = FakeAgentRunner([], preflight_responses=[[]])
-    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        cfg=cfg,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
-    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
 
     _run(deps)
 
@@ -526,160 +459,17 @@ def test_improve_handoff_failure_wipes_stale_improve_session_state(tmp_path, git
     assert not (wt / ".pycastle-session" / "improve").exists()
 
 
-def test_improve_cross_service_handoff_failure_prints_phase_1_restart_notice(
-    tmp_path, git_svc
+def test_improve_gate_failure_restarts_next_entry_from_scan_phase(
+    tmp_path, git_svc, monkeypatch: pytest.MonkeyPatch
 ):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
-    _seed_main_codex_transcript(wt)
-    status_display = MagicMock()
+    monkeypatch.setattr(
+        "pycastle.iteration.improve._has_exact_phase_1_main_transcript",
+        lambda deps, worktree_path: False,
+    )
     runner = FakeAgentRunner([], preflight_responses=[[]])
-    cfg = Config(improve_override=StageOverride(service="claude", effort="medium"))
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        cfg=cfg,
-        status_display=status_display,
-        service_registry=ServiceRegistry(
-            {"claude": MagicMock(), "codex": CodexService()}
-        ),
-    )
-
-    _run(deps)
-
-    assert runner.calls == []
-    status_display.print.assert_any_call(
-        "Improve",
-        "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
-    )
-    assert not (wt / ".pycastle-session" / "improve").exists()
-
-
-def test_improve_clean_phase_2_entry_with_different_selected_service_does_not_dispatch_prd(
-    tmp_path, git_svc
-):
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_progress(wt, "01-scan:picked")
-    _seed_main_codex_transcript(wt)
-    runner = FakeAgentRunner(
-        [IssueOutput(number=17, labels=[]), CompletionOutput()],
-        preflight_responses=[[]],
-    )
-    cfg = Config(improve_override=StageOverride(service="claude", effort="medium"))
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        cfg=cfg,
-        service_registry=ServiceRegistry(
-            {"claude": MagicMock(), "codex": CodexService()}
-        ),
-    )
-
-    _run(deps)
-
-    assert runner.calls == []
-
-
-def test_improve_clean_phase_2_entry_with_non_resumable_main_state_does_not_dispatch_prd(
-    tmp_path, git_svc
-):
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_progress(wt, "01-scan:picked")
-    main_session = RoleSession(wt, AgentRole.IMPROVE, "main")
-    main_session.start_fresh()
-    main_session.save_service_session_metadata("codex", "thread-phase-1")
-    main_session.save_service_session_id("codex", "thread-phase-1")
-    runner = FakeAgentRunner(
-        [IssueOutput(number=17, labels=[]), CompletionOutput()],
-        preflight_responses=[[]],
-    )
-    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        cfg=cfg,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
-    )
-
-    _run(deps)
-
-    assert runner.calls == []
-
-
-def test_improve_clean_phase_2_entry_with_conflicting_main_session_state_does_not_dispatch_prd(
-    tmp_path, git_svc
-):
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_progress(wt, "01-scan:picked")
-    _seed_main_codex_transcript(wt, provider_session_id="thread-from-rollout")
-    main_session = RoleSession(wt, AgentRole.IMPROVE, "main")
-    main_session.save_service_session_metadata("codex", "thread-from-metadata")
-    runner = FakeAgentRunner(
-        [IssueOutput(number=17, labels=[]), CompletionOutput()],
-        preflight_responses=[[]],
-    )
-    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        cfg=cfg,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
-    )
-
-    _run(deps)
-
-    assert runner.calls == []
-
-
-def test_improve_clean_phase_2_entry_with_conflicting_codex_rollout_state_does_not_dispatch_prd(
-    tmp_path, git_svc
-):
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_progress(wt, "01-scan:picked")
-    _seed_main_codex_transcript(wt, provider_session_id="thread-from-sidecar")
-    sessions_dir = wt / ".pycastle-session" / "improve" / "main" / "codex" / "sessions"
-    (sessions_dir / "rollout-1.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
-        encoding="utf-8",
-    )
-    github_svc = MagicMock()
-    github_svc.get_issue.return_value = {"number": 17, "title": "PRD", "body": "body"}
-    github_svc.get_issue_comments.return_value = []
-    runner = FakeAgentRunner(
-        [IssueOutput(number=17, labels=[]), CompletionOutput()],
-        preflight_responses=[[]],
-    )
-    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        cfg=cfg,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
-    )
-
-    _run(deps)
-
-    assert runner.calls == []
-
-
-def test_improve_gate_failure_restarts_next_entry_from_scan_phase(tmp_path, git_svc):
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_progress(wt, "01-scan:picked")
-    runner = FakeAgentRunner([], preflight_responses=[[]])
-    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        cfg=cfg,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
-    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
 
     result = _run(deps)
 
@@ -690,13 +480,7 @@ def test_improve_gate_failure_restarts_next_entry_from_scan_phase(tmp_path, git_
         [CompletionOutput(), CompletionOutput(), CompletionOutput()],
         preflight_responses=[[]],
     )
-    follow_up_deps = _make_deps(
-        tmp_path,
-        follow_up,
-        git_svc=git_svc,
-        cfg=cfg,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
-    )
+    follow_up_deps = _make_deps(tmp_path, follow_up, git_svc=git_svc)
 
     _run(follow_up_deps)
 
@@ -759,15 +543,7 @@ def test_improve_resumes_mid_phase_2_without_clean_entry_gate(tmp_path, git_svc)
         [IssueOutput(number=17, labels=[]), CompletionOutput()],
         preflight_responses=[[]],
     )
-    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        cfg=cfg,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
-    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
 
     _run(deps)
 
@@ -820,23 +596,22 @@ def test_mid_phase_2_retry_does_not_signal_role_prompt(tmp_path, git_svc):
     assert prd_call.send_role_prompt_on_resume is False
 
 
-def test_cross_teardown_resume_at_phase_2_signals_role_prompt(tmp_path, git_svc):
+def test_cross_teardown_resume_at_phase_2_signals_role_prompt(
+    tmp_path, git_svc, monkeypatch: pytest.MonkeyPatch
+):
     """Resume from '01-scan:picked' (phase 1 completed, container torn down):
     phase 2's RunRequest signals send_role_prompt_on_resume=True so the PRD
     prompt is delivered, not the continuation prompt."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
-    _seed_main_codex_transcript(wt)
+    monkeypatch.setattr(
+        "pycastle.iteration.improve._has_exact_phase_1_main_transcript",
+        lambda deps, worktree_path: True,
+    )
     runner = FakeAgentRunner(
         [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
     )
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
-        cfg=Config(improve_override=StageOverride(service="codex", effort="medium")),
-    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     prd_call = next(c for c in runner.calls if c.template == PromptTemplate.IMPROVE_PRD)
     assert prd_call.send_role_prompt_on_resume is True
@@ -904,21 +679,20 @@ def test_improve_fresh_run_on_whitespace_only_progress_file(tmp_path, git_svc):
     assert runner.calls[0].template == PromptTemplate.IMPROVE_SCAN
 
 
-def test_improve_resumes_correctly_with_whitespace_padded_progress(tmp_path, git_svc):
+def test_improve_resumes_correctly_with_whitespace_padded_progress(
+    tmp_path, git_svc, monkeypatch: pytest.MonkeyPatch
+):
     """Progress file with a valid phase ID surrounded by whitespace is still recognized — resumes at correct phase."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "  01-scan:picked  \n")
-    _seed_main_codex_transcript(wt)
+    monkeypatch.setattr(
+        "pycastle.iteration.improve._has_exact_phase_1_main_transcript",
+        lambda deps, worktree_path: True,
+    )
     runner = FakeAgentRunner(
         [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
     )
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
-        cfg=Config(improve_override=StageOverride(service="codex", effort="medium")),
-    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert runner.calls[0].template == PromptTemplate.IMPROVE_PRD
     assert len(runner.calls) == 2
