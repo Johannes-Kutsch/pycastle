@@ -16,6 +16,20 @@ from pycastle.session import RunKind
 def test_opencode_service_builds_json_commands_and_go_api_env() -> None:
     service = OpenCodeService(api_key="go-key")
 
+    restricted = service.build_command(
+        role=AgentRole.PLANNER,
+        model="kimi-k2.6",
+        effort="medium",
+        run_kind=RunKind.FRESH,
+        session_uuid=None,
+    )
+    partial = service.build_command(
+        role=AgentRole.PREFLIGHT_ISSUE,
+        model="kimi-k2.6",
+        effort="medium",
+        run_kind=RunKind.FRESH,
+        session_uuid=None,
+    )
     fresh = service.build_command(
         role=AgentRole.IMPLEMENTER,
         model="kimi-k2.6",
@@ -36,15 +50,14 @@ def test_opencode_service_builds_json_commands_and_go_api_env() -> None:
         "opencode run --format json --model opencode-go/kimi-k2.6 "
         '"$(cat /tmp/.pycastle_prompt)"'
     )
+    assert restricted == fresh
+    assert partial == fresh
     assert resume == (
         "opencode run --format json --session session-123 "
         '--model opencode-go/kimi-k2.6 "$(cat /tmp/.pycastle_prompt)"'
     )
     assert env["TZ"] == "UTC"
-    assert (
-        env["OPENCODE_HOME"]
-        == "/workspace/.pycastle-session/implementer/opencode"
-    )
+    assert env["OPENCODE_HOME"] == "/workspace/.pycastle-session/implementer/opencode"
     assert env["OPENCODE_GO_API_KEY"] == "go-key"
     config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
     provider = config["provider"]["opencode-go"]

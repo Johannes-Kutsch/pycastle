@@ -19,6 +19,7 @@ from .agent_service import (
     UsageLimit,
 )
 from ._wake_time import compute_wake_time
+from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
 
 _RESET_TIME_RE = re.compile(
     r"try again at\s+"
@@ -76,6 +77,19 @@ _OPENCODE_GO_MODELS = (
 )
 
 
+@dataclasses.dataclass(frozen=True)
+class _OpenCodePolicyMapping:
+    cli_args: tuple[str, ...] = ()
+    supports_policy_controls: bool = False
+
+
+_OPENCODE_POLICY_MAPPINGS = {
+    AgentToolPolicyGroup.RESTRICTED: _OpenCodePolicyMapping(),
+    AgentToolPolicyGroup.PARTIAL: _OpenCodePolicyMapping(),
+    AgentToolPolicyGroup.FULL: _OpenCodePolicyMapping(),
+}
+
+
 def _opencode_go_model_ref(model: str) -> str:
     if "/" in model:
         return model
@@ -94,9 +108,7 @@ def _opencode_go_config_content() -> str:
                         "baseURL": _OPENCODE_GO_BASE_URL,
                         "apiKey": "{env:OPENCODE_GO_API_KEY}",
                     },
-                    "models": {
-                        model: {"name": model} for model in _OPENCODE_GO_MODELS
-                    },
+                    "models": {model: {"name": model} for model in _OPENCODE_GO_MODELS},
                 }
             },
         },
@@ -207,12 +219,14 @@ class OpenCodeService:
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
     ) -> str:
-        del role, effort
+        del effort
+        policy_mapping = _OPENCODE_POLICY_MAPPINGS[tool_policy_group_for(role)]
         parts = ["opencode run", "--format json"]
         if run_kind == RunKind.RESUME and session_uuid:
             parts.append(f"--session {session_uuid}")
         if model:
             parts.append(f"--model {_opencode_go_model_ref(model)}")
+        parts.extend(policy_mapping.cli_args)
         parts.append('"$(cat /tmp/.pycastle_prompt)"')
         return " ".join(parts)
 
