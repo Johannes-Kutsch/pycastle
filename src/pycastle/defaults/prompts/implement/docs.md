@@ -6,7 +6,7 @@ Fix issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
 ## 1. Explore
 
-Read the issue's **What to build** and acceptance criteria to identify the exact markdown edits requested. Explore only the markdown files named in the issue. Do not survey the full repository.
+Explore only the markdown files named in the issue.
 
 
 ## 2. Edit

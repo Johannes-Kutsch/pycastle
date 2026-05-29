@@ -184,13 +184,14 @@ def _format_feedback_commands(checks: Sequence[str]) -> str:
 
 
 class PromptRenderer:
-    _STATIC_SHARED_FILES: dict[str, str] = {
+    _OPTIONAL_SHARED_FILES: dict[str, str] = {
         "DESIGN_STANDARDS": "coding-standards/design.md",
         "IMPLEMENTATION_STANDARDS": "coding-standards/implementation.md",
         "IMPLEMENT_OUTPUT_RULES": "coding-standards/implement-output-rules.md",
-        "ISSUE_TRACKER": "_issue-tracker.md",
     }
-    _DYNAMIC_SHARED_FILES: dict[str, str] = {
+    _SHARED_FILES: dict[str, str] = {
+        **_OPTIONAL_SHARED_FILES,
+        "ISSUE_TRACKER": "_issue-tracker.md",
         "IMPLEMENT_REVIEW_SHARED_FRAMING": "_implement-review-shared-framing.md",
     }
 
@@ -201,10 +202,6 @@ class PromptRenderer:
         self._prompt_source = PromptSource.for_prompts_dir(prompts_dir)
         self._global_args = self._build_global_args(cfg)
         self._validate_templates()
-
-    @property
-    def _shared_files(self) -> dict[str, str]:
-        return {**self._STATIC_SHARED_FILES, **self._DYNAMIC_SHARED_FILES}
 
     @staticmethod
     def _referenced_tokens(content: str) -> set[str]:
@@ -247,22 +244,22 @@ class PromptRenderer:
             cycle = " -> ".join((*stack, key))
             raise PromptRenderError(f"Prompt fragment cycle detected: {cycle}")
 
-        prompt_file = self._prompt_source.maybe_lookup(self._shared_files[key])
+        prompt_file = self._prompt_source.maybe_lookup(self._SHARED_FILES[key])
         if prompt_file is None:
-            if key in self._STATIC_SHARED_FILES and key != "ISSUE_TRACKER":
+            if key in self._OPTIONAL_SHARED_FILES:
                 cache[key] = ""
                 return ""
             if key == "ISSUE_TRACKER":
                 raise PromptRenderError(
-                    f"Missing prompt fragment for {key}: {self._shared_files[key]}"
+                    f"Missing prompt fragment for {key}: {self._SHARED_FILES[key]}"
                 )
             raise PromptRenderError(
-                f"Missing prompt fragment: {self._shared_files[key]}"
+                f"Missing prompt fragment: {self._SHARED_FILES[key]}"
             )
 
         content = prompt_file.read_text()
         found = self._referenced_tokens(content)
-        shared_found = found & self._shared_files.keys()
+        shared_found = found & self._SHARED_FILES.keys()
         resolved_args = dict(allowed_args)
         for nested_key in shared_found:
             resolved_args[nested_key] = self._resolve_shared_file(
@@ -308,7 +305,7 @@ class PromptRenderer:
 
     def _validate_templates(self) -> None:
         shared_cache: dict[str, str] = {}
-        global_keys = set(self._global_args.keys()) | set(self._shared_files)
+        global_keys = set(self._global_args.keys()) | set(self._SHARED_FILES)
         for template in PromptTemplate:
             prompt_file = self._prompt_source.maybe_lookup(template.filename)
             if prompt_file is None:
@@ -324,20 +321,12 @@ class PromptRenderer:
             validation_args = self._validation_args(
                 self._global_args, template.scope.placeholders
             )
-            for key in found & self._shared_files.keys():
+            for key in found & self._SHARED_FILES.keys():
                 self._resolve_shared_file(
                     key,
                     allowed_args=validation_args,
                     cache=shared_cache,
                 )
-        self._global_args = {
-            **self._global_args,
-            **{
-                key: value
-                for key, value in shared_cache.items()
-                if key in self._STATIC_SHARED_FILES
-            },
-        }
 
     async def render(
         self,
@@ -362,12 +351,8 @@ class PromptRenderer:
         content = self._prompt_source.lookup(template.filename).read_text()
         preprocessed = await _preprocess(content, exec_fn)
         all_args = {**self._global_args, **scope_args}
-        shared_cache = {
-            key: value
-            for key, value in self._global_args.items()
-            if key in self._STATIC_SHARED_FILES
-        }
-        for key in self._referenced_tokens(preprocessed) & self._shared_files.keys():
+        shared_cache: dict[str, str] = {}
+        for key in self._referenced_tokens(preprocessed) & self._SHARED_FILES.keys():
             all_args[key] = self._resolve_shared_file(
                 key,
                 allowed_args=all_args,

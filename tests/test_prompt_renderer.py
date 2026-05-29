@@ -1153,7 +1153,7 @@ def test_placeholder_info_global_tokens_match_code(cfg, prompts_dir):
     # ISSUE_TRACKER is conditional on its fragment file being present.
     (prompts_dir / "_issue-tracker.md").write_text("issue-tracker recipes")
     renderer = PromptRenderer(cfg)
-    expected = set(renderer._global_args.keys()) | set(renderer._DYNAMIC_SHARED_FILES)
+    expected = set(renderer._global_args.keys()) | set(renderer._SHARED_FILES)
 
     global_tokens, _ = _parse_placeholder_info()
 

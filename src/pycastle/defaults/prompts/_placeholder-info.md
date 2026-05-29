@@ -17,7 +17,7 @@ Prompt templates use a two-tier placeholder model: *global* placeholders are ava
 - `{{DESIGN_STANDARDS}}` — Contents of `coding-standards/design.md` (architecture vocabulary and deepening strategy).
 - `{{IMPLEMENTATION_STANDARDS}}` — Contents of `coding-standards/implementation.md` (testing, mocking, deep modules, interfaces, and refactoring).
 - `{{IMPLEMENT_OUTPUT_RULES}}` — Contents of `coding-standards/implement-output-rules.md` (commit-message tag format and convention, do-not-stage rule).
-- `{{IMPLEMENT_REVIEW_SHARED_FRAMING}}` — Contents of `_implement-review-shared-framing.md` (shared branch/task, issue context, interrupted-work, and glossary framing used by Implementer and Reviewer prompts).
+- `{{IMPLEMENT_REVIEW_SHARED_FRAMING}}` — Contents of `_implement-review-shared-framing.md` (shared task/context, interrupted-work, explore, glossary, and ADR framing used by Implementer and Reviewer prompts).
 - `{{ISSUE_TRACKER}}` — Contents of `_issue-tracker.md` (GitHub REST recipes for issue operations: create, view, search, label, comment, close, sub-issue). Present only when `_issue-tracker.md` exists in the prompts directory.
 
 ## Scope: PER_ISSUE

@@ -6,9 +6,7 @@ Fix issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
 ## 1. Explore
 
-Read the issue's **What to build** and acceptance criteria to identify the exact structural change requested. Explore only the files named in the issue and any files those directly import. Do not survey the full repository.
-
-Use symbol names and vocabulary from `CONTEXT.md`.
+Explore only the files named in the issue and any files those directly import.
 
 ## 2. Refactor
 

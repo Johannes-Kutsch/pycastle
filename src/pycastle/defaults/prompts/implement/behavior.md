@@ -8,9 +8,7 @@ Fix issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
 ## Explore
 
-Explore only the files mentioned in the issue and the test files that directly touch those files. Do not survey the full repository.
-
-Check that test names and interface vocabulary match the project's language in `CONTEXT.md`. Consult `docs/adr/README.md` if present, then read any ADRs that touch the area you're changing.
+Explore only the files mentioned in the issue and the test files that directly touch those files.
 
 From the issue's acceptance criteria, derive an ordered list of behaviors to implement. Most critical paths first, edge cases last.
 
