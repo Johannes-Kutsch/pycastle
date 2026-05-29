@@ -334,7 +334,6 @@ class PromptRenderer:
         }
 
     def _validate_templates(self) -> None:
-        shared_cache: dict[str, str] = {}
         global_keys = set(self._global_args.keys()) | set(self._SHARED_FILES)
         for template in PromptTemplate:
             prompt_file = self._prompt_source.maybe_lookup_reference(template.reference)
@@ -351,6 +350,7 @@ class PromptRenderer:
             validation_args = self._validation_args(
                 self._global_args, template.scope.placeholders
             )
+            shared_cache: dict[str, str] = {}
             for key in found & self._SHARED_FILES.keys():
                 self._resolve_shared_file(
                     key,
