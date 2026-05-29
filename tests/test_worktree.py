@@ -1397,6 +1397,28 @@ def test_prune_orphan_worktrees_sweeps_fixed_pycastle_dir_even_when_config_is_st
     assert not orphan_in_old_location.exists()
 
 
+def test_prune_orphan_worktrees_uses_injected_git_service_without_loading_config(
+    tmp_path,
+):
+    """Injected git_service is the seam; fixed-path pruning must not depend on config load."""
+    from pycastle.infrastructure import worktree as worktree_module
+
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+    orphan = worktrees_dir / "orphan-branch"
+    orphan.mkdir()
+
+    with patch.object(
+        worktree_module, "load_config", side_effect=AssertionError("unexpected load")
+    ):
+        worktree_module.prune_orphan_worktrees(
+            tmp_path,
+            git_service=_make_prune_git_svc([]),
+        )
+
+    assert not orphan.exists()
+
+
 # ── prune_orphan_worktrees: git-registered worktrees without role sessions ────
 
 

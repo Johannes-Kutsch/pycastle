@@ -74,8 +74,11 @@ def prune_orphan_worktrees(
     cfg: Config | None = None,
     git_service: GitService | None = None,
 ) -> None:
-    resolved_cfg = cfg or load_config()
-    svc = git_service or GitService(resolved_cfg)
+    if git_service is not None:
+        svc = git_service
+    else:
+        resolved_cfg = cfg or load_config()
+        svc = GitService(resolved_cfg)
     worktrees_dir = _project_local_worktrees_dir(repo_root)
     if not worktrees_dir.exists():
         return
