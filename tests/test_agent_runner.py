@@ -2676,6 +2676,36 @@ def test_agent_runner_records_opencode_service_session_metadata_on_success(tmp_p
     }
 
 
+def test_agent_runner_does_not_record_metadata_on_failed_run(tmp_path):
+    # Stream with no <plan> tag forces PlanParseError on every attempt; after 3
+    # retries the runner returns FailedOutput without saving metadata.
+    no_plan_stream = [
+        b'{"type": "result", "result": "no plan tag here", "is_error": false}\n'
+    ]
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client(no_plan_stream),
+    )
+
+    with pytest.raises(AgentFailedError):
+        asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Planner",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                )
+            )
+        )
+
+    session = RoleSession(tmp_path, AgentRole.PLANNER)
+    assert session.service_session_metadata("claude") is None
+
+
 def test_agent_runner_opencode_resume_uses_persisted_session_id_on_later_run(tmp_path):
     state_dir = tmp_path / ".pycastle-session" / "planner" / "opencode"
     state_dir.mkdir(parents=True)

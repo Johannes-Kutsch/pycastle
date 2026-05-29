@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import stat
@@ -85,8 +86,6 @@ class RoleSession:
         if not path.is_file():
             return None
         try:
-            import json
-
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
@@ -106,8 +105,6 @@ class RoleSession:
     def save_service_session_metadata(self, service_name: str, session_id: str) -> None:
         path = self.service_session_metadata_path
         try:
-            import json
-
             payload = (
                 json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
             )
