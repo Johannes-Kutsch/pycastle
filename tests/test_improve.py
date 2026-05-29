@@ -23,7 +23,6 @@ from pycastle.iteration.improve import (
 )
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitService, ServiceRegistry
-from pycastle.services.codex_service import CodexService
 from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session import RoleSession
 
@@ -440,27 +439,16 @@ def test_improve_clean_phase_2_entry_requires_matching_resumable_main_transcript
     assert len(runner.calls) == 2
 
 
-@pytest.mark.parametrize(
-    ("saved_provider_id", "metadata_provider_id"),
-    [
-        ("sess-opencode-123", None),
-        ("sess-opencode-123", "sess-opencode-other"),
-    ],
-)
 def test_improve_clean_phase_2_entry_restarts_from_phase_1_without_exact_main_transcript(
     tmp_path,
     git_svc,
-    saved_provider_id,
-    metadata_provider_id,
 ):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
     status_display = MagicMock()
     runner = FakeAgentRunner([], preflight_responses=[[]])
     role_session = RoleSession(wt, AgentRole.IMPROVE, "main")
-    role_session.save_service_session_id("opencode", saved_provider_id)
-    if metadata_provider_id is not None:
-        role_session.save_service_session_metadata("opencode", metadata_provider_id)
+    role_session.save_service_session_id("opencode", "sess-opencode-123")
     cfg = Config(improve_override=StageOverride(service="opencode", effort="medium"))
     deps = _make_deps(
         tmp_path,
@@ -469,80 +457,6 @@ def test_improve_clean_phase_2_entry_restarts_from_phase_1_without_exact_main_tr
         status_display=status_display,
         cfg=cfg,
         service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
-    )
-
-    result = _run(deps)
-
-    assert isinstance(result, ImproveContinue)
-    assert runner.calls == []
-    status_display.print.assert_any_call(
-        "Improve",
-        "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
-    )
-    assert not (wt / ".pycastle-session" / "improve").exists()
-
-
-def test_improve_clean_phase_2_entry_restarts_from_phase_1_without_resumable_codex_provider_state(
-    tmp_path, git_svc
-):
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_progress(wt, "01-scan:picked")
-    status_display = MagicMock()
-    runner = FakeAgentRunner([], preflight_responses=[[]])
-    role_session = RoleSession(wt, AgentRole.IMPROVE, "main")
-    role_session.save_service_session_id("codex", "thread-abc")
-    role_session.save_service_session_metadata("codex", "thread-abc")
-    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        status_display=status_display,
-        cfg=cfg,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
-    )
-
-    result = _run(deps)
-
-    assert isinstance(result, ImproveContinue)
-    assert runner.calls == []
-    status_display.print.assert_any_call(
-        "Improve",
-        "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
-    )
-    assert not (wt / ".pycastle-session" / "improve").exists()
-
-
-def test_improve_clean_phase_2_entry_restarts_from_phase_1_on_ambiguous_codex_rollout_evidence(
-    tmp_path, git_svc
-):
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_progress(wt, "01-scan:picked")
-    status_display = MagicMock()
-    runner = FakeAgentRunner([], preflight_responses=[[]])
-    role_session = RoleSession(wt, AgentRole.IMPROVE, "main")
-    state_dir = role_session.path / "codex"
-    old_rollout_dir = state_dir / "sessions" / "2026" / "05" / "28"
-    new_rollout_dir = state_dir / "sessions" / "2026" / "05" / "29"
-    old_rollout_dir.mkdir(parents=True, exist_ok=True)
-    new_rollout_dir.mkdir(parents=True, exist_ok=True)
-    (old_rollout_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-old"}\n',
-        encoding="utf-8",
-    )
-    (new_rollout_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-new"}\n',
-        encoding="utf-8",
-    )
-    role_session.save_service_session_metadata("codex", "thread-new")
-    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        status_display=status_display,
-        cfg=cfg,
-        service_registry=ServiceRegistry({"codex": CodexService()}),
     )
 
     result = _run(deps)

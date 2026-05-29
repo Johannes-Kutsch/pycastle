@@ -2811,31 +2811,20 @@ def test_agent_runner_does_not_call_mark_exhausted_on_hard_agent_error(tmp_path)
     assert svc.is_available() is True
 
 
-def test_agent_runner_uses_run_session_plan_auth_seeding_requirement_for_codex(
+def test_agent_runner_resumes_codex_dispatch_from_recovered_rollout_thread_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(Path, "home", lambda: home)
 
-    planned_state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-
-    def planned_run_session(**kwargs):
-        return RunSessionPlan(
-            role=AgentRole.IMPLEMENTER,
-            worktree=tmp_path,
-            namespace="",
-            service=kwargs["service"],
-            run_kind=RunKind.RESUME,
-            service_state_dir=planned_state_dir,
-            provider_session_id="thread-from-plan",
-            auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
-            recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
-        )
-
-    monkeypatch.setattr(
-        "pycastle.session.run_session.RunSessionPlan.for_service",
-        planned_run_session,
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
     )
 
     captured_cmds: list[str] = []
@@ -2875,17 +2864,47 @@ def test_agent_runner_uses_run_session_plan_auth_seeding_requirement_for_codex(
 
     assert captured_cmds
     assert "codex exec resume " in captured_cmds[0]
-    assert "thread-from-plan" in captured_cmds[0]
+    assert "thread-from-rollout" in captured_cmds[0]
 
 
-def test_agent_runner_seeds_codex_auth_for_fresh_state_dir(tmp_path, monkeypatch):
+def test_agent_runner_starts_fresh_when_codex_rollout_threads_are_unrecoverable(
+    tmp_path, monkeypatch
+):
     home = tmp_path / "home"
     host_auth = home / ".codex" / "auth.json"
     host_auth.parent.mkdir(parents=True)
     host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
     monkeypatch.setattr(Path, "home", lambda: home)
 
-    mock_client = _make_docker_client(_CODEX_COMPLETE_STREAM)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    old_rollout_dir = state_dir / "sessions" / "2026" / "05" / "28"
+    new_rollout_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    old_rollout_dir.mkdir(parents=True, exist_ok=True)
+    new_rollout_dir.mkdir(parents=True, exist_ok=True)
+    (old_rollout_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-old"}\n',
+        encoding="utf-8",
+    )
+    (new_rollout_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-new"}\n',
+        encoding="utf-8",
+    )
+
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            result = MagicMock()
+            result.output = iter(_CODEX_COMPLETE_STREAM)
+            return result
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
     runner = AgentRunner(
         {},
         _make_cfg(tmp_path),
@@ -2906,6 +2925,9 @@ def test_agent_runner_seeds_codex_auth_for_fresh_state_dir(tmp_path, monkeypatch
         )
     )
 
+    assert captured_cmds
+    assert "codex exec " in captured_cmds[0]
+    assert "resume" not in captured_cmds[0]
     seeded = tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
     assert seeded.read_text(encoding="utf-8") == '{"mode":"oauth"}'
 
