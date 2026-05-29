@@ -22,6 +22,7 @@ from .agent_service import (
     UsageLimit,
 )
 from ._wake_time import compute_wake_time
+from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
 
 _log = logging.getLogger(__name__)
 
@@ -223,8 +224,9 @@ class CodexService:
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
     ) -> str:
+        policy_group = tool_policy_group_for(role)
         if run_kind == RunKind.RESUME and session_uuid:
-            parts = [f"codex exec resume {session_uuid}"]
+            parts = ["codex exec resume"]
         else:
             parts = ["codex exec"]
         if model:
@@ -233,7 +235,14 @@ class CodexService:
             parts.append(f"-c model_reasoning_effort={effort}")
         parts.append("-c approval_policy=never")
         if run_kind != RunKind.RESUME:
-            parts.append("--sandbox danger-full-access")
+            if policy_group is AgentToolPolicyGroup.PARTIAL:
+                parts.append("--dangerously-bypass-approvals-and-sandbox")
+            else:
+                parts.append("--sandbox danger-full-access")
+        elif policy_group is AgentToolPolicyGroup.PARTIAL:
+            parts.append("--dangerously-bypass-approvals-and-sandbox")
+        if run_kind == RunKind.RESUME and session_uuid:
+            parts.append(session_uuid)
         parts += [
             "--json",
             "< /tmp/.pycastle_prompt",

@@ -105,6 +105,34 @@ def test_build_command_fresh_includes_sandbox():
     assert "--sandbox danger-full-access" in cmd
 
 
+def test_build_command_fresh_improve_uses_partial_role_bypass_policy():
+    cmd = CodexService().build_command(role=AgentRole.IMPROVE, run_kind=RunKind.FRESH)
+    assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+    assert "-c approval_policy=never" in cmd
+    assert "--sandbox" not in cmd
+
+
+def test_build_command_role_policies_keep_restricted_partial_and_full_distinct():
+    planner_cmd = CodexService().build_command(
+        role=AgentRole.PLANNER, run_kind=RunKind.FRESH
+    )
+    partial_cmd = CodexService().build_command(
+        role=AgentRole.PREFLIGHT_ISSUE, run_kind=RunKind.FRESH
+    )
+    full_cmd = CodexService().build_command(
+        role=AgentRole.IMPLEMENTER, run_kind=RunKind.FRESH
+    )
+
+    assert "--dangerously-bypass-approvals-and-sandbox" not in planner_cmd
+    assert "--sandbox danger-full-access" in planner_cmd
+
+    assert "--dangerously-bypass-approvals-and-sandbox" in partial_cmd
+    assert "--sandbox" not in partial_cmd
+
+    assert "--dangerously-bypass-approvals-and-sandbox" not in full_cmd
+    assert "--sandbox danger-full-access" in full_cmd
+
+
 def test_build_command_fresh_includes_json_flag():
     cmd = CodexService().build_command(run_kind=RunKind.FRESH)
     assert "--json" in cmd
@@ -122,7 +150,8 @@ def test_build_command_resume_includes_exec_resume():
     cmd = CodexService().build_command(
         run_kind=RunKind.RESUME, session_uuid="thread-xyz"
     )
-    assert "exec resume thread-xyz" in cmd
+    assert "codex exec resume " in cmd
+    assert "thread-xyz" in cmd
 
 
 def test_build_command_resume_includes_thread_id():
@@ -152,6 +181,20 @@ def test_build_command_resume_excludes_sandbox():
     cmd = CodexService().build_command(
         run_kind=RunKind.RESUME, session_uuid="thread-xyz"
     )
+    assert "--sandbox" not in cmd
+
+
+def test_build_command_resume_improve_keeps_partial_role_bypass_before_session_id():
+    cmd = CodexService().build_command(
+        role=AgentRole.IMPROVE,
+        run_kind=RunKind.RESUME,
+        session_uuid="thread-xyz",
+    )
+    assert (
+        "codex exec resume -c approval_policy=never "
+        "--dangerously-bypass-approvals-and-sandbox thread-xyz" in cmd
+    )
+    assert "-c approval_policy=never" in cmd
     assert "--sandbox" not in cmd
 
 

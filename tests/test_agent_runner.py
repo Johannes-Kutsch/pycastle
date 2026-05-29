@@ -3014,7 +3014,8 @@ def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
     assert isinstance(result, PlannerOutput)
     assert "codex exec " in captured_cmds[0]
     assert "resume" not in captured_cmds[0]
-    assert "codex exec resume thread-from-fresh" in captured_cmds[1]
+    assert "codex exec resume " in captured_cmds[1]
+    assert "thread-from-fresh" in captured_cmds[1]
     saved = tmp_path / ".pycastle-session" / "planner" / "codex" / "thread_id"
     assert saved.read_text(encoding="utf-8") == "thread-from-fresh"
 
@@ -3253,7 +3254,8 @@ def test_agent_runner_codex_resume_uses_thread_id_from_rollout(tmp_path):
     )
 
     assert captured_cmds
-    assert "codex exec resume thread-from-rollout" in captured_cmds[0]
+    assert "codex exec resume " in captured_cmds[0]
+    assert "thread-from-rollout" in captured_cmds[0]
 
 
 def test_agent_runner_codex_resume_recovers_thread_id_from_nested_rollout_and_persists(
@@ -3304,7 +3306,8 @@ def test_agent_runner_codex_resume_recovers_thread_id_from_nested_rollout_and_pe
     )
 
     assert captured_cmds
-    assert "codex exec resume thread-from-nested-rollout" in captured_cmds[0]
+    assert "codex exec resume " in captured_cmds[0]
+    assert "thread-from-nested-rollout" in captured_cmds[0]
     assert (state_dir / "thread_id").read_text(
         encoding="utf-8"
     ) == "thread-from-nested-rollout"
@@ -3364,7 +3367,8 @@ def test_agent_runner_codex_resume_with_duplicate_same_thread_id_is_not_ambiguou
     )
 
     assert captured_cmds
-    assert "codex exec resume thread-same-id" in captured_cmds[0]
+    assert "codex exec resume " in captured_cmds[0]
+    assert "thread-same-id" in captured_cmds[0]
 
 
 def test_agent_runner_codex_resume_with_distinct_thread_ids_falls_to_fresh(
