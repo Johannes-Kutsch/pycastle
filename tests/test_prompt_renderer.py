@@ -331,6 +331,18 @@ def test_renderer_ctor_rejects_out_of_scope_token(cfg, prompts_dir):
         PromptRenderer(cfg)
 
 
+def test_renderer_ctor_rejects_broken_effective_local_role_prompt_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "_resume-prompt.md").write_text("Broken: {{ISSUE_NUMBER}}")
+
+    with pytest.raises(PromptRenderError, match="ISSUE_NUMBER"):
+        PromptRenderer(Config())
+
+
 # ── Ctor skips missing template files (no error) ─────────────────────────────
 
 
@@ -904,6 +916,25 @@ def test_prompt_source_ignores_unknown_local_file_when_bundled_fallback_is_enabl
     source = PromptSource(local_dir, bundled_dir=bundled_dir)
 
     assert source.maybe_read_text("unknown.md") is None
+
+
+def test_renderer_ctor_ignores_broken_unknown_local_prompt_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "unknown.md").write_text("stale {{UNKNOWN_TOKEN}}")
+
+    renderer = PromptRenderer(Config())
+    shipped_renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+
+    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
+    shipped_result = _run(
+        shipped_renderer.render(PromptTemplate.RESUME, {}, _noop_exec)
+    )
+
+    assert result == shipped_result
 
 
 def test_prompt_source_ignores_stale_local_file_for_removed_bundled_default(
