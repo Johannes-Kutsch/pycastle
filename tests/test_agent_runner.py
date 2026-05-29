@@ -1432,6 +1432,86 @@ def test_agent_runner_run_preflight_returns_failure_tuple_for_declared_tool_proj
     ]
 
 
+def test_agent_runner_run_preflight_raises_setup_phase_error_after_running_later_checks(
+    tmp_path,
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 't'\ndependencies = ['ruff>=0.5']\n", encoding="utf-8"
+    )
+    exec_calls: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def _exec_run(cmd, **kwargs):
+        command_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+        exec_calls.append(command_str)
+        if "git config" in command_str or "pip install" in command_str:
+            return MagicMock(exit_code=0, output=(b"", b""))
+        if "ruff check ." in command_str:
+            return MagicMock(
+                exit_code=127, output=(b"bash: ruff: command not found", b"")
+            )
+        if "mypy ." in command_str:
+            return MagicMock(exit_code=1, output=(b"src/app.py:1: error: boom", b""))
+        raise AssertionError(f"unexpected command: {command_str}")
+
+    mock_container.exec_run.side_effect = _exec_run
+    cfg = _make_cfg(
+        tmp_path,
+        preflight_checks=(("ruff", "ruff check ."), ("mypy", "mypy .")),
+    )
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    with pytest.raises(SetupPhaseError, match="Missing expected preflight tool 'ruff'"):
+        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    ruff_idx = next(i for i, call in enumerate(exec_calls) if "ruff check ." in call)
+    mypy_idx = next(i for i, call in enumerate(exec_calls) if "mypy ." in call)
+    assert ruff_idx < mypy_idx
+
+
+def test_agent_runner_run_preflight_returns_all_ordinary_failures_in_configured_order(
+    tmp_path,
+):
+    exec_calls: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def _exec_run(cmd, **kwargs):
+        command_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+        exec_calls.append(command_str)
+        if "git config" in command_str or "pip install" in command_str:
+            return MagicMock(exit_code=0, output=(b"", b""))
+        if "ruff check ." in command_str:
+            return MagicMock(exit_code=1, output=(b"src/app.py:1:1: F401", b""))
+        if "mypy ." in command_str:
+            return MagicMock(exit_code=0, output=(b"", b""))
+        if "pytest" in command_str:
+            return MagicMock(exit_code=1, output=(b"FAILED tests/test_app.py", b""))
+        raise AssertionError(f"unexpected command: {command_str}")
+
+    mock_container.exec_run.side_effect = _exec_run
+    cfg = _make_cfg(
+        tmp_path,
+        preflight_checks=(
+            ("ruff", "ruff check ."),
+            ("mypy", "mypy ."),
+            ("pytest", "pytest"),
+        ),
+    )
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == [
+        ("ruff", "ruff check .", "Command failed (exit 1): src/app.py:1:1: F401"),
+        ("pytest", "pytest", "Command failed (exit 1): FAILED tests/test_app.py"),
+    ]
+    assert any("mypy ." in call for call in exec_calls)
+
+
 def test_agent_runner_run_preflight_passes_checks_that_require_installed_tools(
     tmp_path,
 ):
