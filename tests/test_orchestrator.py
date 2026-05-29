@@ -641,8 +641,8 @@ def test_cross_service_config_threads_service_to_core_phase_requests(tmp_path):
     assert merger_call["service"] == "codex"
 
 
-def test_empty_stage_override_model_uses_cli_default(tmp_path):
-    """Default planner stage override must pass the configured model and effort."""
+def test_default_planner_stage_override_passes_configured_model_and_effort(tmp_path):
+    """The Planner stage must receive the bundled default model and effort."""
     captured: list[dict] = []
 
     async def _fake_run_agent(request: RunRequest):

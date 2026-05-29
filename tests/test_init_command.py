@@ -1038,6 +1038,12 @@ def test_init_config_example_shows_opencode_planner_default_and_kimi_override(
         '    service="opencode",\n'
         '    model="deepseek-v4-flash",\n'
         '    effort="medium",\n'
+        "    fallback=StageOverride(\n"
+        '        service="codex",\n'
+        '        model="gpt-5.4-mini",\n'
+        '        effort="low",\n'
+        '        fallback=StageOverride(service="claude", model="haiku", effort="low"),\n'
+        "    ),\n"
     ) in content
     assert (
         '# plan_override = StageOverride(service="opencode", model="kimi-k2.6", '
