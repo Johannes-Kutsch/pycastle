@@ -1955,3 +1955,25 @@ def test_merge_phase_partial_close_failure_still_closes_successful_issue(
     assert result.clean == issues
     closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
     assert 2 in closed
+
+
+def test_merge_phase_keeps_merged_branch_progress_when_conflict_close_fails(
+    recording_deps, git_svc, github_svc
+):
+    deps, recording = recording_deps
+    git_svc.try_merge.side_effect = _conflict_on([2])
+
+    def _close_issue(number: int) -> None:
+        if number == 2:
+            raise _api_error(500)
+
+    github_svc.close_issue.side_effect = _close_issue
+    issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
+    _run(issues, deps)
+
+    merge_updates = [
+        call[2]
+        for call in recording.calls
+        if call[0] == "update_phase" and call[1] == "Merge"
+    ]
+    assert "merging 2/2 branches, closing 1/2 issues" in merge_updates

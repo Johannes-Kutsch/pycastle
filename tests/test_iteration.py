@@ -4557,7 +4557,7 @@ def test_merge_phase_only_shows_removing_counter_during_active_deletion(
     assert "merging 1/2 branches, closing 1/2 issues, removing 1/2 worktrees" in (
         merge_updates
     )
-    assert "merging 1/2 branches, closing 2/2 issues" in merge_updates
+    assert "merging 2/2 branches, closing 2/2 issues" in merge_updates
 
 
 # ── In-flight classification ──────────────────────────────────────────────────

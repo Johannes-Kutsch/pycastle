@@ -346,6 +346,8 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                             deps.repo_root, target_branch, sandbox_branch
                         )
                         RoleSession(sandbox_path, AgentRole.MERGER).discard()
+                        merge_done += 1
+                        _render_phase_status()
                 except (
                     AgentTimeoutError,
                     UsageLimitError,
