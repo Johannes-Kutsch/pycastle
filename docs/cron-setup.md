@@ -95,11 +95,11 @@ Have the credentials for the services your repo uses ready before running `pycas
 
 ## 5. Pycastle scaffold
 
-8. Scaffold the `pycastle/` directory in the consuming project. Choose local scope when prompted (global scope is for sharing config across many repos on one host):
+8. Scaffold the `pycastle/` directory in the consuming project. On a fresh unattended host, choose local scope when prompted (global scope is for sharing config across many repos on one host):
    ```bash
    .venv/bin/pycastle init
    ```
-   Paste the credentials relevant to the services you selected when prompted.
+   At the service-selection prompt, pressing Enter selects all supported services. If you choose only a subset, make sure your configured services still cover every bundled default stage chain you plan to use; otherwise add custom stage overrides before the first unattended run so pycastle does not hit an unconfigured stage. Paste the credentials relevant to the services you selected when prompted.
    Expected: `pycastle/` directory created with your local config files plus pycastle-managed scaffold: `.gitignore`, the separately rendered `config.py.example`, and the cron helpers under `setup/`. Prompt files and `pycastle/Dockerfile` are not copied; bundled prompts and the bundled universal Dockerfile remain in use unless you create local overrides. No `pycastle/prompts/` directory is expected until you decide to override a specific bundled prompt file.
 
 9. Build the agent image:
@@ -114,7 +114,7 @@ Have the credentials for the services your repo uses ready before running `pycas
 
 The cron helpers under `pycastle/setup/` manage unattended operation. `pycastle init` and `pycastle init --refresh` keep only the pycastle-managed scaffold in sync: `pycastle/.gitignore` plus `pycastle/setup/cron.sh`, `pycastle/setup/cron-install.sh`, and `pycastle/setup/cron-uninstall.sh` are copied from the managed scaffold allowlist, while `pycastle/config.py.example` is refresh-owned but rendered separately. `config.py`, `.env`, prompt overrides under `pycastle/prompts/`, the optional `pycastle/Dockerfile`, and `.pycastle-session/` runtime state remain user-owned and are not touched by refresh. The managed `.gitignore` ignores local secrets, runtime directories, local `config.py`, `config.py.example`, and `setup/`; refresh never copies files outside the scaffold allowlist, including `__pycache__/` or `*.pyc`. When `logs_dir` comes from global config, pycastle treats it as a parent directory and the effective log directory becomes `<logs_dir>/<sanitised project name>/`. When `logs_dir` comes from local config, pycastle uses the configured path directly.
 
-- **`setup/cron.sh`** — bootstrap-and-run wrapper. Acquires a global flock at `$PYCASTLE_HOME/.cron.lock` (6-hour timeout) so multiple repos on the same host serialize cleanly, asserts `.venv/` exists, upgrades pycastle (the host venv only needs pycastle itself — consuming-project deps are installed inside the agent container per ADR 0001), runs `pycastle init --refresh`, invokes `pycastle run` (which rebuilds the agent image internally via layer cache), then trims `cron.log` to the last 10000 lines so it cannot grow unbounded.
+- **`setup/cron.sh`** — bootstrap-and-run wrapper. Acquires a global flock at `$PYCASTLE_HOME/.cron.lock` (6-hour timeout) so multiple repos on the same host serialize cleanly, asserts `.venv/` exists, upgrades pycastle (the host venv only needs pycastle itself — consuming-project deps are installed inside the agent container per ADR 0001), refreshes the managed scaffold, then starts the normal unattended pycastle pipeline. Through that run path, pycastle verifies or rebuilds the universal agent image as needed, refreshes runtime-only session state when required, and either starts work or exits cleanly when no issue is ready. The wrapper then trims `cron.log` to the last 10000 lines so it cannot grow unbounded.
 - **`setup/cron-install.sh`** — idempotently installs a daily entry (`0 1 * * *`) into your user crontab, tagged `# pycastle:<absolute-repo-path>` so multiple repos coexist. The crontab line redirects stdout+stderr into the effective project's `cron.log`, resolved from `logs_dir` at install time: `<logs_dir>/<sanitised project name>/cron.log` for global config, or `<logs_dir>/cron.log` for local config. Cron output therefore lands alongside the per-agent logs and is captured from second 0, including bootstrap failures like a missing `.venv/` or pip errors.
 - **`setup/cron-uninstall.sh`** — removes only the line bearing this repo's marker.
 
@@ -140,7 +140,7 @@ All repos installed via `cron-install.sh` fire at 01:00 and serialize through a 
    ```bash
    bash pycastle/setup/cron.sh
    ```
-    Expected: pip upgrade ×2 completes, `pycastle init --refresh` completes, `pycastle run` refreshes any runtime-only session state it needs and starts (exits cleanly immediately if the issue tracker has nothing ready).
+    Expected: the managed scaffold refresh completes successfully, the normal run path verifies or rebuilds the universal agent image as needed, runtime-only session state refreshes if required, and the pipeline either starts normally or exits cleanly immediately if the issue tracker has nothing ready.
 
 ---
 
