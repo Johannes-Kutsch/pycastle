@@ -869,6 +869,18 @@ def test_load_config_local_removed_path_fields_are_ignored(tmp_path):
     assert not hasattr(cfg, "env_file")
 
 
+def test_load_config_removed_project_local_path_keys_do_not_hide_unknown_local_keys(
+    tmp_path,
+):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pathlib import Path\npycastle_dir = Path('legacy')\nnot_a_real_key = 1\n"
+    )
+
+    with pytest.raises(ValueError, match="not_a_real_key"):
+        load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
+
+
 def test_load_config_pycastle_home_env_resolves_global_dir(tmp_path, monkeypatch):
     global_dir = tmp_path / "from_env"
     global_dir.mkdir()
