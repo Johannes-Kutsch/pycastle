@@ -8,6 +8,7 @@ import pytest
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.session import (
+    ExactTranscriptHandoff,
     ProviderIdentity,
     ProviderIdentityKind,
     RoleSession,
@@ -400,6 +401,144 @@ def test_provider_identity_is_unrecoverable_when_sidecar_contains_only_whitespac
             run_kind=RunKind.FRESH,
             provider_session_id=None,
         )
+    )
+
+
+def test_exact_transcript_handoff_is_eligible_with_matching_metadata_provider_id_and_resumable_state(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    state_dir = rs.path / "opencode"
+    rs.save_service_session_id("opencode", "sess-opencode-123")
+    rs.save_service_session_metadata("opencode", "sess-opencode-123")
+
+    assert rs.exact_transcript_handoff(
+        "opencode",
+        state_dir=state_dir,
+        has_resumable_provider_state=True,
+    ) == ExactTranscriptHandoff(
+        provider_identity=ProviderIdentity(
+            kind=ProviderIdentityKind.RESUME,
+            run_kind=RunKind.RESUME,
+            provider_session_id="sess-opencode-123",
+        ),
+        is_eligible=True,
+    )
+
+
+@pytest.mark.parametrize(
+    ("service_name", "saved_provider_id", "metadata_service", "metadata_provider_id"),
+    [
+        ("opencode", "sess-opencode-123", None, None),
+        ("opencode", None, "opencode", "sess-opencode-123"),
+        ("opencode", "sess-opencode-123", "claude", "sess-opencode-123"),
+        ("opencode", "sess-opencode-123", "opencode", "sess-other"),
+    ],
+)
+def test_exact_transcript_handoff_is_ineligible_for_missing_or_mismatched_saved_identity(
+    worktree,
+    service_name,
+    saved_provider_id,
+    metadata_service,
+    metadata_provider_id,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    state_dir = rs.path / service_name
+    if saved_provider_id is not None:
+        rs.save_service_session_id(service_name, saved_provider_id)
+    if metadata_service is not None and metadata_provider_id is not None:
+        rs.save_service_session_metadata(metadata_service, metadata_provider_id)
+
+    assert (
+        rs.exact_transcript_handoff(
+            service_name,
+            state_dir=state_dir,
+            has_resumable_provider_state=True,
+        ).is_eligible
+        is False
+    )
+
+
+def test_exact_transcript_handoff_is_ineligible_without_resumable_provider_state(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    state_dir = rs.path / "opencode"
+    rs.save_service_session_id("opencode", "sess-opencode-123")
+    rs.save_service_session_metadata("opencode", "sess-opencode-123")
+
+    handoff = rs.exact_transcript_handoff(
+        "opencode",
+        state_dir=state_dir,
+        has_resumable_provider_state=False,
+    )
+
+    assert handoff.is_eligible is False
+    assert handoff.provider_identity == ProviderIdentity(
+        kind=ProviderIdentityKind.FRESH,
+        run_kind=RunKind.FRESH,
+        provider_session_id=None,
+    )
+
+
+def test_exact_transcript_handoff_is_eligible_for_codex_with_recovered_rollout_identity(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    state_dir = rs.path / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+    rs.save_service_session_metadata("codex", "thread-abc")
+
+    handoff = rs.exact_transcript_handoff(
+        "codex",
+        state_dir=state_dir,
+        has_resumable_provider_state=True,
+    )
+
+    assert handoff.is_eligible is True
+    assert handoff.provider_identity == ProviderIdentity(
+        kind=ProviderIdentityKind.RESUME,
+        run_kind=RunKind.RESUME,
+        provider_session_id="thread-abc",
+    )
+    assert rs.service_session_id("codex") == "thread-abc"
+
+
+def test_exact_transcript_handoff_is_ineligible_for_ambiguous_codex_rollout_evidence(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    state_dir = rs.path / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-old"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-new"}\n',
+        encoding="utf-8",
+    )
+    rs.save_service_session_metadata("codex", "thread-new")
+
+    handoff = rs.exact_transcript_handoff(
+        "codex",
+        state_dir=state_dir,
+        has_resumable_provider_state=True,
+    )
+
+    assert handoff.is_eligible is False
+    assert handoff.provider_identity == ProviderIdentity(
+        kind=ProviderIdentityKind.UNRECOVERABLE,
+        run_kind=RunKind.FRESH,
+        provider_session_id=None,
     )
 
 

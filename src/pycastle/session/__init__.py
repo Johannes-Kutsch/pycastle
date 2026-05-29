@@ -1,4 +1,5 @@
 from .resume import (
+    ExactTranscriptHandoff,
     ProviderIdentity,
     ProviderIdentityKind,
     SESSION_DIR_NAME,
@@ -9,6 +10,7 @@ from .resume import (
 )
 
 __all__ = [
+    "ExactTranscriptHandoff",
     "ProviderIdentity",
     "ProviderIdentityKind",
     "SESSION_DIR_NAME",

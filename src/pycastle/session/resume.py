@@ -70,6 +70,24 @@ class ProviderIdentity:
     provider_session_id: str | None
 
 
+@dataclass(frozen=True)
+class ExactTranscriptHandoff:
+    provider_identity: ProviderIdentity
+    is_eligible: bool
+
+
+def _is_exact_resumable_provider_session(
+    service_name: str,
+    provider_session_id: str | None,
+    state_dir: Path | None,
+) -> bool:
+    if provider_session_id is None or state_dir is None:
+        return False
+    if service_name == "codex":
+        return _codex_thread_id_from_rollouts(state_dir) == provider_session_id
+    return True
+
+
 def is_stage_done_for(worktree: Path, role: AgentRole) -> bool:
     return RoleSession(worktree, role).is_done()
 
@@ -182,6 +200,47 @@ class RoleSession:
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+
+    def exact_transcript_handoff(
+        self,
+        service_name: str,
+        *,
+        state_dir: Path | None,
+        has_resumable_provider_state: bool,
+    ) -> ExactTranscriptHandoff:
+        if service_name == "claude":
+            provider_identity = ProviderIdentity(
+                kind=(
+                    ProviderIdentityKind.RESUME
+                    if has_resumable_provider_state
+                    else ProviderIdentityKind.FRESH
+                ),
+                run_kind=(
+                    RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH
+                ),
+                provider_session_id=self.session_uuid(),
+            )
+        else:
+            provider_identity = self.provider_identity(
+                service_name,
+                has_resumable_provider_state=has_resumable_provider_state,
+            )
+
+        metadata = self.service_session_metadata(service_name)
+        is_eligible = (
+            provider_identity.run_kind is RunKind.RESUME
+            and metadata is not None
+            and metadata["provider_session_id"] == provider_identity.provider_session_id
+            and _is_exact_resumable_provider_session(
+                service_name,
+                provider_identity.provider_session_id,
+                state_dir,
+            )
+        )
+        return ExactTranscriptHandoff(
+            provider_identity=provider_identity,
+            is_eligible=is_eligible,
+        )
 
     def is_resumable(self) -> bool:
         return self.path.is_dir() and any(
