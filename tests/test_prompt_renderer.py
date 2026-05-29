@@ -13,7 +13,7 @@ from pycastle.prompts.pipeline import (
     Scope,
     build_interrupted_work_clause,
 )
-from pycastle.prompts.source import PromptSource
+from pycastle.prompts.source import PromptReference, PromptSource
 from pycastle.session import RunKind
 
 _SHIPPED_PROMPTS_DIR = (
@@ -259,6 +259,13 @@ def test_template_improve_issues_has_correct_scope():
 def test_template_resume_has_correct_scope():
     assert PromptTemplate.RESUME.filename == "_resume-prompt.md"
     assert PromptTemplate.RESUME.scope == Scope.RESUME
+
+
+def test_template_reference_carries_name_and_relative_path():
+    ref = PromptTemplate.IMPLEMENT_BEHAVIOR.reference
+    assert isinstance(ref, PromptReference)
+    assert ref.name == "IMPLEMENT_BEHAVIOR"
+    assert ref.relative_path == PromptTemplate.IMPLEMENT_BEHAVIOR.filename
 
 
 def test_template_enum_has_fifteen_variants():

@@ -14,6 +14,12 @@ def _is_local_prompts_dir(path: Path) -> bool:
     )
 
 
+@dataclass(frozen=True)
+class PromptReference:
+    name: str
+    relative_path: str
+
+
 class PromptSource:
     def __init__(
         self,
@@ -78,6 +84,14 @@ class PromptSource:
         if prompt_file is None:
             return None
         return prompt_file.read_text()
+
+    def lookup_reference(self, prompt: PromptReference) -> EffectivePromptFile:
+        return self.lookup(prompt.relative_path)
+
+    def maybe_lookup_reference(
+        self, prompt: PromptReference
+    ) -> EffectivePromptFile | None:
+        return self.maybe_lookup(prompt.relative_path)
 
 
 @dataclass(frozen=True)
