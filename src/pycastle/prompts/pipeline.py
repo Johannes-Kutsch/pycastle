@@ -185,9 +185,9 @@ def _format_feedback_commands(checks: Sequence[str]) -> str:
 
 class PromptRenderer:
     _STATIC_SHARED_FILES: dict[str, str] = {
-        "DESIGN_STANDARDS": "design.md",
-        "IMPLEMENTATION_STANDARDS": "implementation.md",
-        "IMPLEMENT_OUTPUT_RULES": "implement-output-rules.md",
+        "DESIGN_STANDARDS": "coding-standards/design.md",
+        "IMPLEMENTATION_STANDARDS": "coding-standards/implementation.md",
+        "IMPLEMENT_OUTPUT_RULES": "coding-standards/implement-output-rules.md",
         "ISSUE_TRACKER": "_issue-tracker.md",
     }
     _DYNAMIC_SHARED_FILES: dict[str, str] = {
@@ -202,6 +202,16 @@ class PromptRenderer:
         self._global_args = self._build_global_args(cfg)
         self._validate_templates()
 
+    @property
+    def _shared_files(self) -> dict[str, str]:
+        return {**self._STATIC_SHARED_FILES, **self._DYNAMIC_SHARED_FILES}
+
+    @staticmethod
+    def _referenced_tokens(content: str) -> set[str]:
+        found = set(PLACEHOLDER.findall(content))
+        found |= {m.group(1) for m in CONDITIONAL_BLOCK.finditer(content)}
+        return found
+
     def _render_effective_file(
         self,
         prompt_file: EffectivePromptFile | None,
@@ -214,8 +224,7 @@ class PromptRenderer:
                 raise PromptRenderError("Missing prompt fragment")
             return None
         content = prompt_file.read_text()
-        found = set(PLACEHOLDER.findall(content))
-        found |= {m.group(1) for m in CONDITIONAL_BLOCK.finditer(content)}
+        found = self._referenced_tokens(content)
         unknown = found - allowed_args.keys()
         if unknown:
             raise PromptRenderError(
@@ -224,25 +233,52 @@ class PromptRenderer:
             )
         return _render(content, allowed_args)
 
-    def _load_static_shared_files(self, base_args: dict[str, str]) -> dict[str, str]:
-        result = {}
-        for key, filename in self._STATIC_SHARED_FILES.items():
-            if filename.startswith("_"):
-                rendered = self._render_effective_file(
-                    self._prompt_source.maybe_lookup(filename),
-                    allowed_args=base_args,
-                    required=False,
+    def _resolve_shared_file(
+        self,
+        key: str,
+        *,
+        allowed_args: dict[str, str],
+        cache: dict[str, str],
+        stack: tuple[str, ...] = (),
+    ) -> str:
+        if key in cache:
+            return cache[key]
+        if key in stack:
+            cycle = " -> ".join((*stack, key))
+            raise PromptRenderError(f"Prompt fragment cycle detected: {cycle}")
+
+        prompt_file = self._prompt_source.maybe_lookup(self._shared_files[key])
+        if prompt_file is None:
+            if key in self._STATIC_SHARED_FILES and key != "ISSUE_TRACKER":
+                cache[key] = ""
+                return ""
+            if key == "ISSUE_TRACKER":
+                raise PromptRenderError(
+                    f"Missing prompt fragment for {key}: {self._shared_files[key]}"
                 )
-                if rendered is not None:
-                    result[key] = rendered
-            else:
-                rendered = self._render_effective_file(
-                    self._prompt_source.maybe_lookup(f"coding-standards/{filename}"),
-                    allowed_args=base_args,
-                    required=False,
-                )
-                result[key] = rendered or ""
-        return result
+            raise PromptRenderError(
+                f"Missing prompt fragment: {self._shared_files[key]}"
+            )
+
+        content = prompt_file.read_text()
+        found = self._referenced_tokens(content)
+        shared_found = found & self._shared_files.keys()
+        resolved_args = dict(allowed_args)
+        for nested_key in shared_found:
+            resolved_args[nested_key] = self._resolve_shared_file(
+                nested_key,
+                allowed_args=allowed_args,
+                cache=cache,
+                stack=(*stack, key),
+            )
+        rendered = self._render_effective_file(
+            prompt_file,
+            allowed_args=resolved_args,
+            required=True,
+        )
+        assert rendered is not None
+        cache[key] = rendered
+        return rendered
 
     @staticmethod
     def _validation_args(
@@ -255,7 +291,7 @@ class PromptRenderer:
 
     def _build_global_args(self, cfg: Config) -> dict[str, str]:
         checks = " && ".join(cmd for _, cmd in cfg.preflight_checks)
-        base_args = {
+        return {
             "BUG_LABEL": cfg.bug_label,
             "READY_FOR_AGENT_LABEL": cfg.issue_label,
             "READY_FOR_HUMAN_LABEL": cfg.hitl_label,
@@ -269,17 +305,16 @@ class PromptRenderer:
             "FEEDBACK_COMMANDS": _format_feedback_commands(cfg.implement_checks),
             "CHECKS": checks,
         }
-        return {**base_args, **self._load_static_shared_files(base_args)}
 
     def _validate_templates(self) -> None:
-        global_keys = set(self._global_args.keys()) | set(self._DYNAMIC_SHARED_FILES)
+        shared_cache: dict[str, str] = {}
+        global_keys = set(self._global_args.keys()) | set(self._shared_files)
         for template in PromptTemplate:
             prompt_file = self._prompt_source.maybe_lookup(template.filename)
             if prompt_file is None:
                 continue
             content = prompt_file.read_text()
-            found = set(PLACEHOLDER.findall(content))
-            found |= {m.group(1) for m in CONDITIONAL_BLOCK.finditer(content)}
+            found = self._referenced_tokens(content)
             allowed = global_keys | template.scope.placeholders
             unknown = found - allowed
             if unknown:
@@ -289,16 +324,20 @@ class PromptRenderer:
             validation_args = self._validation_args(
                 self._global_args, template.scope.placeholders
             )
-            for key, filename in self._DYNAMIC_SHARED_FILES.items():
-                if key not in found:
-                    continue
-                rendered = self._render_effective_file(
-                    self._prompt_source.maybe_lookup(filename),
+            for key in found & self._shared_files.keys():
+                self._resolve_shared_file(
+                    key,
                     allowed_args=validation_args,
-                    required=False,
+                    cache=shared_cache,
                 )
-                if rendered is None:
-                    raise PromptRenderError(f"Missing prompt fragment: {filename}")
+        self._global_args = {
+            **self._global_args,
+            **{
+                key: value
+                for key, value in shared_cache.items()
+                if key in self._STATIC_SHARED_FILES
+            },
+        }
 
     async def render(
         self,
@@ -323,15 +362,15 @@ class PromptRenderer:
         content = self._prompt_source.lookup(template.filename).read_text()
         preprocessed = await _preprocess(content, exec_fn)
         all_args = {**self._global_args, **scope_args}
-        for key, filename in self._DYNAMIC_SHARED_FILES.items():
-            if key not in preprocessed:
-                continue
-            rendered = self._render_effective_file(
-                self._prompt_source.maybe_lookup(filename),
+        shared_cache = {
+            key: value
+            for key, value in self._global_args.items()
+            if key in self._STATIC_SHARED_FILES
+        }
+        for key in self._referenced_tokens(preprocessed) & self._shared_files.keys():
+            all_args[key] = self._resolve_shared_file(
+                key,
                 allowed_args=all_args,
-                required=False,
+                cache=shared_cache,
             )
-            if rendered is None:
-                raise PromptRenderError(f"Missing prompt fragment: {filename}")
-            all_args[key] = rendered
         return _render(preprocessed, all_args)

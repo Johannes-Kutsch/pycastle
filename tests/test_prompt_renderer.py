@@ -601,6 +601,40 @@ def test_renderer_returns_all_empty_standards_when_dir_absent(tmp_path):
     assert result == "|"
 
 
+def test_renderer_ignores_broken_unreferenced_local_shared_file_in_custom_prompt_tree(
+    prompts_dir,
+):
+    custom_prompts_dir = prompts_dir.parent / "custom-prompts"
+    (custom_prompts_dir / "implement").mkdir(parents=True)
+    (custom_prompts_dir / "coding-standards").mkdir()
+    (custom_prompts_dir / "implement" / "behavior.md").write_text(
+        "issue {{ISSUE_NUMBER}}"
+    )
+    (custom_prompts_dir / "coding-standards" / "design.md").write_text(
+        "{{UNKNOWN_KEY}}"
+    )
+    cfg = _cfg_for_prompts_dir(custom_prompts_dir)
+
+    renderer = PromptRenderer(cfg)
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
+            {
+                "ISSUE_NUMBER": "1",
+                "ISSUE_TITLE": "t",
+                "ISSUE_BODY": "",
+                "ISSUE_COMMENTS": "",
+                "BRANCH": "b",
+                "INTERRUPTED_WORK": "",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert result == "issue 1"
+
+
 def test_renderer_renders_issue_tracker_fragment(prompts_dir):
     (prompts_dir / "_issue-tracker.md").write_text("issue-tracker recipes")
     (prompts_dir / "improve" / "01-scan.md").write_text("{{ISSUE_TRACKER}}")
