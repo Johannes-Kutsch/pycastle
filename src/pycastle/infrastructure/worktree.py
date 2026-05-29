@@ -28,10 +28,6 @@ class _WorktreeDeps(Protocol):
     git_svc: GitService
 
 
-class _RepoRootDeps(Protocol):
-    repo_root: Path
-
-
 def worktree_name_for_branch(branch: str) -> str:
     m = re.match(r"pycastle/issue-(\d+)", branch)
     if m:
@@ -43,12 +39,7 @@ def _project_local_worktrees_dir(repo_root: Path) -> Path:
     return repo_root / PROJECT_LOCAL_PYCASTLE_DIR / ".worktrees"
 
 
-def worktree_path(name: str, repo_root_or_deps: Path | _RepoRootDeps) -> Path:
-    repo_root = (
-        repo_root_or_deps
-        if isinstance(repo_root_or_deps, Path)
-        else repo_root_or_deps.repo_root
-    )
+def worktree_path(name: str, repo_root: Path) -> Path:
     return _project_local_worktrees_dir(repo_root) / name
 
 
