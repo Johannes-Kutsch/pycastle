@@ -70,6 +70,7 @@ class ImplementResult:
     usage_limit_hit: bool = False
     usage_limit_reset_time: datetime | None = None
     usage_limit_provider: str | None = None
+    usage_limit_raw_message: str | None = None
     usage_limit_account_label: str | None = None
     usage_limit_is_permanent: bool = False
 
@@ -321,6 +322,9 @@ async def implement_phase(
         usage_limit_reset_time=usage_limit_reset_time,
         usage_limit_provider=(
             first_usage_limit_error.provider if first_usage_limit_error else None
+        ),
+        usage_limit_raw_message=(
+            first_usage_limit_error.raw_message if first_usage_limit_error else None
         ),
         usage_limit_account_label=(
             first_usage_limit_error.account_label if first_usage_limit_error else None

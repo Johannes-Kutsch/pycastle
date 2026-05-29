@@ -58,6 +58,7 @@ class AbortedHITL:
 class AbortedUsageLimit:
     reset_time: datetime | None = None
     provider: str | None = None
+    raw_message: str | None = None
     account_label: str | None = None
     is_permanent: bool = False
     stage_key: str | None = None
@@ -149,6 +150,7 @@ async def _run_implement_and_merge(
             return AbortedUsageLimit(
                 reset_time=impl_result.usage_limit_reset_time,
                 provider=impl_result.usage_limit_provider,
+                raw_message=impl_result.usage_limit_raw_message,
                 account_label=impl_result.usage_limit_account_label,
                 is_permanent=impl_result.usage_limit_is_permanent,
                 stage_key="implement",
@@ -289,6 +291,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
     except UsageLimitError as err:
         if (
             err.raw_message is not None
+            and not err.is_permanent
             and err.raw_message not in _FILED_USAGE_LIMIT_RAW_MESSAGES
         ):
             _FILED_USAGE_LIMIT_RAW_MESSAGES.add(err.raw_message)
@@ -299,6 +302,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         return AbortedUsageLimit(
             reset_time=err.reset_time,
             provider=err.provider,
+            raw_message=err.raw_message,
             account_label=err.account_label,
             is_permanent=err.is_permanent,
             stage_key=err.stage_key,

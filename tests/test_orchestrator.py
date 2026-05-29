@@ -2229,12 +2229,78 @@ def test_subscription_access_denial_switch_message_names_service_and_account(
         )
 
     mock_sleep.assert_not_called()
-    out = capsys.readouterr().out
-    assert (
-        "claude secondary account exhausted permanently, switching to next available."
-        in out
-    )
+    out = " ".join(capsys.readouterr().out.split())
+    assert "claude secondary account retired for this run" in out
+    assert "will be retried on the next run." in out
     assert "Usage limit reached. Sleeping until " not in out
+
+
+def test_permanent_stage_exhaustion_with_no_fallback_stops_without_sleeping(
+    tmp_path, capsys
+):
+    fixed_now = datetime(2026, 1, 1, 14, 0, 0).astimezone()
+    permanent_wake = datetime(9999, 12, 31, 23, 59, 0).astimezone()
+    denial = (
+        "Your organization has disabled Claude subscription access for Claude Code. "
+        "Please use an Anthropic API key instead, or ask your admin to enable "
+        "Claude subscription access for Claude Code."
+    )
+
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.side_effect = [
+        [
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "x" * 100,
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
+        ],
+        [],
+    ]
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+            )
+        raise UsageLimitError(
+            reset_time=None,
+            provider="claude",
+            raw_message=denial,
+            is_permanent=True,
+            account_label="secondary",
+            stage_key="implement",
+        )
+
+    with (
+        patch("time.sleep") as mock_sleep,
+        patch("pycastle._time.now_local", return_value=fixed_now),
+    ):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            service_registry=ServiceRegistry(
+                {"claude": _FakeService(available=False, wake_time=permanent_wake)}
+            ),
+            implement_override=StageOverride(
+                service="claude",
+                model="sonnet",
+                effort="medium",
+            ),
+            max_iterations=2,
+        )
+
+    mock_sleep.assert_not_called()
+    out = capsys.readouterr().out
+    normalized = " ".join(out.split())
+    assert "claude secondary account retired for this run" in normalized
+    assert "will be retried on the next run." in normalized
+    assert denial in normalized
+    assert "Sleeping until" not in out
+    assert "=== Iteration 2/2 ===" not in out
 
 
 # ── Preflight-phase usage-limit handling ─────────────────────────────────────

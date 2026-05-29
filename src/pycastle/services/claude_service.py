@@ -200,7 +200,14 @@ def _classify_line(line: str) -> list[ParsedTurn]:
     if _is_subscription_access_denial(
         obj.get("api_error_status"), obj.get("result"), obj.get("is_error")
     ):
-        return [UsageLimit(reset_time=None, raw_message=None, is_permanent=True)]
+        denial_message = obj.get("result")
+        return [
+            UsageLimit(
+                reset_time=None,
+                raw_message=denial_message if isinstance(denial_message, str) else None,
+                is_permanent=True,
+            )
+        ]
 
     if obj.get("is_error") and obj.get("type") == "result":
         status = obj.get("api_error_status")

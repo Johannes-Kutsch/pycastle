@@ -112,6 +112,24 @@ def _override_for_stage_key(cfg, stage_key: str | None):
     return None
 
 
+def _print_permanent_exhaustion_warning(
+    *,
+    status_display: StatusDisplay,
+    provider: str | None,
+    account_label: str | None,
+    denial_message: str | None,
+) -> None:
+    provider_label = provider or "claude"
+    account = account_label or "unknown"
+    message = (
+        f"{provider_label} {account} account retired for this run and will be retried "
+        "on the next run."
+    )
+    if denial_message:
+        message += f" Claude said: {denial_message}"
+    status_display.print("", message)
+
+
 def ensure_session_excludes(repo_root: Path) -> None:
     exclude_file = repo_root / ".git" / "info" / "exclude"
     if not exclude_file.parent.exists():
@@ -288,6 +306,7 @@ async def run(
                 case AbortedUsageLimit(
                     reset_time=reset_time,
                     provider=provider,
+                    raw_message=raw_message,
                     account_label=account_label,
                     is_permanent=is_permanent,
                     stage_key=stage_key,
@@ -312,10 +331,11 @@ async def run(
                             and provider is not None
                             and account_label is not None
                         ):
-                            status_display.print(  # type: ignore[union-attr]
-                                "",
-                                f"{provider} {account_label} account exhausted permanently, "
-                                "switching to next available.",
+                            _print_permanent_exhaustion_warning(
+                                status_display=status_display,  # type: ignore[arg-type]
+                                provider=provider,
+                                account_label=account_label,
+                                denial_message=raw_message,
                             )
                         else:
                             if registry is None:
@@ -333,6 +353,14 @@ async def run(
                                     "switching to next available.",
                                 )
                         continue
+                    if is_permanent:
+                        _print_permanent_exhaustion_warning(
+                            status_display=status_display,  # type: ignore[arg-type]
+                            provider=provider,
+                            account_label=account_label,
+                            denial_message=raw_message,
+                        )
+                        break
                     if registry is None:
                         next_wake = None
                     elif use_stage_scope:
