@@ -35,7 +35,7 @@ class PromptSource:
 
     def _resolve_local_override(self, relative_path: str) -> Path | None:
         local_path = self._local_dir / relative_path
-        if not local_path.exists():
+        if not local_path.is_file():
             return None
         if self._bundled_relative_paths is None:
             return local_path
@@ -86,7 +86,7 @@ class EffectivePromptFile:
     path: Path
 
     def exists(self) -> bool:
-        return self.path.exists()
+        return self.path.is_file()
 
     def read_text(self) -> str:
         return self.path.read_text(encoding="utf-8")
