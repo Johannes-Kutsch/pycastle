@@ -131,6 +131,9 @@ def _extract_error(event: dict[str, object]) -> HardError | TransientError | Non
         if 400 <= status < 500:
             return HardError(status_code=status, raw_message=message)
 
+    if status is None and message.lower().startswith("model not found:"):
+        return HardError(status_code=400, raw_message=message)
+
     if status is None:
         return TransientError(status_code=None, raw_message=message)
 
@@ -159,7 +162,7 @@ class OpenCodeService:
         if run_kind == RunKind.RESUME and session_uuid:
             parts.append(f"--session {session_uuid}")
         if model:
-            parts.append(f"--model opencode-go/{model}")
+            parts.append(f"--model {model}")
         parts.append('"$(cat /tmp/.pycastle_prompt)"')
         return " ".join(parts)
 

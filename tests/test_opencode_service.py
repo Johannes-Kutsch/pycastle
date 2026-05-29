@@ -32,12 +32,12 @@ def test_opencode_service_builds_json_commands_and_go_api_env() -> None:
     env = service.build_env("/workspace/.pycastle-session/implementer/opencode")
 
     assert fresh == (
-        "opencode run --format json --model opencode-go/kimi-k2.6 "
+        "opencode run --format json --model kimi-k2.6 "
         '"$(cat /tmp/.pycastle_prompt)"'
     )
     assert resume == (
         "opencode run --format json --session session-123 "
-        '--model opencode-go/kimi-k2.6 "$(cat /tmp/.pycastle_prompt)"'
+        '--model kimi-k2.6 "$(cat /tmp/.pycastle_prompt)"'
     )
     assert env == {
         "TZ": "UTC",
@@ -167,6 +167,32 @@ def test_opencode_service_maps_transient_and_hard_runtime_errors() -> None:
         TransientError(status_code=None, raw_message="connection dropped")
     ]
     assert hard == [HardError(status_code=401, raw_message="invalid api key")]
+
+
+def test_opencode_service_maps_missing_model_without_status_as_hard_error() -> None:
+    service = OpenCodeService()
+
+    events = list(
+        service.run(
+            [
+                (
+                    '{"type":"error","timestamp":1,"sessionID":"sess_123","error":{'
+                    '"name":"UnknownError","data":{"message":"Model not found: '
+                    'opencode-go/deepseek-v4-flash. Did you mean: deepseek-v4-flash?"}}}'
+                )
+            ]
+        )
+    )
+
+    assert events == [
+        HardError(
+            status_code=400,
+            raw_message=(
+                "Model not found: opencode-go/deepseek-v4-flash. "
+                "Did you mean: deepseek-v4-flash?"
+            ),
+        )
+    ]
 
 
 def test_opencode_service_session_id_callback_fires_once_for_repeated_id() -> None:
