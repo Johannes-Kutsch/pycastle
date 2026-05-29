@@ -400,6 +400,88 @@ def test_check_files_one_host_check_issue_per_failed_command_and_reports_numbers
     )
 
 
+def test_check_surfaces_each_failed_host_check_before_host_check_reporter_startup(
+    tmp_path, monkeypatch, capsys
+):
+    import pycastle.commands.check as check_mod
+    from pycastle.agents.output_protocol import AgentRole, IssueOutput
+    from pycastle.agents.runner import RunRequest
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "abc123def456"
+
+    failures = {
+        "lint": check_mod.HostCheckFailedError(
+            name="lint", command="python -c lint", output="lint broke"
+        ),
+        "tests": check_mod.HostCheckFailedError(
+            name="tests", command="python -c tests", output="tests broke"
+        ),
+    }
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        exc = failures.get(name)
+        if exc is not None:
+            raise exc
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _RecordingAgentRunner:
+        def __init__(self) -> None:
+            self.calls: list[RunRequest] = []
+
+        async def run(self, request: RunRequest) -> IssueOutput:
+            self.calls.append(request)
+            request.status_display.register(request.name, "agent")
+            request.status_display.remove(request.name)
+            return IssueOutput(
+                number=40 + len(self.calls), labels=["bug", "ready-for-human"]
+            )
+
+    runner = _RecordingAgentRunner()
+    github_svc = MagicMock()
+
+    monkeypatch.setattr(check_mod, "_run_host_check", fake_run_host_check)
+    monkeypatch.setattr(
+        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+    )
+
+    check_mod.main(
+        cfg=Config(
+            host_checks=(
+                ("lint", "python -c lint"),
+                ("tests", "python -c tests"),
+                ("format", "python -c format"),
+            )
+        ),
+        git_service=git_svc,
+        github_service=github_svc,
+        agent_runner=runner,
+    )
+
+    out = capsys.readouterr().out
+    assert [call.role for call in runner.calls] == [
+        AgentRole.PREFLIGHT_ISSUE,
+        AgentRole.PREFLIGHT_ISSUE,
+    ]
+    assert [call.scope_args["CHECK_NAME"] for call in runner.calls] == ["lint", "tests"]
+    assert out.index("[Host Check] failed lint") < out.index(
+        "[Host-Check Reporter] started"
+    )
+    assert out.index("[Host Check] failed tests") < out.index(
+        "[Host-Check Reporter] started"
+    )
+    assert out.index("[Host Check] format") < out.index("[Host-Check Reporter] started")
+    assert "Host checks filed or updated issues: #41, #42" in out
+
+
 def test_check_passes_raw_failed_command_output_to_host_check_issue_agent(
     tmp_path, monkeypatch
 ):

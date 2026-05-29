@@ -50,6 +50,13 @@ def _surface_current_host_check(status_display: StatusDisplay, name: str) -> Non
         status_display.print("Host Check", name)
 
 
+def _surface_failed_host_checks(
+    status_display: StatusDisplay, failures: list[_HostCheckFailure]
+) -> None:
+    for failure in failures:
+        status_display.print("Host Check", f"failed {failure.name}", style="error")
+
+
 def _failure_from_exception(
     name: str, command: str, exc: RuntimeError
 ) -> _HostCheckFailure:
@@ -212,6 +219,7 @@ def main(
                     except RuntimeError as exc:
                         failures.append(_failure_from_exception(name, command, exc))
                 if failures:
+                    _surface_failed_host_checks(resolved_status_display, failures)
                     resolved_agent_runner = agent_runner
                     resolved_service_registry = service_registry
                     if resolved_agent_runner is None:
