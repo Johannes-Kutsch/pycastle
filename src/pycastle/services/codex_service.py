@@ -198,7 +198,7 @@ class CodexService:
         sessions_dir = state_dir / "sessions"
         if not sessions_dir.is_dir():
             return False
-        return any(sessions_dir.glob("rollout-*.jsonl"))
+        return any(sessions_dir.rglob("rollout-*.jsonl"))
 
     def valid_models(self) -> frozenset[str]:
         return frozenset(

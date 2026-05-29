@@ -250,6 +250,14 @@ def test_is_resumable_true_when_rollout_jsonl_exists(tmp_path):
     assert CodexService().is_resumable(state_dir) is True
 
 
+def test_is_resumable_true_when_nested_rollout_jsonl_exists(tmp_path):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    nested_sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    nested_sessions_dir.mkdir(parents=True)
+    (nested_sessions_dir / "rollout-001.jsonl").write_text("{}\n")
+    assert CodexService().is_resumable(state_dir) is True
+
+
 def test_is_resumable_false_when_sessions_dir_empty(tmp_path):
     state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
     sessions_dir = state_dir / "sessions"
