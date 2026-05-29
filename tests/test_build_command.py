@@ -1,6 +1,7 @@
 import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
@@ -113,6 +114,24 @@ def _shipped_defaults_in_wheel(tmp_path: Path) -> set[str]:
                 name[len("pycastle/") :]
                 for name in wheel.namelist()
                 if name.startswith("pycastle/defaults/") and not name.endswith("/")
+            }
+    finally:
+        shutil.rmtree(build_dir, ignore_errors=True)
+
+
+def _shipped_defaults_in_sdist(tmp_path: Path) -> set[str]:
+    from setuptools.build_meta import build_sdist  # type: ignore[import-untyped]
+
+    repo_root = Path(__file__).resolve().parents[1]
+    build_dir = repo_root / "build"
+    shutil.rmtree(build_dir, ignore_errors=True)
+    try:
+        sdist_name = build_sdist(str(tmp_path))
+        with tarfile.open(tmp_path / sdist_name, "r:gz") as sdist:
+            return {
+                name.split("src/pycastle/", 1)[1]
+                for name in sdist.getnames()
+                if "src/pycastle/defaults/" in name and not name.endswith("/")
             }
     finally:
         shutil.rmtree(build_dir, ignore_errors=True)
@@ -477,6 +496,20 @@ def test_packaging_includes_bundled_universal_dockerfile():
 
 def test_wheel_ships_current_bundled_runtime_defaults_tree_only(tmp_path):
     shipped_defaults = _shipped_defaults_in_wheel(tmp_path)
+    bundled_defaults = {
+        str(path.relative_to(Path("src/pycastle")))
+        for path in Path("src/pycastle/defaults").rglob("*")
+        if path.is_file()
+    }
+
+    assert bundled_defaults <= shipped_defaults
+    assert "defaults/Dockerfile.claude" not in shipped_defaults
+    assert "defaults/Dockerfile.codex" not in shipped_defaults
+    assert "defaults/Dockerfile.opencode" not in shipped_defaults
+
+
+def test_sdist_ships_current_bundled_runtime_defaults_tree_only(tmp_path):
+    shipped_defaults = _shipped_defaults_in_sdist(tmp_path)
     bundled_defaults = {
         str(path.relative_to(Path("src/pycastle")))
         for path in Path("src/pycastle/defaults").rglob("*")
