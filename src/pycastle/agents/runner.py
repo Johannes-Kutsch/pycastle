@@ -151,14 +151,16 @@ class AgentRunner:
         self,
         mount_path: Path,
         service: AgentService,
-        state_dir_relpath: str | None = None,
+        state_dir: Path | None = None,
     ) -> DockerSession:
         volumes, auto_overlay = build_volume_spec(mount_path)
         container_env = self._container_base_env()
-        state_dir: str | None = None
-        if state_dir_relpath is not None:
-            state_dir = f"{_CONTAINER_WORKSPACE}/{state_dir_relpath}"
-        container_env.update(service.build_env(state_dir))
+        state_dir_container_path: str | None = None
+        if state_dir is not None:
+            state_dir_container_path = (
+                f"{_CONTAINER_WORKSPACE}/{state_dir.relative_to(mount_path)}/"
+            )
+        container_env.update(service.build_env(state_dir_container_path))
         return DockerSession(
             volumes=volumes,
             container_env=container_env,
@@ -277,7 +279,6 @@ class AgentRunner:
                 else RecoveredSessionIdPersistence.SKIP
             ),
         )
-        svc_state_relpath = service.state_dir_relpath(role, session_namespace)
         run_kind = plan.run_kind
         state_dir = plan.service_state_dir
         service_session_id: str | None = plan.provider_session_id
@@ -322,7 +323,7 @@ class AgentRunner:
                 effort=effort,
             ),
         ) as row:
-            session = self._build_session(mount_path, service, svc_state_relpath)
+            session = self._build_session(mount_path, service, state_dir)
             runner = ContainerRunner(
                 name,
                 session,

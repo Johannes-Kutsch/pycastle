@@ -2865,6 +2865,72 @@ def test_agent_runner_uses_run_session_plan_for_claude_resume_dispatch(
     assert all("--session-id" not in c for c in captured_cmds)
 
 
+def test_agent_runner_uses_run_session_plan_state_dir_for_claude_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured_env: dict[str, str] = {}
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+
+    def run_side_effect(*args, **kwargs):
+        captured_env.update(kwargs.get("environment") or {})
+        return mock_container
+
+    mock_client.containers.run.side_effect = run_side_effect
+
+    def exec_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            r = MagicMock()
+            r.output = iter(_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    planned_state_dir = tmp_path / ".pycastle-session" / "implementer" / "planned"
+
+    def planned_run_session(**kwargs):
+        return RunSessionPlan(
+            role=AgentRole.IMPLEMENTER,
+            worktree=tmp_path,
+            namespace="",
+            service=kwargs["service"],
+            run_kind=RunKind.FRESH,
+            service_state_dir=planned_state_dir,
+            provider_session_id="planned-session-id",
+            auth_seeding_requirement=kwargs["auth_seeding_requirement"],
+            recovered_session_id_persistence=kwargs["recovered_session_id_persistence"],
+        )
+
+    monkeypatch.setattr(
+        "pycastle.session.run_session.RunSessionPlan.for_service",
+        planned_run_session,
+    )
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Impl",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                service="claude",
+            )
+        )
+    )
+
+    assert captured_env["CLAUDE_CONFIG_DIR"].endswith(
+        "/.pycastle-session/implementer/planned/"
+    )
+
+
 def test_build_prompt_uses_role_template_on_resume_with_send_role_prompt(tmp_path):
     """On a Resume run with send_role_prompt_on_resume=True, _build_prompt uses the role template."""
     cfg = _make_build_prompt_cfg(tmp_path)
