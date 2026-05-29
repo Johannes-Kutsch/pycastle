@@ -10,8 +10,13 @@ from pathlib import Path
 
 from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
-from ..config import DEFAULT_ENV_FILE, Config, load_config
-from ..config import load_env, resolve_global_dir
+from ..config import (
+    DEFAULT_ENV_FILE,
+    Config,
+    load_config,
+    load_credential_env,
+    resolve_global_dir,
+)
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
 from ..infrastructure.worktree import transient_worktree
 from ..iteration import status_row
@@ -89,7 +94,7 @@ def _resolve_github_service(
     cfg: Config,
     git_svc: GitService,
 ) -> GithubService:
-    resolved = load_env(
+    resolved = load_credential_env(
         global_dir=resolve_global_dir(None, os.environ),
         local_env_file=DEFAULT_ENV_FILE,
         process_env=os.environ,
@@ -112,15 +117,11 @@ def _resolve_agent_runner(
 ) -> tuple[AgentRunnerProtocol, ServiceRegistry]:
     from ..agents.runner import AgentRunner
 
-    env = {
-        key: value
-        for key, value in load_env(
-            global_dir=resolve_global_dir(None, os.environ),
-            local_env_file=DEFAULT_ENV_FILE,
-            process_env=os.environ,
-        ).items()
-        if value
-    }
+    env = load_credential_env(
+        global_dir=resolve_global_dir(None, os.environ),
+        local_env_file=DEFAULT_ENV_FILE,
+        process_env=os.environ,
+    )
     service_registry = ServiceRegistry(_configured_service_registry(cfg, env))
     return (
         AgentRunner(env, cfg, git_svc, service_registry=service_registry.services),

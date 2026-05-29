@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from pycastle.config.types import StageOverride
-from pycastle.config.env_loader import DEFAULT_ENV_FILE, load_env
+from pycastle.config.env_loader import (
+    DEFAULT_ENV_FILE,
+    KNOWN_CREDENTIAL_ENV_KEYS,
+    load_credential_env,
+    load_env,
+)
 from pycastle.config.loader import (
     Config,
     image_name_for,
@@ -15,9 +20,11 @@ from pycastle.config.loader import (
 __all__ = [
     "Config",
     "DEFAULT_ENV_FILE",
+    "KNOWN_CREDENTIAL_ENV_KEYS",
     "StageOverride",
     "image_name_for",
     "load_config",
+    "load_credential_env",
     "load_env",
     "replace_config_runtime_fields",
     "resolve_logs_dir",

@@ -11,9 +11,10 @@ import click
 from .config import (
     DEFAULT_ENV_FILE,
     Config,
+    KNOWN_CREDENTIAL_ENV_KEYS,
     StageOverride,
     load_config,
-    load_env,
+    load_credential_env,
     resolve_logs_dir,
     resolve_global_dir,
 )
@@ -92,23 +93,14 @@ def _validate_stage_overrides(
     return violations
 
 
-_ENV_KEYS = (
-    "CLAUDE_CODE_OAUTH_TOKEN",
-    "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY",
-    "GH_TOKEN",
-    "OPENCODE_GO_API_KEY",
-)
-
-
 def _load_env(cfg: Config | None = None) -> dict[str, str]:
     if cfg is None:
-        cfg = load_config()
-    resolved = load_env(
+        load_config()
+    return load_credential_env(
         global_dir=resolve_global_dir(None, os.environ),
         local_env_file=DEFAULT_ENV_FILE,
         process_env=os.environ,
     )
-    return {k: v for k in _ENV_KEYS if (v := resolved.get(k))}
 
 
 def _configured_service_registry(
@@ -365,7 +357,8 @@ def _do_run(
     container_env = {
         k: v
         for k, v in env.items()
-        if k not in {"CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", "OPENCODE_GO_API_KEY"}
+        if k in KNOWN_CREDENTIAL_ENV_KEYS
+        and k not in {"CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", "OPENCODE_GO_API_KEY"}
     }
     if no_improve:
         effective_improve_mode = None
