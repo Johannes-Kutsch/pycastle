@@ -44,6 +44,12 @@ class HostCheckFailedError(RuntimeError):
         super().__init__(f"Host check {name!r} failed: {command}{detail}")
 
 
+def _surface_current_host_check(status_display: StatusDisplay, name: str) -> None:
+    status_display.update_phase("Host Check", name)
+    if isinstance(status_display, PlainStatusDisplay):
+        status_display.print("Host Check", name)
+
+
 def _failure_from_exception(
     name: str, command: str, exc: RuntimeError
 ) -> _HostCheckFailure:
@@ -200,6 +206,7 @@ def main(
             ) as path:
                 failures: list[_HostCheckFailure] = []
                 for name, command in resolved_cfg.host_checks:
+                    _surface_current_host_check(resolved_status_display, name)
                     try:
                         _run_host_check(name, command, path)
                     except RuntimeError as exc:
