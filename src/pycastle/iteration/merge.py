@@ -167,11 +167,11 @@ async def _close_issues_parallel(
 
 
 def _ensure_conflict_branches_are_merged(
-    issues: list[dict], sandbox_path: Path, deps: _MergeDeps
+    issues: list[dict], path: Path, deps: _MergeDeps
 ) -> None:
     for issue in issues:
         branch = branch_for(issue["number"])
-        if deps.git_svc.is_ancestor(branch, sandbox_path):
+        if deps.git_svc.is_ancestor(branch, path):
             continue
         raise RuntimeError(f"{branch} is not a merged branch")
 
