@@ -6,37 +6,49 @@ from pycastle import StageOverride
 # worktree_timeout = 30
 # idle_timeout = 300
 # auto_push = True
+# timeout_retries = 1
+# diagnose_on_failure = True
 
 # --- Docker ---
-# Name for the Docker image built by `pycastle build`.
-# Defaults to a sanitised CWD name; uncomment to override.
+# Local-only build artifact name used by `pycastle build`.
+# Defaults to a sanitised CWD name when left empty.
 # docker_image_name = ""
 
 # --- Labels ---
+# bug_label = "bug"
 # issue_label = "ready-for-agent"
 # hitl_label = "ready-for-human"
+# enhancement_label = "enhancement"
+# needs_triage_label = "needs-triage"
+# needs_info_label = "needs-info"
+# wontfix_label = "wontfix"
+# refactor_slice_label = "refactor-slice"
+# behavior_slice_label = "behavior-slice"
+# docs_slice_label = "docs-slice"
+# needs_slice_type_label = "needs-slice-type"
 
-# --- Paths ---
-# pycastle_dir = Path("pycastle")
-# prompts_dir = Path("pycastle/prompts")
+# --- Logging ---
+# In local config, logs_dir is used directly.
+# In global config, logs_dir is the parent directory for per-project logs.
 # logs_dir = Path("pycastle/logs")
-# worktrees_dir = Path("worktrees")
-# env_file = Path("pycastle/.env")
-# dockerfile = Path("pycastle/Dockerfile")
 
-# --- Preflight checks (run before each agent; format: (name, command)) ---
+# --- Preflight checks ---
+# Run by pycastle before agent work; format: (name, command).
 # preflight_checks = (
 #     ("ruff", "ruff check ."),
 #     ("mypy", "mypy ."),
 #     ("pytest", "pytest"),
 # )
 
-# --- Host checks (run by `pycastle check`; format: (name, command)) ---
+# --- Host checks ---
+# Run by `pycastle check` on the current OS; format: (name, command).
 # host_checks = (
 #     ("pytest", "pytest"),
 # )
 
-# --- Implement checks (run after each implement phase) ---
+# --- Implement checks ---
+# injected via prompt - these commands appear in the agent's FEEDBACK LOOPS
+# section, they are not run directly by pycastle config.
 # implement_checks = (
 #     "ruff check --fix",
 #     "ruff format --check",
@@ -46,16 +58,27 @@ from pycastle import StageOverride
 
 # --- Improve ---
 # Default improve mode used when --improve is not passed on the CLI.
-# "until_sleep" exits after the first sleep clears the backlog; "endless" runs until Ctrl-C.
-# improve_mode = "until_sleep"
+# Options: "until_sleep", "endless", or None.
+# improve_mode = None
 
-# Maximum number of improve-agent dispatches per run. improve_mode must also
-# be active (--improve flag or improve_mode config) for this to have any effect.
-# improve_max = 1
+# Maximum number of improve-agent dispatches per run.
+# improve_max = None
 
 # --- Stage overrides ---
-# model shorthands: haiku, sonnet, opus  (leave empty to use the Claude CLI default)
-# effort values:    low, medium, high, xhigh, max    (leave empty to use the Claude CLI default)
+# Claude model shorthands: haiku, sonnet, opus
+# Codex model names: gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.3-codex, gpt-5.3-codex-spark, gpt-5.2
+# OpenCode model ids: deepseek-v4-flash, deepseek-v4-pro, glm-5, glm-5.1, hy3-preview, kimi-k2.5, kimi-k2.6, mimo-v2-omni, mimo-v2-pro, mimo-v2.5, mimo-v2.5-pro, minimax-m2.5, minimax-m2.7, qwen3.5-plus, qwen3.6-plus, qwen3.7-max
+# Claude effort values: low, medium, high, xhigh, max
+# Codex effort values: low, medium, high, xhigh
+# OpenCode effort values: medium
+# Opt-in example:
+# opencode_review_override = StageOverride(service="opencode", model="kimi-k2.6", effort="medium")
+# opencode_implement_override = StageOverride(
+#     service="opencode",
+#     model="kimi-k2.6",
+#     effort="medium",
+#     fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
+# )
 plan_override = StageOverride(
     service="codex",
     model="gpt-5.4-mini",
