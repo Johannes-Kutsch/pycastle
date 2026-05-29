@@ -49,6 +49,8 @@ def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: P
         service=service,
         run_kind=RunKind.FRESH,
         service_state_dir=tmp_path / ".pycastle-session/improve/main/codex",
+        provider_state_dir_relpath=".pycastle-session/improve/main/codex/",
+        host_provider_state_dir=tmp_path / ".pycastle-session/improve/main/codex",
         provider_session_id=None,
         auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
         recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
@@ -86,6 +88,28 @@ def test_run_session_plan_uses_selected_codex_service_state_dir_for_rollout_reco
     assert (
         RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex")
         == "thread-from-custom-state"
+    )
+
+
+def test_run_session_plan_preserves_codex_provider_state_dir_layout_when_service_state_dir_is_custom(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService("custom/codex-state", name="codex", resumable=True),
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.service_state_dir == tmp_path / "custom" / "codex-state"
+    assert plan.provider_state_dir_relpath == ".pycastle-session/implementer/codex/"
+    assert plan.host_provider_state_dir == (
+        tmp_path / ".pycastle-session" / "implementer" / "codex"
     )
 
 
