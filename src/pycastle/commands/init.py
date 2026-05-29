@@ -53,127 +53,49 @@ def _discover_project_shaped_files(pkg: Traversable) -> list[str]:
 _ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
 _OPENCODE_ENV_TEMPLATE = "OPENCODE_GO_API_KEY=\n"
 
-_CONFIG_EXAMPLE_TEMPLATE = """from pathlib import Path
+_CONFIG_FIELD_RE = re.compile(r"[a-z_]+\s*=")
 
-from pycastle import StageOverride
 
-# --- Behaviour ---
-max_iterations = 10
-max_parallel = 1
-worktree_timeout = 30
-idle_timeout = 300
-auto_push = True
-timeout_retries = 1
-diagnose_on_failure = True
+def _render_config_example(defaults_text: str) -> str:
+    out = ["from pathlib import Path", ""]
+    uncomment_block = False
+    preserve_commented_block = False
 
-# --- Docker ---
-# Local-only build artifact name used by `pycastle build`.
-# Rejected in global config.py.
-# Defaults to a sanitised CWD name when left empty.
-docker_image_name = ""
+    for line in defaults_text.splitlines():
+        if line == "from pathlib import Path":
+            continue
+        if line.startswith("# "):
+            body = line[2:]
+            if uncomment_block:
+                out.append(body)
+                if body.strip() == ")":
+                    uncomment_block = False
+                continue
+            if preserve_commented_block:
+                out.append(line)
+                if body.strip() == ")":
+                    preserve_commented_block = False
+                continue
+            if _CONFIG_FIELD_RE.match(body):
+                if body.startswith("opencode_"):
+                    out.append(line)
+                    preserve_commented_block = body.rstrip().endswith("(")
+                else:
+                    out.append(body)
+                    uncomment_block = body.rstrip().endswith("(")
+                continue
+        out.append(line)
 
-# --- Labels ---
-bug_label = "bug"
-issue_label = "ready-for-agent"
-hitl_label = "ready-for-human"
-enhancement_label = "enhancement"
-needs_triage_label = "needs-triage"
-needs_info_label = "needs-info"
-wontfix_label = "wontfix"
-refactor_slice_label = "refactor-slice"
-behavior_slice_label = "behavior-slice"
-docs_slice_label = "docs-slice"
-needs_slice_type_label = "needs-slice-type"
+    return "\n".join(out).rstrip() + "\n"
 
-# --- Logging ---
-# In local config, logs_dir is used directly.
-# In global config, logs_dir is the parent directory for per-project logs.
-logs_dir = Path("pycastle/logs")
 
-# --- Preflight checks ---
-# Run by pycastle before agent work; format: (name, command).
-preflight_checks = (
-    ("ruff", "ruff check ."),
-    ("mypy", "mypy ."),
-    ("pytest", "pytest"),
+def _load_config_example_template(pkg: Traversable) -> str:
+    return _render_config_example((pkg / "config.py").read_text())
+
+
+_CONFIG_EXAMPLE_TEMPLATE = _load_config_example_template(
+    files("pycastle").joinpath("defaults")
 )
-
-# --- Host checks ---
-# Run by `pycastle check` on the current OS; format: (name, command).
-host_checks = (
-    ("pytest", "pytest"),
-)
-
-# --- Implement checks ---
-# injected via prompt - these commands appear in the agent's FEEDBACK LOOPS
-# section, they are not run directly by pycastle config.
-implement_checks = (
-    "ruff check --fix",
-    "ruff format --check",
-    "mypy .",
-    "pytest",
-)
-
-# --- Improve ---
-# Default improve mode used when --improve is not passed on the CLI.
-# Options: "until_sleep", "endless", or None.
-improve_mode = None
-
-# Maximum number of improve-agent dispatches per run.
-improve_max = None
-
-# --- Stage overrides ---
-# Claude model shorthands: haiku, sonnet, opus
-# Codex model names: gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.3-codex, gpt-5.3-codex-spark, gpt-5.2
-# OpenCode model ids: deepseek-v4-flash, deepseek-v4-pro, glm-5, glm-5.1, hy3-preview, kimi-k2.5, kimi-k2.6, mimo-v2-omni, mimo-v2-pro, mimo-v2.5, mimo-v2.5-pro, minimax-m2.5, minimax-m2.7, qwen3.5-plus, qwen3.6-plus, qwen3.7-max
-# Claude effort values: low, medium, high, xhigh, max
-# Codex effort values: low, medium, high, xhigh
-# OpenCode effort values: medium
-# Opt-in example:
-# opencode_review_override = StageOverride(service="opencode", model="kimi-k2.6", effort="medium")
-# opencode_implement_override = StageOverride(
-#     service="opencode",
-#     model="kimi-k2.6",
-#     effort="medium",
-#     fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
-# )
-plan_override = StageOverride(
-    service="codex",
-    model="gpt-5.4-mini",
-    effort="low",
-    fallback=StageOverride(service="claude", model="haiku", effort="low"),
-)
-implement_override = StageOverride(
-    service="codex",
-    model="gpt-5.4",
-    effort="medium",
-    fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
-)
-review_override = StageOverride(
-    service="claude",
-    model="sonnet",
-    effort="medium",
-    fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
-)
-merge_override = StageOverride(
-    service="codex",
-    model="gpt-5.5",
-    effort="medium",
-    fallback=StageOverride(service="claude", model="opus", effort="high"),
-)
-preflight_issue_override = StageOverride(
-    service="codex",
-    model="gpt-5.5",
-    effort="medium",
-    fallback=StageOverride(service="claude", model="opus", effort="high"),
-)
-improve_override = StageOverride(
-    service="codex",
-    model="gpt-5.5",
-    effort="high",
-    fallback=StageOverride(service="claude", model="opus", effort="high"),
-)
-"""
 
 
 def _write_env_key(env_file: Path, key: str, value: str) -> None:
@@ -252,9 +174,9 @@ def _managed_env_template(service: str) -> str:
     return _ENV_TEMPLATE
 
 
-def _write_config_example(target_dir: Path) -> None:
+def _write_config_example(target_dir: Path, content: str) -> None:
     target_dir.mkdir(parents=True, exist_ok=True)
-    (target_dir / "config.py.example").write_text(_CONFIG_EXAMPLE_TEMPLATE)
+    (target_dir / "config.py.example").write_text(content)
 
 
 def _prompt_credential_with_overwrite(
@@ -308,14 +230,15 @@ def refresh() -> None:
     project_dir = Path("pycastle")
     project_dir.mkdir(parents=True, exist_ok=True)
     pkg = files("pycastle").joinpath("defaults")
+    config_example_template = _load_config_example_template(pkg)
     pycastle_home = resolve_global_dir(None, os.environ)
     config_example_path = project_dir / "config.py.example"
     config_example_verb = _refresh_status_text(
-        config_example_path, _CONFIG_EXAMPLE_TEMPLATE
+        config_example_path, config_example_template
     )
-    _write_config_example(project_dir)
+    _write_config_example(project_dir, config_example_template)
     if (pycastle_home / "config.py.example").exists():
-        _write_config_example(pycastle_home)
+        _write_config_example(pycastle_home, config_example_template)
 
     report: list[tuple[str, str]] = [(config_example_verb, "config.py.example")]
 
@@ -382,9 +305,10 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             continue
         _copy_template(rel, target, pkg)
 
-    _write_config_example(project_dir)
+    config_example_template = _load_config_example_template(pkg)
+    _write_config_example(project_dir, config_example_template)
     if pycastle_home.is_dir():
-        _write_config_example(pycastle_home)
+        _write_config_example(pycastle_home, config_example_template)
 
     config_file = scoped_dir / "config.py"
     if config_file.exists():

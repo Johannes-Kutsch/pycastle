@@ -486,6 +486,28 @@ def test_bundled_config_example_is_behavioral_only_with_logging_guidance():
         assert f"{removed_key} =" not in content
 
 
+def test_refresh_config_example_uses_bundled_behavioral_contract(tmp_path, monkeypatch):
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    bundled_pkg = tmp_path / "bundled-pycastle"
+    defaults_dir = bundled_pkg / "defaults"
+    defaults_dir.mkdir(parents=True)
+    (defaults_dir / "config.py").write_text(
+        "from pycastle import StageOverride\n\n"
+        "# --- Behaviour ---\n"
+        '# bug_label = "bug-from-bundle"\n'
+    )
+    monkeypatch.setattr("pycastle.commands.init.files", lambda _pkg: bundled_pkg)
+
+    refresh()
+
+    content = (tmp_path / "pycastle" / "config.py.example").read_text()
+
+    assert 'bug_label = "bug-from-bundle"' in content
+    assert 'bug_label = "bug"' not in content
+
+
 def test_init_writes_config_example_to_existing_pycastle_home(tmp_path, monkeypatch):
     """init also writes config.py.example to pycastle home when that directory exists."""
     from pycastle.commands.init import main
