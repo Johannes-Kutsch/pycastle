@@ -745,6 +745,37 @@ def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
     assert len(runner.calls) == 1
 
 
+def test_improve_resumes_mid_phase_2_without_clean_entry_gate(tmp_path, git_svc):
+    """Progress='02-prd' WITH in-flight='02-prd' resumes phase 2 as a continuation."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    role_session_dir = wt / ".pycastle-session" / "improve"
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    (role_session_dir / "_phase_progress").write_text("02-prd", encoding="utf-8")
+    (role_session_dir / "_phase_in_flight").write_text("02-prd", encoding="utf-8")
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {"number": 17, "title": "PRD", "body": "body"}
+    github_svc.get_issue_comments.return_value = []
+    runner = FakeAgentRunner(
+        [IssueOutput(number=17, labels=[]), CompletionOutput()],
+        preflight_responses=[[]],
+    )
+    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=cfg,
+        service_registry=ServiceRegistry({"codex": CodexService()}),
+    )
+
+    _run(deps)
+
+    assert runner.calls[0].template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].send_role_prompt_on_resume is False
+    assert len(runner.calls) == 2
+
+
 def test_improve_is_terminal_after_issues(tmp_path, git_svc):
     """Resume from '03-issues' is immediately terminal — no agent calls."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
