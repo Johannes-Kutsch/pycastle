@@ -1409,6 +1409,29 @@ def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_undeclared
     ]
 
 
+def test_agent_runner_run_preflight_returns_failure_tuple_for_declared_tool_project_failure(
+    tmp_path,
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 't'\ndependencies = ['ruff>=0.5']\n", encoding="utf-8"
+    )
+    mock_client = _make_preflight_docker_client(
+        exit_code=1, stdout=b"src/app.py:1:1: F401 imported but unused"
+    )
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == [
+        (
+            "ruff",
+            "ruff check .",
+            "Command failed (exit 1): src/app.py:1:1: F401 imported but unused",
+        )
+    ]
+
+
 def test_agent_runner_run_preflight_passes_checks_that_require_installed_tools(
     tmp_path,
 ):
