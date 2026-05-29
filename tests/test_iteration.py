@@ -42,6 +42,7 @@ from pycastle.agents.output_protocol import (
     CommitMessageOutput,
     CompletionOutput,
     IssueOutput,
+    FailedOutput,
     NoCandidateOutput,
     PlannerOutput,
     PromiseParseError,
@@ -3015,6 +3016,67 @@ def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
     assert failure_req.scope_args["FAILED_ROLE"] == "planner"
     assert "SESSION_DIR" in failure_req.scope_args
     assert expected_path.exists()
+
+
+def test_run_iteration_failure_report_uses_failed_planner_service_session_dir(
+    tmp_path, git_svc, logger
+):
+    calls: list[RunRequest] = []
+    expected_path = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+    response_queue = [
+        FailedOutput(failure_class="protocol_error"),
+        IssueOutput(number=55, labels=["bug"]),
+    ]
+
+    async def agent_fn(req: RunRequest):
+        calls.append(req)
+        return response_queue.pop(0)
+
+    def checkout_detached(repo: Path, path: Path, sha: str) -> None:
+        assert repo == tmp_path
+        assert sha == "abc123"
+        path.mkdir(parents=True)
+        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+    git_svc.checkout_detached.side_effect = checkout_detached
+
+    deps = _make_deps(
+        tmp_path,
+        agent_fn,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        cfg=Config(plan_override=StageOverride(service="opencode", effort="medium")),
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentFailure)
+    assert result.failed_role == "planner"
+    assert len(calls) == 2
+    failure_req = calls[1]
+    assert failure_req.mount_path == expected_path
+    assert failure_req.scope_args is not None
+    assert (
+        failure_req.scope_args["SESSION_DIR"]
+        == ".pycastle-session/planner/opencode"
+    )
 
 
 def test_run_iteration_returns_aborted_agent_failure_when_implementer_agent_fails(

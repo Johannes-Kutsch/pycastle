@@ -134,17 +134,22 @@ class AgentFailedError(PycastleError):
         worktree_path: Path,
         namespace: str = "",
         failure_class: str = "",
+        service_name: str = "claude",
     ) -> None:
         super().__init__(f"Agent {role_value!r} failed irrecoverably")
         self.role_value = role_value
         self.worktree_path = worktree_path
         self.namespace = namespace
         self.failure_class = failure_class
+        self.service_name = service_name or "claude"
 
     @property
     def session_dir(self) -> str:
         from .session import SESSION_DIR_NAME
 
         if self.namespace:
-            return f"{SESSION_DIR_NAME}/{self.role_value}/{self.namespace}/claude"
-        return f"{SESSION_DIR_NAME}/{self.role_value}/claude"
+            return (
+                f"{SESSION_DIR_NAME}/{self.role_value}/{self.namespace}/"
+                f"{self.service_name}"
+            )
+        return f"{SESSION_DIR_NAME}/{self.role_value}/{self.service_name}"

@@ -897,6 +897,39 @@ def test_agent_runner_run_raises_agent_failed_error_for_protocol_error(tmp_path)
     assert err.role_value == AgentRole.PLANNER.value
     assert err.worktree_path == tmp_path
     assert err.namespace == ""
+    assert err.service_name == "claude"
+    assert err.session_dir == ".pycastle-session/planner/claude"
+
+
+def test_agent_runner_failed_output_reports_selected_service_session_dir(tmp_path):
+    from unittest.mock import AsyncMock, patch
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        service_registry={"opencode": OpenCodeService()},
+    )
+    request = _run_request(
+        name="Test",
+        template=_PLAN_TEMPLATE,
+        scope_args=_PLAN_SCOPE_ARGS,
+        mount_path=tmp_path,
+        role=AgentRole.PLANNER,
+        service="opencode",
+    )
+
+    with patch.object(
+        runner,
+        "_run",
+        new=AsyncMock(return_value=FailedOutput(failure_class="protocol_error")),
+    ):
+        with pytest.raises(AgentFailedError) as exc_info:
+            asyncio.run(runner.run(request))
+
+    err = exc_info.value
+    assert err.service_name == "opencode"
+    assert err.session_dir == ".pycastle-session/planner/opencode"
 
 
 @pytest.mark.parametrize(

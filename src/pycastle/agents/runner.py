@@ -86,6 +86,7 @@ async def translate_run_outcome(
                 worktree_path=request.mount_path,
                 namespace=request.session_namespace,
                 failure_class=output.failure_class,
+                service_name=request.service,
             )
         return output
     except AgentTimeoutError as err:
