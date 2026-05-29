@@ -58,6 +58,18 @@ def _codex_auth_seeding_requirement(
     return AuthSeedingRequirement.NOT_REQUIRED
 
 
+def _is_exact_resumable_provider_session(
+    service_name: str,
+    provider_session_id: str | None,
+    state_dir: Path | None,
+) -> bool:
+    if provider_session_id is None or state_dir is None:
+        return False
+    if service_name == "codex":
+        return _codex_thread_id_from_rollouts(state_dir) == provider_session_id
+    return True
+
+
 @dataclasses.dataclass(frozen=True)
 class RunSessionPlan:
     role: AgentRole
@@ -121,6 +133,9 @@ class RunSessionPlan:
             run_kind is RunKind.RESUME
             and metadata is not None
             and metadata["provider_session_id"] == provider_session_id
+            and _is_exact_resumable_provider_session(
+                service.name, provider_session_id, service_state_dir
+            )
         )
         return cls(
             role=role,
