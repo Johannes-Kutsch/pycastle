@@ -164,12 +164,43 @@ def test_provider_identity_resumes_from_saved_codex_thread_id(worktree):
     )
 
 
+def test_provider_identity_is_fresh_when_service_has_no_resumable_provider_state(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    rs.save_service_session_id("opencode", "sess-from-prior-run")
+
+    assert rs.provider_identity("opencode", has_resumable_provider_state=False) == (
+        ProviderIdentity(
+            kind=ProviderIdentityKind.FRESH,
+            run_kind=RunKind.FRESH,
+            provider_session_id=None,
+        )
+    )
+
+
 def test_provider_identity_is_unrecoverable_when_opencode_sidecar_session_id_is_missing(
     worktree,
 ):
     rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
 
     assert rs.provider_identity("opencode", has_resumable_provider_state=True) == (
+        ProviderIdentity(
+            kind=ProviderIdentityKind.UNRECOVERABLE,
+            run_kind=RunKind.FRESH,
+            provider_session_id=None,
+        )
+    )
+
+
+def test_provider_identity_is_unrecoverable_when_sidecar_contains_only_whitespace(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    rs.service_session_id_path("codex").parent.mkdir(parents=True, exist_ok=True)
+    rs.service_session_id_path("codex").write_text("   \n", encoding="utf-8")
+
+    assert rs.provider_identity("codex", has_resumable_provider_state=True) == (
         ProviderIdentity(
             kind=ProviderIdentityKind.UNRECOVERABLE,
             run_kind=RunKind.FRESH,
