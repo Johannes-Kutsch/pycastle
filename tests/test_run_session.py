@@ -111,6 +111,7 @@ def test_run_session_plan_reports_fresh_for_claude_with_absent_or_empty_state_di
     tmp_path: Path,
 ):
     service = ClaudeService()
+    expected_relpath = ".pycastle-session/implementer/claude/"
     expected_state_dir = tmp_path / ".pycastle-session/implementer/claude"
     expected_session_id = RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
 
@@ -132,10 +133,16 @@ def test_run_session_plan_reports_fresh_for_claude_with_absent_or_empty_state_di
 
     assert absent_plan.run_kind is RunKind.FRESH
     assert empty_plan.run_kind is RunKind.FRESH
+    assert absent_plan.provider_state_dir_relpath == expected_relpath
+    assert empty_plan.provider_state_dir_relpath == expected_relpath
+    assert absent_plan.host_provider_state_dir == expected_state_dir
+    assert empty_plan.host_provider_state_dir == expected_state_dir
     assert absent_plan.service_state_dir == expected_state_dir
     assert empty_plan.service_state_dir == expected_state_dir
     assert absent_plan.provider_session_id == expected_session_id
     assert empty_plan.provider_session_id == expected_session_id
+    assert absent_plan.auth_seeding_requirement is AuthSeedingRequirement.NOT_REQUIRED
+    assert empty_plan.auth_seeding_requirement is AuthSeedingRequirement.NOT_REQUIRED
 
 
 def test_run_session_plan_reports_resume_for_claude_with_populated_state_dir(

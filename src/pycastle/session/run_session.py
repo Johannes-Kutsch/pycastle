@@ -45,6 +45,14 @@ class RunSessionPlan:
     recovered_session_id_persistence: RecoveredSessionIdPersistence
     exact_transcript_match: bool = False
 
+    @property
+    def provider_state_dir_relpath(self) -> str | None:
+        return self.service.state_dir_relpath(self.role, self.namespace)
+
+    @property
+    def host_provider_state_dir(self) -> Path | None:
+        return self.service_state_dir
+
     @classmethod
     def for_service(
         cls,
