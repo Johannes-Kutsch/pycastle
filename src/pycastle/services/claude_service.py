@@ -119,10 +119,8 @@ _MONTHS = {
     "dec": 12,
 }
 
-_SUBSCRIPTION_ACCESS_DENIAL = (
-    "Your organization has disabled Claude subscription access for Claude Code. "
-    "Please use an Anthropic API key instead, or ask your admin to enable "
-    "Claude subscription access for Claude Code."
+_SUBSCRIPTION_ACCESS_DENIAL_PHRASE = (
+    "disabled Claude subscription access for Claude Code"
 )
 _PERMANENT_EXHAUSTION_WAKE = datetime(9999, 12, 31, 23, 59, tzinfo=timezone.utc)
 
@@ -182,7 +180,7 @@ def _is_subscription_access_denial(
         is_error is True
         and status == 403
         and isinstance(result, str)
-        and result == _SUBSCRIPTION_ACCESS_DENIAL
+        and _SUBSCRIPTION_ACCESS_DENIAL_PHRASE in result
     )
 
 
