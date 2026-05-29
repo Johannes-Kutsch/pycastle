@@ -221,6 +221,37 @@ def test_init_creates_only_pycastle_managed_scaffold_files(tmp_path, monkeypatch
     assert not (scaffold / "prompts").exists()
 
 
+@pytest.mark.parametrize("command_name", ["init", "refresh"])
+def test_init_commands_leave_bundled_prompts_as_runtime_defaults(
+    tmp_path, monkeypatch, command_name
+):
+    """init paths keep bundled prompts as the runtime default without local prompt scaffolding."""
+    import asyncio
+
+    from pycastle.commands.init import main, refresh
+    from pycastle.config import Config
+    from pycastle.prompts.pipeline import PromptRenderer, PromptTemplate
+
+    monkeypatch.chdir(tmp_path)
+    if command_name == "init":
+        with (
+            patch("click.prompt", return_value=""),
+            patch("click.confirm", return_value=False),
+        ):
+            main(scope="local")
+    else:
+        refresh()
+
+    async def _noop_exec(cmd: str) -> str:
+        return f"output-of:{cmd}"
+
+    assert not (tmp_path / "pycastle" / "prompts").exists()
+    rendered = asyncio.run(
+        PromptRenderer(Config()).render(PromptTemplate.RESUME, {}, _noop_exec)
+    )
+    assert rendered
+
+
 def test_init_writes_local_config_example_with_all_supported_settings(
     tmp_path, monkeypatch
 ):
