@@ -1977,3 +1977,75 @@ def test_merge_phase_keeps_merged_branch_progress_when_conflict_close_fails(
         if call[0] == "update_phase" and call[1] == "Merge"
     ]
     assert "merging 2/2 branches, closing 1/2 issues" in merge_updates
+
+
+def test_conflict_branch_stays_incomplete_until_target_branch_is_verified_merged(
+    recording_deps, git_svc, github_svc
+):
+    deps, recording = recording_deps
+    git_svc.try_merge.side_effect = _conflict_on([2])
+
+    def _is_ancestor(branch, repo_path):
+        if branch == "pycastle/issue-2" and repo_path == deps.repo_root:
+            return False
+        return True
+
+    git_svc.is_ancestor.side_effect = _is_ancestor
+    issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
+    result = _run(issues, deps)
+
+    merge_updates = [
+        call[2]
+        for call in recording.calls
+        if call[0] == "update_phase" and call[1] == "Merge"
+    ]
+    assert "merging 1/2 branches, closing 1/2 issues" in merge_updates
+    assert "merging 2/2 branches, closing 2/2 issues" not in merge_updates
+    assert result.completed_conflicts == []
+    assert result.pending_conflicts == [{"number": 2, "title": "Conflict"}]
+    github_svc.close_issue.assert_called_once_with(1)
+
+
+def test_merge_phase_shows_only_remaining_merge_work_while_merger_is_active(
+    tmp_path, git_svc, github_svc
+):
+    recording = RecordingStatusDisplay()
+    seen_phase_updates: list[str] = []
+    merge_row_open: list[bool] = []
+
+    async def side_effect(request: RunRequest):
+        if request.name == "Merge Agent":
+            merge_updates = [
+                call[2]
+                for call in recording.calls
+                if call[0] == "update_phase" and call[1] == "Merge"
+            ]
+            seen_phase_updates.append(merge_updates[-1])
+            merge_row_open.append(
+                not any(
+                    call[0] == "remove" and call[1] == "Merge"
+                    for call in recording.calls
+                )
+            )
+        return CompletionOutput()
+
+    git_svc.try_merge.side_effect = _conflict_on([5])
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner(side_effect=side_effect),
+        git_svc=git_svc,
+        github_svc=github_svc,
+        status_display=recording,
+    )
+    issues = [
+        {"number": 1, "title": "A"},
+        {"number": 2, "title": "B"},
+        {"number": 3, "title": "C"},
+        {"number": 4, "title": "D"},
+        {"number": 5, "title": "Conflict"},
+    ]
+
+    _run(issues, deps)
+
+    assert seen_phase_updates == ["merging 4/5 branches, closing 4/5 issues"]
+    assert merge_row_open == [True]

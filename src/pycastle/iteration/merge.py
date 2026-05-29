@@ -262,6 +262,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 branches, deps, _on_teardown_progress
             )
             remove_done = None
+            _render_phase_status()
             return deleted
 
         if clean_issues:
@@ -344,6 +345,9 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                         )
                         deps.git_svc.fast_forward_branch(
                             deps.repo_root, target_branch, sandbox_branch
+                        )
+                        _ensure_conflict_branches_are_merged(
+                            [active_issue], deps.repo_root, deps
                         )
                         RoleSession(sandbox_path, AgentRole.MERGER).discard()
                         merge_done += 1
