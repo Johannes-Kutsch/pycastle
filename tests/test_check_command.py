@@ -85,6 +85,119 @@ def test_check_refreshes_branch_runs_host_checks_and_cleans_up(tmp_path, monkeyp
     assert not (local / "pycastle" / ".worktrees").exists()
 
 
+def test_check_surfaces_host_check_phase_row_before_orchestration_steps(
+    tmp_path, monkeypatch
+):
+    import pycastle.commands.check as check_mod
+    from pycastle.config import Config
+
+    events: list[tuple[object, ...]] = []
+
+    class RecordingStatusDisplay:
+        def register(
+            self,
+            caller: str,
+            kind: str,
+            startup_message: str = "started",
+            work_body: str = "",
+            initial_phase: str = "Setup",
+            color_key: int | None = None,
+            model_display=None,
+        ) -> None:
+            events.append(
+                ("register", caller, kind, startup_message, work_body, initial_phase)
+            )
+
+        def update_phase(self, name: str, phase: str) -> None:
+            events.append(("phase", name, phase))
+
+        def reset_idle_timer(self, name: str) -> None:
+            return None
+
+        def update_tokens(self, name: str, current_tokens: int) -> None:
+            return None
+
+        def remove(
+            self,
+            caller: str,
+            shutdown_message: str = "finished",
+            shutdown_style: str = "success",
+        ) -> None:
+            events.append(("remove", caller, shutdown_message, shutdown_style))
+
+        def print(self, caller: str, message: object, style: str | None = None) -> None:
+            return None
+
+    git_svc = MagicMock()
+
+    def fake_pull(repo_root: Path) -> None:
+        events.append(("pull", repo_root))
+
+    def fake_clean(repo_root: Path) -> bool:
+        events.append(("clean", repo_root))
+        return True
+
+    git_svc.pull_with_merge_fallback.side_effect = fake_pull
+    git_svc.is_working_tree_clean.side_effect = fake_clean
+    git_svc.get_head_sha.return_value = "abc123def456"
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            events.append(("worktree-enter",))
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            events.append(("worktree-exit",))
+            return None
+
+    monkeypatch.setattr(
+        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+    )
+    monkeypatch.setattr(
+        check_mod,
+        "_run_host_check",
+        lambda name, command, cwd: events.append(("host-check", name, command, cwd)),
+    )
+
+    check_mod.main(
+        cfg=Config(host_checks=(("tests", "python -c tests"),)),
+        git_service=git_svc,
+        status_display=RecordingStatusDisplay(),
+    )
+
+    assert events[:4] == [
+        ("register", "Host Check", "phase", "started", "", "Setup"),
+        ("pull", Path(".").resolve()),
+        ("clean", Path(".").resolve()),
+        ("worktree-enter",),
+    ]
+    assert ("host-check", "tests", "python -c tests", tmp_path) in events
+    assert ("remove", "Host Check", "finished", "success") in events
+
+
+def test_check_keeps_clean_tree_abort_behavior_with_host_check_phase_row(
+    monkeypatch, capsys
+):
+    import pycastle.commands.check as check_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = False
+
+    monkeypatch.setattr(check_mod, "transient_worktree", lambda *a, **kw: None)
+
+    with pytest.raises(
+        RuntimeError, match="Working tree must be clean before running host checks."
+    ):
+        check_mod.main(
+            cfg=Config(host_checks=(("tests", "python -c tests"),)),
+            git_service=git_svc,
+        )
+
+    assert capsys.readouterr().out == "\n[Host Check] started\n[Host Check] failed\n"
+    git_svc.get_head_sha.assert_not_called()
+
+
 def test_check_files_one_host_check_issue_per_failed_command_and_reports_numbers(
     tmp_path, monkeypatch, capsys
 ):
@@ -368,10 +481,14 @@ def test_check_keeps_passing_host_checks_report_only_after_issue_filing_exists(
         github_service=github_svc,
     )
 
-    assert (
-        capsys.readouterr().out == "Host checks passed on "
+    out = capsys.readouterr().out
+    assert out == (
+        "\n[Host Check] started\n"
+        "[Host Check] finished\n"
+        "Host checks passed on "
         f"{platform.system()} ({platform.platform()}) at abc123def456.\n"
     )
+    assert "Host-Check Reporter" not in out
     github_svc.close_issue.assert_not_called()
     github_svc.add_label_to_issue.assert_not_called()
     github_svc.remove_label_from_issue.assert_not_called()

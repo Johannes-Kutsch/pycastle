@@ -14,6 +14,7 @@ from ..config import DEFAULT_ENV_FILE, Config, load_config
 from ..config import load_env, resolve_global_dir
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
 from ..infrastructure.worktree import transient_worktree
+from ..iteration import status_row
 from ..iteration.preflight import validate_issue_report
 from ..main import _configured_service_registry
 from ..prompts.pipeline import PromptTemplate
@@ -178,56 +179,70 @@ def main(
     git_svc = git_service or GitService(resolved_cfg)
     resolved_status_display = status_display or PlainStatusDisplay()
 
-    git_svc.pull_with_merge_fallback(repo_root)
-    if not git_svc.is_working_tree_clean(repo_root):
-        raise RuntimeError("Working tree must be clean before running host checks.")
-
-    sha = git_svc.get_head_sha(repo_root)
-    deps = _CheckDeps(repo_root=repo_root, cfg=resolved_cfg, git_svc=git_svc)
-
     async def _run_checks() -> bool:
-        async with transient_worktree(
-            f"host-check-{sha[:7]}", sha=sha, deps=deps
-        ) as path:
-            failures: list[_HostCheckFailure] = []
-            for name, command in resolved_cfg.host_checks:
-                try:
-                    _run_host_check(name, command, path)
-                except RuntimeError as exc:
-                    failures.append(_failure_from_exception(name, command, exc))
-            if failures:
-                resolved_agent_runner = agent_runner
-                resolved_service_registry = service_registry
-                if resolved_agent_runner is None:
-                    (
-                        resolved_agent_runner,
-                        resolved_service_registry,
-                    ) = _resolve_agent_runner(resolved_cfg, git_svc)
-                resolved_github_service = github_service or _resolve_github_service(
-                    repo_root, resolved_cfg, git_svc
+        async with status_row(
+            resolved_status_display,
+            "Host Check",
+            kind="phase",
+            must_close=True,
+        ) as row:
+            git_svc.pull_with_merge_fallback(repo_root)
+            if not git_svc.is_working_tree_clean(repo_root):
+                raise RuntimeError(
+                    "Working tree must be clean before running host checks."
                 )
-                issue_numbers = []
-                for failure in failures:
-                    issue_numbers.append(
-                        await _file_host_check_issue(
-                            failure=failure,
-                            mount_path=path,
-                            sha=sha,
-                            cfg=resolved_cfg,
-                            github_svc=resolved_github_service,
-                            agent_runner=resolved_agent_runner,
-                            status_display=resolved_status_display,
-                            service_registry=resolved_service_registry,
-                        )
+
+            sha = git_svc.get_head_sha(repo_root)
+            deps = _CheckDeps(repo_root=repo_root, cfg=resolved_cfg, git_svc=git_svc)
+
+            async with transient_worktree(
+                f"host-check-{sha[:7]}", sha=sha, deps=deps
+            ) as path:
+                failures: list[_HostCheckFailure] = []
+                for name, command in resolved_cfg.host_checks:
+                    try:
+                        _run_host_check(name, command, path)
+                    except RuntimeError as exc:
+                        failures.append(_failure_from_exception(name, command, exc))
+                if failures:
+                    resolved_agent_runner = agent_runner
+                    resolved_service_registry = service_registry
+                    if resolved_agent_runner is None:
+                        (
+                            resolved_agent_runner,
+                            resolved_service_registry,
+                        ) = _resolve_agent_runner(resolved_cfg, git_svc)
+                    resolved_github_service = github_service or _resolve_github_service(
+                        repo_root, resolved_cfg, git_svc
                     )
-                joined = ", ".join(f"#{number}" for number in issue_numbers)
-                print(f"Host checks filed or updated issues: {joined}")
-                sys.stdout.flush()
-                return False
-            return True
+                    issue_numbers = []
+                    for failure in failures:
+                        issue_numbers.append(
+                            await _file_host_check_issue(
+                                failure=failure,
+                                mount_path=path,
+                                sha=sha,
+                                cfg=resolved_cfg,
+                                github_svc=resolved_github_service,
+                                agent_runner=resolved_agent_runner,
+                                status_display=resolved_status_display,
+                                service_registry=resolved_service_registry,
+                            )
+                        )
+                    row.close(
+                        f"failed {failures[0].name}",
+                        shutdown_style="error",
+                    )
+                    joined = ", ".join(f"#{number}" for number in issue_numbers)
+                    print(f"Host checks filed or updated issues: {joined}")
+                    sys.stdout.flush()
+                    return False
+                row.close("finished")
+                return True
 
     passed = asyncio.run(_run_checks())
     if passed:
+        sha = git_svc.get_head_sha(repo_root)
         print(
             "Host checks passed on "
             f"{platform.system()} ({platform.platform()}) at {sha}."
