@@ -934,6 +934,45 @@ def test_prompt_source_only_shadows_for_known_bundled_relative_paths(
     assert source.read_text("_resume-prompt.md") == "local resume prompt"
 
 
+def test_renderer_startup_ignores_unknown_local_prompt_notes(tmp_path: Path):
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "notes.md").write_text("scratchpad {{UNKNOWN_KEY}}")
+
+    renderer = PromptRenderer(_cfg_for_prompts_dir(prompts_dir))
+
+    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
+    shipped_result = _run(
+        PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR)).render(
+            PromptTemplate.RESUME, {}, _noop_exec
+        )
+    )
+
+    assert result == shipped_result
+
+
+def test_renderer_ignores_stale_local_prompt_file_for_removed_bundled_default(
+    tmp_path: Path,
+):
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "coding-standards").mkdir()
+    (prompts_dir / "coding-standards" / "testing.md").write_text(
+        "stale testing notes {{UNKNOWN_KEY}}"
+    )
+
+    renderer = PromptRenderer(_cfg_for_prompts_dir(prompts_dir))
+
+    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
+    shipped_result = _run(
+        PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR)).render(
+            PromptTemplate.RESUME, {}, _noop_exec
+        )
+    )
+
+    assert result == shipped_result
+
+
 def test_renderer_prefers_local_override_over_bundled_prompt(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
