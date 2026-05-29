@@ -1709,6 +1709,30 @@ def test_init_and_refresh_preserve_existing_prompt_fragments(
     assert target.read_bytes() == original
 
 
+def test_init_preserves_existing_local_prompt_overrides(tmp_path, monkeypatch):
+    """`pycastle init` leaves existing local prompt overrides untouched."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    prompt_files = {
+        "plan-prompt.md": b"user-owned prompt override\n",
+        "coding-standards/implementation.md": b"user-owned nested override\n",
+    }
+    for rel_path, original in prompt_files.items():
+        target = tmp_path / "pycastle" / "prompts" / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(original)
+
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    for rel_path, original in prompt_files.items():
+        assert (tmp_path / "pycastle" / "prompts" / rel_path).read_bytes() == original
+
+
 def test_init_refresh_copies_cron_sh(tmp_path, monkeypatch):
     """`pycastle init --refresh` copies cron.sh into the consuming project."""
     from pycastle.commands.init import main, refresh
@@ -2487,6 +2511,33 @@ def test_refresh_reports_overwritten_managed_scaffold_but_ignores_service_docker
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert lines == ["overwrote config.py.example"]
     assert dockerfile.read_text() == "FROM stale\n"
+
+
+def test_refresh_preserves_local_prompt_overrides_and_omits_them_from_output(
+    tmp_path, monkeypatch, capsys
+):
+    """Refresh leaves local prompt overrides untouched and reports only managed overwrites."""
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    prompt_files = {
+        "plan-prompt.md": b"user-owned prompt override\n",
+        "coding-standards/implementation.md": b"user-owned nested override\n",
+    }
+    for rel_path, original in prompt_files.items():
+        target = pycastle_dir / "prompts" / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(original)
+    (pycastle_dir / "config.py.example").write_text("# stale example\n")
+
+    refresh()
+    out = capsys.readouterr().out
+
+    for rel_path, original in prompt_files.items():
+        assert (pycastle_dir / "prompts" / rel_path).read_bytes() == original
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert lines == ["overwrote config.py.example"]
 
 
 def test_refresh_treats_crlf_config_example_as_unchanged(tmp_path, monkeypatch, capsys):
