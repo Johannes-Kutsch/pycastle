@@ -6,12 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
-from .resume import (
-    ProviderIdentityKind,
-    RoleSession,
-    RunKind,
-    _codex_thread_id_from_rollouts,
-)
+from .resume import RoleSession, RunKind
 
 if TYPE_CHECKING:
     from ..services.agent_service import AgentService
@@ -35,18 +30,6 @@ def _codex_auth_seeding_requirement(
     if run_kind is RunKind.FRESH or not (state_dir / "auth.json").exists():
         return AuthSeedingRequirement.REQUIRED
     return AuthSeedingRequirement.NOT_REQUIRED
-
-
-def _is_exact_resumable_provider_session(
-    service_name: str,
-    provider_session_id: str | None,
-    state_dir: Path | None,
-) -> bool:
-    if provider_session_id is None or state_dir is None:
-        return False
-    if service_name == "codex":
-        return _codex_thread_id_from_rollouts(state_dir) == provider_session_id
-    return True
 
 
 @dataclasses.dataclass(frozen=True)
@@ -81,36 +64,19 @@ class RunSessionPlan:
         has_resumable_provider_state = (
             service_state_dir is not None and service.is_resumable(service_state_dir)
         )
-        run_kind = RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH
         role_session = RoleSession(worktree, role, namespace)
-        if provider_session_id is None and service.name == "claude":
-            provider_session_id = role_session.session_uuid()
-        if provider_session_id is None and service.name == "codex":
-            saved_provider_session_id = role_session.service_session_id("codex")
-            provider_identity = role_session.provider_identity(
-                "codex",
-                has_resumable_provider_state=has_resumable_provider_state,
-            )
-            if provider_identity.kind is ProviderIdentityKind.RESUME:
-                provider_session_id = provider_identity.provider_session_id
-            if provider_identity.kind is ProviderIdentityKind.UNRECOVERABLE:
-                run_kind = RunKind.FRESH
-            elif provider_identity.kind is ProviderIdentityKind.RESUME:
-                if saved_provider_session_id is None:
-                    recovered_session_id_persistence = (
-                        RecoveredSessionIdPersistence.PERSIST
-                    )
-                else:
-                    recovered_session_id_persistence = (
-                        RecoveredSessionIdPersistence.SKIP
-                    )
-        if provider_session_id is None and service.name == "opencode":
-            provider_identity = role_session.provider_identity(
-                "opencode",
-                has_resumable_provider_state=has_resumable_provider_state,
-            )
-            provider_session_id = provider_identity.provider_session_id
-            run_kind = provider_identity.run_kind
+        provider_identity = role_session.provider_identity(
+            service.name,
+            has_resumable_provider_state=has_resumable_provider_state,
+            provider_state_dir=service_state_dir,
+            derived_provider_session_id=(
+                role_session.session_uuid() if service.name == "claude" else None
+            ),
+        )
+        run_kind = provider_identity.run_kind
+        provider_session_id = provider_identity.provider_session_id
+        if provider_identity.persist_provider_session_id:
+            recovered_session_id_persistence = RecoveredSessionIdPersistence.PERSIST
         if service.name == "codex":
             auth_seeding_requirement = _codex_auth_seeding_requirement(
                 service_state_dir, run_kind
@@ -120,7 +86,7 @@ class RunSessionPlan:
             run_kind is RunKind.RESUME
             and metadata is not None
             and metadata["provider_session_id"] == provider_session_id
-            and _is_exact_resumable_provider_session(
+            and role_session.is_exact_resumable_provider_session(
                 service.name, provider_session_id, service_state_dir
             )
         )

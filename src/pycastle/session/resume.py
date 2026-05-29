@@ -3,7 +3,7 @@ import os
 import shutil
 import stat
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
@@ -68,6 +68,7 @@ class ProviderIdentity:
     kind: ProviderIdentityKind
     run_kind: RunKind
     provider_session_id: str | None
+    persist_provider_session_id: bool = field(default=False, compare=False)
 
 
 def is_stage_done_for(worktree: Path, role: AgentRole) -> bool:
@@ -126,16 +127,42 @@ class RoleSession:
         path.write_text(session_id, encoding="utf-8")
 
     def provider_identity(
-        self, service_name: str, *, has_resumable_provider_state: bool
+        self,
+        service_name: str,
+        *,
+        has_resumable_provider_state: bool,
+        provider_state_dir: Path | None = None,
+        derived_provider_session_id: str | None = None,
     ) -> ProviderIdentity:
+        if service_name == "claude":
+            claude_session_id = derived_provider_session_id or self.session_uuid()
+            if has_resumable_provider_state:
+                return ProviderIdentity(
+                    ProviderIdentityKind.RESUME,
+                    RunKind.RESUME,
+                    claude_session_id,
+                )
+            return ProviderIdentity(
+                ProviderIdentityKind.FRESH,
+                RunKind.FRESH,
+                claude_session_id,
+            )
+
         if not has_resumable_provider_state:
             return ProviderIdentity(ProviderIdentityKind.FRESH, RunKind.FRESH, None)
 
-        provider_session_id = self.service_session_id(service_name)
+        provider_session_id: str | None = self.service_session_id(service_name)
         if provider_session_id is None and service_name == "codex":
-            provider_session_id = _codex_thread_id_from_rollouts(self.path / "codex")
+            codex_state_dir = provider_state_dir or (self.path / "codex")
+            provider_session_id = _codex_thread_id_from_rollouts(codex_state_dir)
             if provider_session_id is not None:
                 self.save_service_session_id(service_name, provider_session_id)
+                return ProviderIdentity(
+                    ProviderIdentityKind.RESUME,
+                    RunKind.RESUME,
+                    provider_session_id,
+                    persist_provider_session_id=True,
+                )
         if provider_session_id is None:
             return ProviderIdentity(
                 ProviderIdentityKind.UNRECOVERABLE, RunKind.FRESH, None
@@ -144,6 +171,21 @@ class RoleSession:
         return ProviderIdentity(
             ProviderIdentityKind.RESUME, RunKind.RESUME, provider_session_id
         )
+
+    def is_exact_resumable_provider_session(
+        self,
+        service_name: str,
+        provider_session_id: str | None,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        if provider_session_id is None or provider_state_dir is None:
+            return False
+        if service_name == "codex":
+            return (
+                _codex_thread_id_from_rollouts(provider_state_dir)
+                == provider_session_id
+            )
+        return True
 
     def service_session_metadata(self, service_name: str) -> dict[str, str] | None:
         path = self.service_session_metadata_path
