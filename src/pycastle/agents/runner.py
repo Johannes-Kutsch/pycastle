@@ -243,11 +243,6 @@ class AgentRunner:
             worktree=mount_path,
             namespace=session_namespace,
             service=service,
-            auth_seeding_requirement=(
-                AuthSeedingRequirement.REQUIRED
-                if service.name == "codex"
-                else AuthSeedingRequirement.NOT_REQUIRED
-            ),
             recovered_session_id_persistence=(
                 RecoveredSessionIdPersistence.PERSIST
                 if service.name == "codex"
@@ -270,10 +265,12 @@ class AgentRunner:
             if service_session_id is None:
                 run_kind = RunKind.FRESH
         host_codex_auth: Path | None = None
-        if state_dir is not None and service.name == "codex":
-            auth_missing_from_state_dir = not (state_dir / "auth.json").exists()
-            if run_kind == RunKind.FRESH or auth_missing_from_state_dir:
-                host_codex_auth = self._host_codex_auth_path()
+        if (
+            state_dir is not None
+            and service.name == "codex"
+            and plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
+        ):
+            host_codex_auth = self._host_codex_auth_path()
 
         non_typed_retry_done = False
 

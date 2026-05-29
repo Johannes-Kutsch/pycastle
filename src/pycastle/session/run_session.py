@@ -48,6 +48,16 @@ def _codex_thread_id_from_rollouts(state_dir: Path) -> str | None:
     return next(iter(found)) if len(found) == 1 else None
 
 
+def _codex_auth_seeding_requirement(
+    state_dir: Path | None, run_kind: RunKind
+) -> AuthSeedingRequirement:
+    if state_dir is None:
+        return AuthSeedingRequirement.NOT_REQUIRED
+    if run_kind is RunKind.FRESH or not (state_dir / "auth.json").exists():
+        return AuthSeedingRequirement.REQUIRED
+    return AuthSeedingRequirement.NOT_REQUIRED
+
+
 @dataclasses.dataclass(frozen=True)
 class RunSessionPlan:
     role: AgentRole
@@ -101,6 +111,10 @@ class RunSessionPlan:
                     )
                 if provider_session_id is None:
                     run_kind = RunKind.FRESH
+        if service.name == "codex":
+            auth_seeding_requirement = _codex_auth_seeding_requirement(
+                service_state_dir, run_kind
+            )
         return cls(
             role=role,
             worktree=worktree,

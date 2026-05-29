@@ -286,3 +286,19 @@ def test_run_session_plan_never_generates_pycastle_uuid_for_fresh_codex(
 
     assert plan.run_kind is RunKind.FRESH
     assert plan.provider_session_id is None
+
+
+def test_run_session_plan_requires_auth_seeding_for_fresh_codex_without_auth_json(
+    tmp_path: Path,
+):
+    service = CodexService()
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
