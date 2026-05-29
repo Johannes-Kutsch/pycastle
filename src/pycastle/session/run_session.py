@@ -54,7 +54,6 @@ class RunSessionPlan:
         namespace: str,
         service: AgentService,
     ) -> RunSessionPlan:
-        provider_session_id: str | None = None
         auth_seeding_requirement = AuthSeedingRequirement.NOT_REQUIRED
         recovered_session_id_persistence = RecoveredSessionIdPersistence.SKIP
         state_dir_relpath = service.state_dir_relpath(role, namespace)
@@ -65,31 +64,21 @@ class RunSessionPlan:
             service_state_dir is not None and service.is_resumable(service_state_dir)
         )
         role_session = RoleSession(worktree, role, namespace)
-        provider_identity = role_session.provider_identity(
+        handoff = role_session.exact_transcript_handoff(
             service.name,
+            state_dir=service_state_dir,
             has_resumable_provider_state=has_resumable_provider_state,
-            provider_state_dir=service_state_dir,
-            derived_provider_session_id=(
-                role_session.session_uuid() if service.name == "claude" else None
-            ),
         )
-        run_kind = provider_identity.run_kind
+        provider_identity = handoff.provider_identity
         provider_session_id = provider_identity.provider_session_id
+        run_kind = provider_identity.run_kind
         if provider_identity.persist_provider_session_id:
             recovered_session_id_persistence = RecoveredSessionIdPersistence.PERSIST
         if service.name == "codex":
             auth_seeding_requirement = _codex_auth_seeding_requirement(
                 service_state_dir, run_kind
             )
-        metadata = role_session.service_session_metadata(service.name)
-        exact_transcript_match = (
-            run_kind is RunKind.RESUME
-            and metadata is not None
-            and metadata["provider_session_id"] == provider_session_id
-            and role_session.is_exact_resumable_provider_session(
-                service.name, provider_session_id, service_state_dir
-            )
-        )
+        exact_transcript_match = handoff.is_eligible
         return cls(
             role=role,
             worktree=worktree,
