@@ -179,7 +179,7 @@ def main(
     git_svc = git_service or GitService(resolved_cfg)
     resolved_status_display = status_display or PlainStatusDisplay()
 
-    async def _run_checks() -> bool:
+    async def _run_checks() -> str | None:
         async with status_row(
             resolved_status_display,
             "Host Check",
@@ -236,13 +236,12 @@ def main(
                     joined = ", ".join(f"#{number}" for number in issue_numbers)
                     print(f"Host checks filed or updated issues: {joined}")
                     sys.stdout.flush()
-                    return False
+                    return None
                 row.close("finished")
-                return True
+                return sha
 
-    passed = asyncio.run(_run_checks())
-    if passed:
-        sha = git_svc.get_head_sha(repo_root)
+    sha = asyncio.run(_run_checks())
+    if sha is not None:
         print(
             "Host checks passed on "
             f"{platform.system()} ({platform.platform()}) at {sha}."

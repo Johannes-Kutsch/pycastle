@@ -493,3 +493,35 @@ def test_check_keeps_passing_host_checks_report_only_after_issue_filing_exists(
     github_svc.add_label_to_issue.assert_not_called()
     github_svc.remove_label_from_issue.assert_not_called()
     github_svc.post_comment.assert_not_called()
+
+
+def test_check_reports_the_checked_sha_in_success_summary(
+    tmp_path, monkeypatch, capsys
+):
+    import pycastle.commands.check as check_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.side_effect = ["checked-sha", "moved-head"]
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    monkeypatch.setattr(check_mod, "_run_host_check", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+    )
+
+    check_mod.main(
+        cfg=Config(host_checks=(("tests", "python -c tests"),)),
+        git_service=git_svc,
+    )
+
+    out = capsys.readouterr().out
+    assert "checked-sha" in out
+    assert "moved-head" not in out
