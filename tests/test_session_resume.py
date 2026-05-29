@@ -141,6 +141,31 @@ def test_service_session_ids_are_isolated_by_role_and_worktree(tmp_path):
     assert reviewer_a.service_session_id("opencode") == "sess-review"
 
 
+def test_mark_done_preserves_service_session_metadata_without_counting_as_resumable(rs):
+    rs.start_fresh()
+    rs.save_service_session_metadata("codex", "thread-from-run")
+    rs.save_service_session_id("codex", "thread-from-run")
+
+    rs.mark_done()
+
+    assert rs.service_session_metadata("codex") == {
+        "service": "codex",
+        "provider_session_id": "thread-from-run",
+    }
+    assert rs.is_done() is True
+    assert rs.is_resumable() is False
+    assert rs.run_kind() == RunKind.FRESH
+
+
+def test_malformed_service_session_metadata_is_ignored(rs):
+    rs.start_fresh()
+    rs.service_session_metadata_path.write_text("{not-json", encoding="utf-8")
+
+    assert rs.service_session_metadata("claude") is None
+    assert rs.is_resumable() is False
+    assert rs.run_kind() == RunKind.FRESH
+
+
 # ── any_role_dir_present ──────────────────────────────────────────────────────
 
 

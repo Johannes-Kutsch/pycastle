@@ -78,8 +78,9 @@ _DIVERGENCE_RESOLVER_FAILED_STREAM = [
 ]
 
 _CODEX_COMPLETE_STREAM = [
+    b'{"type":"thread.started","thread_id":"thread-from-fresh"}\n',
     b'{"type":"item.completed","item":{"type":"agent_message",'
-    b'"content":"<commit_message>done</commit_message>"}}\n'
+    b'"content":"<commit_message>done</commit_message>"}}\n',
 ]
 
 _CODEX_PROTOCOL_ERROR_STREAM = [
@@ -1926,6 +1927,69 @@ def test_agent_runner_passes_session_id_flag_to_claude_on_fresh_run(tmp_path):
     assert all("--resume" not in c for c in captured_cmds)
 
 
+def test_agent_runner_records_claude_service_session_metadata_on_success(tmp_path):
+    mock_client = _make_docker_client(_COMPLETE_STREAM)
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+    )
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Impl",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+            )
+        )
+    )
+
+    session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    assert session.service_session_metadata("claude") == {
+        "service": "claude",
+        "provider_session_id": session.session_uuid(),
+    }
+
+
+def test_agent_runner_records_codex_service_session_metadata_on_success(
+    tmp_path, monkeypatch
+):
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client(_CODEX_COMPLETE_STREAM),
+        service_registry={"codex": CodexService()},
+    )
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Codex",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                service="codex",
+            )
+        )
+    )
+
+    session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    assert session.service_session_metadata("codex") == {
+        "service": "codex",
+        "provider_session_id": "thread-from-fresh",
+    }
+
+
 def _seed_implementer_session(tmp_path: Path) -> None:
     """Seed the claude service state dir so ClaudeService.is_resumable returns True."""
     claude_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
@@ -2583,6 +2647,35 @@ def test_agent_runner_opencode_reprompt_resumes_with_persisted_session_id(tmp_pa
     assert saved.read_text(encoding="utf-8") == "sess-from-fresh"
 
 
+def test_agent_runner_records_opencode_service_session_metadata_on_success(tmp_path):
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client(_OPENCODE_PLAN_COMPLETE_STREAM),
+        service_registry={"opencode": OpenCodeService()},
+    )
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="OpenCode",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+                service="opencode",
+            )
+        )
+    )
+
+    session = RoleSession(tmp_path, AgentRole.PLANNER)
+    assert session.service_session_metadata("opencode") == {
+        "service": "opencode",
+        "provider_session_id": "sess-from-fresh",
+    }
+
+
 def test_agent_runner_opencode_resume_uses_persisted_session_id_on_later_run(tmp_path):
     state_dir = tmp_path / ".pycastle-session" / "planner" / "opencode"
     state_dir.mkdir(parents=True)
@@ -2657,10 +2750,13 @@ def test_agent_runner_opencode_keeps_api_key_out_of_session_files_across_resume_
     )
 
     assert session_files == [
-        tmp_path / ".pycastle-session" / "planner" / "opencode" / "session_id"
+        tmp_path / ".pycastle-session" / "planner" / "_service_session_metadata.json",
+        tmp_path / ".pycastle-session" / "planner" / "opencode" / "session_id",
     ]
-    assert session_files[0].read_text(encoding="utf-8") == "sess-from-fresh"
-    assert "go-key" not in session_files[0].read_text(encoding="utf-8")
+    assert session_files[1].read_text(encoding="utf-8") == "sess-from-fresh"
+    assert all(
+        "go-key" not in path.read_text(encoding="utf-8") for path in session_files
+    )
 
 
 def test_agent_runner_codex_resume_uses_thread_id_from_rollout(tmp_path):
