@@ -952,6 +952,26 @@ def test_renderer_falls_back_to_bundled_prompt_when_local_override_path_is_direc
     assert result == shipped_result
 
 
+def test_renderer_falls_back_to_bundled_prompt_when_local_override_path_is_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    target = tmp_path / "override.md"
+    target.write_text("symlinked local resume prompt")
+    (prompts_dir / "_resume-prompt.md").symlink_to(target)
+    renderer = PromptRenderer(Config())
+    shipped_renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+
+    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
+    shipped_result = _run(
+        shipped_renderer.render(PromptTemplate.RESUME, {}, _noop_exec)
+    )
+
+    assert result == shipped_result
+
+
 def test_renderer_prefers_absolute_local_role_prompt_override(tmp_path):
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True)
