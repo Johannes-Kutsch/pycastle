@@ -6,10 +6,15 @@ Everything an adopter needs once they have decided to try pycastle: prerequisite
 
 - Python 3.11.3 or later
 - Docker (daemon must be running)
-- A valid `CLAUDE_CODE_OAUTH_TOKEN` environment variable (or a `.env` file in your project root). Run `claude setup-token` to generate one.
-- A GitHub repository with a `GH_TOKEN` environment variable that has issue read/write access. `GH_TOKEN` is the sole GitHub credential pycastle uses — there is no `gh` CLI dependency.
+- A GitHub repository with a `GH_TOKEN` environment variable that has issue read/write access. Store it in local `pycastle/.env`, global pycastle-home `.env`, or your process environment.
+
+  `GH_TOKEN` is the sole GitHub credential pycastle uses. Host-side pycastle code talks to GitHub over HTTP with that PAT; agent containers also receive `GH_TOKEN` and include `gh` for prompt-driven issue operations inside the container boundary.
 
   If your repository belongs to an SSO-protected organisation, the PAT must be authorised for that org via the GitHub web UI (PAT settings → "Configure SSO" → Authorize) before pycastle can use it.
+- Service-specific credentials for whichever services you actually configure:
+  - Claude: `CLAUDE_CODE_OAUTH_TOKEN` (run `claude setup-token` to generate one)
+  - Codex: host `~/.codex/auth.json`, which pycastle seeds into per-role runtime state on demand
+  - OpenCode: `OPENCODE_GO_API_KEY`
 
 ## Installation
 
@@ -23,7 +28,9 @@ pip install pycastle
 
 Interactive bootstrap for a consuming project. `pycastle init` refreshes the managed scaffold allowlist that stays under package control (`.gitignore` plus the cron helpers under `setup/`), refreshes `config.py.example`, then runs the init wizard to choose service/scope, merge missing `.env` keys, and offer GitHub label setup.
 
-Use `pycastle init --refresh` for the non-interactive scaffold sync path. It bypasses the wizard and refreshes only the managed scaffold allowlist and `config.py.example`; it preserves `config.py`, `.env`, prompt overrides, Dockerfile overrides, and all runtime session state. `cron.sh` invokes this on every tick so scaffold updates ship automatically when you upgrade pycastle.
+Use `pycastle init --refresh` for the non-interactive scaffold sync path. It does not run service selection, scope selection, `.env` credential prompts, or GitHub label prompts. It refreshes only the managed scaffold allowlist and `config.py.example`; it preserves `config.py`, `.env`, prompt overrides, Dockerfile overrides, and all runtime session state. `cron.sh` invokes this on every tick so scaffold updates ship automatically when you upgrade pycastle.
+
+Service selection in the interactive wizard controls which service-specific credentials pycastle offers to collect into `.env`. It does not change the bundled default stage-chain policy. Current model IDs, effort values, and default stage priority chains live in `pycastle/config.py.example`.
 
 Refresh behavior is asymmetric by design: `pycastle/config.py.example` is always refreshed from a rendered template, while the copied scaffold allowlist is exactly `pycastle/.gitignore`, `pycastle/setup/cron.sh`, `pycastle/setup/cron-install.sh`, and `pycastle/setup/cron-uninstall.sh`. Those paths are pycastle-owned scaffold; `pycastle/.gitignore` is always overwritten and ignores local secrets, runtime directories, local `config.py`, `config.py.example`, and `setup/`. Bundled prompts and the bundled universal Dockerfile remain the defaults unless you create local overrides. Local prompt files under `pycastle/prompts/` and `pycastle/Dockerfile` are user-owned overrides, so init and refresh never create, overwrite, or delete them. Your `config.py`, `.env`, prompt overrides, Dockerfile override, and `.pycastle-session/` runtime state stay yours across refreshes. Files outside the allowlist, including `__pycache__/` and `*.pyc`, are never copied. A global `config.py.example` is refreshed only if you already keep one in pycastle home.
 
@@ -52,15 +59,24 @@ pycastle labels
 
 ### `pycastle run`
 
-Runs the full agent pipeline. The pipeline iterates up to `max_iterations` times, each time picking up whatever `ready-for-agent` issues remain open. Progress is streamed to your terminal in real time.
+Runs the full agent pipeline. Before starting agents, `pycastle run` verifies the universal agent image by invoking the same build path as `pycastle build`; Docker's layer cache keeps the no-op case cheap. The pipeline then iterates up to `max_iterations` times, each time picking up whatever `ready-for-agent` issues remain open. Progress is streamed to your terminal in real time.
 
 ```bash
 pycastle run
 pycastle run --improve              # dispatch the improve agent when no issues are ready (defaults to 'until_sleep')
 pycastle run --improve endless      # keep generating improvements until Ctrl-C
+pycastle run --no-improve           # one-off override when improve_mode is enabled in config.py
 ```
 
-Set `improve_mode = "until_sleep"` (or `"endless"`) in `pycastle/config.py` to make this the default for a repo without passing the flag every time — useful for the cron wrapper. The CLI flag overrides the config value.
+Set `improve_mode = "until_sleep"` (or `"endless"`) in `pycastle/config.py` to make this the default for a repo without passing the flag every time. Use `pycastle run --no-improve` to disable that config-driven improve mode for one invocation.
+
+### `pycastle check`
+
+Runs host checks on the current OS in a temporary local worktree. On failure, pycastle diagnoses each failed `HOST_CHECKS` command, files or deduplicates a host-check issue, and stops there; it does not implement fixes or merge anything.
+
+```bash
+pycastle check
+```
 
 ## Pycastle Home
 
@@ -73,6 +89,8 @@ Override the location with the `PYCASTLE_HOME` environment variable.
 
 For multi-machine sync, put your pycastle home under your own dotfiles repository (e.g. via `chezmoi` or a plain git checkout). Pycastle does not own remote sourcing.
 
+The local secrets file lives at `pycastle/.env`. The global secrets file, if you use one, lives at `<pycastle-home>/.env`.
+
 If `config.py.example` exists in pycastle home already, both `pycastle init` and `pycastle init --refresh` refresh it there as well. Otherwise the example file is only guaranteed locally at `pycastle/config.py.example`.
 
 ## Runtime Session State
@@ -83,7 +101,7 @@ Codex authentication is seeded at runtime only: when a fresh Codex role state di
 
 ## Configuration
 
-Runtime configuration lives in `config.py`, loaded from pycastle home first and then from local `pycastle/config.py` when present. Key settings:
+Runtime configuration lives in `config.py`, loaded from pycastle home first and then from local `pycastle/config.py` when present. For the live model IDs, supported effort values, and bundled default stage priority chains, read `pycastle/config.py.example` instead of copying lists out of this guide. Key settings:
 
 | Setting | Default | Description |
 |---|---|---|
@@ -93,11 +111,11 @@ Runtime configuration lives in `config.py`, loaded from pycastle home first and 
 | `hitl_label` | `ready-for-human` | Label that triggers a human-intervention exit |
 | `logs_dir` | `pycastle/logs` | Log directory. In global config this is a parent directory and the effective project log directory is `<logs_dir>/<sanitised project name>/`; in local config the configured path is used directly as the effective log directory. Agent logs, `errors.log`, and cron wrapper output all go to that effective project log directory |
 | `preflight_checks` | ruff, mypy, pytest | Commands run before planning |
+| `host_checks` | pytest host suite | Commands run by `pycastle check` on the current OS in a temporary local worktree |
 | `implement_checks` | ruff fix, mypy, pytest | Commands the implementer must pass |
-| `skip_preflight` | `False` | Set to `True` to bypass preflight entirely |
 | `improve_mode` | `None` | `"until_sleep"` or `"endless"`; default for `pycastle run` when no `--improve` flag is passed |
-| `improve_max` | `1` | Maximum improve-agent dispatches per run when improve mode is active |
-| `plan_override` / `implement_override` / `review_override` / `merge_override` | — | Per-stage model and effort overrides |
+| `improve_max` | `None` | Optional cap on improve-agent dispatches per run when improve mode is active |
+| `plan_override` / `implement_override` / `review_override` / `merge_override` / `preflight_issue_override` / `improve_override` | — | Per-stage service/model/effort override chains |
 
 Edit local `pycastle/config.py` and/or global `config.py` in pycastle home to tailor these to your project. Project-local layout paths are fixed: local config lives at `pycastle/config.py`, local `.env` at `pycastle/.env`, prompt overrides at `pycastle/prompts/`, worktrees under `pycastle/.worktrees/`, setup scaffold under `pycastle/setup/`, and the optional Dockerfile override at `pycastle/Dockerfile`. Ownership is split on purpose: pycastle manages the scaffold allowlist and `config.py.example`, while `config.py`, `.env`, prompt overrides, the optional Dockerfile override, and `.pycastle-session/` runtime state are user-owned. Local `config.py` is ignored by pycastle's managed `.gitignore`, but refresh still preserves it.
 
