@@ -121,7 +121,7 @@ IterationOutcome: TypeAlias = (
 
 def _is_in_flight(issue: dict, deps: Deps) -> bool:
     branch = branch_for(issue["number"])
-    wt_path = worktree_path(worktree_name_for_branch(branch), deps)
+    wt_path = worktree_path(worktree_name_for_branch(branch), deps.repo_root)
     if any_role_dir_present(wt_path):
         return True
     if not deps.git_svc.verify_ref_exists(branch, deps.repo_root):

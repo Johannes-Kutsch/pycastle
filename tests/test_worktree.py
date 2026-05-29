@@ -459,7 +459,7 @@ def test_managed_worktree_error_includes_path_and_listing(bare_branch_deps):
                 pass
 
         msg = str(exc_info.value)
-        expected_path = worktree_path("issue-42", bare_branch_deps)
+        expected_path = worktree_path("issue-42", bare_branch_deps.repo_root)
         assert str(expected_path) in msg, f"worktree path missing from error: {msg!r}"
         assert "README.md" in msg, f"directory listing missing from error: {msg!r}"
 
@@ -761,17 +761,18 @@ def test_worktree_name_for_branch_does_not_match_issue_number_in_non_pycastle_br
 
 
 def test_worktree_path_constructs_correct_path(tmp_path):
-    cfg = Config()
-    deps = SimpleNamespace(repo_root=tmp_path, cfg=cfg)
-    result = worktree_path("issue-42", deps)
+    result = worktree_path("issue-42", tmp_path)
     assert result == tmp_path / "pycastle" / ".worktrees" / "issue-42"
 
 
 def test_worktree_path_uses_fixed_project_local_pycastle_dir(tmp_path):
-    cfg = Config()
-    deps = SimpleNamespace(repo_root=tmp_path, cfg=cfg)
-    result = worktree_path("issue-99", deps)
+    result = worktree_path("issue-99", tmp_path)
     assert result == tmp_path / "pycastle" / ".worktrees" / "issue-99"
+
+
+def test_worktree_path_accepts_repo_root_directly(tmp_path):
+    result = worktree_path("issue-100", tmp_path)
+    assert result == tmp_path / "pycastle" / ".worktrees" / "issue-100"
 
 
 # ── transient_worktree ────────────────────────────────────────────────────────

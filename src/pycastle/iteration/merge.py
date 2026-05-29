@@ -66,7 +66,9 @@ async def _delete_merged_branches(
         try:
             if not deps.git_svc.is_ancestor(branch, deps.repo_root):
                 return
-            worktree_path_ = worktree_path(worktree_name_for_branch(branch), deps)
+            worktree_path_ = worktree_path(
+                worktree_name_for_branch(branch), deps.repo_root
+            )
             if worktree_path_ in registered_worktrees:
                 try:
                     await asyncio.to_thread(
