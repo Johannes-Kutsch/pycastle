@@ -2923,6 +2923,180 @@ def test_agent_runner_codex_resume_uses_thread_id_from_rollout(tmp_path):
     assert "codex exec resume thread-from-rollout" in captured_cmds[0]
 
 
+def test_agent_runner_codex_resume_recovers_thread_id_from_nested_rollout_and_persists(
+    tmp_path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    nested_sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    nested_sessions_dir.mkdir(parents=True)
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+    (nested_sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-nested-rollout"}\n',
+        encoding="utf-8",
+    )
+
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            r = MagicMock()
+            r.output = iter(_CODEX_PLAN_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"codex": CodexService()},
+    )
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Codex",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                service="codex",
+            )
+        )
+    )
+
+    assert captured_cmds
+    assert "codex exec resume thread-from-nested-rollout" in captured_cmds[0]
+    assert (state_dir / "thread_id").read_text(
+        encoding="utf-8"
+    ) == "thread-from-nested-rollout"
+
+
+def test_agent_runner_codex_resume_with_duplicate_same_thread_id_is_not_ambiguous(
+    tmp_path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
+        encoding="utf-8",
+    )
+
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            r = MagicMock()
+            r.output = iter(_CODEX_PLAN_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"codex": CodexService()},
+    )
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Codex",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                service="codex",
+            )
+        )
+    )
+
+    assert captured_cmds
+    assert "codex exec resume thread-same-id" in captured_cmds[0]
+
+
+def test_agent_runner_codex_resume_with_distinct_thread_ids_falls_to_fresh(
+    tmp_path, monkeypatch
+):
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-id-old"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-id-new"}\n',
+        encoding="utf-8",
+    )
+
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            r = MagicMock()
+            r.output = iter(_CODEX_COMPLETE_STREAM)
+            return r
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"codex": CodexService()},
+    )
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Codex",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                service="codex",
+            )
+        )
+    )
+
+    assert captured_cmds
+    assert "resume" not in captured_cmds[0]
+
+
 def test_agent_runner_codex_missing_host_auth_raises_hard_error(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()

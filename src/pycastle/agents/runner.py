@@ -187,7 +187,8 @@ class AgentRunner:
         sessions_dir = state_dir / "sessions"
         if not sessions_dir.is_dir():
             return None
-        for rollout in sorted(sessions_dir.glob("rollout-*.jsonl"), reverse=True):
+        found: set[str] = set()
+        for rollout in sessions_dir.rglob("rollout-*.jsonl"):
             try:
                 lines = rollout.read_text(encoding="utf-8").splitlines()
             except OSError:
@@ -203,8 +204,8 @@ class AgentRunner:
                     continue
                 thread_id = obj.get("thread_id")
                 if isinstance(thread_id, str) and thread_id.strip():
-                    return thread_id.strip()
-        return None
+                    found.add(thread_id.strip())
+        return next(iter(found)) if len(found) == 1 else None
 
     async def _build_prompt(
         self,
