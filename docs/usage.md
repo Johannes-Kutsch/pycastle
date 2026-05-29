@@ -25,7 +25,7 @@ Interactive bootstrap for a consuming project. `pycastle init` syncs the pycastl
 
 Use `pycastle init --refresh` for the non-interactive scaffold sync path. It bypasses the wizard and refreshes the pycastle-managed setup scaffold and `config.py.example` without changing `config.py`, `.env`, prompt overrides, Dockerfile overrides, or any runtime session state. `cron.sh` invokes this on every tick so scaffold updates ship automatically when you upgrade pycastle.
 
-Refresh behavior is asymmetric by design: `pycastle/config.py.example` is always refreshed, and `pycastle/setup/` is refreshed by both `pycastle init` and `pycastle init --refresh`. Bundled prompts and the bundled universal Dockerfile remain the defaults unless you create local overrides. Local prompt files under `pycastle/prompts/` and `pycastle/Dockerfile` are user-owned overrides, so init never creates, overwrites, or deletes them. A global `config.py.example` is refreshed only if you already keep one in pycastle home.
+Refresh behavior is asymmetric by design: `pycastle/config.py.example` is always refreshed, and `pycastle/setup/` is refreshed by both `pycastle init` and `pycastle init --refresh`. Bundled prompts and the bundled universal Dockerfile remain the defaults unless you create local overrides. Local prompt files under `pycastle/prompts/` and `pycastle/Dockerfile` are user-owned overrides, so init never creates, overwrites, or deletes them. Your `config.py`, `.env`, prompt overrides, Dockerfile override, and `.pycastle-session/` runtime state stay yours across refreshes. A global `config.py.example` is refreshed only if you already keep one in pycastle home.
 
 ```bash
 pycastle init                # interactive bootstrap; asks where config.py / .env should live
@@ -36,7 +36,7 @@ pycastle init --refresh      # non-interactive scaffold sync; refreshes pycastle
 
 ### `pycastle build`
 
-Builds the universal agent image. `pycastle build` uses `pycastle/Dockerfile` only if you created that file; otherwise it builds from the bundled universal Dockerfile. `pycastle init` and `pycastle init --refresh` do not create a local Dockerfile copy. Pass `--no-cache` to force a clean build.
+Builds the universal agent image. `pycastle build` uses `pycastle/Dockerfile` only if you created that file; otherwise it builds from the bundled universal Dockerfile. `pycastle init` and `pycastle init --refresh` do not create a local Dockerfile copy. Build selection does not scan for service-specific Dockerfiles under `pycastle/` or elsewhere in the repo: the only local override path is `pycastle/Dockerfile`. Pass `--no-cache` to force a clean build.
 
 ```bash
 pycastle build [--no-cache]
@@ -99,15 +99,15 @@ Runtime configuration lives in `config.py`, loaded from pycastle home first and 
 | `improve_max` | `1` | Maximum improve-agent dispatches per run when improve mode is active |
 | `plan_override` / `implement_override` / `review_override` / `merge_override` | — | Per-stage model and effort overrides |
 
-Edit local `pycastle/config.py` and/or global `config.py` in pycastle home to tailor these to your project. Project-local layout paths are fixed: local config lives at `pycastle/config.py`, local `.env` at `pycastle/.env`, prompt overrides at `pycastle/prompts/`, worktrees under `pycastle/.worktrees/`, setup scaffold under `pycastle/setup/`, and the optional Dockerfile override at `pycastle/Dockerfile`. Ownership is split on purpose: pycastle manages `setup/` and `config.py.example`, while prompt overrides and the optional Dockerfile override are yours.
+Edit local `pycastle/config.py` and/or global `config.py` in pycastle home to tailor these to your project. Project-local layout paths are fixed: local config lives at `pycastle/config.py`, local `.env` at `pycastle/.env`, prompt overrides at `pycastle/prompts/`, worktrees under `pycastle/.worktrees/`, setup scaffold under `pycastle/setup/`, and the optional Dockerfile override at `pycastle/Dockerfile`. Ownership is split on purpose: pycastle manages `setup/` and `config.py.example`, while `config.py`, `.env`, prompt overrides, the optional Dockerfile override, and `.pycastle-session/` runtime state are user-owned.
 
 ### Prompt overrides
 
-Bundled prompts live in pycastle's installed defaults and are used automatically. To customize one prompt or shared prompt fragment, create a matching file under `pycastle/prompts/` using the same relative path as the bundled default. Missing local files fall back to bundled defaults per file, so `pycastle/prompts/` is a per-file override layer rather than a separate prompt tree you have to copy wholesale.
+Bundled prompts live in pycastle's installed defaults and are used automatically. If `pycastle/prompts/` does not exist, that is the normal defaults-first state and pycastle reads every prompt from the bundled set. To customize one prompt or shared prompt fragment, create a matching file under `pycastle/prompts/` using the same relative path as the bundled default. Missing local files fall back to bundled defaults per file, so `pycastle/prompts/` is a per-file override layer rather than a separate prompt tree you have to copy wholesale.
 
-`pycastle init` and `pycastle init --refresh` do not create `pycastle/prompts/` or copy prompt files. Existing local prompt files are user-owned overrides and shadow bundled prompt improvements until you update or remove them.
+`pycastle init` and `pycastle init --refresh` do not create `pycastle/prompts/` or copy prompt files. Existing local prompt files are user-owned overrides and shadow bundled prompt improvements until you update or remove them. The practical workflow is: inspect the bundled prompt first, then create one local override only for the file you actually want to fork.
 
-To inspect the current bundled prompts before creating an override, first check the installed package's `pycastle/defaults/prompts/` directory or the source tree under `src/pycastle/defaults/prompts/`, then copy only the file you actually want to override into `pycastle/prompts/` at the same relative path.
+To inspect the current bundled prompts before creating an override, first check the installed package's `pycastle/defaults/prompts/` directory or the source tree under `src/pycastle/defaults/prompts/`, then copy only the single file you actually want to override into `pycastle/prompts/` at the same relative path.
 
 ### Minimal local `config.py`
 
