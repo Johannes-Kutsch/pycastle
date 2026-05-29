@@ -249,6 +249,52 @@ def test_check_names_current_host_check_through_host_check_status_surface(
     assert ("phase", "Host Check", "tests") in events
 
 
+def test_check_surfaces_current_host_check_without_streaming_passing_command_output(
+    tmp_path, monkeypatch, capsys
+):
+    import pycastle.commands.check as check_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "abc123def456"
+
+    script = (
+        "import sys; print('passing stdout'); print('passing stderr', file=sys.stderr)"
+    )
+    if platform.system() == "Windows":
+        command = subprocess.list2cmdline([sys.executable, "-c", script])
+    else:
+        command = shlex.join([sys.executable, "-c", script])
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    monkeypatch.setattr(
+        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+    )
+
+    check_mod.main(
+        cfg=Config(host_checks=(("noisy", command),)),
+        git_service=git_svc,
+    )
+
+    out = capsys.readouterr().out
+    assert "passing stdout" not in out
+    assert "passing stderr" not in out
+    assert out == (
+        "\n[Host Check] started\n"
+        "[Host Check] noisy\n"
+        "[Host Check] finished\n"
+        "Host checks passed on "
+        f"{platform.system()} ({platform.platform()}) at abc123def456.\n"
+    )
+
+
 def test_check_keeps_clean_tree_abort_behavior_with_host_check_phase_row(
     monkeypatch, capsys
 ):
@@ -558,6 +604,7 @@ def test_check_keeps_passing_host_checks_report_only_after_issue_filing_exists(
     out = capsys.readouterr().out
     assert out == (
         "\n[Host Check] started\n"
+        "[Host Check] tests\n"
         "[Host Check] finished\n"
         "Host checks passed on "
         f"{platform.system()} ({platform.platform()}) at abc123def456.\n"
