@@ -213,7 +213,7 @@ class PromptRenderer:
             "IMPLEMENTATION_STANDARDS", "shared/standards/_implementation.md"
         ),
         "IMPLEMENT_OUTPUT_RULES": PromptReference(
-            "IMPLEMENT_OUTPUT_RULES", "shared/standards/_output-rules.md"
+            "IMPLEMENT_OUTPUT_RULES", "work/_output-rules.md"
         ),
     }
     _SHARED_FILES: dict[str, PromptReference] = {

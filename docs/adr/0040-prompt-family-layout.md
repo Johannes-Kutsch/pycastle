@@ -11,11 +11,11 @@ Bundled prompts are organized by prompt family instead of a mostly flat prompts 
 Fragments live beside the family that owns them unless reused across families. Cross-family fragments and prompt reference cards live under `shared/`, and non-dispatched prompt files use underscore-prefixed filenames:
 
 - `work/_shared-instructions.md`
+- `work/_output-rules.md`
 - `shared/_issue-tracker.md`
 - `shared/_placeholder-info.md`
 - `shared/standards/_design.md`
 - `shared/standards/_implementation.md`
-- `shared/standards/_output-rules.md`
 
 `shared/resume.md` is the deliberate exception to the underscore rule inside `shared/`: it is a dispatched continuation prompt, not a fragment or reference card.
 

@@ -553,8 +553,7 @@ def test_render_design_standards_available_in_improve_prd(cfg, prompts_dir):
 def test_render_implement_output_rules_available_in_per_issue_template(
     cfg, prompts_dir
 ):
-    standards_dir = prompts_dir / "shared/standards"
-    (standards_dir / "_output-rules.md").write_text("output rules content")
+    (prompts_dir / "work" / "_output-rules.md").write_text("output rules content")
     (prompts_dir / "work" / "behavior.md").write_text("{{IMPLEMENT_OUTPUT_RULES}}")
     renderer = PromptRenderer(cfg)
 

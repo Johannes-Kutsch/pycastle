@@ -1,4 +1,4 @@
-Prompt templates use a two-tier placeholder model: *global* placeholders are available in every template; *scope* placeholders are specific to a group of templates that share the same runtime context. Within the prompt-family tree, underscore-prefixed files are fragments or reference cards (`work/_shared-instructions.md`, `shared/_issue-tracker.md`, `shared/_placeholder-info.md`, `shared/standards/_*.md`); dispatched prompts such as `shared/resume.md` keep non-underscore names.
+Prompt templates use a two-tier placeholder model: *global* placeholders are available in every template; *scope* placeholders are specific to a group of templates that share the same runtime context. Within the prompt-family tree, underscore-prefixed files are fragments or reference cards (`work/_shared-instructions.md`, `work/_output-rules.md`, `shared/_issue-tracker.md`, `shared/_placeholder-info.md`, `shared/standards/_*.md`); dispatched prompts such as `shared/resume.md` keep non-underscore names.
 
 ## Global placeholders
 
@@ -16,7 +16,7 @@ Prompt templates use a two-tier placeholder model: *global* placeholders are ava
 - `{{CHECKS}}` — All preflight check commands joined with `&&`.
 - `{{DESIGN_STANDARDS}}` — Contents of `shared/standards/_design.md` (architecture vocabulary and deepening strategy).
 - `{{IMPLEMENTATION_STANDARDS}}` — Contents of `shared/standards/_implementation.md` (testing, mocking, deep modules, interfaces, and refactoring).
-- `{{IMPLEMENT_OUTPUT_RULES}}` — Contents of `shared/standards/_output-rules.md` (commit-message tag format and convention, do-not-stage rule).
+- `{{IMPLEMENT_OUTPUT_RULES}}` — Contents of `work/_output-rules.md` (commit-message tag format and convention, do-not-stage rule).
 - `{{WORK_SHARED_INSTRUCTIONS}}` — Contents of `work/_shared-instructions.md` (shared task/context, interrupted-work, explore, glossary, and ADR framing used by `work/behavior.md`, `work/refactor.md`, `work/docs.md`, and `work/review.md`).
 - `{{ISSUE_TRACKER}}` — Contents of `shared/_issue-tracker.md` (GitHub `gh` CLI recipes for issue operations: create, view, search, label, comment, close, sub-issue). Resolved through the same per-file override rule as other shared fragments.
 

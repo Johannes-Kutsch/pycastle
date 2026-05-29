@@ -18,7 +18,7 @@ From the issue's acceptance criteria, derive an ordered list of behaviors to imp
 
 For each behavior in order:
 
-### RED — write the failing test
+### 1. RED — write the failing test
 
 Write **one** failing test that confirms the behavior works end-to-end:
 
@@ -30,7 +30,7 @@ RED: Write test → run {{FEEDBACK_COMMANDS}} → test fails
 - `Edit` or `Write` on any non-test file is forbidden.
 - Do not touch production source files until the first `<behavior>` tag has been emitted with a real failing-test paste.
 
-### Emit `<behavior>`
+### 2. Emit `<behavior>`
 
 Before writing any production code for this behavior, emit:
 
@@ -46,7 +46,7 @@ Failing test output:
 </behavior>
 ```
 
-### GREEN — minimal code
+### 3. GREEN — minimal code
 
 Write the minimal production code to make the test pass:
 
@@ -69,10 +69,14 @@ After all behaviors are green, look for refactor candidates:
 
 {{IMPLEMENTATION_STANDARDS}}
 
+</workflow>
+
+<output>
+
 ### Output
 
 Before finishing, run `{{FEEDBACK_COMMANDS}}` to ensure all tests pass.
 
 {{IMPLEMENT_OUTPUT_RULES}}
 
-</workflow>
+</output>

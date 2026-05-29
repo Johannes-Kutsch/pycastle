@@ -66,7 +66,7 @@ pycastle = [
     "defaults/prompts/shared/resume.md",
     "defaults/prompts/shared/standards/_design.md",
     "defaults/prompts/shared/standards/_implementation.md",
-    "defaults/prompts/shared/standards/_output-rules.md",
+    "defaults/prompts/work/_output-rules.md",
     "defaults/prompts/work/_shared-instructions.md",
     "defaults/prompts/work/behavior.md",
     "defaults/prompts/work/docs.md",

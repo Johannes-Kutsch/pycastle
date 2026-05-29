@@ -1,6 +1,6 @@
 <task>
 
-Review the code changes for issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
+Review issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
 **Constraint**: Never change what the code does — only how it does it. All original features, outputs, and behaviors must remain intact.
 
@@ -56,20 +56,10 @@ Consult `docs/adr/README.md` if present, then check that the implementation resp
 
 Run `{{FEEDBACK_COMMANDS}}` to ensure nothing is broken.
 
-## 8. Output
-
-Emit the three output tags. `<reviewed_diff>` must already be present from step 3; emit `<checks_passed>` and optionally `<commit_message>` now.
-
-```
-<checks_passed>
-<final FEEDBACK_COMMANDS summary line>
-</checks_passed>
-```
-
-```
-<commit_message>
-Description of refinements (optional — omit if no changes were made)
-</commit_message>
-```
-
 </workflow>
+
+<output>
+
+{{IMPLEMENT_OUTPUT_RULES}}
+
+</output>
