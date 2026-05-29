@@ -22,7 +22,7 @@ Originally these ran `--bare`. Per #871 (see amendment note above), both now run
 
 ## Non-bare full-tool roles
 
-Implementer, Reviewer, Merger get no tool restriction. Reviewer is in this group despite emitting `<commit_message>` because `review-prompt.md` instructs the reviewer to write missing tests, refactor red-flag tests, fix bugs found, and reduce complexity (steps 2-6) — i.e. Reviewer actively modifies code.
+Implementer, Reviewer, Merger get no tool restriction. Reviewer is in this group despite emitting `<commit_message>` because `work/review.md` instructs the reviewer to write missing tests, refactor red-flag tests, fix bugs found, and reduce complexity (steps 2-6) — i.e. Reviewer actively modifies code.
 
 ## MCP suppression on all roles
 
@@ -32,7 +32,7 @@ Every role gets `--strict-mcp-config --mcp-config '{"mcpServers":{}}'` — same 
 
 Independent of the bare/non-bare choice — survives the #871 amendment unchanged.
 
-Previous: `diverge-prompt.md` step 5 instructed the resolver to run `{{CHECKS}}` post-merge and step 6 committed unconditionally. Prompt was silent on what to do if CHECKS failed, giving the agent latitude to fix code inline — latitude that relied on CLAUDE.md and conventions context.
+Previous: `coordination/diverge.md` step 5 instructed the resolver to run `{{CHECKS}}` post-merge and step 6 committed unconditionally. Prompt was silent on what to do if CHECKS failed, giving the agent latitude to fix code inline — latitude that relied on CLAUDE.md and conventions context.
 
 New: divergence-resolver does textual conflict resolution only. Prompt explicitly instructs the agent **not** to run CHECKS. `<promise>COMPLETE</promise>` iff the merge commits cleanly; `<promise>FAILED</promise>` iff conflicts cannot be resolved textually. Post-merge breakage is detected by the same `get_safe_sha()` call (`iteration/preflight.py:207-258`) — after `pull_with_resolution` returns and main is fast-forwarded, control re-enters `get_safe_sha` which reads the new HEAD, sees cache miss, runs `PREFLIGHT_CHECKS` in `preflight-sandbox`, and files an AFK issue routed through the existing preflight-fix path.
 
@@ -50,8 +50,8 @@ Trade-off: main briefly carries a potentially broken merge until preflight-fix l
 ## Consequences
 
 - `claude_service.build_command` gains a `role: AgentRole` parameter; per-role flag lookup lives in the same module.
-- `diverge-prompt.md` step 5 is rewritten to *forbid* running `{{CHECKS}}`; `{{CHECKS}}` placeholder is dropped from the prompt's scope.
-- `plan-prompt.md` gains one line instructing the Planner to `Read` `CONTEXT.md` and `docs/adr/` selectively when blocker analysis needs architectural context.
+- `coordination/diverge.md` step 5 is rewritten to *forbid* running `{{CHECKS}}`; `{{CHECKS}}` placeholder is dropped from the prompt's scope.
+- `coordination/plan.md` gains one line instructing the Planner to `Read` `CONTEXT.md` and `docs/adr/` selectively when blocker analysis needs architectural context.
 - Token savings are largest for Planner (skips CLAUDE.md + MCP + skills + plugins + hooks; restricts tool defs to two) and divergence-resolver (same, plus the prompt is shorter). Other roles save the slash-commands + MCP tool defs + investigator roles also save Edit/Write/NotebookEdit defs.
 - Anthropic prompt-cache hit rate improves across parallel Implementer/Reviewer runs because `--exclude-dynamic-system-prompt-sections` removes the per-worktree path from the system prompt.
 - Post-Merger broken-main detection when the Merger closes the last AFK issue is **not** covered by this ADR — orchestrator currently exits the loop without a final `get_safe_sha` call in that case. Tracked separately (issue handed off during grilling).

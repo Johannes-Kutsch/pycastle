@@ -31,5 +31,5 @@ When an agent is interrupted mid-task the orchestrator preserves the worktree an
 - **Cleanup-on-success is load-bearing**: after every successful commit/merge, run `RoleSession(...).mark_done()` inside the worktree context — otherwise preservation rule keeps the worktree alive forever. All `shutil.rmtree` calls use an `onerror` handler that clears read-only flags before retrying, because agent CLIs (notably Codex) create read-only git pack files inside the session dir that `shutil.rmtree` cannot delete on Windows without chmod.
 - **Non-typed Resume retry (#640):** any exception from `runner.work()` on Resume not in `{UsageLimitError, AgentTimeoutError, AgentOutputProtocolError, PreflightFailure}` triggers one in-call retry. Second failure → `FailedOutput(failure_class="non_typed_crash")` → `AbortedAgentFailure`.
 - Session gitignoring via `<repo>/.git/info/exclude`: orchestrator startup appends `.pycastle-session/` and `.claude/` idempotently.
-- Continuation prompt at `defaults/prompts/_resume-prompt.md` shared across roles; assumes conversation history present.
+- Continuation prompt at `defaults/prompts/shared/resume.md` shared across roles; assumes conversation history present.
 - Improve mode (#408) layers multi-prompt-within-one-run on top of this — subsumed by ADR 0010.
