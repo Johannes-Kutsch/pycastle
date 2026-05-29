@@ -126,6 +126,13 @@ class AgentRunner:
         self._service_registry = service_registry or {"claude": ClaudeService()}
         self._renderer = PromptRenderer(cfg)
 
+    def _container_base_env(self) -> dict[str, str]:
+        env: dict[str, str] = {}
+        gh_token = self._env.get("GH_TOKEN")
+        if gh_token:
+            env["GH_TOKEN"] = gh_token
+        return env
+
     def _resolve_service(self, service_name: str = "") -> AgentService:
         resolved_name = service_name.strip()
         if not resolved_name:
@@ -142,7 +149,7 @@ class AgentRunner:
         state_dir_relpath: str | None = None,
     ) -> DockerSession:
         volumes, auto_overlay = build_volume_spec(mount_path)
-        container_env = dict(self._env)
+        container_env = self._container_base_env()
         state_dir: str | None = None
         if state_dir_relpath is not None:
             state_dir = f"{_CONTAINER_WORKSPACE}/{state_dir_relpath}"
@@ -160,7 +167,7 @@ class AgentRunner:
         volumes, auto_overlay = build_volume_spec(mount_path)
         return DockerSession(
             volumes=volumes,
-            container_env=dict(self._env),
+            container_env=self._container_base_env(),
             image_name=image_name_for(self._cfg.docker_image_name, ""),
             cfg=self._cfg,
             docker_client=self._docker_client,

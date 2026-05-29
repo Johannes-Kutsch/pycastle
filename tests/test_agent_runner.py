@@ -16,6 +16,7 @@ from pycastle.agents.output_protocol import (
     CommitMessageOutput,
     CompletionOutput,
     FailedOutput,
+    IssueOutput,
     PlannerOutput,
 )
 from pycastle.agents.result import CancellationToken
@@ -34,6 +35,7 @@ from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session import RoleSession, RunKind
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
+from pycastle.services.claude_service import ClaudeService
 from pycastle.display.status_display import ModelDisplayMetadata
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 
@@ -1639,6 +1641,211 @@ def test_agent_runner_injects_picked_token_into_container_env(tmp_path):
     )
 
     assert captured_env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok-secondary"
+
+
+def test_agent_runner_filters_host_env_before_container_startup(tmp_path):
+    from pycastle.services.claude_service import ClaudeService
+
+    started_envs: list[dict[str, str]] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+
+    def _start_container(*args, **kwargs):
+        started_envs.append(dict(kwargs.get("environment") or {}))
+        return mock_container
+
+    def _exec_run(*args, **kwargs):
+        if kwargs.get("stream"):
+            result = MagicMock()
+            result.output = iter(_COMPLETE_STREAM)
+            return result
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_client.containers.run.side_effect = _start_container
+    mock_container.exec_run.side_effect = _exec_run
+
+    runner = AgentRunner(
+        {
+            "GH_TOKEN": "gh-token",
+            "PATH": r"C:\Windows\System32;C:\Windows",
+            "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY": "secondary-token",
+        },
+        _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),)),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={
+            "claude": ClaudeService(accounts=[("primary", "tok-primary")])
+        },
+    )
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Implement",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.IMPLEMENTER,
+                service="claude",
+            )
+        )
+    )
+    asyncio.run(runner.run_preflight(name="preflight", mount_path=tmp_path))
+
+    agent_env, preflight_env = started_envs
+    assert agent_env["GH_TOKEN"] == "gh-token"
+    assert "PATH" not in agent_env
+    assert "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY" not in agent_env
+    assert agent_env["CLAUDE_CODE_OAUTH_TOKEN"] == "tok-primary"
+    assert "CLAUDE_CONFIG_DIR" in agent_env
+
+    assert preflight_env["GH_TOKEN"] == "gh-token"
+    assert "PATH" not in preflight_env
+    assert "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY" not in preflight_env
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in preflight_env
+
+
+def test_agent_runner_keeps_service_env_across_preflight_issue_review_and_failure_report(
+    tmp_path,
+    monkeypatch,
+):
+    issue_stream = [
+        b'{"type": "result", "result": "<issue>{\\"number\\": 123, \\"labels\\": [\\"bug\\"]}</issue>", "is_error": false}\n'
+    ]
+    opencode_issue_stream = [
+        b'{"type":"text","sessionID":"sess-from-fresh",'
+        b'"part":{"type":"text","text":"<issue>{\\"number\\": 456, \\"labels\\": [\\"bug\\"]}</issue>",'
+        b'"time":{"start":1,"end":2}}}\n',
+        b'{"type":"session.status","sessionID":"sess-from-fresh",'
+        b'"status":{"type":"idle"}}\n',
+    ]
+    started: list[tuple[str, dict[str, str]]] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    def _start_container(image_name: str, **kwargs):
+        started.append((image_name, dict(kwargs.get("environment") or {})))
+        return mock_container
+
+    def _exec_run(cmd, **kwargs):
+        if not kwargs.get("stream"):
+            return MagicMock(exit_code=0, output=(b"", b""))
+        command = cmd[2] if isinstance(cmd, list) and len(cmd) > 2 else ""
+        result = MagicMock()
+        if "opencode run" in command:
+            result.output = iter(opencode_issue_stream)
+        elif "codex exec" in command:
+            result.output = iter(_CODEX_COMPLETE_STREAM)
+        else:
+            result.output = iter(issue_stream)
+        return result
+
+    mock_client.containers.run.side_effect = _start_container
+    mock_container.exec_run.side_effect = _exec_run
+
+    runner = AgentRunner(
+        {
+            "GH_TOKEN": "gh-token",
+            "PATH": r"C:\Windows\System32;C:\Windows",
+            "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY": "secondary-token",
+            "OPENCODE_GO_API_KEY": "opencode-key",
+        },
+        _make_cfg(tmp_path, docker_image_name="pycastle-test"),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={
+            "claude": ClaudeService(accounts=[("primary", "tok-primary")]),
+            "codex": CodexService(),
+            "opencode": OpenCodeService(api_key="opencode-key"),
+        },
+    )
+
+    preflight_issue = asyncio.run(
+        runner.run(
+            _run_request(
+                name="Host-Check Reporter",
+                template=PromptTemplate.HOST_CHECK_ISSUE,
+                scope_args={
+                    "HOST_OS": "Windows",
+                    "HOST_PLATFORM": "Windows-11",
+                    "CHECKED_SHA": "abc123",
+                    "CHECK_NAME": "pytest",
+                    "COMMAND": "pytest tests/host",
+                    "OUTPUT": "failed",
+                },
+                mount_path=tmp_path,
+                role=AgentRole.PREFLIGHT_ISSUE,
+                service="opencode",
+            )
+        )
+    )
+    review = asyncio.run(
+        runner.run(
+            _run_request(
+                name="Review",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.REVIEWER,
+                service="codex",
+            )
+        )
+    )
+    failure_report = asyncio.run(
+        runner.run(
+            _run_request(
+                name="Failure Report",
+                template=PromptTemplate.FAILURE_REPORT,
+                scope_args={
+                    "SESSION_DIR": "/tmp/session",
+                    "FAILED_ROLE": "reviewer",
+                    "FAILURE_CLASS": "protocol_error",
+                },
+                mount_path=tmp_path,
+                role=AgentRole.FAILURE_REPORT,
+                service="claude",
+            )
+        )
+    )
+
+    assert isinstance(preflight_issue, IssueOutput)
+    assert isinstance(review, CommitMessageOutput)
+    assert isinstance(failure_report, IssueOutput)
+
+    opencode_env = started[0][1]
+    codex_env = started[1][1]
+    claude_env = started[2][1]
+
+    assert started[0][0] == "pycastle-test"
+    assert opencode_env["GH_TOKEN"] == "gh-token"
+    assert opencode_env["OPENCODE_GO_API_KEY"] == "opencode-key"
+    assert "OPENCODE_CONFIG_CONTENT" in opencode_env
+    assert opencode_env["OPENCODE_HOME"].endswith(
+        "/.pycastle-session/preflight_issue/opencode/"
+    )
+    assert "PATH" not in opencode_env
+    assert "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY" not in opencode_env
+
+    assert started[1][0] == "pycastle-test"
+    assert codex_env["GH_TOKEN"] == "gh-token"
+    assert codex_env["TZ"] == "UTC"
+    assert codex_env["CODEX_HOME"].endswith("/.pycastle-session/reviewer/codex/")
+    assert "PATH" not in codex_env
+    assert "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY" not in codex_env
+
+    assert started[2][0] == "pycastle-test"
+    assert claude_env["GH_TOKEN"] == "gh-token"
+    assert claude_env["CLAUDE_CODE_OAUTH_TOKEN"] == "tok-primary"
+    assert claude_env["CLAUDE_CONFIG_DIR"].endswith(
+        "/.pycastle-session/failure_report/claude/"
+    )
+    assert "PATH" not in claude_env
+    assert "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY" not in claude_env
 
 
 def test_agent_runner_cancels_token_and_raises_on_transient_agent_error(tmp_path):
