@@ -432,7 +432,6 @@ def cron_cmd(no_improve: bool) -> None:
     from .commands.init import refresh as _refresh
     from .log_maintenance import maintain_logs
 
-    cfg = _load_config_or_exit()
     home = resolve_global_dir(None, os.environ)
     lock_path = home / ".cron.lock"
     home.mkdir(parents=True, exist_ok=True)
@@ -485,6 +484,7 @@ def cron_cmd(no_improve: bool) -> None:
 
         _print_layer_summary()
         _refresh()
+        cfg = _load_config_or_exit()
         _do_run(cfg, no_improve=no_improve, improve_mode_flag=None)
 
     maintain_logs(resolve_logs_dir(cfg), max_lines=10000, retention_days=30)
