@@ -6,6 +6,7 @@ from typing import cast
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services import ClaudeService
+from pycastle.services.codex_service import CodexService
 from pycastle.session.run_session import (
     AuthSeedingRequirement,
     RecoveredSessionIdPersistence,
@@ -162,3 +163,126 @@ def test_run_session_plan_namespaces_claude_provider_session_identity_only_when_
         base_plan.provider_session_id
         == RoleSession(tmp_path, AgentRole.IMPLEMENTER, "").session_uuid()
     )
+
+
+def test_run_session_plan_prefers_saved_codex_thread_id_for_resume(tmp_path: Path):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    role_session.save_service_session_id("codex", "thread-from-sidecar")
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == "thread-from-sidecar"
+
+
+def test_run_session_plan_recovers_single_codex_rollout_and_marks_it_for_persistence(
+    tmp_path: Path,
+):
+    service = CodexService()
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == "thread-from-rollout"
+    assert (
+        plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
+    )
+
+
+def test_run_session_plan_treats_duplicate_codex_rollout_thread_id_as_unambiguous(
+    tmp_path: Path,
+):
+    service = CodexService()
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
+        encoding="utf-8",
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == "thread-same-id"
+
+
+def test_run_session_plan_treats_distinct_codex_rollout_thread_ids_as_fresh(
+    tmp_path: Path,
+):
+    service = CodexService()
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-id-old"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-id-new"}\n',
+        encoding="utf-8",
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.provider_session_id is None
+
+
+def test_run_session_plan_never_generates_pycastle_uuid_for_fresh_codex(
+    tmp_path: Path,
+):
+    service = CodexService()
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.provider_session_id is None

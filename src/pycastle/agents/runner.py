@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-import json
 import shutil
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -198,30 +197,6 @@ class AgentRunner:
         state_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(host_auth, dest)
 
-    def _codex_thread_id_from_rollouts(self, state_dir: Path) -> str | None:
-        sessions_dir = state_dir / "sessions"
-        if not sessions_dir.is_dir():
-            return None
-        found: set[str] = set()
-        for rollout in sessions_dir.rglob("rollout-*.jsonl"):
-            try:
-                lines = rollout.read_text(encoding="utf-8").splitlines()
-            except OSError:
-                continue
-            for line in lines:
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(obj, dict):
-                    continue
-                if obj.get("type") != "thread.started":
-                    continue
-                thread_id = obj.get("thread_id")
-                if isinstance(thread_id, str) and thread_id.strip():
-                    found.add(thread_id.strip())
-        return next(iter(found)) if len(found) == 1 else None
-
     async def _build_prompt(
         self,
         template: PromptTemplate,
@@ -282,16 +257,14 @@ class AgentRunner:
         run_kind = plan.run_kind
         state_dir = plan.service_state_dir
         service_session_id: str | None = plan.provider_session_id
-        if service.name == "codex":
-            service_session_id = None
-            if run_kind == RunKind.RESUME and state_dir is not None:
-                service_session_id = role_session.service_session_id(
-                    "codex"
-                ) or self._codex_thread_id_from_rollouts(state_dir)
-                if service_session_id is not None:
-                    role_session.save_service_session_id("codex", service_session_id)
-                else:
-                    run_kind = RunKind.FRESH
+        if (
+            service.name == "codex"
+            and run_kind == RunKind.RESUME
+            and service_session_id is not None
+            and plan.recovered_session_id_persistence
+            is RecoveredSessionIdPersistence.PERSIST
+        ):
+            role_session.save_service_session_id("codex", service_session_id)
         elif service.name == "opencode" and run_kind == RunKind.RESUME:
             service_session_id = role_session.service_session_id("opencode")
             if service_session_id is None:

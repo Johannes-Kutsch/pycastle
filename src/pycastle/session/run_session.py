@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -20,6 +21,31 @@ class AuthSeedingRequirement(Enum):
 class RecoveredSessionIdPersistence(Enum):
     PERSIST = "persist"
     SKIP = "skip"
+
+
+def _codex_thread_id_from_rollouts(state_dir: Path) -> str | None:
+    sessions_dir = state_dir / "sessions"
+    if not sessions_dir.is_dir():
+        return None
+    found: set[str] = set()
+    for rollout in sessions_dir.rglob("rollout-*.jsonl"):
+        try:
+            lines = rollout.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            if obj.get("type") != "thread.started":
+                continue
+            thread_id = obj.get("thread_id")
+            if isinstance(thread_id, str) and thread_id.strip():
+                found.add(thread_id.strip())
+    return next(iter(found)) if len(found) == 1 else None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -59,8 +85,22 @@ class RunSessionPlan:
             if service_state_dir is not None and service.is_resumable(service_state_dir)
             else RunKind.FRESH
         )
+        role_session = RoleSession(worktree, role, namespace)
         if provider_session_id is None and service.name == "claude":
-            provider_session_id = RoleSession(worktree, role, namespace).session_uuid()
+            provider_session_id = role_session.session_uuid()
+        if provider_session_id is None and service.name == "codex":
+            provider_session_id = role_session.service_session_id("codex")
+            if provider_session_id is None and run_kind == RunKind.RESUME:
+                if service_state_dir is not None:
+                    provider_session_id = _codex_thread_id_from_rollouts(
+                        service_state_dir
+                    )
+                if provider_session_id is not None:
+                    recovered_session_id_persistence = (
+                        RecoveredSessionIdPersistence.PERSIST
+                    )
+                if provider_session_id is None:
+                    run_kind = RunKind.FRESH
         return cls(
             role=role,
             worktree=worktree,
