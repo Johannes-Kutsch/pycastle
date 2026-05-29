@@ -344,6 +344,40 @@ def test_renderer_ctor_rejects_broken_effective_local_role_prompt_override(
         PromptRenderer(Config())
 
 
+def test_renderer_ctor_rejects_unknown_fixed_local_prompt_override_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    (prompts_dir / "work").mkdir(parents=True)
+    (prompts_dir / "work" / "scratch.md").write_text("unused")
+
+    with pytest.raises(PromptRenderError, match=r"work/scratch\.md"):
+        PromptRenderer(Config())
+
+
+def test_renderer_ctor_rejects_stale_flat_local_prompt_override_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    prompts_dir.mkdir(parents=True)
+    (prompts_dir / "implement.md").write_text("stale flat prompt override")
+
+    with pytest.raises(PromptRenderError, match=r"implement\.md"):
+        PromptRenderer(Config())
+
+
+def test_renderer_ctor_allows_extra_directories_in_fixed_local_prompt_overrides(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    (prompts_dir / "notes/archive").mkdir(parents=True)
+
+    PromptRenderer(Config())
+
+
 # ── Ctor skips missing template files (no error) ─────────────────────────────
 
 
@@ -651,6 +685,19 @@ def test_renderer_ignores_broken_unreferenced_local_shared_file_in_custom_prompt
     )
 
     assert result == "issue 1"
+
+
+def test_renderer_allows_extra_files_in_custom_complete_prompt_root(tmp_path: Path):
+    custom_prompts_dir = tmp_path / "custom-prompts"
+    (custom_prompts_dir / "shared").mkdir(parents=True)
+    (custom_prompts_dir / "shared" / "resume.md").write_text("Custom resume")
+    (custom_prompts_dir / "scratch.md").write_text("unused")
+
+    renderer = PromptRenderer(_cfg_for_prompts_dir(custom_prompts_dir))
+
+    result = _run(renderer.render(PromptTemplate.RESUME, {}, _noop_exec))
+
+    assert result == "Custom resume"
 
 
 def test_renderer_renders_issue_tracker_fragment(prompts_dir):
