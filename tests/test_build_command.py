@@ -137,6 +137,14 @@ def _shipped_defaults_in_sdist(tmp_path: Path) -> set[str]:
         shutil.rmtree(build_dir, ignore_errors=True)
 
 
+def _bundled_runtime_defaults() -> set[str]:
+    return {
+        path.relative_to(Path("src/pycastle")).as_posix()
+        for path in Path("src/pycastle/defaults").rglob("*")
+        if path.is_file() and path.name != ".env"
+    }
+
+
 # ── subprocess command flags ──────────────────────────────────────────────────
 
 
@@ -496,11 +504,7 @@ def test_packaging_includes_bundled_universal_dockerfile():
 
 def test_wheel_ships_current_bundled_runtime_defaults_tree_only(tmp_path):
     shipped_defaults = _shipped_defaults_in_wheel(tmp_path)
-    bundled_defaults = {
-        str(path.relative_to(Path("src/pycastle")))
-        for path in Path("src/pycastle/defaults").rglob("*")
-        if path.is_file()
-    }
+    bundled_defaults = _bundled_runtime_defaults()
 
     assert bundled_defaults <= shipped_defaults
     assert "defaults/Dockerfile.claude" not in shipped_defaults
@@ -510,11 +514,7 @@ def test_wheel_ships_current_bundled_runtime_defaults_tree_only(tmp_path):
 
 def test_sdist_ships_current_bundled_runtime_defaults_tree_only(tmp_path):
     shipped_defaults = _shipped_defaults_in_sdist(tmp_path)
-    bundled_defaults = {
-        str(path.relative_to(Path("src/pycastle")))
-        for path in Path("src/pycastle/defaults").rglob("*")
-        if path.is_file()
-    }
+    bundled_defaults = _bundled_runtime_defaults()
 
     assert bundled_defaults <= shipped_defaults
     assert "defaults/Dockerfile.claude" not in shipped_defaults

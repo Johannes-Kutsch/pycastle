@@ -1,4 +1,5 @@
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -9,7 +10,8 @@ import pytest
 from pycastle.config.loader import derive_docker_image_name
 
 pytestmark = pytest.mark.skipif(
-    sys.platform == "win32", reason="bash/crontab not available on Windows"
+    sys.platform == "win32" or shutil.which("bash") is None,
+    reason="bash/crontab not available on this host",
 )
 
 DEFAULTS_DIR = Path(__file__).parent.parent / "src" / "pycastle" / "defaults"
@@ -68,7 +70,7 @@ def cron_env(tmp_path, fake_crontab):
     }
 
 
-_BASH = subprocess.run(["which", "bash"], capture_output=True, text=True).stdout.strip()
+_BASH = shutil.which("bash") or "bash"
 
 
 def _run(script: Path, env: dict) -> subprocess.CompletedProcess:
