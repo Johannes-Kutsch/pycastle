@@ -164,6 +164,39 @@ def test_provider_identity_resumes_from_saved_codex_thread_id(worktree):
     )
 
 
+def test_provider_identity_ignores_unreadable_codex_sidecar_and_recovers_unique_rollout(
+    worktree, monkeypatch
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    sidecar_path = rs.service_session_id_path("codex")
+    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+    sidecar_path.write_text("thread-from-sidecar", encoding="utf-8")
+
+    rollout_dir = rs.path / "codex" / "sessions" / "2026" / "05" / "29"
+    rollout_dir.mkdir(parents=True, exist_ok=True)
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
+    )
+
+    original_read_text = type(sidecar_path).read_text
+
+    def unreadable_read_text(path, *args, **kwargs):
+        if path == sidecar_path:
+            raise OSError("sidecar unreadable")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(sidecar_path), "read_text", unreadable_read_text)
+
+    assert rs.provider_identity("codex", has_resumable_provider_state=True) == (
+        ProviderIdentity(
+            kind=ProviderIdentityKind.RESUME,
+            run_kind=RunKind.RESUME,
+            provider_session_id="thread-from-rollout",
+        )
+    )
+
+
 def test_provider_identity_recovers_single_nested_codex_rollout_thread_id_and_persists_sidecar(
     worktree,
 ):
@@ -174,6 +207,37 @@ def test_provider_identity_recovers_single_nested_codex_rollout_thread_id_and_pe
         '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
         encoding="utf-8",
     )
+
+    assert rs.provider_identity("codex", has_resumable_provider_state=True) == (
+        ProviderIdentity(
+            kind=ProviderIdentityKind.RESUME,
+            run_kind=RunKind.RESUME,
+            provider_session_id="thread-from-rollout",
+        )
+    )
+    assert rs.service_session_id("codex") == "thread-from-rollout"
+
+
+def test_provider_identity_recovers_single_codex_rollout_thread_id_amid_malformed_rollout_noise(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    rollout_dir = rs.path / "codex" / "sessions" / "2026" / "05" / "29"
+    rollout_dir.mkdir(parents=True, exist_ok=True)
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                "{not-json",
+                '["not-an-object"]',
+                '{"type":"turn.completed","thread_id":"ignored"}',
+                '{"type":"thread.started","thread_id":"   "}',
+                '{"type":"thread.started","thread_id":"thread-from-rollout"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (rollout_dir / "rollout-002.jsonl").write_bytes(b"\xff\xfe\x00")
 
     assert rs.provider_identity("codex", has_resumable_provider_state=True) == (
         ProviderIdentity(
@@ -241,6 +305,36 @@ def test_provider_identity_is_unrecoverable_when_codex_rollouts_have_two_distinc
             provider_session_id=None,
         )
     )
+    assert rs.service_session_id("codex") is None
+
+
+def test_provider_identity_is_unrecoverable_when_codex_rollouts_are_malformed_only(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    rollout_dir = rs.path / "codex" / "sessions" / "2026" / "05" / "29"
+    rollout_dir.mkdir(parents=True, exist_ok=True)
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                "{not-json",
+                '["not-an-object"]',
+                '{"type":"turn.completed","thread_id":"ignored"}',
+                '{"type":"thread.started","thread_id":"   "}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert rs.provider_identity("codex", has_resumable_provider_state=True) == (
+        ProviderIdentity(
+            kind=ProviderIdentityKind.UNRECOVERABLE,
+            run_kind=RunKind.FRESH,
+            provider_session_id=None,
+        )
+    )
+    assert rs.service_session_id("codex") is None
 
 
 def test_provider_identity_does_not_scan_rollouts_when_codex_has_no_resumable_provider_state(

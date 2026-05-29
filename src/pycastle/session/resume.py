@@ -34,7 +34,7 @@ def _codex_thread_id_from_rollouts(state_dir: Path) -> str | None:
     for rollout in sessions_dir.rglob("rollout-*.jsonl"):
         try:
             lines = rollout.read_text(encoding="utf-8").splitlines()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             continue
         for line in lines:
             try:
@@ -114,7 +114,10 @@ class RoleSession:
         path = self.service_session_id_path(service_name)
         if not path.is_file():
             return None
-        value = path.read_text(encoding="utf-8").strip()
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError):
+            return None
         return value or None
 
     def save_service_session_id(self, service_name: str, session_id: str) -> None:
