@@ -1171,6 +1171,22 @@ def test_close_message_shows_zero_branches_merged_when_no_issues(recording_deps)
     assert "0 branch(es) merged and deleted" in shutdown_msg
 
 
+def test_merge_phase_shows_no_misleading_nonzero_progress_when_completed_is_empty(
+    recording_deps,
+):
+    """With no completed issues, live progress stays at merging 0/0 — no closing or removing counters."""
+    deps, recording = recording_deps
+    _run([], deps)
+
+    update_calls = [
+        c for c in recording.calls if c[0] == "update_phase" and c[1] == "Merge"
+    ]
+    progress_texts = [c[2] for c in update_calls]
+    assert progress_texts, "at least one update_phase call expected"
+    assert all(t == "merging 0/0 branches" for t in progress_texts)
+    assert not any("closing" in t or "removing" in t for t in progress_texts)
+
+
 def test_merge_row_still_active_while_merger_runs(tmp_path, git_svc, github_svc):
     """The 'Merge' phase row must remain open (not yet closed) while the Merge Agent runs."""
     recording = RecordingStatusDisplay()
