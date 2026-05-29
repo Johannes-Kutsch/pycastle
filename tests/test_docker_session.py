@@ -370,6 +370,29 @@ def test_docker_session_enter_wraps_container_start_failure_with_image_context()
     assert "entrypoint" in message
 
 
+def test_docker_session_enter_wraps_generic_container_start_failure_without_hint():
+    """__enter__ wraps non-tooling Docker start failures without the missing-tools hint."""
+    mock_client = MagicMock()
+    mock_client.containers.run.side_effect = docker.errors.APIError(
+        "network sandbox join failed"
+    )
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="pycastle-test",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+
+    with pytest.raises(DockerError) as exc_info:
+        session.__enter__()
+
+    message = str(exc_info.value)
+    assert "pycastle-test" in message
+    assert "network sandbox join failed" in message
+    assert "image contract" not in message
+
+
 def test_docker_session_exec_simple_returns_stdout_on_success():
     """exec_simple returns decoded stdout when command exits with code 0."""
     mock_client = _mock_client(exit_code=0, stdout=b"hello\n")
