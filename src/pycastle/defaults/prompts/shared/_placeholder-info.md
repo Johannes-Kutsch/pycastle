@@ -14,15 +14,15 @@ Prompt templates use a two-tier placeholder model: *global* placeholders are ava
 - `{{DOCS_SLICE_LABEL}}` — GitHub label marking docs-slice issues.
 - `{{FEEDBACK_COMMANDS}}` — Formatted list of implement-feedback commands (e.g. `ruff check --fix` and `pytest`).
 - `{{CHECKS}}` — All preflight check commands joined with `&&`.
-- `{{DESIGN_STANDARDS}}` — Contents of `coding-standards/design.md` (architecture vocabulary and deepening strategy).
-- `{{IMPLEMENTATION_STANDARDS}}` — Contents of `coding-standards/implementation.md` (testing, mocking, deep modules, interfaces, and refactoring).
-- `{{IMPLEMENT_OUTPUT_RULES}}` — Contents of `coding-standards/implement-output-rules.md` (commit-message tag format and convention, do-not-stage rule).
-- `{{IMPLEMENT_REVIEW_SHARED_FRAMING}}` — Contents of `_implement-review-shared-framing.md` (shared task/context, interrupted-work, explore, glossary, and ADR framing used by Implementer and Reviewer prompts).
-- `{{ISSUE_TRACKER}}` — Contents of `_issue-tracker.md` (GitHub REST recipes for issue operations: create, view, search, label, comment, close, sub-issue). Present only when `_issue-tracker.md` exists in the prompts directory.
+- `{{DESIGN_STANDARDS}}` — Contents of `shared/standards/_design.md` (architecture vocabulary and deepening strategy).
+- `{{IMPLEMENTATION_STANDARDS}}` — Contents of `shared/standards/_implementation.md` (testing, mocking, deep modules, interfaces, and refactoring).
+- `{{IMPLEMENT_OUTPUT_RULES}}` — Contents of `shared/standards/_output-rules.md` (commit-message tag format and convention, do-not-stage rule).
+- `{{WORK_SHARED_INSTRUCTIONS}}` — Contents of `work/_shared-instructions.md` (shared task/context, interrupted-work, explore, glossary, and ADR framing used by Implementer and Reviewer prompts).
+- `{{ISSUE_TRACKER}}` — Contents of `shared/_issue-tracker.md` (GitHub REST recipes for issue operations: create, view, search, label, comment, close, sub-issue). Present only when `shared/_issue-tracker.md` exists in the prompts directory.
 
 ## Scope: PER_ISSUE
 
-Used by: implement/behavior.md, implement/refactor.md, implement/docs.md, review-prompt.md
+Used by: work/behavior.md, work/refactor.md, work/docs.md, work/review.md
 
 - `{{ISSUE_NUMBER}}` — The GitHub issue number.
 - `{{ISSUE_TITLE}}` — The issue title.
@@ -33,20 +33,20 @@ Used by: implement/behavior.md, implement/refactor.md, implement/docs.md, review
 
 ## Scope: MERGE
 
-Used by: merge-prompt.md
+Used by: coordination/merge.md
 
 - `{{BRANCHES}}` — Newline-separated list of branches to merge.
 
 ## Scope: PLAN
 
-Used by: plan-prompt.md
+Used by: coordination/plan.md
 
 - `{{ALL_OPEN_ISSUES_JSON}}` — JSON array of all open issues.
 - `{{READY_FOR_AGENT_ISSUES_JSON}}` — JSON array of issues labelled ready-for-agent.
 
 ## Scope: PREFLIGHT
 
-Used by: preflight-issue.md
+Used by: diagnostics/preflight-issue.md
 
 - `{{CHECK_NAME}}` — Name of the failing preflight check.
 - `{{COMMAND}}` — The preflight check command that failed.
@@ -54,7 +54,7 @@ Used by: preflight-issue.md
 
 ## Scope: HOST_CHECK
 
-Used by: host-check-issue.md
+Used by: diagnostics/host-check-issue.md
 
 - `{{HOST_OS}}` — Host operating system where the failing host check was observed.
 - `{{HOST_PLATFORM}}` — Host platform identifier where the failing host check was observed.
@@ -87,19 +87,19 @@ Used by: improve/03-issues.md
 
 ## Scope: DIVERGE
 
-Used by: diverge-prompt.md
+Used by: coordination/diverge.md
 
 - `{{BRANCH}}` — The current branch name (used to identify both the local branch and its `origin/<branch>` counterpart to merge).
 
 ## Scope: RESUME
 
-Used by: _resume-prompt.md
+Used by: shared/resume.md
 
 *(no scope-specific placeholders)*
 
 ## Scope: FAILURE_REPORT
 
-Used by: failure-report.md
+Used by: diagnostics/failure-report.md
 
 - `{{FAILED_ROLE}}` — The agent role that failed.
 - `{{SESSION_DIR}}` — Path to the session log directory.

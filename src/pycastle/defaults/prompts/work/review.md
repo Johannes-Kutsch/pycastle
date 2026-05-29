@@ -4,7 +4,7 @@ Review the code changes for issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
 **Constraint**: Never change what the code does — only how it does it. All original features, outputs, and behaviors must remain intact.
 
-{{IMPLEMENT_REVIEW_SHARED_FRAMING}}
+{{WORK_SHARED_INSTRUCTIONS}}
 
 ## 1. Confirm baseline
 

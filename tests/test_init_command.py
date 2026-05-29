@@ -1682,7 +1682,7 @@ def test_init_refresh_overwrites_stale_prompt_file(tmp_path, monkeypatch):
     from pycastle.commands.init import refresh
 
     monkeypatch.chdir(tmp_path)
-    plan_prompt = tmp_path / "pycastle" / "prompts" / "plan-prompt.md"
+    plan_prompt = tmp_path / "pycastle" / "prompts" / "coordination/plan.md"
     plan_prompt.parent.mkdir(parents=True, exist_ok=True)
     bundled_bytes = b"STALE LOCAL EDIT\n"
     plan_prompt.write_bytes(bundled_bytes)
@@ -1695,8 +1695,8 @@ def test_init_refresh_overwrites_stale_prompt_file(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "rel_path",
     [
-        "prompts/_issue-tracker.md",
-        "prompts/coding-standards/implementation.md",
+        "prompts/shared/_issue-tracker.md",
+        "prompts/shared/standards/_implementation.md",
     ],
     ids=["shared_prompt_fragment", "nested_prompt_fragment"],
 )
@@ -1731,8 +1731,8 @@ def test_init_preserves_existing_local_prompt_overrides(tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     prompt_files = {
-        "plan-prompt.md": b"user-owned prompt override\n",
-        "coding-standards/implementation.md": b"user-owned nested override\n",
+        "coordination/plan.md": b"user-owned prompt override\n",
+        "shared/standards/_implementation.md": b"user-owned nested override\n",
     }
     for rel_path, original in prompt_files.items():
         target = tmp_path / "pycastle" / "prompts" / rel_path
@@ -1867,7 +1867,7 @@ def test_init_overwrites_stale_setup_scaffold_files_on_rerun(
     assert target.read_bytes() == bundled_bytes
 
 
-@pytest.mark.parametrize("rel_path", ["prompts/plan-prompt.md", "Dockerfile"])
+@pytest.mark.parametrize("rel_path", ["prompts/coordination/plan.md", "Dockerfile"])
 def test_init_rerun_preserves_user_owned_overrides(tmp_path, monkeypatch, rel_path):
     """Re-running init leaves prompt and Dockerfile overrides byte-for-byte unchanged."""
     from pycastle.commands.init import main
@@ -2593,8 +2593,8 @@ def test_refresh_preserves_local_prompt_overrides_and_omits_them_from_output(
     monkeypatch.chdir(tmp_path)
     pycastle_dir = tmp_path / "pycastle"
     prompt_files = {
-        "plan-prompt.md": b"user-owned prompt override\n",
-        "coding-standards/implementation.md": b"user-owned nested override\n",
+        "coordination/plan.md": b"user-owned prompt override\n",
+        "shared/standards/_implementation.md": b"user-owned nested override\n",
     }
     for rel_path, original in prompt_files.items():
         target = pycastle_dir / "prompts" / rel_path
@@ -2635,7 +2635,7 @@ def test_refresh_treats_crlf_config_example_as_unchanged(tmp_path, monkeypatch, 
 @pytest.mark.parametrize(
     ("rel_path", "content"),
     [
-        ("prompts/plan-prompt.md", b"user prompt override\n"),
+        ("prompts/coordination/plan.md", b"user prompt override\n"),
         ("Dockerfile", b"FROM scratch\n"),
     ],
     ids=["prompt_override", "dockerfile_override"],
@@ -2675,7 +2675,7 @@ def test_refresh_reports_only_overwritten_managed_scaffold_when_prompt_override_
     refresh()
     capsys.readouterr()
 
-    prompt_override = pycastle_dir / "prompts" / "_issue-tracker.md"
+    prompt_override = pycastle_dir / "prompts" / "shared/_issue-tracker.md"
     prompt_override.parent.mkdir(parents=True, exist_ok=True)
     prompt_override.write_text("user override\n")
     (pycastle_dir / "setup" / "cron.sh").write_text("STALE CONTENT\n")
@@ -2684,5 +2684,5 @@ def test_refresh_reports_only_overwritten_managed_scaffold_when_prompt_override_
     out = capsys.readouterr().out
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert lines == ["overwrote setup/cron.sh"]
-    assert "_issue-tracker.md" not in out
+    assert "shared/_issue-tracker.md" not in out
     assert prompt_override.read_text() == "user override\n"
