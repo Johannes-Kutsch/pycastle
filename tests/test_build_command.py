@@ -535,6 +535,14 @@ def test_bundled_universal_dockerfile_installs_supported_clis_and_baseline_tools
     assert "auth.json" not in dockerfile
 
 
+def test_adr_0029_is_kept_as_superseded_historical_context_for_universal_dockerfile():
+    adr = Path("docs/adr/0029-per-service-docker-images.md").read_text(encoding="utf-8")
+
+    assert "Superseded by ADR 0034" in adr
+    assert "historical context" in adr.lower()
+    assert "universal agent image" in adr.lower()
+
+
 # ── Issue 222: empty docker_image_name guard ──────────────────────────────────
 
 

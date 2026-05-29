@@ -1,5 +1,7 @@
 # Per-service Docker images
 
+Superseded by ADR 0034. This ADR remains available as historical context for the old per-service Dockerfile model; the current model uses the universal agent image described in ADR 0034.
+
 `pycastle build` was service-blind — one image from `cfg.dockerfile` regardless of `referenced_services(cfg)`. Adding Codex to config after init left the container without Node.js/Codex CLI, causing silent runtime failures (#925, #931). We split into two separate images: `Dockerfile.claude` (Claude CLI only) and `Dockerfile.codex` (Node.js + Codex CLI only, no Claude CLI). `docker_image_name` becomes a base prefix; build tags `<base>-claude` and `<base>-codex` per referenced service. Runtime selects image per agent role from `StageOverride.service`. The `dockerfile` config field is dropped (silently ignored if still set).
 
 ## Considered Options
