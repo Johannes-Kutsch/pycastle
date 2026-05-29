@@ -69,6 +69,7 @@ class RunSessionPlan:
     provider_session_id: str | None
     auth_seeding_requirement: AuthSeedingRequirement
     recovered_session_id_persistence: RecoveredSessionIdPersistence
+    exact_transcript_match: bool = False
 
     @classmethod
     def for_service(
@@ -119,6 +120,12 @@ class RunSessionPlan:
             auth_seeding_requirement = _codex_auth_seeding_requirement(
                 service_state_dir, run_kind
             )
+        metadata = role_session.service_session_metadata(service.name)
+        exact_transcript_match = (
+            run_kind is RunKind.RESUME
+            and metadata is not None
+            and metadata["provider_session_id"] == provider_session_id
+        )
         return cls(
             role=role,
             worktree=worktree,
@@ -129,6 +136,7 @@ class RunSessionPlan:
             provider_session_id=provider_session_id,
             auth_seeding_requirement=auth_seeding_requirement,
             recovered_session_id_persistence=recovered_session_id_persistence,
+            exact_transcript_match=exact_transcript_match,
         )
 
 

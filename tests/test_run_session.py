@@ -153,6 +153,149 @@ def test_run_session_plan_reports_exact_transcript_match_for_claude_only_with_ma
     assert plan.exact_transcript_match is True
 
 
+def test_run_session_plan_reports_no_exact_transcript_match_for_claude_without_metadata(
+    tmp_path: Path,
+):
+    service = ClaudeService()
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.exact_transcript_match is False
+
+
+def test_run_session_plan_reports_no_exact_transcript_match_for_claude_with_mismatched_metadata(
+    tmp_path: Path,
+):
+    service = ClaudeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+
+    role_session.save_service_session_metadata("claude", "stale-session-id")
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.exact_transcript_match is False
+
+
+def test_run_session_plan_reports_no_exact_transcript_match_for_codex_with_conflicting_rollout_thread_ids(
+    tmp_path: Path,
+):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-id-old"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-id-new"}\n',
+        encoding="utf-8",
+    )
+    role_session.save_service_session_metadata("codex", "thread-id-new")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.exact_transcript_match is False
+
+
+def test_run_session_plan_reports_exact_transcript_match_for_codex_with_matching_metadata_and_unique_rollout(
+    tmp_path: Path,
+):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+    role_session.save_service_session_metadata("codex", "thread-abc")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == "thread-abc"
+    assert plan.exact_transcript_match is True
+
+
+def test_run_session_plan_reports_exact_transcript_match_for_opencode_with_matching_metadata_and_resumable_state(
+    tmp_path: Path,
+):
+    service = OpenCodeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    role_session.save_service_session_id("opencode", "sess-opencode-123")
+    role_session.save_service_session_metadata("opencode", "sess-opencode-123")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == "sess-opencode-123"
+    assert plan.exact_transcript_match is True
+
+
+def test_run_session_plan_reports_no_exact_transcript_match_for_cross_service_metadata(
+    tmp_path: Path,
+):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+    role_session.save_service_session_metadata("claude", "some-claude-session-id")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.exact_transcript_match is False
+
+
 def test_run_session_plan_namespaces_claude_provider_session_identity_only_when_non_empty(
     tmp_path: Path,
 ):
