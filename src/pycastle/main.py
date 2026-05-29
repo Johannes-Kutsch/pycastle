@@ -235,8 +235,8 @@ def main() -> None:
     "refresh_flag",
     is_flag=True,
     default=False,
-    help="Re-pull bundled project-shaped files (Dockerfile, .gitignore, prompts/**) "
-    "into ./pycastle/ without prompts. Leaves config.py and .env untouched.",
+    help="Re-pull bundled pycastle-managed scaffold files into ./pycastle/ "
+    "without prompts. Leaves config.py and .env untouched.",
 )
 def init_cmd(global_flag: bool, local_flag: bool, refresh_flag: bool) -> None:
     from .commands.init import main as _init

@@ -1777,6 +1777,17 @@ def test_init_refresh_creates_local_scaffold_without_wizard_or_runtime_state(
     assert not (pycastle_dir / ".pycastle-session").exists()
 
 
+def test_init_refresh_help_does_not_claim_dockerfile_management():
+    """`pycastle init --refresh` help excludes user-owned Dockerfile overrides."""
+    from pycastle.main import main as cli
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["init", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "Dockerfile" not in result.output
+
+
 def test_init_refresh_and_global_mutually_exclusive(tmp_path, monkeypatch):
     """`pycastle init --refresh --global` fails with a usage error."""
     from pycastle.main import main as cli
