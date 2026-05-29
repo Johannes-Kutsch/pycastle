@@ -33,6 +33,7 @@ from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session import RoleSession, RunKind
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
+from pycastle.display.status_display import ModelDisplayMetadata
 from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
 
 
@@ -1022,12 +1023,21 @@ def test_agent_runner_run_registers_and_removes_status_row_on_success(tmp_path):
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
                 mount_path=tmp_path,
+                model="sonnet",
+                effort="medium",
                 status_display=display,
             )
         )
     )
 
-    assert ("register", "Test", "agent", "started", "Setup") in display.calls
+    assert (
+        "register",
+        "Test",
+        "agent",
+        "started",
+        "Setup",
+        ModelDisplayMetadata(service="claude", model="sonnet", effort="medium"),
+    ) in display.calls
     assert ("remove", "Test", "finished", "success") in display.calls
 
 
@@ -1045,12 +1055,21 @@ def test_agent_runner_run_removes_status_row_when_setup_fails(tmp_path):
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
+                    model="sonnet",
+                    effort="medium",
                     status_display=display,
                 )
             )
         )
 
-    assert ("register", "Test", "agent", "started", "Setup") in display.calls
+    assert (
+        "register",
+        "Test",
+        "agent",
+        "started",
+        "Setup",
+        ModelDisplayMetadata(service="claude", model="sonnet", effort="medium"),
+    ) in display.calls
     assert ("remove", "Test", "failed", "error") in display.calls
 
 
@@ -1070,12 +1089,21 @@ def test_agent_runner_run_marks_failed_output_as_failed_in_status_row(tmp_path):
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
                     role=AgentRole.DIVERGENCE_RESOLVER,
+                    model="sonnet",
+                    effort="medium",
                     status_display=display,
                 )
             )
         )
 
-    assert ("register", "Test", "agent", "started", "Setup") in display.calls
+    assert (
+        "register",
+        "Test",
+        "agent",
+        "started",
+        "Setup",
+        ModelDisplayMetadata(service="claude", model="sonnet", effort="medium"),
+    ) in display.calls
     assert ("remove", "Test", "failed", "error") in display.calls
 
 
@@ -1329,6 +1357,7 @@ def test_agent_runner_run_preflight_registers_and_removes_status_row_on_success(
         "agent",
         "started",
         "Setup",
+        None,
     ) in display.calls
     assert (
         "remove",

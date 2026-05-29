@@ -10,6 +10,8 @@ from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
 
+from .status_display import ModelDisplayMetadata
+
 
 _PALETTE: list[tuple[int, int, int]] = [
     (149, 97, 226),  # 0 deep purple
@@ -195,6 +197,7 @@ class RichStatusDisplay:
         work_body: str = "",
         initial_phase: str = "Setup",
         color_key: int | None = None,
+        model_display: ModelDisplayMetadata | None = None,
     ) -> None:
         with self._lock:
             self._rows[caller] = _AgentRow(caller, initial_phase, work_body, color_key)

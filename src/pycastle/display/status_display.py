@@ -1,7 +1,15 @@
+from dataclasses import dataclass
 import builtins
 from typing import Literal, Protocol, runtime_checkable
 
 Kind = Literal["phase", "agent"]
+
+
+@dataclass(frozen=True)
+class ModelDisplayMetadata:
+    service: str
+    model: str
+    effort: str
 
 
 @runtime_checkable
@@ -14,6 +22,7 @@ class StatusDisplay(Protocol):
         work_body: str = "",
         initial_phase: str = "Setup",
         color_key: int | None = None,
+        model_display: ModelDisplayMetadata | None = None,
     ) -> None: ...
     def update_phase(self, name: str, phase: str) -> None: ...
     def reset_idle_timer(self, name: str) -> None: ...
@@ -51,6 +60,7 @@ class PlainStatusDisplay:
         work_body: str = "",
         initial_phase: str = "Setup",
         color_key: int | None = None,
+        model_display: ModelDisplayMetadata | None = None,
     ) -> None:
         if caller != "":
             self._kinds[caller] = kind
