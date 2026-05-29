@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import click
 from click.testing import CliRunner
 
 
@@ -88,8 +89,8 @@ def test_init_keeps_credential_flow_but_only_manages_scaffold_files(
     assert not (pycastle_dir / "prompts").exists()
 
 
-def test_init_both_services_skip_dockerfiles_and_runtime_state(tmp_path, monkeypatch):
-    """Selecting both keeps the wizard flow but skips user-owned overrides and session state."""
+def test_init_all_services_skip_dockerfiles_and_runtime_state(tmp_path, monkeypatch):
+    """Selecting all keeps the wizard flow but skips user-owned overrides and session state."""
     from pycastle.commands.init import main
     from pycastle.session.resume import SESSION_DIR_NAME
 
@@ -100,7 +101,7 @@ def test_init_both_services_skip_dockerfiles_and_runtime_state(tmp_path, monkeyp
     monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
     with (
-        patch("click.prompt", side_effect=["both", "", ""]),
+        patch("click.prompt", side_effect=["all", "", "", ""]),
         patch("click.confirm", return_value=False),
     ):
         main(scope="local")
@@ -120,7 +121,7 @@ def test_init_both_services_skip_dockerfiles_and_runtime_state(tmp_path, monkeyp
     [
         "claude",
         "codex",
-        "both",
+        "all",
     ],
 )
 def test_init_service_selection_creates_one_universal_dockerfile(
@@ -136,7 +137,12 @@ def test_init_service_selection_creates_one_universal_dockerfile(
     monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
     with (
-        patch("click.prompt", side_effect=[service, "", ""]),
+        patch(
+            "click.prompt",
+            side_effect=[service, "", "", ""]
+            if service == "all"
+            else [service, "", ""],
+        ),
         patch("click.confirm", return_value=False),
     ):
         main(scope="local")
@@ -743,7 +749,7 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
     )
 
 
-@pytest.mark.parametrize("service", ["claude", "codex", "both"])
+@pytest.mark.parametrize("service", ["claude", "codex", "all"])
 def test_init_service_selection_writes_same_stage_chains(
     tmp_path, monkeypatch, service
 ):
@@ -756,7 +762,9 @@ def test_init_service_selection_writes_same_stage_chains(
     monkeypatch.chdir(workspace)
 
     prompt_values = [service, ""]
-    if service != "codex":
+    if service == "all":
+        prompt_values.extend(["", ""])
+    elif service != "codex":
         prompt_values.append("")
 
     with (
@@ -841,22 +849,23 @@ def test_init_service_selection_changes_only_credential_collection(
 
     claude_prompts, claude_config, claude_example = run_init("claude")
     codex_prompts, codex_config, codex_example = run_init("codex")
-    both_prompts, both_config, both_example = run_init("both")
+    all_prompts, all_config, all_example = run_init("all")
 
     assert any("GitHub token" in prompt for prompt in claude_prompts)
     assert any("Claude OAuth token" in prompt for prompt in claude_prompts)
     assert any("GitHub token" in prompt for prompt in codex_prompts)
     assert not any("Claude OAuth token" in prompt for prompt in codex_prompts)
-    assert any("GitHub token" in prompt for prompt in both_prompts)
-    assert any("Claude OAuth token" in prompt for prompt in both_prompts)
+    assert any("GitHub token" in prompt for prompt in all_prompts)
+    assert any("Claude OAuth token" in prompt for prompt in all_prompts)
+    assert any("OpenCode Go API key" in prompt for prompt in all_prompts)
 
     assert (
         strip_docker_image_hint(claude_config)
         == strip_docker_image_hint(codex_config)
-        == strip_docker_image_hint(both_config)
+        == strip_docker_image_hint(all_config)
     )
-    assert claude_example == codex_example == both_example
-    for service in ("claude", "codex", "both"):
+    assert claude_example == codex_example == all_example
+    for service in ("claude", "codex", "all"):
         pycastle_dir = tmp_path / service / "pycastle"
         assert not (pycastle_dir / "Dockerfile").exists()
         assert not (pycastle_dir / "Dockerfile.claude").exists()
@@ -915,7 +924,7 @@ def test_init_opencode_selection_adds_env_key_without_changing_stage_policy(
     )
 
 
-@pytest.mark.parametrize("service", ["claude", "codex", "both"])
+@pytest.mark.parametrize("service", ["claude", "codex"])
 def test_init_non_opencode_selection_keeps_managed_env_template_unchanged(
     tmp_path, monkeypatch, service
 ):
@@ -1254,7 +1263,14 @@ def test_init_local_always_prompts_for_credentials(tmp_path, monkeypatch):
         return False
 
     with (
-        patch("click.prompt", return_value="local-value") as pm,
+        patch(
+            "click.prompt",
+            side_effect=lambda message, **kwargs: (
+                kwargs["default"]
+                if "Which agent services" in message
+                else "local-value"
+            ),
+        ) as pm,
         patch("click.confirm", side_effect=confirm_side_effect),
     ):
         main(scope="local")
@@ -1454,7 +1470,7 @@ def test_init_cli_local_flag_skips_scope_prompt(tmp_path, monkeypatch):
     # Provide empty input for the credential prompts; if the scope prompt
     # were also asked, click.confirm would default-False but we want to assert
     # no scope prompt is rendered.
-    result = runner.invoke(cli, ["init", "--local"], input="\n\nn\n")
+    result = runner.invoke(cli, ["init", "--local"], input="\n\n\n\n")
     assert result.exit_code == 0, result.output
     assert "global pycastle home" not in result.output.lower()
     assert (tmp_path / "pycastle" / "config.py").exists()
@@ -1470,7 +1486,7 @@ def test_init_cli_global_flag_skips_scope_prompt(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["init", "--global"], input="\n\nn\n")
+    result = runner.invoke(cli, ["init", "--global"], input="\n\n\n\n")
     assert result.exit_code == 0, result.output
     assert (home / "config.py").exists()
     assert not (tmp_path / "pycastle" / "config.py").exists()
@@ -1531,6 +1547,37 @@ def test_init_codex_service_does_not_print_claude_token_warning(
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in out
 
 
+def test_init_default_service_selection_is_all_and_prompts_for_all_credentials(
+    tmp_path, monkeypatch
+):
+    """Pressing Enter at service selection chooses all supported services."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    prompt_messages: list[str] = []
+    service_prompt_defaults: list[str] = []
+
+    def prompt_side_effect(message, **kwargs):
+        prompt_messages.append(message)
+        if "Which agent services" in message:
+            service_prompt_defaults.append(kwargs["default"])
+            return kwargs["default"]
+        return ""
+
+    with (
+        patch("click.prompt", side_effect=prompt_side_effect),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert service_prompt_defaults == ["all"]
+    assert prompt_messages[0].endswith("[claude/codex/opencode/all]")
+    env_text = (tmp_path / "pycastle" / ".env").read_text()
+    assert "GH_TOKEN=" in env_text
+    assert "CLAUDE_CODE_OAUTH_TOKEN=" in env_text
+    assert "OPENCODE_GO_API_KEY=" in env_text
+
+
 def test_init_merges_missing_template_keys_into_existing_env(tmp_path, monkeypatch):
     """Re-running init adds missing template keys to .env without touching existing values."""
     from pycastle.commands.init import main
@@ -1561,7 +1608,12 @@ def test_init_overwrite_no_preserves_existing_gh_token(tmp_path, monkeypatch):
     env_file.write_text("GH_TOKEN=existing-gh\nCLAUDE_CODE_OAUTH_TOKEN=\n")
 
     with (
-        patch("click.prompt", return_value="new-value"),
+        patch(
+            "click.prompt",
+            side_effect=lambda message, **kwargs: (
+                kwargs["default"] if "Which agent services" in message else "new-value"
+            ),
+        ),
         patch("click.confirm", return_value=False),
     ):
         main(scope="local")
@@ -1608,7 +1660,12 @@ def test_init_overwrite_no_preserves_existing_claude_token(tmp_path, monkeypatch
     env_file.write_text("GH_TOKEN=\nCLAUDE_CODE_OAUTH_TOKEN=existing-claude\n")
 
     with (
-        patch("click.prompt", return_value="new-value"),
+        patch(
+            "click.prompt",
+            side_effect=lambda message, **kwargs: (
+                kwargs["default"] if "Which agent services" in message else "new-value"
+            ),
+        ),
         patch("click.confirm", return_value=False),
     ):
         main(scope="local")
@@ -1645,11 +1702,53 @@ def test_init_overwrite_yes_replaces_existing_claude_token(tmp_path, monkeypatch
     assert "CLAUDE_CODE_OAUTH_TOKEN=new-claude" in env_file.read_text()
 
 
-@pytest.mark.parametrize("service", ["claude", "both"])
-def test_init_claude_and_both_service_prompt_for_both_credentials(
-    tmp_path, monkeypatch, service
+@pytest.mark.parametrize(
+    ("service", "expected_prompts", "expected_env_keys", "unexpected_env_keys"),
+    [
+        (
+            "all",
+            [
+                "GitHub token",
+                "Claude OAuth token",
+                "OpenCode Go API key",
+            ],
+            [
+                "GH_TOKEN=",
+                "CLAUDE_CODE_OAUTH_TOKEN=",
+                "OPENCODE_GO_API_KEY=",
+            ],
+            [],
+        ),
+        (
+            "claude",
+            ["GitHub token", "Claude OAuth token"],
+            ["GH_TOKEN=", "CLAUDE_CODE_OAUTH_TOKEN="],
+            ["OPENCODE_GO_API_KEY="],
+        ),
+        (
+            "codex",
+            ["GitHub token"],
+            ["GH_TOKEN=", "CLAUDE_CODE_OAUTH_TOKEN="],
+            ["OPENCODE_GO_API_KEY="],
+        ),
+        (
+            "opencode",
+            ["GitHub token", "OpenCode Go API key"],
+            ["GH_TOKEN=", "CLAUDE_CODE_OAUTH_TOKEN=", "OPENCODE_GO_API_KEY="],
+            [],
+        ),
+    ],
+    ids=["all", "claude", "codex", "opencode"],
+)
+def test_init_service_selection_controls_credential_prompts_and_env_keys(
+    tmp_path,
+    monkeypatch,
+    service,
+    expected_prompts,
+    expected_env_keys,
+    unexpected_env_keys,
 ):
-    """Selecting claude or both prompts for both CLAUDE_CODE_OAUTH_TOKEN and GH_TOKEN."""
+    """Credential prompting follows the selected service set."""
     from pycastle.commands.init import main
 
     fake_home = tmp_path / "fakehome"
@@ -1670,8 +1769,13 @@ def test_init_claude_and_both_service_prompt_for_both_credentials(
         main(scope="local")
 
     prompt_calls = [c.args[0] for c in pm.call_args_list]
-    assert any("GitHub token" in m for m in prompt_calls)
-    assert any("Claude OAuth token" in m for m in prompt_calls)
+    for expected_prompt in expected_prompts:
+        assert any(expected_prompt in message for message in prompt_calls)
+    env_text = (tmp_path / "pycastle" / ".env").read_text()
+    for expected_env_key in expected_env_keys:
+        assert expected_env_key in env_text
+    for unexpected_env_key in unexpected_env_keys:
+        assert unexpected_env_key not in env_text
 
 
 # ── Issue #483: --refresh flag for non-interactive scaffold updates ──────────
@@ -2079,10 +2183,8 @@ def test_init_codex_selection_creates_no_runtime_state_even_with_host_auth(
     assert not (tmp_path / SESSION_DIR_NAME).exists()
 
 
-def test_init_both_rerun_keeps_existing_env_without_runtime_state(
-    tmp_path, monkeypatch
-):
-    """Re-running init with both preserves .env behavior and still creates no session state."""
+def test_init_all_rerun_keeps_existing_env_without_runtime_state(tmp_path, monkeypatch):
+    """Re-running init with all preserves existing values and adds OpenCode's key."""
     from pycastle.commands.init import main
     from pycastle.session.resume import SESSION_DIR_NAME
 
@@ -2100,17 +2202,19 @@ def test_init_both_rerun_keeps_existing_env_without_runtime_state(
 
     env_content = (tmp_path / "pycastle" / ".env").read_text()
     with (
-        patch("click.prompt", side_effect=["both", "", ""]),
+        patch("click.prompt", side_effect=["all", "", "", ""]),
         patch("click.confirm", return_value=False),
     ):
         main(scope="local")
 
-    assert (tmp_path / "pycastle" / ".env").read_text() == env_content
+    env_text = (tmp_path / "pycastle" / ".env").read_text()
+    assert env_content in env_text
+    assert "OPENCODE_GO_API_KEY=\n" in env_text
     assert not (tmp_path / SESSION_DIR_NAME).exists()
 
 
-def test_init_both_without_host_codex_auth_keeps_written_env(tmp_path, monkeypatch):
-    """Selecting both with no host Codex auth keeps the normal .env flow and does not fail."""
+def test_init_all_without_host_codex_auth_keeps_written_env(tmp_path, monkeypatch):
+    """Selecting all with no host Codex auth keeps the normal .env flow and does not fail."""
     from pycastle.commands.init import main
     from pycastle.session.resume import SESSION_DIR_NAME
 
@@ -2121,7 +2225,7 @@ def test_init_both_without_host_codex_auth_keeps_written_env(tmp_path, monkeypat
     monkeypatch.chdir(tmp_path)
 
     with (
-        patch("click.prompt", side_effect=["both", "my-gh-token", ""]),
+        patch("click.prompt", side_effect=["all", "my-gh-token", "", ""]),
         patch("click.confirm", return_value=False),
     ):
         main(scope="local")
@@ -2130,6 +2234,23 @@ def test_init_both_without_host_codex_auth_keeps_written_env(tmp_path, monkeypat
     assert env_file.exists()
     assert "GH_TOKEN=my-gh-token" in env_file.read_text()
     assert not (tmp_path / SESSION_DIR_NAME).exists()
+
+
+@pytest.mark.parametrize("selection", ["both", "unknown"])
+def test_init_invalid_service_selection_exits_with_clear_error(
+    tmp_path, monkeypatch, selection
+):
+    """Invalid service selections fail setup instead of falling back."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(click.ClickException, match="Invalid service selection"):
+        with (
+            patch("click.prompt", side_effect=[selection]),
+            patch("click.confirm", return_value=False),
+        ):
+            main(scope="local")
 
 
 # ── Issue #790: --refresh picks Dockerfile template by config walk ─────────────
