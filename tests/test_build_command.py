@@ -527,7 +527,7 @@ def test_bundled_universal_dockerfile_installs_supported_clis_and_baseline_tools
 
     assert "@openai/codex@0.134.0" in dockerfile
     assert "@anthropic-ai/claude-code@2.1.152" in dockerfile
-    assert "opencode-ai@0.5.12" in dockerfile
+    assert "opencode-ai@1.15.12" in dockerfile
     assert 'ENV PATH="/home/agent/.local/bin:$PATH"' in dockerfile
     for tool in ("gh", "git", "jq", "curl", "ripgrep"):
         assert tool in dockerfile
