@@ -180,11 +180,7 @@ def referenced_services(cfg: Config) -> set[str]:
     return names
 
 
-def resolve_dockerfile(
-    pycastle_dir: Path | str, service: str | Path | None = None
-) -> Path:
-    if service is not None:
-        raise TypeError("resolve_dockerfile() expects only a pycastle_dir Path")
+def resolve_dockerfile(pycastle_dir: Path | str) -> Path:
     if isinstance(pycastle_dir, str):
         pycastle_dir = Path(pycastle_dir)
     elif not isinstance(pycastle_dir, Path):
