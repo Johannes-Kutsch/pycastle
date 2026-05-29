@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from unittest.mock import MagicMock, patch
@@ -2239,7 +2239,7 @@ def test_permanent_stage_exhaustion_with_no_fallback_stops_without_sleeping(
     tmp_path, capsys
 ):
     fixed_now = datetime(2026, 1, 1, 14, 0, 0).astimezone()
-    permanent_wake = datetime(9999, 12, 31, 23, 59, 0).astimezone()
+    permanent_wake = datetime(9999, 12, 31, 23, 59, 0, tzinfo=timezone.utc)
     denial = (
         "Your organization has disabled Claude subscription access for Claude Code. "
         "Please use an Anthropic API key instead, or ask your admin to enable "
