@@ -260,10 +260,6 @@ class AgentRunner:
             is RecoveredSessionIdPersistence.PERSIST
         ):
             role_session.save_service_session_id("codex", service_session_id)
-        elif service.name == "opencode" and run_kind == RunKind.RESUME:
-            service_session_id = role_session.service_session_id("opencode")
-            if service_session_id is None:
-                run_kind = RunKind.FRESH
         host_codex_auth: Path | None = None
         if (
             state_dir is not None

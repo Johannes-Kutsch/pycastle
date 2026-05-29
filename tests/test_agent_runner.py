@@ -3296,6 +3296,77 @@ def test_agent_runner_records_opencode_service_session_metadata_on_success(tmp_p
     }
 
 
+def test_agent_runner_uses_run_session_plan_provider_session_id_for_opencode_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured_cmds: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
+        if kwargs.get("stream"):
+            captured_cmds.append(cmd)
+            result = MagicMock()
+            result.output = iter(_OPENCODE_PLAN_COMPLETE_STREAM)
+            return result
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    planned_state_dir = tmp_path / ".pycastle-session" / "planner" / "opencode"
+
+    def planned_run_session(**kwargs):
+        return RunSessionPlan(
+            role=AgentRole.PLANNER,
+            worktree=tmp_path,
+            namespace="",
+            service=kwargs["service"],
+            run_kind=RunKind.RESUME,
+            service_state_dir=planned_state_dir,
+            provider_session_id="sess-from-plan",
+            auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
+            recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
+        )
+
+    monkeypatch.setattr(
+        "pycastle.session.run_session.RunSessionPlan.for_service",
+        planned_run_session,
+    )
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"opencode": OpenCodeService()},
+    )
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="OpenCode",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+                service="opencode",
+            )
+        )
+    )
+
+    assert captured_cmds == [
+        'export PATH="/home/agent/.local/bin:$PATH"; opencode run --format json --session sess-from-plan "$(cat /tmp/.pycastle_prompt)"'
+    ]
+    session = RoleSession(tmp_path, AgentRole.PLANNER)
+    assert session.service_session_metadata("opencode") == {
+        "service": "opencode",
+        "provider_session_id": "sess-from-fresh",
+    }
+    assert session.service_session_id("opencode") == "sess-from-fresh"
+
+
 def test_agent_runner_does_not_record_metadata_on_failed_run(tmp_path):
     # Stream with no <plan> tag forces PlanParseError on every attempt; after 3
     # retries the runner returns FailedOutput without saving metadata.
