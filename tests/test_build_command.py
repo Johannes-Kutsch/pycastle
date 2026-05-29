@@ -380,6 +380,63 @@ def test_build_command_builds_universal_image_with_default_dockerfile_when_local
     assert "Building myproject..." in capsys.readouterr().out
 
 
+def test_build_command_ignores_legacy_project_local_service_specific_dockerfiles(
+    tmp_path, monkeypatch, capsys
+):
+    from pycastle.commands.build import main
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "Dockerfile.claude").write_text("FROM legacy-claude\n")
+    (pycastle_dir / "Dockerfile.codex").write_text("FROM legacy-codex\n")
+    (pycastle_dir / "Dockerfile.opencode").write_text("FROM legacy-opencode\n")
+    svc = MagicMock()
+    svc.build_image.return_value = None
+
+    main(docker_service=svc, cfg=_cfg_referencing_only("codex", "myproject"))
+
+    svc.build_image.assert_called_once()
+    args, _kwargs = svc.build_image.call_args
+    assert args[:3] == (
+        "myproject",
+        resolve_dockerfile(Path("pycastle")),
+        Path("."),
+    )
+    assert "Building myproject..." in capsys.readouterr().out
+
+
+def test_build_command_uses_bundled_default_when_project_local_dockerfile_path_is_a_directory(
+    tmp_path, monkeypatch, capsys
+):
+    from pycastle.commands.build import main
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "Dockerfile").mkdir()
+    bundled_default = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "pycastle"
+        / "defaults"
+        / "Dockerfile"
+    )
+    svc = MagicMock()
+    svc.build_image.return_value = None
+
+    main(docker_service=svc, cfg=_cfg_referencing_only("codex", "myproject"))
+
+    svc.build_image.assert_called_once()
+    args, _kwargs = svc.build_image.call_args
+    assert args[:3] == (
+        "myproject",
+        bundled_default,
+        Path("."),
+    )
+    assert "Building myproject..." in capsys.readouterr().out
+
+
 def test_build_command_ignores_stage_fallback_services_when_building_universal_image(
     tmp_path, monkeypatch, capsys
 ):
