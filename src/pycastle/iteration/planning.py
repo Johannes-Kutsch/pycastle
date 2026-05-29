@@ -58,7 +58,7 @@ def _hydrate_blocked_issues(blocked: list[dict], open_issues: list[dict]) -> lis
     hydrated: list[dict] = []
     for blocked_issue in blocked:
         number = blocked_issue["number"]
-        title = blocked_issue.get("title") or titles_by_number.get(number)
+        title = titles_by_number.get(number) or blocked_issue.get("title")
         if title is None:
             hydrated.append({"number": number})
             continue

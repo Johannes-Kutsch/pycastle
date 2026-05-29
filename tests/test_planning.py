@@ -448,6 +448,52 @@ def test_planning_phase_all_blocked_hydrates_canonical_titles_for_legacy_entries
     )
 
 
+def test_planning_phase_all_blocked_prefers_canonical_title_over_planner_title(
+    tmp_path, git_svc
+):
+    recording = RecordingStatusDisplay()
+    output = PlannerOutput(
+        issues=[],
+        blocked=[
+            {
+                "number": 5,
+                "title": "Planner supplied stale title",
+                "blocked_by": 3,
+                "reason": "depends on #3",
+            }
+        ],
+    )
+    issues = [
+        {
+            "number": 5,
+            "title": "Unblock planner parsing",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["ready-for-agent", "behavior-slice"],
+        },
+        {
+            "number": 3,
+            "title": "Planner blocker",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["ready-for-agent", "behavior-slice"],
+        },
+    ]
+    fake = FakeAgentRunner([output])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
+    result = asyncio.run(planning_phase(deps, issues, []))
+
+    assert isinstance(result, AllBlocked)
+    assert result.blocked == [{"number": 5, "title": "Unblock planner parsing"}]
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must be removed"
+    assert (
+        plan_removes[0][2]
+        == "All ready-for-agent issues are blocked:\n  #5: Unblock planner parsing"
+    )
+
+
 def test_planning_phase_all_blocked_accepts_concise_blocked_entries(tmp_path, git_svc):
     recording = RecordingStatusDisplay()
     blocked = [
