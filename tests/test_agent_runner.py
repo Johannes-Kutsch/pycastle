@@ -1389,6 +1389,27 @@ def test_agent_runner_run_preflight_raises_setup_phase_error_for_missing_pyproje
     assert err.output == "Command failed (exit 127): bash: ruff: command not found"
 
 
+def test_agent_runner_run_preflight_raises_setup_phase_error_for_missing_requirements_declared_tool(
+    tmp_path,
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 't'\ndependencies = ['click>=8']\n", encoding="utf-8"
+    )
+    (tmp_path / "requirements.txt").write_text("ruff==0.6.9\n", encoding="utf-8")
+    mock_client = _make_preflight_docker_client(
+        exit_code=127, stdout=b"bash: ruff: command not found"
+    )
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert exc_info.value.phase == "preflight"
+    assert "ruff" in str(exc_info.value)
+    assert "requirements.txt" in str(exc_info.value)
+
+
 def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_undeclared_tool(
     tmp_path,
 ):
@@ -1408,6 +1429,27 @@ def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_undeclared
             "black",
             "black --check .",
             "Command failed (exit 127): bash: black: command not found",
+        )
+    ]
+
+
+def test_agent_runner_run_preflight_keeps_missing_tool_without_python_declaration_as_ordinary_failure(
+    tmp_path,
+):
+    (tmp_path / "requirements.txt").write_text("pytest==9.0.0\n", encoding="utf-8")
+    mock_client = _make_preflight_docker_client(
+        exit_code=127, stdout=b"bash: shellcheck: command not found"
+    )
+    cfg = _make_cfg(tmp_path, preflight_checks=(("shellcheck", "shellcheck ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == [
+        (
+            "shellcheck",
+            "shellcheck .",
+            "Command failed (exit 127): bash: shellcheck: command not found",
         )
     ]
 
