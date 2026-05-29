@@ -1644,8 +1644,6 @@ def test_agent_runner_injects_picked_token_into_container_env(tmp_path):
 
 
 def test_agent_runner_filters_host_env_before_container_startup(tmp_path):
-    from pycastle.services.claude_service import ClaudeService
-
     started_envs: list[dict[str, str]] = []
     mock_client = MagicMock()
     mock_container = MagicMock()
