@@ -544,6 +544,35 @@ def test_exact_transcript_handoff_is_eligible_for_codex_with_recovered_rollout_i
     assert rs.service_session_id("codex") == "thread-abc"
 
 
+def test_exact_transcript_handoff_is_ineligible_for_codex_without_saved_thread_id_sidecar(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    state_dir = rs.path / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+    rs.save_service_session_metadata("codex", "thread-abc")
+
+    handoff = rs.exact_transcript_handoff(
+        "codex",
+        state_dir=state_dir,
+        has_resumable_provider_state=True,
+    )
+
+    assert handoff.is_eligible is False
+    assert handoff.provider_identity == ProviderIdentity(
+        kind=ProviderIdentityKind.RESUME,
+        run_kind=RunKind.RESUME,
+        provider_session_id="thread-abc",
+        persist_provider_session_id=True,
+    )
+    assert rs.service_session_id("codex") == "thread-abc"
+
+
 def test_exact_transcript_handoff_is_ineligible_for_ambiguous_codex_rollout_evidence(
     worktree,
 ):
