@@ -14,11 +14,7 @@ from pycastle.agents.runner import RunRequest
 from pycastle.config import Config
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.services import GitService
-from pycastle.iteration._deps import (
-    FakeAgentRunner,
-    RecordingLogger,
-    RecordingStatusDisplay,
-)
+from tests.support import FakeAgentRunner, RecordingLogger, RecordingStatusDisplay
 from pycastle.services import GithubService
 from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.iteration.implement import (

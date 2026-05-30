@@ -23,7 +23,7 @@ from pycastle.services import (
     GitService,
     ServiceRegistry,
 )
-from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
+from tests.support import FakeAgentRunner, RecordingStatusDisplay
 from pycastle.infrastructure.worktree import prune_orphan_worktrees
 from pycastle.iteration.orchestrator import (
     ensure_session_excludes,

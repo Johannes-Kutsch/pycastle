@@ -1,27 +1,21 @@
 import asyncio
-import dataclasses
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Literal, Protocol, TypeAlias
+from typing import Any
+from unittest.mock import MagicMock
 
-from ..agents.output_protocol import AgentOutput, AgentSuccessOutput
-from ..agents.runner import AgentRunnerProtocol, RunRequest, translate_run_outcome
-from ..config import Config
-from ..errors import HardAgentError
-from ..services import GitService
-from ..services import GithubService, ServiceRegistry
-from ..display.status_display import ModelDisplayMetadata, StatusDisplay
-from .preflight import PreflightCache, PreflightReady, PreflightResult
-
-ImproveMode: TypeAlias = Literal["until_sleep", "endless"] | None
-
-
-class Logger(Protocol):
-    def log_error(self, issue: dict, error: Exception) -> None: ...
-    def log_internal_error(
-        self, label: str, error: Exception, cause: Exception | None = None
-    ) -> None: ...
-    def log_agent_output(self, agent_name: str, output: str) -> None: ...
+from pycastle.agents.output_protocol import AgentOutput, AgentSuccessOutput
+from pycastle.agents.runner import (
+    AgentRunnerProtocol,
+    RunRequest,
+    translate_run_outcome,
+)
+from pycastle.config import Config
+from pycastle.display.status_display import ModelDisplayMetadata, StatusDisplay
+from pycastle.errors import HardAgentError
+from pycastle.iteration._deps import Deps, Logger
+from pycastle.iteration.preflight import PreflightCache, PreflightReady, PreflightResult
+from pycastle.services import GitService, GithubService, ServiceRegistry
 
 
 class RecordingLogger:
@@ -132,7 +126,7 @@ class FakeAgentRunner:
         name: str,
         mount_path: Path,
         stage: str = "",
-        status_display: "StatusDisplay | None" = None,
+        status_display: StatusDisplay | None = None,
         work_body: str = "",
     ) -> list[tuple[str, str, str]]:
         call = {
@@ -165,17 +159,32 @@ class StubPreflightCache:
         return self._verdict
 
 
-@dataclasses.dataclass
-class Deps:
-    repo_root: Path
-    git_svc: GitService
-    github_svc: GithubService
-    agent_runner: AgentRunnerProtocol
-    cfg: Config
-    logger: Logger
-    status_display: StatusDisplay
-    service_registry: ServiceRegistry | None = None
-    improve_mode: ImproveMode = None
-    slept_once: bool = False
-    improve_dispatched_count: int = 0
-    preflight_cache: PreflightCache = dataclasses.field(default_factory=PreflightCache)
+def _make_deps(
+    repo_root: Path,
+    agent_runner: AgentRunnerProtocol,
+    *,
+    git_svc: GitService | None = None,
+    github_svc: GithubService | None = None,
+    cfg: Config | None = None,
+    logger: Logger | None = None,
+    status_display: StatusDisplay | None = None,
+    preflight_cache: PreflightCache | StubPreflightCache | None = None,
+    service_registry: ServiceRegistry | None = None,
+) -> Deps:
+    return Deps(
+        repo_root=repo_root,
+        git_svc=git_svc if git_svc is not None else MagicMock(spec=GitService),
+        github_svc=github_svc
+        if github_svc is not None
+        else MagicMock(spec=GithubService),
+        agent_runner=agent_runner,
+        cfg=cfg if cfg is not None else Config(),
+        logger=logger if logger is not None else RecordingLogger(),
+        status_display=status_display
+        if status_display is not None
+        else RecordingStatusDisplay(),
+        service_registry=service_registry,
+        preflight_cache=preflight_cache
+        if preflight_cache is not None
+        else StubPreflightCache(),  # type: ignore[arg-type]
+    )

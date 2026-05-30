@@ -19,7 +19,7 @@ from pycastle.errors import (
     DockerError,
     UsageLimitError,
 )
-from pycastle.iteration._deps import RecordingStatusDisplay
+from tests.support import RecordingStatusDisplay
 from pycastle.session import RunKind
 from pycastle.services.claude_service import ClaudeService
 

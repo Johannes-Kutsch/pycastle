@@ -10,7 +10,7 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.config import Config, StageOverride
 from pycastle.services import GitService
-from pycastle.iteration._deps import (
+from tests.support import (
     FakeAgentRunner,
     RecordingStatusDisplay,
     StubPreflightCache,

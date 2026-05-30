@@ -4,7 +4,7 @@ import re
 
 from rich.console import Console
 
-from pycastle.iteration._deps import RecordingStatusDisplay
+from tests.support import RecordingStatusDisplay
 from pycastle.display.status_display import (
     ModelDisplayMetadata,
     PlainStatusDisplay,

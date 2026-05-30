@@ -14,7 +14,7 @@ from pycastle.agents.output_protocol import (
     NoCandidateOutput,
 )
 from pycastle.config import Config, StageOverride
-from pycastle.iteration._deps import FakeAgentRunner, _make_deps
+from tests.support import FakeAgentRunner, _make_deps
 from pycastle.iteration.improve import (
     IMPROVE_SANDBOX,
     ImproveContinue,

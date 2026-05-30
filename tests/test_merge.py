@@ -15,7 +15,7 @@ from pycastle.config import Config
 from pycastle.infrastructure.worktree import worktree_name_for_branch
 from pycastle.services import GitCommandError, GitService
 from pycastle.services import GithubAPIError, GithubService
-from pycastle.iteration._deps import (
+from tests.support import (
     FakeAgentRunner,
     RecordingStatusDisplay,
     StubPreflightCache,

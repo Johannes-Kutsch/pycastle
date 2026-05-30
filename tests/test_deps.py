@@ -6,7 +6,8 @@ import pytest
 from pycastle.agents.output_protocol import CompletionOutput
 from pycastle.agents.runner import RunRequest
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.iteration._deps import Deps, FakeAgentRunner, RecordingLogger, _make_deps
+from pycastle.iteration._deps import Deps
+from tests.support import FakeAgentRunner, RecordingLogger, _make_deps
 
 
 @pytest.fixture

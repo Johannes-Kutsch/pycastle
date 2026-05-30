@@ -21,7 +21,7 @@ from pycastle.services import (
     UnrelatedHistoriesError,
 )
 from pycastle.services.agent_service import AgentService
-from pycastle.iteration._deps import FakeAgentRunner
+from tests.support import FakeAgentRunner
 from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.iteration.preflight import (
     PreflightAFK,

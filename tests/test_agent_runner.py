@@ -37,7 +37,7 @@ from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
 from pycastle.display.status_display import ModelDisplayMetadata
-from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
+from tests.support import FakeAgentRunner, RecordingStatusDisplay
 
 
 @pytest.fixture(autouse=True)

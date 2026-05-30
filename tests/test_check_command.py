@@ -324,7 +324,7 @@ def test_check_files_one_host_check_issue_per_failed_command_and_reports_numbers
     import pycastle.commands.check as check_mod
     from pycastle.agents.output_protocol import AgentRole, IssueOutput
     from pycastle.config import Config
-    from pycastle.iteration._deps import FakeAgentRunner
+    from tests.support import FakeAgentRunner
 
     git_svc = MagicMock()
     git_svc.is_working_tree_clean.return_value = True
@@ -488,7 +488,7 @@ def test_check_passes_raw_failed_command_output_to_host_check_issue_agent(
     import pycastle.commands.check as check_mod
     from pycastle.agents.output_protocol import IssueOutput
     from pycastle.config import Config
-    from pycastle.iteration._deps import FakeAgentRunner
+    from tests.support import FakeAgentRunner
     from pycastle.prompts.pipeline import PromptTemplate
 
     git_svc = MagicMock()
@@ -593,7 +593,7 @@ def test_check_rejects_afk_host_check_issue_without_slice_mode_label(
     import pycastle.commands.check as check_mod
     from pycastle.agents.output_protocol import IssueOutput
     from pycastle.config import Config
-    from pycastle.iteration._deps import FakeAgentRunner
+    from tests.support import FakeAgentRunner
 
     git_svc = MagicMock()
     git_svc.is_working_tree_clean.return_value = True
@@ -636,7 +636,7 @@ def test_check_rejects_afk_host_check_issue_with_short_body(tmp_path, monkeypatc
     import pycastle.commands.check as check_mod
     from pycastle.agents.output_protocol import IssueOutput
     from pycastle.config import Config
-    from pycastle.iteration._deps import FakeAgentRunner
+    from tests.support import FakeAgentRunner
 
     git_svc = MagicMock()
     git_svc.is_working_tree_clean.return_value = True

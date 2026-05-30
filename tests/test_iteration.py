@@ -33,9 +33,6 @@ from pycastle.iteration.merge import merge_phase
 from pycastle.agents.runner import RunRequest
 from pycastle.iteration._deps import (
     Deps,
-    FakeAgentRunner,
-    RecordingLogger,
-    RecordingStatusDisplay,
 )
 from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.agents.output_protocol import (
@@ -48,6 +45,7 @@ from pycastle.agents.output_protocol import (
     PlannerOutput,
     PromiseParseError,
 )
+from tests.support import FakeAgentRunner, RecordingLogger, RecordingStatusDisplay
 
 
 def _make_agent_failed_error(role: AgentRole, worktree_path: Path) -> AgentFailedError:
