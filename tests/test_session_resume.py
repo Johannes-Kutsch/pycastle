@@ -18,6 +18,7 @@ from pycastle.session import (
     any_role_dir_present,
     is_stage_done_for,
 )
+from pycastle.session._provider_session_state import recover_codex_rollout_thread_id
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -748,3 +749,76 @@ def test_discard_sibling_safe(worktree):
     assert any_role_dir_present(worktree) is True
     assert rs_review.is_resumable() is False
     assert rs_review.is_done() is True
+
+
+# ── recover_codex_rollout_thread_id ───────────────────────────────────────────
+
+
+def test_recover_codex_rollout_thread_id_returns_none_when_sessions_dir_absent(
+    tmp_path,
+):
+    assert recover_codex_rollout_thread_id(tmp_path) is None
+
+
+def test_recover_codex_rollout_thread_id_returns_none_when_sessions_dir_is_empty(
+    tmp_path,
+):
+    (tmp_path / "sessions").mkdir()
+    assert recover_codex_rollout_thread_id(tmp_path) is None
+
+
+def test_recover_codex_rollout_thread_id_returns_none_when_no_rollout_files(
+    tmp_path,
+):
+    sessions_dir = tmp_path / "sessions" / "2026" / "05"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "other.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"ignored"}\n', encoding="utf-8"
+    )
+    assert recover_codex_rollout_thread_id(tmp_path) is None
+
+
+def test_recover_codex_rollout_thread_id_returns_single_valid_thread_id(tmp_path):
+    rollout_dir = tmp_path / "sessions" / "2026" / "05"
+    rollout_dir.mkdir(parents=True)
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n', encoding="utf-8"
+    )
+    assert recover_codex_rollout_thread_id(tmp_path) == "thread-abc"
+
+
+def test_recover_codex_rollout_thread_id_strips_whitespace_from_thread_id(tmp_path):
+    rollout_dir = tmp_path / "sessions"
+    rollout_dir.mkdir()
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"  thread-abc  "}\n', encoding="utf-8"
+    )
+    assert recover_codex_rollout_thread_id(tmp_path) == "thread-abc"
+
+
+def test_recover_codex_rollout_thread_id_ignores_non_string_thread_id_values(
+    tmp_path,
+):
+    rollout_dir = tmp_path / "sessions"
+    rollout_dir.mkdir()
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                '{"type":"thread.started","thread_id":42}',
+                '{"type":"thread.started","thread_id":null}',
+                '{"type":"thread.started","thread_id":true}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert recover_codex_rollout_thread_id(tmp_path) is None
+
+
+def test_recover_codex_rollout_thread_id_returns_none_for_empty_rollout_file(
+    tmp_path,
+):
+    rollout_dir = tmp_path / "sessions"
+    rollout_dir.mkdir()
+    (rollout_dir / "rollout-001.jsonl").write_text("", encoding="utf-8")
+    assert recover_codex_rollout_thread_id(tmp_path) is None
