@@ -75,6 +75,26 @@ class RunSessionPlan:
     auth_seed_action: LocalAuthSeedAction | None = None
     exact_transcript_match: bool = False
 
+    def capture_provider_session_id(self, provider_session_id: str) -> None:
+        object.__setattr__(self, "provider_session_id", provider_session_id)
+        if not _preserves_role_provider_layout(self.service.name):
+            return
+        RoleSession(
+            self.worktree,
+            self.role,
+            self.namespace,
+        ).save_service_session_id(self.service.name, provider_session_id)
+
+    def record_successful_run(self, provider_session_id: str | None = None) -> None:
+        session_id = provider_session_id or self.provider_session_id
+        if session_id is None:
+            return
+        RoleSession(
+            self.worktree,
+            self.role,
+            self.namespace,
+        ).save_service_session_metadata(self.service.name, session_id)
+
     @classmethod
     def for_service(
         cls,

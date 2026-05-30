@@ -3257,6 +3257,129 @@ def test_agent_runner_records_opencode_service_session_metadata_on_success(tmp_p
     }
 
 
+def test_agent_runner_notifies_run_session_plan_when_opencode_emits_session_id_and_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured_session_ids: list[str] = []
+    successful_session_ids: list[str | None] = []
+    service = OpenCodeService()
+    planned_state_dir = tmp_path / ".pycastle-session" / "planner" / "opencode"
+
+    class _PlannedSession:
+        role = AgentRole.PLANNER
+        worktree = tmp_path
+        namespace = ""
+        run_kind = RunKind.FRESH
+        service_state_dir = planned_state_dir
+        provider_state_dir_relpath = ".pycastle-session/planner/opencode/"
+        host_provider_state_dir = planned_state_dir
+        provider_session_id: str | None = None
+        auth_seeding_requirement = AuthSeedingRequirement.NOT_REQUIRED
+        recovered_session_id_persistence = RecoveredSessionIdPersistence.SKIP
+        auth_seed_action = None
+        exact_transcript_match = False
+
+        def capture_provider_session_id(self, provider_session_id: str) -> None:
+            captured_session_ids.append(provider_session_id)
+            self.provider_session_id = provider_session_id
+
+        def record_successful_run(self, provider_session_id: str | None = None) -> None:
+            successful_session_ids.append(
+                provider_session_id or self.provider_session_id
+            )
+
+    monkeypatch.setattr(
+        "pycastle.session.run_session.RunSessionPlan.for_service",
+        lambda **kwargs: _PlannedSession(),
+    )
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client(_OPENCODE_PLAN_COMPLETE_STREAM),
+        service_registry={"opencode": service},
+    )
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="OpenCode",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+                service="opencode",
+            )
+        )
+    )
+
+    assert captured_session_ids == ["sess-from-fresh"]
+    assert successful_session_ids == ["sess-from-fresh"]
+
+
+def test_agent_runner_notifies_run_session_plan_of_provider_id_but_not_success_on_failed_opencode_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured_session_ids: list[str] = []
+    successful_session_ids: list[str | None] = []
+    service = OpenCodeService()
+    planned_state_dir = tmp_path / ".pycastle-session" / "planner" / "opencode"
+
+    class _PlannedSession:
+        role = AgentRole.PLANNER
+        worktree = tmp_path
+        namespace = ""
+        run_kind = RunKind.FRESH
+        service_state_dir = planned_state_dir
+        provider_state_dir_relpath = ".pycastle-session/planner/opencode/"
+        host_provider_state_dir = planned_state_dir
+        provider_session_id: str | None = None
+        auth_seeding_requirement = AuthSeedingRequirement.NOT_REQUIRED
+        recovered_session_id_persistence = RecoveredSessionIdPersistence.SKIP
+        auth_seed_action = None
+        exact_transcript_match = False
+
+        def capture_provider_session_id(self, provider_session_id: str) -> None:
+            captured_session_ids.append(provider_session_id)
+            self.provider_session_id = provider_session_id
+
+        def record_successful_run(self, provider_session_id: str | None = None) -> None:
+            successful_session_ids.append(
+                provider_session_id or self.provider_session_id
+            )
+
+    monkeypatch.setattr(
+        "pycastle.session.run_session.RunSessionPlan.for_service",
+        lambda **kwargs: _PlannedSession(),
+    )
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client(_OPENCODE_PROTOCOL_ERROR_STREAM),
+        service_registry={"opencode": service},
+    )
+
+    with pytest.raises(AgentFailedError):
+        asyncio.run(
+            runner.run(
+                _run_request(
+                    name="OpenCode",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service="opencode",
+                )
+            )
+        )
+
+    assert captured_session_ids == ["sess-from-fresh"] * 3
+    assert successful_session_ids == []
+
+
 def test_agent_runner_does_not_record_metadata_on_failed_run(tmp_path):
     # Stream with no <plan> tag forces PlanParseError on every attempt; after 3
     # retries the runner returns FailedOutput without saving metadata.

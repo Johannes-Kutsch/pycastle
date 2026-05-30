@@ -258,7 +258,7 @@ class AgentRunner:
             and plan.recovered_session_id_persistence
             is RecoveredSessionIdPersistence.PERSIST
         ):
-            role_session.save_service_session_id(service.name, service_session_id)
+            plan.capture_provider_session_id(service_session_id)
         host_codex_auth: Path | None = None
         if (
             state_dir is not None
@@ -316,8 +316,7 @@ class AgentRunner:
                 def remember_thread_id(thread_id: str) -> None:
                     nonlocal service_session_id
                     service_session_id = thread_id
-                    if service.name in {"codex", "opencode"}:
-                        role_session.save_service_session_id(service.name, thread_id)
+                    plan.capture_provider_session_id(thread_id)
 
                 loop = asyncio.get_running_loop()
 
@@ -350,9 +349,7 @@ class AgentRunner:
                                     not isinstance(output, FailedOutput)
                                     and service_session_id is not None
                                 ):
-                                    role_session.save_service_session_metadata(
-                                        service.name, service_session_id
-                                    )
+                                    plan.record_successful_run(service_session_id)
                                 if isinstance(output, FailedOutput):
                                     row.close("failed", shutdown_style="error")
                                 return output

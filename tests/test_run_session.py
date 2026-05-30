@@ -818,6 +818,82 @@ def test_run_session_plan_skips_auth_seed_action_for_fresh_codex_with_auth_json(
     assert plan.auth_seed_action is None
 
 
+@pytest.mark.parametrize(
+    ("service", "role", "namespace", "expected_session_id"),
+    [
+        (ClaudeService(), AgentRole.PLANNER, "", "claude-session-id"),
+        (CodexService(), AgentRole.IMPLEMENTER, "", "thread-codex-123"),
+        (OpenCodeService(), AgentRole.IMPROVE, "main", "sess-opencode-123"),
+    ],
+)
+def test_run_session_plan_records_service_session_metadata_on_success(
+    tmp_path: Path,
+    service: AgentService,
+    role: AgentRole,
+    namespace: str,
+    expected_session_id: str,
+):
+    plan = RunSessionPlan.for_service(
+        role=role,
+        worktree=tmp_path,
+        namespace=namespace,
+        service=service,
+    )
+
+    plan.record_successful_run(expected_session_id)
+
+    assert RoleSession(tmp_path, role, namespace).service_session_metadata(
+        service.name
+    ) == {
+        "service": service.name,
+        "provider_session_id": expected_session_id,
+    }
+
+
+def test_run_session_plan_captures_codex_provider_session_id_for_same_plan_reuse(
+    tmp_path: Path,
+):
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=CodexService(),
+    )
+
+    plan.capture_provider_session_id("thread-codex-456")
+    plan.record_successful_run()
+
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    assert plan.provider_session_id == "thread-codex-456"
+    assert role_session.service_session_id("codex") == "thread-codex-456"
+    assert role_session.service_session_metadata("codex") == {
+        "service": "codex",
+        "provider_session_id": "thread-codex-456",
+    }
+
+
+def test_run_session_plan_captures_opencode_provider_session_id_for_same_plan_reuse(
+    tmp_path: Path,
+):
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=OpenCodeService(),
+    )
+
+    plan.capture_provider_session_id("sess-opencode-456")
+    plan.record_successful_run()
+
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    assert plan.provider_session_id == "sess-opencode-456"
+    assert role_session.service_session_id("opencode") == "sess-opencode-456"
+    assert role_session.service_session_metadata("opencode") == {
+        "service": "opencode",
+        "provider_session_id": "sess-opencode-456",
+    }
+
+
 def test_run_session_plan_requires_auth_seeding_for_resume_codex_without_auth_json(
     tmp_path: Path,
 ):
