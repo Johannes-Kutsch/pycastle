@@ -32,6 +32,19 @@ class _LegacyStateDirService:
         return state_dir.is_dir() and any(state_dir.rglob("*"))
 
 
+@dataclass
+class _CustomOpenCodeStateDirService:
+    name: str = "opencode"
+    relpath: str = "custom/opencode-state/"
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        del role, namespace
+        return self.relpath
+
+    def is_resumable(self, state_dir: Path) -> bool:
+        return (state_dir / "session_id").is_file()
+
+
 def _request(
     tmp_path: Path,
     *,
@@ -515,6 +528,30 @@ def test_prepare_agent_session_opencode_with_saved_session_resumes(tmp_path: Pat
 
     assert session.run_kind is RunKind.RESUME
     assert session.provider_session_id == "sess-opencode-resume"
+
+
+def test_prepare_agent_session_opencode_resume_uses_selected_service_state_dir(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text("sess-from-custom-state", encoding="utf-8")
+
+    session = prepare_agent_session(
+        _request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            service=cast(AgentService, _CustomOpenCodeStateDirService()),
+            namespace="main",
+        )
+    )
+
+    assert session.run_kind is RunKind.RESUME
+    assert session.provider_session_id == "sess-from-custom-state"
+    assert (
+        session.provider_state_dir_container_path
+        == "/home/agent/workspace/custom/opencode-state/"
+    )
 
 
 def test_remember_provider_session_id_updates_session_id(tmp_path: Path):

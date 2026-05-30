@@ -84,6 +84,17 @@ class RunSessionPlan:
     exact_transcript_match: bool = False
 
     def provider_state_dir_container_path(self, container_workspace: str) -> str | None:
+        if (
+            self.service.name == "opencode"
+            and self.run_kind is RunKind.RESUME
+            and self.service_state_dir is not None
+        ):
+            try:
+                service_relpath = self.service_state_dir.relative_to(self.worktree)
+            except ValueError:
+                pass
+            else:
+                return f"{container_workspace}/{service_relpath.as_posix()}/"
         if self.host_provider_state_dir is not None:
             try:
                 host_relpath = self.host_provider_state_dir.relative_to(self.worktree)
