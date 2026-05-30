@@ -22,7 +22,7 @@ from pycastle.iteration.improve import (
     improve_phase,
 )
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.services import ClaudeService, GitService, ServiceRegistry
+from pycastle.services import ClaudeService, CodexService, GitService, ServiceRegistry
 from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session import RoleSession
 
@@ -442,7 +442,7 @@ def test_improve_clean_phase_2_entry_requires_matching_resumable_main_transcript
     assert len(runner.calls) == 2
 
 
-def test_improve_clean_phase_2_entry_restarts_from_phase_1_without_exact_main_transcript(
+def test_improve_clean_phase_2_entry_restarts_from_phase_1_on_codex_conflicting_rollouts(
     tmp_path,
     git_svc,
 ):
@@ -451,15 +451,29 @@ def test_improve_clean_phase_2_entry_restarts_from_phase_1_without_exact_main_tr
     status_display = MagicMock()
     runner = FakeAgentRunner([], preflight_responses=[[]])
     role_session = RoleSession(wt, AgentRole.IMPROVE, "main")
-    role_session.save_service_session_id("opencode", "sess-opencode-123")
-    cfg = Config(improve_override=StageOverride(service="opencode", effort="medium"))
+    role_session.save_service_session_id("codex", "thread-id-new")
+    role_session.save_service_session_metadata("codex", "thread-id-new")
+    state_dir = role_session.path / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True, exist_ok=True)
+    dir_b.mkdir(parents=True, exist_ok=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-id-old"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-id-new"}\n',
+        encoding="utf-8",
+    )
+    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
     deps = _make_deps(
         tmp_path,
         runner,
         git_svc=git_svc,
         status_display=status_display,
         cfg=cfg,
-        service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
+        service_registry=ServiceRegistry({"codex": CodexService()}),
     )
 
     result = _run(deps)

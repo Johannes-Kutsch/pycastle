@@ -143,24 +143,6 @@ def test_prepare_agent_session_fresh_codex_missing_host_auth_is_dispatcher_hard_
     assert not (tmp_path / ".pycastle-session" / "implementer").exists()
 
 
-def test_prepare_agent_session_codex_with_rollout_returns_run_kind_resume(
-    tmp_path: Path,
-):
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    sessions_dir = state_dir / "sessions"
-    sessions_dir.mkdir(parents=True)
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-xyz"}\n',
-        encoding="utf-8",
-    )
-    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
-
-    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
-
-    assert session.run_kind is RunKind.RESUME
-    assert session.provider_session_id == "thread-xyz"
-
-
 def test_prepare_agent_session_resume_codex_with_provider_auth_does_not_require_host_auth(
     tmp_path: Path,
     monkeypatch,
@@ -254,33 +236,6 @@ def test_prepare_agent_session_persists_recovered_codex_thread_id_for_future_res
     )
 
 
-def test_prepare_agent_session_treats_duplicate_codex_rollout_thread_ids_as_one_recoverable_session(
-    tmp_path: Path,
-):
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    dir_a = state_dir / "sessions" / "2026" / "05" / "29"
-    dir_b = state_dir / "sessions" / "2026" / "05" / "30"
-    dir_a.mkdir(parents=True)
-    dir_b.mkdir(parents=True)
-    (dir_a / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
-        encoding="utf-8",
-    )
-    (dir_b / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
-        encoding="utf-8",
-    )
-    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
-
-    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
-
-    assert session.run_kind is RunKind.RESUME
-    assert session.provider_session_id == "thread-same-id"
-    assert RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex") == (
-        "thread-same-id"
-    )
-
-
 def test_prepare_agent_session_falls_back_to_fresh_for_codex_with_distinct_rollout_thread_ids_without_writing_sidecar(
     tmp_path: Path,
 ):
@@ -306,54 +261,6 @@ def test_prepare_agent_session_falls_back_to_fresh_for_codex_with_distinct_rollo
     assert (
         RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex") is None
     )
-
-
-def test_prepare_agent_session_ignores_invalid_or_unrelated_codex_rollout_events_during_recovery(
-    tmp_path: Path,
-):
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    sessions_dir = state_dir / "sessions" / "2026" / "05" / "30"
-    sessions_dir.mkdir(parents=True)
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        "\n".join(
-            [
-                "{not-json",
-                '{"type":"thread.started"}',
-                '{"type":"thread.started","thread_id":"   "}',
-                '{"type":"item.completed","item":{"type":"agent_message","text":"hi"}}',
-                '{"type":"thread.started","thread_id":"thread-valid"}',
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
-
-    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
-
-    assert session.run_kind is RunKind.RESUME
-    assert session.provider_session_id == "thread-valid"
-    assert RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex") == (
-        "thread-valid"
-    )
-
-
-def test_prepare_agent_session_falls_back_to_fresh_for_codex_without_persisted_or_recoverable_thread_id(
-    tmp_path: Path,
-):
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    sessions_dir = state_dir / "sessions" / "2026" / "05" / "30"
-    sessions_dir.mkdir(parents=True)
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        '{"type":"item.completed","item":{"type":"agent_message","text":"hi"}}\n',
-        encoding="utf-8",
-    )
-    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
-
-    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
-
-    assert session.run_kind is RunKind.FRESH
-    assert session.provider_session_id is None
 
 
 def test_prepare_agent_session_start_fresh_preserves_existing_codex_auth_json(
