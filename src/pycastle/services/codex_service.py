@@ -157,14 +157,22 @@ class CodexService:
                 request.preferred_provider_session_id,
             )
         if not request.has_resumable_provider_state:
-            return ProviderSessionState(RunKind.FRESH, None)
+            return ProviderSessionState(
+                RunKind.FRESH,
+                None,
+                allow_protocol_reprompt=not request.force_resume,
+            )
 
         provider_session_id = request.role_session.service_session_id(self.name)
         persist_provider_session_id = False
         if provider_session_id is None:
             provider_session_id = _recover_rollout_thread_id(request.provider_state_dir)
             if provider_session_id is None:
-                return ProviderSessionState(RunKind.FRESH, None)
+                return ProviderSessionState(
+                    RunKind.FRESH,
+                    None,
+                    allow_protocol_reprompt=not request.force_resume,
+                )
             request.role_session.save_service_session_id(self.name, provider_session_id)
             persist_provider_session_id = True
 

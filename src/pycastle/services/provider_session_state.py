@@ -26,6 +26,7 @@ class ProviderSessionState:
     provider_session_id: str | None
     exact_transcript_match: bool = False
     persist_provider_session_id: bool = False
+    allow_protocol_reprompt: bool = True
 
 
 __all__ = [

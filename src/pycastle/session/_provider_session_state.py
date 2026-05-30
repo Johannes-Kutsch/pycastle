@@ -71,12 +71,8 @@ class PreparedProviderSessionState:
     def protocol_reprompt_provider_run_session(
         self,
     ) -> PreparedProviderRunSession | None:
-        service = getattr(self._plan, "service", None)
         provider_session_state = self._resume_provider_session_state()
-        if (
-            getattr(service, "name", None) == "codex"
-            and provider_session_state.provider_session_id is None
-        ):
+        if not provider_session_state.allow_protocol_reprompt:
             return None
         return PreparedProviderRunSession(
             run_kind=provider_session_state.run_kind,
