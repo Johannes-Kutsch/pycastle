@@ -16,6 +16,8 @@ class ProviderSessionStateRequest:
     provider_state_dir: Path | None
     has_resumable_provider_state: bool
     require_exact_transcript_match: bool = False
+    preferred_provider_session_id: str | None = None
+    force_resume: bool = False
 
 
 @dataclasses.dataclass(frozen=True)

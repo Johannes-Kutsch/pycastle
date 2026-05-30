@@ -18,6 +18,9 @@ from .resume import RoleSession, RunKind
 
 if TYPE_CHECKING:
     from ..services.agent_service import AgentService
+from ..services.provider_session_state import (
+    ProviderSessionStateRequest as ServiceProviderSessionStateRequest,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -57,12 +60,10 @@ class PreparedProviderSessionState:
         )
 
     def resumable_provider_run_session(self) -> PreparedProviderRunSession:
-        run_kind = RunKind.RESUME
-        if self.provider_session_id is None:
-            run_kind = RunKind.FRESH
+        provider_session_state = self._resume_provider_session_state()
         return PreparedProviderRunSession(
-            run_kind=run_kind,
-            provider_session_id=self.provider_session_id,
+            run_kind=provider_session_state.run_kind,
+            provider_session_id=provider_session_state.provider_session_id,
             _provider_session_id_recorder=self.record_provider_session_id,
             _success_recorder=self.record_successful_run,
         )
@@ -71,12 +72,18 @@ class PreparedProviderSessionState:
         self,
     ) -> PreparedProviderRunSession | None:
         service = getattr(self._plan, "service", None)
+        provider_session_state = self._resume_provider_session_state()
         if (
             getattr(service, "name", None) == "codex"
-            and self.provider_session_id is None
+            and provider_session_state.provider_session_id is None
         ):
             return None
-        return self.resumable_provider_run_session()
+        return PreparedProviderRunSession(
+            run_kind=provider_session_state.run_kind,
+            provider_session_id=provider_session_state.provider_session_id,
+            _provider_session_id_recorder=self.record_provider_session_id,
+            _success_recorder=self.record_successful_run,
+        )
 
     def prepare_for_run(self) -> None:
         _require_auth_seed_source(self.auth_seed_action)
@@ -111,6 +118,19 @@ class PreparedProviderSessionState:
         if host_provider_state_dir is None:
             return None
         return host_provider_state_dir / "auth.json"
+
+    def _resume_provider_session_state(self):
+        service = self._plan.service
+        service_state = self.role_session.service_session_state(service)
+        return service.provider_session_state(
+            ServiceProviderSessionStateRequest(
+                role_session=self.role_session,
+                provider_state_dir=service_state.state_dir,
+                has_resumable_provider_state=service_state.has_resumable_provider_state,
+                preferred_provider_session_id=self.provider_session_id,
+                force_resume=True,
+            )
+        )
 
 
 @dataclasses.dataclass(frozen=True)

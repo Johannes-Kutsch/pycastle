@@ -151,6 +151,11 @@ class CodexService:
     def provider_session_state(
         self, request: ProviderSessionStateRequest
     ) -> ProviderSessionState:
+        if request.preferred_provider_session_id is not None:
+            return ProviderSessionState(
+                RunKind.RESUME,
+                request.preferred_provider_session_id,
+            )
         if not request.has_resumable_provider_state:
             return ProviderSessionState(RunKind.FRESH, None)
 
