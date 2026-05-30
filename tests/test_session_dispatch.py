@@ -260,6 +260,151 @@ def test_prepare_agent_session_resume_codex_with_provider_auth_does_not_require_
     assert session.provider_session_id == "thread-xyz"
 
 
+def test_prepare_provider_session_state_recovers_single_nested_codex_rollout_thread_id_and_persists_it(
+    tmp_path: Path,
+):
+    _seed_codex_auth(tmp_path)
+    rollout_dir = (
+        tmp_path
+        / ".pycastle-session"
+        / "implementer"
+        / "codex"
+        / "sessions"
+        / "2026"
+        / "05"
+        / "29"
+        / "nested"
+    )
+    rollout_dir.mkdir(parents=True)
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"   "}',
+                '{"type":"thread.started","thread_id":"thread-from-rollout"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    state = prepare_provider_session_state(
+        _provider_request(tmp_path, service=CodexService())
+    )
+
+    initial_run = state.initial_provider_run_session()
+
+    assert state.run_kind is RunKind.RESUME
+    assert state.provider_session_id == "thread-from-rollout"
+    assert initial_run.run_kind is RunKind.RESUME
+    assert initial_run.provider_session_id == "thread-from-rollout"
+    assert (
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex")
+        == "thread-from-rollout"
+    )
+
+
+def test_prepare_provider_session_state_treats_duplicate_nested_codex_rollout_thread_ids_as_unambiguous(
+    tmp_path: Path,
+):
+    _seed_codex_auth(tmp_path)
+    dir_a = (
+        tmp_path
+        / ".pycastle-session"
+        / "implementer"
+        / "codex"
+        / "sessions"
+        / "2026"
+        / "05"
+        / "28"
+    )
+    dir_b = (
+        tmp_path
+        / ".pycastle-session"
+        / "implementer"
+        / "codex"
+        / "sessions"
+        / "2026"
+        / "05"
+        / "29"
+        / "nested"
+    )
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
+        encoding="utf-8",
+    )
+
+    state = prepare_provider_session_state(
+        _provider_request(tmp_path, service=CodexService())
+    )
+
+    assert state.run_kind is RunKind.RESUME
+    assert state.provider_session_id == "thread-same-id"
+    assert (
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex")
+        == "thread-same-id"
+    )
+
+
+def test_prepare_provider_session_state_treats_distinct_nested_codex_rollout_thread_ids_as_fresh(
+    tmp_path: Path,
+):
+    _seed_codex_auth(tmp_path)
+    dir_a = (
+        tmp_path
+        / ".pycastle-session"
+        / "implementer"
+        / "codex"
+        / "sessions"
+        / "2026"
+        / "05"
+        / "28"
+    )
+    dir_b = (
+        tmp_path
+        / ".pycastle-session"
+        / "implementer"
+        / "codex"
+        / "sessions"
+        / "2026"
+        / "05"
+        / "29"
+        / "nested"
+    )
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-alpha"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-beta"}\n',
+        encoding="utf-8",
+    )
+
+    state = prepare_provider_session_state(
+        _provider_request(tmp_path, service=CodexService())
+    )
+
+    initial_run = state.initial_provider_run_session()
+    resumable_run = state.resumable_provider_run_session()
+
+    assert state.run_kind is RunKind.FRESH
+    assert state.provider_session_id is None
+    assert initial_run.run_kind is RunKind.FRESH
+    assert initial_run.provider_session_id is None
+    assert resumable_run.run_kind is RunKind.FRESH
+    assert resumable_run.provider_session_id is None
+    assert (
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex") is None
+    )
+
+
 def test_prepare_agent_session_prefers_persisted_codex_thread_id_for_resume(
     tmp_path: Path,
 ):
