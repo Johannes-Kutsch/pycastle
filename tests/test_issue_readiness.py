@@ -9,6 +9,8 @@ from pycastle.issue_readiness import (
     WellFormed,
     WellFormedBody,
     classify_issue_readiness,
+    classify_issues,
+    partition_classified_issues,
     slice_labels,
 )
 
@@ -296,3 +298,101 @@ def test_classify_issue_readiness_custom_hitl_label_is_honoured():
     assert result.kind == IssueReadinessKind.HITL_EXEMPT
     assert result.hitl_label == "needs-human"
     assert result.is_hitl_exempt is True
+
+
+# ── partition_classified_issues ──────────────────────────────────────────────
+
+
+def test_partition_classified_issues_ready_issue_in_ready_and_both_well_formed_lists():
+    issue = {"number": 1, "labels": ["behavior-slice"], "body": "x" * BODY_FLOOR}
+    classified = classify_issues([issue], _cfg)
+
+    partition = partition_classified_issues(classified)
+
+    assert partition.ready == [issue]
+    assert partition.slice_well_formed == [issue]
+    assert partition.body_well_formed == [issue]
+    assert partition.slice_malformed == []
+    assert partition.body_malformed == []
+
+
+def test_partition_classified_issues_missing_slice_excluded_from_ready_and_slice_well_formed():
+    issue = {"number": 1, "labels": [], "body": "x" * BODY_FLOOR}
+    classified = classify_issues([issue], _cfg)
+
+    partition = partition_classified_issues(classified)
+
+    assert partition.ready == []
+    assert partition.slice_malformed == [issue]
+    assert partition.slice_well_formed == []
+    assert partition.body_well_formed == [issue]
+    assert partition.body_malformed == []
+
+
+def test_partition_classified_issues_short_body_excluded_from_ready_and_body_well_formed():
+    issue = {"number": 1, "labels": ["behavior-slice"], "body": "short"}
+    classified = classify_issues([issue], _cfg)
+
+    partition = partition_classified_issues(classified)
+
+    assert partition.ready == []
+    assert partition.slice_well_formed == [issue]
+    assert partition.slice_malformed == []
+    assert partition.body_malformed == [issue]
+    assert partition.body_well_formed == []
+
+
+def test_partition_classified_issues_issue_malformed_in_both_dimensions_appears_in_both_malformed_lists():
+    issue = {"number": 1, "labels": [], "body": "short"}
+    classified = classify_issues([issue], _cfg)
+
+    partition = partition_classified_issues(classified)
+
+    assert partition.ready == []
+    assert partition.slice_malformed == [issue]
+    assert partition.body_malformed == [issue]
+    assert partition.slice_well_formed == []
+    assert partition.body_well_formed == []
+
+
+def test_partition_classified_issues_empty_list_returns_all_empty_partitions():
+    partition = partition_classified_issues([])
+
+    assert partition.ready == []
+    assert partition.slice_well_formed == []
+    assert partition.slice_malformed == []
+    assert partition.body_well_formed == []
+    assert partition.body_malformed == []
+
+
+def test_partition_classified_issues_hitl_exempt_excluded_from_ready():
+    issue = {
+        "number": 1,
+        "labels": ["ready-for-human", "behavior-slice"],
+        "body": "x" * BODY_FLOOR,
+    }
+    classified = classify_issues([issue], _cfg)
+
+    partition = partition_classified_issues(classified)
+
+    assert partition.ready == []
+    assert partition.slice_well_formed == [issue]
+    assert partition.body_well_formed == [issue]
+
+
+def test_partition_classified_issues_slice_and_body_partitions_cover_all_issues():
+    issues = [
+        {"number": 1, "labels": ["behavior-slice"], "body": "x" * BODY_FLOOR},
+        {"number": 2, "labels": [], "body": "short"},
+        {"number": 3, "labels": ["refactor-slice"], "body": "short"},
+    ]
+    classified = classify_issues(issues, _cfg)
+
+    partition = partition_classified_issues(classified)
+
+    assert len(partition.slice_well_formed) + len(partition.slice_malformed) == len(
+        issues
+    )
+    assert len(partition.body_well_formed) + len(partition.body_malformed) == len(
+        issues
+    )
