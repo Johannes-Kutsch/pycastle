@@ -323,6 +323,10 @@ def test_opencode_service_resolves_fresh_without_saved_session_id_even_when_stat
     role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
     provider_state_dir = tmp_path / "selected-opencode-state"
     provider_state_dir.mkdir(parents=True)
+    (provider_state_dir / "session_id").write_text(
+        "sess-opencode-123",
+        encoding="utf-8",
+    )
 
     provider_run_state = service.resolve_provider_run_state(
         role_session,
@@ -331,6 +335,28 @@ def test_opencode_service_resolves_fresh_without_saved_session_id_even_when_stat
     )
 
     assert provider_run_state == ProviderRunState(RunKind.FRESH, None)
+
+
+def test_opencode_service_exact_transcript_is_false_without_saved_session_id(
+    tmp_path: Path,
+) -> None:
+    service = OpenCodeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    role_session.save_service_session_metadata("opencode", "sess-opencode-123")
+    provider_state_dir = tmp_path / "selected-opencode-state"
+    provider_state_dir.mkdir(parents=True)
+    (provider_state_dir / "session_id").write_text(
+        "sess-opencode-123",
+        encoding="utf-8",
+    )
+
+    exact = service.has_exact_transcript_session(
+        role_session,
+        provider_run_state=ProviderRunState(RunKind.RESUME, "sess-opencode-123"),
+        provider_state_dir=provider_state_dir,
+    )
+
+    assert exact is False
 
 
 def test_opencode_service_skips_malformed_json_and_non_dict_values() -> None:

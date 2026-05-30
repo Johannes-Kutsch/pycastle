@@ -192,11 +192,6 @@ class OpenCodeService:
             return ProviderRunState(RunKind.FRESH, None)
         provider_session_id = role_session.service_session_id(self.name)
         if provider_session_id is None:
-            provider_session_id = load_state_dir_provider_session_id(
-                provider_state_dir,
-                self.name,
-            )
-        if provider_session_id is None:
             return ProviderRunState(RunKind.FRESH, None)
         return ProviderRunState(RunKind.RESUME, provider_session_id)
 
@@ -209,6 +204,9 @@ class OpenCodeService:
     ) -> bool:
         provider_session_id = provider_run_state.provider_session_id
         if provider_session_id is None:
+            return False
+        saved_provider_session_id = role_session.service_session_id(self.name)
+        if saved_provider_session_id != provider_session_id:
             return False
         state_dir_session_id = load_state_dir_provider_session_id(
             provider_state_dir,
