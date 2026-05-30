@@ -1581,8 +1581,10 @@ def test_run_iteration_skips_planning_when_all_issues_have_existing_worktrees(
             / f"issue-{n}"
             / SESSION_DIR_NAME
             / AgentRole.IMPLEMENTER.value
+            / "claude"
         )
         role_dir.mkdir(parents=True)
+        (role_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
 
     agent_names: list[str] = []
 
@@ -4672,8 +4674,9 @@ def test_worktree_with_role_session_dir_is_in_flight(
     cfg = Config(max_parallel=4, max_iterations=1)
     # Create worktree dir with a role session dir for issue #1
     wt_dir = tmp_path / "pycastle" / ".worktrees" / "issue-1"
-    role_dir = wt_dir / SESSION_DIR_NAME / AgentRole.IMPLEMENTER.value
+    role_dir = wt_dir / SESSION_DIR_NAME / AgentRole.IMPLEMENTER.value / "claude"
     role_dir.mkdir(parents=True)
+    (role_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
 
     async def _fake_agent(request: RunRequest):
         return CompletionOutput()

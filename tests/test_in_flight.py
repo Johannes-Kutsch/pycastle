@@ -42,8 +42,10 @@ def test_select_in_flight_issues_keeps_input_order_across_mixed_evidence(
         / "issue-1"
         / SESSION_DIR_NAME
         / AgentRole.IMPLEMENTER.value
+        / "claude"
     )
     role_dir.mkdir(parents=True)
+    (role_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
 
     git_svc.verify_ref_exists.side_effect = lambda ref, _repo_root: (
         ref == "pycastle/issue-2"
@@ -56,6 +58,65 @@ def test_select_in_flight_issues_keeps_input_order_across_mixed_evidence(
         issues[0],
         issues[1],
     ]
+
+
+def test_select_in_flight_issues_uses_only_resumable_role_session_worktree_evidence(
+    tmp_path: Path,
+):
+    git_svc = MagicMock(spec=GitService)
+    repo_root = tmp_path
+    issues = [
+        {
+            "number": 1,
+            "title": "Resume from started role session",
+            "body": "Issue body 1",
+            "comments": [{"author": "alice", "body": "keep context"}],
+            "labels": ["ready-for-agent", "behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Empty leftover role dir",
+            "body": "Issue body 2",
+            "comments": [{"author": "bob", "body": "leftover"}],
+            "labels": ["ready-for-agent", "behavior-slice"],
+        },
+        {
+            "number": 3,
+            "title": "No evidence",
+            "body": "Issue body 3",
+            "comments": [{"author": "carol", "body": "fresh"}],
+            "labels": ["ready-for-agent", "behavior-slice"],
+        },
+    ]
+
+    started_role_dir = (
+        repo_root
+        / "pycastle"
+        / ".worktrees"
+        / "issue-1"
+        / SESSION_DIR_NAME
+        / AgentRole.IMPLEMENTER.value
+        / "claude"
+    )
+    started_role_dir.mkdir(parents=True)
+    (started_role_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    empty_role_dir = (
+        repo_root
+        / "pycastle"
+        / ".worktrees"
+        / "issue-2"
+        / SESSION_DIR_NAME
+        / AgentRole.IMPLEMENTER.value
+    )
+    empty_role_dir.mkdir(parents=True)
+
+    git_svc.verify_ref_exists.return_value = False
+
+    result = select_in_flight_issues(issues, repo_root=repo_root, git_svc=git_svc)
+
+    assert result == [issues[0]]
+    assert result[0] is issues[0]
 
 
 def test_select_in_flight_issues_returns_exact_issue_for_branch_with_commits_ahead(
