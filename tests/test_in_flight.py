@@ -7,7 +7,7 @@ from pycastle.config import Config
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.iteration.in_flight import select_in_flight_issues
 from pycastle.services import GitService
-from pycastle.session.resume import SESSION_DIR_NAME
+from pycastle.session.resume import RoleSession, SESSION_DIR_NAME
 
 
 def _commit(repo_root: Path, message: str, content: str) -> None:
@@ -117,6 +117,29 @@ def test_select_in_flight_issues_uses_only_resumable_role_session_worktree_evide
 
     assert result == [issues[0]]
     assert result[0] is issues[0]
+
+
+def test_select_in_flight_issues_omits_metadata_only_role_session_without_branch_evidence(
+    tmp_path: Path,
+):
+    git_svc = MagicMock(spec=GitService)
+    issue = {
+        "number": 1,
+        "title": "Done role session keeps only metadata",
+        "body": "Issue body 1",
+        "comments": [{"author": "alice", "body": "done"}],
+        "labels": ["ready-for-agent", "behavior-slice"],
+    }
+    role_session = RoleSession(
+        tmp_path / "pycastle" / ".worktrees" / "issue-1",
+        AgentRole.IMPLEMENTER,
+    )
+    role_session.start_fresh()
+    role_session.save_service_session_metadata("claude", "thread-123")
+
+    git_svc.verify_ref_exists.return_value = False
+
+    assert select_in_flight_issues([issue], repo_root=tmp_path, git_svc=git_svc) == []
 
 
 def test_select_in_flight_issues_returns_exact_issue_for_branch_with_commits_ahead(
