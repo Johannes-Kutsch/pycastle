@@ -17,6 +17,7 @@ class SessionDispatchRequest:
     role: AgentRole
     session_namespace: str
     service: AgentService
+    container_workspace: str
 
 
 @dataclasses.dataclass
@@ -97,7 +98,7 @@ def prepare_agent_session(request: SessionDispatchRequest) -> PreparedAgentSessi
         provider_session_id=provider_session_id,
         service_state_dir_relpath=plan.provider_state_dir_relpath,
         provider_state_dir_container_path=plan.provider_state_dir_container_path(
-            "/home/agent/workspace"
+            request.container_workspace
         ),
         success_recorder=success_recorder,
         on_provider_session_id=on_provider_session_id,

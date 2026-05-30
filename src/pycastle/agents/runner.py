@@ -223,6 +223,7 @@ class AgentRunner:
                 role=role,
                 session_namespace=request.session_namespace,
                 service=service,
+                container_workspace=_CONTAINER_WORKSPACE,
             )
         )
         run_kind = prepared_session.run_kind

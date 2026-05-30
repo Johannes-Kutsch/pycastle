@@ -32,7 +32,7 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.session import RunKind
+from pycastle.session import RoleSession, RunKind
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
@@ -2440,35 +2440,14 @@ def test_agent_runner_passes_session_id_flag_to_claude_on_fresh_run(tmp_path):
 
 
 def test_agent_runner_records_successful_run_in_plan_for_claude(tmp_path, monkeypatch):
-    from unittest.mock import patch
     from pycastle.infrastructure.container_runner import ContainerRunner
 
-    recorded_session_ids: list[str | None] = []
     work_session_ids: list[str | None] = []
 
-    class _PlannedSession:
-        run_kind = RunKind.FRESH
-        auth_seed_action = None
-        exact_transcript_match = False
-        provider_state_dir_relpath = ".pycastle-session/implementer/claude/"
-        service = ClaudeService()
-
-        def prepared_provider_session_id(self) -> str | None:
-            return "planned-session-id"
-
-        def provider_state_dir_container_path(self, container_workspace: str) -> str:
-            return f"{container_workspace}/.pycastle-session/implementer/claude/"
-
-        def record_successful_run(self, provider_session_id: str | None = None) -> None:
-            recorded_session_ids.append(provider_session_id)
-
-        def prepare_host_provider_state_dir(self) -> None:
-            return None
-
-        def capture_provider_session_id(self, provider_session_id: str) -> None:
-            raise AssertionError(
-                "claude run should not capture a new provider session id"
-            )
+    expected_session_id = RoleSession(
+        tmp_path,
+        AgentRole.IMPLEMENTER,
+    ).session_uuid()
 
     runner = AgentRunner(
         {},
@@ -2477,28 +2456,31 @@ def test_agent_runner_records_successful_run_in_plan_for_claude(tmp_path, monkey
         docker_client=_make_setup_docker_client(),
     )
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+    async def _fake_work(
+        self, role, prompt, *, run_kind, session_uuid, on_thread_id=None
+    ):
         work_session_ids.append(session_uuid)
         return CommitMessageOutput(message="done")
 
-    monkeypatch.setattr(
-        "pycastle.session.run_session.RunSessionPlan.for_service",
-        lambda **kwargs: _PlannedSession(),
-    )
-
-    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
-        asyncio.run(
-            runner.run(
-                _run_request(
-                    name="Impl",
-                    template=_PLAN_TEMPLATE,
-                    scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
-                )
+    monkeypatch.setattr(ContainerRunner, "work", _fake_work)
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Impl",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
             )
         )
-    assert work_session_ids == ["planned-session-id"]
-    assert recorded_session_ids == ["planned-session-id"]
+    )
+
+    assert work_session_ids == [expected_session_id]
+    assert RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_metadata(
+        "claude"
+    ) == {
+        "service": "claude",
+        "provider_session_id": expected_session_id,
+    }
 
 
 def _seed_implementer_session(tmp_path: Path) -> None:

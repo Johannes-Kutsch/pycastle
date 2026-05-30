@@ -51,12 +51,14 @@ def _request(
     role: AgentRole = AgentRole.IMPLEMENTER,
     service=None,
     namespace: str = "",
+    container_workspace: str = "/home/agent/workspace",
 ) -> SessionDispatchRequest:
     return SessionDispatchRequest(
         mount_path=tmp_path,
         role=role,
         session_namespace=namespace,
         service=service or ClaudeService(),
+        container_workspace=container_workspace,
     )
 
 
@@ -402,13 +404,13 @@ def test_prepare_agent_session_improve_main_uses_namespaced_provider_state_dir_f
             role=AgentRole.IMPROVE,
             namespace="main",
             service=cast(AgentService, _LegacyStateDirService()),
+            container_workspace="/workspace",
         )
     )
 
     assert session.provider_state_dir_relpath == ".pycastle-session/improve/main/fake/"
-    assert (
-        session.provider_state_dir_container_path
-        == "/home/agent/workspace/.pycastle-session/improve/main/fake/"
+    assert session.provider_state_dir_container_path == (
+        "/workspace/.pycastle-session/improve/main/fake/"
     )
 
 
@@ -440,15 +442,15 @@ def test_prepare_agent_session_improve_issues_uses_namespaced_provider_state_dir
             role=AgentRole.IMPROVE,
             namespace="issues",
             service=cast(AgentService, _LegacyStateDirService()),
+            container_workspace="/workspace",
         )
     )
 
     assert session.provider_state_dir_relpath == (
         ".pycastle-session/improve/issues/fake/"
     )
-    assert (
-        session.provider_state_dir_container_path
-        == "/home/agent/workspace/.pycastle-session/improve/issues/fake/"
+    assert session.provider_state_dir_container_path == (
+        "/workspace/.pycastle-session/improve/issues/fake/"
     )
 
 
@@ -481,6 +483,21 @@ def test_prepare_agent_session_computes_container_path_from_workspace(tmp_path: 
     assert session.provider_state_dir_container_path.startswith(
         "/home/agent/workspace/"
     )
+
+
+def test_prepare_agent_session_preserves_requested_container_workspace(
+    tmp_path: Path,
+):
+    session = prepare_agent_session(
+        _request(
+            tmp_path,
+            service=ClaudeService(),
+            container_workspace="/workspace",
+        )
+    )
+
+    assert session.provider_state_dir_container_path is not None
+    assert session.provider_state_dir_container_path.startswith("/workspace/")
 
 
 def test_prepare_agent_session_no_state_dir_service_yields_none_container_path(
