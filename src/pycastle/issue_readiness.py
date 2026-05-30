@@ -86,6 +86,21 @@ class ClassifiedIssue:
     readiness: IssueReadiness
 
 
+def selected_mode_for_issue(issue: dict, cfg: Config) -> SliceMode | None:
+    readiness = issue.get("readiness")
+    if isinstance(readiness, IssueReadiness):
+        if readiness.selected_mode is not None:
+            return readiness.selected_mode
+        if isinstance(readiness.slice_status, WellFormed):
+            return readiness.slice_status.mode
+        return None
+
+    fallback = classify_issue_readiness(issue, cfg).slice_status
+    if isinstance(fallback, WellFormed):
+        return fallback.mode
+    return None
+
+
 def slice_labels(cfg: Config) -> frozenset[str]:
     return frozenset(
         {cfg.refactor_slice_label, cfg.behavior_slice_label, cfg.docs_slice_label}
