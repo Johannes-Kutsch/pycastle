@@ -33,10 +33,13 @@ from pycastle.errors import (
 )
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session import ProviderRunState, RoleSession, RunKind
-from pycastle.session.service_resume_identity import ServiceResumeIdentityStore
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
+from pycastle.services.provider_session_state import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
 from pycastle.display.status_display import ModelDisplayMetadata
 from tests.support import FakeAgentRunner, RecordingStatusDisplay
 
@@ -428,25 +431,16 @@ class _RecordingAgentService:
     def is_resumable(self, state_dir: Path) -> bool:
         return False
 
-    def resolve_provider_run_state(
+    def provider_session_state(
         self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_state_dir: Path | None,
-        has_resumable_provider_state: bool,
-    ) -> ProviderRunState:
-        del role_session, provider_state_dir, has_resumable_provider_state
-        return self._provider_run_state
-
-    def has_exact_transcript_session(
-        self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_run_state: ProviderRunState,
-        provider_state_dir: Path | None,
-    ) -> bool:
-        del role_session, provider_run_state, provider_state_dir
-        return False
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        del request
+        return ProviderSessionState(
+            self._provider_run_state.run_kind,
+            self._provider_run_state.provider_session_id,
+            persist_provider_session_id=self._provider_run_state.persist_provider_session_id,
+        )
 
     def valid_efforts(self) -> frozenset[str]:
         return frozenset({"low", "medium", "high"})

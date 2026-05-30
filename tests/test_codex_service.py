@@ -17,6 +17,7 @@ from pycastle.services.agent_service import (
     TransientError,
     UsageLimit,
 )
+from pycastle.services.provider_session_state import ProviderSessionStateRequest
 from pycastle.session import RoleSession, RunKind
 
 
@@ -316,22 +317,24 @@ def test_is_resumable_false_when_sessions_has_non_rollout_files(tmp_path):
     assert CodexService().is_resumable(state_dir) is False
 
 
-def test_resolve_provider_run_state_is_fresh_without_resumable_provider_state(tmp_path):
+def test_provider_session_state_is_fresh_without_resumable_provider_state(tmp_path):
     service = CodexService()
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
 
-    provider_run_state = service.resolve_provider_run_state(
-        role_session,
-        provider_state_dir=None,
-        has_resumable_provider_state=False,
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=None,
+            has_resumable_provider_state=False,
+        )
     )
 
-    assert provider_run_state.run_kind is RunKind.FRESH
-    assert provider_run_state.provider_session_id is None
-    assert provider_run_state.persist_provider_session_id is False
+    assert provider_session_state.run_kind is RunKind.FRESH
+    assert provider_session_state.provider_session_id is None
+    assert provider_session_state.persist_provider_session_id is False
 
 
-def test_resolve_provider_run_state_recovers_single_nested_codex_rollout_thread_id(
+def test_provider_session_state_recovers_single_nested_codex_rollout_thread_id(
     tmp_path,
 ):
     service = CodexService()
@@ -344,19 +347,21 @@ def test_resolve_provider_run_state_recovers_single_nested_codex_rollout_thread_
         encoding="utf-8",
     )
 
-    provider_run_state = service.resolve_provider_run_state(
-        role_session,
-        provider_state_dir=state_dir,
-        has_resumable_provider_state=True,
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+        )
     )
 
-    assert provider_run_state.run_kind is RunKind.RESUME
-    assert provider_run_state.provider_session_id == "thread-from-rollout"
-    assert provider_run_state.persist_provider_session_id is True
+    assert provider_session_state.run_kind is RunKind.RESUME
+    assert provider_session_state.provider_session_id == "thread-from-rollout"
+    assert provider_session_state.persist_provider_session_id is True
     assert role_session.service_session_id("codex") == "thread-from-rollout"
 
 
-def test_resolve_provider_run_state_is_fresh_for_malformed_only_codex_rollouts(
+def test_provider_session_state_is_fresh_for_malformed_only_codex_rollouts(
     tmp_path,
 ):
     service = CodexService()
@@ -377,19 +382,21 @@ def test_resolve_provider_run_state_is_fresh_for_malformed_only_codex_rollouts(
         encoding="utf-8",
     )
 
-    provider_run_state = service.resolve_provider_run_state(
-        role_session,
-        provider_state_dir=state_dir,
-        has_resumable_provider_state=True,
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+        )
     )
 
-    assert provider_run_state.run_kind is RunKind.FRESH
-    assert provider_run_state.provider_session_id is None
-    assert provider_run_state.persist_provider_session_id is False
+    assert provider_session_state.run_kind is RunKind.FRESH
+    assert provider_session_state.provider_session_id is None
+    assert provider_session_state.persist_provider_session_id is False
     assert role_session.service_session_id("codex") is None
 
 
-def test_resolve_provider_run_state_is_fresh_for_distinct_codex_rollout_thread_ids(
+def test_provider_session_state_is_fresh_for_distinct_codex_rollout_thread_ids(
     tmp_path,
 ):
     service = CodexService()
@@ -408,19 +415,23 @@ def test_resolve_provider_run_state_is_fresh_for_distinct_codex_rollout_thread_i
         encoding="utf-8",
     )
 
-    provider_run_state = service.resolve_provider_run_state(
-        role_session,
-        provider_state_dir=state_dir,
-        has_resumable_provider_state=True,
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+        )
     )
 
-    assert provider_run_state.run_kind is RunKind.FRESH
-    assert provider_run_state.provider_session_id is None
-    assert provider_run_state.persist_provider_session_id is False
+    assert provider_session_state.run_kind is RunKind.FRESH
+    assert provider_session_state.provider_session_id is None
+    assert provider_session_state.persist_provider_session_id is False
     assert role_session.service_session_id("codex") is None
 
 
-def test_has_exact_transcript_session_true_for_matching_codex_identity(tmp_path):
+def test_provider_session_state_marks_exact_transcript_match_for_matching_codex_identity(
+    tmp_path,
+):
     service = CodexService()
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
@@ -433,24 +444,22 @@ def test_has_exact_transcript_session_true_for_matching_codex_identity(tmp_path)
     role_session.save_service_session_id("codex", "thread-abc")
     role_session.save_service_session_metadata("codex", "thread-abc")
 
-    provider_run_state = service.resolve_provider_run_state(
-        role_session,
-        provider_state_dir=state_dir,
-        has_resumable_provider_state=True,
-    )
-
-    assert provider_run_state.persist_provider_session_id is False
-    assert (
-        service.has_exact_transcript_session(
-            role_session,
-            provider_run_state=provider_run_state,
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
             provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+            require_exact_transcript_match=True,
         )
-        is True
     )
 
+    assert provider_session_state.persist_provider_session_id is False
+    assert provider_session_state.exact_transcript_match is True
 
-def test_has_exact_transcript_session_false_for_recovered_codex_identity(tmp_path):
+
+def test_provider_session_state_skips_exact_transcript_match_for_recovered_codex_identity(
+    tmp_path,
+):
     service = CodexService()
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
@@ -462,21 +471,17 @@ def test_has_exact_transcript_session_false_for_recovered_codex_identity(tmp_pat
     )
     role_session.save_service_session_metadata("codex", "thread-abc")
 
-    provider_run_state = service.resolve_provider_run_state(
-        role_session,
-        provider_state_dir=state_dir,
-        has_resumable_provider_state=True,
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+            require_exact_transcript_match=True,
+        )
     )
 
-    assert provider_run_state.persist_provider_session_id is True
-    assert (
-        service.has_exact_transcript_session(
-            role_session,
-            provider_run_state=provider_run_state,
-            provider_state_dir=state_dir,
-        )
-        is False
-    )
+    assert provider_session_state.persist_provider_session_id is True
+    assert provider_session_state.exact_transcript_match is False
 
 
 # ── CodexService.run: JSONL parsing ──────────────────────────────────────────

@@ -14,14 +14,13 @@ from pycastle.agents.session_dispatch import (
     prepare_agent_session,
     record_successful_provider_session_metadata,
 )
-from pycastle.session import ProviderRunState, RoleSession, RunKind
+from pycastle.session import RoleSession, RunKind
 from pycastle.session._provider_session_sidecars import service_session_metadata_path
 from pycastle.session._provider_session_state import (
-    ProviderSessionStateRequest,
+    ProviderSessionStateRequest as PreparedProviderSessionStateRequest,
     prepare_provider_session_state,
 )
 from pycastle.session.service_resume_identity import (
-    ServiceResumeIdentityStore,
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
 )
@@ -29,6 +28,10 @@ from pycastle.errors import HardAgentError
 from pycastle.services import ClaudeService, CodexService
 from pycastle.services.agent_service import AgentService
 from pycastle.services.opencode_service import OpenCodeService
+from pycastle.services.provider_session_state import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
 
 
 @dataclass
@@ -42,33 +45,21 @@ class _LegacyStateDirService:
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(state_dir.rglob("*"))
 
-    def resolve_provider_run_state(
+    def provider_session_state(
         self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_state_dir: Path | None,
-        has_resumable_provider_state: bool,
-    ) -> ProviderRunState:
-        del provider_state_dir
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
         if self.name == "claude":
-            return ProviderRunState(
-                RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH,
-                role_session.session_uuid(),
+            return ProviderSessionState(
+                RunKind.RESUME
+                if request.has_resumable_provider_state
+                else RunKind.FRESH,
+                request.role_session.session_uuid(),
             )
-        return ProviderRunState(
-            RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH,
+        return ProviderSessionState(
+            RunKind.RESUME if request.has_resumable_provider_state else RunKind.FRESH,
             None,
         )
-
-    def has_exact_transcript_session(
-        self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_run_state: ProviderRunState,
-        provider_state_dir: Path | None,
-    ) -> bool:
-        del role_session, provider_run_state, provider_state_dir
-        return False
 
 
 @dataclass
@@ -84,41 +75,33 @@ class _CustomOpenCodeStateDirService:
     def is_resumable(self, state_dir: Path) -> bool:
         return (state_dir / "session_id").is_file()
 
-    def resolve_provider_run_state(
+    def provider_session_state(
         self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_state_dir: Path | None,
-        has_resumable_provider_state: bool,
-    ) -> ProviderRunState:
-        if not has_resumable_provider_state:
-            return ProviderRunState(RunKind.FRESH, None)
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        if not request.has_resumable_provider_state:
+            return ProviderSessionState(RunKind.FRESH, None)
         selection = select_resumable_provider_session_id(
-            role_session,
+            request.role_session,
             self.name,
-            provider_state_dir=provider_state_dir,
-            has_resumable_provider_state=has_resumable_provider_state,
+            provider_state_dir=request.provider_state_dir,
+            has_resumable_provider_state=request.has_resumable_provider_state,
         )
         if selection.provider_session_id is None:
-            return ProviderRunState(RunKind.FRESH, None)
-        return ProviderRunState(
+            return ProviderSessionState(RunKind.FRESH, None)
+        exact_transcript_match = False
+        if request.require_exact_transcript_match:
+            exact_transcript_match = is_exact_resumable_service_session(
+                request.role_session,
+                self.name,
+                provider_session_id=selection.provider_session_id,
+                provider_state_dir=request.provider_state_dir,
+            )
+        return ProviderSessionState(
             RunKind.RESUME,
             selection.provider_session_id,
+            exact_transcript_match=exact_transcript_match,
             persist_provider_session_id=selection.persist_provider_session_id,
-        )
-
-    def has_exact_transcript_session(
-        self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_run_state: ProviderRunState,
-        provider_state_dir: Path | None,
-    ) -> bool:
-        return is_exact_resumable_service_session(
-            role_session,
-            self.name,
-            provider_session_id=provider_run_state.provider_session_id,
-            provider_state_dir=provider_state_dir,
         )
 
 
@@ -136,31 +119,23 @@ class _ClaudeFilesystemStandIn:
             path.is_file() for path in state_dir.rglob("*")
         )
 
-    def resolve_provider_run_state(
+    def provider_session_state(
         self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_state_dir: Path | None,
-        has_resumable_provider_state: bool,
-    ) -> ProviderRunState:
-        del provider_state_dir
-        return ProviderRunState(
-            RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH,
-            role_session.session_uuid(),
-        )
-
-    def has_exact_transcript_session(
-        self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_run_state: ProviderRunState,
-        provider_state_dir: Path | None,
-    ) -> bool:
-        return is_exact_resumable_service_session(
-            role_session,
-            self.name,
-            provider_session_id=provider_run_state.provider_session_id,
-            provider_state_dir=provider_state_dir,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        provider_session_id = request.role_session.session_uuid()
+        exact_transcript_match = False
+        if request.require_exact_transcript_match:
+            exact_transcript_match = is_exact_resumable_service_session(
+                request.role_session,
+                self.name,
+                provider_session_id=provider_session_id,
+                provider_state_dir=request.provider_state_dir,
+            )
+        return ProviderSessionState(
+            RunKind.RESUME if request.has_resumable_provider_state else RunKind.FRESH,
+            provider_session_id,
+            exact_transcript_match=exact_transcript_match,
         )
 
 
@@ -187,8 +162,8 @@ def _provider_request(
     role: AgentRole = AgentRole.IMPLEMENTER,
     namespace: str = "",
     service: AgentService | None = None,
-) -> ProviderSessionStateRequest:
-    return ProviderSessionStateRequest(
+) -> PreparedProviderSessionStateRequest:
+    return PreparedProviderSessionStateRequest(
         worktree=tmp_path,
         role=role,
         session_namespace=namespace,

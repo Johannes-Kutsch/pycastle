@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
+from ..services.provider_session_state import ProviderSessionStateRequest
 from ._provider_session_sidecars import (
     load_exact_transcript_service_name,
     is_service_session_metadata_path,
@@ -258,30 +259,24 @@ class RoleSession:
         self, service: "AgentService"
     ) -> ExactTranscriptHandoff:
         state = self.service_session_state(service)
-        provider_run_state = service.resolve_provider_run_state(
-            self,
-            provider_state_dir=state.state_dir,
-            has_resumable_provider_state=state.has_resumable_provider_state,
+        provider_session_state = service.provider_session_state(
+            ProviderSessionStateRequest(
+                role_session=self,
+                provider_state_dir=state.state_dir,
+                has_resumable_provider_state=state.has_resumable_provider_state,
+                require_exact_transcript_match=True,
+            )
         )
         provider_identity = self.provider_identity(
             service.name,
             has_resumable_provider_state=state.has_resumable_provider_state,
             provider_state_dir=state.state_dir,
-            derived_provider_session_id=provider_run_state.provider_session_id,
-            persist_provider_session_id=provider_run_state.persist_provider_session_id,
-        )
-        is_eligible = (
-            provider_run_state.run_kind is RunKind.RESUME
-            and not provider_run_state.persist_provider_session_id
-            and service.has_exact_transcript_session(
-                self,
-                provider_run_state=provider_run_state,
-                provider_state_dir=state.state_dir,
-            )
+            derived_provider_session_id=provider_session_state.provider_session_id,
+            persist_provider_session_id=provider_session_state.persist_provider_session_id,
         )
         return ExactTranscriptHandoff(
             provider_identity=provider_identity,
-            is_eligible=is_eligible,
+            is_eligible=provider_session_state.exact_transcript_match,
         )
 
     def has_exact_transcript_handoff_for_selected_service(

@@ -8,12 +8,9 @@ from pathlib import Path
 
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
-from ..session import ProviderRunState, SESSION_DIR_NAME, RunKind
+from ..session import SESSION_DIR_NAME, RunKind
 from ..session._provider_session_sidecars import load_state_dir_provider_session_id
-from ..session.service_resume_identity import (
-    ServiceResumeIdentityStore,
-    is_exact_resumable_service_session,
-)
+from ..session.service_resume_identity import is_exact_resumable_service_session
 from .agent_service import (
     AssistantTurn,
     HardError,
@@ -22,6 +19,7 @@ from .agent_service import (
     TransientError,
     UsageLimit,
 )
+from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
 from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time
@@ -181,45 +179,34 @@ class OpenCodeService:
             env["OPENCODE_CONFIG_CONTENT"] = _opencode_go_config_content()
         return env
 
-    def resolve_provider_run_state(
-        self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_state_dir: Path | None,
-        has_resumable_provider_state: bool,
-    ) -> ProviderRunState:
-        if not has_resumable_provider_state:
-            return ProviderRunState(RunKind.FRESH, None)
-        provider_session_id = role_session.service_session_id(self.name)
+    def provider_session_state(
+        self, request: ProviderSessionStateRequest
+    ) -> ProviderSessionState:
+        if not request.has_resumable_provider_state:
+            return ProviderSessionState(RunKind.FRESH, None)
+        provider_session_id = request.role_session.service_session_id(self.name)
         if provider_session_id is None:
-            return ProviderRunState(RunKind.FRESH, None)
-        return ProviderRunState(RunKind.RESUME, provider_session_id)
+            return ProviderSessionState(RunKind.FRESH, None)
 
-    def has_exact_transcript_session(
-        self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_run_state: ProviderRunState,
-        provider_state_dir: Path | None,
-    ) -> bool:
-        provider_session_id = provider_run_state.provider_session_id
-        if provider_session_id is None:
-            return False
-        saved_provider_session_id = role_session.service_session_id(self.name)
-        if saved_provider_session_id != provider_session_id:
-            return False
-        state_dir_session_id = load_state_dir_provider_session_id(
-            provider_state_dir,
-            self.name,
-        )
-        return (
-            state_dir_session_id == provider_session_id
-            and is_exact_resumable_service_session(
-                role_session,
+        exact_transcript_match = False
+        if request.require_exact_transcript_match:
+            state_dir_session_id = load_state_dir_provider_session_id(
+                request.provider_state_dir,
                 self.name,
-                provider_session_id=provider_session_id,
-                provider_state_dir=provider_state_dir,
             )
+            exact_transcript_match = (
+                state_dir_session_id == provider_session_id
+                and is_exact_resumable_service_session(
+                    request.role_session,
+                    self.name,
+                    provider_session_id=provider_session_id,
+                    provider_state_dir=request.provider_state_dir,
+                )
+            )
+        return ProviderSessionState(
+            RunKind.RESUME,
+            provider_session_id,
+            exact_transcript_match=exact_transcript_match,
         )
 
     def run(

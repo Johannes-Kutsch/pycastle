@@ -11,6 +11,10 @@ from pycastle.errors import HardAgentError
 from pycastle.services import ClaudeService
 from pycastle.services.codex_service import CodexService
 from pycastle.services.opencode_service import OpenCodeService
+from pycastle.services.provider_session_state import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
 from pycastle.session.agent import RunSessionPlanRequest, plan_run_session
 from pycastle.session.run_session import (
     AuthSeedingRequirement,
@@ -20,13 +24,11 @@ from pycastle.session.run_session import (
 )
 from pycastle.session import (
     ProviderIdentityKind,
-    ProviderRunState,
     RoleSession,
     RunKind,
 )
 from pycastle.session._provider_session_sidecars import service_session_id_path
 from pycastle.session.service_resume_identity import (
-    ServiceResumeIdentityStore,
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
 )
@@ -48,50 +50,57 @@ class _FakeAgentService:
     def is_resumable(self, state_dir: Path) -> bool:
         return self.resumable
 
-    def resolve_provider_run_state(
+    def provider_session_state(
         self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_state_dir: Path | None,
-        has_resumable_provider_state: bool,
-    ) -> ProviderRunState:
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
         if self.name == "claude":
-            del provider_state_dir
-            return ProviderRunState(
-                RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH,
-                self.provider_session_id or role_session.session_uuid(),
+            provider_session_id = (
+                self.provider_session_id or request.role_session.session_uuid()
+            )
+            exact_transcript_match = False
+            if request.require_exact_transcript_match:
+                exact_transcript_match = self.exact_transcript_session or (
+                    is_exact_resumable_service_session(
+                        request.role_session,
+                        self.name,
+                        provider_session_id=provider_session_id,
+                        provider_state_dir=request.provider_state_dir,
+                    )
+                )
+            return ProviderSessionState(
+                RunKind.RESUME
+                if request.has_resumable_provider_state
+                else RunKind.FRESH,
+                provider_session_id,
+                exact_transcript_match=exact_transcript_match,
                 persist_provider_session_id=self.persist_provider_session_id,
             )
-        if not has_resumable_provider_state:
-            return ProviderRunState(RunKind.FRESH, None)
+        if not request.has_resumable_provider_state:
+            return ProviderSessionState(RunKind.FRESH, None)
         selection = select_resumable_provider_session_id(
-            role_session,
+            request.role_session,
             self.name,
-            provider_state_dir=provider_state_dir,
-            has_resumable_provider_state=has_resumable_provider_state,
+            provider_state_dir=request.provider_state_dir,
+            has_resumable_provider_state=request.has_resumable_provider_state,
         )
         if selection.provider_session_id is None:
-            return ProviderRunState(RunKind.FRESH, None)
-        return ProviderRunState(
+            return ProviderSessionState(RunKind.FRESH, None)
+        exact_transcript_match = False
+        if request.require_exact_transcript_match:
+            exact_transcript_match = self.exact_transcript_session or (
+                is_exact_resumable_service_session(
+                    request.role_session,
+                    self.name,
+                    provider_session_id=selection.provider_session_id,
+                    provider_state_dir=request.provider_state_dir,
+                )
+            )
+        return ProviderSessionState(
             RunKind.RESUME,
             selection.provider_session_id,
+            exact_transcript_match=exact_transcript_match,
             persist_provider_session_id=selection.persist_provider_session_id,
-        )
-
-    def has_exact_transcript_session(
-        self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_run_state: ProviderRunState,
-        provider_state_dir: Path | None,
-    ) -> bool:
-        if self.exact_transcript_session:
-            return True
-        return is_exact_resumable_service_session(
-            role_session,
-            self.name,
-            provider_session_id=provider_run_state.provider_session_id,
-            provider_state_dir=provider_state_dir,
         )
 
 

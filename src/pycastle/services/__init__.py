@@ -27,6 +27,10 @@ from .github_service import (
     GithubServiceError,
 )
 from .opencode_service import OpenCodeService
+from .provider_session_state import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
 from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time
 from .service_registry import ServiceRegistry
 
@@ -50,6 +54,8 @@ __all__ = [
     "GithubServiceError",
     "OpenCodeService",
     "ParsedTurn",
+    "ProviderSessionState",
+    "ProviderSessionStateRequest",
     "PromptTokens",
     "ResetTimeSyntaxMode",
     "Result",

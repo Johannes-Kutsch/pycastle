@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
 from ..errors import HardAgentError
+from ..services.provider_session_state import ProviderSessionStateRequest
 from ._provider_session_sidecars import (
     save_service_session_id,
     save_service_session_metadata,
@@ -203,16 +204,19 @@ def plan_provider_session(
         )
         host_state_dir = request.worktree / state_dir_relpath.rstrip("/")
 
-    provider_run_state = request.service.resolve_provider_run_state(
-        role_session,
-        provider_state_dir=service_state.state_dir,
-        has_resumable_provider_state=service_state.has_resumable_provider_state,
+    provider_session_state = request.service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=service_state.state_dir,
+            has_resumable_provider_state=service_state.has_resumable_provider_state,
+            require_exact_transcript_match=True,
+        )
     )
     plan = ProviderSessionPlan(
         state_dir_relpath=state_dir_relpath,
         host_state_dir=host_state_dir,
-        run_kind=provider_run_state.run_kind,
-        provider_session_id=provider_run_state.provider_session_id,
+        run_kind=provider_session_state.run_kind,
+        provider_session_id=provider_session_state.provider_session_id,
         auth_seeding_requirement=_codex_auth_seeding_requirement(
             request.service.name,
             host_state_dir,
@@ -225,16 +229,8 @@ def plan_provider_session(
     return PlannedProviderSession(
         plan=plan,
         service_state_dir=service_state.state_dir,
-        exact_transcript_match=(
-            provider_run_state.run_kind is RunKind.RESUME
-            and not provider_run_state.persist_provider_session_id
-            and request.service.has_exact_transcript_session(
-                role_session,
-                provider_run_state=provider_run_state,
-                provider_state_dir=service_state.state_dir,
-            )
-        ),
-        persist_provider_session_id=provider_run_state.persist_provider_session_id,
+        exact_transcript_match=provider_session_state.exact_transcript_match,
+        persist_provider_session_id=provider_session_state.persist_provider_session_id,
     )
 
 

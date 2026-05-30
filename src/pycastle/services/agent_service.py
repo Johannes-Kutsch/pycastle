@@ -4,13 +4,11 @@ import dataclasses
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from ..agents.output_protocol import AgentRole
-from ..session import ProviderRunState, RunKind
-
-if TYPE_CHECKING:
-    from ..session.service_resume_identity import ServiceResumeIdentityStore
+from ..session import RunKind
+from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
 
 
 @dataclasses.dataclass
@@ -99,21 +97,9 @@ class AgentService(Protocol):
 
     def is_resumable(self, state_dir: Path) -> bool: ...
 
-    def resolve_provider_run_state(
-        self,
-        role_session: "ServiceResumeIdentityStore",
-        *,
-        provider_state_dir: Path | None,
-        has_resumable_provider_state: bool,
-    ) -> ProviderRunState: ...
-
-    def has_exact_transcript_session(
-        self,
-        role_session: "ServiceResumeIdentityStore",
-        *,
-        provider_run_state: ProviderRunState,
-        provider_state_dir: Path | None,
-    ) -> bool: ...
+    def provider_session_state(
+        self, request: ProviderSessionStateRequest
+    ) -> ProviderSessionState: ...
 
     def valid_models(self) -> frozenset[str]: ...
 

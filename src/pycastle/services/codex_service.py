@@ -12,8 +12,7 @@ from typing import Any
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
 from ..agents.output_protocol import AgentOutputProtocolError
-from ..session import ProviderRunState, SESSION_DIR_NAME, RunKind
-from ..session.service_resume_identity import ServiceResumeIdentityStore
+from ..session import SESSION_DIR_NAME, RunKind
 from .agent_service import (
     AssistantTurn,
     HardError,
@@ -22,6 +21,7 @@ from .agent_service import (
     TransientError,
     UsageLimit,
 )
+from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
 from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time
@@ -148,47 +148,36 @@ class CodexService:
             return False
         return any(sessions_dir.rglob("rollout-*.jsonl"))
 
-    def resolve_provider_run_state(
-        self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_state_dir: Path | None,
-        has_resumable_provider_state: bool,
-    ) -> ProviderRunState:
-        if not has_resumable_provider_state:
-            return ProviderRunState(RunKind.FRESH, None)
+    def provider_session_state(
+        self, request: ProviderSessionStateRequest
+    ) -> ProviderSessionState:
+        if not request.has_resumable_provider_state:
+            return ProviderSessionState(RunKind.FRESH, None)
 
-        provider_session_id = role_session.service_session_id(self.name)
-        if provider_session_id is not None:
-            return ProviderRunState(RunKind.RESUME, provider_session_id)
-
-        provider_session_id = _recover_rollout_thread_id(provider_state_dir)
+        provider_session_id = request.role_session.service_session_id(self.name)
+        persist_provider_session_id = False
         if provider_session_id is None:
-            return ProviderRunState(RunKind.FRESH, None)
+            provider_session_id = _recover_rollout_thread_id(request.provider_state_dir)
+            if provider_session_id is None:
+                return ProviderSessionState(RunKind.FRESH, None)
+            request.role_session.save_service_session_id(self.name, provider_session_id)
+            persist_provider_session_id = True
 
-        role_session.save_service_session_id(self.name, provider_session_id)
-        return ProviderRunState(
+        exact_transcript_match = False
+        if request.require_exact_transcript_match and not persist_provider_session_id:
+            metadata = request.role_session.service_session_metadata(self.name)
+            exact_transcript_match = (
+                metadata is not None
+                and metadata["provider_session_id"] == provider_session_id
+                and _recover_rollout_thread_id(request.provider_state_dir)
+                == provider_session_id
+            )
+
+        return ProviderSessionState(
             RunKind.RESUME,
             provider_session_id,
-            persist_provider_session_id=True,
-        )
-
-    def has_exact_transcript_session(
-        self,
-        role_session: ServiceResumeIdentityStore,
-        *,
-        provider_run_state: ProviderRunState,
-        provider_state_dir: Path | None,
-    ) -> bool:
-        metadata = role_session.service_session_metadata(self.name)
-        return (
-            provider_run_state.run_kind is RunKind.RESUME
-            and not provider_run_state.persist_provider_session_id
-            and metadata is not None
-            and metadata["provider_session_id"]
-            == provider_run_state.provider_session_id
-            and _recover_rollout_thread_id(provider_state_dir)
-            == provider_run_state.provider_session_id
+            exact_transcript_match=exact_transcript_match,
+            persist_provider_session_id=persist_provider_session_id,
         )
 
     def valid_models(self) -> frozenset[str]:

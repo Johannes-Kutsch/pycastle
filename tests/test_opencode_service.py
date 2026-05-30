@@ -9,9 +9,10 @@ from pycastle.services.agent_service import AssistantTurn, Result
 from pycastle.services.agent_service import HardError
 from pycastle.services.agent_service import TransientError
 from pycastle.services.agent_service import UsageLimit
+from pycastle.services.provider_session_state import ProviderSessionStateRequest
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services.opencode_service import OpenCodeService
-from pycastle.session import ProviderRunState, RoleSession, RunKind
+from pycastle.session import RoleSession, RunKind
 
 
 def test_opencode_service_builds_json_commands_and_go_api_env() -> None:
@@ -285,13 +286,16 @@ def test_opencode_service_exact_transcript_requires_metadata_saved_id_and_resuma
         encoding="utf-8",
     )
 
-    exact = service.has_exact_transcript_session(
-        role_session,
-        provider_run_state=ProviderRunState(RunKind.RESUME, "sess-opencode-123"),
-        provider_state_dir=provider_state_dir,
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=True,
+            require_exact_transcript_match=True,
+        )
     )
 
-    assert exact is False
+    assert provider_session_state.exact_transcript_match is False
 
 
 def test_opencode_service_resolves_resume_with_saved_session_id_when_state_is_resumable(
@@ -307,13 +311,17 @@ def test_opencode_service_resolves_resume_with_saved_session_id_when_state_is_re
         encoding="utf-8",
     )
 
-    provider_run_state = service.resolve_provider_run_state(
-        role_session,
-        provider_state_dir=provider_state_dir,
-        has_resumable_provider_state=True,
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=True,
+        )
     )
 
-    assert provider_run_state == ProviderRunState(RunKind.RESUME, "sess-opencode-123")
+    assert provider_session_state.run_kind is RunKind.RESUME
+    assert provider_session_state.provider_session_id == "sess-opencode-123"
+    assert provider_session_state.persist_provider_session_id is False
 
 
 def test_opencode_service_resolves_fresh_without_saved_session_id_even_when_state_dir_exists(
@@ -328,13 +336,17 @@ def test_opencode_service_resolves_fresh_without_saved_session_id_even_when_stat
         encoding="utf-8",
     )
 
-    provider_run_state = service.resolve_provider_run_state(
-        role_session,
-        provider_state_dir=provider_state_dir,
-        has_resumable_provider_state=True,
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=True,
+        )
     )
 
-    assert provider_run_state == ProviderRunState(RunKind.FRESH, None)
+    assert provider_session_state.run_kind is RunKind.FRESH
+    assert provider_session_state.provider_session_id is None
+    assert provider_session_state.persist_provider_session_id is False
 
 
 def test_opencode_service_exact_transcript_is_false_without_saved_session_id(
@@ -350,13 +362,16 @@ def test_opencode_service_exact_transcript_is_false_without_saved_session_id(
         encoding="utf-8",
     )
 
-    exact = service.has_exact_transcript_session(
-        role_session,
-        provider_run_state=ProviderRunState(RunKind.RESUME, "sess-opencode-123"),
-        provider_state_dir=provider_state_dir,
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=True,
+            require_exact_transcript_match=True,
+        )
     )
 
-    assert exact is False
+    assert provider_session_state.exact_transcript_match is False
 
 
 def test_opencode_service_skips_malformed_json_and_non_dict_values() -> None:
