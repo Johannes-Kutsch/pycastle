@@ -41,8 +41,7 @@ def select_resumable_provider_session_id(
     if provider_session_id is None:
         return ProviderSessionSelection(provider_session_id=None)
 
-    if service_name != "codex":
-        role_session.save_service_session_id(service_name, provider_session_id)
+    role_session.save_service_session_id(service_name, provider_session_id)
     return ProviderSessionSelection(
         provider_session_id=provider_session_id,
         persist_provider_session_id=True,
