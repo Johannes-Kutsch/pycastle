@@ -83,10 +83,6 @@ def _opencode_go_config_content() -> str:
     )
 
 
-def _parse_reset_time(message: str) -> datetime | None:
-    return parse_reset_time(message, ResetTimeSyntaxMode.TRY_AGAIN_UTC_REQUIRED_DATE)
-
-
 def _extract_usage_limit(event: dict[str, object]) -> UsageLimit | None:
     data = _error_data(event)
     if data is None:
@@ -96,7 +92,9 @@ def _extract_usage_limit(event: dict[str, object]) -> UsageLimit | None:
     message = data.get("message")
     if not isinstance(message, str):
         return UsageLimit(reset_time=None, raw_message=None)
-    reset_time = _parse_reset_time(message)
+    reset_time = parse_reset_time(
+        message, ResetTimeSyntaxMode.TRY_AGAIN_UTC_REQUIRED_DATE
+    )
     raw_message = None if reset_time is not None else message
     return UsageLimit(reset_time=reset_time, raw_message=raw_message)
 
