@@ -30,11 +30,11 @@ from pycastle.iteration import (
     run_iteration,
 )
 from pycastle.iteration.merge import merge_phase
+from pycastle.iteration.preflight import PreflightCache
 from pycastle.agents.runner import RunRequest
 from pycastle.iteration._deps import (
     Deps,
 )
-from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.agents.output_protocol import (
     AgentRole,
     CommitMessageOutput,
@@ -45,7 +45,12 @@ from pycastle.agents.output_protocol import (
     PlannerOutput,
     PromiseParseError,
 )
-from tests.support import FakeAgentRunner, RecordingLogger, RecordingStatusDisplay
+from tests.support import (
+    FakeAgentRunner,
+    RecordingLogger,
+    RecordingStatusDisplay,
+    _make_deps as _make_test_deps,
+)
 
 
 def _make_agent_failed_error(role: AgentRole, worktree_path: Path) -> AgentFailedError:
@@ -113,42 +118,19 @@ def _make_deps(
     status_display=None,
     preflight_responses=None,
 ) -> Deps:
-    import shutil as _shutil
-
-    _cfg = cfg or Config(max_parallel=4, max_iterations=1)
-    _registered: list = []
-
-    def _fake_list_worktrees(repo):
-        return list(_registered)
-
-    def _fake_create_worktree(repo, path, branch, sha=None):
-        path.mkdir(parents=True, exist_ok=True)
-        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
-        _registered.append(path)
-
-    def _fake_remove_worktree(repo, path):
-        _shutil.rmtree(path, ignore_errors=True)
-        _registered[:] = [p for p in _registered if p != path]
-
-    git_svc.list_worktrees.side_effect = _fake_list_worktrees
-    git_svc.create_worktree.side_effect = _fake_create_worktree
-    git_svc.remove_worktree.side_effect = _fake_remove_worktree
-    if isinstance(github_svc.get_all_open_issues_lightweight.return_value, MagicMock):
-        github_svc.get_all_open_issues_lightweight.return_value = []
-
-    return Deps(
-        repo_root=tmp_path,
+    return _make_test_deps(
+        tmp_path,
+        run_agent_fn,
         git_svc=git_svc,
         github_svc=github_svc,
-        agent_runner=FakeAgentRunner(
-            side_effect=run_agent_fn,
-            preflight_responses=[[]]
-            if preflight_responses is None
-            else preflight_responses,
-        ),
-        cfg=_cfg,
+        cfg=cfg or Config(max_parallel=4, max_iterations=1),
         logger=logger,
-        status_display=status_display or PlainStatusDisplay(),  # type: ignore[arg-type]
+        status_display=status_display,
+        preflight_responses=[[]]
+        if preflight_responses is None
+        else preflight_responses,
+        preflight_cache=PreflightCache(),
+        setup_worktrees=True,
     )
 
 
