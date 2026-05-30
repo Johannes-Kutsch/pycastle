@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from ..agents.output_protocol import AgentRole
 
 if TYPE_CHECKING:
+    from ..services import ServiceRegistry
     from ..services.agent_service import AgentService
 
 _NAMESPACE = uuid.NAMESPACE_DNS
@@ -342,6 +343,18 @@ class RoleSession:
             state_dir=state.state_dir,
             has_resumable_provider_state=state.has_resumable_provider_state,
         )
+
+    def has_exact_transcript_handoff_for_selected_service(
+        self,
+        registry: "ServiceRegistry | None",
+        service_name: str,
+    ) -> bool:
+        if registry is None or not service_name:
+            return False
+        service = registry[service_name]
+        if service is None:
+            return False
+        return self.exact_transcript_handoff_for_service(service).is_eligible
 
     def is_resumable(self) -> bool:
         return self.path.is_dir() and any(

@@ -249,20 +249,12 @@ def _build_issues_scope_args(
 
 
 def _has_exact_phase_1_main_transcript(deps: _ImproveDeps, worktree_path: Path) -> bool:
-    registry = deps.service_registry
-    if registry is None:
-        return False
-
-    service_name = deps.cfg.improve_override.service
-    if not service_name:
-        return False
-
-    service = registry[service_name]
-    if service is None:
-        return False
-
-    role_session = RoleSession(worktree_path, AgentRole.IMPROVE, "main")
-    return role_session.exact_transcript_handoff_for_service(service).is_eligible
+    return RoleSession(
+        worktree_path, AgentRole.IMPROVE, "main"
+    ).has_exact_transcript_handoff_for_selected_service(
+        deps.service_registry,
+        deps.cfg.improve_override.service,
+    )
 
 
 async def improve_phase(
