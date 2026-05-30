@@ -10,7 +10,10 @@ from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
 from ..session import SESSION_DIR_NAME, RunKind
 from ..session._provider_session_sidecars import load_state_dir_provider_session_id
-from ..session.service_resume_identity import is_exact_resumable_service_session
+from ..session.service_resume_identity import (
+    is_exact_resumable_service_session,
+    select_resumable_provider_session_id,
+)
 from .agent_service import (
     AssistantTurn,
     HardError,
@@ -189,7 +192,14 @@ class OpenCodeService:
             )
         if not request.has_resumable_provider_state:
             return ProviderSessionState(RunKind.FRESH, None)
-        provider_session_id = request.role_session.service_session_id(self.name)
+
+        selection = select_resumable_provider_session_id(
+            request.role_session,
+            self.name,
+            provider_state_dir=request.provider_state_dir,
+            has_resumable_provider_state=request.has_resumable_provider_state,
+        )
+        provider_session_id = selection.provider_session_id
         if provider_session_id is None:
             return ProviderSessionState(RunKind.FRESH, None)
 
@@ -212,6 +222,7 @@ class OpenCodeService:
             RunKind.RESUME,
             provider_session_id,
             exact_transcript_match=exact_transcript_match,
+            persist_provider_session_id=selection.persist_provider_session_id,
         )
 
     def run(
