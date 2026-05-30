@@ -1,7 +1,8 @@
 import asyncio
+import shutil
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 from pycastle.agents.output_protocol import AgentOutput, AgentSuccessOutput
@@ -161,7 +162,7 @@ class StubPreflightCache:
 
 def _make_deps(
     repo_root: Path,
-    agent_runner: AgentRunnerProtocol,
+    agent_runner: AgentRunnerProtocol | Callable[..., Any],
     *,
     git_svc: GitService | None = None,
     github_svc: GithubService | None = None,
@@ -170,14 +171,52 @@ def _make_deps(
     status_display: StatusDisplay | None = None,
     preflight_cache: PreflightCache | StubPreflightCache | None = None,
     service_registry: ServiceRegistry | None = None,
+    preflight_responses: list[list[tuple[str, str, str]] | BaseException] | None = None,
+    setup_worktrees: bool = False,
 ) -> Deps:
+    if hasattr(agent_runner, "run") and hasattr(agent_runner, "run_preflight"):
+        runner = agent_runner
+    else:
+        runner = FakeAgentRunner(
+            side_effect=agent_runner,
+            preflight_responses=preflight_responses,
+        )
+
+    resolved_git_svc = git_svc if git_svc is not None else MagicMock(spec=GitService)
+    resolved_github_svc = (
+        github_svc if github_svc is not None else MagicMock(spec=GithubService)
+    )
+
+    if setup_worktrees:
+        git_mock = cast(Any, resolved_git_svc)
+        github_mock = cast(Any, resolved_github_svc)
+        registered: list[Path] = []
+
+        def _fake_list_worktrees(repo):
+            return list(registered)
+
+        def _fake_create_worktree(repo, path, branch, sha=None):
+            path.mkdir(parents=True, exist_ok=True)
+            (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+            registered.append(path)
+
+        def _fake_remove_worktree(repo, path):
+            shutil.rmtree(path, ignore_errors=True)
+            registered[:] = [p for p in registered if p != path]
+
+        git_mock.list_worktrees.side_effect = _fake_list_worktrees
+        git_mock.create_worktree.side_effect = _fake_create_worktree
+        git_mock.remove_worktree.side_effect = _fake_remove_worktree
+        if isinstance(
+            github_mock.get_all_open_issues_lightweight.return_value, MagicMock
+        ):
+            github_mock.get_all_open_issues_lightweight.return_value = []
+
     return Deps(
         repo_root=repo_root,
-        git_svc=git_svc if git_svc is not None else MagicMock(spec=GitService),
-        github_svc=github_svc
-        if github_svc is not None
-        else MagicMock(spec=GithubService),
-        agent_runner=agent_runner,
+        git_svc=resolved_git_svc,
+        github_svc=resolved_github_svc,
+        agent_runner=runner,
         cfg=cfg if cfg is not None else Config(),
         logger=logger if logger is not None else RecordingLogger(),
         status_display=status_display
