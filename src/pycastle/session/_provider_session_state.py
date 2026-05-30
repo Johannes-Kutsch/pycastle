@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -108,6 +109,33 @@ def prepare_provider_session_state(
     )
 
 
+def recover_codex_rollout_thread_id(state_dir: Path) -> str | None:
+    sessions_dir = state_dir / "sessions"
+    if not sessions_dir.is_dir():
+        return None
+
+    found: set[str] = set()
+    for rollout in sessions_dir.rglob("rollout-*.jsonl"):
+        try:
+            lines = rollout.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in lines:
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            if obj.get("type") != "thread.started":
+                continue
+            thread_id = obj.get("thread_id")
+            if isinstance(thread_id, str) and thread_id.strip():
+                found.add(thread_id.strip())
+
+    return next(iter(found)) if len(found) == 1 else None
+
+
 def _require_auth_seed_source(
     auth_seed_action: LocalAuthSeedAction | None,
 ) -> None:
@@ -123,4 +151,5 @@ __all__ = [
     "PreparedProviderSessionState",
     "ProviderSessionStateRequest",
     "prepare_provider_session_state",
+    "recover_codex_rollout_thread_id",
 ]
