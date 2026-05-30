@@ -577,6 +577,31 @@ def test_prepare_agent_session_opencode_with_saved_session_resumes(tmp_path: Pat
     assert session.provider_session_id == "sess-opencode-resume"
 
 
+def test_prepare_agent_session_opencode_run_session_switches_from_fresh_to_resume_after_capture(
+    tmp_path: Path,
+):
+    session = prepare_agent_session(
+        _request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            service=OpenCodeService(),
+            namespace="main",
+        )
+    )
+
+    initial_run = session.initial_provider_run_session()
+    resumable_before_capture = session.resumable_provider_run_session()
+    session.on_provider_session_id("sess-opencode-runtime")
+    resumable_after_capture = session.resumable_provider_run_session()
+
+    assert initial_run.run_kind is RunKind.FRESH
+    assert initial_run.provider_session_id is None
+    assert resumable_before_capture.run_kind is RunKind.FRESH
+    assert resumable_before_capture.provider_session_id is None
+    assert resumable_after_capture.run_kind is RunKind.RESUME
+    assert resumable_after_capture.provider_session_id == "sess-opencode-runtime"
+
+
 def test_prepare_agent_session_opencode_resume_uses_selected_service_state_dir(
     tmp_path: Path,
 ):

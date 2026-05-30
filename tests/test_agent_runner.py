@@ -2742,6 +2742,96 @@ def test_agent_runner_opencode_reprompt_resumes_with_persisted_session_id(tmp_pa
     assert "--session sess-from-fresh" in captured_cmds[1]
 
 
+def test_agent_runner_opencode_timeout_retry_resumes_with_captured_session_id(
+    tmp_path: Path,
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    work_calls: list[tuple[RunKind, str | None]] = []
+
+    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+        work_calls.append((run_kind, session_uuid))
+        if len(work_calls) == 1:
+            assert on_thread_id is not None
+            on_thread_id("sess-timeout")
+            raise AgentTimeoutError("timeout")
+        return CommitMessageOutput(message="done")
+
+    cfg = _make_cfg(tmp_path, timeout_retries=1)
+    runner = AgentRunner(
+        {},
+        cfg,
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"opencode": OpenCodeService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="OpenCode",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPLEMENTER,
+                    service="opencode",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [
+        (RunKind.FRESH, None),
+        (RunKind.RESUME, "sess-timeout"),
+    ]
+
+
+def test_agent_runner_opencode_timeout_retry_falls_back_to_fresh_without_session_id(
+    tmp_path: Path,
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    work_calls: list[tuple[RunKind, str | None]] = []
+
+    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+        work_calls.append((run_kind, session_uuid))
+        if len(work_calls) == 1:
+            raise AgentTimeoutError("timeout")
+        return CommitMessageOutput(message="done")
+
+    cfg = _make_cfg(tmp_path, timeout_retries=1)
+    runner = AgentRunner(
+        {},
+        cfg,
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"opencode": OpenCodeService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="OpenCode",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPLEMENTER,
+                    service="opencode",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [
+        (RunKind.FRESH, None),
+        (RunKind.FRESH, None),
+    ]
+
+
 # ── AgentRunner: protocol-error retry semantics ───────────────────────────────
 
 
