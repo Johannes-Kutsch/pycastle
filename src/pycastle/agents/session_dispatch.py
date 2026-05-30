@@ -48,6 +48,9 @@ class PreparedAgentSession:
         self.provider_session_id = provider_session_id
         self._plan.capture_provider_session_id(provider_session_id)
 
+    def record_successful_provider_session_metadata(self) -> None:
+        self._plan.record_successful_run(self.provider_session_id)
+
     def _preserved_codex_auth_bytes(self) -> bytes | None:
         auth_path = self._codex_auth_path()
         if auth_path is None or not auth_path.is_file():
@@ -106,7 +109,7 @@ def _require_dispatcher_auth_seed_source(
 def record_successful_provider_session_metadata(
     prepared_session: PreparedAgentSession,
 ) -> None:
-    prepared_session._plan.record_successful_run(prepared_session.provider_session_id)
+    prepared_session.record_successful_provider_session_metadata()
 
 
 __all__ = [

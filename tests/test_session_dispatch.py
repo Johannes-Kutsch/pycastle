@@ -633,6 +633,50 @@ def test_prepare_agent_session_does_not_write_metadata_before_prepared_success_r
     }
 
 
+def test_prepared_success_recorder_without_provider_session_id_leaves_metadata_unchanged(
+    tmp_path: Path,
+):
+    _seed_codex_auth(tmp_path)
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    role_session.save_service_session_metadata("claude", "thread-existing")
+    before = role_session.service_session_metadata_path.read_text(encoding="utf-8")
+    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
+
+    assert session.provider_session_id is None
+
+    session.record_successful_provider_session_metadata()
+
+    assert role_session.service_session_metadata("claude") == {
+        "service": "claude",
+        "provider_session_id": "thread-existing",
+    }
+    assert role_session.service_session_metadata("codex") is None
+    assert (
+        role_session.service_session_metadata_path.read_text(encoding="utf-8") == before
+    )
+
+
+def test_prepared_success_recorder_preserves_metadata_for_other_services(
+    tmp_path: Path,
+):
+    _seed_codex_auth(tmp_path)
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    role_session.save_service_session_metadata("claude", "thread-claude")
+    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
+    session.remember_provider_session_id("thread-codex")
+
+    session.record_successful_provider_session_metadata()
+
+    assert role_session.service_session_metadata("claude") == {
+        "service": "claude",
+        "provider_session_id": "thread-claude",
+    }
+    assert role_session.service_session_metadata("codex") == {
+        "service": "codex",
+        "provider_session_id": "thread-codex",
+    }
+
+
 def test_record_successful_provider_session_metadata_uses_updated_session_id(
     tmp_path: Path,
 ):
