@@ -44,10 +44,22 @@ class PreparedAgentSession:
         return self.service_state_dir_relpath
 
     def initial_provider_run_session(self) -> PreparedProviderRunSession:
-        return self._state.initial_provider_run_session()
+        state_run_session = self._state.initial_provider_run_session()
+        return PreparedProviderRunSession(
+            run_kind=state_run_session.run_kind,
+            provider_session_id=state_run_session.provider_session_id,
+            _provider_session_id_recorder=self.on_provider_session_id,
+            _success_recorder=self.success_recorder,
+        )
 
     def resumable_provider_run_session(self) -> PreparedProviderRunSession:
-        return self._state.resumable_provider_run_session()
+        state_run_session = self._state.resumable_provider_run_session()
+        return PreparedProviderRunSession(
+            run_kind=state_run_session.run_kind,
+            provider_session_id=state_run_session.provider_session_id,
+            _provider_session_id_recorder=self.on_provider_session_id,
+            _success_recorder=self.success_recorder,
+        )
 
 
 def prepare_agent_session(request: SessionDispatchRequest) -> PreparedAgentSession:

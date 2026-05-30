@@ -306,10 +306,12 @@ class AgentRunner:
                                     work_prompt,
                                     run_kind=work_run_session.run_kind,
                                     session_uuid=work_run_session.provider_session_id,
-                                    on_thread_id=prepared_session.on_provider_session_id,
+                                    on_thread_id=(
+                                        work_run_session.record_provider_session_id
+                                    ),
                                 )
                                 if not isinstance(output, FailedOutput):
-                                    prepared_session.success_recorder()
+                                    work_run_session.record_successful_run()
                                 if isinstance(output, FailedOutput):
                                     row.close("failed", shutdown_style="error")
                                 return output
