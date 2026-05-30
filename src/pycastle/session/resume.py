@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
+from .service_resume_identity import (
+    is_exact_resumable_service_session,
+    select_resumable_provider_session_id,
+)
 
 if TYPE_CHECKING:
     from ..services import ServiceRegistry
@@ -18,65 +22,13 @@ _NAMESPACE = uuid.NAMESPACE_DNS
 
 SESSION_DIR_NAME = ".pycastle-session"
 
-_SERVICE_SESSION_ID_FILENAMES = {
-    "codex": "thread_id",
-    "opencode": "session_id",
-}
+_SERVICE_SESSION_ID_FILENAMES = {"codex": "thread_id", "opencode": "session_id"}
 _SERVICE_SESSION_METADATA_FILENAME = "_service_session_metadata.json"
 
 
 def _force_remove_readonly(func, path, _exc_info):
     os.chmod(path, stat.S_IWRITE)
     func(path)
-
-
-def _codex_thread_id_from_rollouts(state_dir: Path) -> str | None:
-    sessions_dir = state_dir / "sessions"
-    if not sessions_dir.is_dir():
-        return None
-
-    found: set[str] = set()
-    for rollout in sessions_dir.rglob("rollout-*.jsonl"):
-        try:
-            lines = rollout.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            continue
-        for line in lines:
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(obj, dict):
-                continue
-            if obj.get("type") != "thread.started":
-                continue
-            thread_id = obj.get("thread_id")
-            if isinstance(thread_id, str) and thread_id.strip():
-                found.add(thread_id.strip())
-
-    return next(iter(found)) if len(found) == 1 else None
-
-
-def _provider_session_id_from_state_dir(
-    service_name: str,
-    state_dir: Path | None,
-) -> str | None:
-    if state_dir is None:
-        return None
-    if service_name == "codex":
-        return _codex_thread_id_from_rollouts(state_dir)
-
-    session_id_path = state_dir / _SERVICE_SESSION_ID_FILENAMES.get(
-        service_name,
-        "thread_id",
-    )
-    if not session_id_path.is_file():
-        return None
-    try:
-        value = session_id_path.read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeDecodeError):
-        return None
-    return value or None
 
 
 def _role_provider_state_dir_relpath(
@@ -132,18 +84,6 @@ class ExactTranscriptHandoff:
 class ServiceSessionState:
     state_dir: Path | None
     has_resumable_provider_state: bool
-
-
-def _is_exact_resumable_provider_session(
-    service_name: str,
-    provider_session_id: str | None,
-    state_dir: Path | None,
-) -> bool:
-    if provider_session_id is None or state_dir is None:
-        return False
-    if service_name == "codex":
-        return _codex_thread_id_from_rollouts(state_dir) == provider_session_id
-    return True
 
 
 def is_stage_done_for(worktree: Path, role: AgentRole) -> bool:
@@ -226,28 +166,23 @@ class RoleSession:
         if not has_resumable_provider_state:
             return ProviderIdentity(ProviderIdentityKind.FRESH, RunKind.FRESH, None)
 
-        provider_session_id: str | None = self.service_session_id(service_name)
-        if provider_session_id is None:
-            provider_session_id = _provider_session_id_from_state_dir(
-                service_name,
-                provider_state_dir or (self.path / service_name),
-            )
-            if provider_session_id is not None:
-                if service_name != "codex":
-                    self.save_service_session_id(service_name, provider_session_id)
-                return ProviderIdentity(
-                    ProviderIdentityKind.RESUME,
-                    RunKind.RESUME,
-                    provider_session_id,
-                    persist_provider_session_id=True,
-                )
+        selection = select_resumable_provider_session_id(
+            self,
+            service_name,
+            provider_state_dir=provider_state_dir or (self.path / service_name),
+            has_resumable_provider_state=has_resumable_provider_state,
+        )
+        provider_session_id = selection.provider_session_id
         if provider_session_id is None:
             return ProviderIdentity(
                 ProviderIdentityKind.UNRECOVERABLE, RunKind.FRESH, None
             )
 
         return ProviderIdentity(
-            ProviderIdentityKind.RESUME, RunKind.RESUME, provider_session_id
+            ProviderIdentityKind.RESUME,
+            RunKind.RESUME,
+            provider_session_id,
+            persist_provider_session_id=selection.persist_provider_session_id,
         )
 
     def is_exact_resumable_provider_session(
@@ -256,14 +191,12 @@ class RoleSession:
         provider_session_id: str | None,
         provider_state_dir: Path | None,
     ) -> bool:
-        if provider_session_id is None or provider_state_dir is None:
-            return False
-        if service_name == "codex":
-            return (
-                _codex_thread_id_from_rollouts(provider_state_dir)
-                == provider_session_id
-            )
-        return True
+        return is_exact_resumable_service_session(
+            self,
+            service_name,
+            provider_session_id=provider_session_id,
+            provider_state_dir=provider_state_dir,
+        )
 
     def service_session_metadata(self, service_name: str) -> dict[str, str] | None:
         path = self.service_session_metadata_path
@@ -348,15 +281,13 @@ class RoleSession:
                 provider_state_dir=state_dir,
             )
 
-        metadata = self.service_session_metadata(service_name)
         is_eligible = (
             provider_identity.run_kind is RunKind.RESUME
-            and metadata is not None
-            and metadata["provider_session_id"] == provider_identity.provider_session_id
-            and _is_exact_resumable_provider_session(
+            and is_exact_resumable_service_session(
+                self,
                 service_name,
-                provider_identity.provider_session_id,
-                state_dir,
+                provider_session_id=provider_identity.provider_session_id,
+                provider_state_dir=state_dir,
             )
         )
         return ExactTranscriptHandoff(
