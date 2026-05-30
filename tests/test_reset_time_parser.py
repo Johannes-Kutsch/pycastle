@@ -439,3 +439,47 @@ def test_try_again_required_date_12am_is_midnight():
         )
     )
     assert utc.hour == 0
+
+
+def test_try_again_required_date_ordinal_suffixes_accepted():
+    now = datetime(2026, 3, 1, 10, 0, tzinfo=_UTC)
+    for suffix in ("st", "nd", "rd", "th"):
+        text = f"try again at March 1{suffix}, 2026 3:30 PM"
+        utc = _utc(
+            parse_reset_time(
+                text, ResetTimeSyntaxMode.TRY_AGAIN_UTC_REQUIRED_DATE, now=now
+            )
+        )
+        assert (utc.month, utc.day) == (3, 1)
+
+
+def test_try_again_required_date_invalid_hour_zero_returns_none():
+    now = datetime(2026, 5, 27, 14, 0, tzinfo=_UTC)
+    result = parse_reset_time(
+        "try again at May 28th, 2026 0:02 PM",
+        ResetTimeSyntaxMode.TRY_AGAIN_UTC_REQUIRED_DATE,
+        now=now,
+    )
+    assert result is None
+
+
+def test_try_again_required_date_invalid_hour_13_returns_none():
+    now = datetime(2026, 5, 27, 14, 0, tzinfo=_UTC)
+    result = parse_reset_time(
+        "try again at May 28th, 2026 13:00 PM",
+        ResetTimeSyntaxMode.TRY_AGAIN_UTC_REQUIRED_DATE,
+        now=now,
+    )
+    assert result is None
+
+
+def test_try_again_required_date_embedded_in_longer_text():
+    now = datetime(2026, 4, 28, 10, 0, tzinfo=_UTC)
+    utc = _utc(
+        parse_reset_time(
+            "You have reached your OpenCode Go usage limit. Try again at Apr 28th, 2026 9:02 PM.",
+            ResetTimeSyntaxMode.TRY_AGAIN_UTC_REQUIRED_DATE,
+            now=now,
+        )
+    )
+    assert (utc.year, utc.month, utc.day, utc.hour, utc.minute) == (2026, 4, 28, 21, 2)
