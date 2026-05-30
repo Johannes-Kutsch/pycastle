@@ -138,7 +138,7 @@ def _parse_claude_reset(
             return rolled.astimezone(local_tz)
         return local_dt
 
-    return _parse_same_day_utc_reset(local_now, utc_now, hour, minute, local_tz)
+    return _parse_same_day_utc_reset(utc_now, hour, minute, local_tz)
 
 
 def _parse_optional_date_reset(
@@ -158,11 +158,10 @@ def _parse_optional_date_reset(
             return None
         return utc_dt.astimezone(local_tz)
 
-    return _parse_same_day_utc_reset(local_now, utc_now, hour, minute, local_tz)
+    return _parse_same_day_utc_reset(utc_now, hour, minute, local_tz)
 
 
 def _parse_same_day_utc_reset(
-    local_now: datetime,
     utc_now: datetime,
     hour: int,
     minute: int,
