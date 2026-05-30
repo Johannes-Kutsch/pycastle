@@ -4,6 +4,7 @@ import dataclasses
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
+from collections.abc import Callable
 
 from ..agents.output_protocol import AgentRole
 from ..errors import HardAgentError
@@ -49,6 +50,7 @@ class PreparedProviderSessionState:
         return PreparedProviderRunSession(
             run_kind=self.run_kind,
             provider_session_id=self.provider_session_id,
+            _success_recorder=self.record_successful_run,
         )
 
     def resumable_provider_run_session(self) -> PreparedProviderRunSession:
@@ -58,6 +60,7 @@ class PreparedProviderSessionState:
         return PreparedProviderRunSession(
             run_kind=run_kind,
             provider_session_id=self.provider_session_id,
+            _success_recorder=self.record_successful_run,
         )
 
     def prepare_for_run(self) -> None:
@@ -98,6 +101,15 @@ class PreparedProviderSessionState:
 class PreparedProviderRunSession:
     run_kind: RunKind
     provider_session_id: str | None
+    _success_recorder: Callable[[], None] | None = dataclasses.field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+
+    def record_successful_run(self) -> None:
+        if self._success_recorder is not None:
+            self._success_recorder()
 
 
 def prepare_provider_session_state(

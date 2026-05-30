@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from .output_protocol import AgentRole
 from ..session import RoleSession, RunKind

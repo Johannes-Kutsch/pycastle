@@ -15,7 +15,6 @@ from .result import CancellationToken
 from .session_dispatch import (
     SessionDispatchRequest,
     prepare_agent_session,
-    record_successful_provider_session_metadata,
 )
 from ..config import Config, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
@@ -309,13 +308,8 @@ class AgentRunner:
                                     session_uuid=work_run_session.provider_session_id,
                                     on_thread_id=prepared_session.on_provider_session_id,
                                 )
-                                if (
-                                    not isinstance(output, FailedOutput)
-                                    and prepared_session.provider_session_id is not None
-                                ):
-                                    record_successful_provider_session_metadata(
-                                        prepared_session
-                                    )
+                                if not isinstance(output, FailedOutput):
+                                    work_run_session.record_successful_run()
                                 if isinstance(output, FailedOutput):
                                     row.close("failed", shutdown_style="error")
                                 return output
