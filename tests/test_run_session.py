@@ -7,6 +7,7 @@ from typing import cast
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.errors import HardAgentError
 from pycastle.services import ClaudeService
 from pycastle.services.codex_service import CodexService
 from pycastle.services.opencode_service import OpenCodeService
@@ -1070,3 +1071,32 @@ def test_local_auth_seed_action_does_not_overwrite_existing_provider_auth(
         provider_auth.read_text(encoding="utf-8")
         == '{"mode":"oauth","origin":"provider"}'
     )
+
+
+def test_local_auth_seed_action_require_source_raises_hard_agent_error_when_missing(
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "missing" / "auth.json"
+    action = LocalAuthSeedAction(source=missing, destination=tmp_path / "dest.json")
+
+    with pytest.raises(HardAgentError) as exc_info:
+        action.require_source()
+
+    assert exc_info.value.status_code == 401
+
+
+def test_run_session_plan_capture_without_record_persists_session_id_but_not_metadata(
+    tmp_path: Path,
+) -> None:
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.PLANNER,
+        worktree=tmp_path,
+        namespace="",
+        service=OpenCodeService(),
+    )
+
+    plan.capture_provider_session_id("sess-captured")
+
+    role_session = RoleSession(tmp_path, AgentRole.PLANNER)
+    assert role_session.service_session_id("opencode") == "sess-captured"
+    assert role_session.service_session_metadata("opencode") is None
