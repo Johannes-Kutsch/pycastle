@@ -7,9 +7,11 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..agents.output_protocol import AgentRole
 from ..errors import HardAgentError
 
 if TYPE_CHECKING:
+    from ..services.agent_service import AgentService
     from .resume import RunKind
 
 
@@ -263,9 +265,73 @@ def is_service_session_metadata_path(path: Path) -> bool:
     return path.name == _SERVICE_SESSION_METADATA_FILENAME
 
 
+def has_exact_provider_transcript_for_service(
+    *,
+    worktree: Path,
+    role: AgentRole,
+    namespace: str,
+    service: "AgentService",
+) -> bool:
+    role_session_path = _role_session_path(worktree, role, namespace)
+    if load_exact_transcript_service_name(role_session_path) != service.name:
+        return False
+
+    metadata = load_service_session_metadata(role_session_path, service.name)
+    if metadata is None:
+        return False
+
+    provider_session_id = load_service_session_id(role_session_path, service.name)
+    if (
+        provider_session_id is None
+        or metadata["provider_session_id"] != provider_session_id
+    ):
+        return False
+
+    state_dir = _service_state_dir(worktree, role, namespace, service)
+    if state_dir is None or not service.is_resumable(state_dir):
+        return False
+
+    if service.name not in {"codex", "opencode"}:
+        return True
+
+    exact_provider_session_id = _exact_provider_session_id_from_state_dir(
+        state_dir, service.name
+    )
+    return exact_provider_session_id == provider_session_id
+
+
+def _role_session_path(worktree: Path, role: AgentRole, namespace: str) -> Path:
+    base = worktree / ".pycastle-session" / role.value
+    return base / namespace if namespace else base
+
+
+def _service_state_dir(
+    worktree: Path,
+    role: AgentRole,
+    namespace: str,
+    service: "AgentService",
+) -> Path | None:
+    state_dir_relpath = service.state_dir_relpath(role, namespace)
+    if state_dir_relpath is None:
+        return None
+    return worktree / state_dir_relpath.rstrip("/")
+
+
+def _exact_provider_session_id_from_state_dir(
+    state_dir: Path,
+    service_name: str,
+) -> str | None:
+    if service_name == "codex":
+        return recover_state_dir_provider_session_id(state_dir, service_name)
+    if service_name == "opencode":
+        return load_state_dir_provider_session_id(state_dir, service_name)
+    return None
+
+
 __all__ = [
     "AuthSeedingRequirement",
     "clear_service_session_metadata",
+    "has_exact_provider_transcript_for_service",
     "is_service_session_metadata_path",
     "load_exact_transcript_service_name",
     "load_service_session_id",
