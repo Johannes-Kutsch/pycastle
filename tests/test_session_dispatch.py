@@ -120,10 +120,8 @@ def test_prepare_agent_session_fresh_codex_missing_host_auth_is_dispatcher_hard_
     tmp_path: Path,
     monkeypatch,
 ):
-    monkeypatch.setattr(
-        "pycastle.session.run_session.LocalAuthSeedAction.require_source",
-        lambda self: self.source,
-    )
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
 
     with pytest.raises(HardAgentError) as exc_info:
         prepare_agent_session(_request(tmp_path, service=CodexService()))
@@ -135,6 +133,27 @@ def test_prepare_agent_session_fresh_codex_missing_host_auth_is_dispatcher_hard_
 def test_prepare_agent_session_codex_with_rollout_returns_run_kind_resume(
     tmp_path: Path,
 ):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-xyz"}\n',
+        encoding="utf-8",
+    )
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+
+    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
+
+    assert session.run_kind is RunKind.RESUME
+    assert session.provider_session_id == "thread-xyz"
+
+
+def test_prepare_agent_session_resume_codex_with_provider_auth_does_not_require_host_auth(
+    tmp_path: Path,
+    monkeypatch,
+):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
     state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
     sessions_dir = state_dir / "sessions"
     sessions_dir.mkdir(parents=True)

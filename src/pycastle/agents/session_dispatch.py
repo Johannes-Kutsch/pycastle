@@ -65,11 +65,6 @@ class PreparedAgentSession:
 
 
 def prepare_agent_session(request: SessionDispatchRequest) -> PreparedAgentSession:
-    role_session = RoleSession(
-        request.mount_path,
-        request.role,
-        request.session_namespace,
-    )
     plan = RunSessionPlan.for_service(
         role=request.role,
         worktree=request.mount_path,
@@ -78,6 +73,11 @@ def prepare_agent_session(request: SessionDispatchRequest) -> PreparedAgentSessi
     )
     auth_seed_action = plan.auth_seed_action
     _require_dispatcher_auth_seed_source(auth_seed_action)
+    role_session = RoleSession(
+        request.mount_path,
+        request.role,
+        request.session_namespace,
+    )
     return PreparedAgentSession(
         role_session=role_session,
         run_kind=plan.run_kind,
