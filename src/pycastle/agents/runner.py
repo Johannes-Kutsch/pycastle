@@ -12,10 +12,6 @@ from .output_protocol import (
     FailedOutput,
 )
 from .result import CancellationToken
-from .session_dispatch import (
-    SessionDispatchRequest,
-    prepare_agent_session,
-)
 from ..config import Config, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
 from ..infrastructure.docker_session import DockerSession, build_volume_spec
@@ -36,6 +32,10 @@ from ..errors import (
 )
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session import RunKind
+from ..session._provider_session_state import (
+    ProviderSessionStateRequest,
+    prepare_provider_session_state,
+)
 from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
@@ -217,17 +217,18 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError(reset_time=None, stage_key=_stage_key_for_role(role))
 
-        prepared_session = prepare_agent_session(
-            SessionDispatchRequest(
-                mount_path=mount_path,
+        prepared_session = prepare_provider_session_state(
+            ProviderSessionStateRequest(
+                worktree=mount_path,
                 role=role,
                 session_namespace=request.session_namespace,
                 service=service,
-                container_workspace=_CONTAINER_WORKSPACE,
             )
         )
+        if prepared_session.auth_seed_action is not None:
+            prepared_session.auth_seed_action.require_source()
         provider_state_dir_container_path = (
-            prepared_session.provider_state_dir_container_path
+            prepared_session.provider_state_dir_container_path(_CONTAINER_WORKSPACE)
         )
 
         non_typed_retry_done = False
@@ -306,7 +307,7 @@ class AgentRunner:
                                     work_prompt,
                                     run_kind=work_run_session.run_kind,
                                     session_uuid=work_run_session.provider_session_id,
-                                    on_thread_id=prepared_session.on_provider_session_id,
+                                    on_thread_id=prepared_session.record_provider_session_id,
                                 )
                                 if not isinstance(output, FailedOutput):
                                     work_run_session.record_successful_run()
