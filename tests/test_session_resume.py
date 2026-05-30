@@ -200,7 +200,7 @@ def test_provider_identity_ignores_unreadable_codex_sidecar_and_recovers_unique_
     )
 
 
-def test_provider_identity_recovers_single_nested_codex_rollout_thread_id_and_persists_sidecar(
+def test_provider_identity_recovers_single_nested_codex_rollout_thread_id_without_persisting_sidecar(
     worktree,
 ):
     rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
@@ -218,7 +218,7 @@ def test_provider_identity_recovers_single_nested_codex_rollout_thread_id_and_pe
             provider_session_id="thread-from-rollout",
         )
     )
-    assert rs.service_session_id("codex") == "thread-from-rollout"
+    assert rs.service_session_id("codex") is None
 
 
 def test_provider_identity_recovers_single_codex_rollout_thread_id_amid_malformed_rollout_noise(
@@ -249,7 +249,7 @@ def test_provider_identity_recovers_single_codex_rollout_thread_id_amid_malforme
             provider_session_id="thread-from-rollout",
         )
     )
-    assert rs.service_session_id("codex") == "thread-from-rollout"
+    assert rs.service_session_id("codex") is None
 
 
 def test_provider_identity_treats_duplicate_codex_rollout_thread_ids_as_one_recoverable_id(
@@ -529,7 +529,7 @@ def test_exact_transcript_handoff_is_eligible_for_codex_with_recovered_rollout_i
         run_kind=RunKind.RESUME,
         provider_session_id="thread-abc",
     )
-    assert rs.service_session_id("codex") == "thread-abc"
+    assert rs.service_session_id("codex") is None
 
 
 def test_exact_transcript_handoff_is_ineligible_for_ambiguous_codex_rollout_evidence(

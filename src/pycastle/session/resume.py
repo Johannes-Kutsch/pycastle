@@ -233,7 +233,8 @@ class RoleSession:
                 provider_state_dir or (self.path / service_name),
             )
             if provider_session_id is not None:
-                self.save_service_session_id(service_name, provider_session_id)
+                if service_name != "codex":
+                    self.save_service_session_id(service_name, provider_session_id)
                 return ProviderIdentity(
                     ProviderIdentityKind.RESUME,
                     RunKind.RESUME,

@@ -61,7 +61,7 @@ def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: P
     )
 
 
-def test_run_session_plan_uses_selected_codex_service_state_dir_for_rollout_recovery(
+def test_run_session_plan_uses_selected_codex_service_state_dir_for_rollout_recovery_without_persisting_sidecar(
     tmp_path: Path,
 ):
     service = cast(
@@ -90,8 +90,7 @@ def test_run_session_plan_uses_selected_codex_service_state_dir_for_rollout_reco
         plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
     )
     assert (
-        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex")
-        == "thread-from-custom-state"
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex") is None
     )
 
 
@@ -148,7 +147,7 @@ def test_run_session_plan_recovers_namespaced_codex_rollout_from_custom_state_di
     assert plan.provider_session_id == "thread-from-custom-state"
     assert (
         RoleSession(tmp_path, AgentRole.IMPROVE, "main").service_session_id("codex")
-        == "thread-from-custom-state"
+        is None
     )
 
 
