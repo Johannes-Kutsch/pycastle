@@ -2601,6 +2601,57 @@ def test_agent_runner_does_not_call_mark_exhausted_on_hard_agent_error(tmp_path)
     assert svc.is_available() is True
 
 
+def test_agent_runner_claude_reprompt_retries_as_resume_with_same_derived_uuid(
+    tmp_path: Path,
+):
+    from unittest.mock import patch
+    from pycastle.agents.output_protocol import PlanParseError
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    work_calls: list[tuple[RunKind, str | None]] = []
+    expected_session_id = RoleSession(
+        tmp_path,
+        AgentRole.PLANNER,
+    ).session_uuid()
+
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del role, prompt, on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        if len(work_calls) == 1:
+            raise PlanParseError("missing required tag")
+        return PlannerOutput(issues=[])
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"claude": ClaudeService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Claude",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service="claude",
+                )
+            )
+        )
+
+    assert isinstance(result, PlannerOutput)
+    assert work_calls == [
+        (RunKind.FRESH, expected_session_id),
+        (RunKind.RESUME, expected_session_id),
+    ]
+
+
 def test_agent_runner_codex_reprompt_retries_as_resume_after_runtime_thread_capture(
     tmp_path, monkeypatch
 ):

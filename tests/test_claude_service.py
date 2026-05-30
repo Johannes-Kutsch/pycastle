@@ -21,6 +21,8 @@ from pycastle.services.agent_service import (
     Result,
     UsageLimit,
 )
+from pycastle.services.provider_session_state import ProviderSessionStateRequest
+from pycastle.session import RoleSession
 from pycastle.session import RunKind
 
 
@@ -279,6 +281,30 @@ def test_build_env_omits_token_key_when_token_is_none():
 def test_build_env_omits_config_dir_key_when_path_is_none():
     env = ClaudeService().build_env(state_dir_container_path=None)
     assert "CLAUDE_CONFIG_DIR" not in env
+
+
+# ── ClaudeService.provider_session_state ─────────────────────────────────────
+
+
+def test_provider_session_state_forced_resume_uses_preferred_session_id_without_files(
+    tmp_path,
+):
+    service = ClaudeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=None,
+            has_resumable_provider_state=False,
+            preferred_provider_session_id=role_session.session_uuid(),
+            force_resume=True,
+        )
+    )
+
+    assert provider_session_state.run_kind is RunKind.RESUME
+    assert provider_session_state.provider_session_id == role_session.session_uuid()
+    assert provider_session_state.exact_transcript_match is False
 
 
 # ── ClaudeService.run ─────────────────────────────────────────────────────────
