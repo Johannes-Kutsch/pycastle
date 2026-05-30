@@ -191,9 +191,8 @@ def test_prepare_agent_session_prefers_persisted_codex_thread_id_for_resume(
     assert session.provider_session_id == "thread-from-sidecar"
 
 
-def test_prepare_agent_session_codex_resume_does_not_use_role_session_uuid(
+def test_prepare_agent_session_codex_resume_never_uses_role_session_uuid_as_provider_session_id(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ):
     state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
     sessions_dir = state_dir / "sessions" / "2026" / "05" / "30"
@@ -207,16 +206,39 @@ def test_prepare_agent_session_codex_resume_does_not_use_role_session_uuid(
         "codex",
         "thread-from-sidecar",
     )
-    monkeypatch.setattr(
-        RoleSession,
-        "session_uuid",
-        lambda self: (_ for _ in ()).throw(AssertionError("session_uuid called")),
-    )
 
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
 
     assert session.run_kind is RunKind.RESUME
     assert session.provider_session_id == "thread-from-sidecar"
+    assert (
+        session.provider_session_id
+        != RoleSession(
+            tmp_path,
+            AgentRole.IMPLEMENTER,
+        ).session_uuid()
+    )
+
+
+def test_prepare_agent_session_persists_recovered_codex_thread_id_for_future_resume(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
+    )
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+
+    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
+
+    assert session.run_kind is RunKind.RESUME
+    assert session.provider_session_id == "thread-from-rollout"
+    assert RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex") == (
+        "thread-from-rollout"
+    )
 
 
 def test_prepare_agent_session_falls_back_to_fresh_for_codex_without_persisted_or_recoverable_thread_id(
