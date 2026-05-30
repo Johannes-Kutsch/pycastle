@@ -900,7 +900,7 @@ def test_prepare_agent_session_opencode_fresh_has_no_provider_session_id(
     assert session.provider_session_id is None
 
 
-def test_prepare_agent_session_fresh_opencode_uses_provider_state_dir_without_writing_session_files(
+def test_prepare_agent_session_fresh_opencode_uses_selected_provider_state_dir_without_writing_session_files(
     tmp_path: Path,
 ):
     selected_state_dir = tmp_path / "custom" / "opencode-state"
@@ -914,10 +914,6 @@ def test_prepare_agent_session_fresh_opencode_uses_provider_state_dir_without_wr
             namespace="main",
         )
     )
-    provider_state_dir = (
-        tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
-    )
-
     session.prepare_for_run()
 
     assert session.run_kind is RunKind.FRESH
@@ -925,10 +921,8 @@ def test_prepare_agent_session_fresh_opencode_uses_provider_state_dir_without_wr
     assert selected_state_dir.is_dir()
     assert (
         session.provider_state_dir_container_path
-        == "/home/agent/workspace/.pycastle-session/improve/main/opencode/"
+        == "/home/agent/workspace/custom/opencode-state/"
     )
-    assert provider_state_dir.is_dir()
-    assert list(provider_state_dir.rglob("*")) == []
 
 
 def test_prepare_agent_session_opencode_with_saved_session_resumes(tmp_path: Path):

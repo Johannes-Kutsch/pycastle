@@ -190,7 +190,7 @@ def test_run_session_plan_uses_selected_codex_service_state_dir_for_saved_resume
     assert plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.SKIP
 
 
-def test_run_session_plan_preserves_codex_provider_state_dir_layout_when_service_state_dir_is_custom(
+def test_run_session_plan_uses_selected_codex_provider_state_dir_layout_when_service_state_dir_is_custom(
     tmp_path: Path,
 ):
     service = cast(
@@ -206,13 +206,11 @@ def test_run_session_plan_preserves_codex_provider_state_dir_layout_when_service
     )
 
     assert plan.service_state_dir == tmp_path / "custom" / "codex-state"
-    assert plan.provider_state_dir_relpath == ".pycastle-session/implementer/codex/"
-    assert plan.host_provider_state_dir == (
-        tmp_path / ".pycastle-session" / "implementer" / "codex"
-    )
+    assert plan.provider_state_dir_relpath == "custom/codex-state"
+    assert plan.host_provider_state_dir == tmp_path / "custom" / "codex-state"
 
 
-def test_run_session_plan_uses_namespaced_codex_saved_resume_identity_from_custom_state_dir_while_preserving_provider_layout(
+def test_run_session_plan_uses_namespaced_codex_saved_resume_identity_from_custom_state_dir(
     tmp_path: Path,
 ):
     service = cast(
@@ -235,14 +233,12 @@ def test_run_session_plan_uses_namespaced_codex_saved_resume_identity_from_custo
 
     assert plan.run_kind is RunKind.RESUME
     assert plan.service_state_dir == state_dir
-    assert plan.provider_state_dir_relpath == ".pycastle-session/improve/main/codex/"
-    assert plan.host_provider_state_dir == (
-        tmp_path / ".pycastle-session" / "improve" / "main" / "codex"
-    )
+    assert plan.provider_state_dir_relpath == "custom/codex-state"
+    assert plan.host_provider_state_dir == state_dir
     assert plan.provider_session_id == "thread-from-sidecar"
 
 
-def test_run_session_plan_uses_saved_opencode_resume_identity_from_selected_service_state_dir_while_preserving_provider_layout(
+def test_run_session_plan_uses_saved_opencode_resume_identity_from_selected_service_state_dir(
     tmp_path: Path,
 ):
     service = cast(
@@ -264,10 +260,8 @@ def test_run_session_plan_uses_saved_opencode_resume_identity_from_selected_serv
 
     assert plan.run_kind is RunKind.RESUME
     assert plan.service_state_dir == state_dir
-    assert plan.provider_state_dir_relpath == ".pycastle-session/improve/main/opencode/"
-    assert plan.host_provider_state_dir == (
-        tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
-    )
+    assert plan.provider_state_dir_relpath == "custom/opencode-state"
+    assert plan.host_provider_state_dir == state_dir
     assert plan.provider_session_id == "sess-from-sidecar"
 
 
@@ -297,7 +291,7 @@ def test_run_session_plan_uses_selected_opencode_service_state_dir_for_resume_co
     )
 
 
-def test_run_session_plan_uses_preserved_opencode_provider_layout_for_fresh_container_path(
+def test_run_session_plan_uses_selected_opencode_provider_state_dir_for_fresh_container_path(
     tmp_path: Path,
 ):
     service = cast(
@@ -316,7 +310,7 @@ def test_run_session_plan_uses_preserved_opencode_provider_layout_for_fresh_cont
 
     assert plan.run_kind is RunKind.FRESH
     assert plan.provider_state_dir_container_path("/home/agent/workspace") == (
-        "/home/agent/workspace/.pycastle-session/implementer/opencode/"
+        "/home/agent/workspace/custom/opencode-state/"
     )
 
 
@@ -990,7 +984,7 @@ def test_run_session_plan_exposes_auth_seed_action_for_resume_codex_without_auth
     assert action.destination == state_dir / "auth.json"
 
 
-def test_run_session_plan_does_not_require_auth_seeding_for_resume_codex_with_auth_json(
+def test_run_session_plan_skips_auth_seeding_for_resume_codex_with_auth_json(
     tmp_path: Path,
 ):
     service = CodexService()
@@ -1012,9 +1006,10 @@ def test_run_session_plan_does_not_require_auth_seeding_for_resume_codex_with_au
 
     assert plan.run_kind is RunKind.RESUME
     assert plan.auth_seeding_requirement is AuthSeedingRequirement.NOT_REQUIRED
+    assert plan.auth_seed_action is None
 
 
-def test_run_session_plan_skips_auth_seed_action_when_preserved_codex_provider_state_already_has_auth_json(
+def test_run_session_plan_skips_auth_seed_action_when_selected_codex_state_dir_already_has_auth_json(
     tmp_path: Path,
 ):
     service = cast(
@@ -1028,9 +1023,7 @@ def test_run_session_plan_skips_auth_seed_action_when_preserved_codex_provider_s
         '{"type":"thread.started","thread_id":"thread-abc"}\n',
         encoding="utf-8",
     )
-    provider_state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    provider_state_dir.mkdir(parents=True)
-    (provider_state_dir / "auth.json").write_text(
+    (state_dir / "auth.json").write_text(
         '{"mode":"oauth","origin":"provider"}',
         encoding="utf-8",
     )
@@ -1074,13 +1067,10 @@ def test_local_auth_seed_action_applies_only_to_preserved_codex_provider_state_d
 
     action.apply()
 
-    provider_auth = (
-        tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
-    )
+    provider_auth = tmp_path / "custom" / "codex-state" / "auth.json"
     assert (
         provider_auth.read_text(encoding="utf-8") == '{"mode":"oauth","origin":"host"}'
     )
-    assert not (tmp_path / "custom" / "codex-state").exists()
 
 
 def test_local_auth_seed_action_does_not_overwrite_existing_provider_auth(

@@ -18,7 +18,6 @@ from .provider_session_state import (
 from .resume import (
     RoleSession,
     _normalize_state_dir_relpath,
-    _role_provider_state_dir_relpath,
 )
 
 if TYPE_CHECKING:
@@ -46,7 +45,7 @@ def record_observed_provider_session_id(
         session_id_path = service_state_dir / "session_id"
         session_id_path.parent.mkdir(parents=True, exist_ok=True)
         session_id_path.write_text(provider_session_id, encoding="utf-8")
-    if not _preserves_role_provider_layout(service_name):
+    if service_name not in {"codex", "opencode"}:
         return
     save_service_session_id(
         RoleSession(worktree, role, namespace).path,
@@ -112,16 +111,6 @@ def plan_provider_session(
     host_state_dir = service_state.state_dir
     if state_dir_relpath is not None and state_dir_relpath != raw_state_dir_relpath:
         host_state_dir = request.worktree / state_dir_relpath.rstrip("/")
-    if (
-        _preserves_role_provider_layout(request.service.name)
-        and state_dir_relpath is not None
-    ):
-        state_dir_relpath = _role_provider_state_dir_relpath(
-            request.role,
-            request.namespace,
-            request.service.name,
-        )
-        host_state_dir = request.worktree / state_dir_relpath.rstrip("/")
 
     provider_session_state = request.service.provider_session_state(
         ProviderSessionStateRequest(
@@ -151,10 +140,6 @@ def plan_provider_session(
             host_state_dir,
         ),
     )
-
-
-def _preserves_role_provider_layout(service_name: str) -> bool:
-    return service_name in {"codex", "opencode"}
 
 
 def _requires_codex_auth_seed(
