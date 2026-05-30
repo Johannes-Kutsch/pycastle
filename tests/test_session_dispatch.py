@@ -617,6 +617,22 @@ def test_record_successful_provider_session_metadata_saves_metadata(tmp_path: Pa
     assert metadata["provider_session_id"] == session.provider_session_id
 
 
+def test_prepare_agent_session_does_not_write_metadata_before_prepared_success_recording(
+    tmp_path: Path,
+):
+    session = prepare_agent_session(_request(tmp_path, service=ClaudeService()))
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+
+    assert role_session.service_session_metadata_path.exists() is False
+
+    session.record_successful_provider_session_metadata()
+
+    assert role_session.service_session_metadata("claude") == {
+        "service": "claude",
+        "provider_session_id": session.provider_session_id,
+    }
+
+
 def test_record_successful_provider_session_metadata_uses_updated_session_id(
     tmp_path: Path,
 ):
