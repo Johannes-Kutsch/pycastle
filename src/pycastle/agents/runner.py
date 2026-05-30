@@ -32,9 +32,9 @@ from ..errors import (
 )
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session import RunKind
-from ..session._provider_session_state import (
-    ProviderSessionStateRequest,
-    prepare_provider_session_state,
+from .session_dispatch import (
+    SessionDispatchRequest,
+    prepare_agent_session,
 )
 from ..services import GitService
 from ..services.agent_service import AgentService
@@ -217,18 +217,17 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError(reset_time=None, stage_key=_stage_key_for_role(role))
 
-        prepared_session = prepare_provider_session_state(
-            ProviderSessionStateRequest(
-                worktree=mount_path,
+        prepared_session = prepare_agent_session(
+            SessionDispatchRequest(
+                mount_path=mount_path,
                 role=role,
                 session_namespace=request.session_namespace,
                 service=service,
+                container_workspace=_CONTAINER_WORKSPACE,
             )
         )
-        if prepared_session.auth_seed_action is not None:
-            prepared_session.auth_seed_action.require_source()
         provider_state_dir_container_path = (
-            prepared_session.provider_state_dir_container_path(_CONTAINER_WORKSPACE)
+            prepared_session.provider_state_dir_container_path
         )
 
         non_typed_retry_done = False
@@ -307,10 +306,10 @@ class AgentRunner:
                                     work_prompt,
                                     run_kind=work_run_session.run_kind,
                                     session_uuid=work_run_session.provider_session_id,
-                                    on_thread_id=prepared_session.record_provider_session_id,
+                                    on_thread_id=prepared_session.on_provider_session_id,
                                 )
                                 if not isinstance(output, FailedOutput):
-                                    work_run_session.record_successful_run()
+                                    prepared_session.success_recorder()
                                 if isinstance(output, FailedOutput):
                                     row.close("failed", shutdown_style="error")
                                 return output
