@@ -21,6 +21,8 @@ class ServiceResumeIdentityStore(Protocol):
 class ExactTranscriptHandoffStore(ServiceResumeIdentityStore, Protocol):
     def service_session_state(self, service: AgentService) -> Any: ...
 
+    def session_uuid(self) -> str: ...
+
 
 @dataclass(frozen=True)
 class ProviderSessionSelection:
@@ -87,22 +89,34 @@ def has_exact_transcript_handoff_for_selected_service(
         return False
 
     state = role_session.service_session_state(service)
-    selection = select_resumable_provider_session_id(
-        role_session,
-        service_name,
-        provider_state_dir=state.state_dir,
-        has_resumable_provider_state=state.has_resumable_provider_state,
-    )
-    return (
-        state.has_resumable_provider_state
-        and selection.provider_session_id is not None
-        and not selection.persist_provider_session_id
-        and is_exact_resumable_service_session(
+    if not state.has_resumable_provider_state:
+        return False
+
+    if service_name == "claude":
+        # Claude session identity is UUID-derived, not written to a provider-owned file.
+        # `capture_provider_session_id` skips `save_service_session_id` for Claude, so
+        # the file-based lookup used by `select_resumable_provider_session_id` would
+        # always return None. Use the same UUID that `exact_transcript_handoff` uses.
+        provider_session_id: str | None = role_session.session_uuid()
+    else:
+        selection = select_resumable_provider_session_id(
             role_session,
             service_name,
-            provider_session_id=selection.provider_session_id,
             provider_state_dir=state.state_dir,
+            has_resumable_provider_state=state.has_resumable_provider_state,
         )
+        if (
+            selection.provider_session_id is None
+            or selection.persist_provider_session_id
+        ):
+            return False
+        provider_session_id = selection.provider_session_id
+
+    return is_exact_resumable_service_session(
+        role_session,
+        service_name,
+        provider_session_id=provider_session_id,
+        provider_state_dir=state.state_dir,
     )
 
 
