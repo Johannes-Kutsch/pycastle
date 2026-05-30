@@ -623,6 +623,53 @@ def test_improve_clean_phase_2_entry_restarts_from_phase_1_on_selected_service_m
     assert not (wt / ".pycastle-session" / "improve").exists()
 
 
+def test_improve_clean_phase_2_entry_restarts_when_selected_provider_has_only_stale_exact_state(
+    tmp_path, git_svc
+):
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_progress(wt, "01-scan:picked")
+
+    role_session = RoleSession(wt, AgentRole.IMPROVE, "main")
+    claude_uuid = role_session.session_uuid()
+    claude_state_dir = role_session.path / "claude"
+    claude_state_dir.mkdir(parents=True, exist_ok=True)
+    (claude_state_dir / "claude-session-file").write_text(
+        "session-data", encoding="utf-8"
+    )
+    role_session.save_service_session_metadata("claude", claude_uuid)
+
+    stale_opencode_state_dir = role_session.path / "opencode"
+    stale_opencode_state_dir.mkdir(parents=True, exist_ok=True)
+    (stale_opencode_state_dir / "session_id").write_text(
+        "sess-opencode-stale",
+        encoding="utf-8",
+    )
+    role_session.save_service_session_id("opencode", "sess-opencode-stale")
+    role_session.save_service_session_metadata("opencode", "sess-opencode-stale")
+
+    status_display = MagicMock()
+    runner = FakeAgentRunner([], preflight_responses=[[]])
+    cfg = Config(improve_override=StageOverride(service="opencode", effort="medium"))
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        status_display=status_display,
+        cfg=cfg,
+        service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
+    )
+
+    result = _run(deps)
+
+    assert isinstance(result, ImproveContinue)
+    assert runner.calls == []
+    status_display.print.assert_any_call(
+        "Improve",
+        "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
+    )
+    assert not (wt / ".pycastle-session" / "improve").exists()
+
+
 def test_improve_clean_phase_2_entry_passes_gate_when_claude_is_configured_service(
     tmp_path, git_svc
 ):
