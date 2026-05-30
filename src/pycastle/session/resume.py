@@ -267,10 +267,9 @@ class RoleSession:
             has_resumable_provider_state=state.has_resumable_provider_state,
         )
         provider_identity = ProviderIdentity(
-            kind=(
-                ProviderIdentityKind.RESUME
-                if provider_run_state.run_kind is RunKind.RESUME
-                else ProviderIdentityKind.FRESH
+            kind=_provider_identity_kind_for_run_state(
+                provider_run_state,
+                has_resumable_provider_state=state.has_resumable_provider_state,
             ),
             run_kind=provider_run_state.run_kind,
             provider_session_id=provider_run_state.provider_session_id,
@@ -333,3 +332,15 @@ class RoleSession:
     def discard(self) -> None:
         if self.path.is_dir():
             shutil.rmtree(self.path, onerror=_force_remove_readonly)
+
+
+def _provider_identity_kind_for_run_state(
+    provider_run_state: ProviderRunState,
+    *,
+    has_resumable_provider_state: bool,
+) -> ProviderIdentityKind:
+    if provider_run_state.run_kind is RunKind.RESUME:
+        return ProviderIdentityKind.RESUME
+    if has_resumable_provider_state and provider_run_state.provider_session_id is None:
+        return ProviderIdentityKind.UNRECOVERABLE
+    return ProviderIdentityKind.FRESH
