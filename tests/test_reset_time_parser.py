@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 
 from pycastle.services import ResetTimeSyntaxMode, parse_reset_time
@@ -262,6 +263,18 @@ def test_try_again_optional_date_no_rollover_within_two_minute_window():
     )
     assert utc.day == 27
     assert (utc.hour, utc.minute) == (15, 30)
+
+
+def test_try_again_optional_date_same_day_rollover_uses_next_utc_day_across_dst():
+    los_angeles = ZoneInfo("America/Los_Angeles")
+    now = datetime(2026, 3, 7, 19, 33, tzinfo=los_angeles)
+    result = parse_reset_time(
+        "try again at 3:30 AM",
+        ResetTimeSyntaxMode.TRY_AGAIN_UTC_OPTIONAL_DATE,
+        now=now,
+    )
+
+    assert result == datetime(2026, 3, 8, 20, 30, tzinfo=los_angeles)
 
 
 def test_try_again_optional_date_with_full_date():

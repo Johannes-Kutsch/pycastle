@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from enum import StrEnum
 
 from .. import _time as _time_module
@@ -138,13 +138,7 @@ def _parse_claude_reset(
             return rolled.astimezone(local_tz)
         return local_dt
 
-    utc_dt = _combine_utc_date(utc_now.date(), hour, minute)
-    if utc_dt is None:
-        return None
-    local_dt = utc_dt.astimezone(local_tz)
-    if local_dt < local_now - timedelta(minutes=2):
-        local_dt += timedelta(days=1)
-    return local_dt
+    return _parse_same_day_utc_reset(local_now, utc_now, hour, minute, local_tz)
 
 
 def _parse_optional_date_reset(
@@ -164,13 +158,24 @@ def _parse_optional_date_reset(
             return None
         return utc_dt.astimezone(local_tz)
 
+    return _parse_same_day_utc_reset(local_now, utc_now, hour, minute, local_tz)
+
+
+def _parse_same_day_utc_reset(
+    local_now: datetime,
+    utc_now: datetime,
+    hour: int,
+    minute: int,
+    local_tz: tzinfo | None,
+) -> datetime | None:
     utc_dt = _combine_utc_date(utc_now.date(), hour, minute)
     if utc_dt is None:
         return None
-    local_dt = utc_dt.astimezone(local_tz)
-    if local_dt < local_now - timedelta(minutes=2):
-        local_dt += timedelta(days=1)
-    return local_dt
+    if utc_dt < utc_now - timedelta(minutes=2):
+        utc_dt = _combine_utc_date(utc_now.date() + timedelta(days=1), hour, minute)
+        if utc_dt is None:
+            return None
+    return utc_dt.astimezone(local_tz)
 
 
 def _parse_required_date_reset(
