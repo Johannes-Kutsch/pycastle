@@ -79,6 +79,30 @@ def _provider_session_id_from_state_dir(
     return value or None
 
 
+def _role_provider_state_dir_relpath(
+    role: AgentRole,
+    namespace: str,
+    service_name: str,
+) -> str:
+    if namespace:
+        return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{service_name}/"
+    return f"{SESSION_DIR_NAME}/{role.value}/{service_name}/"
+
+
+def _normalize_state_dir_relpath(
+    role: AgentRole,
+    namespace: str,
+    service_name: str,
+    state_dir_relpath: str | None,
+) -> str | None:
+    if state_dir_relpath is None or not namespace:
+        return state_dir_relpath
+    legacy_relpath = _role_provider_state_dir_relpath(role, "", service_name)
+    if state_dir_relpath == legacy_relpath:
+        return _role_provider_state_dir_relpath(role, namespace, service_name)
+    return state_dir_relpath
+
+
 class RunKind(Enum):
     FRESH = "fresh"
     RESUME = "resume"
@@ -279,7 +303,12 @@ class RoleSession:
         path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
 
     def service_session_state(self, service: "AgentService") -> ServiceSessionState:
-        state_dir_relpath = service.state_dir_relpath(self._role, self._namespace)
+        state_dir_relpath = _normalize_state_dir_relpath(
+            self._role,
+            self._namespace,
+            service.name,
+            service.state_dir_relpath(self._role, self._namespace),
+        )
         state_dir = (
             self._worktree / state_dir_relpath
             if state_dir_relpath is not None

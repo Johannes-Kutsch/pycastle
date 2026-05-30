@@ -68,6 +68,21 @@ def _role_provider_state_dir_relpath(
     return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
 
 
+def _normalize_provider_state_dir_relpath(
+    *,
+    role: AgentRole,
+    namespace: str,
+    service_name: str,
+    provider_state_dir_relpath: str | None,
+) -> str | None:
+    if provider_state_dir_relpath is None or not namespace:
+        return provider_state_dir_relpath
+    legacy_relpath = _role_provider_state_dir_relpath(role, "", service_name)
+    if provider_state_dir_relpath == legacy_relpath:
+        return _role_provider_state_dir_relpath(role, namespace, service_name)
+    return provider_state_dir_relpath
+
+
 def _preserves_role_provider_layout(service_name: str) -> bool:
     return service_name in {"codex", "opencode"}
 
@@ -157,8 +172,19 @@ class RunSessionPlan:
         provider_identity = handoff.provider_identity
         provider_session_id = provider_identity.provider_session_id
         run_kind = provider_identity.run_kind
-        provider_state_dir_relpath = service.state_dir_relpath(role, namespace)
+        raw_provider_state_dir_relpath = service.state_dir_relpath(role, namespace)
+        provider_state_dir_relpath = _normalize_provider_state_dir_relpath(
+            role=role,
+            namespace=namespace,
+            service_name=service.name,
+            provider_state_dir_relpath=raw_provider_state_dir_relpath,
+        )
         host_provider_state_dir = service_state_dir
+        if (
+            provider_state_dir_relpath is not None
+            and provider_state_dir_relpath != raw_provider_state_dir_relpath
+        ):
+            host_provider_state_dir = worktree / provider_state_dir_relpath.rstrip("/")
         if (
             _preserves_role_provider_layout(service.name)
             and provider_state_dir_relpath is not None

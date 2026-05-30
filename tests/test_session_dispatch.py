@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 
 from pycastle.agents.output_protocol import AgentRole
@@ -12,7 +14,20 @@ from pycastle.agents.session_dispatch import (
 )
 from pycastle.session import RoleSession, RunKind
 from pycastle.services import ClaudeService, CodexService
+from pycastle.services.agent_service import AgentService
 from pycastle.services.opencode_service import OpenCodeService
+
+
+@dataclass
+class _LegacyStateDirService:
+    name: str = "fake"
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        del namespace
+        return f".pycastle-session/{role.value}/{self.name}/"
+
+    def is_resumable(self, state_dir: Path) -> bool:
+        return state_dir.is_dir() and any(state_dir.rglob("*"))
 
 
 def _request(
@@ -128,6 +143,89 @@ def test_prepare_agent_session_namespaced_role_uses_namespace_in_session_id(
     )
 
     assert session_main.provider_session_id != session_issues.provider_session_id
+
+
+def test_prepare_agent_session_improve_main_uses_namespaced_provider_state_dir_for_legacy_service_relpath(
+    tmp_path: Path,
+):
+    session = prepare_agent_session(
+        _request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            namespace="main",
+            service=cast(AgentService, _LegacyStateDirService()),
+            container_workspace="/workspace",
+        )
+    )
+
+    assert session.provider_state_dir_relpath == ".pycastle-session/improve/main/fake/"
+    assert (
+        session.provider_state_dir_container_path
+        == "/workspace/.pycastle-session/improve/main/fake/"
+    )
+
+
+def test_prepare_agent_session_namespaced_resume_state_does_not_leak_between_namespaces_for_legacy_service_relpath(
+    tmp_path: Path,
+):
+    legacy_state_dir = tmp_path / ".pycastle-session" / "improve" / "claude"
+    legacy_state_dir.mkdir(parents=True)
+    (legacy_state_dir / "transcript.jsonl").write_text("{}\n", encoding="utf-8")
+
+    session = prepare_agent_session(
+        _request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            namespace="issues",
+            service=cast(AgentService, _LegacyStateDirService(name="claude")),
+        )
+    )
+
+    assert session.run_kind is RunKind.FRESH
+
+
+def test_prepare_agent_session_improve_issues_uses_namespaced_provider_state_dir_for_legacy_service_relpath(
+    tmp_path: Path,
+):
+    session = prepare_agent_session(
+        _request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            namespace="issues",
+            service=cast(AgentService, _LegacyStateDirService()),
+            container_workspace="/workspace",
+        )
+    )
+
+    assert session.provider_state_dir_relpath == (
+        ".pycastle-session/improve/issues/fake/"
+    )
+    assert (
+        session.provider_state_dir_container_path
+        == "/workspace/.pycastle-session/improve/issues/fake/"
+    )
+
+
+def test_prepare_agent_session_empty_namespace_preserves_legacy_path_and_uuid_for_legacy_service_relpath(
+    tmp_path: Path,
+):
+    session = prepare_agent_session(
+        _request(
+            tmp_path,
+            role=AgentRole.IMPLEMENTER,
+            namespace="",
+            service=cast(AgentService, _LegacyStateDirService(name="claude")),
+        )
+    )
+
+    assert session.provider_state_dir_relpath == ".pycastle-session/implementer/claude/"
+    assert (
+        session.provider_session_id
+        == RoleSession(
+            tmp_path,
+            AgentRole.IMPLEMENTER,
+        ).session_uuid()
+    )
 
 
 def test_prepare_agent_session_computes_container_path_from_workspace(tmp_path: Path):
