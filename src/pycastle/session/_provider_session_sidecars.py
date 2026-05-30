@@ -78,6 +78,25 @@ def load_service_session_metadata(
     }
 
 
+def load_exact_transcript_service_name(role_session_path: Path) -> str | None:
+    path = service_session_metadata_path(role_session_path)
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict) or len(payload) != 1:
+        return None
+    service_name = next(iter(payload), None)
+    if not isinstance(service_name, str) or not service_name:
+        return None
+    metadata = load_service_session_metadata(role_session_path, service_name)
+    if metadata is None:
+        return None
+    return metadata["service"]
+
+
 def save_service_session_metadata(
     role_session_path: Path,
     service_name: str,

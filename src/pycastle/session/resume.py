@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
 from ._provider_session_sidecars import (
+    load_exact_transcript_service_name,
     is_service_session_metadata_path,
     load_service_session_id,
     load_service_session_metadata,
@@ -195,6 +196,9 @@ class RoleSession:
 
     def service_session_metadata(self, service_name: str) -> dict[str, str] | None:
         return load_service_session_metadata(self.path, service_name)
+
+    def exact_transcript_service_name(self) -> str | None:
+        return load_exact_transcript_service_name(self.path)
 
     def save_service_session_metadata(self, service_name: str, session_id: str) -> None:
         save_service_session_metadata(self.path, service_name, session_id)

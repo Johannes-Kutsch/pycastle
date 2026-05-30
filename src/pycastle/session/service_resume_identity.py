@@ -17,6 +17,8 @@ class ServiceResumeIdentityStore(Protocol):
 
     def service_session_metadata(self, service_name: str) -> dict[str, str] | None: ...
 
+    def exact_transcript_service_name(self) -> str | None: ...
+
 
 @dataclass(frozen=True)
 class ProviderSessionSelection:
@@ -61,7 +63,8 @@ def is_exact_resumable_service_session(
 ) -> bool:
     metadata = role_session.service_session_metadata(service_name)
     return (
-        metadata is not None
+        role_session.exact_transcript_service_name() == service_name
+        and metadata is not None
         and metadata["provider_session_id"] == provider_session_id
         and _is_exact_resumable_provider_session(
             service_name,

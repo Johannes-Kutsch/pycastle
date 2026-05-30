@@ -175,8 +175,17 @@ def test_malformed_service_session_metadata_is_ignored(rs):
     service_session_metadata_path(rs.path).write_text("{not-json", encoding="utf-8")
 
     assert rs.service_session_metadata("claude") is None
+    assert rs.exact_transcript_service_name() is None
     assert rs.is_resumable() is False
     assert rs.run_kind() == RunKind.FRESH
+
+
+def test_exact_transcript_service_name_is_ambiguous_with_multiple_services(rs):
+    rs.start_fresh()
+    rs.save_service_session_metadata("claude", "thread-claude")
+    rs.save_service_session_metadata("opencode", "sess-opencode")
+
+    assert rs.exact_transcript_service_name() is None
 
 
 # ── any_role_dir_present ──────────────────────────────────────────────────────
