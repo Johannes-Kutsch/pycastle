@@ -580,6 +580,61 @@ def test_prepare_provider_session_state_treats_distinct_nested_codex_rollout_thr
     )
 
 
+def test_prepare_provider_session_state_protocol_reprompt_skips_codex_when_conflicting_rollout_thread_ids_are_unrecoverable(
+    tmp_path: Path,
+):
+    _seed_codex_auth(tmp_path)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-alpha"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-beta"}\n',
+        encoding="utf-8",
+    )
+
+    state = prepare_provider_session_state(
+        _provider_request(tmp_path, service=CodexService())
+    )
+
+    assert state.run_kind is RunKind.FRESH
+    assert state.protocol_reprompt_provider_run_session() is None
+
+
+def test_prepare_provider_session_state_protocol_reprompt_resumes_codex_when_duplicate_rollout_thread_ids_match(
+    tmp_path: Path,
+):
+    _seed_codex_auth(tmp_path)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
+        encoding="utf-8",
+    )
+
+    state = prepare_provider_session_state(
+        _provider_request(tmp_path, service=CodexService())
+    )
+
+    reprompt_run = state.protocol_reprompt_provider_run_session()
+
+    assert reprompt_run is not None
+    assert reprompt_run.run_kind is RunKind.RESUME
+    assert reprompt_run.provider_session_id == "thread-same-id"
+
+
 def test_prepare_agent_session_prefers_persisted_codex_thread_id_for_resume(
     tmp_path: Path,
 ):
