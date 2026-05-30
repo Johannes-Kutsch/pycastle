@@ -2662,11 +2662,11 @@ def test_agent_runner_opencode_reprompt_retries_as_resume_after_runtime_session_
 @pytest.mark.parametrize(
     ("service_name", "role", "namespace", "provider_session_id"),
     [
-        ("codex", AgentRole.IMPLEMENTER, "", "thread-runtime-success"),
-        ("opencode", AgentRole.IMPROVE, "main", "sess-runtime-success"),
+        ("codex", AgentRole.IMPLEMENTER, "", "thread-planned-success"),
+        ("opencode", AgentRole.IMPROVE, "main", "sess-planned-success"),
     ],
 )
-def test_agent_runner_success_records_provider_session_metadata_after_runtime_capture(
+def test_agent_runner_success_passes_planned_provider_run_session_to_execution(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     service_name: str,
@@ -2683,10 +2683,25 @@ def test_agent_runner_success_records_provider_session_metadata_after_runtime_ca
         host_auth.parent.mkdir(parents=True)
         host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
         monkeypatch.setattr(Path, "home", lambda: home)
+        state_dir = tmp_path / ".pycastle-session" / role.value / "codex"
+        sessions_dir = state_dir / "sessions" / "2026" / "05" / "30"
+        sessions_dir.mkdir(parents=True)
+        (sessions_dir / "rollout-001.jsonl").write_text(
+            '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+            encoding="utf-8",
+        )
+    else:
+        state_dir = tmp_path / ".pycastle-session" / role.value / namespace / "opencode"
+        state_dir.mkdir(parents=True)
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
-        assert on_thread_id is not None
-        on_thread_id(provider_session_id)
+    RoleSession(tmp_path, role, namespace).save_service_session_id(
+        service_name,
+        provider_session_id,
+    )
+
+    async def _fake_work(_role, _prompt, *, run_kind, session_uuid, on_thread_id=None):
+        assert run_kind is RunKind.RESUME
+        assert session_uuid == provider_session_id
         return CommitMessageOutput(message="done")
 
     runner = AgentRunner(
@@ -2716,22 +2731,16 @@ def test_agent_runner_success_records_provider_session_metadata_after_runtime_ca
         )
 
     assert isinstance(result, CommitMessageOutput)
-    role_session = RoleSession(tmp_path, role, namespace)
-    assert role_session.service_session_id(service_name) == provider_session_id
-    assert role_session.service_session_metadata(service_name) == {
-        "service": service_name,
-        "provider_session_id": provider_session_id,
-    }
 
 
 @pytest.mark.parametrize(
     ("service_name", "role", "namespace", "provider_session_id"),
     [
-        ("codex", AgentRole.IMPLEMENTER, "", "thread-runtime-failed"),
-        ("opencode", AgentRole.IMPROVE, "main", "sess-runtime-failed"),
+        ("codex", AgentRole.IMPLEMENTER, "", "thread-planned-failed"),
+        ("opencode", AgentRole.IMPROVE, "main", "sess-planned-failed"),
     ],
 )
-def test_agent_runner_failed_output_does_not_record_provider_session_metadata(
+def test_agent_runner_failed_output_keeps_planned_provider_run_session_at_execution(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     service_name: str,
@@ -2748,10 +2757,25 @@ def test_agent_runner_failed_output_does_not_record_provider_session_metadata(
         host_auth.parent.mkdir(parents=True)
         host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
         monkeypatch.setattr(Path, "home", lambda: home)
+        state_dir = tmp_path / ".pycastle-session" / role.value / "codex"
+        sessions_dir = state_dir / "sessions" / "2026" / "05" / "30"
+        sessions_dir.mkdir(parents=True)
+        (sessions_dir / "rollout-001.jsonl").write_text(
+            '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+            encoding="utf-8",
+        )
+    else:
+        state_dir = tmp_path / ".pycastle-session" / role.value / namespace / "opencode"
+        state_dir.mkdir(parents=True)
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
-        assert on_thread_id is not None
-        on_thread_id(provider_session_id)
+    RoleSession(tmp_path, role, namespace).save_service_session_id(
+        service_name,
+        provider_session_id,
+    )
+
+    async def _fake_work(_role, _prompt, *, run_kind, session_uuid, on_thread_id=None):
+        assert run_kind is RunKind.RESUME
+        assert session_uuid == provider_session_id
         return FailedOutput(failure_class="agent_failed")
 
     runner = AgentRunner(
@@ -2780,10 +2804,6 @@ def test_agent_runner_failed_output_does_not_record_provider_session_metadata(
                     )
                 )
             )
-
-    role_session = RoleSession(tmp_path, role, namespace)
-    assert role_session.service_session_id(service_name) == provider_session_id
-    assert role_session.service_session_metadata(service_name) is None
 
 
 def test_agent_runner_opencode_timeout_retry_resumes_with_captured_session_id(

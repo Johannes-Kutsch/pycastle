@@ -8,6 +8,10 @@ from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
 from ..errors import HardAgentError
+from ._provider_session_sidecars import (
+    save_service_session_id,
+    save_service_session_metadata,
+)
 from .service_resume_identity import is_exact_resumable_service_session
 from .resume import (
     RoleSession,
@@ -130,11 +134,11 @@ def record_observed_provider_session_id(
         session_id_path.write_text(provider_session_id, encoding="utf-8")
     if not _preserves_role_provider_layout(service_name):
         return
-    RoleSession(
-        worktree,
-        role,
-        namespace,
-    ).save_service_session_id(service_name, provider_session_id)
+    save_service_session_id(
+        RoleSession(worktree, role, namespace).path,
+        service_name,
+        provider_session_id,
+    )
 
 
 def capture_provider_session_id(
@@ -164,11 +168,11 @@ def record_successful_provider_session_metadata(
     service_name: str,
     provider_session_id: str,
 ) -> None:
-    RoleSession(
-        worktree,
-        role,
-        namespace,
-    ).save_service_session_metadata(service_name, provider_session_id)
+    save_service_session_metadata(
+        RoleSession(worktree, role, namespace).path,
+        service_name,
+        provider_session_id,
+    )
 
 
 def plan_provider_session(

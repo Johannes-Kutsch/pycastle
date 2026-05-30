@@ -1,4 +1,3 @@
-import json
 import os
 import shutil
 import stat
@@ -9,6 +8,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
+from ._provider_session_sidecars import (
+    is_service_session_metadata_path,
+    load_service_session_id,
+    load_service_session_metadata,
+    save_service_session_id,
+    save_service_session_metadata,
+    service_session_id_path,
+    service_session_metadata_path,
+)
 from .service_resume_identity import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
@@ -21,9 +29,6 @@ if TYPE_CHECKING:
 _NAMESPACE = uuid.NAMESPACE_DNS
 
 SESSION_DIR_NAME = ".pycastle-session"
-
-_SERVICE_SESSION_ID_FILENAMES = {"codex": "thread_id", "opencode": "session_id"}
-_SERVICE_SESSION_METADATA_FILENAME = "_service_session_metadata.json"
 
 
 def _force_remove_readonly(func, path, _exc_info):
@@ -119,27 +124,17 @@ class RoleSession:
         return str(session_id)
 
     def service_session_id_path(self, service_name: str) -> Path:
-        filename = _SERVICE_SESSION_ID_FILENAMES.get(service_name, "thread_id")
-        return self.path / service_name / filename
+        return service_session_id_path(self.path, service_name)
 
     @property
     def service_session_metadata_path(self) -> Path:
-        return self.path / _SERVICE_SESSION_METADATA_FILENAME
+        return service_session_metadata_path(self.path)
 
     def service_session_id(self, service_name: str) -> str | None:
-        path = self.service_session_id_path(service_name)
-        if not path.is_file():
-            return None
-        try:
-            value = path.read_text(encoding="utf-8").strip()
-        except (OSError, UnicodeDecodeError):
-            return None
-        return value or None
+        return load_service_session_id(self.path, service_name)
 
     def save_service_session_id(self, service_name: str, session_id: str) -> None:
-        path = self.service_session_id_path(service_name)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(session_id, encoding="utf-8")
+        save_service_session_id(self.path, service_name, session_id)
 
     def provider_identity(
         self,
@@ -199,42 +194,10 @@ class RoleSession:
         )
 
     def service_session_metadata(self, service_name: str) -> dict[str, str] | None:
-        path = self.service_session_metadata_path
-        if not path.is_file():
-            return None
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return None
-        if not isinstance(payload, dict):
-            return None
-        metadata = payload.get(service_name)
-        if not isinstance(metadata, dict):
-            return None
-        provider_session_id = metadata.get("provider_session_id")
-        if not isinstance(provider_session_id, str) or not provider_session_id.strip():
-            return None
-        return {
-            "service": service_name,
-            "provider_session_id": provider_session_id.strip(),
-        }
+        return load_service_session_metadata(self.path, service_name)
 
     def save_service_session_metadata(self, service_name: str, session_id: str) -> None:
-        path = self.service_session_metadata_path
-        try:
-            payload = (
-                json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
-            )
-        except (OSError, ValueError):
-            payload = {}
-        if not isinstance(payload, dict):
-            payload = {}
-        payload[service_name] = {
-            "service": service_name,
-            "provider_session_id": session_id,
-        }
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+        save_service_session_metadata(self.path, service_name, session_id)
 
     def service_session_state(self, service: "AgentService") -> ServiceSessionState:
         state_dir_relpath = _normalize_state_dir_relpath(
@@ -320,7 +283,7 @@ class RoleSession:
 
     def is_resumable(self) -> bool:
         return self.path.is_dir() and any(
-            f.is_file() and f.name != _SERVICE_SESSION_METADATA_FILENAME
+            f.is_file() and not is_service_session_metadata_path(f)
             for f in self.path.rglob("*")
         )
 
@@ -339,7 +302,7 @@ class RoleSession:
         if not self.path.is_dir():
             return
         for child in self.path.iterdir():
-            if child.name == _SERVICE_SESSION_METADATA_FILENAME:
+            if is_service_session_metadata_path(child):
                 continue
             if child.is_file() or child.is_symlink():
                 child.unlink(missing_ok=True)

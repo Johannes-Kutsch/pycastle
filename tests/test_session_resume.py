@@ -141,12 +141,16 @@ def test_service_session_ids_are_isolated_by_role_and_worktree(tmp_path):
     assert reviewer_a.service_session_id("opencode") == "sess-review"
 
 
-def test_service_session_id_filenames_remain_byte_compatible(worktree):
+def test_service_session_ids_use_service_specific_sidecars(worktree):
     rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
 
-    assert rs.service_session_id_path("codex").name == "thread_id"
-    assert rs.service_session_id_path("opencode").name == "session_id"
-    assert rs.service_session_id_path("unknown-service").name == "thread_id"
+    rs.save_service_session_id("codex", "thread-123")
+    rs.save_service_session_id("opencode", "sess-123")
+    rs.save_service_session_id("unknown-service", "default-123")
+
+    assert rs.service_session_id("codex") == "thread-123"
+    assert rs.service_session_id("opencode") == "sess-123"
+    assert rs.service_session_id("unknown-service") == "default-123"
 
 
 def test_mark_done_preserves_service_session_metadata_without_counting_as_resumable(rs):

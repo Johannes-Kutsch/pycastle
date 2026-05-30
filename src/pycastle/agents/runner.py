@@ -313,16 +313,12 @@ class AgentRunner:
                                     row.close("failed", shutdown_style="error")
                                 return output
                             except AgentOutputProtocolError:
-                                if (
-                                    service.name == "codex"
-                                    and prepared_session.provider_session_id is None
-                                ):
+                                next_run_session = prepared_session.protocol_reprompt_provider_run_session()
+                                if next_run_session is None:
                                     row.close("failed", shutdown_style="error")
                                     return FailedOutput(failure_class="protocol_error")
                                 work_prompt = REPROMPT_MESSAGE
-                                work_run_session = (
-                                    prepared_session.resumable_provider_run_session()
-                                )
+                                work_run_session = next_run_session
                         row.close("failed", shutdown_style="error")
                         return FailedOutput(failure_class="protocol_error")
                     except AgentTimeoutError:

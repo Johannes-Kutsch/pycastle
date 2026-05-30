@@ -67,6 +67,17 @@ class PreparedProviderSessionState:
             _success_recorder=self.record_successful_run,
         )
 
+    def protocol_reprompt_provider_run_session(
+        self,
+    ) -> PreparedProviderRunSession | None:
+        service = getattr(self._plan, "service", None)
+        if (
+            getattr(service, "name", None) == "codex"
+            and self.provider_session_id is None
+        ):
+            return None
+        return self.resumable_provider_run_session()
+
     def prepare_for_run(self) -> None:
         _require_auth_seed_source(self.auth_seed_action)
         preserved_auth = self._preserved_codex_auth_bytes()

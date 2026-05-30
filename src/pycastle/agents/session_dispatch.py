@@ -62,6 +62,19 @@ class PreparedAgentSession:
             _success_recorder=self.success_recorder,
         )
 
+    def protocol_reprompt_provider_run_session(
+        self,
+    ) -> PreparedProviderRunSession | None:
+        state_run_session = self._state.protocol_reprompt_provider_run_session()
+        if state_run_session is None:
+            return None
+        return PreparedProviderRunSession(
+            run_kind=state_run_session.run_kind,
+            provider_session_id=state_run_session.provider_session_id,
+            _provider_session_id_recorder=self.on_provider_session_id,
+            _success_recorder=self.success_recorder,
+        )
+
 
 def prepare_agent_session(request: SessionDispatchRequest) -> PreparedAgentSession:
     session_state = prepare_provider_session_state(
