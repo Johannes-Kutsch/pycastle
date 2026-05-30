@@ -1,9 +1,9 @@
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from dataclasses import dataclass
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services.codex_service import CodexService
@@ -26,6 +26,19 @@ class _FakeService:
 
     def is_resumable(self, state_dir: Path) -> bool:
         return self.resumable
+
+
+def _write_codex_rollout(state_dir: Path, *thread_ids: str) -> None:
+    rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    rollout_dir.mkdir(parents=True)
+    lines = [
+        json.dumps({"type": "thread.started", "thread_id": thread_id})
+        for thread_id in thread_ids
+    ]
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        "\n".join(lines) + "\n",
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.parametrize(
@@ -176,18 +189,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_codex_with_m
     service = CodexService()
     role_dir = tmp_path / ".pycastle-session" / "improve" / "main"
     state_dir = role_dir / "codex"
-    rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
-    rollout_dir.mkdir(parents=True)
-    (rollout_dir / "rollout-001.jsonl").write_text(
-        "\n".join(
-            [
-                '{"type":"thread.started","thread_id":"thread-exact"}',
-                '{"type":"thread.started","thread_id":"thread-exact"}',
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    _write_codex_rollout(state_dir, "thread-exact", "thread-exact")
     save_service_session_id(role_dir, "codex", "thread-exact")
     save_service_session_metadata(role_dir, "codex", "thread-exact")
 
@@ -195,6 +197,35 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_codex_with_m
         has_exact_provider_transcript_for_service(
             worktree=tmp_path,
             role=AgentRole.IMPROVE,
+            namespace="main",
+            service=service,
+        )
+        is True
+    )
+
+
+def test_has_exact_provider_transcript_for_service_returns_true_for_opencode_with_matching_metadata_sidecar_and_resumable_state_dir(
+    tmp_path: Path,
+) -> None:
+    service = cast(
+        Any,
+        _FakeService(
+            name="opencode",
+            relpath="custom/opencode-state/",
+            resumable=True,
+        ),
+    )
+    role_dir = tmp_path / ".pycastle-session" / "reviewer" / "main"
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text("sess-opencode-123\n", encoding="utf-8")
+    save_service_session_id(role_dir, "opencode", "sess-opencode-123")
+    save_service_session_metadata(role_dir, "opencode", "sess-opencode-123")
+
+    assert (
+        has_exact_provider_transcript_for_service(
+            worktree=tmp_path,
+            role=AgentRole.REVIEWER,
             namespace="main",
             service=service,
         )
@@ -231,18 +262,86 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_claude_with_
     )
 
 
+@pytest.mark.parametrize(
+    ("service", "role", "namespace"),
+    [
+        (
+            cast(
+                Any,
+                _FakeService(
+                    name="claude", relpath="custom/claude-state/", resumable=True
+                ),
+            ),
+            AgentRole.IMPLEMENTER,
+            "",
+        ),
+        (
+            CodexService(),
+            AgentRole.IMPROVE,
+            "main",
+        ),
+    ],
+)
+def test_has_exact_provider_transcript_for_service_returns_false_when_metadata_is_missing(
+    tmp_path: Path,
+    service: Any,
+    role: AgentRole,
+    namespace: str,
+) -> None:
+    role_dir = tmp_path / ".pycastle-session" / role.value
+    if namespace:
+        role_dir = role_dir / namespace
+    state_dir = tmp_path / service.state_dir_relpath(role, namespace).rstrip("/")
+    state_dir.mkdir(parents=True)
+    if service.name == "codex":
+        _write_codex_rollout(state_dir, "thread-exact")
+        save_service_session_id(role_dir, "codex", "thread-exact")
+    else:
+        (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+        save_service_session_id(role_dir, "claude", "claude-session-uuid")
+
+    assert (
+        has_exact_provider_transcript_for_service(
+            worktree=tmp_path,
+            role=role,
+            namespace=namespace,
+            service=service,
+        )
+        is False
+    )
+
+
+def test_has_exact_provider_transcript_for_service_returns_false_for_malformed_metadata(
+    tmp_path: Path,
+) -> None:
+    service = CodexService()
+    role_dir = tmp_path / ".pycastle-session" / "improve" / "main"
+    state_dir = role_dir / "codex"
+    _write_codex_rollout(state_dir, "thread-exact")
+    save_service_session_id(role_dir, "codex", "thread-exact")
+    (role_dir / "_service_session_metadata.json").write_text(
+        json.dumps({"codex": {"provider_session_id": "   "}}, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    assert (
+        has_exact_provider_transcript_for_service(
+            worktree=tmp_path,
+            role=AgentRole.IMPROVE,
+            namespace="main",
+            service=service,
+        )
+        is False
+    )
+
+
 def test_has_exact_provider_transcript_for_service_returns_false_when_metadata_payload_includes_another_provider(
     tmp_path: Path,
 ) -> None:
     service = CodexService()
     role_dir = tmp_path / ".pycastle-session" / "improve" / "main"
     state_dir = role_dir / "codex"
-    rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
-    rollout_dir.mkdir(parents=True)
-    (rollout_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-exact"}\n',
-        encoding="utf-8",
-    )
+    _write_codex_rollout(state_dir, "thread-exact")
     save_service_session_id(role_dir, "codex", "thread-exact")
     (role_dir / "_service_session_metadata.json").write_text(
         json.dumps(
@@ -260,6 +359,131 @@ def test_has_exact_provider_transcript_for_service_returns_false_when_metadata_p
         ),
         encoding="utf-8",
     )
+
+    assert (
+        has_exact_provider_transcript_for_service(
+            worktree=tmp_path,
+            role=AgentRole.IMPROVE,
+            namespace="main",
+            service=service,
+        )
+        is False
+    )
+
+
+@pytest.mark.parametrize(
+    ("sidecar_value", "metadata_value"),
+    [
+        ("thread-sidecar", "thread-metadata"),
+        (None, "thread-exact"),
+        ("", "thread-exact"),
+    ],
+)
+def test_has_exact_provider_transcript_for_service_returns_false_for_missing_or_mismatched_sidecar(
+    tmp_path: Path,
+    sidecar_value: str | None,
+    metadata_value: str,
+) -> None:
+    service = CodexService()
+    role_dir = tmp_path / ".pycastle-session" / "improve" / "main"
+    state_dir = role_dir / "codex"
+    _write_codex_rollout(state_dir, "thread-exact")
+    if sidecar_value is None:
+        pass
+    elif sidecar_value:
+        save_service_session_id(role_dir, "codex", sidecar_value)
+    else:
+        service_dir = role_dir / "codex"
+        service_dir.mkdir(parents=True, exist_ok=True)
+        (service_dir / "thread_id").write_text("\n", encoding="utf-8")
+    save_service_session_metadata(role_dir, "codex", metadata_value)
+
+    assert (
+        has_exact_provider_transcript_for_service(
+            worktree=tmp_path,
+            role=AgentRole.IMPROVE,
+            namespace="main",
+            service=service,
+        )
+        is False
+    )
+
+
+def test_has_exact_provider_transcript_for_service_returns_false_for_different_selected_service(
+    tmp_path: Path,
+) -> None:
+    role_dir = tmp_path / ".pycastle-session" / "improve" / "main"
+    state_dir = role_dir / "codex"
+    _write_codex_rollout(state_dir, "thread-exact")
+    save_service_session_id(role_dir, "codex", "thread-exact")
+    save_service_session_metadata(role_dir, "codex", "thread-exact")
+    selected_service = cast(
+        Any,
+        _FakeService(
+            name="claude",
+            relpath="custom/claude-state/",
+            resumable=True,
+        ),
+    )
+
+    assert (
+        has_exact_provider_transcript_for_service(
+            worktree=tmp_path,
+            role=AgentRole.IMPROVE,
+            namespace="main",
+            service=selected_service,
+        )
+        is False
+    )
+
+
+def test_has_exact_provider_transcript_for_service_returns_false_for_non_resumable_provider_state(
+    tmp_path: Path,
+) -> None:
+    service = cast(
+        Any,
+        _FakeService(
+            name="claude",
+            relpath="custom/claude-state/",
+            resumable=False,
+        ),
+    )
+    role_dir = tmp_path / ".pycastle-session" / "implementer"
+    state_dir = tmp_path / "custom" / "claude-state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+    save_service_session_id(role_dir, "claude", "claude-session-uuid")
+    save_service_session_metadata(role_dir, "claude", "claude-session-uuid")
+
+    assert (
+        has_exact_provider_transcript_for_service(
+            worktree=tmp_path,
+            role=AgentRole.IMPLEMENTER,
+            namespace="",
+            service=service,
+        )
+        is False
+    )
+
+
+def test_has_exact_provider_transcript_for_service_returns_false_for_ambiguous_codex_identity_evidence(
+    tmp_path: Path,
+) -> None:
+    service = CodexService()
+    role_dir = tmp_path / ".pycastle-session" / "improve" / "main"
+    state_dir = role_dir / "codex"
+    rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    rollout_dir.mkdir(parents=True)
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-old"}\n',
+        encoding="utf-8",
+    )
+    (rollout_dir / "rollout-002.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-new"}\n',
+        encoding="utf-8",
+    )
+    save_service_session_id(role_dir, "codex", "thread-old")
+    save_service_session_metadata(role_dir, "codex", "thread-old")
 
     assert (
         has_exact_provider_transcript_for_service(
