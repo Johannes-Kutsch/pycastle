@@ -40,6 +40,7 @@ class _LegacyStateDirService:
 class _CustomOpenCodeStateDirService:
     name: str = "opencode"
     relpath: str = "custom/opencode-state/"
+    api_key: str = "go-key"
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         del role, namespace
@@ -920,16 +921,31 @@ def test_prepare_provider_session_state_captures_opencode_session_id_in_selected
         )
     )
 
+    state.prepare_for_run()
     state.record_provider_session_id("sess-opencode-runtime")
+    state.record_successful_run()
+
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    session_file_text = {
+        path.relative_to(tmp_path).as_posix(): path.read_text(encoding="utf-8")
+        for path in sorted(
+            {
+                *state_dir.rglob("*"),
+                *(tmp_path / ".pycastle-session" / "improve" / "main").rglob("*"),
+            }
+        )
+        if path.is_file()
+    }
 
     assert (state_dir / "session_id").read_text(encoding="utf-8") == (
         "sess-opencode-runtime"
     )
-    assert "go-key" not in (state_dir / "session_id").read_text(encoding="utf-8")
-    assert (
-        RoleSession(tmp_path, AgentRole.IMPROVE, "main").service_session_id("opencode")
-        == "sess-opencode-runtime"
-    )
+    assert role_session.service_session_id("opencode") == "sess-opencode-runtime"
+    assert role_session.service_session_metadata("opencode") == {
+        "service": "opencode",
+        "provider_session_id": "sess-opencode-runtime",
+    }
+    assert all("go-key" not in contents for contents in session_file_text.values())
 
 
 def test_remember_provider_session_id_updates_session_id(tmp_path: Path):
