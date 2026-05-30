@@ -13,6 +13,7 @@ from pycastle.session import (
     any_role_dir_present,
     is_stage_done_for,
 )
+from pycastle.session._provider_session_sidecars import service_session_metadata_path
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -171,7 +172,7 @@ def test_mark_done_preserves_service_session_metadata_without_counting_as_resuma
 
 def test_malformed_service_session_metadata_is_ignored(rs):
     rs.start_fresh()
-    rs.service_session_metadata_path.write_text("{not-json", encoding="utf-8")
+    service_session_metadata_path(rs.path).write_text("{not-json", encoding="utf-8")
 
     assert rs.service_session_metadata("claude") is None
     assert rs.is_resumable() is False

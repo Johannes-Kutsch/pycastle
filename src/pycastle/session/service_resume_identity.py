@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from ._provider_session_sidecars import load_state_dir_provider_session_id
+
 
 class ServiceResumeIdentityStore(Protocol):
     def service_session_id(self, service_name: str) -> str | None: ...
@@ -98,22 +100,13 @@ def _provider_session_id_from_state_dir(
     service_name: str,
     state_dir: Path | None,
 ) -> str | None:
-    if state_dir is None:
-        return None
     if service_name == "codex":
-        return recover_codex_rollout_thread_id(state_dir)
-
-    session_id_path = state_dir / {
-        "codex": "thread_id",
-        "opencode": "session_id",
-    }.get(service_name, "thread_id")
-    if not session_id_path.is_file():
-        return None
-    try:
-        value = session_id_path.read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeDecodeError):
-        return None
-    return value or None
+        return (
+            recover_codex_rollout_thread_id(state_dir)
+            if state_dir is not None
+            else None
+        )
+    return load_state_dir_provider_session_id(state_dir, service_name)
 
 
 def _is_exact_resumable_provider_session(

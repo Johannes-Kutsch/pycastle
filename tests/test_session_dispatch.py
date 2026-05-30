@@ -15,6 +15,7 @@ from pycastle.agents.session_dispatch import (
     record_successful_provider_session_metadata,
 )
 from pycastle.session import RoleSession, RunKind
+from pycastle.session._provider_session_sidecars import service_session_metadata_path
 from pycastle.session._provider_session_state import (
     ProviderSessionStateRequest,
     prepare_provider_session_state,
@@ -996,7 +997,7 @@ def test_prepared_provider_run_session_records_success_metadata_with_runtime_ses
         "provider_session_id": "sess-opencode-runtime",
     }
     assert json.loads(
-        role_session.service_session_metadata_path.read_text(encoding="utf-8")
+        service_session_metadata_path(role_session.path).read_text(encoding="utf-8")
     ) == {
         "opencode": {
             "service": "opencode",
@@ -1112,7 +1113,7 @@ def test_prepare_agent_session_does_not_write_metadata_before_prepared_success_r
     session = prepare_agent_session(_request(tmp_path, service=ClaudeService()))
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
 
-    assert role_session.service_session_metadata_path.exists() is False
+    assert service_session_metadata_path(role_session.path).exists() is False
 
     session.success_recorder()
 
@@ -1128,7 +1129,9 @@ def test_prepared_success_recorder_without_provider_session_id_leaves_metadata_u
     _seed_codex_auth(tmp_path)
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     role_session.save_service_session_metadata("claude", "thread-existing")
-    before = role_session.service_session_metadata_path.read_text(encoding="utf-8")
+    before = service_session_metadata_path(role_session.path).read_text(
+        encoding="utf-8"
+    )
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
 
     assert session.provider_session_id is None
@@ -1141,7 +1144,8 @@ def test_prepared_success_recorder_without_provider_session_id_leaves_metadata_u
     }
     assert role_session.service_session_metadata("codex") is None
     assert (
-        role_session.service_session_metadata_path.read_text(encoding="utf-8") == before
+        service_session_metadata_path(role_session.path).read_text(encoding="utf-8")
+        == before
     )
 
 

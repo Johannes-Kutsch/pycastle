@@ -37,6 +37,22 @@ def save_service_session_id(
     path.write_text(session_id, encoding="utf-8")
 
 
+def load_state_dir_provider_session_id(
+    state_dir: Path | None,
+    service_name: str,
+) -> str | None:
+    if state_dir is None:
+        return None
+    path = state_dir / _SERVICE_SESSION_ID_FILENAMES.get(service_name, "thread_id")
+    if not path.is_file():
+        return None
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    return value or None
+
+
 def load_service_session_metadata(
     role_session_path: Path,
     service_name: str,

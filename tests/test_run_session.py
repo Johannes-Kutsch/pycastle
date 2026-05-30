@@ -19,6 +19,7 @@ from pycastle.session.run_session import (
     RunSessionPlan,
 )
 from pycastle.session import RoleSession, RunKind
+from pycastle.session._provider_session_sidecars import service_session_id_path
 from pycastle.services.agent_service import AgentService
 
 
@@ -701,7 +702,7 @@ def test_run_session_plan_recovers_codex_rollout_when_saved_thread_id_is_unreada
         encoding="utf-8",
     )
 
-    sidecar_path = role_session.service_session_id_path("codex")
+    sidecar_path = service_session_id_path(role_session.path, "codex")
     original_read_text = type(sidecar_path).read_text
 
     def unreadable_read_text(path: Path, *args, **kwargs) -> str:

@@ -14,8 +14,6 @@ from ._provider_session_sidecars import (
     load_service_session_metadata,
     save_service_session_id,
     save_service_session_metadata,
-    service_session_id_path,
-    service_session_metadata_path,
 )
 from .service_resume_identity import (
     is_exact_resumable_service_session,
@@ -122,13 +120,6 @@ class RoleSession:
         role_ns = uuid.uuid5(_NAMESPACE, role_key)
         session_id = uuid.uuid5(role_ns, str(self._worktree.resolve()))
         return str(session_id)
-
-    def service_session_id_path(self, service_name: str) -> Path:
-        return service_session_id_path(self.path, service_name)
-
-    @property
-    def service_session_metadata_path(self) -> Path:
-        return service_session_metadata_path(self.path)
 
     def service_session_id(self, service_name: str) -> str | None:
         return load_service_session_id(self.path, service_name)
