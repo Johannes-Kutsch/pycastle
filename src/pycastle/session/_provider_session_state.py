@@ -8,12 +8,14 @@ from collections.abc import Callable
 
 from ..agents.output_protocol import AgentRole
 from ..errors import HardAgentError
-from .resume import RoleSession, RunKind
-from .run_session import (
+from .agent import plan_run_session
+from .agent._planning import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
     RunSessionPlan,
+    RunSessionPlanRequest,
 )
+from .resume import RoleSession, RunKind
 
 if TYPE_CHECKING:
     from ..services.agent_service import AgentService
@@ -128,11 +130,13 @@ class PreparedProviderRunSession:
 def prepare_provider_session_state(
     request: ProviderSessionStateRequest,
 ) -> PreparedProviderSessionState:
-    plan = RunSessionPlan.for_service(
-        role=request.role,
-        worktree=request.worktree,
-        namespace=request.session_namespace,
-        service=request.service,
+    plan = plan_run_session(
+        RunSessionPlanRequest(
+            role=request.role,
+            worktree=request.worktree,
+            namespace=request.session_namespace,
+            service=request.service,
+        )
     )
     auth_seed_action = plan.auth_seed_action
     role_session = RoleSession(
