@@ -1,14 +1,181 @@
 from pycastle.config import Config
+from pycastle.issue_readiness import BODY_FLOOR
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.agents.classifier import (
+    IssueReadiness,
     Malformed,
+    MalformedBody,
+    WellFormedBody,
     SliceMode,
+    classify_issue_readiness,
     WellFormed,
     classify_slice,
     slice_labels,
 )
 
 _cfg = Config()
+
+
+def test_classify_issue_readiness_ready_selects_matching_slice_mode():
+    issue = {
+        "number": 1,
+        "labels": ["behavior-slice"],
+        "body": "x" * 100,
+    }
+
+    result = classify_issue_readiness(issue, _cfg)
+
+    assert result == IssueReadiness(
+        slice_status=WellFormed(
+            SliceMode.BEHAVIOR,
+            label="behavior-slice",
+        ),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=SliceMode.BEHAVIOR,
+    )
+
+
+def test_classify_issue_readiness_slice_label_failures_expose_found_labels():
+    missing = classify_issue_readiness({"number": 1, "body": "x" * 100}, _cfg)
+    multiple = classify_issue_readiness(
+        {
+            "number": 1,
+            "labels": ["docs-slice", "behavior-slice", "bug"],
+            "body": "x" * 100,
+        },
+        _cfg,
+    )
+
+    assert missing == IssueReadiness(
+        slice_status=Malformed(
+            found=[],
+            configured=frozenset({"refactor-slice", "behavior-slice", "docs-slice"}),
+        ),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=False,
+        selected_mode=None,
+    )
+    assert multiple == IssueReadiness(
+        slice_status=Malformed(
+            found=["docs-slice", "behavior-slice"],
+            configured=frozenset({"refactor-slice", "behavior-slice", "docs-slice"}),
+        ),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=False,
+        selected_mode=None,
+    )
+
+
+def test_classify_issue_readiness_body_floor_status_handles_edge_cases():
+    empty = classify_issue_readiness({"number": 1, "labels": ["docs-slice"]}, _cfg)
+    whitespace = classify_issue_readiness(
+        {"number": 1, "labels": ["docs-slice"], "body": " \n\t "},
+        _cfg,
+    )
+    at_marker = classify_issue_readiness(
+        {"number": 1, "labels": ["docs-slice"], "body": "@-"},
+        _cfg,
+    )
+    below_floor = classify_issue_readiness(
+        {"number": 1, "labels": ["docs-slice"], "body": "x" * (BODY_FLOOR - 1)},
+        _cfg,
+    )
+    at_floor = classify_issue_readiness(
+        {"number": 1, "labels": ["docs-slice"], "body": "x" * BODY_FLOOR},
+        _cfg,
+    )
+
+    assert empty.body_floor_status == MalformedBody(
+        stripped_length=0,
+        body_floor=BODY_FLOOR,
+    )
+    assert whitespace.body_floor_status == MalformedBody(
+        stripped_length=0,
+        body_floor=BODY_FLOOR,
+    )
+    assert at_marker.body_floor_status == MalformedBody(
+        stripped_length=2,
+        body_floor=BODY_FLOOR,
+    )
+    assert below_floor.body_floor_status == MalformedBody(
+        stripped_length=BODY_FLOOR - 1,
+        body_floor=BODY_FLOOR,
+    )
+    assert at_floor.body_floor_status == WellFormedBody(
+        stripped_length=BODY_FLOOR,
+        body_floor=BODY_FLOOR,
+    )
+
+
+def test_classify_issue_readiness_reports_slice_and_body_failures_together():
+    result = classify_issue_readiness(
+        {
+            "number": 1,
+            "labels": ["refactor-slice", "behavior-slice", "bug"],
+            "body": "@-",
+        },
+        _cfg,
+    )
+
+    assert result == IssueReadiness(
+        slice_status=Malformed(
+            found=["refactor-slice", "behavior-slice"],
+            configured=frozenset({"refactor-slice", "behavior-slice", "docs-slice"}),
+        ),
+        body_floor_status=MalformedBody(
+            stripped_length=2,
+            body_floor=BODY_FLOOR,
+        ),
+        is_ready=False,
+        selected_mode=None,
+    )
+
+
+def test_classify_issue_readiness_ignores_unrelated_labels_and_honors_renames():
+    cfg = Config(refactor_slice_label="custom-refactor")
+
+    ready = classify_issue_readiness(
+        {
+            "number": 1,
+            "labels": ["bug", "ready-for-agent", "custom-refactor"],
+            "body": "x" * BODY_FLOOR,
+        },
+        cfg,
+    )
+    renamed_away = classify_issue_readiness(
+        {
+            "number": 1,
+            "labels": ["bug", "ready-for-agent", "refactor-slice"],
+            "body": "x" * BODY_FLOOR,
+        },
+        cfg,
+    )
+
+    assert ready == IssueReadiness(
+        slice_status=WellFormed(
+            SliceMode.REFACTOR,
+            label="custom-refactor",
+        ),
+        body_floor_status=WellFormedBody(
+            stripped_length=BODY_FLOOR,
+            body_floor=BODY_FLOOR,
+        ),
+        is_ready=True,
+        selected_mode=SliceMode.REFACTOR,
+    )
+    assert renamed_away == IssueReadiness(
+        slice_status=Malformed(
+            found=[],
+            configured=frozenset({"custom-refactor", "behavior-slice", "docs-slice"}),
+        ),
+        body_floor_status=WellFormedBody(
+            stripped_length=BODY_FLOOR,
+            body_floor=BODY_FLOOR,
+        ),
+        is_ready=False,
+        selected_mode=None,
+    )
 
 
 def test_classify_slice_refactor():

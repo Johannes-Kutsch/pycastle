@@ -27,17 +27,42 @@ class SliceMode(enum.Enum):
 @dataclasses.dataclass(frozen=True)
 class WellFormed:
     mode: SliceMode
+    label: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
 class Malformed:
     found: list[str]
+    configured: frozenset[str] = dataclasses.field(default_factory=frozenset)
 
 
 SliceClassification = WellFormed | Malformed
 
 
 BODY_FLOOR = 100
+
+
+@dataclasses.dataclass(frozen=True)
+class WellFormedBody:
+    stripped_length: int
+    body_floor: int = BODY_FLOOR
+
+
+@dataclasses.dataclass(frozen=True)
+class MalformedBody:
+    stripped_length: int
+    body_floor: int = BODY_FLOOR
+
+
+BodyFloorClassification = WellFormedBody | MalformedBody
+
+
+@dataclasses.dataclass(frozen=True)
+class IssueReadiness:
+    slice_status: SliceClassification
+    body_floor_status: BodyFloorClassification
+    is_ready: bool
+    selected_mode: SliceMode | None
 
 
 def slice_labels(cfg: Config) -> frozenset[str]:
@@ -55,10 +80,35 @@ def classify_slice(issue: dict, cfg: Config) -> SliceClassification:
     issue_labels: list[str] = issue.get("labels") or []
     matches = [lbl for lbl in issue_labels if lbl in label_to_mode]
     if len(matches) == 1:
-        return WellFormed(label_to_mode[matches[0]])
-    return Malformed(found=matches)
+        return WellFormed(label_to_mode[matches[0]], label=matches[0])
+    return Malformed(found=matches, configured=frozenset(label_to_mode))
 
 
 def is_well_formed_body(issue: dict) -> bool:
     body = issue.get("body") or ""
     return len(body.strip()) >= BODY_FLOOR
+
+
+def classify_body_floor(issue: dict) -> BodyFloorClassification:
+    stripped_length = len((issue.get("body") or "").strip())
+    if stripped_length >= BODY_FLOOR:
+        return WellFormedBody(stripped_length=stripped_length)
+    return MalformedBody(stripped_length=stripped_length)
+
+
+def classify_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
+    slice_status = classify_slice(issue, cfg)
+    body_floor_status = classify_body_floor(issue)
+    is_ready = False
+    selected_mode = None
+    if isinstance(slice_status, WellFormed) and isinstance(
+        body_floor_status, WellFormedBody
+    ):
+        is_ready = True
+        selected_mode = slice_status.mode
+    return IssueReadiness(
+        slice_status=slice_status,
+        body_floor_status=body_floor_status,
+        is_ready=is_ready,
+        selected_mode=selected_mode,
+    )
