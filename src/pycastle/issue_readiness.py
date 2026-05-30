@@ -86,6 +86,15 @@ class ClassifiedIssue:
     readiness: IssueReadiness
 
 
+@dataclasses.dataclass(frozen=True)
+class ReadinessPartition:
+    ready: list[dict]
+    slice_well_formed: list[dict]
+    slice_malformed: list[dict]
+    body_well_formed: list[dict]
+    body_malformed: list[dict]
+
+
 def slice_labels(cfg: Config) -> frozenset[str]:
     return frozenset(
         {cfg.refactor_slice_label, cfg.behavior_slice_label, cfg.docs_slice_label}
@@ -161,3 +170,38 @@ def classify_issues(issues: list[dict], cfg: Config) -> list[ClassifiedIssue]:
         ClassifiedIssue(issue=issue, readiness=classify_issue_readiness(issue, cfg))
         for issue in issues
     ]
+
+
+def partition_classified_issues(
+    classified_issues: list[ClassifiedIssue],
+) -> ReadinessPartition:
+    ready: list[dict] = []
+    slice_well_formed: list[dict] = []
+    slice_malformed: list[dict] = []
+    body_well_formed: list[dict] = []
+    body_malformed: list[dict] = []
+
+    for classified in classified_issues:
+        issue = classified.issue
+        readiness = classified.readiness
+
+        if isinstance(readiness.slice_status, WellFormed):
+            slice_well_formed.append(issue)
+        else:
+            slice_malformed.append(issue)
+
+        if isinstance(readiness.body_floor_status, WellFormedBody):
+            body_well_formed.append(issue)
+        else:
+            body_malformed.append(issue)
+
+        if readiness.is_ready:
+            ready.append(issue)
+
+    return ReadinessPartition(
+        ready=ready,
+        slice_well_formed=slice_well_formed,
+        slice_malformed=slice_malformed,
+        body_well_formed=body_well_formed,
+        body_malformed=body_malformed,
+    )

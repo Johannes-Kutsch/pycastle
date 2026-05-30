@@ -16,12 +16,10 @@ from ..services.github_service import GithubService
 from ..display.status_display import StatusDisplay
 from ..issue_readiness import (
     BODY_FLOOR,
-    ClassifiedIssue,
     Malformed,
-    WellFormed,
-    WellFormedBody,
     classify_issue_readiness,
     classify_issues,
+    partition_classified_issues,
 )
 from ..infrastructure.worktree import transient_worktree
 from ._rows import status_row
@@ -94,32 +92,6 @@ def hydrate_planned_issues(
             }
         )
     return PlanReady(issues=hydrated, sha=plan_result.sha)
-
-
-def _partition_by_body_floor(
-    classified_issues: list[ClassifiedIssue],
-) -> tuple[list[dict], list[dict]]:
-    well_formed_body: list[dict] = []
-    malformed_body: list[dict] = []
-    for classified in classified_issues:
-        if isinstance(classified.readiness.body_floor_status, WellFormedBody):
-            well_formed_body.append(classified.issue)
-        else:
-            malformed_body.append(classified.issue)
-    return well_formed_body, malformed_body
-
-
-def _partition_by_slice_readiness(
-    classified_issues: list[ClassifiedIssue],
-) -> tuple[list[dict], list[dict]]:
-    well_formed: list[dict] = []
-    malformed: list[dict] = []
-    for classified in classified_issues:
-        if isinstance(classified.readiness.slice_status, WellFormed):
-            well_formed.append(classified.issue)
-        else:
-            malformed.append(classified.issue)
-    return well_formed, malformed
 
 
 _MALFORMED_COMMENT = """\
@@ -244,22 +216,21 @@ async def planning_phase(
         sha = verdict.sha
 
         classified_issues = classify_issues(open_issues, deps.cfg)
+        readiness_partition = partition_classified_issues(classified_issues)
 
-        good_body, bad_body = _partition_by_body_floor(classified_issues)
-        _sync_needs_info(good_body, bad_body, deps.github_svc)
-
-        slice_well_formed, slice_malformed = _partition_by_slice_readiness(
-            classified_issues
+        _sync_needs_info(
+            readiness_partition.body_well_formed,
+            readiness_partition.body_malformed,
+            deps.github_svc,
         )
+
         _sync_needs_slice_type(
-            slice_well_formed, slice_malformed, deps.cfg, deps.github_svc
+            readiness_partition.slice_well_formed,
+            readiness_partition.slice_malformed,
+            deps.cfg,
+            deps.github_svc,
         )
-
-        well_formed = [
-            classified.issue
-            for classified in classified_issues
-            if classified.readiness.is_ready
-        ]
+        well_formed = readiness_partition.ready
 
         if len(well_formed) == 1:
             row.close(
@@ -297,7 +268,10 @@ async def planning_phase(
                 )
             if not output.issues:
                 blocked = _hydrate_blocked_issues(output.blocked, well_formed)
-                blocker_summary = _planning_blocker_summary(slice_malformed, bad_body)
+                blocker_summary = _planning_blocker_summary(
+                    readiness_partition.slice_malformed,
+                    readiness_partition.body_malformed,
+                )
                 blocked_lines = [
                     _format_blocked_issue_line(blocked_issue)
                     for blocked_issue in blocked
