@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from ..services import ServiceRegistry
+    from ..services.agent_service import AgentService
 
 
 class ServiceResumeIdentityStore(Protocol):
@@ -12,6 +16,10 @@ class ServiceResumeIdentityStore(Protocol):
     def save_service_session_id(self, service_name: str, session_id: str) -> None: ...
 
     def service_session_metadata(self, service_name: str) -> dict[str, str] | None: ...
+
+
+class ExactTranscriptHandoffStore(ServiceResumeIdentityStore, Protocol):
+    def service_session_state(self, service: AgentService) -> Any: ...
 
 
 @dataclass(frozen=True)
@@ -63,6 +71,37 @@ def is_exact_resumable_service_session(
             service_name,
             provider_session_id,
             provider_state_dir,
+        )
+    )
+
+
+def has_exact_transcript_handoff_for_selected_service(
+    role_session: ExactTranscriptHandoffStore,
+    registry: ServiceRegistry | None,
+    service_name: str,
+) -> bool:
+    if registry is None or not service_name:
+        return False
+    service = registry[service_name]
+    if service is None:
+        return False
+
+    state = role_session.service_session_state(service)
+    selection = select_resumable_provider_session_id(
+        role_session,
+        service_name,
+        provider_state_dir=state.state_dir,
+        has_resumable_provider_state=state.has_resumable_provider_state,
+    )
+    return (
+        state.has_resumable_provider_state
+        and selection.provider_session_id is not None
+        and not selection.persist_provider_session_id
+        and is_exact_resumable_service_session(
+            role_session,
+            service_name,
+            provider_session_id=selection.provider_session_id,
+            provider_state_dir=state.state_dir,
         )
     )
 
