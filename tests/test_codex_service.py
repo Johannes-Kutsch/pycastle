@@ -19,6 +19,9 @@ from pycastle.services.agent_service import (
 )
 from pycastle.services.provider_session_state import ProviderSessionStateRequest
 from pycastle.session import RoleSession, RunKind
+from pycastle.session.service_resume_identity import (
+    select_resumable_provider_session_id,
+)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -332,6 +335,30 @@ def test_provider_session_state_is_fresh_without_resumable_provider_state(tmp_pa
     assert provider_session_state.run_kind is RunKind.FRESH
     assert provider_session_state.provider_session_id is None
     assert provider_session_state.persist_provider_session_id is False
+
+
+def test_select_resumable_provider_session_id_does_not_recover_codex_rollout_thread_id_without_sidecar(
+    tmp_path,
+):
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
+    )
+
+    selection = select_resumable_provider_session_id(
+        role_session,
+        "codex",
+        provider_state_dir=state_dir,
+        has_resumable_provider_state=True,
+    )
+
+    assert selection.provider_session_id is None
+    assert selection.persist_provider_session_id is False
+    assert role_session.service_session_id("codex") is None
 
 
 def test_provider_session_state_recovers_single_nested_codex_rollout_thread_id(

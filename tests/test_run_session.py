@@ -76,6 +76,8 @@ class _FakeAgentService:
                 exact_transcript_match=exact_transcript_match,
                 persist_provider_session_id=self.persist_provider_session_id,
             )
+        if self.name == "codex":
+            return CodexService().provider_session_state(request)
         if not request.has_resumable_provider_state:
             return ProviderSessionState(RunKind.FRESH, None)
         selection = select_resumable_provider_session_id(
