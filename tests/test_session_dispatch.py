@@ -1298,6 +1298,28 @@ def test_prepared_provider_run_session_without_provider_session_id_clears_stale_
     }
 
 
+def test_prepared_provider_run_session_without_provider_session_id_deletes_file_when_sole_service(
+    tmp_path: Path,
+):
+    _seed_codex_auth(tmp_path)
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    role_session.save_service_session_metadata("codex", "thread-stale")
+
+    state = prepare_provider_session_state(
+        PreparedProviderSessionStateRequest(
+            worktree=tmp_path,
+            role=AgentRole.IMPLEMENTER,
+            session_namespace="",
+            service=CodexService(),
+        )
+    )
+
+    state.initial_provider_run_session().record_successful_run()
+
+    assert role_session.service_session_metadata("codex") is None
+    assert not service_session_metadata_path(role_session.path).exists()
+
+
 def test_prepared_success_recorder_preserves_metadata_for_other_services(
     tmp_path: Path,
 ):
