@@ -1,17 +1,13 @@
-import asyncio
 import dataclasses
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Literal, Protocol, TypeAlias
+from typing import Literal, Protocol, TypeAlias
 
-from ..agents.output_protocol import AgentOutput, AgentSuccessOutput
-from ..agents.runner import AgentRunnerProtocol, RunRequest, translate_run_outcome
+from ..agents.runner import AgentRunnerProtocol
 from ..config import Config
-from ..errors import HardAgentError
+from ..display.status_display import StatusDisplay
 from ..services import GitService
 from ..services import GithubService, ServiceRegistry
-from ..display.status_display import ModelDisplayMetadata, StatusDisplay
-from .preflight import PreflightCache, PreflightReady, PreflightResult
+from .preflight import PreflightCache
 
 ImproveMode: TypeAlias = Literal["until_sleep", "endless"] | None
 
@@ -22,147 +18,6 @@ class Logger(Protocol):
         self, label: str, error: Exception, cause: Exception | None = None
     ) -> None: ...
     def log_agent_output(self, agent_name: str, output: str) -> None: ...
-
-
-class RecordingLogger:
-    def __init__(self) -> None:
-        self.errors: list[tuple[dict, Exception]] = []
-        self.internal_errors: list[tuple[str, Exception, Exception | None]] = []
-        self.agent_outputs: list[tuple[str, str]] = []
-
-    def log_error(self, issue: dict, error: Exception) -> None:
-        self.errors.append((issue, error))
-
-    def log_internal_error(
-        self, label: str, error: Exception, cause: Exception | None = None
-    ) -> None:
-        self.internal_errors.append((label, error, cause))
-
-    def log_agent_output(self, agent_name: str, output: str) -> None:
-        self.agent_outputs.append((agent_name, output))
-
-
-class RecordingStatusDisplay:
-    def __init__(self) -> None:
-        self.calls: list[tuple] = []
-
-    def register(
-        self,
-        caller: str,
-        kind: str,
-        startup_message: str = "started",
-        work_body: str = "",
-        initial_phase: str = "Setup",
-        color_key: int | None = None,
-        model_display: ModelDisplayMetadata | None = None,
-    ) -> None:
-        self.calls.append(
-            ("register", caller, kind, startup_message, initial_phase, model_display)
-        )
-
-    def update_phase(self, name: str, phase: str) -> None:
-        self.calls.append(("update_phase", name, phase))
-
-    def reset_idle_timer(self, name: str) -> None:
-        self.calls.append(("reset_idle_timer", name))
-
-    def update_tokens(self, name: str, current_tokens: int) -> None:
-        self.calls.append(("update_tokens", name, current_tokens))
-
-    def remove(
-        self,
-        caller: str,
-        shutdown_message: str = "finished",
-        shutdown_style: str = "success",
-    ) -> None:
-        self.calls.append(("remove", caller, shutdown_message, shutdown_style))
-
-    def print(self, caller: str, message: object, style: str | None = None) -> None:
-        self.calls.append(("print", caller, message, style))
-
-
-class FakeAgentRunner:
-    """Queue-based test double: pop responses in order, record all calls, or delegate to side_effect."""
-
-    def __init__(
-        self,
-        responses: list[AgentOutput | BaseException] | None = None,
-        *,
-        side_effect: Callable[..., Any] | None = None,
-        preflight_responses: list[list[tuple[str, str, str]] | BaseException]
-        | None = None,
-    ) -> None:
-        self._responses: list[AgentOutput | BaseException] = list(responses or [])
-        self._side_effect = side_effect
-        self._preflight_unlimited = preflight_responses is None
-        self._preflight_responses: list[list[tuple[str, str, str]] | BaseException] = (
-            list(preflight_responses or [])
-        )
-        self.calls: list[RunRequest] = []
-        self.preflight_calls: list[dict] = []
-
-    async def run(self, request: RunRequest) -> AgentSuccessOutput:
-        return await translate_run_outcome(self._run(request), request)
-
-    async def _run(self, request: RunRequest) -> AgentOutput:
-        self.calls.append(request)
-        try:
-            if self._side_effect is not None:
-                result = self._side_effect(request)
-                if asyncio.iscoroutine(result):
-                    result = await result
-                if isinstance(result, BaseException):
-                    raise result
-                return result
-            if not self._responses:
-                raise AssertionError(
-                    f"FakeAgentRunner queue exhausted — unexpected call for agent {request.name!r}"
-                )
-            response = self._responses.pop(0)
-            if isinstance(response, BaseException):
-                raise response
-            return response
-        except HardAgentError as err:
-            err.caller = request.name
-            raise
-
-    async def run_preflight(
-        self,
-        *,
-        name: str,
-        mount_path: Path,
-        stage: str = "",
-        status_display: "StatusDisplay | None" = None,
-        work_body: str = "",
-    ) -> list[tuple[str, str, str]]:
-        call = {
-            "name": name,
-            "mount_path": mount_path,
-            "stage": stage,
-            "status_display": status_display,
-            "work_body": work_body,
-        }
-        self.preflight_calls.append(call)
-        if not self._preflight_responses:
-            if self._preflight_unlimited:
-                return []
-            raise AssertionError(
-                f"FakeAgentRunner preflight queue exhausted — unexpected call for agent {name!r}"
-            )
-        response = self._preflight_responses.pop(0)
-        if isinstance(response, BaseException):
-            raise response
-        return response
-
-
-class StubPreflightCache:
-    """Test double: always returns a fixed verdict from get_safe_sha()."""
-
-    def __init__(self, verdict: PreflightResult | None = None) -> None:
-        self._verdict: PreflightResult = verdict or PreflightReady(sha="abc123")
-
-    async def get_safe_sha(self, deps: Any) -> PreflightResult:
-        return self._verdict
 
 
 @dataclasses.dataclass
