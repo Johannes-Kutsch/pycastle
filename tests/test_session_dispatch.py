@@ -239,27 +239,23 @@ def test_prepare_provider_session_state_fresh_prepare_for_run_preserves_wipe_bef
     ]
 
 
-def test_prepare_provider_session_state_fresh_codex_without_role_auth_reports_seeding_requirement_without_copying_files(
+def test_prepare_provider_session_state_fresh_codex_without_role_auth_is_hard_error_before_copying_files(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
     home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", lambda: home)
 
-    state = prepare_provider_session_state(
-        _provider_request(tmp_path, service=CodexService())
-    )
-
     provider_auth = (
         tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
     )
-    action = state.auth_seed_action
 
-    assert state.run_kind is RunKind.FRESH
-    assert state.auth_seeding_requirement.name == "REQUIRED"
-    assert action is not None
-    assert action.source == home / ".codex" / "auth.json"
-    assert action.destination == provider_auth
+    with pytest.raises(HardAgentError) as exc_info:
+        prepare_provider_session_state(
+            _provider_request(tmp_path, service=CodexService())
+        )
+
+    assert exc_info.value.status_code == 401
     assert provider_auth.exists() is False
 
 

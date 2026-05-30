@@ -166,6 +166,8 @@ def prepare_provider_session_state(
         )
     )
     auth_seed_action = plan.auth_seed_action
+    if auth_seed_action is not None:
+        auth_seed_action.require_source()
     role_session = RoleSession(
         request.worktree,
         request.role,
