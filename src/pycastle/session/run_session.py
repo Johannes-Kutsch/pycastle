@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import shutil
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -22,12 +23,24 @@ class RecoveredSessionIdPersistence(Enum):
     SKIP = "skip"
 
 
+@dataclasses.dataclass(frozen=True)
+class LocalAuthSeedAction:
+    source: Path
+    destination: Path
+
+    def apply(self) -> None:
+        if self.destination.exists():
+            return
+        self.destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(self.source, self.destination)
+
+
 def _codex_auth_seeding_requirement(
-    state_dir: Path | None, run_kind: RunKind
+    provider_state_dir: Path | None,
 ) -> AuthSeedingRequirement:
-    if state_dir is None:
+    if provider_state_dir is None:
         return AuthSeedingRequirement.NOT_REQUIRED
-    if run_kind is RunKind.FRESH or not (state_dir / "auth.json").exists():
+    if not (provider_state_dir / "auth.json").exists():
         return AuthSeedingRequirement.REQUIRED
     return AuthSeedingRequirement.NOT_REQUIRED
 
@@ -59,6 +72,7 @@ class RunSessionPlan:
     provider_session_id: str | None
     auth_seeding_requirement: AuthSeedingRequirement
     recovered_session_id_persistence: RecoveredSessionIdPersistence
+    auth_seed_action: LocalAuthSeedAction | None = None
     exact_transcript_match: bool = False
 
     @classmethod
@@ -72,6 +86,7 @@ class RunSessionPlan:
     ) -> RunSessionPlan:
         auth_seeding_requirement = AuthSeedingRequirement.NOT_REQUIRED
         recovered_session_id_persistence = RecoveredSessionIdPersistence.SKIP
+        auth_seed_action: LocalAuthSeedAction | None = None
         role_session = RoleSession(worktree, role, namespace)
         service_state = role_session.service_session_state(service)
         service_state_dir = service_state.state_dir
@@ -90,8 +105,16 @@ class RunSessionPlan:
             recovered_session_id_persistence = RecoveredSessionIdPersistence.PERSIST
         if service.name == "codex":
             auth_seeding_requirement = _codex_auth_seeding_requirement(
-                service_state_dir, run_kind
+                host_provider_state_dir
             )
+            if (
+                auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
+                and host_provider_state_dir is not None
+            ):
+                auth_seed_action = LocalAuthSeedAction(
+                    source=Path.home() / ".codex" / "auth.json",
+                    destination=host_provider_state_dir / "auth.json",
+                )
         exact_transcript_match = handoff.is_eligible
         return cls(
             role=role,
@@ -105,12 +128,14 @@ class RunSessionPlan:
             provider_session_id=provider_session_id,
             auth_seeding_requirement=auth_seeding_requirement,
             recovered_session_id_persistence=recovered_session_id_persistence,
+            auth_seed_action=auth_seed_action,
             exact_transcript_match=exact_transcript_match,
         )
 
 
 __all__ = [
     "AuthSeedingRequirement",
+    "LocalAuthSeedAction",
     "RecoveredSessionIdPersistence",
     "RunSessionPlan",
 ]

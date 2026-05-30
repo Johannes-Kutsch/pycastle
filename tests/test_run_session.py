@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+import pytest
+
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services import ClaudeService
 from pycastle.services.codex_service import CodexService
@@ -774,6 +776,27 @@ def test_run_session_plan_requires_auth_seeding_for_fresh_codex_without_auth_jso
     assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
 
 
+def test_run_session_plan_exposes_auth_seed_action_for_fresh_codex_without_auth_json(
+    tmp_path: Path,
+):
+    service = CodexService()
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    action = plan.auth_seed_action
+
+    assert action is not None
+    assert action.source == Path.home() / ".codex" / "auth.json"
+    assert action.destination == (
+        tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
+    )
+
+
 def test_run_session_plan_requires_auth_seeding_for_resume_codex_without_auth_json(
     tmp_path: Path,
 ):
@@ -795,6 +818,33 @@ def test_run_session_plan_requires_auth_seeding_for_resume_codex_without_auth_js
 
     assert plan.run_kind is RunKind.RESUME
     assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
+
+
+def test_run_session_plan_exposes_auth_seed_action_for_resume_codex_without_auth_json(
+    tmp_path: Path,
+):
+    service = CodexService()
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    action = plan.auth_seed_action
+
+    assert plan.run_kind is RunKind.RESUME
+    assert action is not None
+    assert action.source == Path.home() / ".codex" / "auth.json"
+    assert action.destination == state_dir / "auth.json"
 
 
 def test_run_session_plan_does_not_require_auth_seeding_for_resume_codex_with_auth_json(
@@ -819,3 +869,72 @@ def test_run_session_plan_does_not_require_auth_seeding_for_resume_codex_with_au
 
     assert plan.run_kind is RunKind.RESUME
     assert plan.auth_seeding_requirement is AuthSeedingRequirement.NOT_REQUIRED
+
+
+def test_run_session_plan_skips_auth_seed_action_when_preserved_codex_provider_state_already_has_auth_json(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService("custom/codex-state", name="codex", resumable=True),
+    )
+    state_dir = tmp_path / "custom" / "codex-state"
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+    provider_state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    provider_state_dir.mkdir(parents=True)
+    (provider_state_dir / "auth.json").write_text(
+        '{"mode":"oauth","origin":"provider"}',
+        encoding="utf-8",
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.auth_seeding_requirement is AuthSeedingRequirement.NOT_REQUIRED
+    assert plan.auth_seed_action is None
+
+
+def test_local_auth_seed_action_applies_only_to_preserved_codex_provider_state_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth","origin":"host"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    service = cast(
+        AgentService,
+        _FakeAgentService("custom/codex-state", name="codex", resumable=True),
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    action = plan.auth_seed_action
+
+    assert action is not None
+
+    action.apply()
+
+    provider_auth = (
+        tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
+    )
+    assert (
+        provider_auth.read_text(encoding="utf-8") == '{"mode":"oauth","origin":"host"}'
+    )
+    assert not (tmp_path / "custom" / "codex-state").exists()
