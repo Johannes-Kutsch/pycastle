@@ -53,6 +53,15 @@ def test_prepare_agent_session_fresh_claude_has_uuid_as_provider_session_id(
     assert session.provider_session_id == expected
 
 
+def test_prepare_agent_session_fresh_claude_exposes_state_dir_relpath(
+    tmp_path: Path,
+):
+    session = prepare_agent_session(_request(tmp_path, service=ClaudeService()))
+
+    assert session.run_kind is RunKind.FRESH
+    assert session.provider_state_dir_relpath == ".pycastle-session/implementer/claude/"
+
+
 def _seed_codex_auth(tmp_path: Path) -> None:
     auth_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
     auth_dir.mkdir(parents=True, exist_ok=True)
