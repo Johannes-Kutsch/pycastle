@@ -337,7 +337,7 @@ def test_provider_session_state_is_fresh_without_resumable_provider_state(tmp_pa
     assert provider_session_state.persist_provider_session_id is False
 
 
-def test_select_resumable_provider_session_id_does_not_recover_codex_rollout_thread_id_without_sidecar(
+def test_select_resumable_provider_session_id_recovers_codex_rollout_thread_id_without_sidecar(
     tmp_path,
 ):
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
@@ -356,9 +356,9 @@ def test_select_resumable_provider_session_id_does_not_recover_codex_rollout_thr
         has_resumable_provider_state=True,
     )
 
-    assert selection.provider_session_id is None
-    assert selection.persist_provider_session_id is False
-    assert role_session.service_session_id("codex") is None
+    assert selection.provider_session_id == "thread-from-rollout"
+    assert selection.persist_provider_session_id is True
+    assert role_session.service_session_id("codex") == "thread-from-rollout"
 
 
 def test_provider_session_state_recovers_single_nested_codex_rollout_thread_id(
@@ -508,6 +508,40 @@ def test_provider_session_state_skips_exact_transcript_match_for_recovered_codex
     )
 
     assert provider_session_state.persist_provider_session_id is True
+    assert provider_session_state.exact_transcript_match is False
+
+
+def test_provider_session_state_skips_exact_transcript_match_for_conflicting_codex_rollouts(
+    tmp_path,
+):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-old"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-new"}\n',
+        encoding="utf-8",
+    )
+    role_session.save_service_session_id("codex", "thread-new")
+    role_session.save_service_session_metadata("codex", "thread-new")
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+            require_exact_transcript_match=True,
+        )
+    )
+
+    assert provider_session_state.persist_provider_session_id is False
     assert provider_session_state.exact_transcript_match is False
 
 

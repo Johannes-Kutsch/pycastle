@@ -13,6 +13,10 @@ from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
 from ..agents.output_protocol import AgentOutputProtocolError
 from ..session import SESSION_DIR_NAME, RunKind
+from ..session.service_resume_identity import (
+    is_exact_resumable_service_session,
+    select_resumable_provider_session_id,
+)
 from .agent_service import (
     AssistantTurn,
     HardError,
@@ -35,33 +39,6 @@ _UNAUTHORIZED_RE = re.compile(
     re.IGNORECASE,
 )
 _HTTP_STATUS_RE = re.compile(r"\bstatus\s+(?P<status>\d{3})\b", re.IGNORECASE)
-
-
-def _recover_rollout_thread_id(state_dir: Path | None) -> str | None:
-    if state_dir is None:
-        return None
-    sessions_dir = state_dir / "sessions"
-    if not sessions_dir.is_dir():
-        return None
-
-    found: set[str] = set()
-    for rollout in sessions_dir.rglob("rollout-*.jsonl"):
-        try:
-            lines = rollout.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            continue
-        for line in lines:
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(obj, dict) or obj.get("type") != "thread.started":
-                continue
-            thread_id = obj.get("thread_id")
-            if isinstance(thread_id, str) and thread_id.strip():
-                found.add(thread_id.strip())
-
-    return next(iter(found)) if len(found) == 1 else None
 
 
 def _classify_error_message(message: str) -> HardError | TransientError | None:
@@ -163,34 +140,37 @@ class CodexService:
                 allow_protocol_reprompt=not request.force_resume,
             )
 
-        provider_session_id = request.role_session.service_session_id(self.name)
-        persist_provider_session_id = False
+        selection = select_resumable_provider_session_id(
+            request.role_session,
+            self.name,
+            provider_state_dir=request.provider_state_dir,
+            has_resumable_provider_state=request.has_resumable_provider_state,
+        )
+        provider_session_id = selection.provider_session_id
         if provider_session_id is None:
-            provider_session_id = _recover_rollout_thread_id(request.provider_state_dir)
-            if provider_session_id is None:
-                return ProviderSessionState(
-                    RunKind.FRESH,
-                    None,
-                    allow_protocol_reprompt=not request.force_resume,
-                )
-            request.role_session.save_service_session_id(self.name, provider_session_id)
-            persist_provider_session_id = True
+            return ProviderSessionState(
+                RunKind.FRESH,
+                None,
+                allow_protocol_reprompt=not request.force_resume,
+            )
 
         exact_transcript_match = False
-        if request.require_exact_transcript_match and not persist_provider_session_id:
-            metadata = request.role_session.service_session_metadata(self.name)
-            exact_transcript_match = (
-                metadata is not None
-                and metadata["provider_session_id"] == provider_session_id
-                and _recover_rollout_thread_id(request.provider_state_dir)
-                == provider_session_id
+        if (
+            request.require_exact_transcript_match
+            and not selection.persist_provider_session_id
+        ):
+            exact_transcript_match = is_exact_resumable_service_session(
+                request.role_session,
+                self.name,
+                provider_session_id=provider_session_id,
+                provider_state_dir=request.provider_state_dir,
             )
 
         return ProviderSessionState(
             RunKind.RESUME,
             provider_session_id,
             exact_transcript_match=exact_transcript_match,
-            persist_provider_session_id=persist_provider_session_id,
+            persist_provider_session_id=selection.persist_provider_session_id,
         )
 
     def valid_models(self) -> frozenset[str]:

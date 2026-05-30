@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -77,7 +78,39 @@ def _provider_session_id_from_state_dir(
     service_name: str,
     state_dir: Path | None,
 ) -> str | None:
-    return load_state_dir_provider_session_id(state_dir, service_name)
+    provider_session_id = load_state_dir_provider_session_id(state_dir, service_name)
+    if provider_session_id is not None:
+        return provider_session_id
+    if service_name != "codex":
+        return None
+    return _recover_codex_rollout_thread_id(state_dir)
+
+
+def _recover_codex_rollout_thread_id(state_dir: Path | None) -> str | None:
+    if state_dir is None:
+        return None
+    sessions_dir = state_dir / "sessions"
+    if not sessions_dir.is_dir():
+        return None
+
+    found: set[str] = set()
+    for rollout in sessions_dir.rglob("rollout-*.jsonl"):
+        try:
+            lines = rollout.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in lines:
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(obj, dict) or obj.get("type") != "thread.started":
+                continue
+            thread_id = obj.get("thread_id")
+            if isinstance(thread_id, str) and thread_id.strip():
+                found.add(thread_id.strip())
+
+    return next(iter(found)) if len(found) == 1 else None
 
 
 def _is_exact_resumable_provider_session(
@@ -87,4 +120,21 @@ def _is_exact_resumable_provider_session(
 ) -> bool:
     if provider_session_id is None or provider_state_dir is None:
         return False
-    return True
+    if service_name not in {"codex", "opencode"}:
+        return True
+    exact_provider_session_id = _exact_provider_session_id_from_state_dir(
+        service_name,
+        provider_state_dir,
+    )
+    return exact_provider_session_id == provider_session_id
+
+
+def _exact_provider_session_id_from_state_dir(
+    service_name: str,
+    state_dir: Path | None,
+) -> str | None:
+    if service_name == "codex":
+        return _recover_codex_rollout_thread_id(state_dir)
+    if service_name == "opencode":
+        return load_state_dir_provider_session_id(state_dir, service_name)
+    return None

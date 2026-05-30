@@ -8,6 +8,7 @@ import pytest
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.session import (
+    ProviderIdentityKind,
     RoleSession,
     RunKind,
     any_role_dir_present,
@@ -152,6 +153,37 @@ def test_service_session_ids_use_service_specific_sidecars(worktree):
     assert rs.service_session_id("codex") == "thread-123"
     assert rs.service_session_id("opencode") == "sess-123"
     assert rs.service_session_id("unknown-service") == "default-123"
+
+
+def test_provider_identity_recovers_single_nested_codex_rollout_thread_id_and_persists_it(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    state_dir = rs.path / "codex"
+    rollout_dir = state_dir / "sessions" / "2026" / "05" / "30" / "nested"
+    rollout_dir.mkdir(parents=True)
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"   "}',
+                '{"type":"thread.started","thread_id":"thread-from-rollout"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    identity = rs.provider_identity(
+        "codex",
+        has_resumable_provider_state=True,
+        provider_state_dir=state_dir,
+    )
+
+    assert identity.kind is ProviderIdentityKind.RESUME
+    assert identity.run_kind is RunKind.RESUME
+    assert identity.provider_session_id == "thread-from-rollout"
+    assert identity.persist_provider_session_id is True
+    assert rs.service_session_id("codex") == "thread-from-rollout"
 
 
 def test_mark_done_preserves_service_session_metadata_without_counting_as_resumable(rs):
