@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import dataclasses
-import shutil
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ...agents.output_protocol import AgentRole
-from ...errors import HardAgentError
 from .._provider_session_plan import (
+    AuthSeedingRequirement,
+    LocalAuthSeedAction,
     ProviderSessionPlan,
     ProviderSessionPlanRequest,
     _preserves_role_provider_layout,
@@ -23,38 +23,9 @@ if TYPE_CHECKING:
     from ...services.agent_service import AgentService
 
 
-class AuthSeedingRequirement(Enum):
-    REQUIRED = "required"
-    NOT_REQUIRED = "not_required"
-
-
 class RecoveredSessionIdPersistence(Enum):
     PERSIST = "persist"
     SKIP = "skip"
-
-
-@dataclasses.dataclass(frozen=True)
-class LocalAuthSeedAction:
-    source: Path
-    destination: Path
-    missing_source_message: str = dataclasses.field(
-        default="Codex authentication missing: run `codex login` on the host.",
-        compare=False,
-    )
-
-    def require_source(self) -> Path:
-        if not self.source.exists():
-            raise HardAgentError(
-                self.missing_source_message,
-                status_code=401,
-            )
-        return self.source
-
-    def apply(self) -> None:
-        if self.destination.exists():
-            return
-        self.destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(self.source, self.destination)
 
 
 def _persist_provider_state_session_id(
@@ -105,6 +76,8 @@ class RunSessionPlan:
                 host_state_dir=self.host_provider_state_dir,
                 run_kind=self.run_kind,
                 provider_session_id=self.provider_session_id,
+                auth_seeding_requirement=self.auth_seeding_requirement,
+                auth_seed_action=self.auth_seed_action,
             ),
         )
 
@@ -194,9 +167,7 @@ class RunSessionPlan:
 
 
 def plan_run_session(request: RunSessionPlanRequest) -> RunSessionPlan:
-    auth_seeding_requirement = AuthSeedingRequirement.NOT_REQUIRED
     recovered_session_id_persistence = RecoveredSessionIdPersistence.SKIP
-    auth_seed_action: LocalAuthSeedAction | None = None
     provider_session = plan_provider_session(
         ProviderSessionPlanRequest(
             worktree=request.worktree,
@@ -208,13 +179,6 @@ def plan_run_session(request: RunSessionPlanRequest) -> RunSessionPlan:
     provider_plan = provider_session.plan
     if provider_session.persist_provider_session_id:
         recovered_session_id_persistence = RecoveredSessionIdPersistence.PERSIST
-    if provider_plan.requires_codex_auth_seed:
-        auth_seeding_requirement = AuthSeedingRequirement.REQUIRED
-        if provider_plan.host_state_dir is not None:
-            auth_seed_action = LocalAuthSeedAction(
-                source=Path.home() / ".codex" / "auth.json",
-                destination=provider_plan.host_state_dir / "auth.json",
-            )
     return RunSessionPlan(
         role=request.role,
         worktree=request.worktree,
@@ -226,9 +190,9 @@ def plan_run_session(request: RunSessionPlanRequest) -> RunSessionPlan:
         provider_state_dir_relpath=provider_plan.state_dir_relpath,
         host_provider_state_dir=provider_plan.host_state_dir,
         provider_session_id=provider_plan.provider_session_id,
-        auth_seeding_requirement=auth_seeding_requirement,
+        auth_seeding_requirement=provider_plan.auth_seeding_requirement,
         recovered_session_id_persistence=recovered_session_id_persistence,
-        auth_seed_action=auth_seed_action,
+        auth_seed_action=provider_plan.auth_seed_action,
         exact_transcript_match=provider_session.exact_transcript_match,
     )
 

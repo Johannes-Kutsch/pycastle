@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import dataclasses
+import shutil
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
+from ..errors import HardAgentError
 from .service_resume_identity import is_exact_resumable_service_session
 from .resume import (
     RoleSession,
@@ -18,13 +21,45 @@ if TYPE_CHECKING:
     from ..services.agent_service import AgentService
 
 
+class AuthSeedingRequirement(Enum):
+    REQUIRED = "required"
+    NOT_REQUIRED = "not_required"
+
+
+@dataclasses.dataclass(frozen=True)
+class LocalAuthSeedAction:
+    source: Path
+    destination: Path
+    missing_source_message: str = dataclasses.field(
+        default="Codex authentication missing: run `codex login` on the host.",
+        compare=False,
+    )
+
+    def require_source(self) -> Path:
+        if not self.source.exists():
+            raise HardAgentError(
+                self.missing_source_message,
+                status_code=401,
+            )
+        return self.source
+
+    def apply(self) -> None:
+        if self.destination.exists():
+            return
+        self.destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(self.source, self.destination)
+
+
 @dataclasses.dataclass(frozen=True)
 class ProviderSessionPlan:
     state_dir_relpath: str | None
     host_state_dir: Path | None
     run_kind: RunKind
     provider_session_id: str | None
-    requires_codex_auth_seed: bool = False
+    auth_seeding_requirement: AuthSeedingRequirement = (
+        AuthSeedingRequirement.NOT_REQUIRED
+    )
+    auth_seed_action: LocalAuthSeedAction | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -88,7 +123,11 @@ def plan_provider_session(
         host_state_dir=host_state_dir,
         run_kind=provider_identity.run_kind,
         provider_session_id=provider_identity.provider_session_id,
-        requires_codex_auth_seed=_requires_codex_auth_seed(
+        auth_seeding_requirement=_codex_auth_seeding_requirement(
+            request.service.name,
+            host_state_dir,
+        ),
+        auth_seed_action=_codex_auth_seed_action(
             request.service.name,
             host_state_dir,
         ),
@@ -147,7 +186,32 @@ def _requires_codex_auth_seed(
     )
 
 
+def _codex_auth_seeding_requirement(
+    service_name: str,
+    host_state_dir: Path | None,
+) -> AuthSeedingRequirement:
+    if _requires_codex_auth_seed(service_name, host_state_dir):
+        return AuthSeedingRequirement.REQUIRED
+    return AuthSeedingRequirement.NOT_REQUIRED
+
+
+def _codex_auth_seed_action(
+    service_name: str,
+    host_state_dir: Path | None,
+) -> LocalAuthSeedAction | None:
+    if not _requires_codex_auth_seed(service_name, host_state_dir):
+        return None
+    if host_state_dir is None:
+        return None
+    return LocalAuthSeedAction(
+        source=Path.home() / ".codex" / "auth.json",
+        destination=host_state_dir / "auth.json",
+    )
+
+
 __all__ = [
+    "AuthSeedingRequirement",
+    "LocalAuthSeedAction",
     "PlannedProviderSession",
     "ProviderSessionPlan",
     "ProviderSessionPlanRequest",
