@@ -147,9 +147,10 @@ def _sync_needs_slice_type(
 def _sync_needs_info(
     well_formed_body: list[dict],
     malformed_body: list[dict],
+    cfg: "Config",
     github_svc: "GithubService",
 ) -> None:
-    flag = "needs-info"
+    flag = cfg.needs_info_label
 
     for issue in malformed_body:
         labels: list[str] = issue.get("labels") or []
@@ -233,6 +234,7 @@ async def planning_phase(
         _sync_needs_info(
             readiness_partition.body_well_formed,
             readiness_partition.body_malformed,
+            deps.cfg,
             deps.github_svc,
         )
 

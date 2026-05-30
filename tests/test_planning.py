@@ -861,6 +861,43 @@ def test_planning_phase_adds_label_and_comment_for_malformed_without_flag(
     assert "none" in comment_body
 
 
+def test_planning_phase_adds_custom_needs_slice_type_label_for_malformed_issue(
+    tmp_path, git_svc
+):
+    from unittest.mock import MagicMock
+    from pycastle.services.github_service import GithubService
+
+    cfg = Config(needs_slice_type_label="needs-mode")
+    well = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    malformed = {
+        "number": 2,
+        "title": "B",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
+    fake = FakeAgentRunner([_plan_output([well])])
+    github_svc = MagicMock(spec=GithubService)
+
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=cfg,
+    )
+    asyncio.run(planning_phase(deps, [well, malformed], []))
+
+    github_svc.add_label_to_issue.assert_called_once_with(2, "needs-mode")
+    github_svc.post_comment.assert_called_once()
+
+
 def test_planning_phase_makes_no_calls_for_malformed_already_flagged(tmp_path, git_svc):
     from unittest.mock import MagicMock
     from pycastle.services.github_service import GithubService
@@ -1016,6 +1053,41 @@ def test_planning_phase_adds_needs_info_label_and_comment_for_short_body(
     comment_body = github_svc.post_comment.call_args[0][1]
     assert "too short" in comment_body
     assert "needs-info" in comment_body
+
+
+def test_planning_phase_adds_custom_needs_info_label_for_short_body(tmp_path, git_svc):
+    from unittest.mock import MagicMock
+    from pycastle.services.github_service import GithubService
+
+    cfg = Config(needs_info_label="awaiting-details")
+    well = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    short_body = {
+        "number": 2,
+        "title": "B",
+        "body": "too short",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    fake = FakeAgentRunner([_plan_output([well])])
+    github_svc = MagicMock(spec=GithubService)
+
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=cfg,
+    )
+    asyncio.run(planning_phase(deps, [well, short_body], []))
+
+    github_svc.add_label_to_issue.assert_called_once_with(2, "awaiting-details")
+    github_svc.post_comment.assert_called_once()
 
 
 def test_planning_phase_removes_needs_info_when_body_now_long_enough(tmp_path, git_svc):
@@ -1216,6 +1288,94 @@ def test_planning_phase_issue_malformed_in_both_dimensions_gets_both_labels(
     assert "needs-info" in added_labels
     assert "needs-slice-type" in added_labels
     assert github_svc.post_comment.call_count == 2
+
+
+def test_planning_phase_issue_malformed_in_both_dimensions_gets_both_custom_labels(
+    tmp_path, git_svc
+):
+    from unittest.mock import MagicMock
+    from pycastle.services.github_service import GithubService
+
+    cfg = Config(
+        needs_info_label="awaiting-details",
+        needs_slice_type_label="needs-mode",
+    )
+    well = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    both_bad = {
+        "number": 2,
+        "title": "B",
+        "body": "short",
+        "comments": [],
+        "labels": [],
+    }
+    fake = FakeAgentRunner([_plan_output([well])])
+    github_svc = MagicMock(spec=GithubService)
+
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=cfg,
+    )
+    asyncio.run(planning_phase(deps, [well, both_bad], []))
+
+    added_labels = [
+        call.args[1] for call in github_svc.add_label_to_issue.call_args_list
+    ]
+    assert "awaiting-details" in added_labels
+    assert "needs-mode" in added_labels
+    assert github_svc.post_comment.call_count == 2
+
+
+def test_planning_phase_removes_custom_stale_readiness_blocker_labels_from_ready_issue(
+    tmp_path, git_svc
+):
+    from unittest.mock import MagicMock
+    from pycastle.services.github_service import GithubService
+
+    cfg = Config(
+        needs_info_label="awaiting-details",
+        needs_slice_type_label="needs-mode",
+    )
+    ready = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice", "awaiting-details", "needs-mode"],
+    }
+    other_ready = {
+        "number": 2,
+        "title": "B",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["refactor-slice"],
+    }
+    fake = FakeAgentRunner([_plan_output([ready, other_ready])])
+    github_svc = MagicMock(spec=GithubService)
+
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=cfg,
+    )
+    asyncio.run(planning_phase(deps, [ready, other_ready], []))
+
+    removed_labels = [
+        call.args[1] for call in github_svc.remove_label_from_issue.call_args_list
+    ]
+    assert removed_labels == ["awaiting-details", "needs-mode"]
+    github_svc.add_label_to_issue.assert_not_called()
+    github_svc.post_comment.assert_not_called()
 
 
 def test_planning_phase_single_issue_with_short_body_excluded_from_short_circuit(
