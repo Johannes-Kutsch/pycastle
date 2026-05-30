@@ -643,6 +643,36 @@ def test_has_exact_transcript_handoff_for_selected_service_returns_true_when_eli
     )
 
 
+def test_has_exact_transcript_handoff_for_selected_service_uses_selected_codex_state_dir(
+    worktree,
+):
+    class CustomCodexService:
+        name = "codex"
+
+        def state_dir_relpath(self, role, namespace=""):
+            return ".pycastle-session/improve/main/custom-codex/"
+
+        def is_resumable(self, state_dir):
+            sessions_dir = state_dir / "sessions"
+            return sessions_dir.is_dir() and any(sessions_dir.rglob("rollout-*.jsonl"))
+
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    state_dir = worktree / ".pycastle-session" / "improve" / "main" / "custom-codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+    rs.save_service_session_id("codex", "thread-abc")
+    rs.save_service_session_metadata("codex", "thread-abc")
+
+    registry = ServiceRegistry({"codex": CustomCodexService()})
+    assert (
+        rs.has_exact_transcript_handoff_for_selected_service(registry, "codex") is True
+    )
+
+
 def test_mark_done_preserves_service_session_metadata_without_counting_as_resumable(rs):
     rs.start_fresh()
     rs.save_service_session_metadata("codex", "thread-from-run")
