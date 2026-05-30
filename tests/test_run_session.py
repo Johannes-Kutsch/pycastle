@@ -11,6 +11,7 @@ from pycastle.errors import HardAgentError
 from pycastle.services import ClaudeService
 from pycastle.services.codex_service import CodexService
 from pycastle.services.opencode_service import OpenCodeService
+from pycastle.session.agent import RunSessionPlanRequest, plan_run_session
 from pycastle.session.run_session import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
@@ -44,6 +45,37 @@ def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: P
         worktree=tmp_path,
         namespace="main",
         service=service,
+    )
+
+    assert plan == RunSessionPlan(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+        run_kind=RunKind.FRESH,
+        service_state_dir=tmp_path / ".pycastle-session/improve/main/codex",
+        provider_state_dir_relpath=".pycastle-session/improve/main/codex/",
+        host_provider_state_dir=tmp_path / ".pycastle-session/improve/main/codex",
+        provider_session_id=None,
+        auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
+        recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
+    )
+
+
+def test_plan_run_session_public_interface_preserves_namespaced_role_session_facts(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService, _FakeAgentService(".pycastle-session/improve/main/codex/")
+    )
+
+    plan = plan_run_session(
+        RunSessionPlanRequest(
+            role=AgentRole.IMPROVE,
+            worktree=tmp_path,
+            namespace="main",
+            service=service,
+        )
     )
 
     assert plan == RunSessionPlan(

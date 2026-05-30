@@ -8,12 +8,12 @@ from collections.abc import Callable
 
 from ..agents.output_protocol import AgentRole
 from ..errors import HardAgentError
-from .agent import plan_run_session
-from .agent._planning import (
+from .agent import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
     RunSessionPlan,
     RunSessionPlanRequest,
+    plan_run_session,
 )
 from .resume import RoleSession, RunKind
 

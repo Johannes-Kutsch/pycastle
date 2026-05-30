@@ -12,7 +12,7 @@ from ..session._provider_session_state import (
     ProviderSessionStateRequest,
     prepare_provider_session_state,
 )
-from ..session.agent._planning import LocalAuthSeedAction
+from ..session.agent import LocalAuthSeedAction
 from ..services.agent_service import AgentService
 
 
