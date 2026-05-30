@@ -106,6 +106,25 @@ class _CustomOpenCodeStateDirService:
 
 
 @dataclass
+class _CustomCodexStateDirService:
+    name: str = "codex"
+    relpath: str = "custom/codex-state/"
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        del role, namespace
+        return self.relpath
+
+    def is_resumable(self, state_dir: Path) -> bool:
+        return CodexService().is_resumable(state_dir)
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        return CodexService().provider_session_state(request)
+
+
+@dataclass
 class _ClaudeFilesystemStandIn:
     name: str = "claude"
 
@@ -286,6 +305,39 @@ def test_prepare_provider_session_state_fresh_codex_applies_host_auth_seed_only_
     assert provider_auth.read_text(encoding="utf-8") == (
         '{"mode":"oauth","origin":"host"}'
     )
+
+
+def test_prepare_provider_session_state_fresh_codex_uses_selected_state_dir_for_auth_seeding_and_container_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True, exist_ok=True)
+    host_auth.write_text('{"mode":"oauth","origin":"host"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    state = prepare_provider_session_state(
+        _provider_request(
+            tmp_path,
+            service=cast(AgentService, _CustomCodexStateDirService()),
+        )
+    )
+
+    state.prepare_for_run()
+
+    selected_state_dir = tmp_path / "custom" / "codex-state"
+    legacy_state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+
+    assert state.run_kind is RunKind.FRESH
+    assert state.provider_session_id is None
+    assert state.provider_state_dir_container_path("/home/agent/workspace") == (
+        "/home/agent/workspace/custom/codex-state/"
+    )
+    assert (selected_state_dir / "auth.json").read_text(encoding="utf-8") == (
+        '{"mode":"oauth","origin":"host"}'
+    )
+    assert legacy_state_dir.exists() is False
 
 
 def test_prepare_provider_session_state_fresh_codex_prepare_for_run_wipes_role_session_before_seeding_auth(
