@@ -369,8 +369,18 @@ def _never_yields():
 
 
 class _RecordingAgentService:
-    def __init__(self, name: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        *,
+        state_dir_relpath: str | None = None,
+        provider_run_state: ProviderRunState | None = None,
+    ) -> None:
         self.name = name
+        self._state_dir_relpath = state_dir_relpath
+        self._provider_run_state = provider_run_state or ProviderRunState(
+            RunKind.FRESH, None
+        )
         self.commands: list[str] = []
         self.env_state_dirs: list[str | None] = []
 
@@ -412,7 +422,8 @@ class _RecordingAgentService:
         pass
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        return None
+        del role, namespace
+        return self._state_dir_relpath
 
     def is_resumable(self, state_dir: Path) -> bool:
         return False
@@ -425,7 +436,7 @@ class _RecordingAgentService:
         has_resumable_provider_state: bool,
     ) -> ProviderRunState:
         del role_session, provider_state_dir, has_resumable_provider_state
-        return ProviderRunState(RunKind.FRESH, None)
+        return self._provider_run_state
 
     def has_exact_transcript_session(
         self,
@@ -439,6 +450,9 @@ class _RecordingAgentService:
 
     def valid_efforts(self) -> frozenset[str]:
         return frozenset({"low", "medium", "high"})
+
+    def valid_models(self) -> frozenset[str]:
+        return frozenset({"test-model"})
 
 
 # ── AgentRunner: run() return values ─────────────────────────────────────────
@@ -519,6 +533,56 @@ def test_agent_runner_uses_requested_service_from_registry(tmp_path):
     assert isinstance(result, CommitMessageOutput)
     assert requested_service.commands == ["codex exec"]
     assert claude_service.commands == []
+
+
+def test_agent_runner_uses_service_owned_provider_run_state_and_state_dir(
+    tmp_path: Path,
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    requested_service = _RecordingAgentService(
+        "fake",
+        state_dir_relpath=".pycastle-session/improve/fake/",
+        provider_run_state=ProviderRunState(
+            RunKind.RESUME,
+            "provider-session-123",
+        ),
+    )
+    work_calls: list[tuple[RunKind, str | None]] = []
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"fake": requested_service},
+    )
+
+    async def _fake_work(_role, _prompt, *, run_kind, session_uuid, on_thread_id=None):
+        del on_thread_id
+        work_calls.append((run_kind, session_uuid))
+        return CommitMessageOutput(message="done")
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Improve",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPROVE,
+                    service="fake",
+                    session_namespace="main",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [(RunKind.RESUME, "provider-session-123")]
+    assert requested_service.env_state_dirs == [
+        "/home/agent/workspace/.pycastle-session/improve/main/fake/"
+    ]
 
 
 def test_agent_runner_does_not_fall_back_to_claude_for_unknown_requested_service(
