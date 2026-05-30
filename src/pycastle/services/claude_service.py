@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import re
 import shlex
 from collections.abc import Callable, Iterable, Iterator
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..agents.output_protocol import AgentRole
@@ -22,6 +21,7 @@ from .agent_service import (
     UsageLimit,
 )
 from ._wake_time import compute_wake_time
+from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time
 
 
 # ── private account pool ──────────────────────────────────────────────────────
@@ -85,40 +85,6 @@ class _AccountPool:
         return [a.name for a in self._accounts]
 
 
-_RESET_TIME_RE = re.compile(
-    r"resets\s+"
-    r"(?:(?P<month>[A-Za-z]+)\s+(?P<day>\d{1,2}),\s+)?"
-    r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?(?P<ampm>am|pm)\s+\(UTC\)",
-    re.IGNORECASE,
-)
-
-_MONTHS = {
-    "january": 1,
-    "jan": 1,
-    "february": 2,
-    "feb": 2,
-    "march": 3,
-    "mar": 3,
-    "april": 4,
-    "apr": 4,
-    "may": 5,
-    "june": 6,
-    "jun": 6,
-    "july": 7,
-    "jul": 7,
-    "august": 8,
-    "aug": 8,
-    "september": 9,
-    "sept": 9,
-    "sep": 9,
-    "october": 10,
-    "oct": 10,
-    "november": 11,
-    "nov": 11,
-    "december": 12,
-    "dec": 12,
-}
-
 _SUBSCRIPTION_ACCESS_DENIAL_PHRASE = (
     "disabled Claude subscription access for Claude Code"
 )
@@ -128,49 +94,7 @@ _PERMANENT_EXHAUSTION_WAKE = datetime(9999, 12, 31, 23, 59, tzinfo=timezone.utc)
 def _parse_reset_time(result: object) -> datetime | None:
     if not isinstance(result, str):
         return None
-    match = _RESET_TIME_RE.search(result)
-    if not match:
-        return None
-
-    hour = int(match.group("hour"))
-    minute = int(match.group("minute") or 0)
-    ampm = match.group("ampm").lower()
-    if not (1 <= hour <= 12) or not (0 <= minute <= 59):
-        return None
-    if ampm == "pm" and hour != 12:
-        hour += 12
-    elif ampm == "am" and hour == 12:
-        hour = 0
-
-    now_l = _time_module.now_local()
-    now_utc = now_l.astimezone(timezone.utc)
-
-    month_str = match.group("month")
-    if month_str is not None:
-        month = _MONTHS.get(month_str.lower())
-        if month is None:
-            return None
-        day = int(match.group("day"))
-        try:
-            utc_dt = datetime(
-                now_utc.year, month, day, hour, minute, tzinfo=timezone.utc
-            )
-        except ValueError:
-            return None
-        local_dt = utc_dt.astimezone()
-        if local_dt < now_l - timedelta(days=31):
-            try:
-                utc_dt = utc_dt.replace(year=utc_dt.year + 1)
-            except ValueError:
-                return None
-            local_dt = utc_dt.astimezone()
-        return local_dt
-
-    utc_dt = datetime.combine(now_utc.date(), time(hour, minute), tzinfo=timezone.utc)
-    local_dt = utc_dt.astimezone()
-    if local_dt < now_l - timedelta(minutes=2):
-        local_dt += timedelta(days=1)
-    return local_dt
+    return parse_reset_time(result, ResetTimeSyntaxMode.CLAUDE_RESETS_UTC)
 
 
 def _is_subscription_access_denial(

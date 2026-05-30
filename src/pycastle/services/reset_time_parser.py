@@ -121,9 +121,12 @@ def _parse_claude_reset(
     minute: int,
 ) -> datetime | None:
     local_tz = local_now.tzinfo
-    month = _parse_month(match.group("month"))
+    month_text = match.group("month")
     day = match.group("day")
-    if month is not None and day is not None:
+    month = _parse_month(month_text)
+    if month_text is not None or day is not None:
+        if month is None or day is None:
+            return None
         utc_dt = _build_utc_datetime(utc_now.year, month, int(day), hour, minute)
         if utc_dt is None:
             return None

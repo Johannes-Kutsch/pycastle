@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+import pycastle._time as _time_module
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.errors import (
     ClaudeCliNotFoundError,
@@ -387,3 +389,20 @@ def test_run_usage_limit_has_no_raw_message_when_reset_time_parsed_successfully(
     limit = next(e for e in events if isinstance(e, UsageLimit))
     assert limit.reset_time is not None
     assert limit.raw_message is None
+
+
+def test_run_usage_limit_uses_local_timezone_from_now_local(monkeypatch):
+    pacific = timezone(-timedelta(hours=7))
+    monkeypatch.setattr(
+        _time_module,
+        "now_local",
+        lambda: datetime(2026, 5, 27, 7, 0, tzinfo=pacific),
+    )
+    line = json.dumps({"api_error_status": 429, "result": "limit resets 3:30pm (UTC)"})
+
+    events = list(ClaudeService().run([line]))
+
+    limit = next(e for e in events if isinstance(e, UsageLimit))
+    assert limit.reset_time == datetime(2026, 5, 27, 8, 30, tzinfo=pacific)
+    assert limit.reset_time is not None
+    assert limit.reset_time.utcoffset() == pacific.utcoffset(None)

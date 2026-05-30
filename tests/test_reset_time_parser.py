@@ -143,6 +143,16 @@ def test_claude_resets_utc_invalid_date_feb30_returns_none():
     assert result is None
 
 
+def test_claude_resets_utc_invalid_month_returns_none():
+    now = datetime(2026, 5, 27, 14, 0, tzinfo=_UTC)
+    result = parse_reset_time(
+        "resets Smarch 7, 3pm (UTC)",
+        ResetTimeSyntaxMode.CLAUDE_RESETS_UTC,
+        now=now,
+    )
+    assert result is None
+
+
 def test_claude_resets_utc_invalid_hour_zero_returns_none():
     now = datetime(2026, 5, 27, 14, 0, tzinfo=_UTC)
     result = parse_reset_time(
