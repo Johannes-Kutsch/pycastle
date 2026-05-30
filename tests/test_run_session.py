@@ -27,7 +27,6 @@ from pycastle.session import (
     RoleSession,
     RunKind,
 )
-from pycastle.session._provider_session_sidecars import service_session_id_path
 from pycastle.session.service_resume_identity import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
@@ -164,20 +163,19 @@ def test_plan_run_session_public_interface_preserves_namespaced_role_session_fac
     )
 
 
-def test_run_session_plan_uses_selected_codex_service_state_dir_for_rollout_recovery_and_persists_sidecar(
+def test_run_session_plan_uses_selected_codex_service_state_dir_for_saved_resume_identity(
     tmp_path: Path,
 ):
     service = cast(
         AgentService,
         _FakeAgentService("custom/codex-state", name="codex", resumable=True),
     )
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     state_dir = tmp_path / "custom" / "codex-state"
     sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
     sessions_dir.mkdir(parents=True)
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-from-custom-state"}\n',
-        encoding="utf-8",
-    )
+    (sessions_dir / "rollout-001.jsonl").write_text("{}\n", encoding="utf-8")
+    role_session.save_service_session_id("codex", "thread-from-sidecar")
 
     plan = RunSessionPlan.for_service(
         role=AgentRole.IMPLEMENTER,
@@ -188,14 +186,8 @@ def test_run_session_plan_uses_selected_codex_service_state_dir_for_rollout_reco
 
     assert plan.run_kind is RunKind.RESUME
     assert plan.service_state_dir == state_dir
-    assert plan.provider_session_id == "thread-from-custom-state"
-    assert (
-        plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
-    )
-    assert (
-        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex")
-        == "thread-from-custom-state"
-    )
+    assert plan.provider_session_id == "thread-from-sidecar"
+    assert plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.SKIP
 
 
 def test_run_session_plan_preserves_codex_provider_state_dir_layout_when_service_state_dir_is_custom(
@@ -220,20 +212,19 @@ def test_run_session_plan_preserves_codex_provider_state_dir_layout_when_service
     )
 
 
-def test_run_session_plan_recovers_namespaced_codex_rollout_from_custom_state_dir_while_preserving_provider_layout(
+def test_run_session_plan_uses_namespaced_codex_saved_resume_identity_from_custom_state_dir_while_preserving_provider_layout(
     tmp_path: Path,
 ):
     service = cast(
         AgentService,
         _FakeAgentService("custom/codex-state", name="codex", resumable=True),
     )
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
     state_dir = tmp_path / "custom" / "codex-state"
     sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
     sessions_dir.mkdir(parents=True)
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-from-custom-state"}\n',
-        encoding="utf-8",
-    )
+    (sessions_dir / "rollout-001.jsonl").write_text("{}\n", encoding="utf-8")
+    role_session.save_service_session_id("codex", "thread-from-sidecar")
 
     plan = RunSessionPlan.for_service(
         role=AgentRole.IMPROVE,
@@ -248,26 +239,21 @@ def test_run_session_plan_recovers_namespaced_codex_rollout_from_custom_state_di
     assert plan.host_provider_state_dir == (
         tmp_path / ".pycastle-session" / "improve" / "main" / "codex"
     )
-    assert plan.provider_session_id == "thread-from-custom-state"
-    assert (
-        RoleSession(tmp_path, AgentRole.IMPROVE, "main").service_session_id("codex")
-        == "thread-from-custom-state"
-    )
+    assert plan.provider_session_id == "thread-from-sidecar"
 
 
-def test_run_session_plan_recovers_opencode_session_id_from_selected_service_state_dir_while_preserving_provider_layout(
+def test_run_session_plan_uses_saved_opencode_resume_identity_from_selected_service_state_dir_while_preserving_provider_layout(
     tmp_path: Path,
 ):
     service = cast(
         AgentService,
         _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
     )
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
     state_dir = tmp_path / "custom" / "opencode-state"
     state_dir.mkdir(parents=True)
-    (state_dir / "session_id").write_text(
-        "sess-from-custom-state",
-        encoding="utf-8",
-    )
+    (state_dir / "session_id").write_text("sess-from-state-dir", encoding="utf-8")
+    role_session.save_service_session_id("opencode", "sess-from-sidecar")
 
     plan = RunSessionPlan.for_service(
         role=AgentRole.IMPROVE,
@@ -282,67 +268,7 @@ def test_run_session_plan_recovers_opencode_session_id_from_selected_service_sta
     assert plan.host_provider_state_dir == (
         tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
     )
-    assert plan.provider_session_id == "sess-from-custom-state"
-    assert (
-        RoleSession(tmp_path, AgentRole.IMPROVE, "main").service_session_id("opencode")
-        == "sess-from-custom-state"
-    )
-
-
-def test_run_session_plan_reports_fresh_for_selected_opencode_service_state_without_session_id_while_preserving_provider_layout(
-    tmp_path: Path,
-):
-    service = cast(
-        AgentService,
-        _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
-    )
-    state_dir = tmp_path / "custom" / "opencode-state"
-    state_dir.mkdir(parents=True)
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPROVE,
-        worktree=tmp_path,
-        namespace="main",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.FRESH
-    assert plan.service_state_dir == state_dir
-    assert plan.provider_state_dir_relpath == ".pycastle-session/improve/main/opencode/"
-    assert plan.host_provider_state_dir == (
-        tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
-    )
-    assert plan.provider_session_id is None
-    assert (
-        RoleSession(tmp_path, AgentRole.IMPROVE, "main").service_session_id("opencode")
-        is None
-    )
-
-
-def test_run_session_plan_reports_fresh_for_selected_opencode_service_state_with_whitespace_only_session_id(
-    tmp_path: Path,
-):
-    service = cast(
-        AgentService,
-        _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
-    )
-    state_dir = tmp_path / "custom" / "opencode-state"
-    state_dir.mkdir(parents=True)
-    (state_dir / "session_id").write_text("   \n", encoding="utf-8")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPROVE,
-        worktree=tmp_path,
-        namespace="main",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.FRESH
-    assert plan.provider_session_id is None
-    assert (
-        RoleSession(tmp_path, AgentRole.IMPROVE, "main").service_session_id("opencode")
-        is None
-    )
+    assert plan.provider_session_id == "sess-from-sidecar"
 
 
 def test_run_session_plan_uses_selected_opencode_service_state_dir_for_resume_container_path(
@@ -352,9 +278,11 @@ def test_run_session_plan_uses_selected_opencode_service_state_dir_for_resume_co
         AgentService,
         _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
     )
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
     state_dir = tmp_path / "custom" / "opencode-state"
     state_dir.mkdir(parents=True)
-    (state_dir / "session_id").write_text("sess-from-custom-state", encoding="utf-8")
+    (state_dir / "session_id").write_text("sess-from-state-dir", encoding="utf-8")
+    role_session.save_service_session_id("opencode", "sess-from-sidecar")
 
     plan = RunSessionPlan.for_service(
         role=AgentRole.IMPROVE,
@@ -642,64 +570,6 @@ def test_run_session_plan_preserves_claude_provider_session_persistence_from_ser
     )
 
 
-def test_run_session_plan_reports_no_exact_transcript_match_for_codex_with_conflicting_rollout_thread_ids(
-    tmp_path: Path,
-):
-    service = CodexService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
-    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
-    dir_a.mkdir(parents=True)
-    dir_b.mkdir(parents=True)
-    (dir_a / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-id-old"}\n',
-        encoding="utf-8",
-    )
-    (dir_b / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-id-new"}\n',
-        encoding="utf-8",
-    )
-    role_session.save_service_session_metadata("codex", "thread-id-new")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.FRESH
-    assert plan.exact_transcript_match is False
-
-
-def test_run_session_plan_reports_exact_transcript_match_for_codex_with_matching_metadata_and_unique_rollout(
-    tmp_path: Path,
-):
-    service = CodexService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    sessions_dir = state_dir / "sessions"
-    sessions_dir.mkdir(parents=True)
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-abc"}\n',
-        encoding="utf-8",
-    )
-    role_session.save_service_session_id("codex", "thread-abc")
-    role_session.save_service_session_metadata("codex", "thread-abc")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.provider_session_id == "thread-abc"
-    assert plan.exact_transcript_match is True
-
-
 def test_run_session_plan_reports_exact_transcript_match_for_opencode_with_matching_metadata_and_resumable_state(
     tmp_path: Path,
 ):
@@ -718,31 +588,6 @@ def test_run_session_plan_reports_exact_transcript_match_for_opencode_with_match
     assert plan.run_kind is RunKind.RESUME
     assert plan.provider_session_id == "sess-opencode-123"
     assert plan.exact_transcript_match is True
-
-
-def test_run_session_plan_reports_no_exact_transcript_match_for_cross_service_metadata(
-    tmp_path: Path,
-):
-    service = CodexService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    sessions_dir = state_dir / "sessions"
-    sessions_dir.mkdir(parents=True)
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-abc"}\n',
-        encoding="utf-8",
-    )
-    role_session.save_service_session_metadata("claude", "some-claude-session-id")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.exact_transcript_match is False
 
 
 def test_role_session_exact_transcript_handoff_for_service_reports_unrecoverable_codex_identity_when_rollout_thread_ids_conflict(
@@ -861,223 +706,6 @@ def test_run_session_plan_uses_namespaced_claude_provider_state_dir_paths(
     assert issues_plan.provider_session_id == (
         RoleSession(tmp_path, AgentRole.IMPROVE, "issues").session_uuid()
     )
-
-
-def test_run_session_plan_prefers_saved_codex_thread_id_for_resume(tmp_path: Path):
-    service = CodexService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    sessions_dir = state_dir / "sessions"
-    sessions_dir.mkdir(parents=True)
-    role_session.save_service_session_id("codex", "thread-from-sidecar")
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
-        encoding="utf-8",
-    )
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.provider_session_id == "thread-from-sidecar"
-
-
-def test_run_session_plan_recovers_codex_rollout_when_saved_thread_id_is_unreadable(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    service = CodexService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
-    sessions_dir.mkdir(parents=True)
-    role_session.save_service_session_id("codex", "thread-from-sidecar")
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
-        encoding="utf-8",
-    )
-
-    sidecar_path = service_session_id_path(role_session.path, "codex")
-    original_read_text = type(sidecar_path).read_text
-
-    def unreadable_read_text(path: Path, *args, **kwargs) -> str:
-        if path == sidecar_path:
-            raise OSError("thread_id unreadable")
-        return original_read_text(path, *args, **kwargs)
-
-    monkeypatch.setattr(type(sidecar_path), "read_text", unreadable_read_text)
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.provider_session_id == "thread-from-rollout"
-    assert (
-        plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
-    )
-    assert (
-        original_read_text(sidecar_path, encoding="utf-8").strip()
-        == "thread-from-rollout"
-    )
-
-
-def test_run_session_plan_recovers_single_codex_rollout_and_marks_it_for_persistence(
-    tmp_path: Path,
-):
-    service = CodexService()
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
-    sessions_dir.mkdir(parents=True)
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
-        encoding="utf-8",
-    )
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.provider_session_id == "thread-from-rollout"
-    assert (
-        plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
-    )
-
-
-def test_run_session_plan_recovers_single_codex_rollout_amid_malformed_rollout_noise(
-    tmp_path: Path,
-):
-    service = CodexService()
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
-    sessions_dir.mkdir(parents=True)
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        "\n".join(
-            [
-                "{not-json",
-                '["not-an-object"]',
-                '{"type":"turn.completed","thread_id":"ignored"}',
-                '{"type":"thread.started","thread_id":"   "}',
-                '{"type":"thread.started","thread_id":"thread-from-rollout"}',
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (sessions_dir / "rollout-002.jsonl").write_bytes(b"\xff\xfe\x00")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.provider_session_id == "thread-from-rollout"
-    assert (
-        plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
-    )
-
-
-def test_run_session_plan_treats_duplicate_codex_rollout_thread_id_as_unambiguous(
-    tmp_path: Path,
-):
-    service = CodexService()
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
-    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
-    dir_a.mkdir(parents=True)
-    dir_b.mkdir(parents=True)
-    (dir_a / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
-        encoding="utf-8",
-    )
-    (dir_b / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
-        encoding="utf-8",
-    )
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.provider_session_id == "thread-same-id"
-
-
-def test_run_session_plan_treats_distinct_codex_rollout_thread_ids_as_fresh(
-    tmp_path: Path,
-):
-    service = CodexService()
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
-    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
-    dir_a.mkdir(parents=True)
-    dir_b.mkdir(parents=True)
-    (dir_a / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-id-old"}\n',
-        encoding="utf-8",
-    )
-    (dir_b / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-id-new"}\n',
-        encoding="utf-8",
-    )
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.FRESH
-    assert plan.provider_session_id is None
-
-
-def test_run_session_plan_treats_malformed_only_codex_rollout_state_as_fresh(
-    tmp_path: Path,
-):
-    service = CodexService()
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
-    sessions_dir.mkdir(parents=True)
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        "\n".join(
-            [
-                "{not-json",
-                '["not-an-object"]',
-                '{"type":"turn.completed","thread_id":"ignored"}',
-                '{"type":"thread.started","thread_id":"   "}',
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.FRESH
-    assert plan.provider_session_id is None
 
 
 def test_run_session_plan_never_generates_pycastle_uuid_for_fresh_codex(
