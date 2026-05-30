@@ -745,6 +745,33 @@ def test_run_session_plan_reads_namespaced_opencode_session_id_for_resume(
     )
 
 
+def test_run_session_plan_recovers_namespaced_opencode_session_id_from_selected_service_state_dir(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
+    )
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text("sess-from-provider-state", encoding="utf-8")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == "sess-from-provider-state"
+    assert (
+        plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
+    )
+    assert role_session.service_session_id("opencode") == "sess-from-provider-state"
+
+
 def test_run_session_plan_fresh_opencode_when_sidecar_session_id_is_missing(
     tmp_path: Path,
 ):
