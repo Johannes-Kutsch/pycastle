@@ -3132,6 +3132,53 @@ def test_agent_runner_starts_fresh_when_codex_rollout_threads_are_unrecoverable(
     assert "resume" not in captured_cmds[0]
 
 
+def test_agent_runner_fresh_codex_preserves_existing_provider_auth_json(tmp_path):
+    provider_state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    provider_state_dir.mkdir(parents=True)
+    provider_auth = provider_state_dir / "auth.json"
+    provider_auth.write_text(
+        '{"mode":"oauth","origin":"provider"}',
+        encoding="utf-8",
+    )
+
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            result = MagicMock()
+            result.output = iter(_CODEX_COMPLETE_STREAM)
+            return result
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"codex": CodexService()},
+    )
+
+    result = asyncio.run(
+        runner.run(
+            _run_request(
+                name="Codex",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                service="codex",
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert provider_auth.read_text(encoding="utf-8") == (
+        '{"mode":"oauth","origin":"provider"}'
+    )
+
+
 def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
     tmp_path, monkeypatch
 ):
