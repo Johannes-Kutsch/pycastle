@@ -11,6 +11,7 @@ from ...errors import HardAgentError
 from .._provider_session_plan import (
     ProviderSessionPlan,
     ProviderSessionPlanRequest,
+    _preserves_role_provider_layout,
     plan_provider_session,
 )
 from ..resume import (
@@ -30,10 +31,6 @@ class AuthSeedingRequirement(Enum):
 class RecoveredSessionIdPersistence(Enum):
     PERSIST = "persist"
     SKIP = "skip"
-
-
-def _preserves_role_provider_layout(service_name: str) -> bool:
-    return service_name in {"codex", "opencode"}
 
 
 @dataclasses.dataclass(frozen=True)
