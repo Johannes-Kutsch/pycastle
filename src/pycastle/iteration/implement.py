@@ -22,7 +22,7 @@ from ..prompts.pipeline import (
     build_interrupted_work_clause,
     build_issue_scope_args,
 )
-from ..agents.classifier import WellFormed, classify_slice
+from ..issue_readiness import WellFormed, classify_issue_readiness
 from ..session import RoleSession, is_stage_done_for
 from ..display.status_display import StatusDisplay
 from ..services import GitService, GithubService
@@ -50,9 +50,12 @@ def branch_for(issue_number: int) -> str:
 
 
 def _resolve_slice(issue: dict, cfg: Config) -> tuple[str, PromptTemplate]:
-    result = classify_slice(issue, cfg)
-    assert isinstance(result, WellFormed)
-    return result.mode.display_name, result.mode.template
+    readiness = classify_issue_readiness(issue, cfg)
+    assert isinstance(readiness.slice_status, WellFormed)
+    return (
+        readiness.slice_status.mode.display_name,
+        readiness.slice_status.mode.template,
+    )
 
 
 def pick_implement_template(issue: dict, cfg: Config) -> PromptTemplate:
