@@ -219,6 +219,31 @@ def test_prepare_provider_session_state_fresh_codex_applies_host_auth_seed_only_
     )
 
 
+def test_prepare_provider_session_state_fresh_codex_prepare_for_run_wipes_role_session_before_seeding_auth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True, exist_ok=True)
+    host_auth.write_text('{"mode":"oauth","origin":"host"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+    role_dir = tmp_path / ".pycastle-session" / "implementer"
+    (role_dir / "stale.txt").parent.mkdir(parents=True)
+    (role_dir / "stale.txt").write_text("stale", encoding="utf-8")
+
+    state = prepare_provider_session_state(
+        _provider_request(tmp_path, service=CodexService())
+    )
+
+    state.prepare_for_run()
+
+    assert (role_dir / "stale.txt").exists() is False
+    assert (role_dir / "codex" / "auth.json").read_text(encoding="utf-8") == (
+        '{"mode":"oauth","origin":"host"}'
+    )
+
+
 def test_prepare_provider_session_state_treats_preseeded_codex_auth_json_alone_as_fresh(
     tmp_path: Path,
 ):

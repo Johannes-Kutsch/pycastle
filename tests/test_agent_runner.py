@@ -2243,6 +2243,38 @@ def test_agent_runner_treats_unrelated_403_as_hard_error(tmp_path):
         )
 
 
+def test_agent_runner_codex_missing_host_auth_fails_before_container_setup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    docker_client = _make_docker_client([])
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=docker_client,
+        service_registry={"codex": CodexService()},
+    )
+
+    with pytest.raises(HardAgentError) as exc_info:
+        asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Codex",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service="codex",
+                )
+            )
+        )
+
+    assert exc_info.value.status_code == 401
+    docker_client.containers.run.assert_not_called()
+
+
 def test_fake_agent_runner_accepts_run_request_and_records_it():
     completion = CompletionOutput()
     fake = FakeAgentRunner([completion])
