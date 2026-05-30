@@ -343,6 +343,20 @@ def test_run_yields_usage_limit_for_429_line():
     assert any(isinstance(e, UsageLimit) for e in events)
 
 
+def test_run_accepts_provider_session_callback_without_emitting_session_id():
+    captured: list[str] = []
+
+    events = list(
+        ClaudeService().run(
+            [_assistant_line("hello"), _result_line("done")],
+            on_provider_session_id=captured.append,
+        )
+    )
+
+    assert events == [AssistantTurn(text="hello"), Result(text="done")]
+    assert captured == []
+
+
 def test_run_stops_after_result():
     lines = [_result_line("done"), _assistant_line("after")]
     events = list(ClaudeService().run(lines))

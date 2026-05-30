@@ -21,6 +21,7 @@ from pycastle.errors import (
 )
 from tests.support import RecordingStatusDisplay
 from pycastle.session import RunKind
+from pycastle.services.agent_service import Result
 from pycastle.services.claude_service import ClaudeService
 
 _ROLE = AgentRole.IMPLEMENTER
@@ -295,6 +296,45 @@ def test_work_calls_session_exec_stream_with_claude_command(tmp_path):
     asyncio.run(runner.work(_ROLE, "prompt"))
     assert any("claude" in c for c in session.stream_calls)
     assert any("--model claude-sonnet-4-6" in c for c in session.stream_calls)
+
+
+def test_work_forwards_provider_session_callback_to_service_run(tmp_path):
+    captured: list[str] = []
+
+    class FakeService:
+        name = "fake"
+
+        def build_command(
+            self,
+            role=AgentRole.IMPLEMENTER,
+            model="",
+            effort="",
+            run_kind=RunKind.FRESH,
+            session_uuid=None,
+        ) -> str:
+            del role, model, effort, run_kind, session_uuid
+            return "fake run"
+
+        def run(self, lines, on_provider_session_id=None):
+            list(lines)
+            if on_provider_session_id is not None:
+                on_provider_session_id("provider-session-123")
+            yield Result("<commit_message>done</commit_message>")
+
+    session = FakeDockerSession(stream_chunks=[b'{"type":"ignored"}\n'])
+    runner = ContainerRunner(
+        "agent",
+        cast(DockerSession, session),
+        cfg=Config(logs_dir=tmp_path),
+        service=cast(ClaudeService, FakeService()),
+    )
+
+    result = asyncio.run(
+        runner.work(_ROLE, "prompt", on_provider_session_id=captured.append)
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert captured == ["provider-session-123"]
 
 
 def test_work_called_twice_writes_each_prompt(tmp_path):
