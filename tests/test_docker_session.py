@@ -254,20 +254,6 @@ def test_git_file_without_worktree_path_falls_back_to_plain_repo(tmp_path):
     assert auto_overlay is None
     bound_paths = {v["bind"]: k for k, v in volumes.items()}
     assert "/home/agent/workspace" in bound_paths
-    assert volumes[bound_paths["/home/agent/workspace"]]["mode"] == "rw"
-
-
-def test_git_file_without_worktree_path_mounts_mount_path_rw_at_workspace(tmp_path):
-    """Unsupported gitdir file still exposes the plain single RW workspace mount."""
-    git_file = tmp_path / ".git"
-    git_file.write_text("gitdir: /not/a/worktrees/path\n", encoding="utf-8")
-
-    volumes, auto_overlay = build_volume_spec(tmp_path)
-
-    assert len(volumes) == 1
-    assert auto_overlay is None
-    bound_paths = {v["bind"]: k for k, v in volumes.items()}
-    assert "/home/agent/workspace" in bound_paths
     assert bound_paths["/home/agent/workspace"] == str(tmp_path.resolve()).replace(
         "\\", "/"
     )
@@ -276,21 +262,6 @@ def test_git_file_without_worktree_path_mounts_mount_path_rw_at_workspace(tmp_pa
 
 def test_git_file_with_missing_parent_git_falls_back_to_plain_repo(tmp_path):
     """When .git is a file but parent git dir doesn't exist, falls back to single RW mount."""
-    git_file = tmp_path / ".git"
-    git_file.write_text(
-        "gitdir: /nonexistent/.git/worktrees/branch\n", encoding="utf-8"
-    )
-
-    volumes, auto_overlay = build_volume_spec(tmp_path)
-
-    assert len(volumes) == 1
-    assert auto_overlay is None
-    bound_paths = {v["bind"]: k for k, v in volumes.items()}
-    assert "/home/agent/workspace" in bound_paths
-
-
-def test_git_file_with_missing_parent_git_mounts_mount_path_rw_at_workspace(tmp_path):
-    """Missing parent gitdir still exposes the plain single RW workspace mount."""
     git_file = tmp_path / ".git"
     git_file.write_text(
         "gitdir: /nonexistent/.git/worktrees/branch\n", encoding="utf-8"
