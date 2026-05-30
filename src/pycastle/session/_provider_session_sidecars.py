@@ -117,5 +117,25 @@ def save_service_session_metadata(
     path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
 
 
+def clear_service_session_metadata(
+    role_session_path: Path,
+    service_name: str,
+) -> None:
+    path = service_session_metadata_path(role_session_path)
+    if not path.is_file():
+        return
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(payload, dict) or service_name not in payload:
+        return
+    del payload[service_name]
+    if not payload:
+        path.unlink(missing_ok=True)
+        return
+    path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+
+
 def is_service_session_metadata_path(path: Path) -> bool:
     return path.name == _SERVICE_SESSION_METADATA_FILENAME

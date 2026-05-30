@@ -10,6 +10,7 @@ from ..agents.output_protocol import AgentRole
 from ..errors import HardAgentError
 from ..services.provider_session_state import ProviderSessionStateRequest
 from ._provider_session_sidecars import (
+    clear_service_session_metadata,
     save_service_session_id,
     save_service_session_metadata,
 )
@@ -165,10 +166,14 @@ def record_successful_provider_session_metadata(
     role: AgentRole,
     namespace: str,
     service_name: str,
-    provider_session_id: str,
+    provider_session_id: str | None,
 ) -> None:
+    role_session_path = RoleSession(worktree, role, namespace).path
+    if provider_session_id is None:
+        clear_service_session_metadata(role_session_path, service_name)
+        return
     save_service_session_metadata(
-        RoleSession(worktree, role, namespace).path,
+        role_session_path,
         service_name,
         provider_session_id,
     )

@@ -109,8 +109,6 @@ class RunSessionPlan:
 
     def record_successful_run(self, provider_session_id: str | None = None) -> None:
         session_id = provider_session_id or self.provider_session_id
-        if session_id is None:
-            return
         record_successful_provider_session_metadata(
             worktree=self.worktree,
             role=self.role,
