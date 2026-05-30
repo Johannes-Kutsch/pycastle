@@ -13,10 +13,7 @@ from pycastle.agents.output_protocol import (
 from pycastle.agents.runner import RunRequest
 from pycastle.config import Config
 from pycastle.errors import AgentTimeoutError, UsageLimitError
-from pycastle.services import GitService
-from tests.support import FakeAgentRunner, RecordingLogger, RecordingStatusDisplay
-from pycastle.services import GithubService
-from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
+from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.iteration.implement import (
     ImplementResult,
     branch_for,
@@ -25,59 +22,19 @@ from pycastle.iteration.implement import (
     run_issue,
 )
 from pycastle.prompts.pipeline import PromptRenderError, build_issue_scope_args
+from pycastle.services import GitService, GithubService
+from tests.support import (
+    FakeAgentRunner,
+    RecordingLogger,
+    RecordingStatusDisplay,
+    _make_deps,
+)
 
 _cfg = Config()
 
 
 def _reviewer_output(message: str | None) -> CommitMessageOutput:
     return CommitMessageOutput(message=message)
-
-
-@dataclasses.dataclass
-class _ImplementStub:
-    cfg: Config
-    status_display: StatusDisplay
-    agent_runner: FakeAgentRunner
-    git_svc: GitService
-    github_svc: GithubService
-    repo_root: Path
-    logger: RecordingLogger
-
-
-def _make_deps(
-    tmp_path, agent_runner, logger=None, status_display=None
-) -> _ImplementStub:
-    import shutil as _shutil
-
-    git_svc = MagicMock(spec=GitService)
-    git_svc.verify_ref_exists.return_value = False
-
-    _registered: list[Path] = []
-
-    def _fake_list_worktrees(repo):
-        return list(_registered)
-
-    def _fake_create_worktree(repo, path, branch, sha=None):
-        path.mkdir(parents=True, exist_ok=True)
-        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
-        _registered.append(path)
-
-    def _fake_remove_worktree(repo, path):
-        _shutil.rmtree(path, ignore_errors=True)
-        _registered[:] = [p for p in _registered if p != path]
-
-    git_svc.list_worktrees.side_effect = _fake_list_worktrees
-    git_svc.create_worktree.side_effect = _fake_create_worktree
-    git_svc.remove_worktree.side_effect = _fake_remove_worktree
-    return _ImplementStub(
-        repo_root=tmp_path,
-        git_svc=git_svc,
-        github_svc=MagicMock(spec=GithubService),
-        agent_runner=agent_runner,
-        cfg=Config(max_parallel=4, max_iterations=1),
-        logger=logger or RecordingLogger(),
-        status_display=status_display or PlainStatusDisplay(),
-    )
 
 
 # ── branch_for ────────────────────────────────────────────────────────────────
@@ -1727,11 +1684,11 @@ def test_implement_phase_never_opens_more_than_max_parallel_plus_one_worktrees(
         return CompletionOutput()
 
     fake = FakeAgentRunner(side_effect=_agent)
-    deps = _ImplementStub(
-        repo_root=tmp_path,
+    deps = _make_deps(
+        tmp_path,
+        fake,
         git_svc=git_svc,
         github_svc=MagicMock(spec=GithubService),
-        agent_runner=fake,
         cfg=Config(max_parallel=max_parallel, max_iterations=1),
         logger=RecordingLogger(),
         status_display=PlainStatusDisplay(),

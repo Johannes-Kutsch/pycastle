@@ -1,4 +1,5 @@
 import asyncio
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -159,6 +160,34 @@ class StubPreflightCache:
         return self._verdict
 
 
+def _default_git_service() -> GitService:
+    git_svc = MagicMock(spec=GitService)
+    git_svc.verify_ref_exists.return_value = False
+
+    registered: list[Path] = []
+
+    def _fake_list_worktrees(repo: Path) -> list[Path]:
+        return list(registered)
+
+    def _fake_create_worktree(
+        repo: Path, path: Path, branch: str, sha: str | None = None
+    ) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+        registered.append(path)
+
+    def _fake_remove_worktree(repo: Path, path: Path) -> None:
+        shutil.rmtree(path, ignore_errors=True)
+        registered[:] = [
+            registered_path for registered_path in registered if registered_path != path
+        ]
+
+    git_svc.list_worktrees.side_effect = _fake_list_worktrees
+    git_svc.create_worktree.side_effect = _fake_create_worktree
+    git_svc.remove_worktree.side_effect = _fake_remove_worktree
+    return git_svc
+
+
 def _make_deps(
     repo_root: Path,
     agent_runner: AgentRunnerProtocol,
@@ -173,7 +202,7 @@ def _make_deps(
 ) -> Deps:
     return Deps(
         repo_root=repo_root,
-        git_svc=git_svc if git_svc is not None else MagicMock(spec=GitService),
+        git_svc=git_svc if git_svc is not None else _default_git_service(),
         github_svc=github_svc
         if github_svc is not None
         else MagicMock(spec=GithubService),
