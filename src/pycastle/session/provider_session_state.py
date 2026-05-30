@@ -129,6 +129,15 @@ def load_state_dir_provider_session_id(
     return load_provider_state_session_id(state_dir / filename)
 
 
+def recover_state_dir_provider_session_id(
+    state_dir: Path | None,
+    service_name: str,
+) -> str | None:
+    if service_name != "codex":
+        return None
+    return _recover_codex_rollout_thread_id(state_dir)
+
+
 def load_provider_state_session_id(path: Path) -> str | None:
     if not path.is_file():
         return None
@@ -137,6 +146,33 @@ def load_provider_state_session_id(path: Path) -> str | None:
     except (OSError, UnicodeDecodeError):
         return None
     return value or None
+
+
+def _recover_codex_rollout_thread_id(state_dir: Path | None) -> str | None:
+    if state_dir is None:
+        return None
+    sessions_dir = state_dir / "sessions"
+    if not sessions_dir.is_dir():
+        return None
+
+    found: set[str] = set()
+    for rollout in sessions_dir.rglob("rollout-*.jsonl"):
+        try:
+            lines = rollout.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in lines:
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(obj, dict) or obj.get("type") != "thread.started":
+                continue
+            thread_id = obj.get("thread_id")
+            if isinstance(thread_id, str) and thread_id.strip():
+                found.add(thread_id.strip())
+
+    return next(iter(found)) if len(found) == 1 else None
 
 
 def load_service_session_metadata(
@@ -235,6 +271,7 @@ __all__ = [
     "load_service_session_id",
     "load_service_session_metadata",
     "load_service_session_metadata_payload",
+    "recover_state_dir_provider_session_id",
     "load_state_dir_provider_session_id",
     "LocalAuthSeedAction",
     "parse_service_session_metadata",
