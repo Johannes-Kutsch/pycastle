@@ -306,7 +306,7 @@ class AgentRunner:
                                     work_prompt,
                                     run_kind=work_run_session.run_kind,
                                     session_uuid=work_run_session.provider_session_id,
-                                    on_thread_id=(
+                                    on_provider_session_id=(
                                         work_run_session.record_provider_session_id
                                     ),
                                 )

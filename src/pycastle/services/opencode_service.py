@@ -225,7 +225,7 @@ class OpenCodeService:
     def run(
         self,
         lines: Iterable[str],
-        on_thread_id: Callable[[str], None] | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
     ) -> Iterator[ParsedTurn]:
         assistant_turns: list[str] = []
         seen_session_id: str | None = None
@@ -242,10 +242,10 @@ class OpenCodeService:
                 isinstance(session_id, str)
                 and session_id
                 and session_id != seen_session_id
-                and on_thread_id is not None
+                and on_provider_session_id is not None
             ):
                 seen_session_id = session_id
-                on_thread_id(session_id)
+                on_provider_session_id(session_id)
 
             if event.get("type") == "text":
                 part = event.get("part")

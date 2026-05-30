@@ -86,7 +86,7 @@ class AgentService(Protocol):
     def run(
         self,
         lines: Iterable[str],
-        on_thread_id: Callable[[str], None] | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
     ) -> Iterator[ParsedTurn]: ...
 
     def is_available(self, now: datetime | None = None) -> bool: ...

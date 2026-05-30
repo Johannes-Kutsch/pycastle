@@ -95,7 +95,7 @@ def test_opencode_service_surfaces_assistant_turns_final_result_and_session_id()
                     '"status":{"type":"idle"}}'
                 ),
             ],
-            on_thread_id=session_ids.append,
+            on_provider_session_id=session_ids.append,
         )
     )
 
@@ -264,7 +264,7 @@ def test_opencode_service_session_id_callback_fires_once_for_repeated_id() -> No
                 ),
                 '{"type":"session.status","sessionID":"sess_1","status":{"type":"idle"}}',
             ],
-            on_thread_id=session_ids.append,
+            on_provider_session_id=session_ids.append,
         )
     )
 

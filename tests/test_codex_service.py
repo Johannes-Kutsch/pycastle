@@ -650,7 +650,7 @@ def test_run_thread_started_surfaces_thread_id():
         _item_completed("agent_message", "Hi"),
         _turn_completed(),
     ]
-    list(CodexService().run(lines, on_thread_id=captured.append))
+    list(CodexService().run(lines, on_provider_session_id=captured.append))
     assert captured == ["thread-test-id"]
 
 

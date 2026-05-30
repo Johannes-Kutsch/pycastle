@@ -252,7 +252,7 @@ class CodexService:
     def run(
         self,
         lines: Iterable[str],
-        on_thread_id: Callable[[str], None] | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
     ) -> Iterator[ParsedTurn]:
         saw_exact_live_prompt_tokens = False
         for line in lines:
@@ -274,8 +274,8 @@ class CodexService:
 
             if event_type == "thread.started":
                 thread_id = obj.get("thread_id")
-                if thread_id and on_thread_id is not None:
-                    on_thread_id(thread_id)
+                if thread_id and on_provider_session_id is not None:
+                    on_provider_session_id(thread_id)
                 continue
 
             if event_type == "item.completed":

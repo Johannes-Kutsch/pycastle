@@ -311,7 +311,7 @@ class ClaudeService:
     def run(
         self,
         lines: Iterable[str],
-        on_thread_id: Callable[[str], None] | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
     ) -> Iterator[ParsedTurn]:
         for line in lines:
             for event in _classify_line(line):

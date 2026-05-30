@@ -407,7 +407,7 @@ class _RecordingAgentService:
     def run(
         self,
         lines: Iterable[str],
-        on_thread_id: Callable[[str], None] | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
     ) -> Iterator[ParsedTurn]:
         list(lines)
         yield Result("<commit_message>done</commit_message>")
@@ -558,8 +558,10 @@ def test_agent_runner_uses_service_owned_provider_run_state_and_state_dir(
         service_registry={"fake": requested_service},
     )
 
-    async def _fake_work(_role, _prompt, *, run_kind, session_uuid, on_thread_id=None):
-        del on_thread_id
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
         work_calls.append((run_kind, session_uuid))
         return CommitMessageOutput(message="done")
 
@@ -2620,11 +2622,13 @@ def test_agent_runner_codex_reprompt_retries_as_resume_after_runtime_thread_capt
 
     work_calls: list[tuple[RunKind, str | None]] = []
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         work_calls.append((run_kind, session_uuid))
         if len(work_calls) == 1:
-            assert on_thread_id is not None
-            on_thread_id("thread-from-fresh")
+            assert on_provider_session_id is not None
+            on_provider_session_id("thread-from-fresh")
             raise PlanParseError("missing required tag")
         return PlannerOutput(issues=[])
 
@@ -2707,11 +2711,13 @@ def test_agent_runner_opencode_reprompt_retries_as_resume_after_runtime_session_
 
     work_calls: list[tuple[RunKind, str | None]] = []
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         work_calls.append((run_kind, session_uuid))
         if len(work_calls) == 1:
-            assert on_thread_id is not None
-            on_thread_id("sess-from-fresh")
+            assert on_provider_session_id is not None
+            on_provider_session_id("sess-from-fresh")
             raise PlanParseError("missing required tag")
         return PlannerOutput(issues=[])
 
@@ -2784,7 +2790,9 @@ def test_agent_runner_success_passes_planned_provider_run_session_to_execution(
         provider_session_id,
     )
 
-    async def _fake_work(_role, _prompt, *, run_kind, session_uuid, on_thread_id=None):
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         assert run_kind is RunKind.RESUME
         assert session_uuid == provider_session_id
         return CommitMessageOutput(message="done")
@@ -2858,7 +2866,9 @@ def test_agent_runner_failed_output_keeps_planned_provider_run_session_at_execut
         provider_session_id,
     )
 
-    async def _fake_work(_role, _prompt, *, run_kind, session_uuid, on_thread_id=None):
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         assert run_kind is RunKind.RESUME
         assert session_uuid == provider_session_id
         return FailedOutput(failure_class="agent_failed")
@@ -2899,11 +2909,13 @@ def test_agent_runner_opencode_timeout_retry_resumes_with_captured_session_id(
 
     work_calls: list[tuple[RunKind, str | None]] = []
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         work_calls.append((run_kind, session_uuid))
         if len(work_calls) == 1:
-            assert on_thread_id is not None
-            on_thread_id("sess-timeout")
+            assert on_provider_session_id is not None
+            on_provider_session_id("sess-timeout")
             raise AgentTimeoutError("timeout")
         return CommitMessageOutput(message="done")
 
@@ -2945,7 +2957,9 @@ def test_agent_runner_opencode_timeout_retry_falls_back_to_fresh_without_session
 
     work_calls: list[tuple[RunKind, str | None]] = []
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         work_calls.append((run_kind, session_uuid))
         if len(work_calls) == 1:
             raise AgentTimeoutError("timeout")
@@ -3004,7 +3018,9 @@ def test_agent_runner_run_returns_success_after_protocol_error_on_first_attempt(
     success_output = CommitMessageOutput(message="done")
     work_calls: list[tuple[str, RunKind]] = []
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         work_calls.append((prompt, run_kind))
         if len(work_calls) == 1:
             raise PlanParseError("no tag")
@@ -3044,7 +3060,9 @@ def test_agent_runner_run_raises_agent_failed_error_after_three_protocol_errors(
 
     call_count = 0
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         nonlocal call_count
         call_count += 1
         raise PromiseParseError("no tag")
@@ -3079,7 +3097,9 @@ def test_agent_runner_run_does_not_reprompt_when_work_returns_failed_output(tmp_
 
     call_count = 0
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         nonlocal call_count
         call_count += 1
         return FailedOutput(failure_class="agent_failed")
@@ -3116,7 +3136,9 @@ def test_agent_runner_run_decrements_timeout_budget_when_protocol_error_precedes
 
     call_count = 0
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
