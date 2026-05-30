@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -29,6 +29,7 @@ from pycastle.iteration import (
     NoCandidate,
     run_iteration,
 )
+from pycastle.iteration.improve import ImproveContinue
 from pycastle.iteration.merge import merge_phase
 from pycastle.iteration.preflight import PreflightCache
 from pycastle.agents.runner import RunRequest
@@ -1648,6 +1649,56 @@ def test_run_iteration_uses_only_in_flight_issues_when_some_have_existing_branch
     )
 
 
+def test_run_iteration_passes_full_ready_for_agent_fetch_to_in_flight_selector(
+    tmp_path, git_svc, logger
+):
+    """The initial ready-for-agent fetch is classified once as a whole list before planning."""
+    github_svc = MagicMock(spec=GithubService)
+    issues = [
+        {
+            "number": 5,
+            "title": "In flight",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 6,
+            "title": "Also in flight",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+    github_svc.get_open_issues.return_value = issues
+
+    agent_names: list[str] = []
+
+    async def _fake_agent(request: RunRequest):
+        agent_names.append(request.name)
+        return CompletionOutput()
+
+    def _selector(candidates, *, repo_root, git_svc):
+        del repo_root, git_svc
+        if [issue["number"] for issue in candidates] == [5, 6]:
+            return list(candidates)
+        return []
+
+    deps = _make_deps(
+        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    )
+
+    with patch("pycastle.iteration.select_in_flight_issues", side_effect=_selector):
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    assert "Plan Agent" not in agent_names, (
+        "Plan Agent must be skipped when the selector classifies the full fetched list"
+    )
+    assert "Implement Agent #5" in agent_names
+    assert "Implement Agent #6" in agent_names
+
+
 def test_run_iteration_in_flight_worktree_uses_existing_branch_path(
     tmp_path, git_svc, logger
 ):
@@ -1681,6 +1732,70 @@ def test_run_iteration_in_flight_worktree_uses_existing_branch_path(
     assert implementer_sha == "abc123", (
         "In-flight implementer worktree must use the safe SHA returned by planning"
     )
+
+
+def test_run_iteration_passes_full_improve_refetch_to_in_flight_selector(
+    tmp_path, git_svc, logger
+):
+    """After ImproveContinue, the refetched ready-for-agent list is classified once as a whole list."""
+    github_svc = MagicMock(spec=GithubService)
+    refetched_issues = [
+        {
+            "number": 7,
+            "title": "Improve follow-up A",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 8,
+            "title": "Improve follow-up B",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+    github_svc.get_open_issues.side_effect = [[], refetched_issues]
+
+    agent_names: list[str] = []
+
+    async def _fake_agent(request: RunRequest):
+        agent_names.append(request.name)
+        return CompletionOutput()
+
+    def _selector(candidates, *, repo_root, git_svc):
+        del repo_root, git_svc
+        if [issue["number"] for issue in candidates] == [7, 8]:
+            return list(candidates)
+        return []
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+        ),
+        improve_mode="endless",
+    )
+
+    with (
+        patch("pycastle.iteration.select_in_flight_issues", side_effect=_selector),
+        patch(
+            "pycastle.iteration.improve_phase",
+            new=AsyncMock(return_value=ImproveContinue()),
+        ),
+    ):
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    assert github_svc.get_open_issues.call_count == 2
+    assert "Plan Agent" not in agent_names, (
+        "Plan Agent must be skipped when the selector classifies the full refetched list"
+    )
+    assert "Implement Agent #7" in agent_names
+    assert "Implement Agent #8" in agent_names
 
 
 def test_run_iteration_detects_in_flight_via_both_branch_and_worktree_signals(
