@@ -21,7 +21,7 @@ from .agent_service import (
     UsageLimit,
 )
 from ._wake_time import compute_wake_time
-from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time
+from .reset_time_parser import parse_claude_reset_time
 
 
 # ── private account pool ──────────────────────────────────────────────────────
@@ -91,12 +91,6 @@ _SUBSCRIPTION_ACCESS_DENIAL_PHRASE = (
 _PERMANENT_EXHAUSTION_WAKE = datetime(9999, 12, 31, 23, 59, tzinfo=timezone.utc)
 
 
-def _parse_reset_time(result: object) -> datetime | None:
-    if not isinstance(result, str):
-        return None
-    return parse_reset_time(result, ResetTimeSyntaxMode.CLAUDE_RESETS_UTC)
-
-
 def _is_subscription_access_denial(
     status: object, result: object, is_error: object
 ) -> bool:
@@ -117,7 +111,7 @@ def _classify_line(line: str) -> list[ParsedTurn]:
         return []
 
     if obj.get("api_error_status") == 429:
-        reset_time = _parse_reset_time(obj.get("result"))
+        reset_time = parse_claude_reset_time(obj.get("result"))
         raw = line if reset_time is None else None
         return [UsageLimit(reset_time=reset_time, raw_message=raw)]
 
