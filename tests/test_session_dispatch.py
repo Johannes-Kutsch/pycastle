@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+import pytest
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.session_dispatch import (
@@ -13,6 +14,7 @@ from pycastle.agents.session_dispatch import (
     record_successful_provider_session_metadata,
 )
 from pycastle.session import RoleSession, RunKind
+from pycastle.errors import HardAgentError
 from pycastle.services import ClaudeService, CodexService
 from pycastle.services.agent_service import AgentService
 from pycastle.services.opencode_service import OpenCodeService
@@ -112,6 +114,22 @@ def test_prepare_agent_session_fresh_codex_has_no_provider_session_id(tmp_path: 
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
 
     assert session.provider_session_id is None
+
+
+def test_prepare_agent_session_fresh_codex_missing_host_auth_is_dispatcher_hard_error(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "pycastle.session.run_session.LocalAuthSeedAction.require_source",
+        lambda self: self.source,
+    )
+
+    with pytest.raises(HardAgentError) as exc_info:
+        prepare_agent_session(_request(tmp_path, service=CodexService()))
+
+    assert exc_info.value.status_code == 401
+    assert not (tmp_path / ".pycastle-session" / "implementer").exists()
 
 
 def test_prepare_agent_session_codex_with_rollout_returns_run_kind_resume(

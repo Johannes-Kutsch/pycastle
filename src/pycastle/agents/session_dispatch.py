@@ -4,6 +4,7 @@ import dataclasses
 from pathlib import Path
 
 from .output_protocol import AgentRole
+from ..errors import HardAgentError
 from ..session import RoleSession, RunKind
 from ..session.run_session import LocalAuthSeedAction, RunSessionPlan
 from ..services.agent_service import AgentService
@@ -76,8 +77,7 @@ def prepare_agent_session(request: SessionDispatchRequest) -> PreparedAgentSessi
         service=request.service,
     )
     auth_seed_action = plan.auth_seed_action
-    if auth_seed_action is not None:
-        auth_seed_action.require_source()
+    _require_dispatcher_auth_seed_source(auth_seed_action)
     return PreparedAgentSession(
         role_session=role_session,
         run_kind=plan.run_kind,
@@ -89,6 +89,17 @@ def prepare_agent_session(request: SessionDispatchRequest) -> PreparedAgentSessi
         auth_seed_action=auth_seed_action,
         exact_transcript_match=plan.exact_transcript_match,
         _plan=plan,
+    )
+
+
+def _require_dispatcher_auth_seed_source(
+    auth_seed_action: LocalAuthSeedAction | None,
+) -> None:
+    if auth_seed_action is None or auth_seed_action.source.exists():
+        return
+    raise HardAgentError(
+        auth_seed_action.missing_source_message,
+        status_code=401,
     )
 
 

@@ -3179,6 +3179,39 @@ def test_agent_runner_fresh_codex_preserves_existing_provider_auth_json(tmp_path
     )
 
 
+def test_agent_runner_fresh_codex_missing_host_auth_raises_before_container_or_role_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    mock_client = MagicMock()
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"codex": CodexService()},
+    )
+
+    with pytest.raises(HardAgentError) as exc_info:
+        asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Codex",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    service="codex",
+                )
+            )
+        )
+
+    assert exc_info.value.status_code == 401
+    assert not (tmp_path / ".pycastle-session" / "implementer").exists()
+    mock_client.containers.run.assert_not_called()
+
+
 def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
     tmp_path, monkeypatch
 ):
