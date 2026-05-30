@@ -9,7 +9,7 @@ from pathlib import Path
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
 from ..session import SESSION_DIR_NAME, RunKind
-from ..session._provider_session_sidecars import load_state_dir_provider_session_id
+from ..session.provider_session_state import load_state_dir_provider_session_id
 from ..session.service_resume_identity import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,

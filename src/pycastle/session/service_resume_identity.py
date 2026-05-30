@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from ._provider_session_sidecars import load_state_dir_provider_session_id
+from .provider_session_state import load_state_dir_provider_session_id
 
 
 class ServiceResumeIdentityStore(Protocol):

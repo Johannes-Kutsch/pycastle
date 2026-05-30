@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import dataclasses
-from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -9,21 +8,17 @@ from ...agents.output_protocol import AgentRole
 from .._provider_session_plan import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
-    ProviderSessionPlan,
+    ProviderSessionDecision,
     ProviderSessionPlanRequest,
     plan_provider_session,
     record_observed_provider_session_id,
     record_successful_provider_session_metadata,
 )
+from ..provider_session_state import RecoveredSessionIdPersistence
 from ..resume import RunKind
 
 if TYPE_CHECKING:
     from ...services.agent_service import AgentService
-
-
-class RecoveredSessionIdPersistence(Enum):
-    PERSIST = "persist"
-    SKIP = "skip"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -47,7 +42,7 @@ class RunSessionPlan:
     provider_session_id: str | None
     auth_seeding_requirement: AuthSeedingRequirement
     recovered_session_id_persistence: RecoveredSessionIdPersistence
-    provider_session_plan: ProviderSessionPlan | None = None
+    provider_session_plan: ProviderSessionDecision | None = None
     auth_seed_action: LocalAuthSeedAction | None = None
     exact_transcript_match: bool = False
 
@@ -57,11 +52,16 @@ class RunSessionPlan:
         object.__setattr__(
             self,
             "provider_session_plan",
-            ProviderSessionPlan(
-                state_dir_relpath=self.provider_state_dir_relpath,
-                host_state_dir=self.host_provider_state_dir,
+            ProviderSessionDecision(
                 run_kind=self.run_kind,
                 provider_session_id=self.provider_session_id,
+                state_dir_relpath=self.provider_state_dir_relpath,
+                state_dir_path=self.host_provider_state_dir,
+                recovered_session_id_persistence=(
+                    self.recovered_session_id_persistence
+                ),
+                service_state_dir=self.service_state_dir,
+                exact_transcript_match=self.exact_transcript_match,
                 auth_seeding_requirement=self.auth_seeding_requirement,
                 auth_seed_action=self.auth_seed_action,
             ),
@@ -74,7 +74,6 @@ class RunSessionPlan:
         return provider_session_plan.container_state_dir_path(
             worktree=self.worktree,
             service_name=self.service.name,
-            service_state_dir=self.service_state_dir,
             container_workspace=container_workspace,
         )
 
@@ -137,7 +136,6 @@ class RunSessionPlan:
 
 
 def plan_run_session(request: RunSessionPlanRequest) -> RunSessionPlan:
-    recovered_session_id_persistence = RecoveredSessionIdPersistence.SKIP
     provider_session = plan_provider_session(
         ProviderSessionPlanRequest(
             worktree=request.worktree,
@@ -146,23 +144,22 @@ def plan_run_session(request: RunSessionPlanRequest) -> RunSessionPlan:
             service=request.service,
         )
     )
-    provider_plan = provider_session.plan
-    if provider_session.persist_provider_session_id:
-        recovered_session_id_persistence = RecoveredSessionIdPersistence.PERSIST
     return RunSessionPlan(
         role=request.role,
         worktree=request.worktree,
         namespace=request.namespace,
         service=request.service,
-        provider_session_plan=provider_plan,
-        run_kind=provider_plan.run_kind,
+        provider_session_plan=provider_session,
+        run_kind=provider_session.run_kind,
         service_state_dir=provider_session.service_state_dir,
-        provider_state_dir_relpath=provider_plan.state_dir_relpath,
-        host_provider_state_dir=provider_plan.host_state_dir,
-        provider_session_id=provider_plan.provider_session_id,
-        auth_seeding_requirement=provider_plan.auth_seeding_requirement,
-        recovered_session_id_persistence=recovered_session_id_persistence,
-        auth_seed_action=provider_plan.auth_seed_action,
+        provider_state_dir_relpath=provider_session.state_dir_relpath,
+        host_provider_state_dir=provider_session.state_dir_path,
+        provider_session_id=provider_session.provider_session_id,
+        auth_seeding_requirement=provider_session.auth_seeding_requirement,
+        recovered_session_id_persistence=(
+            provider_session.recovered_session_id_persistence
+        ),
+        auth_seed_action=provider_session.auth_seed_action,
         exact_transcript_match=provider_session.exact_transcript_match,
     )
 

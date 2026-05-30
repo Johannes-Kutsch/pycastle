@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
 from ..services.provider_session_state import ProviderSessionStateRequest
-from ._provider_session_sidecars import (
+from .provider_session_state import (
     load_exact_transcript_service_name,
     is_service_session_metadata_path,
     load_service_session_id,
