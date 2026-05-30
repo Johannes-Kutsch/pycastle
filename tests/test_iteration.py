@@ -1553,6 +1553,83 @@ def test_run_iteration_passes_full_ready_for_agent_fetch_to_in_flight_selector(
     assert "Implement Agent #6" in agent_names
 
 
+def test_run_iteration_selected_in_flight_issues_resume_through_planning(
+    tmp_path, git_svc, logger
+):
+    """Selected in-flight issues still traverse planning's preflight gate and skip Plan Agent."""
+    github_svc = MagicMock(spec=GithubService)
+    issues = [
+        {
+            "number": 5,
+            "title": "In flight",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 6,
+            "title": "Also in flight",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+    github_svc.get_open_issues.return_value = issues
+    recording = RecordingStatusDisplay()
+    agent_names: list[str] = []
+    call_count = 0
+
+    class _SequentialCache:
+        async def get_safe_sha(self, deps):
+            del deps
+            nonlocal call_count
+            call_count += 1
+            from pycastle.iteration.preflight import PreflightReady
+
+            return PreflightReady(sha="sha-x1")
+
+    async def _fake_agent(request: RunRequest):
+        agent_names.append(request.name)
+        return CompletionOutput()
+
+    def _selector(candidates, *, repo_root, git_svc):
+        del repo_root, git_svc
+        if [issue["number"] for issue in candidates] == [5, 6]:
+            return list(candidates)
+        return []
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            status_display=recording,
+        ),
+        preflight_cache=_SequentialCache(),  # type: ignore[arg-type]
+    )
+
+    with patch("pycastle.iteration.select_in_flight_issues", side_effect=_selector):
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    assert call_count == 1, (
+        "selected in-flight issues must still use planning's preflight gate exactly once"
+    )
+    assert "Plan Agent" not in agent_names
+    assert "Implement Agent #5" in agent_names
+    assert "Implement Agent #6" in agent_names
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must close on the in-flight resume path"
+    assert "resuming 2 in-flight branch(es) (#5, #6)" in plan_removes[0][2]
+    assert "skipping plan agent" in plan_removes[0][2]
+    implementer_sha = git_svc.create_worktree.call_args_list[0][0][3]
+    assert implementer_sha == "sha-x1", (
+        "selected in-flight issues must hand planning's SHA to implementation"
+    )
+
+
 # ── [Plan] row rendered on all paths ─────────────────────────────────────────
 
 
