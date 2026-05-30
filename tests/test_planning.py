@@ -1042,6 +1042,42 @@ def test_planning_phase_short_body_issue_appears_in_all_open_issues_json(
     assert fake.calls[0].scope_args["ALL_OPEN_ISSUES_JSON"] == json.dumps(all_open)
 
 
+def test_planning_phase_issue_failing_both_checks_excluded_from_ready_for_agent_json(
+    tmp_path, git_svc
+):
+    import json
+
+    well1 = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    well2 = {
+        "number": 3,
+        "title": "C",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["refactor-slice"],
+    }
+    both_bad = {
+        "number": 2,
+        "title": "B",
+        "body": "short",
+        "comments": [],
+        "labels": [],
+    }
+    fake = FakeAgentRunner([_plan_output([well1, well2])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    asyncio.run(planning_phase(deps, [well1, both_bad, well2], []))
+
+    assert fake.calls[0].scope_args["READY_FOR_AGENT_ISSUES_JSON"] == json.dumps(
+        [well1, well2]
+    )
+
+
 def test_planning_phase_issue_malformed_in_both_dimensions_gets_both_labels(
     tmp_path, git_svc
 ):
