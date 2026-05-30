@@ -32,7 +32,7 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.session import RunKind
+from pycastle.session import RoleSession, RunKind
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
@@ -2830,6 +2830,111 @@ def test_agent_runner_opencode_timeout_retry_falls_back_to_fresh_without_session
         (RunKind.FRESH, None),
         (RunKind.FRESH, None),
     ]
+
+
+def test_agent_runner_success_records_service_session_metadata_in_role_namespace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+        assert on_thread_id is not None
+        on_thread_id("thread-success")
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"codex": CodexService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Codex",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPLEMENTER,
+                    service="codex",
+                    session_namespace="main",
+                )
+            )
+        )
+
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER, "main")
+    assert isinstance(result, CommitMessageOutput)
+    assert role_session.service_session_metadata_path == (
+        tmp_path
+        / ".pycastle-session"
+        / "implementer"
+        / "main"
+        / "_service_session_metadata.json"
+    )
+    assert role_session.service_session_metadata("codex") == {
+        "service": "codex",
+        "provider_session_id": "thread-success",
+    }
+
+
+def test_agent_runner_protocol_error_does_not_record_service_session_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from unittest.mock import patch
+    from pycastle.agents.output_protocol import PromiseParseError
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+        if on_thread_id is not None:
+            on_thread_id("thread-protocol-error")
+        raise PromiseParseError("no tag")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"codex": CodexService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        with pytest.raises(AgentFailedError) as exc_info:
+            asyncio.run(
+                runner.run(
+                    _run_request(
+                        name="Codex",
+                        template=_PLAN_TEMPLATE,
+                        scope_args=_PLAN_SCOPE_ARGS,
+                        mount_path=tmp_path,
+                        role=AgentRole.IMPLEMENTER,
+                        service="codex",
+                        session_namespace="main",
+                    )
+                )
+            )
+
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER, "main")
+    assert exc_info.value.failure_class == "protocol_error"
+    assert role_session.service_session_id("codex") == "thread-protocol-error"
+    assert role_session.service_session_metadata("codex") is None
 
 
 # ── AgentRunner: protocol-error retry semantics ───────────────────────────────
