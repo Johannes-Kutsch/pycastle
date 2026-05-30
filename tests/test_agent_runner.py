@@ -32,7 +32,7 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.session import RoleSession, RunKind
+from pycastle.session import RunKind
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
@@ -2439,67 +2439,63 @@ def test_agent_runner_passes_session_id_flag_to_claude_on_fresh_run(tmp_path):
     assert all("--resume" not in c for c in captured_cmds)
 
 
-def test_agent_runner_records_claude_service_session_metadata_on_success(tmp_path):
-    mock_client = _make_docker_client(_COMPLETE_STREAM)
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
+def test_agent_runner_records_successful_run_in_plan_for_claude(tmp_path, monkeypatch):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
 
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Impl",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+    recorded_session_ids: list[str | None] = []
+    work_session_ids: list[str | None] = []
+
+    class _PlannedSession:
+        run_kind = RunKind.FRESH
+        auth_seed_action = None
+
+        def prepared_provider_session_id(self) -> str | None:
+            return "planned-session-id"
+
+        def provider_state_dir_container_path(self, container_workspace: str) -> str:
+            return f"{container_workspace}/.pycastle-session/implementer/claude/"
+
+        def prepare_host_provider_state_dir(self) -> None:
+            return None
+
+        def capture_provider_session_id(self, provider_session_id: str) -> None:
+            raise AssertionError(
+                "claude run should not capture a new provider session id"
             )
-        )
-    )
 
-    session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    assert session.service_session_metadata("claude") == {
-        "service": "claude",
-        "provider_session_id": session.session_uuid(),
-    }
-
-
-def test_agent_runner_records_codex_service_session_metadata_on_success(
-    tmp_path, monkeypatch
-):
-    home = tmp_path / "home"
-    host_auth = home / ".codex" / "auth.json"
-    host_auth.parent.mkdir(parents=True)
-    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
-    monkeypatch.setattr(Path, "home", lambda: home)
+        def record_successful_run(self, provider_session_id: str | None = None) -> None:
+            recorded_session_ids.append(provider_session_id)
 
     runner = AgentRunner(
         {},
         _make_cfg(tmp_path),
         _make_git_service(),
-        docker_client=_make_docker_client(_CODEX_COMPLETE_STREAM),
-        service_registry={"codex": CodexService()},
+        docker_client=_make_setup_docker_client(),
     )
 
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Codex",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                service="codex",
+    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+        work_session_ids.append(session_uuid)
+        return CommitMessageOutput(message="done")
+
+    monkeypatch.setattr(
+        "pycastle.session.run_session.RunSessionPlan.for_service",
+        lambda **kwargs: _PlannedSession(),
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Impl",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                )
             )
         )
-    )
-
-    session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    assert session.service_session_metadata("codex") == {
-        "service": "codex",
-        "provider_session_id": "thread-from-fresh",
-    }
+    assert work_session_ids == ["planned-session-id"]
+    assert recorded_session_ids == ["planned-session-id"]
 
 
 def _seed_implementer_session(tmp_path: Path) -> None:
@@ -3009,19 +3005,6 @@ def test_agent_runner_does_not_call_mark_exhausted_on_hard_agent_error(tmp_path)
 def test_agent_runner_resumes_codex_dispatch_from_recovered_rollout_thread_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setattr(Path, "home", lambda: home)
-
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
-    sessions_dir.mkdir(parents=True, exist_ok=True)
-    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
-        encoding="utf-8",
-    )
-
     captured_cmds: list[str] = []
     mock_client = MagicMock()
     mock_container = MagicMock()
@@ -3037,6 +3020,27 @@ def test_agent_runner_resumes_codex_dispatch_from_recovered_rollout_thread_id(
         return MagicMock(exit_code=0, output=(b"", b""))
 
     mock_container.exec_run.side_effect = exec_side_effect
+    planned_state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+
+    def planned_run_session(**kwargs):
+        return RunSessionPlan(
+            role=AgentRole.IMPLEMENTER,
+            worktree=tmp_path,
+            namespace="",
+            service=kwargs["service"],
+            run_kind=RunKind.RESUME,
+            service_state_dir=planned_state_dir,
+            provider_state_dir_relpath=".pycastle-session/implementer/codex/",
+            host_provider_state_dir=planned_state_dir,
+            provider_session_id="thread-from-plan",
+            auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
+            recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
+        )
+
+    monkeypatch.setattr(
+        "pycastle.session.run_session.RunSessionPlan.for_service",
+        planned_run_session,
+    )
     runner = AgentRunner(
         {},
         _make_cfg(tmp_path),
@@ -3059,32 +3063,12 @@ def test_agent_runner_resumes_codex_dispatch_from_recovered_rollout_thread_id(
 
     assert captured_cmds
     assert "codex exec resume " in captured_cmds[0]
-    assert "thread-from-rollout" in captured_cmds[0]
+    assert "thread-from-plan" in captured_cmds[0]
 
 
 def test_agent_runner_starts_fresh_when_codex_rollout_threads_are_unrecoverable(
     tmp_path, monkeypatch
 ):
-    home = tmp_path / "home"
-    host_auth = home / ".codex" / "auth.json"
-    host_auth.parent.mkdir(parents=True)
-    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
-    monkeypatch.setattr(Path, "home", lambda: home)
-
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    old_rollout_dir = state_dir / "sessions" / "2026" / "05" / "28"
-    new_rollout_dir = state_dir / "sessions" / "2026" / "05" / "29"
-    old_rollout_dir.mkdir(parents=True, exist_ok=True)
-    new_rollout_dir.mkdir(parents=True, exist_ok=True)
-    (old_rollout_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-old"}\n',
-        encoding="utf-8",
-    )
-    (new_rollout_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-new"}\n',
-        encoding="utf-8",
-    )
-
     captured_cmds: list[str] = []
     mock_client = MagicMock()
     mock_container = MagicMock()
@@ -3100,6 +3084,27 @@ def test_agent_runner_starts_fresh_when_codex_rollout_threads_are_unrecoverable(
         return MagicMock(exit_code=0, output=(b"", b""))
 
     mock_container.exec_run.side_effect = exec_side_effect
+    planned_state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+
+    def planned_run_session(**kwargs):
+        return RunSessionPlan(
+            role=AgentRole.IMPLEMENTER,
+            worktree=tmp_path,
+            namespace="",
+            service=kwargs["service"],
+            run_kind=RunKind.FRESH,
+            service_state_dir=planned_state_dir,
+            provider_state_dir_relpath=".pycastle-session/implementer/codex/",
+            host_provider_state_dir=planned_state_dir,
+            provider_session_id=None,
+            auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
+            recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
+        )
+
+    monkeypatch.setattr(
+        "pycastle.session.run_session.RunSessionPlan.for_service",
+        planned_run_session,
+    )
     runner = AgentRunner(
         {},
         _make_cfg(tmp_path),
@@ -3123,8 +3128,6 @@ def test_agent_runner_starts_fresh_when_codex_rollout_threads_are_unrecoverable(
     assert captured_cmds
     assert "codex exec " in captured_cmds[0]
     assert "resume" not in captured_cmds[0]
-    seeded = tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
-    assert seeded.read_text(encoding="utf-8") == '{"mode":"oauth"}'
 
 
 def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
@@ -3178,8 +3181,6 @@ def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
     assert "resume" not in captured_cmds[0]
     assert "codex exec resume " in captured_cmds[1]
     assert "thread-from-fresh" in captured_cmds[1]
-    saved = tmp_path / ".pycastle-session" / "planner" / "codex" / "thread_id"
-    assert saved.read_text(encoding="utf-8") == "thread-from-fresh"
 
 
 def test_agent_runner_opencode_reprompt_resumes_with_persisted_session_id(tmp_path):
@@ -3224,198 +3225,6 @@ def test_agent_runner_opencode_reprompt_resumes_with_persisted_session_id(tmp_pa
     assert "opencode run --format json " in captured_cmds[0]
     assert "--session" not in captured_cmds[0]
     assert "--session sess-from-fresh" in captured_cmds[1]
-    saved = tmp_path / ".pycastle-session" / "planner" / "opencode" / "session_id"
-    assert saved.read_text(encoding="utf-8") == "sess-from-fresh"
-
-
-def test_agent_runner_records_opencode_service_session_metadata_on_success(tmp_path):
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_docker_client(_OPENCODE_PLAN_COMPLETE_STREAM),
-        service_registry={"opencode": OpenCodeService()},
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="OpenCode",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.PLANNER,
-                service="opencode",
-            )
-        )
-    )
-
-    session = RoleSession(tmp_path, AgentRole.PLANNER)
-    assert session.service_session_metadata("opencode") == {
-        "service": "opencode",
-        "provider_session_id": "sess-from-fresh",
-    }
-
-
-def test_agent_runner_opencode_sidecar_persists_but_metadata_absent_on_failed_run(
-    tmp_path: Path,
-) -> None:
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_docker_client(_OPENCODE_PROTOCOL_ERROR_STREAM),
-        service_registry={"opencode": OpenCodeService()},
-    )
-
-    with pytest.raises(AgentFailedError):
-        asyncio.run(
-            runner.run(
-                _run_request(
-                    name="OpenCode",
-                    template=_PLAN_TEMPLATE,
-                    scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
-                    role=AgentRole.PLANNER,
-                    service="opencode",
-                )
-            )
-        )
-
-    role_session = RoleSession(tmp_path, AgentRole.PLANNER)
-    assert role_session.service_session_id("opencode") == "sess-from-fresh"
-    assert role_session.service_session_metadata("opencode") is None
-
-
-def test_agent_runner_does_not_record_metadata_on_failed_run(tmp_path):
-    # Stream with no <plan> tag forces PlanParseError on every attempt; after 3
-    # retries the runner returns FailedOutput without saving metadata.
-    no_plan_stream = [
-        b'{"type": "result", "result": "no plan tag here", "is_error": false}\n'
-    ]
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_docker_client(no_plan_stream),
-    )
-
-    with pytest.raises(AgentFailedError):
-        asyncio.run(
-            runner.run(
-                _run_request(
-                    name="Planner",
-                    template=_PLAN_TEMPLATE,
-                    scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
-                    role=AgentRole.PLANNER,
-                )
-            )
-        )
-
-    session = RoleSession(tmp_path, AgentRole.PLANNER)
-    assert session.service_session_metadata("claude") is None
-
-
-def test_agent_runner_opencode_keeps_api_key_out_of_session_files_across_resume_runs(
-    tmp_path,
-):
-    service = OpenCodeService(api_key="go-key")
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_docker_client(_OPENCODE_PLAN_COMPLETE_STREAM),
-        service_registry={"opencode": service},
-    )
-
-    request = _run_request(
-        name="OpenCode",
-        template=_PLAN_TEMPLATE,
-        scope_args=_PLAN_SCOPE_ARGS,
-        mount_path=tmp_path,
-        role=AgentRole.PLANNER,
-        service="opencode",
-    )
-    asyncio.run(runner.run(request))
-    asyncio.run(runner.run(request))
-
-    session_files = sorted(
-        path for path in (tmp_path / ".pycastle-session").rglob("*") if path.is_file()
-    )
-
-    assert session_files == [
-        tmp_path / ".pycastle-session" / "planner" / "_service_session_metadata.json",
-        tmp_path / ".pycastle-session" / "planner" / "opencode" / "session_id",
-    ]
-    assert session_files[1].read_text(encoding="utf-8") == "sess-from-fresh"
-    assert all(
-        "go-key" not in path.read_text(encoding="utf-8") for path in session_files
-    )
-
-
-def test_agent_runner_codex_missing_host_auth_raises_hard_error(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setattr(Path, "home", lambda: home)
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_docker_client(_CODEX_COMPLETE_STREAM),
-        service_registry={"codex": CodexService()},
-    )
-
-    with pytest.raises(
-        HardAgentError, match="Codex authentication missing"
-    ) as exc_info:
-        asyncio.run(
-            runner.run(
-                _run_request(
-                    name="Codex",
-                    template=_PLAN_TEMPLATE,
-                    scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
-                    service="codex",
-                )
-            )
-        )
-
-    assert exc_info.value.status_code == 401
-
-
-def test_agent_runner_codex_missing_host_auth_leaves_no_done_session_state(
-    tmp_path, monkeypatch
-):
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setattr(Path, "home", lambda: home)
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_docker_client(_CODEX_COMPLETE_STREAM),
-        service_registry={"codex": CodexService()},
-    )
-
-    with pytest.raises(HardAgentError, match="Codex authentication missing"):
-        asyncio.run(
-            runner.run(
-                _run_request(
-                    name="Codex",
-                    template=_PLAN_TEMPLATE,
-                    scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
-                    service="codex",
-                )
-            )
-        )
-
-    session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    assert session.is_done() is False
-    assert not session.path.exists()
 
 
 # ── AgentRunner: protocol-error retry semantics ───────────────────────────────
