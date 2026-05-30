@@ -8,7 +8,7 @@ from pycastle.agents.session_state import (
     prepare_agent_run_session_state,
     record_observed_provider_session_id,
 )
-from pycastle.services import ClaudeService, CodexService
+from pycastle.services import ClaudeService, CodexService, OpenCodeService
 from pycastle.session import RoleSession, RunKind
 
 
@@ -150,6 +150,30 @@ def test_prepare_agent_run_session_state_fresh_codex_without_persisted_or_recove
     assert state.provider_session_id is None
     assert state.service_state_dir_path == state_dir
     assert state.provider_state_dir_relpath == ".pycastle-session/implementer/codex/"
+
+
+def test_prepare_agent_run_session_state_resume_opencode_uses_persisted_session_id(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text("sess-persisted\n", encoding="utf-8")
+
+    state = prepare_agent_run_session_state(
+        AgentRunSessionStateRequest(
+            worktree=tmp_path,
+            role=AgentRole.IMPROVE,
+            session_namespace="main",
+            service=OpenCodeService(),
+        )
+    )
+
+    assert state.run_kind is RunKind.RESUME
+    assert state.provider_session_id == "sess-persisted"
+    assert state.service_state_dir_path == state_dir
+    assert (
+        state.provider_state_dir_relpath == ".pycastle-session/improve/main/opencode/"
+    )
 
 
 def test_record_observed_provider_session_id_writes_exact_codex_thread_id_file(
