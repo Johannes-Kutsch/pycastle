@@ -386,20 +386,23 @@ def _seed_exact_phase_1_main_transcript(
     (state_dir / "session_id").write_text(provider_session_id, encoding="utf-8")
 
 
-def test_improve_resumes_at_prd_after_scan_picked(
-    tmp_path, git_svc, monkeypatch: pytest.MonkeyPatch
-):
+def test_improve_resumes_at_prd_after_scan_picked(tmp_path, git_svc):
     """Resume from '01-scan:picked' starts at phase 2 (PRD)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
-    monkeypatch.setattr(
-        "pycastle.iteration.improve._has_exact_phase_1_main_transcript",
-        lambda deps, worktree_path: True,
+    _seed_exact_phase_1_main_transcript(
+        wt, service_name="opencode", provider_session_id="sess-opencode-123"
     )
     runner = FakeAgentRunner(
         [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
     )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        cfg=Config(improve_override=StageOverride(service="opencode", effort="medium")),
+        service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
+    )
     _run(deps)
     assert runner.calls[0].template == PromptTemplate.IMPROVE_PRD
     assert len(runner.calls) == 2
@@ -470,15 +473,9 @@ def test_improve_clean_phase_2_entry_restarts_from_phase_1_without_exact_main_tr
     assert not (wt / ".pycastle-session" / "improve").exists()
 
 
-def test_improve_gate_failure_restarts_next_entry_from_scan_phase(
-    tmp_path, git_svc, monkeypatch: pytest.MonkeyPatch
-):
+def test_improve_gate_failure_restarts_next_entry_from_scan_phase(tmp_path, git_svc):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
-    monkeypatch.setattr(
-        "pycastle.iteration.improve._has_exact_phase_1_main_transcript",
-        lambda deps, worktree_path: False,
-    )
     runner = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
 
@@ -640,22 +637,25 @@ def test_mid_phase_2_retry_does_not_signal_role_prompt(tmp_path, git_svc):
     assert prd_call.send_role_prompt_on_resume is False
 
 
-def test_cross_teardown_resume_at_phase_2_signals_role_prompt(
-    tmp_path, git_svc, monkeypatch: pytest.MonkeyPatch
-):
+def test_cross_teardown_resume_at_phase_2_signals_role_prompt(tmp_path, git_svc):
     """Resume from '01-scan:picked' (phase 1 completed, container torn down):
     phase 2's RunRequest signals send_role_prompt_on_resume=True so the PRD
     prompt is delivered, not the continuation prompt."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
-    monkeypatch.setattr(
-        "pycastle.iteration.improve._has_exact_phase_1_main_transcript",
-        lambda deps, worktree_path: True,
+    _seed_exact_phase_1_main_transcript(
+        wt, service_name="opencode", provider_session_id="sess-opencode-123"
     )
     runner = FakeAgentRunner(
         [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
     )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        cfg=Config(improve_override=StageOverride(service="opencode", effort="medium")),
+        service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
+    )
     _run(deps)
     prd_call = next(c for c in runner.calls if c.template == PromptTemplate.IMPROVE_PRD)
     assert prd_call.send_role_prompt_on_resume is True
@@ -723,20 +723,23 @@ def test_improve_fresh_run_on_whitespace_only_progress_file(tmp_path, git_svc):
     assert runner.calls[0].template == PromptTemplate.IMPROVE_SCAN
 
 
-def test_improve_resumes_correctly_with_whitespace_padded_progress(
-    tmp_path, git_svc, monkeypatch: pytest.MonkeyPatch
-):
+def test_improve_resumes_correctly_with_whitespace_padded_progress(tmp_path, git_svc):
     """Progress file with a valid phase ID surrounded by whitespace is still recognized — resumes at correct phase."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "  01-scan:picked  \n")
-    monkeypatch.setattr(
-        "pycastle.iteration.improve._has_exact_phase_1_main_transcript",
-        lambda deps, worktree_path: True,
+    _seed_exact_phase_1_main_transcript(
+        wt, service_name="opencode", provider_session_id="sess-opencode-123"
     )
     runner = FakeAgentRunner(
         [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
     )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        cfg=Config(improve_override=StageOverride(service="opencode", effort="medium")),
+        service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
+    )
     _run(deps)
     assert runner.calls[0].template == PromptTemplate.IMPROVE_PRD
     assert len(runner.calls) == 2

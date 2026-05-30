@@ -7,6 +7,7 @@ import uuid
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.services import ServiceRegistry
 from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session import (
     ExactTranscriptHandoff,
@@ -561,6 +562,41 @@ def test_exact_transcript_handoff_is_ineligible_for_ambiguous_codex_rollout_evid
         kind=ProviderIdentityKind.UNRECOVERABLE,
         run_kind=RunKind.FRESH,
         provider_session_id=None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("registry", "service_name"),
+    [
+        (None, "opencode"),
+        (ServiceRegistry({"opencode": OpenCodeService()}), ""),
+        (ServiceRegistry({}), "opencode"),
+    ],
+)
+def test_has_exact_transcript_handoff_for_selected_service_returns_false_for_missing_inputs(
+    worktree, registry, service_name
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    assert (
+        rs.has_exact_transcript_handoff_for_selected_service(registry, service_name)
+        is False
+    )
+
+
+def test_has_exact_transcript_handoff_for_selected_service_returns_true_when_eligible(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    state_dir = rs.path / "opencode"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text("sess-123", encoding="utf-8")
+    rs.save_service_session_id("opencode", "sess-123")
+    rs.save_service_session_metadata("opencode", "sess-123")
+
+    registry = ServiceRegistry({"opencode": OpenCodeService()})
+    assert (
+        rs.has_exact_transcript_handoff_for_selected_service(registry, "opencode")
+        is True
     )
 
 
