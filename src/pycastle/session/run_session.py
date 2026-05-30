@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
 from ..errors import HardAgentError
-from .resume import RoleSession, RunKind, SESSION_DIR_NAME
+from .resume import (
+    RoleSession,
+    RunKind,
+    _normalize_state_dir_relpath,
+    _role_provider_state_dir_relpath,
+)
 
 if TYPE_CHECKING:
     from ..services.agent_service import AgentService
@@ -56,31 +61,6 @@ def _codex_auth_seeding_requirement(
     if not (provider_state_dir / "auth.json").exists():
         return AuthSeedingRequirement.REQUIRED
     return AuthSeedingRequirement.NOT_REQUIRED
-
-
-def _role_provider_state_dir_relpath(
-    role: AgentRole,
-    namespace: str,
-    provider_name: str,
-) -> str:
-    if namespace:
-        return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
-    return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
-
-
-def _normalize_provider_state_dir_relpath(
-    *,
-    role: AgentRole,
-    namespace: str,
-    service_name: str,
-    provider_state_dir_relpath: str | None,
-) -> str | None:
-    if provider_state_dir_relpath is None or not namespace:
-        return provider_state_dir_relpath
-    legacy_relpath = _role_provider_state_dir_relpath(role, "", service_name)
-    if provider_state_dir_relpath == legacy_relpath:
-        return _role_provider_state_dir_relpath(role, namespace, service_name)
-    return provider_state_dir_relpath
 
 
 def _preserves_role_provider_layout(service_name: str) -> bool:
@@ -173,11 +153,11 @@ class RunSessionPlan:
         provider_session_id = provider_identity.provider_session_id
         run_kind = provider_identity.run_kind
         raw_provider_state_dir_relpath = service.state_dir_relpath(role, namespace)
-        provider_state_dir_relpath = _normalize_provider_state_dir_relpath(
-            role=role,
-            namespace=namespace,
-            service_name=service.name,
-            provider_state_dir_relpath=raw_provider_state_dir_relpath,
+        provider_state_dir_relpath = _normalize_state_dir_relpath(
+            role,
+            namespace,
+            service.name,
+            raw_provider_state_dir_relpath,
         )
         host_provider_state_dir = service_state_dir
         if (
