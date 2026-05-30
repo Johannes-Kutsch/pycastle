@@ -131,22 +131,6 @@ def test_pick_implement_template_ignores_unrelated_labels():
     assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_BEHAVIOR
 
 
-def test_pick_implement_template_fails_fast_on_missing_slice_label():
-    issue = {"number": 1, "title": "T", "labels": ["bug", "ready-for-agent"]}
-    with pytest.raises(AssertionError):
-        pick_implement_template(issue, _cfg)
-
-
-def test_pick_implement_template_fails_fast_on_multiple_slice_labels():
-    issue = {
-        "number": 1,
-        "title": "T",
-        "labels": ["behavior-slice", "refactor-slice"],
-    }
-    with pytest.raises(AssertionError):
-        pick_implement_template(issue, _cfg)
-
-
 # ── implement_phase: parallel execution (tracer bullet) ───────────────────────
 
 

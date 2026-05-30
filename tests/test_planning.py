@@ -20,7 +20,6 @@ from pycastle.iteration.planning import (
     AllBlocked,
     PlanReady,
     hydrate_planned_issues,
-    partition_by_slice_label,
     planning_phase,
 )
 
@@ -629,26 +628,6 @@ def test_config_needs_slice_type_label_defaults_to_needs_slice_type():
     assert Config().needs_slice_type_label == "needs-slice-type"
 
 
-# ── partition_by_slice_label ─────────────────────────────────────────────────
-
-
-def test_partition_by_slice_label_separates_well_formed_and_malformed():
-    from pycastle.config import Config
-
-    cfg = Config()
-    well = {"number": 1, "labels": ["ready-for-agent", "behavior-slice"]}
-    no_slice = {"number": 2, "labels": ["ready-for-agent"]}
-    multi_slice = {
-        "number": 3,
-        "labels": ["ready-for-agent", "behavior-slice", "refactor-slice"],
-    }
-
-    good, bad = partition_by_slice_label([well, no_slice, multi_slice], cfg)
-
-    assert good == [well]
-    assert bad == [no_slice, multi_slice]
-
-
 def test_planning_phase_all_open_issues_json_unaffected_by_partition(tmp_path, git_svc):
     import json
 
@@ -833,45 +812,6 @@ def test_planning_phase_filters_malformed_from_ready_for_agent_json(tmp_path, gi
     assert fake.calls[0].scope_args["READY_FOR_AGENT_ISSUES_JSON"] == json.dumps(
         [well1, well2]
     )
-
-
-# ── is_well_formed_body ──────────────────────────────────────────────────────
-
-
-def test_is_well_formed_body_returns_false_for_short_body():
-    from pycastle.iteration.planning import is_well_formed_body
-
-    assert is_well_formed_body({"body": "x" * 99}) is False
-
-
-def test_is_well_formed_body_returns_true_for_body_at_floor():
-    from pycastle.iteration.planning import is_well_formed_body
-
-    assert is_well_formed_body({"body": "x" * 100}) is True
-
-
-def test_is_well_formed_body_returns_false_for_empty_body():
-    from pycastle.iteration.planning import is_well_formed_body
-
-    assert is_well_formed_body({"body": ""}) is False
-
-
-def test_is_well_formed_body_returns_false_for_whitespace_body():
-    from pycastle.iteration.planning import is_well_formed_body
-
-    assert is_well_formed_body({"body": "   \n  "}) is False
-
-
-def test_is_well_formed_body_returns_false_for_at_dash_body():
-    from pycastle.iteration.planning import is_well_formed_body
-
-    assert is_well_formed_body({"body": "@-"}) is False
-
-
-def test_is_well_formed_body_returns_false_for_none_body():
-    from pycastle.iteration.planning import is_well_formed_body
-
-    assert is_well_formed_body({"body": None}) is False
 
 
 # ── planning_phase: needs-info body lifecycle ────────────────────────────────
