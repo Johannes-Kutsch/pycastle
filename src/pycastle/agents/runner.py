@@ -12,6 +12,11 @@ from .output_protocol import (
     FailedOutput,
 )
 from .result import CancellationToken
+from .session_dispatch import (
+    SessionDispatchRequest,
+    prepare_agent_session,
+    record_successful_provider_session_metadata,
+)
 from ..config import Config, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
 from ..infrastructure.docker_session import DockerSession, build_volume_spec
@@ -31,8 +36,7 @@ from ..errors import (
     UsageLimitError,
 )
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
-from ..session import RoleSession, RunKind
-from ..session.run_session import RunSessionPlan
+from ..session import RunKind
 from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
@@ -214,19 +218,16 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError(reset_time=None, stage_key=_stage_key_for_role(role))
 
-        session_namespace = request.session_namespace
-        role_session = RoleSession(mount_path, role, session_namespace)
-        plan = RunSessionPlan.for_service(
-            role=role,
-            worktree=mount_path,
-            namespace=session_namespace,
-            service=service,
+        prepared_session = prepare_agent_session(
+            SessionDispatchRequest(
+                mount_path=mount_path,
+                role=role,
+                session_namespace=request.session_namespace,
+                service=service,
+                container_workspace=_CONTAINER_WORKSPACE,
+            )
         )
-        run_kind = plan.run_kind
-        service_session_id: str | None = plan.prepared_provider_session_id()
-        auth_seed_action = plan.auth_seed_action
-        if auth_seed_action is not None:
-            auth_seed_action.require_source()
+        run_kind = prepared_session.run_kind
 
         non_typed_retry_done = False
 
@@ -252,7 +253,7 @@ class AgentRunner:
             session = self._build_session(
                 mount_path,
                 service,
-                plan.provider_state_dir_container_path(_CONTAINER_WORKSPACE),
+                prepared_session.provider_state_dir_container_path,
             )
             runner = ContainerRunner(
                 name,
@@ -272,14 +273,12 @@ class AgentRunner:
                     raise SetupPhaseError(role.value, str(exc)) from exc
 
                 if run_kind == RunKind.FRESH:
-                    role_session.start_fresh()
+                    prepared_session.role_session.start_fresh()
 
-                plan.prepare_host_provider_state_dir()
+                prepared_session.prepare_host_provider_state_dir()
 
                 def remember_thread_id(thread_id: str) -> None:
-                    nonlocal service_session_id
-                    service_session_id = thread_id
-                    plan.capture_provider_session_id(thread_id)
+                    prepared_session.remember_provider_session_id(thread_id)
 
                 loop = asyncio.get_running_loop()
 
@@ -305,21 +304,23 @@ class AgentRunner:
                                     role,
                                     work_prompt,
                                     run_kind=work_run_kind,
-                                    session_uuid=service_session_id,
+                                    session_uuid=prepared_session.provider_session_id,
                                     on_thread_id=remember_thread_id,
                                 )
                                 if (
                                     not isinstance(output, FailedOutput)
-                                    and service_session_id is not None
+                                    and prepared_session.provider_session_id is not None
                                 ):
-                                    plan.record_successful_run(service_session_id)
+                                    record_successful_provider_session_metadata(
+                                        prepared_session
+                                    )
                                 if isinstance(output, FailedOutput):
                                     row.close("failed", shutdown_style="error")
                                 return output
                             except AgentOutputProtocolError:
                                 if (
                                     service.name == "codex"
-                                    and service_session_id is None
+                                    and prepared_session.provider_session_id is None
                                 ):
                                     row.close("failed", shutdown_style="error")
                                     return FailedOutput(failure_class="protocol_error")
