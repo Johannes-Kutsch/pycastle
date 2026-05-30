@@ -12,6 +12,7 @@ from pycastle.services.codex_service import CodexService
 from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session.run_session import (
     AuthSeedingRequirement,
+    LocalAuthSeedAction,
     RecoveredSessionIdPersistence,
     RunSessionPlan,
 )
@@ -797,6 +798,26 @@ def test_run_session_plan_exposes_auth_seed_action_for_fresh_codex_without_auth_
     )
 
 
+def test_run_session_plan_skips_auth_seed_action_for_fresh_codex_with_auth_json(
+    tmp_path: Path,
+):
+    service = CodexService()
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    state_dir.mkdir(parents=True)
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.auth_seeding_requirement is AuthSeedingRequirement.NOT_REQUIRED
+    assert plan.auth_seed_action is None
+
+
 def test_run_session_plan_requires_auth_seeding_for_resume_codex_without_auth_json(
     tmp_path: Path,
 ):
@@ -938,3 +959,38 @@ def test_local_auth_seed_action_applies_only_to_preserved_codex_provider_state_d
         provider_auth.read_text(encoding="utf-8") == '{"mode":"oauth","origin":"host"}'
     )
     assert not (tmp_path / "custom" / "codex-state").exists()
+
+
+def test_local_auth_seed_action_does_not_overwrite_existing_provider_auth(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth","origin":"host"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    service = CodexService()
+    provider_state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    provider_state_dir.mkdir(parents=True)
+    provider_auth = provider_state_dir / "auth.json"
+    provider_auth.write_text('{"mode":"oauth","origin":"provider"}', encoding="utf-8")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.auth_seed_action is None
+
+    LocalAuthSeedAction(
+        source=host_auth,
+        destination=provider_auth,
+    ).apply()
+
+    assert (
+        provider_auth.read_text(encoding="utf-8")
+        == '{"mode":"oauth","origin":"provider"}'
+    )
