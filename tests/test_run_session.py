@@ -274,6 +274,53 @@ def test_run_session_plan_reports_fresh_for_selected_opencode_service_state_with
     )
 
 
+def test_run_session_plan_uses_selected_opencode_service_state_dir_for_resume_container_path(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
+    )
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text("sess-from-custom-state", encoding="utf-8")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_state_dir_container_path("/home/agent/workspace") == (
+        "/home/agent/workspace/custom/opencode-state/"
+    )
+
+
+def test_run_session_plan_uses_preserved_opencode_provider_layout_for_fresh_container_path(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
+    )
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.provider_state_dir_container_path("/home/agent/workspace") == (
+        "/home/agent/workspace/.pycastle-session/implementer/opencode/"
+    )
+
+
 def test_run_session_plan_keeps_none_service_state_dir_when_service_has_no_state_dir(
     tmp_path: Path,
 ):
