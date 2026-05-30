@@ -8,6 +8,8 @@ from unittest.mock import MagicMock
 import pytest
 from click.testing import CliRunner
 
+from tests.support import FakeAgentRunner, RecordingStatusDisplay
+
 
 def _git(repo: Path, *args: str) -> str:
     result = subprocess.run(
@@ -93,41 +95,6 @@ def test_check_surfaces_host_check_phase_row_before_orchestration_steps(
 
     events: list[tuple[object, ...]] = []
 
-    class RecordingStatusDisplay:
-        def register(
-            self,
-            caller: str,
-            kind: str,
-            startup_message: str = "started",
-            work_body: str = "",
-            initial_phase: str = "Setup",
-            color_key: int | None = None,
-            model_display=None,
-        ) -> None:
-            events.append(
-                ("register", caller, kind, startup_message, work_body, initial_phase)
-            )
-
-        def update_phase(self, name: str, phase: str) -> None:
-            events.append(("phase", name, phase))
-
-        def reset_idle_timer(self, name: str) -> None:
-            return None
-
-        def update_tokens(self, name: str, current_tokens: int) -> None:
-            return None
-
-        def remove(
-            self,
-            caller: str,
-            shutdown_message: str = "finished",
-            shutdown_style: str = "success",
-        ) -> None:
-            events.append(("remove", caller, shutdown_message, shutdown_style))
-
-        def print(self, caller: str, message: object, style: str | None = None) -> None:
-            return None
-
     git_svc = MagicMock()
 
     def fake_pull(repo_root: Path) -> None:
@@ -158,21 +125,29 @@ def test_check_surfaces_host_check_phase_row_before_orchestration_steps(
         "_run_host_check",
         lambda name, command, cwd: events.append(("host-check", name, command, cwd)),
     )
+    display = RecordingStatusDisplay()
 
     check_mod.main(
         cfg=Config(host_checks=(("tests", "python -c tests"),)),
         git_service=git_svc,
-        status_display=RecordingStatusDisplay(),
+        status_display=display,
     )
 
-    assert events[:4] == [
-        ("register", "Host Check", "phase", "started", "", "Setup"),
+    assert display.calls[0] == (
+        "register",
+        "Host Check",
+        "phase",
+        "started",
+        "Setup",
+        None,
+    )
+    assert events[:3] == [
         ("pull", Path(".").resolve()),
         ("clean", Path(".").resolve()),
         ("worktree-enter",),
     ]
     assert ("host-check", "tests", "python -c tests", tmp_path) in events
-    assert ("remove", "Host Check", "finished", "success") in events
+    assert display.calls[-1] == ("remove", "Host Check", "finished", "success")
 
 
 def test_check_names_current_host_check_through_host_check_status_surface(
@@ -180,43 +155,6 @@ def test_check_names_current_host_check_through_host_check_status_surface(
 ):
     import pycastle.commands.check as check_mod
     from pycastle.config import Config
-
-    events: list[tuple[object, ...]] = []
-
-    class RecordingStatusDisplay:
-        def register(
-            self,
-            caller: str,
-            kind: str,
-            startup_message: str = "started",
-            work_body: str = "",
-            initial_phase: str = "Setup",
-            color_key: int | None = None,
-            model_display=None,
-        ) -> None:
-            events.append(
-                ("register", caller, kind, startup_message, work_body, initial_phase)
-            )
-
-        def update_phase(self, name: str, phase: str) -> None:
-            events.append(("phase", name, phase))
-
-        def reset_idle_timer(self, name: str) -> None:
-            return None
-
-        def update_tokens(self, name: str, current_tokens: int) -> None:
-            return None
-
-        def remove(
-            self,
-            caller: str,
-            shutdown_message: str = "finished",
-            shutdown_style: str = "success",
-        ) -> None:
-            events.append(("remove", caller, shutdown_message, shutdown_style))
-
-        def print(self, caller: str, message: object, style: str | None = None) -> None:
-            return None
 
     git_svc = MagicMock()
     git_svc.is_working_tree_clean.return_value = True
@@ -233,6 +171,7 @@ def test_check_names_current_host_check_through_host_check_status_surface(
         check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
     )
     monkeypatch.setattr(check_mod, "_run_host_check", lambda *a, **kw: None)
+    display = RecordingStatusDisplay()
 
     check_mod.main(
         cfg=Config(
@@ -242,11 +181,11 @@ def test_check_names_current_host_check_through_host_check_status_surface(
             )
         ),
         git_service=git_svc,
-        status_display=RecordingStatusDisplay(),
+        status_display=display,
     )
 
-    assert ("phase", "Host Check", "lint") in events
-    assert ("phase", "Host Check", "tests") in events
+    assert ("update_phase", "Host Check", "lint") in display.calls
+    assert ("update_phase", "Host Check", "tests") in display.calls
 
 
 def test_check_surfaces_current_host_check_without_streaming_passing_command_output(
@@ -324,7 +263,6 @@ def test_check_files_one_host_check_issue_per_failed_command_and_reports_numbers
     import pycastle.commands.check as check_mod
     from pycastle.agents.output_protocol import AgentRole, IssueOutput
     from pycastle.config import Config
-    from tests.support import FakeAgentRunner
 
     git_svc = MagicMock()
     git_svc.is_working_tree_clean.return_value = True
@@ -488,7 +426,6 @@ def test_check_passes_raw_failed_command_output_to_host_check_issue_agent(
     import pycastle.commands.check as check_mod
     from pycastle.agents.output_protocol import IssueOutput
     from pycastle.config import Config
-    from tests.support import FakeAgentRunner
     from pycastle.prompts.pipeline import PromptTemplate
 
     git_svc = MagicMock()
@@ -593,7 +530,6 @@ def test_check_rejects_afk_host_check_issue_without_slice_mode_label(
     import pycastle.commands.check as check_mod
     from pycastle.agents.output_protocol import IssueOutput
     from pycastle.config import Config
-    from tests.support import FakeAgentRunner
 
     git_svc = MagicMock()
     git_svc.is_working_tree_clean.return_value = True
@@ -636,7 +572,6 @@ def test_check_rejects_afk_host_check_issue_with_short_body(tmp_path, monkeypatc
     import pycastle.commands.check as check_mod
     from pycastle.agents.output_protocol import IssueOutput
     from pycastle.config import Config
-    from tests.support import FakeAgentRunner
 
     git_svc = MagicMock()
     git_svc.is_working_tree_clean.return_value = True
