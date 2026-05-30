@@ -948,6 +948,77 @@ def test_prepare_provider_session_state_captures_opencode_session_id_in_selected
     assert all("go-key" not in contents for contents in session_file_text.values())
 
 
+def test_prepared_provider_run_session_records_success_metadata_with_runtime_session_id(
+    tmp_path: Path,
+):
+    state = prepare_provider_session_state(
+        _provider_request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            service=OpenCodeService(),
+            namespace="main",
+        )
+    )
+
+    run_session = state.initial_provider_run_session()
+    run_session.record_provider_session_id("sess-opencode-runtime")
+    run_session.record_successful_run()
+
+    assert RoleSession(
+        tmp_path,
+        AgentRole.IMPROVE,
+        "main",
+    ).service_session_metadata("opencode") == {
+        "service": "opencode",
+        "provider_session_id": "sess-opencode-runtime",
+    }
+
+
+def test_prepared_provider_run_session_capture_without_success_leaves_metadata_absent(
+    tmp_path: Path,
+):
+    state = prepare_provider_session_state(
+        _provider_request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            service=OpenCodeService(),
+            namespace="main",
+        )
+    )
+
+    run_session = state.initial_provider_run_session()
+    run_session.record_provider_session_id("sess-opencode-runtime")
+
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    assert role_session.service_session_id("opencode") == "sess-opencode-runtime"
+    assert role_session.service_session_metadata("opencode") is None
+
+
+def test_prepared_provider_run_session_metadata_survives_mark_done_cleanup(
+    tmp_path: Path,
+):
+    state = prepare_provider_session_state(
+        _provider_request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            service=OpenCodeService(),
+            namespace="main",
+        )
+    )
+
+    run_session = state.initial_provider_run_session()
+    run_session.record_provider_session_id("sess-opencode-runtime")
+    run_session.record_successful_run()
+
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    role_session.mark_done()
+
+    assert role_session.service_session_metadata("opencode") == {
+        "service": "opencode",
+        "provider_session_id": "sess-opencode-runtime",
+    }
+
+
 def test_remember_provider_session_id_updates_session_id(tmp_path: Path):
     _seed_codex_auth(tmp_path)
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))

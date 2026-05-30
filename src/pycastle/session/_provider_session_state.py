@@ -50,6 +50,7 @@ class PreparedProviderSessionState:
         return PreparedProviderRunSession(
             run_kind=self.run_kind,
             provider_session_id=self.provider_session_id,
+            _provider_session_id_recorder=self.record_provider_session_id,
             _success_recorder=self.record_successful_run,
         )
 
@@ -60,6 +61,7 @@ class PreparedProviderSessionState:
         return PreparedProviderRunSession(
             run_kind=run_kind,
             provider_session_id=self.provider_session_id,
+            _provider_session_id_recorder=self.record_provider_session_id,
             _success_recorder=self.record_successful_run,
         )
 
@@ -102,11 +104,21 @@ class PreparedProviderSessionState:
 class PreparedProviderRunSession:
     run_kind: RunKind
     provider_session_id: str | None
+    _provider_session_id_recorder: Callable[[str], None] | None = dataclasses.field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     _success_recorder: Callable[[], None] | None = dataclasses.field(
         default=None,
         repr=False,
         compare=False,
     )
+
+    def record_provider_session_id(self, provider_session_id: str) -> None:
+        object.__setattr__(self, "provider_session_id", provider_session_id)
+        if self._provider_session_id_recorder is not None:
+            self._provider_session_id_recorder(provider_session_id)
 
     def record_successful_run(self) -> None:
         if self._success_recorder is not None:
