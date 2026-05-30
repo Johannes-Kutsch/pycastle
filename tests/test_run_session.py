@@ -639,6 +639,49 @@ def test_run_session_plan_prefers_saved_codex_thread_id_for_resume(tmp_path: Pat
     assert plan.provider_session_id == "thread-from-sidecar"
 
 
+def test_run_session_plan_recovers_codex_rollout_when_saved_thread_id_is_unreadable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    role_session.save_service_session_id("codex", "thread-from-sidecar")
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
+    )
+
+    sidecar_path = role_session.service_session_id_path("codex")
+    original_read_text = type(sidecar_path).read_text
+
+    def unreadable_read_text(path: Path, *args, **kwargs) -> str:
+        if path == sidecar_path:
+            raise OSError("thread_id unreadable")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(sidecar_path), "read_text", unreadable_read_text)
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == "thread-from-rollout"
+    assert (
+        plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
+    )
+    assert (
+        original_read_text(sidecar_path, encoding="utf-8").strip()
+        == "thread-from-rollout"
+    )
+
+
 def test_run_session_plan_recovers_single_codex_rollout_and_marks_it_for_persistence(
     tmp_path: Path,
 ):
@@ -650,6 +693,42 @@ def test_run_session_plan_recovers_single_codex_rollout_and_marks_it_for_persist
         '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
         encoding="utf-8",
     )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == "thread-from-rollout"
+    assert (
+        plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
+    )
+
+
+def test_run_session_plan_recovers_single_codex_rollout_amid_malformed_rollout_noise(
+    tmp_path: Path,
+):
+    service = CodexService()
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                "{not-json",
+                '["not-an-object"]',
+                '{"type":"turn.completed","thread_id":"ignored"}',
+                '{"type":"thread.started","thread_id":"   "}',
+                '{"type":"thread.started","thread_id":"thread-from-rollout"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (sessions_dir / "rollout-002.jsonl").write_bytes(b"\xff\xfe\x00")
 
     plan = RunSessionPlan.for_service(
         role=AgentRole.IMPLEMENTER,
@@ -709,6 +788,37 @@ def test_run_session_plan_treats_distinct_codex_rollout_thread_ids_as_fresh(
     )
     (dir_b / "rollout-001.jsonl").write_text(
         '{"type":"thread.started","thread_id":"thread-id-new"}\n',
+        encoding="utf-8",
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.provider_session_id is None
+
+
+def test_run_session_plan_treats_malformed_only_codex_rollout_state_as_fresh(
+    tmp_path: Path,
+):
+    service = CodexService()
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                "{not-json",
+                '["not-an-object"]',
+                '{"type":"turn.completed","thread_id":"ignored"}',
+                '{"type":"thread.started","thread_id":"   "}',
+            ]
+        )
+        + "\n",
         encoding="utf-8",
     )
 
