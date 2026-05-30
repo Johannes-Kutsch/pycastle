@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from datetime import timezone
+from pathlib import Path
 
 from pycastle.services.agent_service import AssistantTurn, Result
 from pycastle.services.agent_service import HardError
@@ -10,7 +11,7 @@ from pycastle.services.agent_service import TransientError
 from pycastle.services.agent_service import UsageLimit
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services.opencode_service import OpenCodeService
-from pycastle.session import RunKind
+from pycastle.session import ProviderRunState, RoleSession, RunKind
 
 
 def test_opencode_service_builds_json_commands_and_go_api_env() -> None:
@@ -268,6 +269,68 @@ def test_opencode_service_session_id_callback_fires_once_for_repeated_id() -> No
     )
 
     assert session_ids == ["sess_1"]
+
+
+def test_opencode_service_exact_transcript_requires_metadata_saved_id_and_resumable_state_to_match(
+    tmp_path,
+) -> None:
+    service = OpenCodeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    role_session.save_service_session_id("opencode", "sess-opencode-123")
+    role_session.save_service_session_metadata("opencode", "sess-opencode-123")
+    provider_state_dir = tmp_path / "selected-opencode-state"
+    provider_state_dir.mkdir(parents=True)
+    (provider_state_dir / "session_id").write_text(
+        "sess-opencode-other",
+        encoding="utf-8",
+    )
+
+    exact = service.has_exact_transcript_session(
+        role_session,
+        provider_run_state=ProviderRunState(RunKind.RESUME, "sess-opencode-123"),
+        provider_state_dir=provider_state_dir,
+    )
+
+    assert exact is False
+
+
+def test_opencode_service_resolves_resume_with_saved_session_id_when_state_is_resumable(
+    tmp_path: Path,
+) -> None:
+    service = OpenCodeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    role_session.save_service_session_id("opencode", "sess-opencode-123")
+    provider_state_dir = tmp_path / "selected-opencode-state"
+    provider_state_dir.mkdir(parents=True)
+    (provider_state_dir / "session_id").write_text(
+        "sess-opencode-other",
+        encoding="utf-8",
+    )
+
+    provider_run_state = service.resolve_provider_run_state(
+        role_session,
+        provider_state_dir=provider_state_dir,
+        has_resumable_provider_state=True,
+    )
+
+    assert provider_run_state == ProviderRunState(RunKind.RESUME, "sess-opencode-123")
+
+
+def test_opencode_service_resolves_fresh_without_saved_session_id_even_when_state_dir_exists(
+    tmp_path: Path,
+) -> None:
+    service = OpenCodeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    provider_state_dir = tmp_path / "selected-opencode-state"
+    provider_state_dir.mkdir(parents=True)
+
+    provider_run_state = service.resolve_provider_run_state(
+        role_session,
+        provider_state_dir=provider_state_dir,
+        has_resumable_provider_state=True,
+    )
+
+    assert provider_run_state == ProviderRunState(RunKind.FRESH, None)
 
 
 def test_opencode_service_skips_malformed_json_and_non_dict_values() -> None:
