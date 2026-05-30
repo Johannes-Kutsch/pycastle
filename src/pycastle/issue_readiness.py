@@ -65,6 +65,12 @@ class IssueReadiness:
     selected_mode: SliceMode | None
 
 
+@dataclasses.dataclass(frozen=True)
+class ClassifiedIssue:
+    issue: dict
+    readiness: IssueReadiness
+
+
 def slice_labels(cfg: Config) -> frozenset[str]:
     return frozenset(
         {cfg.refactor_slice_label, cfg.behavior_slice_label, cfg.docs_slice_label}
@@ -112,3 +118,10 @@ def classify_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
         is_ready=is_ready,
         selected_mode=selected_mode,
     )
+
+
+def classify_issues(issues: list[dict], cfg: Config) -> list[ClassifiedIssue]:
+    return [
+        ClassifiedIssue(issue=issue, readiness=classify_issue_readiness(issue, cfg))
+        for issue in issues
+    ]
