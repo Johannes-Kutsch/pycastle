@@ -84,6 +84,52 @@ def test_pick_implement_template_ignores_unrelated_labels():
     assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_BEHAVIOR
 
 
+def test_pick_implement_template_uses_carried_readiness_mode_over_labels():
+    from pycastle.issue_readiness import (
+        IssueReadiness,
+        IssueReadinessKind,
+        SliceMode,
+        WellFormed,
+        WellFormedBody,
+    )
+    from pycastle.prompts.pipeline import PromptTemplate
+
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=SliceMode.REFACTOR,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    # Labels say docs-slice but the carried readiness result says refactor
+    issue = {
+        "number": 1,
+        "title": "T",
+        "labels": ["docs-slice"],
+        "readiness": readiness,
+    }
+
+    assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_REFACTOR
+
+
+def test_pick_implement_template_raises_runtime_error_for_malformed_issue():
+    issue = {"number": 42, "title": "Bad", "labels": []}
+
+    with pytest.raises(RuntimeError, match="not implement-ready"):
+        pick_implement_template(issue, _cfg)
+
+
+def test_pick_implement_template_raises_runtime_error_for_multiple_slice_labels():
+    issue = {
+        "number": 99,
+        "title": "Ambiguous",
+        "labels": ["behavior-slice", "refactor-slice"],
+    }
+
+    with pytest.raises(RuntimeError, match="not implement-ready"):
+        pick_implement_template(issue, _cfg)
+
+
 # ── implement_phase: parallel execution (tracer bullet) ───────────────────────
 
 
