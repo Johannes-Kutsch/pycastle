@@ -80,21 +80,6 @@ class IssueReadiness:
     is_hitl_exempt: bool = dataclasses.field(default=False, compare=False)
 
 
-@dataclasses.dataclass(frozen=True)
-class ClassifiedIssue:
-    issue: dict
-    readiness: IssueReadiness
-
-
-@dataclasses.dataclass(frozen=True)
-class ReadinessPartition:
-    ready: list[dict]
-    slice_well_formed: list[dict]
-    slice_malformed: list[dict]
-    body_well_formed: list[dict]
-    body_malformed: list[dict]
-
-
 def selected_mode_for_issue(issue: dict, cfg: Config) -> SliceMode | None:
     readiness = issue.get("readiness")
     if isinstance(readiness, IssueReadiness):
@@ -110,13 +95,7 @@ def selected_mode_for_issue(issue: dict, cfg: Config) -> SliceMode | None:
     return None
 
 
-def slice_labels(cfg: Config) -> frozenset[str]:
-    return frozenset(
-        {cfg.refactor_slice_label, cfg.behavior_slice_label, cfg.docs_slice_label}
-    )
-
-
-def classify_slice(issue: dict, cfg: Config) -> SliceClassification:
+def _classify_slice(issue: dict, cfg: Config) -> SliceClassification:
     label_to_mode = {
         cfg.refactor_slice_label: SliceMode.REFACTOR,
         cfg.behavior_slice_label: SliceMode.BEHAVIOR,
@@ -129,12 +108,7 @@ def classify_slice(issue: dict, cfg: Config) -> SliceClassification:
     return Malformed(found=matches, configured=frozenset(label_to_mode))
 
 
-def is_well_formed_body(issue: dict) -> bool:
-    body = issue.get("body") or ""
-    return len(body.strip()) >= BODY_FLOOR
-
-
-def classify_body_floor(issue: dict) -> BodyFloorClassification:
+def _classify_body_floor(issue: dict) -> BodyFloorClassification:
     stripped_length = len((issue.get("body") or "").strip())
     if stripped_length >= BODY_FLOOR:
         return WellFormedBody(stripped_length=stripped_length)
@@ -142,8 +116,8 @@ def classify_body_floor(issue: dict) -> BodyFloorClassification:
 
 
 def classify_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
-    slice_status = classify_slice(issue, cfg)
-    body_floor_status = classify_body_floor(issue)
+    slice_status = _classify_slice(issue, cfg)
+    body_floor_status = _classify_body_floor(issue)
     issue_labels: list[str] = issue.get("labels") or []
     is_ready = False
     selected_mode = None
@@ -177,46 +151,4 @@ def classify_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
         kind=kind,
         hitl_label=hitl_label,
         is_hitl_exempt=is_hitl_exempt,
-    )
-
-
-def classify_issues(issues: list[dict], cfg: Config) -> list[ClassifiedIssue]:
-    return [
-        ClassifiedIssue(issue=issue, readiness=classify_issue_readiness(issue, cfg))
-        for issue in issues
-    ]
-
-
-def partition_classified_issues(
-    classified_issues: list[ClassifiedIssue],
-) -> ReadinessPartition:
-    ready: list[dict] = []
-    slice_well_formed: list[dict] = []
-    slice_malformed: list[dict] = []
-    body_well_formed: list[dict] = []
-    body_malformed: list[dict] = []
-
-    for classified in classified_issues:
-        issue = classified.issue
-        readiness = classified.readiness
-
-        if isinstance(readiness.slice_status, WellFormed):
-            slice_well_formed.append(issue)
-        else:
-            slice_malformed.append(issue)
-
-        if isinstance(readiness.body_floor_status, WellFormedBody):
-            body_well_formed.append(issue)
-        else:
-            body_malformed.append(issue)
-
-        if readiness.is_ready:
-            ready.append(issue)
-
-    return ReadinessPartition(
-        ready=ready,
-        slice_well_formed=slice_well_formed,
-        slice_malformed=slice_malformed,
-        body_well_formed=body_well_formed,
-        body_malformed=body_malformed,
     )

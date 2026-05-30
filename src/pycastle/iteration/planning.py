@@ -18,9 +18,9 @@ from ..issue_readiness import (
     BODY_FLOOR,
     IssueReadiness,
     Malformed,
+    WellFormed,
+    WellFormedBody,
     classify_issue_readiness,
-    classify_issues,
-    partition_classified_issues,
 )
 from ..infrastructure.worktree import transient_worktree
 from ._rows import status_row
@@ -228,32 +228,52 @@ async def planning_phase(
             return verdict
         sha = verdict.sha
 
-        classified_issues = classify_issues(open_issues, deps.cfg)
-        readiness_partition = partition_classified_issues(classified_issues)
+        classified_issues = [
+            (issue, classify_issue_readiness(issue, deps.cfg)) for issue in open_issues
+        ]
+        slice_well_formed = [
+            issue
+            for issue, readiness in classified_issues
+            if isinstance(readiness.slice_status, WellFormed)
+        ]
+        slice_malformed = [
+            issue
+            for issue, readiness in classified_issues
+            if not isinstance(readiness.slice_status, WellFormed)
+        ]
+        body_well_formed = [
+            issue
+            for issue, readiness in classified_issues
+            if isinstance(readiness.body_floor_status, WellFormedBody)
+        ]
+        body_malformed = [
+            issue
+            for issue, readiness in classified_issues
+            if not isinstance(readiness.body_floor_status, WellFormedBody)
+        ]
 
         _sync_needs_info(
-            readiness_partition.body_well_formed,
-            readiness_partition.body_malformed,
+            body_well_formed,
+            body_malformed,
             deps.cfg,
             deps.github_svc,
         )
 
         _sync_needs_slice_type(
-            readiness_partition.slice_well_formed,
-            readiness_partition.slice_malformed,
+            slice_well_formed,
+            slice_malformed,
             deps.cfg,
             deps.github_svc,
         )
 
         ready_classified = [
-            classified
-            for classified in classified_issues
-            if classified.readiness.is_ready
+            (issue, readiness)
+            for issue, readiness in classified_issues
+            if readiness.is_ready
         ]
-        well_formed = [classified.issue for classified in ready_classified]
+        well_formed = [issue for issue, _ in ready_classified]
         readiness_by_number = {
-            classified.issue["number"]: classified.readiness
-            for classified in ready_classified
+            issue["number"]: readiness for issue, readiness in ready_classified
         }
 
         if len(well_formed) == 1:
@@ -297,8 +317,8 @@ async def planning_phase(
             if not output.issues:
                 blocked = _hydrate_blocked_issues(output.blocked, well_formed)
                 blocker_summary = _planning_blocker_summary(
-                    readiness_partition.slice_malformed,
-                    readiness_partition.body_malformed,
+                    slice_malformed,
+                    body_malformed,
                 )
                 blocked_lines = [
                     _format_blocked_issue_line(blocked_issue)
@@ -321,8 +341,8 @@ async def planning_phase(
                 readiness_by_number=readiness_by_number,
             )
             ready_sources = [
-                {**classified.issue, "readiness": classified.readiness}
-                for classified in ready_classified
+                {**issue, "readiness": readiness}
+                for issue, readiness in ready_classified
             ]
             hydrated = hydrate_planned_issues(plan, ready_sources)
             issue_lines = [
