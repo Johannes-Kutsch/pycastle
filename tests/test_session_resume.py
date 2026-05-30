@@ -18,7 +18,7 @@ from pycastle.session import (
     any_role_dir_present,
     is_stage_done_for,
 )
-from pycastle.session._provider_session_state import recover_codex_rollout_thread_id
+from pycastle.session.service_resume_identity import recover_codex_rollout_thread_id
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
