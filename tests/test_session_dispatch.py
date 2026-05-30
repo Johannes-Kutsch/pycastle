@@ -513,6 +513,38 @@ def test_prepare_agent_session_opencode_fresh_has_no_provider_session_id(
     assert session.provider_session_id is None
 
 
+def test_prepare_agent_session_fresh_opencode_uses_provider_state_dir_without_writing_session_files(
+    tmp_path: Path,
+):
+    selected_state_dir = tmp_path / "custom" / "opencode-state"
+    selected_state_dir.mkdir(parents=True)
+
+    session = prepare_agent_session(
+        _request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            service=cast(AgentService, _CustomOpenCodeStateDirService()),
+            namespace="main",
+        )
+    )
+    provider_state_dir = (
+        tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
+    )
+
+    session.start_fresh()
+    session.prepare_host_provider_state_dir()
+
+    assert session.run_kind is RunKind.FRESH
+    assert session.provider_session_id is None
+    assert selected_state_dir.is_dir()
+    assert (
+        session.provider_state_dir_container_path
+        == "/home/agent/workspace/.pycastle-session/improve/main/opencode/"
+    )
+    assert provider_state_dir.is_dir()
+    assert list(provider_state_dir.rglob("*")) == []
+
+
 def test_prepare_agent_session_opencode_with_saved_session_resumes(tmp_path: Path):
     role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
     role_session.save_service_session_id("opencode", "sess-opencode-resume")
