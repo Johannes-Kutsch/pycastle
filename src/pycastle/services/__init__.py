@@ -27,6 +27,7 @@ from .github_service import (
     GithubServiceError,
 )
 from .opencode_service import OpenCodeService
+from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time
 from .service_registry import ServiceRegistry
 
 __all__ = [
@@ -50,8 +51,10 @@ __all__ = [
     "OpenCodeService",
     "ParsedTurn",
     "PromptTokens",
+    "ResetTimeSyntaxMode",
     "Result",
     "ServiceRegistry",
     "UnsupportedTokens",
     "UsageLimit",
+    "parse_reset_time",
 ]
