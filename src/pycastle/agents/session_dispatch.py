@@ -12,7 +12,7 @@ from ..session._provider_session_state import (
     ProviderSessionStateRequest,
     prepare_provider_session_state,
 )
-from ..session.agent import LocalAuthSeedAction
+from ..session.agent import LocalAuthSeedAction, RunSessionPlan
 from ..services.agent_service import AgentService
 
 
@@ -23,6 +23,7 @@ class SessionDispatchRequest:
     session_namespace: str
     service: AgentService
     container_workspace: str
+    run_session_plan: RunSessionPlan | None = None
 
 
 @dataclasses.dataclass
@@ -69,6 +70,7 @@ def prepare_agent_session(request: SessionDispatchRequest) -> PreparedAgentSessi
             role=request.role,
             session_namespace=request.session_namespace,
             service=request.service,
+            run_session_plan=request.run_session_plan,
         )
     )
     if session_state.auth_seed_action is not None:

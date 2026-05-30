@@ -5,9 +5,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
+from .service_resume_identity import is_exact_resumable_service_session
 from .resume import (
     RoleSession,
     RunKind,
+    ServiceSessionState,
     _normalize_state_dir_relpath,
     _role_provider_state_dir_relpath,
 )
@@ -46,8 +48,6 @@ def plan_provider_session(
 ) -> PlannedProviderSession:
     role_session = RoleSession(request.worktree, request.role, request.namespace)
     service_state = role_session.service_session_state(request.service)
-    handoff = role_session.exact_transcript_handoff_for_service(request.service)
-    provider_identity = handoff.provider_identity
 
     raw_state_dir_relpath = request.service.state_dir_relpath(
         request.role,
@@ -73,6 +73,16 @@ def plan_provider_session(
         )
         host_state_dir = request.worktree / state_dir_relpath.rstrip("/")
 
+    if request.service.name == "claude":
+        return _plan_claude_provider_session(
+            role_session=role_session,
+            service_state=service_state,
+            state_dir_relpath=state_dir_relpath,
+            host_state_dir=host_state_dir,
+        )
+
+    handoff = role_session.exact_transcript_handoff_for_service(request.service)
+    provider_identity = handoff.provider_identity
     plan = ProviderSessionPlan(
         state_dir_relpath=state_dir_relpath,
         host_state_dir=host_state_dir,
@@ -88,6 +98,37 @@ def plan_provider_session(
         service_state_dir=service_state.state_dir,
         exact_transcript_match=handoff.is_eligible,
         persist_provider_session_id=provider_identity.persist_provider_session_id,
+    )
+
+
+def _plan_claude_provider_session(
+    *,
+    role_session: RoleSession,
+    service_state: ServiceSessionState,
+    state_dir_relpath: str | None,
+    host_state_dir: Path | None,
+) -> PlannedProviderSession:
+    run_kind = (
+        RunKind.RESUME if service_state.has_resumable_provider_state else RunKind.FRESH
+    )
+    provider_session_id = role_session.session_uuid()
+    return PlannedProviderSession(
+        plan=ProviderSessionPlan(
+            state_dir_relpath=state_dir_relpath,
+            host_state_dir=host_state_dir,
+            run_kind=run_kind,
+            provider_session_id=provider_session_id,
+        ),
+        service_state_dir=service_state.state_dir,
+        exact_transcript_match=(
+            run_kind is RunKind.RESUME
+            and is_exact_resumable_service_session(
+                role_session,
+                "claude",
+                provider_session_id=provider_session_id,
+                provider_state_dir=host_state_dir,
+            )
+        ),
     )
 
 

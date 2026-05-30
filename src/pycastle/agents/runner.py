@@ -32,6 +32,7 @@ from ..errors import (
 )
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session import RunKind
+from ..session.agent import RunSessionPlan
 from .session_dispatch import (
     SessionDispatchRequest,
     prepare_agent_session,
@@ -217,6 +218,12 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError(reset_time=None, stage_key=_stage_key_for_role(role))
 
+        run_session_plan = RunSessionPlan.for_service(
+            role=role,
+            worktree=mount_path,
+            namespace=request.session_namespace,
+            service=service,
+        )
         prepared_session = prepare_agent_session(
             SessionDispatchRequest(
                 mount_path=mount_path,
@@ -224,10 +231,11 @@ class AgentRunner:
                 session_namespace=request.session_namespace,
                 service=service,
                 container_workspace=_CONTAINER_WORKSPACE,
+                run_session_plan=run_session_plan,
             )
         )
         provider_state_dir_container_path = (
-            prepared_session.provider_state_dir_container_path
+            run_session_plan.provider_state_dir_container_path(_CONTAINER_WORKSPACE)
         )
 
         non_typed_retry_done = False

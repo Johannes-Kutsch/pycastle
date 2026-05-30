@@ -26,6 +26,7 @@ class ProviderSessionStateRequest:
     role: AgentRole
     session_namespace: str
     service: AgentService
+    run_session_plan: RunSessionPlan | None = None
 
 
 @dataclasses.dataclass
@@ -129,7 +130,7 @@ class PreparedProviderRunSession:
 def prepare_provider_session_state(
     request: ProviderSessionStateRequest,
 ) -> PreparedProviderSessionState:
-    plan = plan_run_session(
+    plan = request.run_session_plan or plan_run_session(
         RunSessionPlanRequest(
             role=request.role,
             worktree=request.worktree,
