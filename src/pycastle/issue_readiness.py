@@ -42,6 +42,15 @@ SliceClassification = WellFormed | Malformed
 BODY_FLOOR = 100
 
 
+class IssueReadinessKind(enum.Enum):
+    READY_AFK = "ready_afk"
+    HITL_EXEMPT = "hitl_exempt"
+    MISSING_SLICE_MODE = "missing_slice_mode"
+    MULTIPLE_SLICE_MODES = "multiple_slice_modes"
+    SHORT_BODY = "short_body"
+    MALFORMED = "malformed"
+
+
 @dataclasses.dataclass(frozen=True)
 class WellFormedBody:
     stripped_length: int
@@ -63,6 +72,12 @@ class IssueReadiness:
     body_floor_status: BodyFloorClassification
     is_ready: bool
     selected_mode: SliceMode | None
+    kind: IssueReadinessKind = dataclasses.field(
+        default=IssueReadinessKind.MALFORMED,
+        compare=False,
+    )
+    hitl_label: str | None = dataclasses.field(default=None, compare=False)
+    is_hitl_exempt: bool = dataclasses.field(default=False, compare=False)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -105,18 +120,39 @@ def classify_body_floor(issue: dict) -> BodyFloorClassification:
 def classify_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
     slice_status = classify_slice(issue, cfg)
     body_floor_status = classify_body_floor(issue)
+    issue_labels: list[str] = issue.get("labels") or []
     is_ready = False
     selected_mode = None
+    hitl_label = cfg.hitl_label if cfg.hitl_label in issue_labels else None
+    is_hitl_exempt = hitl_label is not None
+    kind = IssueReadinessKind.MALFORMED
+
+    if is_hitl_exempt:
+        kind = IssueReadinessKind.HITL_EXEMPT
     if isinstance(slice_status, WellFormed) and isinstance(
         body_floor_status, WellFormedBody
     ):
         is_ready = True
         selected_mode = slice_status.mode
+        kind = IssueReadinessKind.READY_AFK
+    elif not is_hitl_exempt and isinstance(slice_status, Malformed):
+        if isinstance(body_floor_status, MalformedBody):
+            kind = IssueReadinessKind.MALFORMED
+        elif slice_status.found:
+            kind = IssueReadinessKind.MULTIPLE_SLICE_MODES
+        else:
+            kind = IssueReadinessKind.MISSING_SLICE_MODE
+    elif not is_hitl_exempt:
+        kind = IssueReadinessKind.SHORT_BODY
+
     return IssueReadiness(
         slice_status=slice_status,
         body_floor_status=body_floor_status,
         is_ready=is_ready,
         selected_mode=selected_mode,
+        kind=kind,
+        hitl_label=hitl_label,
+        is_hitl_exempt=is_hitl_exempt,
     )
 
 
