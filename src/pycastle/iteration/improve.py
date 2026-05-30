@@ -14,9 +14,6 @@ from ..prompts.pipeline import PromptTemplate, Scope, build_issue_scope_args
 from ..services import GitService, ServiceRegistry
 from ..services.github_service import GithubService
 from ..session import RoleSession
-from ..session.service_resume_identity import (
-    has_exact_transcript_handoff_for_selected_service,
-)
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import managed_worktree
 from ._rows import status_row
@@ -292,8 +289,9 @@ async def improve_phase(
                 step is not None
                 and step.prompt_key == "02-prd.md"
                 and step.send_role_prompt_on_resume
-                and not has_exact_transcript_handoff_for_selected_service(
-                    RoleSession(sandbox_path, AgentRole.IMPROVE, "main"),
+                and not RoleSession(
+                    sandbox_path, AgentRole.IMPROVE, "main"
+                ).has_exact_transcript_handoff_for_selected_service(
                     deps.service_registry,
                     deps.cfg.improve_override.service,
                 )
