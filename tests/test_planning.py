@@ -114,6 +114,89 @@ def test_planning_phase_skip_single_issue_emits_plan_row(tmp_path, git_svc):
     assert "skipping plan agent" in msg
 
 
+# ── planning_phase: readiness_by_number propagation ─────────────────────────
+
+
+def test_planning_phase_single_issue_skip_populates_readiness_by_number(
+    tmp_path, git_svc
+):
+    from pycastle.issue_readiness import IssueReadiness, SliceMode
+
+    issue = {
+        "number": 5,
+        "title": "Solo",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["docs-slice"],
+    }
+    fake = FakeAgentRunner([])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(planning_phase(deps, [issue], []))
+
+    assert isinstance(result, PlanReady)
+    assert 5 in result.readiness_by_number
+    readiness = result.readiness_by_number[5]
+    assert isinstance(readiness, IssueReadiness)
+    assert readiness.selected_mode == SliceMode.DOCS
+
+
+def test_planning_phase_multi_issue_planner_populates_readiness_by_number(
+    tmp_path, git_svc
+):
+    from pycastle.issue_readiness import SliceMode
+
+    issue_a = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    issue_b = {
+        "number": 2,
+        "title": "B",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["refactor-slice"],
+    }
+    fake = FakeAgentRunner([_plan_output([issue_a, issue_b])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(planning_phase(deps, [issue_a, issue_b], []))
+
+    assert isinstance(result, PlanReady)
+    assert result.readiness_by_number[1].selected_mode == SliceMode.BEHAVIOR
+    assert result.readiness_by_number[2].selected_mode == SliceMode.REFACTOR
+
+
+def test_planning_phase_malformed_issue_absent_from_readiness_by_number(
+    tmp_path, git_svc
+):
+    well = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    malformed = {
+        "number": 2,
+        "title": "B",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
+    fake = FakeAgentRunner([_plan_output([well])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(planning_phase(deps, [well, malformed], []))
+
+    assert isinstance(result, PlanReady)
+    assert 1 in result.readiness_by_number
+    assert 2 not in result.readiness_by_number
+
+
 # ── planning_phase: returns PlanReady with sorted issues ────────────────────
 
 
@@ -617,6 +700,91 @@ def test_hydrate_planned_issues_raises_when_planned_number_not_in_open_issues():
 
     with pytest.raises(RuntimeError, match="#99"):
         hydrate_planned_issues(plan, open_issues)
+
+
+def test_hydrate_planned_issues_carries_readiness_from_sources_into_result():
+    from pycastle.issue_readiness import (
+        IssueReadiness,
+        IssueReadinessKind,
+        SliceMode,
+        WellFormed,
+        WellFormedBody,
+    )
+
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.BEHAVIOR, label="behavior-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=SliceMode.BEHAVIOR,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    plan = PlanReady(issues=[{"number": 1, "title": "A"}], sha="abc123")
+    sources = [
+        {
+            "number": 1,
+            "title": "A",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+            "readiness": readiness,
+        }
+    ]
+
+    result = hydrate_planned_issues(plan, sources)
+
+    assert result.readiness_by_number[1] is readiness
+
+
+def test_hydrate_planned_issues_merges_readiness_from_plan_and_sources():
+    from pycastle.issue_readiness import (
+        IssueReadiness,
+        IssueReadinessKind,
+        SliceMode,
+        WellFormed,
+        WellFormedBody,
+    )
+
+    readiness_1 = IssueReadiness(
+        slice_status=WellFormed(SliceMode.BEHAVIOR, label="behavior-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=SliceMode.BEHAVIOR,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    readiness_2 = IssueReadiness(
+        slice_status=WellFormed(SliceMode.DOCS, label="docs-slice"),
+        body_floor_status=WellFormedBody(stripped_length=120),
+        is_ready=True,
+        selected_mode=SliceMode.DOCS,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    plan = PlanReady(
+        issues=[{"number": 1, "title": "A"}, {"number": 2, "title": "B"}],
+        sha="abc123",
+        readiness_by_number={1: readiness_1},
+    )
+    sources = [
+        {
+            "number": 1,
+            "title": "A",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "B",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["docs-slice"],
+            "readiness": readiness_2,
+        },
+    ]
+
+    result = hydrate_planned_issues(plan, sources)
+
+    assert result.readiness_by_number[1] is readiness_1
+    assert result.readiness_by_number[2] is readiness_2
 
 
 # ── Config.needs_slice_type_label ────────────────────────────────────────────

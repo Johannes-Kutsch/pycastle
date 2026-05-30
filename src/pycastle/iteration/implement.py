@@ -22,7 +22,7 @@ from ..prompts.pipeline import (
     build_interrupted_work_clause,
     build_issue_scope_args,
 )
-from ..issue_readiness import WellFormed, classify_issue_readiness
+from ..issue_readiness import selected_mode_for_issue
 from ..session import RoleSession, is_stage_done_for
 from ..display.status_display import StatusDisplay
 from ..services import GitService, GithubService
@@ -49,11 +49,15 @@ def branch_for(issue_number: int) -> str:
 
 
 def _resolve_slice(issue: dict, cfg: Config) -> tuple[str, PromptTemplate]:
-    readiness = classify_issue_readiness(issue, cfg)
-    assert isinstance(readiness.slice_status, WellFormed)
+    mode = selected_mode_for_issue(issue, cfg)
+    if mode is None:
+        raise RuntimeError(
+            f"Issue #{issue['number']} is not implement-ready: missing a ready "
+            "slice-mode selection."
+        )
     return (
-        readiness.slice_status.mode.display_name,
-        readiness.slice_status.mode.template,
+        mode.display_name,
+        mode.template,
     )
 
 

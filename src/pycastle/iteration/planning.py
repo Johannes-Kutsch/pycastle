@@ -16,6 +16,7 @@ from ..services.github_service import GithubService
 from ..display.status_display import StatusDisplay
 from ..issue_readiness import (
     BODY_FLOOR,
+    IssueReadiness,
     Malformed,
     classify_issue_readiness,
     classify_issues,
@@ -51,6 +52,9 @@ class _PlanningDeps(Protocol):
 class PlanReady:
     issues: list[dict]
     sha: str | None
+    readiness_by_number: dict[int, IssueReadiness] = dataclasses.field(
+        default_factory=dict
+    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -76,6 +80,7 @@ def hydrate_planned_issues(
 ) -> "PlanReady":
     by_number = {i["number"]: i for i in open_issues}
     hydrated: list[dict] = []
+    readiness_by_number = dict(plan_result.readiness_by_number)
     for issue in plan_result.issues:
         source = by_number.get(issue["number"])
         if source is None:
@@ -91,7 +96,14 @@ def hydrate_planned_issues(
                 "labels": source.get("labels") or [],
             }
         )
-    return PlanReady(issues=hydrated, sha=plan_result.sha)
+        readiness = source.get("readiness")
+        if isinstance(readiness, IssueReadiness):
+            readiness_by_number[issue["number"]] = readiness
+    return PlanReady(
+        issues=hydrated,
+        sha=plan_result.sha,
+        readiness_by_number=readiness_by_number,
+    )
 
 
 _MALFORMED_COMMENT = """\
@@ -230,14 +242,28 @@ async def planning_phase(
             deps.cfg,
             deps.github_svc,
         )
-        well_formed = readiness_partition.ready
+
+        ready_classified = [
+            classified
+            for classified in classified_issues
+            if classified.readiness.is_ready
+        ]
+        well_formed = [classified.issue for classified in ready_classified]
+        readiness_by_number = {
+            classified.issue["number"]: classified.readiness
+            for classified in ready_classified
+        }
 
         if len(well_formed) == 1:
             row.close(
                 f"only one open issue (#{well_formed[0]['number']}) labeled"
                 f" {deps.cfg.issue_label}, skipping plan agent"
             )
-            return PlanReady(issues=_fill_fields(well_formed), sha=sha)
+            return PlanReady(
+                issues=_fill_fields(well_formed),
+                sha=sha,
+                readiness_by_number=readiness_by_number,
+            )
 
         async with transient_worktree("plan-sandbox", sha=sha, deps=deps) as wt:
             try:
@@ -290,8 +316,13 @@ async def planning_phase(
             plan = PlanReady(
                 issues=sorted(output.issues, key=lambda i: i["number"]),
                 sha=sha,
+                readiness_by_number=readiness_by_number,
             )
-            hydrated = hydrate_planned_issues(plan, well_formed)
+            ready_sources = [
+                {**classified.issue, "readiness": classified.readiness}
+                for classified in ready_classified
+            ]
+            hydrated = hydrate_planned_issues(plan, ready_sources)
             issue_lines = [
                 f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
                 for i in hydrated.issues

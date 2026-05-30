@@ -11,6 +11,7 @@ from pycastle.issue_readiness import (
     classify_issue_readiness,
     classify_issues,
     partition_classified_issues,
+    selected_mode_for_issue,
     slice_labels,
 )
 
@@ -396,3 +397,79 @@ def test_partition_classified_issues_slice_and_body_partitions_cover_all_issues(
     assert len(partition.body_well_formed) + len(partition.body_malformed) == len(
         issues
     )
+
+
+# ── selected_mode_for_issue ──────────────────────────────────────────────────
+
+
+def test_selected_mode_for_issue_returns_carried_selected_mode():
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.BEHAVIOR, label="behavior-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=SliceMode.BEHAVIOR,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    issue = {"number": 1, "labels": [], "body": "", "readiness": readiness}
+
+    assert selected_mode_for_issue(issue, _cfg) == SliceMode.BEHAVIOR
+
+
+def test_selected_mode_for_issue_carried_mode_takes_precedence_over_labels():
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=SliceMode.REFACTOR,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    # Labels say docs-slice but carried readiness says refactor
+    issue = {
+        "number": 1,
+        "labels": ["docs-slice"],
+        "body": "x" * 100,
+        "readiness": readiness,
+    }
+
+    assert selected_mode_for_issue(issue, _cfg) == SliceMode.REFACTOR
+
+
+def test_selected_mode_for_issue_returns_none_for_carried_malformed_readiness():
+    readiness = IssueReadiness(
+        slice_status=Malformed(found=[]),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=False,
+        selected_mode=None,
+        kind=IssueReadinessKind.MISSING_SLICE_MODE,
+    )
+    issue = {"number": 1, "labels": [], "body": "", "readiness": readiness}
+
+    assert selected_mode_for_issue(issue, _cfg) is None
+
+
+def test_selected_mode_for_issue_falls_back_to_label_classification_without_readiness():
+    issue = {"number": 1, "labels": ["refactor-slice"], "body": "x"}
+
+    assert selected_mode_for_issue(issue, _cfg) == SliceMode.REFACTOR
+
+
+def test_selected_mode_for_issue_fallback_covers_all_slice_mode_labels():
+    for label, expected in [
+        ("behavior-slice", SliceMode.BEHAVIOR),
+        ("refactor-slice", SliceMode.REFACTOR),
+        ("docs-slice", SliceMode.DOCS),
+    ]:
+        issue = {"number": 1, "labels": [label], "body": "x"}
+        assert selected_mode_for_issue(issue, _cfg) == expected
+
+
+def test_selected_mode_for_issue_returns_none_for_missing_labels_without_readiness():
+    issue = {"number": 1, "labels": [], "body": "x"}
+
+    assert selected_mode_for_issue(issue, _cfg) is None
+
+
+def test_selected_mode_for_issue_returns_none_for_multiple_labels_without_readiness():
+    issue = {"number": 1, "labels": ["behavior-slice", "refactor-slice"], "body": "x"}
+
+    assert selected_mode_for_issue(issue, _cfg) is None
