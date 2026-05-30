@@ -9,7 +9,11 @@ from pathlib import Path
 
 from ..agents.output_protocol import AgentRole
 from .. import _time as _time_module
-from ..session import SESSION_DIR_NAME, RunKind
+from ..session import ProviderRunState, SESSION_DIR_NAME, RunKind
+from ..session.service_resume_identity import (
+    ServiceResumeIdentityStore,
+    is_exact_resumable_service_session,
+)
 from .flag_profiles import flag_profile_for
 from .agent_service import (
     AssistantTurn,
@@ -216,6 +220,35 @@ class ClaudeService:
 
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(f.is_file() for f in state_dir.rglob("*"))
+
+    def resolve_provider_run_state(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_state_dir: Path | None,
+        has_resumable_provider_state: bool,
+    ) -> ProviderRunState:
+        del provider_state_dir
+        return ProviderRunState(
+            run_kind=(
+                RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH
+            ),
+            provider_session_id=role_session.session_uuid(),
+        )
+
+    def has_exact_transcript_session(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_run_state: ProviderRunState,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return is_exact_resumable_service_session(
+            role_session,
+            self.name,
+            provider_session_id=provider_run_state.provider_session_id,
+            provider_state_dir=provider_state_dir,
+        )
 
     def account_names(self) -> list[str]:
         if self._pool is None:

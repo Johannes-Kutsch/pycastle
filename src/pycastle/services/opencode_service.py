@@ -8,7 +8,12 @@ from pathlib import Path
 
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
-from ..session import SESSION_DIR_NAME, RunKind
+from ..session import ProviderRunState, SESSION_DIR_NAME, RunKind
+from ..session.service_resume_identity import (
+    ServiceResumeIdentityStore,
+    is_exact_resumable_service_session,
+    select_resumable_provider_session_id,
+)
 from .agent_service import (
     AssistantTurn,
     HardError,
@@ -175,6 +180,43 @@ class OpenCodeService:
             env["OPENCODE_GO_API_KEY"] = self.api_key
             env["OPENCODE_CONFIG_CONTENT"] = _opencode_go_config_content()
         return env
+
+    def resolve_provider_run_state(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_state_dir: Path | None,
+        has_resumable_provider_state: bool,
+    ) -> ProviderRunState:
+        if not has_resumable_provider_state:
+            return ProviderRunState(RunKind.FRESH, None)
+        selection = select_resumable_provider_session_id(
+            role_session,
+            self.name,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=has_resumable_provider_state,
+        )
+        if selection.provider_session_id is None:
+            return ProviderRunState(RunKind.FRESH, None)
+        return ProviderRunState(
+            RunKind.RESUME,
+            selection.provider_session_id,
+            persist_provider_session_id=selection.persist_provider_session_id,
+        )
+
+    def has_exact_transcript_session(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_run_state: ProviderRunState,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return is_exact_resumable_service_session(
+            role_session,
+            self.name,
+            provider_session_id=provider_run_state.provider_session_id,
+            provider_state_dir=provider_state_dir,
+        )
 
     def run(
         self,

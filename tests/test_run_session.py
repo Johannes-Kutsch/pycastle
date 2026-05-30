@@ -18,8 +18,13 @@ from pycastle.session.run_session import (
     RecoveredSessionIdPersistence,
     RunSessionPlan,
 )
-from pycastle.session import RoleSession, RunKind
+from pycastle.session import ProviderRunState, RoleSession, RunKind
 from pycastle.session._provider_session_sidecars import service_session_id_path
+from pycastle.session.service_resume_identity import (
+    ServiceResumeIdentityStore,
+    is_exact_resumable_service_session,
+    select_resumable_provider_session_id,
+)
 from pycastle.services.agent_service import AgentService
 
 
@@ -34,6 +39,49 @@ class _FakeAgentService:
 
     def is_resumable(self, state_dir: Path) -> bool:
         return self.resumable
+
+    def resolve_provider_run_state(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_state_dir: Path | None,
+        has_resumable_provider_state: bool,
+    ) -> ProviderRunState:
+        if self.name == "claude":
+            del provider_state_dir
+            return ProviderRunState(
+                RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH,
+                role_session.session_uuid(),
+            )
+        if not has_resumable_provider_state:
+            return ProviderRunState(RunKind.FRESH, None)
+        selection = select_resumable_provider_session_id(
+            role_session,
+            self.name,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=has_resumable_provider_state,
+        )
+        if selection.provider_session_id is None:
+            return ProviderRunState(RunKind.FRESH, None)
+        return ProviderRunState(
+            RunKind.RESUME,
+            selection.provider_session_id,
+            persist_provider_session_id=selection.persist_provider_session_id,
+        )
+
+    def has_exact_transcript_session(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_run_state: ProviderRunState,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return is_exact_resumable_service_session(
+            role_session,
+            self.name,
+            provider_session_id=provider_run_state.provider_session_id,
+            provider_state_dir=provider_state_dir,
+        )
 
 
 def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: Path):

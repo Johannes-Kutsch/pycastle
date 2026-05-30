@@ -14,11 +14,16 @@ from pycastle.agents.session_dispatch import (
     prepare_agent_session,
     record_successful_provider_session_metadata,
 )
-from pycastle.session import RoleSession, RunKind
+from pycastle.session import ProviderRunState, RoleSession, RunKind
 from pycastle.session._provider_session_sidecars import service_session_metadata_path
 from pycastle.session._provider_session_state import (
     ProviderSessionStateRequest,
     prepare_provider_session_state,
+)
+from pycastle.session.service_resume_identity import (
+    ServiceResumeIdentityStore,
+    is_exact_resumable_service_session,
+    select_resumable_provider_session_id,
 )
 from pycastle.errors import HardAgentError
 from pycastle.services import ClaudeService, CodexService
@@ -37,6 +42,34 @@ class _LegacyStateDirService:
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(state_dir.rglob("*"))
 
+    def resolve_provider_run_state(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_state_dir: Path | None,
+        has_resumable_provider_state: bool,
+    ) -> ProviderRunState:
+        del provider_state_dir
+        if self.name == "claude":
+            return ProviderRunState(
+                RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH,
+                role_session.session_uuid(),
+            )
+        return ProviderRunState(
+            RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH,
+            None,
+        )
+
+    def has_exact_transcript_session(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_run_state: ProviderRunState,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        del role_session, provider_run_state, provider_state_dir
+        return False
+
 
 @dataclass
 class _CustomOpenCodeStateDirService:
@@ -51,6 +84,43 @@ class _CustomOpenCodeStateDirService:
     def is_resumable(self, state_dir: Path) -> bool:
         return (state_dir / "session_id").is_file()
 
+    def resolve_provider_run_state(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_state_dir: Path | None,
+        has_resumable_provider_state: bool,
+    ) -> ProviderRunState:
+        if not has_resumable_provider_state:
+            return ProviderRunState(RunKind.FRESH, None)
+        selection = select_resumable_provider_session_id(
+            role_session,
+            self.name,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=has_resumable_provider_state,
+        )
+        if selection.provider_session_id is None:
+            return ProviderRunState(RunKind.FRESH, None)
+        return ProviderRunState(
+            RunKind.RESUME,
+            selection.provider_session_id,
+            persist_provider_session_id=selection.persist_provider_session_id,
+        )
+
+    def has_exact_transcript_session(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_run_state: ProviderRunState,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return is_exact_resumable_service_session(
+            role_session,
+            self.name,
+            provider_session_id=provider_run_state.provider_session_id,
+            provider_state_dir=provider_state_dir,
+        )
+
 
 @dataclass
 class _ClaudeFilesystemStandIn:
@@ -64,6 +134,33 @@ class _ClaudeFilesystemStandIn:
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(
             path.is_file() for path in state_dir.rglob("*")
+        )
+
+    def resolve_provider_run_state(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_state_dir: Path | None,
+        has_resumable_provider_state: bool,
+    ) -> ProviderRunState:
+        del provider_state_dir
+        return ProviderRunState(
+            RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH,
+            role_session.session_uuid(),
+        )
+
+    def has_exact_transcript_session(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_run_state: ProviderRunState,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return is_exact_resumable_service_session(
+            role_session,
+            self.name,
+            provider_session_id=provider_run_state.provider_session_id,
+            provider_state_dir=provider_state_dir,
         )
 
 

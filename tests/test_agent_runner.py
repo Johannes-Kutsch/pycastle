@@ -32,7 +32,8 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.session import RoleSession, RunKind
+from pycastle.session import ProviderRunState, RoleSession, RunKind
+from pycastle.session.service_resume_identity import ServiceResumeIdentityStore
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
@@ -414,6 +415,26 @@ class _RecordingAgentService:
         return None
 
     def is_resumable(self, state_dir: Path) -> bool:
+        return False
+
+    def resolve_provider_run_state(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_state_dir: Path | None,
+        has_resumable_provider_state: bool,
+    ) -> ProviderRunState:
+        del role_session, provider_state_dir, has_resumable_provider_state
+        return ProviderRunState(RunKind.FRESH, None)
+
+    def has_exact_transcript_session(
+        self,
+        role_session: ServiceResumeIdentityStore,
+        *,
+        provider_run_state: ProviderRunState,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        del role_session, provider_run_state, provider_state_dir
         return False
 
     def valid_efforts(self) -> frozenset[str]:

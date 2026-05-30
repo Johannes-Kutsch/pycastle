@@ -63,6 +63,13 @@ class RunKind(Enum):
     RESUME = "resume"
 
 
+@dataclass(frozen=True)
+class ProviderRunState:
+    run_kind: RunKind
+    provider_session_id: str | None
+    persist_provider_session_id: bool = field(default=False, compare=False)
+
+
 class ProviderIdentityKind(Enum):
     FRESH = "fresh"
     RESUME = "resume"
@@ -254,10 +261,33 @@ class RoleSession:
         self, service: "AgentService"
     ) -> ExactTranscriptHandoff:
         state = self.service_session_state(service)
-        return self.exact_transcript_handoff(
-            service.name,
-            state_dir=state.state_dir,
+        provider_run_state = service.resolve_provider_run_state(
+            self,
+            provider_state_dir=state.state_dir,
             has_resumable_provider_state=state.has_resumable_provider_state,
+        )
+        provider_identity = ProviderIdentity(
+            kind=(
+                ProviderIdentityKind.RESUME
+                if provider_run_state.run_kind is RunKind.RESUME
+                else ProviderIdentityKind.FRESH
+            ),
+            run_kind=provider_run_state.run_kind,
+            provider_session_id=provider_run_state.provider_session_id,
+            persist_provider_session_id=provider_run_state.persist_provider_session_id,
+        )
+        is_eligible = (
+            provider_run_state.run_kind is RunKind.RESUME
+            and not provider_run_state.persist_provider_session_id
+            and service.has_exact_transcript_session(
+                self,
+                provider_run_state=provider_run_state,
+                provider_state_dir=state.state_dir,
+            )
+        )
+        return ExactTranscriptHandoff(
+            provider_identity=provider_identity,
+            is_eligible=is_eligible,
         )
 
     def has_exact_transcript_handoff_for_selected_service(
