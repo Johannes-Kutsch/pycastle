@@ -61,6 +61,43 @@ class ProviderSessionPlan:
     )
     auth_seed_action: LocalAuthSeedAction | None = None
 
+    def container_state_dir(
+        self,
+        *,
+        service_name: str,
+        service_state_dir: Path | None,
+    ) -> Path | None:
+        if (
+            service_name == "opencode"
+            and self.run_kind is RunKind.RESUME
+            and service_state_dir is not None
+        ):
+            return service_state_dir
+        return self.host_state_dir
+
+    def container_state_dir_path(
+        self,
+        *,
+        worktree: Path,
+        service_name: str,
+        service_state_dir: Path | None,
+        container_workspace: str,
+    ) -> str | None:
+        container_state_dir = self.container_state_dir(
+            service_name=service_name,
+            service_state_dir=service_state_dir,
+        )
+        if container_state_dir is not None:
+            try:
+                container_relpath = container_state_dir.relative_to(worktree)
+            except ValueError:
+                pass
+            else:
+                return f"{container_workspace}/{container_relpath.as_posix()}/"
+        if self.state_dir_relpath is None:
+            return None
+        return f"{container_workspace}/{self.state_dir_relpath}"
+
 
 @dataclasses.dataclass(frozen=True)
 class ProviderSessionPlanRequest:
@@ -76,6 +113,28 @@ class PlannedProviderSession:
     service_state_dir: Path | None
     exact_transcript_match: bool
     persist_provider_session_id: bool = False
+
+
+def capture_provider_session_id(
+    *,
+    worktree: Path,
+    role: AgentRole,
+    namespace: str,
+    service_name: str,
+    service_state_dir: Path | None,
+    provider_session_id: str,
+) -> None:
+    if service_name == "opencode" and service_state_dir is not None:
+        session_id_path = service_state_dir / "session_id"
+        session_id_path.parent.mkdir(parents=True, exist_ok=True)
+        session_id_path.write_text(provider_session_id, encoding="utf-8")
+    if not _preserves_role_provider_layout(service_name):
+        return
+    RoleSession(
+        worktree,
+        role,
+        namespace,
+    ).save_service_session_id(service_name, provider_session_id)
 
 
 def plan_provider_session(
@@ -211,6 +270,7 @@ def _codex_auth_seed_action(
 
 __all__ = [
     "AuthSeedingRequirement",
+    "capture_provider_session_id",
     "LocalAuthSeedAction",
     "PlannedProviderSession",
     "ProviderSessionPlan",

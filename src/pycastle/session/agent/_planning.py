@@ -11,13 +11,10 @@ from .._provider_session_plan import (
     LocalAuthSeedAction,
     ProviderSessionPlan,
     ProviderSessionPlanRequest,
-    _preserves_role_provider_layout,
+    capture_provider_session_id,
     plan_provider_session,
 )
-from ..resume import (
-    RoleSession,
-    RunKind,
-)
+from ..resume import RoleSession, RunKind
 
 if TYPE_CHECKING:
     from ...services.agent_service import AgentService
@@ -26,18 +23,6 @@ if TYPE_CHECKING:
 class RecoveredSessionIdPersistence(Enum):
     PERSIST = "persist"
     SKIP = "skip"
-
-
-def _persist_provider_state_session_id(
-    service_name: str,
-    state_dir: Path | None,
-    provider_session_id: str,
-) -> None:
-    if state_dir is None or service_name != "opencode":
-        return
-    session_id_path = state_dir / "session_id"
-    session_id_path.parent.mkdir(parents=True, exist_ok=True)
-    session_id_path.write_text(provider_session_id, encoding="utf-8")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -82,27 +67,15 @@ class RunSessionPlan:
         )
 
     def provider_state_dir_container_path(self, container_workspace: str) -> str | None:
-        if (
-            self.service.name == "opencode"
-            and self.run_kind is RunKind.RESUME
-            and self.service_state_dir is not None
-        ):
-            try:
-                service_relpath = self.service_state_dir.relative_to(self.worktree)
-            except ValueError:
-                pass
-            else:
-                return f"{container_workspace}/{service_relpath.as_posix()}/"
-        if self.host_provider_state_dir is not None:
-            try:
-                host_relpath = self.host_provider_state_dir.relative_to(self.worktree)
-            except ValueError:
-                pass
-            else:
-                return f"{container_workspace}/{host_relpath.as_posix()}/"
-        if self.provider_state_dir_relpath is None:
+        provider_session_plan = self.provider_session_plan
+        if provider_session_plan is None:
             return None
-        return f"{container_workspace}/{self.provider_state_dir_relpath}"
+        return provider_session_plan.container_state_dir_path(
+            worktree=self.worktree,
+            service_name=self.service.name,
+            service_state_dir=self.service_state_dir,
+            container_workspace=container_workspace,
+        )
 
     def prepared_provider_session_id(self) -> str | None:
         provider_session_id = self.provider_session_id
@@ -124,18 +97,14 @@ class RunSessionPlan:
 
     def capture_provider_session_id(self, provider_session_id: str) -> None:
         object.__setattr__(self, "provider_session_id", provider_session_id)
-        _persist_provider_state_session_id(
-            self.service.name,
-            self.service_state_dir,
-            provider_session_id,
+        capture_provider_session_id(
+            worktree=self.worktree,
+            role=self.role,
+            namespace=self.namespace,
+            service_name=self.service.name,
+            service_state_dir=self.service_state_dir,
+            provider_session_id=provider_session_id,
         )
-        if not _preserves_role_provider_layout(self.service.name):
-            return
-        RoleSession(
-            self.worktree,
-            self.role,
-            self.namespace,
-        ).save_service_session_id(self.service.name, provider_session_id)
 
     def record_successful_run(self, provider_session_id: str | None = None) -> None:
         session_id = provider_session_id or self.provider_session_id
