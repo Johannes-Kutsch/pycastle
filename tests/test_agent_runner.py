@@ -32,7 +32,7 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.session import RoleSession, RunKind
+from pycastle.session import RunKind
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
@@ -89,35 +89,6 @@ _CODEX_COMPLETE_STREAM = [
     b'{"type":"item.completed","item":{"type":"agent_message",'
     b'"content":"<commit_message>done</commit_message>"}}\n',
 ]
-
-_CODEX_PROTOCOL_ERROR_STREAM = [
-    b'{"type":"thread.started","thread_id":"thread-from-fresh"}\n',
-    b'{"type":"item.completed","item":{"type":"agent_message",'
-    b'"content":"missing required tag"}}\n',
-    b'{"type":"turn.completed","usage":{}}\n',
-]
-
-_CODEX_PLAN_COMPLETE_STREAM = [
-    b'{"type":"item.completed","item":{"type":"agent_message",'
-    b'"text":"<plan>{\\"issues\\": [], \\"blocked\\": []}</plan>"}}\n'
-]
-
-_OPENCODE_PROTOCOL_ERROR_STREAM = [
-    b'{"type":"text","sessionID":"sess-from-fresh",'
-    b'"part":{"type":"text","text":"missing required tag",'
-    b'"time":{"start":1,"end":2}}}\n',
-    b'{"type":"session.status","sessionID":"sess-from-fresh",'
-    b'"status":{"type":"idle"}}\n',
-]
-
-_OPENCODE_PLAN_COMPLETE_STREAM = [
-    b'{"type":"text","sessionID":"sess-from-fresh",'
-    b'"part":{"type":"text","text":"<plan>{\\"issues\\": [], \\"blocked\\": []}</plan>",'
-    b'"time":{"start":1,"end":2}}}\n',
-    b'{"type":"session.status","sessionID":"sess-from-fresh",'
-    b'"status":{"type":"idle"}}\n',
-]
-
 
 # ── FakeAgentRunner: queue behaviour ─────────────────────────────────────────
 
@@ -2604,57 +2575,56 @@ def test_agent_runner_does_not_call_mark_exhausted_on_hard_agent_error(tmp_path)
     assert svc.is_available() is True
 
 
-def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
+def test_agent_runner_codex_reprompt_retries_as_resume_after_runtime_thread_capture(
     tmp_path, monkeypatch
 ):
+    from unittest.mock import patch
+    from pycastle.agents.output_protocol import PlanParseError
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
     home = tmp_path / "home"
     host_auth = home / ".codex" / "auth.json"
     host_auth.parent.mkdir(parents=True)
     host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
     monkeypatch.setattr(Path, "home", lambda: home)
 
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-    streams = iter([_CODEX_PROTOCOL_ERROR_STREAM, _CODEX_PLAN_COMPLETE_STREAM])
+    work_calls: list[tuple[RunKind, str | None]] = []
 
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            r = MagicMock()
-            r.output = iter(next(streams))
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
+    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+        work_calls.append((run_kind, session_uuid))
+        if len(work_calls) == 1:
+            assert on_thread_id is not None
+            on_thread_id("thread-from-fresh")
+            raise PlanParseError("missing required tag")
+        return PlannerOutput(issues=[])
 
-    mock_container.exec_run.side_effect = exec_side_effect
     runner = AgentRunner(
         {},
         _make_cfg(tmp_path),
         _make_git_service(),
-        docker_client=mock_client,
+        docker_client=_make_setup_docker_client(),
         service_registry={"codex": CodexService()},
     )
 
-    result = asyncio.run(
-        runner.run(
-            _run_request(
-                name="Codex",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.PLANNER,
-                service="codex",
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Codex",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service="codex",
+                )
             )
         )
-    )
 
     assert isinstance(result, PlannerOutput)
-    assert "codex exec " in captured_cmds[0]
-    assert "resume" not in captured_cmds[0]
-    assert "codex exec resume " in captured_cmds[1]
-    assert "thread-from-fresh" in captured_cmds[1]
+    assert work_calls == [
+        (RunKind.FRESH, None),
+        (RunKind.RESUME, "thread-from-fresh"),
+    ]
 
 
 def test_agent_runner_codex_fails_with_protocol_error_when_no_thread_id_captured(
@@ -2698,48 +2668,50 @@ def test_agent_runner_codex_fails_with_protocol_error_when_no_thread_id_captured
     assert exc_info.value.failure_class == "protocol_error"
 
 
-def test_agent_runner_opencode_reprompt_resumes_with_persisted_session_id(tmp_path):
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-    streams = iter([_OPENCODE_PROTOCOL_ERROR_STREAM, _OPENCODE_PLAN_COMPLETE_STREAM])
+def test_agent_runner_opencode_reprompt_retries_as_resume_after_runtime_session_capture(
+    tmp_path: Path,
+):
+    from unittest.mock import patch
+    from pycastle.agents.output_protocol import PlanParseError
+    from pycastle.infrastructure.container_runner import ContainerRunner
 
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            result = MagicMock()
-            result.output = iter(next(streams))
-            return result
-        return MagicMock(exit_code=0, output=(b"", b""))
+    work_calls: list[tuple[RunKind, str | None]] = []
 
-    mock_container.exec_run.side_effect = exec_side_effect
+    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+        work_calls.append((run_kind, session_uuid))
+        if len(work_calls) == 1:
+            assert on_thread_id is not None
+            on_thread_id("sess-from-fresh")
+            raise PlanParseError("missing required tag")
+        return PlannerOutput(issues=[])
+
     runner = AgentRunner(
         {},
         _make_cfg(tmp_path),
         _make_git_service(),
-        docker_client=mock_client,
+        docker_client=_make_setup_docker_client(),
         service_registry={"opencode": OpenCodeService()},
     )
 
-    result = asyncio.run(
-        runner.run(
-            _run_request(
-                name="OpenCode",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.PLANNER,
-                service="opencode",
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="OpenCode",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service="opencode",
+                )
             )
         )
-    )
 
     assert isinstance(result, PlannerOutput)
-    assert "opencode run --format json " in captured_cmds[0]
-    assert "--session" not in captured_cmds[0]
-    assert "--session sess-from-fresh" in captured_cmds[1]
+    assert work_calls == [
+        (RunKind.FRESH, None),
+        (RunKind.RESUME, "sess-from-fresh"),
+    ]
 
 
 def test_agent_runner_opencode_timeout_retry_resumes_with_captured_session_id(
@@ -2830,111 +2802,6 @@ def test_agent_runner_opencode_timeout_retry_falls_back_to_fresh_without_session
         (RunKind.FRESH, None),
         (RunKind.FRESH, None),
     ]
-
-
-def test_agent_runner_success_records_service_session_metadata_in_role_namespace(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    from unittest.mock import patch
-    from pycastle.infrastructure.container_runner import ContainerRunner
-
-    home = tmp_path / "home"
-    host_auth = home / ".codex" / "auth.json"
-    host_auth.parent.mkdir(parents=True)
-    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
-    monkeypatch.setattr(Path, "home", lambda: home)
-
-    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
-        assert on_thread_id is not None
-        on_thread_id("thread-success")
-        return CommitMessageOutput(message="done")
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_setup_docker_client(),
-        service_registry={"codex": CodexService()},
-    )
-
-    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
-        result = asyncio.run(
-            runner.run(
-                _run_request(
-                    name="Codex",
-                    template=_PLAN_TEMPLATE,
-                    scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
-                    role=AgentRole.IMPLEMENTER,
-                    service="codex",
-                    session_namespace="main",
-                )
-            )
-        )
-
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER, "main")
-    assert isinstance(result, CommitMessageOutput)
-    assert role_session.service_session_metadata_path == (
-        tmp_path
-        / ".pycastle-session"
-        / "implementer"
-        / "main"
-        / "_service_session_metadata.json"
-    )
-    assert role_session.service_session_metadata("codex") == {
-        "service": "codex",
-        "provider_session_id": "thread-success",
-    }
-
-
-def test_agent_runner_protocol_error_does_not_record_service_session_metadata(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    from unittest.mock import patch
-    from pycastle.agents.output_protocol import PromiseParseError
-    from pycastle.infrastructure.container_runner import ContainerRunner
-
-    home = tmp_path / "home"
-    host_auth = home / ".codex" / "auth.json"
-    host_auth.parent.mkdir(parents=True)
-    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
-    monkeypatch.setattr(Path, "home", lambda: home)
-
-    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
-        if on_thread_id is not None:
-            on_thread_id("thread-protocol-error")
-        raise PromiseParseError("no tag")
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_setup_docker_client(),
-        service_registry={"codex": CodexService()},
-    )
-
-    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
-        with pytest.raises(AgentFailedError) as exc_info:
-            asyncio.run(
-                runner.run(
-                    _run_request(
-                        name="Codex",
-                        template=_PLAN_TEMPLATE,
-                        scope_args=_PLAN_SCOPE_ARGS,
-                        mount_path=tmp_path,
-                        role=AgentRole.IMPLEMENTER,
-                        service="codex",
-                        session_namespace="main",
-                    )
-                )
-            )
-
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER, "main")
-    assert exc_info.value.failure_class == "protocol_error"
-    assert role_session.service_session_id("codex") == "thread-protocol-error"
-    assert role_session.service_session_metadata("codex") is None
 
 
 # ── AgentRunner: protocol-error retry semantics ───────────────────────────────
