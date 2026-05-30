@@ -87,6 +87,14 @@ def parse_reset_time(
     return _parse_required_date_reset(match, local_now, hour, minute)
 
 
+def parse_claude_reset_time(
+    retry_text: object, *, now: datetime | None = None
+) -> datetime | None:
+    if not isinstance(retry_text, str):
+        return None
+    return parse_reset_time(retry_text, ResetTimeSyntaxMode.CLAUDE_RESETS_UTC, now=now)
+
+
 def _parse_hour(hour_text: str, ampm_text: str) -> int | None:
     hour = int(hour_text)
     if not 1 <= hour <= 12:
