@@ -38,6 +38,9 @@ class _FakeAgentService:
     relpath: str | None
     name: str = "fake"
     resumable: bool = False
+    provider_session_id: str | None = None
+    persist_provider_session_id: bool = False
+    exact_transcript_session: bool = False
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         return self.relpath
@@ -56,7 +59,8 @@ class _FakeAgentService:
             del provider_state_dir
             return ProviderRunState(
                 RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH,
-                role_session.session_uuid(),
+                self.provider_session_id or role_session.session_uuid(),
+                persist_provider_session_id=self.persist_provider_session_id,
             )
         if not has_resumable_provider_state:
             return ProviderRunState(RunKind.FRESH, None)
@@ -81,6 +85,8 @@ class _FakeAgentService:
         provider_run_state: ProviderRunState,
         provider_state_dir: Path | None,
     ) -> bool:
+        if self.exact_transcript_session:
+            return True
         return is_exact_resumable_service_session(
             role_session,
             self.name,
@@ -499,6 +505,62 @@ def test_run_session_plan_reports_exact_transcript_match_for_claude_only_with_ma
     assert plan.exact_transcript_match is True
 
 
+def test_role_session_exact_transcript_handoff_for_claude_fresh_uses_generated_uuid(
+    tmp_path: Path,
+):
+    service = ClaudeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+
+    handoff = role_session.exact_transcript_handoff_for_service(service)
+
+    assert handoff.provider_identity.kind is ProviderIdentityKind.FRESH
+    assert handoff.provider_identity.run_kind is RunKind.FRESH
+    assert handoff.provider_identity.provider_session_id == role_session.session_uuid()
+    assert handoff.is_eligible is False
+
+
+def test_role_session_exact_transcript_handoff_for_claude_resume_uses_generated_uuid(
+    tmp_path: Path,
+):
+    service = ClaudeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    handoff = role_session.exact_transcript_handoff_for_service(service)
+
+    assert handoff.provider_identity.kind is ProviderIdentityKind.RESUME
+    assert handoff.provider_identity.run_kind is RunKind.RESUME
+    assert handoff.provider_identity.provider_session_id == role_session.session_uuid()
+    assert handoff.is_eligible is False
+
+
+def test_role_session_exact_transcript_handoff_for_claude_named_service_uses_service_provider_session_id(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService(
+            ".pycastle-session/implementer/claude/",
+            name="claude",
+            resumable=True,
+            provider_session_id="foreign-session-id",
+        ),
+    )
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    handoff = role_session.exact_transcript_handoff_for_service(service)
+
+    assert handoff.provider_identity.kind is ProviderIdentityKind.RESUME
+    assert handoff.provider_identity.run_kind is RunKind.RESUME
+    assert handoff.provider_identity.provider_session_id == "foreign-session-id"
+    assert handoff.is_eligible is False
+
+
 def test_run_session_plan_reports_no_exact_transcript_match_for_claude_without_metadata(
     tmp_path: Path,
 ):
@@ -538,6 +600,35 @@ def test_run_session_plan_reports_no_exact_transcript_match_for_claude_with_mism
 
     assert plan.run_kind is RunKind.RESUME
     assert plan.exact_transcript_match is False
+
+
+def test_run_session_plan_preserves_claude_provider_session_persistence_from_service_run_state(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService(
+            ".pycastle-session/implementer/claude/",
+            name="claude",
+            resumable=True,
+            persist_provider_session_id=True,
+        ),
+    )
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert (
+        plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
+    )
 
 
 def test_run_session_plan_reports_no_exact_transcript_match_for_codex_with_conflicting_rollout_thread_ids(

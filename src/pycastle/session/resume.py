@@ -141,19 +141,21 @@ class RoleSession:
         has_resumable_provider_state: bool,
         provider_state_dir: Path | None = None,
         derived_provider_session_id: str | None = None,
+        persist_provider_session_id: bool = False,
     ) -> ProviderIdentity:
-        if service_name == "claude":
-            claude_session_id = derived_provider_session_id or self.session_uuid()
+        if derived_provider_session_id is not None:
             if has_resumable_provider_state:
                 return ProviderIdentity(
                     ProviderIdentityKind.RESUME,
                     RunKind.RESUME,
-                    claude_session_id,
+                    derived_provider_session_id,
+                    persist_provider_session_id=persist_provider_session_id,
                 )
             return ProviderIdentity(
                 ProviderIdentityKind.FRESH,
                 RunKind.FRESH,
-                claude_session_id,
+                derived_provider_session_id,
+                persist_provider_session_id=persist_provider_session_id,
             )
 
         if not has_resumable_provider_state:
@@ -222,25 +224,16 @@ class RoleSession:
         *,
         state_dir: Path | None,
         has_resumable_provider_state: bool,
+        derived_provider_session_id: str | None = None,
+        persist_provider_session_id: bool = False,
     ) -> ExactTranscriptHandoff:
-        if service_name == "claude":
-            provider_identity = ProviderIdentity(
-                kind=(
-                    ProviderIdentityKind.RESUME
-                    if has_resumable_provider_state
-                    else ProviderIdentityKind.FRESH
-                ),
-                run_kind=(
-                    RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH
-                ),
-                provider_session_id=self.session_uuid(),
-            )
-        else:
-            provider_identity = self.provider_identity(
-                service_name,
-                has_resumable_provider_state=has_resumable_provider_state,
-                provider_state_dir=state_dir,
-            )
+        provider_identity = self.provider_identity(
+            service_name,
+            has_resumable_provider_state=has_resumable_provider_state,
+            provider_state_dir=state_dir,
+            derived_provider_session_id=derived_provider_session_id,
+            persist_provider_session_id=persist_provider_session_id,
+        )
 
         is_eligible = (
             provider_identity.run_kind is RunKind.RESUME
@@ -266,13 +259,11 @@ class RoleSession:
             provider_state_dir=state.state_dir,
             has_resumable_provider_state=state.has_resumable_provider_state,
         )
-        provider_identity = ProviderIdentity(
-            kind=_provider_identity_kind_for_run_state(
-                provider_run_state,
-                has_resumable_provider_state=state.has_resumable_provider_state,
-            ),
-            run_kind=provider_run_state.run_kind,
-            provider_session_id=provider_run_state.provider_session_id,
+        provider_identity = self.provider_identity(
+            service.name,
+            has_resumable_provider_state=state.has_resumable_provider_state,
+            provider_state_dir=state.state_dir,
+            derived_provider_session_id=provider_run_state.provider_session_id,
             persist_provider_session_id=provider_run_state.persist_provider_session_id,
         )
         is_eligible = (
@@ -332,15 +323,3 @@ class RoleSession:
     def discard(self) -> None:
         if self.path.is_dir():
             shutil.rmtree(self.path, onerror=_force_remove_readonly)
-
-
-def _provider_identity_kind_for_run_state(
-    provider_run_state: ProviderRunState,
-    *,
-    has_resumable_provider_state: bool,
-) -> ProviderIdentityKind:
-    if provider_run_state.run_kind is RunKind.RESUME:
-        return ProviderIdentityKind.RESUME
-    if has_resumable_provider_state and provider_run_state.provider_session_id is None:
-        return ProviderIdentityKind.UNRECOVERABLE
-    return ProviderIdentityKind.FRESH
