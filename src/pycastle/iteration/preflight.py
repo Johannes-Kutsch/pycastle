@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 import re
 from pathlib import Path
-from typing import Protocol, TypeAlias, cast
+from typing import Protocol, Sequence, TypeAlias, cast
 
 from ..agents.output_protocol import (
     AgentOutputProtocolError,
@@ -20,7 +20,12 @@ from ..services import (
     UnrelatedHistoriesError,
 )
 from ..session import RoleSession
-from ..issue_readiness import WellFormed, WellFormedBody, classify_issue_readiness
+from ..issue_readiness import (
+    IssueReadiness,
+    IssueReadinessKind,
+    WellFormed,
+    classify_issue_readiness,
+)
 from ..display.status_display import StatusDisplay
 from ._utils import _wait_for_clean_working_tree
 from .. import _time as _time_module
@@ -72,17 +77,52 @@ def validate_issue_report(
             f"without exactly one slice-mode label — got labels={issue_output.labels!r}. "
             f"Expected exactly one of {sorted(expected)!r}."
         )
-    filed_issue = github_svc.get_issue(issue_output.number)
     filed_readiness = classify_issue_readiness(
-        {**filed_issue, "labels": list(issue_output.labels)},
+        {
+            **github_svc.get_issue(issue_output.number),
+            "labels": list(issue_output.labels),
+        },
         cfg,
     )
-    if not isinstance(filed_readiness.body_floor_status, WellFormedBody):
-        raise RuntimeError(
-            f"{caller} filed issue #{issue_output.number} whose body is "
+    readiness_error = _diagnostic_issue_readiness_error(
+        caller=caller,
+        issue_number=issue_output.number,
+        issue_labels=issue_output.labels,
+        readiness=filed_readiness,
+    )
+    if readiness_error is not None:
+        raise RuntimeError(readiness_error)
+    return "afk"
+
+
+def _diagnostic_issue_readiness_error(
+    *,
+    caller: str,
+    issue_number: int,
+    issue_labels: Sequence[str],
+    readiness: IssueReadiness,
+) -> str | None:
+    if readiness.kind in {
+        IssueReadinessKind.MISSING_SLICE_MODE,
+        IssueReadinessKind.MULTIPLE_SLICE_MODES,
+        IssueReadinessKind.MALFORMED,
+    }:
+        malformed = readiness.slice_status
+        if not isinstance(malformed, WellFormed):
+            return (
+                f"{caller} filed issue #{issue_number} on the AFK branch "
+                f"without exactly one slice-mode label — got labels={issue_labels!r}. "
+                f"Expected exactly one of {sorted(malformed.configured)!r}."
+            )
+    if readiness.kind in {
+        IssueReadinessKind.SHORT_BODY,
+        IssueReadinessKind.MALFORMED,
+    }:
+        return (
+            f"{caller} filed issue #{issue_number} whose body is "
             f"below the minimum length floor — body too short to be valid."
         )
-    return "afk"
+    return None
 
 
 def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
