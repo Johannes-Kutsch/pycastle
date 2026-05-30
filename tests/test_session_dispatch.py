@@ -14,6 +14,10 @@ from pycastle.agents.session_dispatch import (
     record_successful_provider_session_metadata,
 )
 from pycastle.session import RoleSession, RunKind
+from pycastle.session._provider_session_state import (
+    ProviderSessionStateRequest,
+    prepare_provider_session_state,
+)
 from pycastle.errors import HardAgentError
 from pycastle.services import ClaudeService, CodexService
 from pycastle.services.agent_service import AgentService
@@ -45,6 +49,21 @@ class _CustomOpenCodeStateDirService:
         return (state_dir / "session_id").is_file()
 
 
+@dataclass
+class _ClaudeFilesystemStandIn:
+    name: str = "claude"
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        if namespace:
+            return f".pycastle-session/{role.value}/{namespace}/claude/"
+        return f".pycastle-session/{role.value}/claude/"
+
+    def is_resumable(self, state_dir: Path) -> bool:
+        return state_dir.is_dir() and any(
+            path.is_file() for path in state_dir.rglob("*")
+        )
+
+
 def _request(
     tmp_path: Path,
     *,
@@ -62,10 +81,87 @@ def _request(
     )
 
 
+def _provider_request(
+    tmp_path: Path,
+    *,
+    role: AgentRole = AgentRole.IMPLEMENTER,
+    namespace: str = "",
+    service: AgentService | None = None,
+) -> ProviderSessionStateRequest:
+    return ProviderSessionStateRequest(
+        worktree=tmp_path,
+        role=role,
+        session_namespace=namespace,
+        service=service or cast(AgentService, _ClaudeFilesystemStandIn()),
+    )
+
+
 def test_prepare_agent_session_returns_prepared_agent_session(tmp_path: Path):
     session = prepare_agent_session(_request(tmp_path))
 
     assert isinstance(session, PreparedAgentSession)
+
+
+def test_prepare_provider_session_state_fresh_claude_uses_deterministic_uuid_and_state_path(
+    tmp_path: Path,
+):
+    state = prepare_provider_session_state(_provider_request(tmp_path))
+
+    assert state.run_kind is RunKind.FRESH
+    assert (
+        state.provider_session_id
+        == RoleSession(
+            tmp_path,
+            AgentRole.IMPLEMENTER,
+        ).session_uuid()
+    )
+    assert state.service_state_dir_path == (
+        tmp_path / ".pycastle-session" / "implementer" / "claude"
+    )
+
+
+def test_prepare_provider_session_state_resume_claude_uses_same_deterministic_uuid(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    (state_dir / "projects").mkdir(parents=True)
+    (state_dir / "projects" / "transcript.jsonl").write_text(
+        '{"type":"message"}\n',
+        encoding="utf-8",
+    )
+
+    state = prepare_provider_session_state(_provider_request(tmp_path))
+
+    assert state.run_kind is RunKind.RESUME
+    assert (
+        state.provider_session_id
+        == RoleSession(
+            tmp_path,
+            AgentRole.IMPLEMENTER,
+        ).session_uuid()
+    )
+
+
+def test_prepare_provider_session_state_fresh_prepare_for_run_preserves_wipe_before_fresh_layout(
+    tmp_path: Path,
+):
+    role_dir = tmp_path / ".pycastle-session" / "implementer"
+    (role_dir / "stale.txt").parent.mkdir(parents=True)
+    (role_dir / "stale.txt").write_text("stale", encoding="utf-8")
+    (role_dir / "codex" / "thread_id").parent.mkdir(parents=True)
+    (role_dir / "codex" / "thread_id").write_text("thread-old", encoding="utf-8")
+
+    state = prepare_provider_session_state(_provider_request(tmp_path))
+
+    state.prepare_for_run()
+
+    assert sorted(
+        path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*")
+    ) == [
+        ".pycastle-session",
+        ".pycastle-session/implementer",
+        ".pycastle-session/implementer/claude",
+    ]
 
 
 def test_prepare_agent_session_fresh_claude_returns_run_kind_fresh(tmp_path: Path):
