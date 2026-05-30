@@ -67,6 +67,18 @@ def _preserves_role_provider_layout(service_name: str) -> bool:
     return service_name in {"codex", "opencode"}
 
 
+def _persist_provider_state_session_id(
+    service_name: str,
+    state_dir: Path | None,
+    provider_session_id: str,
+) -> None:
+    if state_dir is None or service_name != "opencode":
+        return
+    session_id_path = state_dir / "session_id"
+    session_id_path.parent.mkdir(parents=True, exist_ok=True)
+    session_id_path.write_text(provider_session_id, encoding="utf-8")
+
+
 @dataclasses.dataclass(frozen=True)
 class RunSessionPlan:
     role: AgentRole
@@ -126,6 +138,11 @@ class RunSessionPlan:
 
     def capture_provider_session_id(self, provider_session_id: str) -> None:
         object.__setattr__(self, "provider_session_id", provider_session_id)
+        _persist_provider_state_session_id(
+            self.service.name,
+            self.service_state_dir,
+            provider_session_id,
+        )
         if not _preserves_role_provider_layout(self.service.name):
             return
         RoleSession(

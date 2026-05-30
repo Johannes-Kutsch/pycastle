@@ -797,6 +797,38 @@ def test_prepare_agent_session_opencode_with_saved_session_resumes(tmp_path: Pat
     assert session.provider_session_id == "sess-opencode-resume"
 
 
+def test_prepare_provider_session_state_resume_opencode_uses_persisted_session_id_for_dispatch(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+
+    initial_state = prepare_provider_session_state(
+        _provider_request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            service=cast(AgentService, _CustomOpenCodeStateDirService()),
+            namespace="main",
+        )
+    )
+    initial_state.record_provider_session_id("sess-opencode-resume")
+
+    resumed_state = prepare_provider_session_state(
+        _provider_request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            service=cast(AgentService, _CustomOpenCodeStateDirService()),
+            namespace="main",
+        )
+    )
+    initial_run = resumed_state.initial_provider_run_session()
+
+    assert resumed_state.run_kind is RunKind.RESUME
+    assert resumed_state.provider_session_id == "sess-opencode-resume"
+    assert initial_run.run_kind is RunKind.RESUME
+    assert initial_run.provider_session_id == "sess-opencode-resume"
+
+
 def test_prepare_agent_session_opencode_run_session_switches_from_fresh_to_resume_after_capture(
     tmp_path: Path,
 ):
@@ -822,6 +854,32 @@ def test_prepare_agent_session_opencode_run_session_switches_from_fresh_to_resum
     assert resumable_after_capture.provider_session_id == "sess-opencode-runtime"
 
 
+def test_prepare_provider_session_state_fresh_opencode_when_selected_state_dir_exists_without_session_id(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "history.jsonl").write_text('{"type":"text"}\n', encoding="utf-8")
+
+    state = prepare_provider_session_state(
+        _provider_request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            service=cast(AgentService, _CustomOpenCodeStateDirService()),
+            namespace="main",
+        )
+    )
+    initial_run = state.initial_provider_run_session()
+    resumable_run = state.resumable_provider_run_session()
+
+    assert state.run_kind is RunKind.FRESH
+    assert state.provider_session_id is None
+    assert initial_run.run_kind is RunKind.FRESH
+    assert initial_run.provider_session_id is None
+    assert resumable_run.run_kind is RunKind.FRESH
+    assert resumable_run.provider_session_id is None
+
+
 def test_prepare_agent_session_opencode_resume_uses_selected_service_state_dir(
     tmp_path: Path,
 ):
@@ -843,6 +901,34 @@ def test_prepare_agent_session_opencode_resume_uses_selected_service_state_dir(
     assert (
         session.provider_state_dir_container_path
         == "/home/agent/workspace/custom/opencode-state/"
+    )
+
+
+def test_prepare_provider_session_state_captures_opencode_session_id_in_selected_state_dir_without_api_key_material(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    service = _CustomOpenCodeStateDirService()
+
+    state = prepare_provider_session_state(
+        _provider_request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            service=cast(AgentService, service),
+            namespace="main",
+        )
+    )
+
+    state.record_provider_session_id("sess-opencode-runtime")
+
+    assert (state_dir / "session_id").read_text(encoding="utf-8") == (
+        "sess-opencode-runtime"
+    )
+    assert "go-key" not in (state_dir / "session_id").read_text(encoding="utf-8")
+    assert (
+        RoleSession(tmp_path, AgentRole.IMPROVE, "main").service_session_id("opencode")
+        == "sess-opencode-runtime"
     )
 
 
