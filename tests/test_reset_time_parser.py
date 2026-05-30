@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 from pycastle.services import ResetTimeSyntaxMode, parse_reset_time
@@ -342,6 +342,25 @@ def test_try_again_required_date_with_full_date():
         )
     )
     assert (utc.year, utc.month, utc.day, utc.hour, utc.minute) == (2026, 3, 15, 15, 30)
+
+
+def test_try_again_required_date_september_aliases_preserve_local_display_time():
+    local_tz = timezone(timedelta(hours=-7))
+    now = datetime(2026, 9, 15, 7, 0, tzinfo=local_tz)
+    results = [
+        parse_reset_time(
+            f"try again at {month} 15th, 2026 3:30 PM",
+            ResetTimeSyntaxMode.TRY_AGAIN_UTC_REQUIRED_DATE,
+            now=now,
+        )
+        for month in ("Sept", "September", "sep")
+    ]
+
+    assert [
+        (result.hour, result.minute, result.utcoffset())
+        for result in results
+        if result is not None
+    ] == [(8, 30, timedelta(hours=-7))] * 3
 
 
 def test_try_again_required_date_invalid_date_returns_none():
