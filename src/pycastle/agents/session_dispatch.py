@@ -23,6 +23,7 @@ class PreparedAgentSession:
     role_session: RoleSession
     run_kind: RunKind
     provider_session_id: str | None
+    provider_state_dir_relpath: str | None
     provider_state_dir_container_path: str | None
     _plan: RunSessionPlan = dataclasses.field(repr=False)
     auth_seed_action: LocalAuthSeedAction | None = None
@@ -55,6 +56,7 @@ def prepare_agent_session(request: SessionDispatchRequest) -> PreparedAgentSessi
         role_session=role_session,
         run_kind=plan.run_kind,
         provider_session_id=plan.prepared_provider_session_id(),
+        provider_state_dir_relpath=plan.provider_state_dir_relpath,
         provider_state_dir_container_path=plan.provider_state_dir_container_path(
             request.container_workspace
         ),

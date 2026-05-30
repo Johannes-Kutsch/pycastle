@@ -2450,6 +2450,7 @@ def test_agent_runner_records_successful_run_in_plan_for_claude(tmp_path, monkey
         run_kind = RunKind.FRESH
         auth_seed_action = None
         exact_transcript_match = False
+        provider_state_dir_relpath = ".pycastle-session/implementer/claude/"
 
         def prepared_provider_session_id(self) -> str | None:
             return "planned-session-id"

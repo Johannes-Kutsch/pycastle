@@ -62,6 +62,23 @@ def test_prepare_agent_session_fresh_claude_exposes_state_dir_relpath(
     assert session.provider_state_dir_relpath == ".pycastle-session/implementer/claude/"
 
 
+def test_prepare_agent_session_resume_claude_returns_run_kind_resume(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "projects").mkdir()
+    (state_dir / "projects" / "transcript.jsonl").write_text(
+        '{"type":"message"}\n', encoding="utf-8"
+    )
+
+    session = prepare_agent_session(_request(tmp_path, service=ClaudeService()))
+
+    assert session.run_kind is RunKind.RESUME
+    expected = RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
+    assert session.provider_session_id == expected
+
+
 def _seed_codex_auth(tmp_path: Path) -> None:
     auth_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
     auth_dir.mkdir(parents=True, exist_ok=True)
