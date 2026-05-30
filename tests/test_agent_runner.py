@@ -32,7 +32,7 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.session import RunKind
+from pycastle.session import RoleSession, RunKind
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
@@ -2744,6 +2744,133 @@ def test_agent_runner_opencode_reprompt_retries_as_resume_after_runtime_session_
         (RunKind.FRESH, None),
         (RunKind.RESUME, "sess-from-fresh"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("service_name", "role", "namespace", "provider_session_id"),
+    [
+        ("codex", AgentRole.IMPLEMENTER, "", "thread-runtime-success"),
+        ("opencode", AgentRole.IMPROVE, "main", "sess-runtime-success"),
+    ],
+)
+def test_agent_runner_success_records_provider_session_metadata_after_runtime_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    service_name: str,
+    role: AgentRole,
+    namespace: str,
+    provider_session_id: str,
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    if service_name == "codex":
+        home = tmp_path / "home"
+        host_auth = home / ".codex" / "auth.json"
+        host_auth.parent.mkdir(parents=True)
+        host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+        monkeypatch.setattr(Path, "home", lambda: home)
+
+    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+        assert on_thread_id is not None
+        on_thread_id(provider_session_id)
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={
+            "codex": CodexService(),
+            "opencode": OpenCodeService(),
+        },
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name=service_name.title(),
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=role,
+                    service=service_name,
+                    session_namespace=namespace,
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    role_session = RoleSession(tmp_path, role, namespace)
+    assert role_session.service_session_id(service_name) == provider_session_id
+    assert role_session.service_session_metadata(service_name) == {
+        "service": service_name,
+        "provider_session_id": provider_session_id,
+    }
+
+
+@pytest.mark.parametrize(
+    ("service_name", "role", "namespace", "provider_session_id"),
+    [
+        ("codex", AgentRole.IMPLEMENTER, "", "thread-runtime-failed"),
+        ("opencode", AgentRole.IMPROVE, "main", "sess-runtime-failed"),
+    ],
+)
+def test_agent_runner_failed_output_does_not_record_provider_session_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    service_name: str,
+    role: AgentRole,
+    namespace: str,
+    provider_session_id: str,
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    if service_name == "codex":
+        home = tmp_path / "home"
+        host_auth = home / ".codex" / "auth.json"
+        host_auth.parent.mkdir(parents=True)
+        host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+        monkeypatch.setattr(Path, "home", lambda: home)
+
+    async def _fake_work(role, prompt, *, run_kind, session_uuid, on_thread_id=None):
+        assert on_thread_id is not None
+        on_thread_id(provider_session_id)
+        return FailedOutput(failure_class="agent_failed")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={
+            "codex": CodexService(),
+            "opencode": OpenCodeService(),
+        },
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        with pytest.raises(AgentFailedError):
+            asyncio.run(
+                runner.run(
+                    _run_request(
+                        name=service_name.title(),
+                        template=_PLAN_TEMPLATE,
+                        scope_args=_PLAN_SCOPE_ARGS,
+                        mount_path=tmp_path,
+                        role=role,
+                        service=service_name,
+                        session_namespace=namespace,
+                    )
+                )
+            )
+
+    role_session = RoleSession(tmp_path, role, namespace)
+    assert role_session.service_session_id(service_name) == provider_session_id
+    assert role_session.service_session_metadata(service_name) is None
 
 
 def test_agent_runner_opencode_timeout_retry_resumes_with_captured_session_id(
