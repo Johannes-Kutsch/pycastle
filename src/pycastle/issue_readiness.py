@@ -37,6 +37,9 @@ class Malformed:
 SliceClassification = WellFormed | Malformed
 
 
+BODY_FLOOR = 100
+
+
 def slice_labels(cfg: Config) -> frozenset[str]:
     return frozenset(
         {cfg.refactor_slice_label, cfg.behavior_slice_label, cfg.docs_slice_label}
@@ -54,3 +57,8 @@ def classify_slice(issue: dict, cfg: Config) -> SliceClassification:
     if len(matches) == 1:
         return WellFormed(label_to_mode[matches[0]])
     return Malformed(found=matches)
+
+
+def is_well_formed_body(issue: dict) -> bool:
+    body = issue.get("body") or ""
+    return len(body.strip()) >= BODY_FLOOR

@@ -2,16 +2,13 @@ import asyncio
 from pathlib import Path
 from typing import Protocol
 
+from .. import issue_readiness
 from ..services import GitService
 from ..display.status_display import StatusDisplay
 
 
-BODY_FLOOR = 100
-
-
-def is_well_formed_body(issue: dict) -> bool:
-    body = issue.get("body") or ""
-    return len(body.strip()) >= BODY_FLOOR
+BODY_FLOOR = issue_readiness.BODY_FLOOR
+is_well_formed_body = issue_readiness.is_well_formed_body
 
 
 class _UtilDeps(Protocol):
