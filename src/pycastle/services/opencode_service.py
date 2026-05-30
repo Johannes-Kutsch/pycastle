@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import re
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,40 +19,7 @@ from .agent_service import (
 )
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
-
-_RESET_TIME_RE = re.compile(
-    r"try again at\s+"
-    r"(?:(?P<month>[A-Za-z]+)\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?,\s+(?P<year>\d{4})\s+)?"
-    r"(?P<hour>\d{1,2}):(?P<minute>\d{2})\s*(?P<ampm>AM|PM)",
-    re.IGNORECASE,
-)
-
-_MONTHS = {
-    "january": 1,
-    "jan": 1,
-    "february": 2,
-    "feb": 2,
-    "march": 3,
-    "mar": 3,
-    "april": 4,
-    "apr": 4,
-    "may": 5,
-    "june": 6,
-    "jun": 6,
-    "july": 7,
-    "jul": 7,
-    "august": 8,
-    "aug": 8,
-    "september": 9,
-    "sep": 9,
-    "sept": 9,
-    "october": 10,
-    "oct": 10,
-    "november": 11,
-    "nov": 11,
-    "december": 12,
-    "dec": 12,
-}
+from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time
 
 _OPENCODE_GO_PROVIDER_ID = "opencode-go"
 _OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1"
@@ -118,39 +84,7 @@ def _opencode_go_config_content() -> str:
 
 
 def _parse_reset_time(message: str) -> datetime | None:
-    match = _RESET_TIME_RE.search(message)
-    if match is None:
-        return None
-
-    hour = int(match.group("hour"))
-    minute = int(match.group("minute"))
-    ampm = match.group("ampm").upper()
-    if ampm == "PM" and hour != 12:
-        hour += 12
-    elif ampm == "AM" and hour == 12:
-        hour = 0
-
-    month = match.group("month")
-    day = match.group("day")
-    year = match.group("year")
-    if month is None or day is None or year is None:
-        return None
-
-    month_num = _MONTHS.get(month.lower())
-    if month_num is None:
-        return None
-
-    try:
-        return datetime(
-            int(year),
-            month_num,
-            int(day),
-            hour,
-            minute,
-            tzinfo=timezone.utc,
-        ).astimezone()
-    except ValueError:
-        return None
+    return parse_reset_time(message, ResetTimeSyntaxMode.TRY_AGAIN_UTC_REQUIRED_DATE)
 
 
 def _extract_usage_limit(event: dict[str, object]) -> UsageLimit | None:

@@ -147,6 +147,33 @@ def test_opencode_service_maps_usage_limit_errors_with_and_without_reset_time() 
     ]
 
 
+def test_opencode_service_leaves_malformed_explicit_retry_at_as_raw_message() -> None:
+    service = OpenCodeService()
+
+    events = list(
+        service.run(
+            [
+                (
+                    '{"type":"error","timestamp":1,"sessionID":"sess_123","error":{'
+                    '"name":"RateLimitError","data":{"message":"You have reached your '
+                    'OpenCode Go usage limit. Try again at Apr 28th, 2026 0:02 PM.",'
+                    '"statusCode":429,"isRetryable":true}}}'
+                )
+            ]
+        )
+    )
+
+    assert events == [
+        UsageLimit(
+            reset_time=None,
+            raw_message=(
+                "You have reached your OpenCode Go usage limit. "
+                "Try again at Apr 28th, 2026 0:02 PM."
+            ),
+        )
+    ]
+
+
 def test_opencode_service_maps_transient_and_hard_runtime_errors() -> None:
     service = OpenCodeService()
 
