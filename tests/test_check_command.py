@@ -609,6 +609,49 @@ def test_check_rejects_afk_host_check_issue_with_short_body(tmp_path, monkeypatc
         )
 
 
+def test_check_hitl_host_check_issue_skips_body_and_slice_validation(
+    tmp_path, monkeypatch
+):
+    import pycastle.commands.check as check_mod
+    from pycastle.agents.output_protocol import IssueOutput
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "abc123def456"
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        raise check_mod.HostCheckFailedError(
+            name=name, command=command, output="command output"
+        )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    fake_runner = FakeAgentRunner(
+        [IssueOutput(number=41, labels=["bug", "ready-for-human"])]
+    )
+    github_svc = MagicMock()
+
+    monkeypatch.setattr(check_mod, "_run_host_check", fake_run_host_check)
+    monkeypatch.setattr(
+        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+    )
+
+    check_mod.main(
+        cfg=Config(host_checks=(("lint", "python -c lint"),)),
+        git_service=git_svc,
+        github_service=github_svc,
+        agent_runner=fake_runner,
+    )
+
+    github_svc.get_issue.assert_not_called()
+
+
 def test_check_prints_passed_and_files_no_issues_when_all_host_checks_succeed(
     tmp_path, monkeypatch, capsys
 ):
