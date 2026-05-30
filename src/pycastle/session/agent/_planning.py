@@ -11,10 +11,11 @@ from .._provider_session_plan import (
     LocalAuthSeedAction,
     ProviderSessionPlan,
     ProviderSessionPlanRequest,
-    capture_provider_session_id,
     plan_provider_session,
+    record_observed_provider_session_id,
+    record_successful_provider_session_metadata,
 )
-from ..resume import RoleSession, RunKind
+from ..resume import RunKind
 
 if TYPE_CHECKING:
     from ...services.agent_service import AgentService
@@ -97,7 +98,7 @@ class RunSessionPlan:
 
     def capture_provider_session_id(self, provider_session_id: str) -> None:
         object.__setattr__(self, "provider_session_id", provider_session_id)
-        capture_provider_session_id(
+        record_observed_provider_session_id(
             worktree=self.worktree,
             role=self.role,
             namespace=self.namespace,
@@ -110,11 +111,13 @@ class RunSessionPlan:
         session_id = provider_session_id or self.provider_session_id
         if session_id is None:
             return
-        RoleSession(
-            self.worktree,
-            self.role,
-            self.namespace,
-        ).save_service_session_metadata(self.service.name, session_id)
+        record_successful_provider_session_metadata(
+            worktree=self.worktree,
+            role=self.role,
+            namespace=self.namespace,
+            service_name=self.service.name,
+            provider_session_id=session_id,
+        )
 
     @classmethod
     def for_service(

@@ -115,7 +115,7 @@ class PlannedProviderSession:
     persist_provider_session_id: bool = False
 
 
-def capture_provider_session_id(
+def record_observed_provider_session_id(
     *,
     worktree: Path,
     role: AgentRole,
@@ -135,6 +135,40 @@ def capture_provider_session_id(
         role,
         namespace,
     ).save_service_session_id(service_name, provider_session_id)
+
+
+def capture_provider_session_id(
+    *,
+    worktree: Path,
+    role: AgentRole,
+    namespace: str,
+    service_name: str,
+    service_state_dir: Path | None,
+    provider_session_id: str,
+) -> None:
+    record_observed_provider_session_id(
+        worktree=worktree,
+        role=role,
+        namespace=namespace,
+        service_name=service_name,
+        service_state_dir=service_state_dir,
+        provider_session_id=provider_session_id,
+    )
+
+
+def record_successful_provider_session_metadata(
+    *,
+    worktree: Path,
+    role: AgentRole,
+    namespace: str,
+    service_name: str,
+    provider_session_id: str,
+) -> None:
+    RoleSession(
+        worktree,
+        role,
+        namespace,
+    ).save_service_session_metadata(service_name, provider_session_id)
 
 
 def plan_provider_session(
