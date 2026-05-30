@@ -8,11 +8,14 @@ from typing import TYPE_CHECKING
 
 from ...agents.output_protocol import AgentRole
 from ...errors import HardAgentError
+from .._provider_session_plan import (
+    ProviderSessionPlan,
+    ProviderSessionPlanRequest,
+    plan_provider_session,
+)
 from ..resume import (
     RoleSession,
     RunKind,
-    _normalize_state_dir_relpath,
-    _role_provider_state_dir_relpath,
 )
 
 if TYPE_CHECKING:
@@ -27,6 +30,10 @@ class AuthSeedingRequirement(Enum):
 class RecoveredSessionIdPersistence(Enum):
     PERSIST = "persist"
     SKIP = "skip"
+
+
+def _preserves_role_provider_layout(service_name: str) -> bool:
+    return service_name in {"codex", "opencode"}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -51,20 +58,6 @@ class LocalAuthSeedAction:
             return
         self.destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(self.source, self.destination)
-
-
-def _codex_auth_seeding_requirement(
-    provider_state_dir: Path | None,
-) -> AuthSeedingRequirement:
-    if provider_state_dir is None:
-        return AuthSeedingRequirement.NOT_REQUIRED
-    if not (provider_state_dir / "auth.json").exists():
-        return AuthSeedingRequirement.REQUIRED
-    return AuthSeedingRequirement.NOT_REQUIRED
-
-
-def _preserves_role_provider_layout(service_name: str) -> bool:
-    return service_name in {"codex", "opencode"}
 
 
 def _persist_provider_state_session_id(
@@ -100,8 +93,23 @@ class RunSessionPlan:
     provider_session_id: str | None
     auth_seeding_requirement: AuthSeedingRequirement
     recovered_session_id_persistence: RecoveredSessionIdPersistence
+    provider_session_plan: ProviderSessionPlan | None = None
     auth_seed_action: LocalAuthSeedAction | None = None
     exact_transcript_match: bool = False
+
+    def __post_init__(self) -> None:
+        if self.provider_session_plan is not None:
+            return
+        object.__setattr__(
+            self,
+            "provider_session_plan",
+            ProviderSessionPlan(
+                state_dir_relpath=self.provider_state_dir_relpath,
+                host_state_dir=self.host_provider_state_dir,
+                run_kind=self.run_kind,
+                provider_session_id=self.provider_session_id,
+            ),
+        )
 
     def provider_state_dir_container_path(self, container_workspace: str) -> str | None:
         if (
@@ -192,71 +200,39 @@ def plan_run_session(request: RunSessionPlanRequest) -> RunSessionPlan:
     auth_seeding_requirement = AuthSeedingRequirement.NOT_REQUIRED
     recovered_session_id_persistence = RecoveredSessionIdPersistence.SKIP
     auth_seed_action: LocalAuthSeedAction | None = None
-    role_session = RoleSession(request.worktree, request.role, request.namespace)
-    service_state = role_session.service_session_state(request.service)
-    service_state_dir = service_state.state_dir
-    handoff = role_session.exact_transcript_handoff_for_service(request.service)
-    provider_identity = handoff.provider_identity
-    provider_session_id = provider_identity.provider_session_id
-    run_kind = provider_identity.run_kind
-    raw_provider_state_dir_relpath = request.service.state_dir_relpath(
-        request.role,
-        request.namespace,
+    provider_session = plan_provider_session(
+        ProviderSessionPlanRequest(
+            worktree=request.worktree,
+            role=request.role,
+            namespace=request.namespace,
+            service=request.service,
+        )
     )
-    provider_state_dir_relpath = _normalize_state_dir_relpath(
-        request.role,
-        request.namespace,
-        request.service.name,
-        raw_provider_state_dir_relpath,
-    )
-    host_provider_state_dir = service_state_dir
-    if (
-        provider_state_dir_relpath is not None
-        and provider_state_dir_relpath != raw_provider_state_dir_relpath
-    ):
-        host_provider_state_dir = request.worktree / provider_state_dir_relpath.rstrip(
-            "/"
-        )
-    if (
-        _preserves_role_provider_layout(request.service.name)
-        and provider_state_dir_relpath is not None
-    ):
-        provider_state_dir_relpath = _role_provider_state_dir_relpath(
-            request.role,
-            request.namespace,
-            request.service.name,
-        )
-        host_provider_state_dir = request.worktree / provider_state_dir_relpath.rstrip(
-            "/"
-        )
-    if provider_identity.persist_provider_session_id:
+    provider_plan = provider_session.plan
+    if provider_session.persist_provider_session_id:
         recovered_session_id_persistence = RecoveredSessionIdPersistence.PERSIST
-    if request.service.name == "codex":
-        auth_seeding_requirement = _codex_auth_seeding_requirement(
-            host_provider_state_dir
-        )
-        if (
-            auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
-            and host_provider_state_dir is not None
-        ):
+    if provider_plan.requires_codex_auth_seed:
+        auth_seeding_requirement = AuthSeedingRequirement.REQUIRED
+        if provider_plan.host_state_dir is not None:
             auth_seed_action = LocalAuthSeedAction(
                 source=Path.home() / ".codex" / "auth.json",
-                destination=host_provider_state_dir / "auth.json",
+                destination=provider_plan.host_state_dir / "auth.json",
             )
     return RunSessionPlan(
         role=request.role,
         worktree=request.worktree,
         namespace=request.namespace,
         service=request.service,
-        run_kind=run_kind,
-        service_state_dir=service_state_dir,
-        provider_state_dir_relpath=provider_state_dir_relpath,
-        host_provider_state_dir=host_provider_state_dir,
-        provider_session_id=provider_session_id,
+        provider_session_plan=provider_plan,
+        run_kind=provider_plan.run_kind,
+        service_state_dir=provider_session.service_state_dir,
+        provider_state_dir_relpath=provider_plan.state_dir_relpath,
+        host_provider_state_dir=provider_plan.host_state_dir,
+        provider_session_id=provider_plan.provider_session_id,
         auth_seeding_requirement=auth_seeding_requirement,
         recovered_session_id_persistence=recovered_session_id_persistence,
         auth_seed_action=auth_seed_action,
-        exact_transcript_match=handoff.is_eligible,
+        exact_transcript_match=provider_session.exact_transcript_match,
     )
 
 
