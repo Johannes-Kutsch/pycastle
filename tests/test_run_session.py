@@ -38,6 +38,7 @@ class _FakeAgentService:
     relpath: str | None
     name: str = "fake"
     resumable: bool = False
+    provider_session_id: str | None = None
     persist_provider_session_id: bool = False
     exact_transcript_session: bool = False
 
@@ -58,7 +59,7 @@ class _FakeAgentService:
             del provider_state_dir
             return ProviderRunState(
                 RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH,
-                role_session.session_uuid(),
+                self.provider_session_id or role_session.session_uuid(),
                 persist_provider_session_id=self.persist_provider_session_id,
             )
         if not has_resumable_provider_state:
@@ -504,36 +505,60 @@ def test_run_session_plan_reports_exact_transcript_match_for_claude_only_with_ma
     assert plan.exact_transcript_match is True
 
 
-def test_role_session_provider_identity_for_claude_fresh_uses_generated_uuid(
+def test_role_session_exact_transcript_handoff_for_claude_fresh_uses_generated_uuid(
     tmp_path: Path,
 ):
+    service = ClaudeService()
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
 
-    provider_identity = role_session.provider_identity(
-        "claude",
-        has_resumable_provider_state=False,
-        derived_provider_session_id="foreign-session-id",
-    )
+    handoff = role_session.exact_transcript_handoff_for_service(service)
 
-    assert provider_identity.kind is ProviderIdentityKind.FRESH
-    assert provider_identity.run_kind is RunKind.FRESH
-    assert provider_identity.provider_session_id == role_session.session_uuid()
+    assert handoff.provider_identity.kind is ProviderIdentityKind.FRESH
+    assert handoff.provider_identity.run_kind is RunKind.FRESH
+    assert handoff.provider_identity.provider_session_id == role_session.session_uuid()
+    assert handoff.is_eligible is False
 
 
-def test_role_session_provider_identity_for_claude_resume_uses_generated_uuid(
+def test_role_session_exact_transcript_handoff_for_claude_resume_uses_generated_uuid(
     tmp_path: Path,
 ):
+    service = ClaudeService()
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
 
-    provider_identity = role_session.provider_identity(
-        "claude",
-        has_resumable_provider_state=True,
-        derived_provider_session_id="foreign-session-id",
+    handoff = role_session.exact_transcript_handoff_for_service(service)
+
+    assert handoff.provider_identity.kind is ProviderIdentityKind.RESUME
+    assert handoff.provider_identity.run_kind is RunKind.RESUME
+    assert handoff.provider_identity.provider_session_id == role_session.session_uuid()
+    assert handoff.is_eligible is False
+
+
+def test_role_session_exact_transcript_handoff_for_claude_named_service_uses_service_provider_session_id(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService(
+            ".pycastle-session/implementer/claude/",
+            name="claude",
+            resumable=True,
+            provider_session_id="foreign-session-id",
+        ),
     )
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
 
-    assert provider_identity.kind is ProviderIdentityKind.RESUME
-    assert provider_identity.run_kind is RunKind.RESUME
-    assert provider_identity.provider_session_id == role_session.session_uuid()
+    handoff = role_session.exact_transcript_handoff_for_service(service)
+
+    assert handoff.provider_identity.kind is ProviderIdentityKind.RESUME
+    assert handoff.provider_identity.run_kind is RunKind.RESUME
+    assert handoff.provider_identity.provider_session_id == "foreign-session-id"
+    assert handoff.is_eligible is False
 
 
 def test_run_session_plan_reports_no_exact_transcript_match_for_claude_without_metadata(
