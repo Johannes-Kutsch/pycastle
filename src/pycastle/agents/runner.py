@@ -32,9 +32,9 @@ from ..errors import (
 )
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session import RunKind
-from .session_dispatch import (
-    SessionDispatchRequest,
-    prepare_agent_session,
+from ..session._provider_session_state import (
+    ProviderSessionStateRequest,
+    prepare_provider_session_state,
 )
 from ..services import GitService
 from ..services.agent_service import AgentService
@@ -217,15 +217,16 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError(reset_time=None, stage_key=_stage_key_for_role(role))
 
-        prepared_session = prepare_agent_session(
-            SessionDispatchRequest(
-                mount_path=mount_path,
+        prepared_session = prepare_provider_session_state(
+            ProviderSessionStateRequest(
+                worktree=mount_path,
                 role=role,
                 session_namespace=request.session_namespace,
                 service=service,
-                container_workspace=_CONTAINER_WORKSPACE,
             )
         )
+        if prepared_session.auth_seed_action is not None:
+            prepared_session.auth_seed_action.require_source()
 
         non_typed_retry_done = False
         initial_attempt = True
@@ -252,7 +253,9 @@ class AgentRunner:
             session = self._build_session(
                 mount_path,
                 service,
-                prepared_session.provider_state_dir_container_path,
+                prepared_session.provider_state_dir_container_path(
+                    _CONTAINER_WORKSPACE
+                ),
             )
             runner = ContainerRunner(
                 name,
