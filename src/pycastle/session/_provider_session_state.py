@@ -64,6 +64,7 @@ class PreparedProviderSessionState:
         )
 
     def prepare_for_run(self) -> None:
+        _require_auth_seed_source(self.auth_seed_action)
         preserved_auth = self._preserved_codex_auth_bytes()
         if self.run_kind is RunKind.FRESH:
             self.role_session.start_fresh()
@@ -122,7 +123,6 @@ def prepare_provider_session_state(
         service=request.service,
     )
     auth_seed_action = plan.auth_seed_action
-    _require_auth_seed_source(auth_seed_action)
     role_session = RoleSession(
         request.worktree,
         request.role,

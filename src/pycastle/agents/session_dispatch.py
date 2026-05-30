@@ -59,6 +59,8 @@ def prepare_agent_session(request: SessionDispatchRequest) -> PreparedAgentSessi
             service=request.service,
         )
     )
+    if session_state.auth_seed_action is not None:
+        session_state.auth_seed_action.require_source()
     session_ref: dict[str, PreparedAgentSession] = {}
 
     def prepare_for_run() -> None:

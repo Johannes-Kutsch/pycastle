@@ -164,6 +164,52 @@ def test_prepare_provider_session_state_fresh_prepare_for_run_preserves_wipe_bef
     ]
 
 
+def test_prepare_provider_session_state_fresh_codex_without_role_auth_reports_seeding_requirement_without_copying_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    state = prepare_provider_session_state(
+        _provider_request(tmp_path, service=CodexService())
+    )
+
+    provider_auth = (
+        tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
+    )
+    action = state.auth_seed_action
+
+    assert state.run_kind is RunKind.FRESH
+    assert state.auth_seeding_requirement.name == "REQUIRED"
+    assert action is not None
+    assert action.source == home / ".codex" / "auth.json"
+    assert action.destination == provider_auth
+    assert provider_auth.exists() is False
+
+
+def test_prepare_provider_session_state_treats_preseeded_codex_auth_json_alone_as_fresh(
+    tmp_path: Path,
+):
+    auth_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    auth_dir.mkdir(parents=True, exist_ok=True)
+    (auth_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+
+    state = prepare_provider_session_state(
+        _provider_request(tmp_path, service=CodexService())
+    )
+
+    initial_run = state.initial_provider_run_session()
+    resumable_run = state.resumable_provider_run_session()
+
+    assert state.run_kind is RunKind.FRESH
+    assert state.provider_session_id is None
+    assert initial_run.run_kind is RunKind.FRESH
+    assert initial_run.provider_session_id is None
+    assert resumable_run.run_kind is RunKind.FRESH
+    assert resumable_run.provider_session_id is None
+
+
 def test_prepare_agent_session_fresh_claude_returns_run_kind_fresh(tmp_path: Path):
     session = prepare_agent_session(_request(tmp_path, service=ClaudeService()))
 
