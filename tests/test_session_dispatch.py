@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -964,13 +965,43 @@ def test_prepared_provider_run_session_records_success_metadata_with_runtime_ses
     run_session.record_provider_session_id("sess-opencode-runtime")
     run_session.record_successful_run()
 
-    assert RoleSession(
-        tmp_path,
-        AgentRole.IMPROVE,
-        "main",
-    ).service_session_metadata("opencode") == {
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    assert role_session.service_session_metadata("opencode") == {
         "service": "opencode",
         "provider_session_id": "sess-opencode-runtime",
+    }
+    assert json.loads(
+        role_session.service_session_metadata_path.read_text(encoding="utf-8")
+    ) == {
+        "opencode": {
+            "service": "opencode",
+            "provider_session_id": "sess-opencode-runtime",
+        }
+    }
+
+
+def test_prepared_provider_resume_run_session_records_success_metadata_with_latest_runtime_session_id(
+    tmp_path: Path,
+):
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    role_session.save_service_session_id("opencode", "sess-opencode-previous")
+
+    state = prepare_provider_session_state(
+        _provider_request(
+            tmp_path,
+            role=AgentRole.IMPROVE,
+            service=OpenCodeService(),
+            namespace="main",
+        )
+    )
+
+    run_session = state.resumable_provider_run_session()
+    run_session.record_provider_session_id("sess-opencode-latest")
+    run_session.record_successful_run()
+
+    assert role_session.service_session_metadata("opencode") == {
+        "service": "opencode",
+        "provider_session_id": "sess-opencode-latest",
     }
 
 
