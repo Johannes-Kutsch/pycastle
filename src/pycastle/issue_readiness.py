@@ -129,20 +129,20 @@ def classify_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
 
     if is_hitl_exempt:
         kind = IssueReadinessKind.HITL_EXEMPT
-    if isinstance(slice_status, WellFormed) and isinstance(
+    elif isinstance(slice_status, WellFormed) and isinstance(
         body_floor_status, WellFormedBody
     ):
         is_ready = True
         selected_mode = slice_status.mode
         kind = IssueReadinessKind.READY_AFK
-    elif not is_hitl_exempt and isinstance(slice_status, Malformed):
+    elif isinstance(slice_status, Malformed):
         if isinstance(body_floor_status, MalformedBody):
             kind = IssueReadinessKind.MALFORMED
         elif slice_status.found:
             kind = IssueReadinessKind.MULTIPLE_SLICE_MODES
         else:
             kind = IssueReadinessKind.MISSING_SLICE_MODE
-    elif not is_hitl_exempt:
+    else:
         kind = IssueReadinessKind.SHORT_BODY
 
     return IssueReadiness(
