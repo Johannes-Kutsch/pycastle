@@ -84,7 +84,7 @@ def parse_reset_time(
         return _parse_claude_reset(match, local_now, utc_now, hour, minute)
     if syntax_mode is ResetTimeSyntaxMode.TRY_AGAIN_UTC_OPTIONAL_DATE:
         return _parse_optional_date_reset(match, local_now, utc_now, hour, minute)
-    return _parse_required_date_reset(match, hour, minute)
+    return _parse_required_date_reset(match, local_now, hour, minute)
 
 
 def _parse_hour(hour_text: str, ampm_text: str) -> int | None:
@@ -120,24 +120,25 @@ def _parse_claude_reset(
     hour: int,
     minute: int,
 ) -> datetime | None:
+    local_tz = local_now.tzinfo
     month = _parse_month(match.group("month"))
     day = match.group("day")
     if month is not None and day is not None:
         utc_dt = _build_utc_datetime(utc_now.year, month, int(day), hour, minute)
         if utc_dt is None:
             return None
-        local_dt = utc_dt.astimezone()
+        local_dt = utc_dt.astimezone(local_tz)
         if local_dt < local_now - timedelta(days=31):
             rolled = _build_utc_datetime(utc_dt.year + 1, month, int(day), hour, minute)
             if rolled is None:
                 return None
-            return rolled.astimezone()
+            return rolled.astimezone(local_tz)
         return local_dt
 
     utc_dt = _combine_utc_date(utc_now.date(), hour, minute)
     if utc_dt is None:
         return None
-    local_dt = utc_dt.astimezone()
+    local_dt = utc_dt.astimezone(local_tz)
     if local_dt < local_now - timedelta(minutes=2):
         local_dt += timedelta(days=1)
     return local_dt
@@ -150,6 +151,7 @@ def _parse_optional_date_reset(
     hour: int,
     minute: int,
 ) -> datetime | None:
+    local_tz = local_now.tzinfo
     year = match.group("year")
     month = _parse_month(match.group("month"))
     day = match.group("day")
@@ -157,19 +159,19 @@ def _parse_optional_date_reset(
         utc_dt = _build_utc_datetime(int(year), month, int(day), hour, minute)
         if utc_dt is None:
             return None
-        return utc_dt.astimezone()
+        return utc_dt.astimezone(local_tz)
 
     utc_dt = _combine_utc_date(utc_now.date(), hour, minute)
     if utc_dt is None:
         return None
-    local_dt = utc_dt.astimezone()
+    local_dt = utc_dt.astimezone(local_tz)
     if local_dt < local_now - timedelta(minutes=2):
         local_dt += timedelta(days=1)
     return local_dt
 
 
 def _parse_required_date_reset(
-    match: re.Match[str], hour: int, minute: int
+    match: re.Match[str], local_now: datetime, hour: int, minute: int
 ) -> datetime | None:
     year = match.group("year")
     month = _parse_month(match.group("month"))
@@ -180,7 +182,7 @@ def _parse_required_date_reset(
     utc_dt = _build_utc_datetime(int(year), month, int(day), hour, minute)
     if utc_dt is None:
         return None
-    return utc_dt.astimezone()
+    return utc_dt.astimezone(local_now.tzinfo)
 
 
 def _combine_utc_date(base_date: date, hour: int, minute: int) -> datetime | None:
