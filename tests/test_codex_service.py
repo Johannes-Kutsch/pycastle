@@ -17,7 +17,7 @@ from pycastle.services.agent_service import (
     TransientError,
     UsageLimit,
 )
-from pycastle.session import RunKind
+from pycastle.session import RoleSession, RunKind
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -314,6 +314,35 @@ def test_is_resumable_false_when_sessions_has_non_rollout_files(tmp_path):
     sessions_dir.mkdir(parents=True)
     (sessions_dir / "other-file.json").write_text("{}")
     assert CodexService().is_resumable(state_dir) is False
+
+
+def test_has_exact_transcript_session_false_for_recovered_codex_identity(tmp_path):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+    role_session.save_service_session_metadata("codex", "thread-abc")
+
+    provider_run_state = service.resolve_provider_run_state(
+        role_session,
+        provider_state_dir=state_dir,
+        has_resumable_provider_state=True,
+    )
+
+    assert provider_run_state.persist_provider_session_id is True
+    assert (
+        service.has_exact_transcript_session(
+            role_session,
+            provider_run_state=provider_run_state,
+            provider_state_dir=state_dir,
+        )
+        is False
+    )
 
 
 # ── CodexService.run: JSONL parsing ──────────────────────────────────────────
