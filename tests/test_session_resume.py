@@ -516,7 +516,7 @@ def test_exact_transcript_handoff_is_ineligible_without_resumable_provider_state
     )
 
 
-def test_exact_transcript_handoff_is_eligible_for_codex_with_recovered_rollout_identity(
+def test_exact_transcript_handoff_is_eligible_for_codex_with_saved_sidecar_and_matching_rollout(
     worktree,
 ):
     rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
@@ -527,6 +527,7 @@ def test_exact_transcript_handoff_is_eligible_for_codex_with_recovered_rollout_i
         '{"type":"thread.started","thread_id":"thread-abc"}\n',
         encoding="utf-8",
     )
+    rs.save_service_session_id("codex", "thread-abc")
     rs.save_service_session_metadata("codex", "thread-abc")
 
     handoff = rs.exact_transcript_handoff(

@@ -283,6 +283,7 @@ class RoleSession:
 
         is_eligible = (
             provider_identity.run_kind is RunKind.RESUME
+            and not provider_identity.persist_provider_session_id
             and is_exact_resumable_service_session(
                 self,
                 service_name,

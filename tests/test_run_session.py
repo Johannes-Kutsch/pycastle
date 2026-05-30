@@ -450,6 +450,7 @@ def test_run_session_plan_reports_exact_transcript_match_for_codex_with_matching
         '{"type":"thread.started","thread_id":"thread-abc"}\n',
         encoding="utf-8",
     )
+    role_session.save_service_session_id("codex", "thread-abc")
     role_session.save_service_session_metadata("codex", "thread-abc")
 
     plan = RunSessionPlan.for_service(
