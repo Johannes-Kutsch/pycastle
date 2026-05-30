@@ -2657,6 +2657,47 @@ def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
     assert "thread-from-fresh" in captured_cmds[1]
 
 
+def test_agent_runner_codex_fails_with_protocol_error_when_no_thread_id_captured(
+    tmp_path, monkeypatch
+):
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    mock_client = _make_docker_client(
+        [
+            b'{"type":"item.completed","item":{"type":"agent_message",'
+            b'"content":"missing required tag"}}\n',
+            b'{"type":"turn.completed","usage":{}}\n',
+        ]
+    )
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"codex": CodexService()},
+    )
+
+    with pytest.raises(AgentFailedError) as exc_info:
+        asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Codex",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service="codex",
+                )
+            )
+        )
+
+    assert exc_info.value.failure_class == "protocol_error"
+
+
 def test_agent_runner_opencode_reprompt_resumes_with_persisted_session_id(tmp_path):
     captured_cmds: list[str] = []
     mock_client = MagicMock()
