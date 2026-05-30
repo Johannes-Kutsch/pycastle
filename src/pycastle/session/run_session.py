@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
+from ..errors import HardAgentError
 from .resume import RoleSession, RunKind, SESSION_DIR_NAME
 
 if TYPE_CHECKING:
@@ -27,6 +28,18 @@ class RecoveredSessionIdPersistence(Enum):
 class LocalAuthSeedAction:
     source: Path
     destination: Path
+    missing_source_message: str = dataclasses.field(
+        default="Codex authentication missing: run `codex login` on the host.",
+        compare=False,
+    )
+
+    def require_source(self) -> Path:
+        if not self.source.exists():
+            raise HardAgentError(
+                self.missing_source_message,
+                status_code=401,
+            )
+        return self.source
 
     def apply(self) -> None:
         if self.destination.exists():
@@ -75,6 +88,36 @@ class RunSessionPlan:
     auth_seed_action: LocalAuthSeedAction | None = None
     exact_transcript_match: bool = False
 
+    def provider_state_dir_container_path(self, container_workspace: str) -> str | None:
+        if self.host_provider_state_dir is not None:
+            try:
+                host_relpath = self.host_provider_state_dir.relative_to(self.worktree)
+            except ValueError:
+                pass
+            else:
+                return f"{container_workspace}/{host_relpath.as_posix()}/"
+        if self.provider_state_dir_relpath is None:
+            return None
+        return f"{container_workspace}/{self.provider_state_dir_relpath}"
+
+    def prepared_provider_session_id(self) -> str | None:
+        provider_session_id = self.provider_session_id
+        if provider_session_id is None:
+            return None
+        if (
+            self.recovered_session_id_persistence
+            is RecoveredSessionIdPersistence.PERSIST
+        ):
+            self.capture_provider_session_id(provider_session_id)
+        return provider_session_id
+
+    def prepare_host_provider_state_dir(self) -> None:
+        if self.host_provider_state_dir is None:
+            return
+        self.host_provider_state_dir.mkdir(parents=True, exist_ok=True)
+        if self.auth_seed_action is not None:
+            self.auth_seed_action.apply()
+
     def capture_provider_session_id(self, provider_session_id: str) -> None:
         object.__setattr__(self, "provider_session_id", provider_session_id)
         if not _preserves_role_provider_layout(self.service.name):
@@ -116,7 +159,10 @@ class RunSessionPlan:
         run_kind = provider_identity.run_kind
         provider_state_dir_relpath = service.state_dir_relpath(role, namespace)
         host_provider_state_dir = service_state_dir
-        if _preserves_role_provider_layout(service.name):
+        if (
+            _preserves_role_provider_layout(service.name)
+            and provider_state_dir_relpath is not None
+        ):
             provider_state_dir_relpath = _role_provider_state_dir_relpath(
                 role, namespace, service.name
             )

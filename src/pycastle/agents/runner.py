@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-import shutil
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any, Protocol
@@ -33,11 +32,7 @@ from ..errors import (
 )
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session import RoleSession, RunKind
-from ..session.run_session import (
-    AuthSeedingRequirement,
-    RecoveredSessionIdPersistence,
-    RunSessionPlan,
-)
+from ..session.run_session import RunSessionPlan
 from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
@@ -155,15 +150,10 @@ class AgentRunner:
         self,
         mount_path: Path,
         service: AgentService,
-        state_dir: Path | None = None,
+        state_dir_container_path: str | None = None,
     ) -> DockerSession:
         volumes, auto_overlay = build_volume_spec(mount_path)
         container_env = self._container_base_env()
-        state_dir_container_path: str | None = None
-        if state_dir is not None:
-            state_dir_container_path = (
-                f"{_CONTAINER_WORKSPACE}/{state_dir.relative_to(mount_path)}/"
-            )
         container_env.update(service.build_env(state_dir_container_path))
         return DockerSession(
             volumes=volumes,
@@ -184,23 +174,6 @@ class AgentRunner:
             docker_client=self._docker_client,
             auto_overlay=auto_overlay,
         )
-
-    def _host_codex_auth_path(self) -> Path:
-        host_auth = Path.home() / ".codex" / "auth.json"
-        if not host_auth.exists():
-            raise HardAgentError(
-                "Codex authentication missing: run `codex login` on the host.",
-                status_code=401,
-            )
-        return host_auth
-
-    def _seed_codex_auth(self, state_dir: Path, host_auth: Path) -> None:
-        dest = state_dir / "auth.json"
-        if dest.exists():
-            return
-
-        state_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(host_auth, dest)
 
     async def _build_prompt(
         self,
@@ -250,21 +223,10 @@ class AgentRunner:
             service=service,
         )
         run_kind = plan.run_kind
-        state_dir = plan.service_state_dir
-        service_session_id: str | None = plan.provider_session_id
-        if (
-            run_kind == RunKind.RESUME
-            and service_session_id is not None
-            and plan.recovered_session_id_persistence
-            is RecoveredSessionIdPersistence.PERSIST
-        ):
-            plan.capture_provider_session_id(service_session_id)
-        host_codex_auth: Path | None = None
-        if (
-            state_dir is not None
-            and plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
-        ):
-            host_codex_auth = self._host_codex_auth_path()
+        service_session_id: str | None = plan.prepared_provider_session_id()
+        auth_seed_action = plan.auth_seed_action
+        if auth_seed_action is not None:
+            auth_seed_action.require_source()
 
         non_typed_retry_done = False
 
@@ -287,7 +249,11 @@ class AgentRunner:
                 effort=effort,
             ),
         ) as row:
-            session = self._build_session(mount_path, service, state_dir)
+            session = self._build_session(
+                mount_path,
+                service,
+                plan.provider_state_dir_container_path(_CONTAINER_WORKSPACE),
+            )
             runner = ContainerRunner(
                 name,
                 session,
@@ -308,10 +274,7 @@ class AgentRunner:
                 if run_kind == RunKind.FRESH:
                     role_session.start_fresh()
 
-                if state_dir is not None:
-                    state_dir.mkdir(parents=True, exist_ok=True)
-                    if host_codex_auth is not None:
-                        self._seed_codex_auth(state_dir, host_codex_auth)
+                plan.prepare_host_provider_state_dir()
 
                 def remember_thread_id(thread_id: str) -> None:
                     nonlocal service_session_id
