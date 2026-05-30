@@ -4,11 +4,13 @@ import dataclasses
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from ..agents.output_protocol import AgentRole
-from ..session import RunKind
 from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
+
+if TYPE_CHECKING:
+    from ..session.resume import RunKind
 
 
 @dataclasses.dataclass

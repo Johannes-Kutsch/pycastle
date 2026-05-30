@@ -4,9 +4,8 @@ import dataclasses
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..session.service_resume_identity import ServiceResumeIdentityStore
-
 if TYPE_CHECKING:
+    from ..session.service_resume_identity import ServiceResumeIdentityStore
     from ..session.resume import RunKind
 
 
