@@ -11,10 +11,6 @@ from .output_protocol import (
     AgentSuccessOutput,
     FailedOutput,
 )
-from .session_state import (
-    AgentRunSessionStateRequest,
-    prepare_agent_run_session_state,
-)
 from .result import CancellationToken
 from ..config import Config, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
@@ -35,6 +31,10 @@ from ..errors import (
     UsageLimitError,
 )
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
+from ..session._provider_session_state import (
+    ProviderSessionStateRequest,
+    prepare_provider_session_state,
+)
 from ..session import RunKind
 from ..services import GitService
 from ..services.agent_service import AgentService
@@ -217,8 +217,8 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError(reset_time=None, stage_key=_stage_key_for_role(role))
 
-        prepared_session = prepare_agent_run_session_state(
-            AgentRunSessionStateRequest(
+        prepared_session = prepare_provider_session_state(
+            ProviderSessionStateRequest(
                 worktree=mount_path,
                 role=role,
                 session_namespace=request.session_namespace,

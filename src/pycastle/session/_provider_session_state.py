@@ -7,13 +7,16 @@ from collections.abc import Callable
 
 from ..agents.output_protocol import AgentRole
 from ..errors import HardAgentError
-from .agent import (
+from ._provider_session_plan import (
     AuthSeedingRequirement,
+    capture_provider_session_id,
     LocalAuthSeedAction,
-    RunSessionPlan,
-    RunSessionPlanRequest,
-    plan_run_session,
+    ProviderSessionDecision,
+    ProviderSessionPlanRequest,
+    plan_provider_session,
+    record_successful_provider_session_metadata,
 )
+from .provider_session_state import RecoveredSessionIdPersistence
 from .resume import RoleSession, RunKind
 
 if TYPE_CHECKING:
@@ -29,7 +32,7 @@ class ProviderSessionStateRequest:
     role: AgentRole
     session_namespace: str
     service: AgentService
-    run_session_plan: RunSessionPlan | None = None
+    provider_session_decision: ProviderSessionDecision | None = None
 
 
 @dataclasses.dataclass
@@ -40,7 +43,11 @@ class PreparedProviderSessionState:
     service_state_dir_relpath: str | None
     service_state_dir_path: Path | None
     auth_seeding_requirement: AuthSeedingRequirement
-    _plan: RunSessionPlan = dataclasses.field(repr=False)
+    worktree: Path = dataclasses.field(repr=False)
+    role: AgentRole = dataclasses.field(repr=False)
+    session_namespace: str = dataclasses.field(repr=False)
+    service: AgentService = dataclasses.field(repr=False)
+    _provider_session_decision: ProviderSessionDecision = dataclasses.field(repr=False)
     auth_seed_action: LocalAuthSeedAction | None = None
     exact_transcript_match: bool = False
 
@@ -49,7 +56,11 @@ class PreparedProviderSessionState:
         return self.service_state_dir_relpath
 
     def provider_state_dir_container_path(self, container_workspace: str) -> str | None:
-        return self._plan.provider_state_dir_container_path(container_workspace)
+        return self._provider_session_decision.container_state_dir_path(
+            worktree=self.worktree,
+            service_name=self.service.name,
+            container_workspace=container_workspace,
+        )
 
     def initial_provider_run_session(self) -> PreparedProviderRunSession:
         return PreparedProviderRunSession(
@@ -91,14 +102,30 @@ class PreparedProviderSessionState:
                 if auth_path is not None:
                     auth_path.parent.mkdir(parents=True, exist_ok=True)
                     auth_path.write_bytes(preserved_auth)
-        self._plan.prepare_host_provider_state_dir()
+        if self.service_state_dir_path is not None:
+            self.service_state_dir_path.mkdir(parents=True, exist_ok=True)
+        if self.auth_seed_action is not None:
+            self.auth_seed_action.apply()
 
     def record_provider_session_id(self, provider_session_id: str) -> None:
         self.provider_session_id = provider_session_id
-        self._plan.capture_provider_session_id(provider_session_id)
+        capture_provider_session_id(
+            worktree=self.worktree,
+            role=self.role,
+            namespace=self.session_namespace,
+            service_name=self.service.name,
+            service_state_dir=self._provider_session_decision.service_state_dir,
+            provider_session_id=provider_session_id,
+        )
 
     def record_successful_run(self) -> None:
-        self._plan.record_successful_run(self.provider_session_id)
+        record_successful_provider_session_metadata(
+            worktree=self.worktree,
+            role=self.role,
+            namespace=self.session_namespace,
+            service_name=self.service.name,
+            provider_session_id=self.provider_session_id,
+        )
 
     def _preserved_codex_auth_bytes(self) -> bytes | None:
         auth_path = self._codex_auth_path()
@@ -107,18 +134,15 @@ class PreparedProviderSessionState:
         return auth_path.read_bytes()
 
     def _codex_auth_path(self) -> Path | None:
-        service = getattr(self._plan, "service", None)
-        if getattr(service, "name", None) != "codex":
+        if self.service.name != "codex":
             return None
-        host_provider_state_dir = getattr(self._plan, "host_provider_state_dir", None)
-        if host_provider_state_dir is None:
+        if self.service_state_dir_path is None:
             return None
-        return host_provider_state_dir / "auth.json"
+        return self.service_state_dir_path / "auth.json"
 
     def _resume_provider_session_state(self):
-        service = self._plan.service
-        service_state = self.role_session.service_session_state(service)
-        return service.provider_session_state(
+        service_state = self.role_session.service_session_state(self.service)
+        return self.service.provider_session_state(
             ServiceProviderSessionStateRequest(
                 role_session=self.role_session,
                 provider_state_dir=service_state.state_dir,
@@ -157,15 +181,15 @@ class PreparedProviderRunSession:
 def prepare_provider_session_state(
     request: ProviderSessionStateRequest,
 ) -> PreparedProviderSessionState:
-    plan = request.run_session_plan or plan_run_session(
-        RunSessionPlanRequest(
-            role=request.role,
+    decision = request.provider_session_decision or plan_provider_session(
+        ProviderSessionPlanRequest(
             worktree=request.worktree,
+            role=request.role,
             namespace=request.session_namespace,
             service=request.service,
         )
     )
-    auth_seed_action = plan.auth_seed_action
+    auth_seed_action = decision.auth_seed_action
     if auth_seed_action is not None:
         auth_seed_action.require_source()
     role_session = RoleSession(
@@ -173,17 +197,34 @@ def prepare_provider_session_state(
         request.role,
         request.session_namespace,
     )
-    provider_session_id = plan.prepared_provider_session_id()
+    provider_session_id = decision.provider_session_id
+    if (
+        provider_session_id is not None
+        and decision.recovered_session_id_persistence
+        is RecoveredSessionIdPersistence.PERSIST
+    ):
+        capture_provider_session_id(
+            worktree=request.worktree,
+            role=request.role,
+            namespace=request.session_namespace,
+            service_name=request.service.name,
+            service_state_dir=decision.service_state_dir,
+            provider_session_id=provider_session_id,
+        )
     return PreparedProviderSessionState(
         role_session=role_session,
-        run_kind=plan.run_kind,
+        run_kind=decision.run_kind,
         provider_session_id=provider_session_id,
-        service_state_dir_relpath=plan.provider_state_dir_relpath,
-        service_state_dir_path=plan.host_provider_state_dir,
-        auth_seeding_requirement=plan.auth_seeding_requirement,
-        _plan=plan,
+        service_state_dir_relpath=decision.state_dir_relpath,
+        service_state_dir_path=decision.state_dir_path,
+        auth_seeding_requirement=decision.auth_seeding_requirement,
+        worktree=request.worktree,
+        role=request.role,
+        session_namespace=request.session_namespace,
+        service=request.service,
+        _provider_session_decision=decision,
         auth_seed_action=auth_seed_action,
-        exact_transcript_match=plan.exact_transcript_match,
+        exact_transcript_match=decision.exact_transcript_match,
     )
 
 
