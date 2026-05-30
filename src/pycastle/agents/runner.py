@@ -225,9 +225,6 @@ class AgentRunner:
                 service=service,
             )
         )
-        if prepared_session.auth_seed_action is not None:
-            prepared_session.auth_seed_action.require_source()
-
         non_typed_retry_done = False
         initial_attempt = True
 

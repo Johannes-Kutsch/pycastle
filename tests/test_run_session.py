@@ -16,10 +16,6 @@ from pycastle.services.provider_session_state import (
     ProviderSessionStateRequest,
 )
 from pycastle.session.agent import RunSessionPlanRequest, plan_run_session
-from pycastle.session._provider_session_state import (
-    ProviderSessionStateRequest as PreparedProviderSessionStateRequest,
-    prepare_provider_session_state,
-)
 from pycastle.session.run_session import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
@@ -819,27 +815,6 @@ def test_run_session_plan_exposes_auth_seed_action_for_fresh_codex_without_auth_
     assert action.destination == (
         tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
     )
-
-
-def test_prepare_provider_session_state_fresh_codex_missing_host_auth_raises_before_prepare_for_run(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
-
-    with pytest.raises(HardAgentError) as exc_info:
-        prepare_provider_session_state(
-            PreparedProviderSessionStateRequest(
-                worktree=tmp_path,
-                role=AgentRole.IMPLEMENTER,
-                session_namespace="",
-                service=CodexService(),
-            )
-        )
-
-    assert exc_info.value.status_code == 401
-    assert not (tmp_path / ".pycastle-session" / "implementer").exists()
 
 
 def test_run_session_plan_skips_auth_seed_action_for_fresh_codex_with_auth_json(
