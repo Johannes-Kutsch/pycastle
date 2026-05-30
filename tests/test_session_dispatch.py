@@ -169,6 +169,100 @@ def test_prepare_agent_session_resume_codex_with_provider_auth_does_not_require_
     assert session.provider_session_id == "thread-xyz"
 
 
+def test_prepare_agent_session_prefers_persisted_codex_thread_id_for_resume(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"item.completed","item":{"type":"agent_message","text":"hi"}}\n',
+        encoding="utf-8",
+    )
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+    RoleSession(tmp_path, AgentRole.IMPLEMENTER).save_service_session_id(
+        "codex",
+        "thread-from-sidecar",
+    )
+
+    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
+
+    assert session.run_kind is RunKind.RESUME
+    assert session.provider_session_id == "thread-from-sidecar"
+
+
+def test_prepare_agent_session_codex_resume_does_not_use_role_session_uuid(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"item.completed","item":{"type":"agent_message","text":"hi"}}\n',
+        encoding="utf-8",
+    )
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+    RoleSession(tmp_path, AgentRole.IMPLEMENTER).save_service_session_id(
+        "codex",
+        "thread-from-sidecar",
+    )
+    monkeypatch.setattr(
+        RoleSession,
+        "session_uuid",
+        lambda self: (_ for _ in ()).throw(AssertionError("session_uuid called")),
+    )
+
+    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
+
+    assert session.run_kind is RunKind.RESUME
+    assert session.provider_session_id == "thread-from-sidecar"
+
+
+def test_prepare_agent_session_falls_back_to_fresh_for_codex_without_persisted_or_recoverable_thread_id(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"item.completed","item":{"type":"agent_message","text":"hi"}}\n',
+        encoding="utf-8",
+    )
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+
+    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
+
+    assert session.run_kind is RunKind.FRESH
+    assert session.provider_session_id is None
+
+
+def test_prepare_agent_session_start_fresh_preserves_existing_codex_auth_json(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"item.completed","item":{"type":"agent_message","text":"hi"}}\n',
+        encoding="utf-8",
+    )
+    auth_path = state_dir / "auth.json"
+    auth_path.write_text(
+        '{"mode":"oauth","origin":"provider"}',
+        encoding="utf-8",
+    )
+
+    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
+    session.start_fresh()
+
+    assert session.run_kind is RunKind.FRESH
+    assert session.provider_session_id is None
+    assert auth_path.read_text(encoding="utf-8") == (
+        '{"mode":"oauth","origin":"provider"}'
+    )
+
+
 def test_prepare_agent_session_namespaced_role_uses_namespace_in_session_id(
     tmp_path: Path,
 ):
