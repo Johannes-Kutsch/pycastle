@@ -33,30 +33,13 @@ def _parse_parent_git(git_file: Path) -> Path | None:
     return Path(gitdir[:idx] + ".git")
 
 
-def build_volume_spec(
-    mount_path: Path,
-    worktree_host_path: Path | None = None,
-    gitdir_overlay: Path | None = None,
-) -> tuple[dict, Path | None]:
+def build_volume_spec(mount_path: Path) -> tuple[dict, Path | None]:
     """Compute the Docker volume specification from host paths.
 
     Returns (volumes_dict, auto_overlay) where auto_overlay is a host path
     that DockerSession.__exit__ must delete, or None if no overlay was created.
     """
     repo_path = str(mount_path.resolve()).replace("\\", "/")
-
-    if worktree_host_path is not None:
-        wt_path = str(worktree_host_path.resolve()).replace("\\", "/")
-        parent_git_path = str((mount_path / ".git").resolve()).replace("\\", "/")
-        volumes: dict = {
-            wt_path: {"bind": "/home/agent/workspace", "mode": "rw"},
-            repo_path: {"bind": "/home/agent/repo", "mode": "ro"},
-            parent_git_path: {"bind": CONTAINER_PARENT_GIT, "mode": "rw"},
-        }
-        if gitdir_overlay is not None:
-            overlay_path = str(gitdir_overlay.resolve()).replace("\\", "/")
-            volumes[overlay_path] = {"bind": "/home/agent/workspace/.git", "mode": "ro"}
-        return volumes, None
 
     git_file = mount_path / ".git"
     if git_file.is_file():
