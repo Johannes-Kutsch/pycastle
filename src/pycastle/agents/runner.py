@@ -273,7 +273,7 @@ class AgentRunner:
                     raise SetupPhaseError(role.value, str(exc)) from exc
 
                 if run_kind == RunKind.FRESH:
-                    prepared_session.role_session.start_fresh()
+                    prepared_session.start_fresh()
 
                 prepared_session.prepare_host_provider_state_dir()
 

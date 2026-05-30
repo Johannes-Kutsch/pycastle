@@ -29,12 +29,38 @@ class PreparedAgentSession:
     auth_seed_action: LocalAuthSeedAction | None = None
     exact_transcript_match: bool = False
 
+    def start_fresh(self) -> None:
+        preserved_auth = self._preserved_codex_auth_bytes()
+        self.role_session.start_fresh()
+        if preserved_auth is None:
+            return
+        auth_path = self._codex_auth_path()
+        if auth_path is None:
+            return
+        auth_path.parent.mkdir(parents=True, exist_ok=True)
+        auth_path.write_bytes(preserved_auth)
+
     def prepare_host_provider_state_dir(self) -> None:
         self._plan.prepare_host_provider_state_dir()
 
     def remember_provider_session_id(self, provider_session_id: str) -> None:
         self.provider_session_id = provider_session_id
         self._plan.capture_provider_session_id(provider_session_id)
+
+    def _preserved_codex_auth_bytes(self) -> bytes | None:
+        auth_path = self._codex_auth_path()
+        if auth_path is None or not auth_path.is_file():
+            return None
+        return auth_path.read_bytes()
+
+    def _codex_auth_path(self) -> Path | None:
+        service = getattr(self._plan, "service", None)
+        if getattr(service, "name", None) != "codex":
+            return None
+        host_provider_state_dir = getattr(self._plan, "host_provider_state_dir", None)
+        if host_provider_state_dir is None:
+            return None
+        return host_provider_state_dir / "auth.json"
 
 
 def prepare_agent_session(request: SessionDispatchRequest) -> PreparedAgentSession:

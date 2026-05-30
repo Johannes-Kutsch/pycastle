@@ -1073,6 +1073,34 @@ def test_local_auth_seed_action_does_not_overwrite_existing_provider_auth(
     )
 
 
+def test_local_auth_seed_action_copies_only_host_auth_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    home = tmp_path / "home"
+    host_codex_dir = home / ".codex"
+    host_codex_dir.mkdir(parents=True)
+    host_auth = host_codex_dir / "auth.json"
+    host_auth.write_text('{"mode":"oauth","origin":"host"}', encoding="utf-8")
+    (host_codex_dir / "config.toml").write_text("model = 'gpt-5.5'\n", encoding="utf-8")
+    host_sessions_dir = host_codex_dir / "sessions"
+    host_sessions_dir.mkdir()
+    (host_sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"host-thread"}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    destination = tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
+    LocalAuthSeedAction(source=host_auth, destination=destination).apply()
+
+    assert destination.read_text(encoding="utf-8") == (
+        '{"mode":"oauth","origin":"host"}'
+    )
+    provider_state_dir = destination.parent
+    assert not (provider_state_dir / "config.toml").exists()
+    assert not (provider_state_dir / "sessions").exists()
+
+
 def test_local_auth_seed_action_require_source_raises_hard_agent_error_when_missing(
     tmp_path: Path,
 ) -> None:
