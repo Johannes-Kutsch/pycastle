@@ -20,9 +20,9 @@ from ..services import (
     UnrelatedHistoriesError,
 )
 from ..session import RoleSession
-from ..agents.classifier import WellFormed, classify_slice, slice_labels
+from ..issue_readiness import WellFormed, WellFormedBody, classify_issue_readiness
 from ..display.status_display import StatusDisplay
-from ._utils import _wait_for_clean_working_tree, is_well_formed_body
+from ._utils import _wait_for_clean_working_tree
 from .. import _time as _time_module
 
 
@@ -64,16 +64,20 @@ def validate_issue_report(
 ) -> str:
     if cfg.hitl_label in issue_output.labels:
         return "hitl"
-    result = classify_slice({"labels": list(issue_output.labels)}, cfg)
-    if not isinstance(result, WellFormed):
-        expected = slice_labels(cfg)
+    readiness = classify_issue_readiness({"labels": list(issue_output.labels)}, cfg)
+    if not isinstance(readiness.slice_status, WellFormed):
+        expected = readiness.slice_status.configured
         raise RuntimeError(
             f"{caller} filed issue #{issue_output.number} on the AFK branch "
             f"without exactly one slice-mode label — got labels={issue_output.labels!r}. "
             f"Expected exactly one of {sorted(expected)!r}."
         )
     filed_issue = github_svc.get_issue(issue_output.number)
-    if not is_well_formed_body(filed_issue):
+    filed_readiness = classify_issue_readiness(
+        {**filed_issue, "labels": list(issue_output.labels)},
+        cfg,
+    )
+    if not isinstance(filed_readiness.body_floor_status, WellFormedBody):
         raise RuntimeError(
             f"{caller} filed issue #{issue_output.number} whose body is "
             f"below the minimum length floor — body too short to be valid."
