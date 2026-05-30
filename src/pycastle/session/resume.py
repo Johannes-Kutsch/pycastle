@@ -143,7 +143,8 @@ class RoleSession:
         derived_provider_session_id: str | None = None,
     ) -> ProviderIdentity:
         if service_name == "claude":
-            claude_session_id = derived_provider_session_id or self.session_uuid()
+            del provider_state_dir, derived_provider_session_id
+            claude_session_id = self.session_uuid()
             if has_resumable_provider_state:
                 return ProviderIdentity(
                     ProviderIdentityKind.RESUME,
@@ -223,24 +224,11 @@ class RoleSession:
         state_dir: Path | None,
         has_resumable_provider_state: bool,
     ) -> ExactTranscriptHandoff:
-        if service_name == "claude":
-            provider_identity = ProviderIdentity(
-                kind=(
-                    ProviderIdentityKind.RESUME
-                    if has_resumable_provider_state
-                    else ProviderIdentityKind.FRESH
-                ),
-                run_kind=(
-                    RunKind.RESUME if has_resumable_provider_state else RunKind.FRESH
-                ),
-                provider_session_id=self.session_uuid(),
-            )
-        else:
-            provider_identity = self.provider_identity(
-                service_name,
-                has_resumable_provider_state=has_resumable_provider_state,
-                provider_state_dir=state_dir,
-            )
+        provider_identity = self.provider_identity(
+            service_name,
+            has_resumable_provider_state=has_resumable_provider_state,
+            provider_state_dir=state_dir,
+        )
 
         is_eligible = (
             provider_identity.run_kind is RunKind.RESUME

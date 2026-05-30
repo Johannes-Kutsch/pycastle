@@ -15,7 +15,6 @@ from ._provider_session_sidecars import (
 from .resume import (
     RoleSession,
     RunKind,
-    ServiceSessionState,
     _normalize_state_dir_relpath,
     _role_provider_state_dir_relpath,
 )
@@ -204,15 +203,6 @@ def plan_provider_session(
         )
         host_state_dir = request.worktree / state_dir_relpath.rstrip("/")
 
-    if request.service.name == "claude":
-        return _plan_claude_provider_session(
-            role_session=role_session,
-            service=request.service,
-            service_state=service_state,
-            state_dir_relpath=state_dir_relpath,
-            host_state_dir=host_state_dir,
-        )
-
     provider_run_state = request.service.resolve_provider_run_state(
         role_session,
         provider_state_dir=service_state.state_dir,
@@ -245,38 +235,6 @@ def plan_provider_session(
             )
         ),
         persist_provider_session_id=provider_run_state.persist_provider_session_id,
-    )
-
-
-def _plan_claude_provider_session(
-    *,
-    role_session: RoleSession,
-    service: AgentService,
-    service_state: ServiceSessionState,
-    state_dir_relpath: str | None,
-    host_state_dir: Path | None,
-) -> PlannedProviderSession:
-    provider_run_state = service.resolve_provider_run_state(
-        role_session,
-        provider_state_dir=host_state_dir,
-        has_resumable_provider_state=service_state.has_resumable_provider_state,
-    )
-    return PlannedProviderSession(
-        plan=ProviderSessionPlan(
-            state_dir_relpath=state_dir_relpath,
-            host_state_dir=host_state_dir,
-            run_kind=provider_run_state.run_kind,
-            provider_session_id=provider_run_state.provider_session_id,
-        ),
-        service_state_dir=service_state.state_dir,
-        exact_transcript_match=(
-            provider_run_state.run_kind is RunKind.RESUME
-            and service.has_exact_transcript_session(
-                role_session,
-                provider_run_state=provider_run_state,
-                provider_state_dir=host_state_dir,
-            )
-        ),
     )
 
 
