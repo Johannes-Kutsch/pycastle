@@ -117,12 +117,6 @@ IterationOutcome: TypeAlias = (
 )
 
 
-def _is_in_flight(issue: dict, deps: Deps) -> bool:
-    return bool(
-        select_in_flight_issues([issue], repo_root=deps.repo_root, git_svc=deps.git_svc)
-    )
-
-
 async def _run_implement_and_merge(
     issues: list[dict],
     deps: Deps,
@@ -211,7 +205,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
         all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
 
-        in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
+        in_flight = select_in_flight_issues(
+            open_issues, repo_root=deps.repo_root, git_svc=deps.git_svc
+        )
 
         # ── (Improve) — runs when idle: no open issues, no in-flight ────────
         if not open_issues and not in_flight:
@@ -236,7 +232,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
                 if not open_issues:
                     return Continue()
-                in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
+                in_flight = select_in_flight_issues(
+                    open_issues, repo_root=deps.repo_root, git_svc=deps.git_svc
+                )
             else:
                 cap_hit = (
                     deps.cfg.improve_max is not None
