@@ -90,6 +90,26 @@ def test_recover_state_dir_provider_session_id_returns_none_for_ambiguous_codex_
     assert recover_state_dir_provider_session_id(state_dir, "codex") is None
 
 
+def test_recover_state_dir_provider_session_id_returns_none_for_distinct_thread_ids_in_one_rollout(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / "codex"
+    rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    rollout_dir.mkdir(parents=True)
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"thread-abc"}',
+                '{"type":"thread.started","thread_id":"thread-def"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert recover_state_dir_provider_session_id(state_dir, "codex") is None
+
+
 def test_recover_state_dir_provider_session_id_ignores_malformed_and_unreadable_codex_rollouts(
     tmp_path: Path,
 ) -> None:
@@ -112,3 +132,18 @@ def test_recover_state_dir_provider_session_id_ignores_malformed_and_unreadable_
     (rollout_dir / "rollout-002.jsonl").mkdir()
 
     assert recover_state_dir_provider_session_id(state_dir, "codex") is None
+
+
+def test_recover_state_dir_provider_session_id_ignores_unreadable_codex_rollouts_without_losing_valid_identity(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / "codex"
+    rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    rollout_dir.mkdir(parents=True)
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+    (rollout_dir / "rollout-002.jsonl").mkdir()
+
+    assert recover_state_dir_provider_session_id(state_dir, "codex") == "thread-abc"
