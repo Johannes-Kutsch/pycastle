@@ -2451,12 +2451,16 @@ def test_agent_runner_records_successful_run_in_plan_for_claude(tmp_path, monkey
         auth_seed_action = None
         exact_transcript_match = False
         provider_state_dir_relpath = ".pycastle-session/implementer/claude/"
+        service = ClaudeService()
 
         def prepared_provider_session_id(self) -> str | None:
             return "planned-session-id"
 
         def provider_state_dir_container_path(self, container_workspace: str) -> str:
             return f"{container_workspace}/.pycastle-session/implementer/claude/"
+
+        def record_successful_run(self, provider_session_id: str | None = None) -> None:
+            recorded_session_ids.append(provider_session_id)
 
         def prepare_host_provider_state_dir(self) -> None:
             return None
@@ -2465,9 +2469,6 @@ def test_agent_runner_records_successful_run_in_plan_for_claude(tmp_path, monkey
             raise AssertionError(
                 "claude run should not capture a new provider session id"
             )
-
-        def record_successful_run(self, provider_session_id: str | None = None) -> None:
-            recorded_session_ids.append(provider_session_id)
 
     runner = AgentRunner(
         {},

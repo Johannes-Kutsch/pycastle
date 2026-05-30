@@ -15,7 +15,6 @@ from .result import CancellationToken
 from .session_dispatch import (
     SessionDispatchRequest,
     prepare_agent_session,
-    record_successful_provider_session_metadata,
 )
 from ..config import Config, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
@@ -224,7 +223,6 @@ class AgentRunner:
                 role=role,
                 session_namespace=request.session_namespace,
                 service=service,
-                container_workspace=_CONTAINER_WORKSPACE,
             )
         )
         run_kind = prepared_session.run_kind
@@ -272,13 +270,7 @@ class AgentRunner:
                 except DockerError as exc:
                     raise SetupPhaseError(role.value, str(exc)) from exc
 
-                if run_kind == RunKind.FRESH:
-                    prepared_session.start_fresh()
-
-                prepared_session.prepare_host_provider_state_dir()
-
-                def remember_thread_id(thread_id: str) -> None:
-                    prepared_session.remember_provider_session_id(thread_id)
+                prepared_session.prepare_for_run()
 
                 loop = asyncio.get_running_loop()
 
@@ -305,15 +297,13 @@ class AgentRunner:
                                     work_prompt,
                                     run_kind=work_run_kind,
                                     session_uuid=prepared_session.provider_session_id,
-                                    on_thread_id=remember_thread_id,
+                                    on_thread_id=prepared_session.on_provider_session_id,
                                 )
                                 if (
                                     not isinstance(output, FailedOutput)
                                     and prepared_session.provider_session_id is not None
                                 ):
-                                    record_successful_provider_session_metadata(
-                                        prepared_session
-                                    )
+                                    prepared_session.success_recorder()
                                 if isinstance(output, FailedOutput):
                                     row.close("failed", shutdown_style="error")
                                 return output

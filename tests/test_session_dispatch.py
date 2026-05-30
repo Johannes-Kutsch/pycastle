@@ -51,14 +51,12 @@ def _request(
     role: AgentRole = AgentRole.IMPLEMENTER,
     service=None,
     namespace: str = "",
-    container_workspace: str = "/home/agent/workspace",
 ) -> SessionDispatchRequest:
     return SessionDispatchRequest(
         mount_path=tmp_path,
         role=role,
         session_namespace=namespace,
         service=service or ClaudeService(),
-        container_workspace=container_workspace,
     )
 
 
@@ -373,7 +371,7 @@ def test_prepare_agent_session_start_fresh_preserves_existing_codex_auth_json(
     )
 
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
-    session.start_fresh()
+    session.prepare_for_run()
 
     assert session.run_kind is RunKind.FRESH
     assert session.provider_session_id is None
@@ -404,14 +402,13 @@ def test_prepare_agent_session_improve_main_uses_namespaced_provider_state_dir_f
             role=AgentRole.IMPROVE,
             namespace="main",
             service=cast(AgentService, _LegacyStateDirService()),
-            container_workspace="/workspace",
         )
     )
 
     assert session.provider_state_dir_relpath == ".pycastle-session/improve/main/fake/"
     assert (
         session.provider_state_dir_container_path
-        == "/workspace/.pycastle-session/improve/main/fake/"
+        == "/home/agent/workspace/.pycastle-session/improve/main/fake/"
     )
 
 
@@ -443,7 +440,6 @@ def test_prepare_agent_session_improve_issues_uses_namespaced_provider_state_dir
             role=AgentRole.IMPROVE,
             namespace="issues",
             service=cast(AgentService, _LegacyStateDirService()),
-            container_workspace="/workspace",
         )
     )
 
@@ -452,7 +448,7 @@ def test_prepare_agent_session_improve_issues_uses_namespaced_provider_state_dir
     )
     assert (
         session.provider_state_dir_container_path
-        == "/workspace/.pycastle-session/improve/issues/fake/"
+        == "/home/agent/workspace/.pycastle-session/improve/issues/fake/"
     )
 
 
@@ -479,12 +475,12 @@ def test_prepare_agent_session_empty_namespace_preserves_legacy_path_and_uuid_fo
 
 
 def test_prepare_agent_session_computes_container_path_from_workspace(tmp_path: Path):
-    session = prepare_agent_session(
-        _request(tmp_path, service=ClaudeService(), container_workspace="/workspace")
-    )
+    session = prepare_agent_session(_request(tmp_path, service=ClaudeService()))
 
     assert session.provider_state_dir_container_path is not None
-    assert session.provider_state_dir_container_path.startswith("/workspace/")
+    assert session.provider_state_dir_container_path.startswith(
+        "/home/agent/workspace/"
+    )
 
 
 def test_prepare_agent_session_no_state_dir_service_yields_none_container_path(
@@ -531,8 +527,7 @@ def test_prepare_agent_session_fresh_opencode_uses_provider_state_dir_without_wr
         tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
     )
 
-    session.start_fresh()
-    session.prepare_host_provider_state_dir()
+    session.prepare_for_run()
 
     assert session.run_kind is RunKind.FRESH
     assert session.provider_session_id is None
@@ -590,7 +585,7 @@ def test_remember_provider_session_id_updates_session_id(tmp_path: Path):
     _seed_codex_auth(tmp_path)
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
 
-    session.remember_provider_session_id("thread-new-id")
+    session.on_provider_session_id("thread-new-id")
 
     assert session.provider_session_id == "thread-new-id"
 
@@ -599,7 +594,7 @@ def test_remember_provider_session_id_persists_sidecar_for_codex(tmp_path: Path)
     _seed_codex_auth(tmp_path)
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
 
-    session.remember_provider_session_id("thread-sidecar-id")
+    session.on_provider_session_id("thread-sidecar-id")
 
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     assert role_session.service_session_id("codex") == "thread-sidecar-id"
@@ -625,7 +620,7 @@ def test_prepare_agent_session_does_not_write_metadata_before_prepared_success_r
 
     assert role_session.service_session_metadata_path.exists() is False
 
-    session.record_successful_provider_session_metadata()
+    session.success_recorder()
 
     assert role_session.service_session_metadata("claude") == {
         "service": "claude",
@@ -644,7 +639,7 @@ def test_prepared_success_recorder_without_provider_session_id_leaves_metadata_u
 
     assert session.provider_session_id is None
 
-    session.record_successful_provider_session_metadata()
+    session.success_recorder()
 
     assert role_session.service_session_metadata("claude") == {
         "service": "claude",
@@ -663,9 +658,9 @@ def test_prepared_success_recorder_preserves_metadata_for_other_services(
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     role_session.save_service_session_metadata("claude", "thread-claude")
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
-    session.remember_provider_session_id("thread-codex")
+    session.on_provider_session_id("thread-codex")
 
-    session.record_successful_provider_session_metadata()
+    session.success_recorder()
 
     assert role_session.service_session_metadata("claude") == {
         "service": "claude",
@@ -682,7 +677,7 @@ def test_record_successful_provider_session_metadata_uses_updated_session_id(
 ):
     _seed_codex_auth(tmp_path)
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
-    session.remember_provider_session_id("thread-runtime-id")
+    session.on_provider_session_id("thread-runtime-id")
 
     record_successful_provider_session_metadata(session)
 
@@ -697,6 +692,6 @@ def test_prepare_host_provider_state_dir_creates_directory(tmp_path: Path):
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
     expected_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
 
-    session.prepare_host_provider_state_dir()
+    session.prepare_for_run()
 
     assert expected_dir.is_dir()
