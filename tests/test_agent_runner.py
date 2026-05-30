@@ -2449,6 +2449,7 @@ def test_agent_runner_records_successful_run_in_plan_for_claude(tmp_path, monkey
     class _PlannedSession:
         run_kind = RunKind.FRESH
         auth_seed_action = None
+        exact_transcript_match = False
 
         def prepared_provider_session_id(self) -> str | None:
             return "planned-session-id"

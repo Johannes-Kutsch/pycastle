@@ -59,7 +59,7 @@ def prepare_agent_session(request: SessionDispatchRequest) -> PreparedAgentSessi
             request.container_workspace
         ),
         auth_seed_action=auth_seed_action,
-        exact_transcript_match=getattr(plan, "exact_transcript_match", False),
+        exact_transcript_match=plan.exact_transcript_match,
         _plan=plan,
     )
 
