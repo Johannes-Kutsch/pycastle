@@ -14,10 +14,6 @@ from ..prompts.pipeline import PromptTemplate, Scope, build_issue_scope_args
 from ..services import GitService, ServiceRegistry
 from ..services.github_service import GithubService
 from ..session import RoleSession
-from ..session._provider_session_state import (
-    ProviderSessionStateRequest,
-    prepare_provider_session_state,
-)
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import managed_worktree
 from ._rows import status_row
@@ -252,27 +248,6 @@ def _build_issues_scope_args(
     )
 
 
-def _has_exact_phase2_transcript_handoff(
-    *,
-    sandbox_path: Path,
-    registry: ServiceRegistry | None,
-    service_name: str,
-) -> bool:
-    if registry is None or not service_name:
-        return False
-    service = registry[service_name]
-    if service is None:
-        return False
-    return prepare_provider_session_state(
-        ProviderSessionStateRequest(
-            worktree=sandbox_path,
-            role=AgentRole.IMPROVE,
-            session_namespace="main",
-            service=service,
-        )
-    ).exact_transcript_match
-
-
 async def improve_phase(
     deps: _ImproveDeps,
 ) -> ImproveNoCandidate | ImproveContinue | PreflightHITL | PreflightAFK:
@@ -303,6 +278,7 @@ async def improve_phase(
             deps=deps,
         ) as sandbox_path:
             role_session = RoleSession(sandbox_path, AgentRole.IMPROVE)
+            main_role_session = RoleSession(sandbox_path, AgentRole.IMPROVE, "main")
             short_sid = role_session.session_uuid().split("-")[0]
             role_session_dir = role_session.path
             driver = ImprovePhaseDriver(
@@ -314,10 +290,9 @@ async def improve_phase(
                 step is not None
                 and step.prompt_key == "02-prd.md"
                 and step.send_role_prompt_on_resume
-                and not _has_exact_phase2_transcript_handoff(
-                    sandbox_path=sandbox_path,
-                    registry=deps.service_registry,
-                    service_name=deps.cfg.improve_override.service,
+                and not main_role_session.has_exact_transcript_handoff_for_selected_service(
+                    deps.service_registry,
+                    deps.cfg.improve_override.service,
                 )
             ):
                 deps.status_display.print(
