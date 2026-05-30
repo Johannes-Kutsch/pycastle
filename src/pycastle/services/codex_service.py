@@ -5,7 +5,7 @@ import json
 import logging
 import re
 from collections.abc import Callable, Iterable, Iterator
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -23,45 +23,11 @@ from .agent_service import (
 )
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
+from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time
 
 _log = logging.getLogger(__name__)
 
 _USAGE_LIMIT_SUBSTRING = "You've hit your usage limit"
-
-# Matches "try again at 3:30 PM" (same-day) or "try again at March 15th, 2026 3:30 PM" (cross-day)
-_RESET_TIME_RE = re.compile(
-    r"(?:or\s+)?try again at\s+"
-    r"(?:(?P<month>[A-Za-z]+)\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?,\s+(?P<year>\d{4})\s+)?"
-    r"(?P<hour>\d{1,2}):(?P<minute>\d{2})\s*(?P<ampm>AM|PM)",
-    re.IGNORECASE,
-)
-
-_MONTHS = {
-    "january": 1,
-    "jan": 1,
-    "february": 2,
-    "feb": 2,
-    "march": 3,
-    "mar": 3,
-    "april": 4,
-    "apr": 4,
-    "may": 5,
-    "june": 6,
-    "jun": 6,
-    "july": 7,
-    "jul": 7,
-    "august": 8,
-    "aug": 8,
-    "september": 9,
-    "sep": 9,
-    "sept": 9,
-    "october": 10,
-    "oct": 10,
-    "november": 11,
-    "nov": 11,
-    "december": 12,
-    "dec": 12,
-}
 
 _UNAUTHORIZED_RE = re.compile(
     r"\b(?:401|unauthorized|missing bearer|basic authentication)\b",
@@ -86,60 +52,13 @@ def _classify_error_message(message: str) -> HardError | TransientError | None:
     return None
 
 
-def _parse_reset_time(message: str) -> datetime | None:
-    """Extract a reset datetime from a Codex usage-limit error message.
-
-    Codex reports reset times in UTC.  We parse as UTC and convert to local
-    so the displayed wake time matches the user's clock.
-    """
-    match = _RESET_TIME_RE.search(message)
-    if not match:
-        return None
-
-    hour = int(match.group("hour"))
-    minute = int(match.group("minute"))
-    ampm = match.group("ampm").upper()
-    if ampm == "PM" and hour != 12:
-        hour += 12
-    elif ampm == "AM" and hour == 12:
-        hour = 0
-
-    year_str = match.group("year")
-    month_str = match.group("month")
-    day_str = match.group("day")
-
-    now_local = _time_module.now_local()
-    now_utc = now_local.astimezone(timezone.utc)
-
-    if year_str and month_str and day_str:
-        month = _MONTHS.get(month_str.lower())
-        if month is None:
-            return None
-        try:
-            utc_dt = datetime(
-                int(year_str),
-                month,
-                int(day_str),
-                hour,
-                minute,
-                tzinfo=timezone.utc,
-            )
-        except ValueError:
-            return None
-        return utc_dt.astimezone()
-
-    utc_dt = now_utc.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    local_dt = utc_dt.astimezone()
-    if local_dt < now_local - timedelta(minutes=2):
-        local_dt += timedelta(days=1)
-    return local_dt
-
-
 def _extract_usage_limit(message: str) -> UsageLimit | None:
     """Return a UsageLimit if message contains the usage-limit substring."""
     if _USAGE_LIMIT_SUBSTRING not in message:
         return None
-    reset_time = _parse_reset_time(message)
+    reset_time = parse_reset_time(
+        message, ResetTimeSyntaxMode.TRY_AGAIN_UTC_OPTIONAL_DATE
+    )
     raw = message if reset_time is None else None
     return UsageLimit(reset_time=reset_time, raw_message=raw)
 
