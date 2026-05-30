@@ -7,6 +7,7 @@ from typing import Callable
 from .output_protocol import AgentRole
 from ..session import RoleSession, RunKind
 from ..session._provider_session_state import (
+    PreparedProviderRunSession,
     PreparedProviderSessionState,
     ProviderSessionStateRequest,
     prepare_provider_session_state,
@@ -41,6 +42,12 @@ class PreparedAgentSession:
     @property
     def provider_state_dir_relpath(self) -> str | None:
         return self.service_state_dir_relpath
+
+    def initial_provider_run_session(self) -> PreparedProviderRunSession:
+        return self._state.initial_provider_run_session()
+
+    def resumable_provider_run_session(self) -> PreparedProviderRunSession:
+        return self._state.resumable_provider_run_session()
 
 
 def prepare_agent_session(request: SessionDispatchRequest) -> PreparedAgentSession:

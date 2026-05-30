@@ -227,12 +227,12 @@ class AgentRunner:
                 container_workspace=_CONTAINER_WORKSPACE,
             )
         )
-        run_kind = prepared_session.run_kind
         provider_state_dir_container_path = (
             prepared_session.provider_state_dir_container_path
         )
 
         non_typed_retry_done = False
+        initial_attempt = True
 
         color_key: int | None = None
         if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
@@ -285,23 +285,28 @@ class AgentRunner:
                 retries_left = self._cfg.timeout_retries
                 while True:
                     try:
+                        provider_run_session = (
+                            prepared_session.initial_provider_run_session()
+                            if initial_attempt
+                            else prepared_session.resumable_provider_run_session()
+                        )
                         prompt = await self._build_prompt(
                             template,
                             scope_args,
                             container_exec,
-                            run_kind=run_kind,
+                            run_kind=provider_run_session.run_kind,
                             send_role_prompt_on_resume=request.send_role_prompt_on_resume,
                         )
 
                         work_prompt = prompt
-                        work_run_kind = run_kind
+                        work_run_session = provider_run_session
                         for _ in range(3):
                             try:
                                 output = await runner.work(
                                     role,
                                     work_prompt,
-                                    run_kind=work_run_kind,
-                                    session_uuid=prepared_session.provider_session_id,
+                                    run_kind=work_run_session.run_kind,
+                                    session_uuid=work_run_session.provider_session_id,
                                     on_thread_id=prepared_session.on_provider_session_id,
                                 )
                                 if (
@@ -322,7 +327,9 @@ class AgentRunner:
                                     row.close("failed", shutdown_style="error")
                                     return FailedOutput(failure_class="protocol_error")
                                 work_prompt = REPROMPT_MESSAGE
-                                work_run_kind = RunKind.RESUME
+                                work_run_session = (
+                                    prepared_session.resumable_provider_run_session()
+                                )
                         row.close("failed", shutdown_style="error")
                         return FailedOutput(failure_class="protocol_error")
                     except AgentTimeoutError:
@@ -335,6 +342,7 @@ class AgentRunner:
                             f" (attempt {restart_num}/{self._cfg.timeout_retries})",
                         )
                         retries_left -= 1
+                        initial_attempt = False
                     except UsageLimitError as err:
                         if err.stage_key is None:
                             err.stage_key = _stage_key_for_role(role)
@@ -362,7 +370,7 @@ class AgentRunner:
                         err.service_name = service.name
                         raise
                     except Exception:
-                        if run_kind != RunKind.RESUME:
+                        if provider_run_session.run_kind != RunKind.RESUME:
                             raise
                         if non_typed_retry_done:
                             row.close("failed", shutdown_style="error")

@@ -45,6 +45,21 @@ class PreparedProviderSessionState:
     def provider_state_dir_container_path(self, container_workspace: str) -> str | None:
         return self._plan.provider_state_dir_container_path(container_workspace)
 
+    def initial_provider_run_session(self) -> PreparedProviderRunSession:
+        return PreparedProviderRunSession(
+            run_kind=self.run_kind,
+            provider_session_id=self.provider_session_id,
+        )
+
+    def resumable_provider_run_session(self) -> PreparedProviderRunSession:
+        run_kind = RunKind.RESUME
+        if self.provider_session_id is None:
+            run_kind = RunKind.FRESH
+        return PreparedProviderRunSession(
+            run_kind=run_kind,
+            provider_session_id=self.provider_session_id,
+        )
+
     def prepare_for_run(self) -> None:
         preserved_auth = self._preserved_codex_auth_bytes()
         if self.run_kind is RunKind.FRESH:
@@ -77,6 +92,12 @@ class PreparedProviderSessionState:
         if host_provider_state_dir is None:
             return None
         return host_provider_state_dir / "auth.json"
+
+
+@dataclasses.dataclass(frozen=True)
+class PreparedProviderRunSession:
+    run_kind: RunKind
+    provider_session_id: str | None
 
 
 def prepare_provider_session_state(
@@ -148,6 +169,7 @@ def _require_auth_seed_source(
 
 
 __all__ = [
+    "PreparedProviderRunSession",
     "PreparedProviderSessionState",
     "ProviderSessionStateRequest",
     "prepare_provider_session_state",
