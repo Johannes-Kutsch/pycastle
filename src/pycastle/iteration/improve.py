@@ -234,6 +234,25 @@ class _ImproveDeps(Protocol):
     improve_dispatched_count: int
 
 
+def _format_recent_improve_prds(recent_prds: list[dict[str, str | int]]) -> str:
+    if not recent_prds:
+        return "No recent improve PRDs found."
+    return "\n".join(
+        f"#{prd['number']} {prd['state']} - {prd['title']}" for prd in recent_prds
+    )
+
+
+def _build_improve_session_scope_args(
+    short_sid: str, github_svc: GithubService
+) -> dict[str, str]:
+    return {
+        "IMPROVE_SHORT_SID": short_sid,
+        "RECENT_IMPROVE_PRDS": _format_recent_improve_prds(
+            github_svc.get_recent_improve_prds()
+        ),
+    }
+
+
 def _build_issues_scope_args(
     short_sid: str,
     prd_number: int | None,
@@ -316,6 +335,10 @@ async def improve_phase(
                 if step.cfg.template.scope is Scope.IMPROVE_ISSUES:
                     scope_args = _build_issues_scope_args(
                         short_sid, driver.prd_number, deps.github_svc
+                    )
+                elif step.cfg.template.scope is Scope.IMPROVE_SESSION:
+                    scope_args = _build_improve_session_scope_args(
+                        short_sid, deps.github_svc
                     )
                 else:
                     scope_args = {**step.scope_args}

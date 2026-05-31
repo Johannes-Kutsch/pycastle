@@ -82,7 +82,10 @@ class Scope(enum.Enum):
         ),
     )
     IMPROVE_SCAN = ("IMPROVE_SCAN", frozenset[str]())
-    IMPROVE_SESSION = ("IMPROVE_SESSION", frozenset({"IMPROVE_SHORT_SID"}))
+    IMPROVE_SESSION = (
+        "IMPROVE_SESSION",
+        frozenset({"IMPROVE_SHORT_SID", "RECENT_IMPROVE_PRDS"}),
+    )
     IMPROVE_ISSUES = (
         "IMPROVE_ISSUES",
         frozenset(

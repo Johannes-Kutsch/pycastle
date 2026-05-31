@@ -16,6 +16,12 @@ You must NOT modify any files in the worktree. Your only outputs are the GitHub 
 
 {{DESIGN_STANDARDS}}
 
+## Recent Improve PRDs
+
+Use this novelty context to avoid filing a duplicate or near-duplicate PRD:
+
+{{RECENT_IMPROVE_PRDS}}
+
 </context>
 
 <workflow>

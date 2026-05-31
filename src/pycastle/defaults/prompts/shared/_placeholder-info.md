@@ -74,6 +74,7 @@ Used by: improve/01-scan.md
 Used by: improve/02-prd.md, improve/04-no-candidate-report.md
 
 - `{{IMPROVE_SHORT_SID}}` — Short session ID for the improve session.
+- `{{RECENT_IMPROVE_PRDS}}` — Plain-text recent Improve PRD history for novelty checking, or `No recent improve PRDs found.` when the lookup is empty.
 
 ## Scope: IMPROVE_ISSUES
 

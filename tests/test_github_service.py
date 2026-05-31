@@ -536,6 +536,72 @@ def test_get_labels_returns_empty_list_when_no_labels():
         assert svc.get_labels(7) == []
 
 
+def test_get_recent_improve_prds_returns_newest_12_canonical_titles_across_states():
+    svc = _make_service()
+    issues = [
+        {
+            "number": number,
+            "title": f"[improve-PRD] Candidate {number}",
+            "state": "open" if number % 2 else "closed",
+        }
+        for number in range(30, 17, -1)
+    ]
+    issues.insert(
+        3,
+        {
+            "number": 999,
+            "title": "Follow-up [improve-PRD] mention only",
+            "state": "open",
+        },
+    )
+    issues.insert(
+        7,
+        {
+            "number": 998,
+            "title": "[improve-SLICE] Not a PRD",
+            "state": "closed",
+        },
+    )
+
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(json.dumps(issues).encode(), headers={}),
+    ):
+        result = svc.get_recent_improve_prds()
+
+    assert result == [
+        {
+            "number": number,
+            "state": "OPEN" if number % 2 else "CLOSED",
+            "title": f"Candidate {number}",
+        }
+        for number in range(30, 18, -1)
+    ]
+
+
+def test_get_recent_improve_prds_returns_empty_list_when_no_matching_issues():
+    svc = _make_service()
+    issues = [
+        {"number": 1, "title": "Regular issue", "state": "open"},
+        {"number": 2, "title": "Follow-up [improve-PRD] mention", "state": "closed"},
+    ]
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(json.dumps(issues).encode()),
+    ):
+        assert svc.get_recent_improve_prds() == []
+
+
+def test_get_recent_improve_prds_propagates_github_api_error():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_http_error(500, b"server error"),
+    ):
+        with pytest.raises(GithubAPIError):
+            svc.get_recent_improve_prds()
+
+
 # ── get_parent ───────────────────────────────────────────────────────────────
 
 

@@ -22,7 +22,7 @@ from pycastle.iteration.improve import (
     improve_phase,
 )
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.services import GitService, ServiceRegistry
+from pycastle.services import GitService, GithubNetworkError, ServiceRegistry
 from pycastle.services.codex_service import CodexService
 from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session import RoleSession
@@ -223,6 +223,60 @@ def test_improve_phase_threads_short_sid_to_prd_phase(deps, agent_runner):
     )
     assert prd_call.scope_args is not None
     assert len(prd_call.scope_args.get("IMPROVE_SHORT_SID", "")) == 8
+
+
+def test_improve_phase_threads_formatted_recent_improve_prds_to_prd_phase(
+    tmp_path, git_svc
+):
+    github_svc = MagicMock()
+    github_svc.get_recent_improve_prds.return_value = [
+        {"number": 12, "state": "OPEN", "title": "First candidate"},
+        {"number": 11, "state": "CLOSED", "title": "Second candidate"},
+    ]
+    runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    _run(deps)
+
+    prd_call = next(c for c in runner.calls if c.template == PromptTemplate.IMPROVE_PRD)
+    assert prd_call.scope_args["RECENT_IMPROVE_PRDS"] == (
+        "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
+    )
+
+
+def test_improve_phase_threads_empty_recent_improve_prd_message_to_prd_phase(
+    tmp_path, git_svc
+):
+    github_svc = MagicMock()
+    github_svc.get_recent_improve_prds.return_value = []
+    runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    _run(deps)
+
+    prd_call = next(c for c in runner.calls if c.template == PromptTemplate.IMPROVE_PRD)
+    assert prd_call.scope_args["RECENT_IMPROVE_PRDS"] == "No recent improve PRDs found."
+
+
+def test_improve_phase_propagates_recent_improve_prd_lookup_failures(tmp_path, git_svc):
+    github_svc = MagicMock()
+    github_svc.get_recent_improve_prds.side_effect = GithubNetworkError(
+        "transport error", cause=RuntimeError("boom")
+    )
+    runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    with pytest.raises(GithubNetworkError):
+        _run(deps)
 
 
 def test_improve_phase_threads_short_sid_to_issues_phase(deps, agent_runner):
