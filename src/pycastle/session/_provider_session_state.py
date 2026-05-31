@@ -245,3 +245,23 @@ __all__ = [
     "ProviderSessionStateRequest",
     "prepare_provider_session_state",
 ]
+
+
+def has_exact_transcript_match(
+    *,
+    worktree: Path,
+    role: AgentRole,
+    session_namespace: str,
+    service: AgentService,
+) -> bool:
+    return plan_provider_session(
+        ProviderSessionPlanRequest(
+            worktree=worktree,
+            role=role,
+            namespace=session_namespace,
+            service=service,
+        )
+    ).exact_transcript_match
+
+
+__all__.append("has_exact_transcript_match")

@@ -13,7 +13,7 @@ from ..config import Config
 from ..prompts.pipeline import PromptTemplate, Scope, build_issue_scope_args
 from ..services import GitService, ServiceRegistry
 from ..services.github_service import GithubService
-from ..session import RoleSession
+from ..session import RoleSession, has_exact_transcript_match
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import managed_worktree
 from ._rows import status_row
@@ -278,7 +278,6 @@ async def improve_phase(
             deps=deps,
         ) as sandbox_path:
             role_session = RoleSession(sandbox_path, AgentRole.IMPROVE)
-            main_role_session = RoleSession(sandbox_path, AgentRole.IMPROVE, "main")
             short_sid = role_session.session_uuid().split("-")[0]
             role_session_dir = role_session.path
             driver = ImprovePhaseDriver(
@@ -290,18 +289,30 @@ async def improve_phase(
                 step is not None
                 and step.prompt_key == "02-prd.md"
                 and step.send_role_prompt_on_resume
-                and not main_role_session.has_exact_transcript_handoff_for_selected_service(
-                    deps.service_registry,
-                    deps.cfg.improve_override.service,
-                )
             ):
-                deps.status_display.print(
-                    "Improve",
-                    "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
+                service_name = deps.cfg.improve_override.service
+                service = (
+                    deps.service_registry[service_name]
+                    if deps.service_registry is not None and service_name
+                    else None
                 )
-                role_session.discard()
-                row.close("restarting from phase 1")
-                return ImproveContinue()
+                has_exact_main_transcript = (
+                    service is not None
+                    and has_exact_transcript_match(
+                        worktree=sandbox_path,
+                        role=AgentRole.IMPROVE,
+                        session_namespace="main",
+                        service=service,
+                    )
+                )
+                if not has_exact_main_transcript:
+                    deps.status_display.print(
+                        "Improve",
+                        "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
+                    )
+                    role_session.discard()
+                    row.close("restarting from phase 1")
+                    return ImproveContinue()
 
             while step is not None:
                 if step.cfg.template.scope is Scope.IMPROVE_ISSUES:
