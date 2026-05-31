@@ -517,7 +517,7 @@ def test_provider_session_state_marks_exact_transcript_match_for_matching_codex_
     assert provider_session_state.exact_transcript_match is True
 
 
-def test_provider_session_state_skips_exact_transcript_match_for_recovered_codex_identity(
+def test_provider_session_state_accepts_exact_transcript_match_for_recovered_codex_identity(
     tmp_path,
 ):
     service = CodexService()
@@ -541,7 +541,8 @@ def test_provider_session_state_skips_exact_transcript_match_for_recovered_codex
     )
 
     assert provider_session_state.persist_provider_session_id is True
-    assert provider_session_state.exact_transcript_match is False
+    assert provider_session_state.exact_transcript_match is True
+    assert role_session.service_session_id("codex") == "thread-abc"
 
 
 def test_provider_session_state_skips_exact_transcript_match_for_conflicting_codex_rollouts(

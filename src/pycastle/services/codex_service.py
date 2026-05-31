@@ -207,7 +207,7 @@ class CodexService:
             )
 
         exact_transcript_match = False
-        if request.require_exact_transcript_match and not persist_provider_session_id:
+        if request.require_exact_transcript_match:
             exact_transcript_match = is_exact_resumable_service_session(
                 request.role_session,
                 self.name,

@@ -262,14 +262,16 @@ def has_exact_transcript_match(
     session_namespace: str,
     service: AgentService,
 ) -> bool:
-    return plan_provider_run_state(
+    plan = plan_provider_run_state(
         ProviderRunStatePlanRequest(
             worktree=worktree,
             role=role,
             namespace=session_namespace,
             service=service,
         )
-    ).exact_transcript_match
+    )
+    plan.prepared_provider_session_id()
+    return plan.exact_transcript_match
 
 
 __all__.append("has_exact_transcript_match")

@@ -562,6 +562,41 @@ def test_improve_clean_phase_2_entry_dispatches_prd_prompt_for_exact_codex_trans
     assert len(runner.calls) == 2
 
 
+def test_improve_clean_phase_2_entry_accepts_recovered_exact_codex_transcript(
+    tmp_path, git_svc
+):
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_progress(wt, "01-scan:picked")
+    _seed_exact_phase_1_main_transcript(
+        wt,
+        service_name="codex",
+        provider_session_id="thread-exact",
+    )
+    (wt / ".pycastle-session" / "improve" / "main" / "codex" / "thread_id").unlink()
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {"number": 17, "title": "PRD", "body": "body"}
+    github_svc.get_issue_comments.return_value = []
+    runner = FakeAgentRunner(
+        [IssueOutput(number=17, labels=[]), CompletionOutput()],
+        preflight_responses=[[]],
+    )
+    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=cfg,
+        service_registry=ServiceRegistry({"codex": CodexService()}),
+    )
+
+    _run(deps)
+
+    assert runner.calls[0].template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].send_role_prompt_on_resume is True
+    assert len(runner.calls) == 2
+
+
 def test_improve_clean_phase_2_entry_restarts_when_codex_rollout_thread_is_not_exact(
     tmp_path, git_svc
 ):
