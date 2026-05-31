@@ -6,8 +6,10 @@ from typing import Any, cast
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.services import ServiceRegistry
 from pycastle.services.codex_service import CodexService
 from pycastle.session.provider_session_state import (
+    has_exact_provider_transcript_for_selected_service,
     has_exact_provider_transcript_for_service,
     recover_state_dir_provider_session_id,
     save_service_session_id,
@@ -259,6 +261,67 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_opencode_wit
             service=service,
         )
         is True
+    )
+
+
+def test_has_exact_provider_transcript_for_selected_service_returns_true_for_registered_matching_service(
+    tmp_path: Path,
+) -> None:
+    service = cast(
+        Any,
+        _FakeService(
+            name="opencode",
+            relpath="custom/opencode-state/",
+            resumable=True,
+        ),
+    )
+    role_dir = tmp_path / ".pycastle-session" / "reviewer" / "main"
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text("sess-opencode-123\n", encoding="utf-8")
+    save_service_session_id(role_dir, "opencode", "sess-opencode-123")
+    save_service_session_metadata(role_dir, "opencode", "sess-opencode-123")
+    registry = ServiceRegistry({"opencode": service})
+
+    assert (
+        has_exact_provider_transcript_for_selected_service(
+            worktree=tmp_path,
+            role=AgentRole.REVIEWER,
+            namespace="main",
+            registry=registry,
+            service_name="opencode",
+        )
+        is True
+    )
+
+
+@pytest.mark.parametrize(
+    ("registry", "service_name"),
+    [
+        (None, "opencode"),
+        (ServiceRegistry({}), "opencode"),
+        (
+            ServiceRegistry(
+                {"opencode": cast(Any, _FakeService("opencode", "state", True))}
+            ),
+            "",
+        ),
+    ],
+)
+def test_has_exact_provider_transcript_for_selected_service_returns_false_without_a_selected_registered_service(
+    tmp_path: Path,
+    registry: ServiceRegistry | None,
+    service_name: str,
+) -> None:
+    assert (
+        has_exact_provider_transcript_for_selected_service(
+            worktree=tmp_path,
+            role=AgentRole.IMPROVE,
+            namespace="main",
+            registry=registry,
+            service_name=service_name,
+        )
+        is False
     )
 
 
