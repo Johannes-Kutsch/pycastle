@@ -15,7 +15,7 @@ from .result import CancellationToken
 from ..config import Config, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
 from ..infrastructure.docker_session import DockerSession, build_volume_spec
-from ..infrastructure.preflight_tool_classifier import (
+from ..preflight_tool_failure_analysis import (
     MissingDeclaredTool,
     PreflightCommandFailure,
     classify_preflight_tool_failure,
