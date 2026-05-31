@@ -25,6 +25,11 @@ from ..issue_readiness import (
 from ..infrastructure.worktree import transient_worktree
 from ._rows import status_row
 from .implement import branch_for
+from .planning_readiness import (
+    BlockerSummaryInputs,
+    LabelSyncAction,
+    PlanningReadinessResult,
+)
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
 _NEEDS_INFO_COMMENT = f"""\
@@ -118,51 +123,87 @@ The implement phase skips this issue until the labeling is fixed.
 """
 
 
-def _sync_needs_slice_type(
+def _needs_slice_type_actions(
     well_formed: list[dict],
     malformed: list[dict],
     cfg: "Config",
-    github_svc: "GithubService",
-) -> None:
+) -> list[LabelSyncAction]:
     flag = cfg.needs_slice_type_label
+    actions: list[LabelSyncAction] = []
 
     for issue in malformed:
         labels: list[str] = issue.get("labels") or []
         if flag in labels:
             continue
-        github_svc.add_label_to_issue(issue["number"], flag)
         result = classify_issue_readiness(issue, cfg).slice_status
         current = result.found if isinstance(result, Malformed) else []
         current_slice = ", ".join(f"`{lbl}`" for lbl in current) or "none"
-        github_svc.post_comment(
-            issue["number"], _MALFORMED_COMMENT.format(current_slice=current_slice)
+        actions.append(
+            LabelSyncAction(
+                issue_number=issue["number"],
+                label_name=flag,
+                intent="add",
+                comment_body=_MALFORMED_COMMENT.format(current_slice=current_slice),
+            )
         )
 
     for issue in well_formed:
         labels = issue.get("labels") or []
         if flag in labels:
-            github_svc.remove_label_from_issue(issue["number"], flag)
+            actions.append(
+                LabelSyncAction(
+                    issue_number=issue["number"],
+                    label_name=flag,
+                    intent="remove",
+                )
+            )
+    return actions
 
 
-def _sync_needs_info(
+def _needs_info_actions(
     well_formed_body: list[dict],
     malformed_body: list[dict],
     cfg: "Config",
-    github_svc: "GithubService",
-) -> None:
+) -> list[LabelSyncAction]:
     flag = cfg.needs_info_label
+    actions: list[LabelSyncAction] = []
 
     for issue in malformed_body:
         labels: list[str] = issue.get("labels") or []
         if flag in labels:
             continue
-        github_svc.add_label_to_issue(issue["number"], flag)
-        github_svc.post_comment(issue["number"], _NEEDS_INFO_COMMENT)
+        actions.append(
+            LabelSyncAction(
+                issue_number=issue["number"],
+                label_name=flag,
+                intent="add",
+                comment_body=_NEEDS_INFO_COMMENT,
+            )
+        )
 
     for issue in well_formed_body:
         labels = issue.get("labels") or []
         if flag in labels:
-            github_svc.remove_label_from_issue(issue["number"], flag)
+            actions.append(
+                LabelSyncAction(
+                    issue_number=issue["number"],
+                    label_name=flag,
+                    intent="remove",
+                )
+            )
+    return actions
+
+
+def _apply_label_sync_actions(
+    actions: tuple[LabelSyncAction, ...], github_svc: "GithubService"
+) -> None:
+    for action in actions:
+        if action.intent == "add":
+            github_svc.add_label_to_issue(action.issue_number, action.label_name)
+            if action.comment_body is not None:
+                github_svc.post_comment(action.issue_number, action.comment_body)
+            continue
+        github_svc.remove_label_from_issue(action.issue_number, action.label_name)
 
 
 def _fill_fields(issues: list[dict]) -> list[dict]:
@@ -172,9 +213,56 @@ def _fill_fields(issues: list[dict]) -> list[dict]:
     ]
 
 
+def _build_planning_readiness(
+    open_issues: list[dict], cfg: "Config"
+) -> PlanningReadinessResult:
+    classified_issues = [
+        (issue, classify_issue_readiness(issue, cfg)) for issue in open_issues
+    ]
+    slice_well_formed = [
+        issue
+        for issue, readiness in classified_issues
+        if isinstance(readiness.slice_status, WellFormed)
+    ]
+    slice_malformed = [
+        issue
+        for issue, readiness in classified_issues
+        if not isinstance(readiness.slice_status, WellFormed)
+    ]
+    body_well_formed = [
+        issue
+        for issue, readiness in classified_issues
+        if isinstance(readiness.body_floor_status, WellFormedBody)
+    ]
+    body_malformed = [
+        issue
+        for issue, readiness in classified_issues
+        if not isinstance(readiness.body_floor_status, WellFormedBody)
+    ]
+    ready_candidates = tuple(
+        issue for issue, readiness in classified_issues if readiness.is_ready
+    )
+    label_sync_actions = tuple(
+        _needs_info_actions(body_well_formed, body_malformed, cfg)
+        + _needs_slice_type_actions(slice_well_formed, slice_malformed, cfg)
+    )
+    return PlanningReadinessResult(
+        ready_candidates=ready_candidates,
+        malformed_body_issues=tuple(body_malformed),
+        malformed_slice_mode_issues=tuple(slice_malformed),
+        label_sync_actions=label_sync_actions,
+        blocker_summary_inputs=BlockerSummaryInputs(
+            malformed_slice_mode_issues=tuple(slice_malformed),
+            malformed_body_issues=tuple(body_malformed),
+        ),
+    )
+
+
 def _planning_blocker_summary(
-    slice_malformed: list[dict], bad_body: list[dict]
+    blocker_inputs: BlockerSummaryInputs,
 ) -> str | None:
+    slice_malformed = blocker_inputs.malformed_slice_mode_issues
+    bad_body = blocker_inputs.malformed_body_issues
     blocker_parts: list[str] = []
     if slice_malformed:
         noun = "label" if len(slice_malformed) == 1 else "labels"
@@ -228,48 +316,12 @@ async def planning_phase(
             return verdict
         sha = verdict.sha
 
-        classified_issues = [
-            (issue, classify_issue_readiness(issue, deps.cfg)) for issue in open_issues
-        ]
-        slice_well_formed = [
-            issue
-            for issue, readiness in classified_issues
-            if isinstance(readiness.slice_status, WellFormed)
-        ]
-        slice_malformed = [
-            issue
-            for issue, readiness in classified_issues
-            if not isinstance(readiness.slice_status, WellFormed)
-        ]
-        body_well_formed = [
-            issue
-            for issue, readiness in classified_issues
-            if isinstance(readiness.body_floor_status, WellFormedBody)
-        ]
-        body_malformed = [
-            issue
-            for issue, readiness in classified_issues
-            if not isinstance(readiness.body_floor_status, WellFormedBody)
-        ]
-
-        _sync_needs_info(
-            body_well_formed,
-            body_malformed,
-            deps.cfg,
-            deps.github_svc,
-        )
-
-        _sync_needs_slice_type(
-            slice_well_formed,
-            slice_malformed,
-            deps.cfg,
-            deps.github_svc,
-        )
+        readiness_result = _build_planning_readiness(open_issues, deps.cfg)
+        _apply_label_sync_actions(readiness_result.label_sync_actions, deps.github_svc)
 
         ready_classified = [
-            (issue, readiness)
-            for issue, readiness in classified_issues
-            if readiness.is_ready
+            (issue, classify_issue_readiness(issue, deps.cfg))
+            for issue in readiness_result.ready_candidates
         ]
         well_formed = [issue for issue, _ in ready_classified]
         readiness_by_number = {
@@ -317,8 +369,7 @@ async def planning_phase(
             if not output.issues:
                 blocked = _hydrate_blocked_issues(output.blocked, well_formed)
                 blocker_summary = _planning_blocker_summary(
-                    slice_malformed,
-                    body_malformed,
+                    readiness_result.blocker_summary_inputs
                 )
                 blocked_lines = [
                     _format_blocked_issue_line(blocked_issue)
