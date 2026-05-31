@@ -121,6 +121,32 @@ def any_role_dir_present(worktree_path: Path) -> bool:
     return any(d.is_dir() for d in session_base.iterdir())
 
 
+def _provider_identity_from_session_state(
+    provider_session_state,
+    *,
+    has_resumable_provider_state: bool,
+) -> ProviderIdentity:
+    if provider_session_state.run_kind is RunKind.RESUME:
+        return ProviderIdentity(
+            ProviderIdentityKind.RESUME,
+            provider_session_state.run_kind,
+            provider_session_state.provider_session_id,
+            persist_provider_session_id=provider_session_state.persist_provider_session_id,
+        )
+    kind = (
+        ProviderIdentityKind.UNRECOVERABLE
+        if has_resumable_provider_state
+        and provider_session_state.provider_session_id is None
+        else ProviderIdentityKind.FRESH
+    )
+    return ProviderIdentity(
+        kind,
+        provider_session_state.run_kind,
+        provider_session_state.provider_session_id,
+        persist_provider_session_id=provider_session_state.persist_provider_session_id,
+    )
+
+
 class RoleSession:
     def __init__(self, worktree: Path, role: AgentRole, namespace: str = "") -> None:
         self._worktree = worktree
@@ -272,15 +298,19 @@ class RoleSession:
         service: "AgentService",
     ) -> ProviderRunState:
         state = self.service_session_state(service)
-        derived_provider_session_id = None
-        if service.name == "claude":
-            derived_provider_session_id = self.session_uuid()
-
-        return self.provider_identity(
-            service.name,
+        provider_session_state = service.provider_session_state(
+            ProviderSessionStateRequest(
+                role_session=self,
+                provider_state_dir=state.state_dir,
+                has_resumable_provider_state=state.has_resumable_provider_state,
+                preferred_provider_session_id=(
+                    self.session_uuid() if service.name == "claude" else None
+                ),
+            )
+        )
+        return _provider_identity_from_session_state(
+            provider_session_state,
             has_resumable_provider_state=state.has_resumable_provider_state,
-            provider_state_dir=state.state_dir,
-            derived_provider_session_id=derived_provider_session_id,
         ).provider_run_state(provider_state_dir=state.state_dir)
 
     def exact_transcript_handoff(
@@ -319,34 +349,24 @@ class RoleSession:
         self, service: "AgentService"
     ) -> ExactTranscriptHandoff:
         state = self.service_session_state(service)
-        if service.name != "codex":
-            provider_session_state = service.provider_session_state(
-                ProviderSessionStateRequest(
-                    role_session=self,
-                    provider_state_dir=state.state_dir,
-                    has_resumable_provider_state=state.has_resumable_provider_state,
-                    require_exact_transcript_match=True,
-                )
-            )
-            provider_identity = ProviderIdentity(
-                (
-                    ProviderIdentityKind.RESUME
-                    if provider_session_state.run_kind is RunKind.RESUME
-                    else ProviderIdentityKind.FRESH
+        provider_session_state = service.provider_session_state(
+            ProviderSessionStateRequest(
+                role_session=self,
+                provider_state_dir=state.state_dir,
+                has_resumable_provider_state=state.has_resumable_provider_state,
+                require_exact_transcript_match=True,
+                preferred_provider_session_id=(
+                    self.session_uuid() if service.name == "claude" else None
                 ),
-                provider_session_state.run_kind,
-                provider_session_state.provider_session_id,
-                persist_provider_session_id=provider_session_state.persist_provider_session_id,
             )
-            return ExactTranscriptHandoff(
-                provider_identity=provider_identity,
-                is_eligible=provider_session_state.exact_transcript_match,
-            )
-
-        return self.exact_transcript_handoff(
-            service.name,
+        )
+        provider_identity = _provider_identity_from_session_state(
+            provider_session_state,
             has_resumable_provider_state=state.has_resumable_provider_state,
-            state_dir=state.state_dir,
+        )
+        return ExactTranscriptHandoff(
+            provider_identity=provider_identity,
+            is_eligible=provider_session_state.exact_transcript_match,
         )
 
     def has_exact_transcript_handoff_for_selected_service(

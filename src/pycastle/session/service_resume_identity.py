@@ -80,10 +80,7 @@ def _provider_session_id_from_state_dir(
     service_name: str,
     state_dir: Path | None,
 ) -> str | None:
-    provider_session_id = load_state_dir_provider_session_id(state_dir, service_name)
-    if provider_session_id is not None:
-        return provider_session_id
-    return recover_state_dir_provider_session_id(state_dir, service_name)
+    return load_state_dir_provider_session_id(state_dir, service_name)
 
 
 def _is_exact_resumable_provider_session(

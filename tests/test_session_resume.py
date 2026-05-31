@@ -1,5 +1,7 @@
 """Tests for session_resume: RoleSession lifecycle and stage/session helpers."""
 
+from __future__ import annotations
+
 import os
 import stat
 import uuid
@@ -12,10 +14,13 @@ import pytest
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services.agent_service import AgentService
 from pycastle.services.codex_service import CodexService
+from pycastle.services.provider_session_state import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
 from pycastle.services.service_registry import ServiceRegistry
 from pycastle.session import (
     ProviderFreshFallbackReason,
-    ProviderIdentityKind,
     ProviderRunState,
     RoleSession,
     RunKind,
@@ -36,6 +41,28 @@ class _FakeService:
 
     def is_resumable(self, state_dir: Path) -> bool:
         return self.resumable
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        if self.name == "claude":
+            provider_session_id = (
+                request.preferred_provider_session_id
+                or request.role_session.session_uuid()
+            )
+            return ProviderSessionState(
+                RunKind.RESUME
+                if request.has_resumable_provider_state
+                else RunKind.FRESH,
+                provider_session_id,
+            )
+        if not request.has_resumable_provider_state:
+            return ProviderSessionState(RunKind.FRESH, None)
+        saved_provider_session_id = request.role_session.service_session_id(self.name)
+        if saved_provider_session_id is None:
+            return ProviderSessionState(RunKind.FRESH, None)
+        return ProviderSessionState(RunKind.RESUME, saved_provider_session_id)
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -176,10 +203,11 @@ def test_service_session_ids_use_service_specific_sidecars(worktree):
     assert rs.service_session_id("unknown-service") == "default-123"
 
 
-def test_provider_identity_recovers_single_nested_codex_rollout_thread_id_and_persists_it(
+def test_provider_run_state_for_codex_service_recovers_single_nested_rollout_thread_id(
     worktree,
 ):
     rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    service = CodexService()
     state_dir = rs.path / "codex"
     rollout_dir = state_dir / "sessions" / "2026" / "05" / "30" / "nested"
     rollout_dir.mkdir(parents=True)
@@ -194,16 +222,14 @@ def test_provider_identity_recovers_single_nested_codex_rollout_thread_id_and_pe
         encoding="utf-8",
     )
 
-    identity = rs.provider_identity(
-        "codex",
-        has_resumable_provider_state=True,
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.RESUME,
+        provider_session_id="thread-from-rollout",
+        persist_provider_session_id=True,
         provider_state_dir=state_dir,
     )
-
-    assert identity.kind is ProviderIdentityKind.RESUME
-    assert identity.run_kind is RunKind.RESUME
-    assert identity.provider_session_id == "thread-from-rollout"
-    assert identity.persist_provider_session_id is True
     assert rs.service_session_id("codex") == "thread-from-rollout"
 
 

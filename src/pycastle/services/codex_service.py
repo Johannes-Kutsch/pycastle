@@ -13,6 +13,7 @@ from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
 from ..agents.output_protocol import AgentOutputProtocolError
 from ..session import SESSION_DIR_NAME, RunKind
+from ..session.provider_session_state import recover_state_dir_provider_session_id
 from ..session.service_resume_identity import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
@@ -133,6 +134,21 @@ class CodexService:
                 RunKind.RESUME,
                 request.preferred_provider_session_id,
             )
+        saved_provider_session_id = request.role_session.service_session_id(self.name)
+        if saved_provider_session_id is not None:
+            exact_transcript_match = False
+            if request.require_exact_transcript_match:
+                exact_transcript_match = is_exact_resumable_service_session(
+                    request.role_session,
+                    self.name,
+                    provider_session_id=saved_provider_session_id,
+                    provider_state_dir=request.provider_state_dir,
+                )
+            return ProviderSessionState(
+                RunKind.RESUME,
+                saved_provider_session_id,
+                exact_transcript_match=exact_transcript_match,
+            )
         if not request.has_resumable_provider_state:
             return ProviderSessionState(
                 RunKind.FRESH,
@@ -147,6 +163,18 @@ class CodexService:
             has_resumable_provider_state=request.has_resumable_provider_state,
         )
         provider_session_id = selection.provider_session_id
+        persist_provider_session_id = selection.persist_provider_session_id
+        if provider_session_id is None:
+            provider_session_id = recover_state_dir_provider_session_id(
+                request.provider_state_dir,
+                self.name,
+            )
+            if provider_session_id is not None:
+                request.role_session.save_service_session_id(
+                    self.name,
+                    provider_session_id,
+                )
+                persist_provider_session_id = True
         if provider_session_id is None:
             return ProviderSessionState(
                 RunKind.FRESH,
@@ -155,10 +183,7 @@ class CodexService:
             )
 
         exact_transcript_match = False
-        if (
-            request.require_exact_transcript_match
-            and not selection.persist_provider_session_id
-        ):
+        if request.require_exact_transcript_match and not persist_provider_session_id:
             exact_transcript_match = is_exact_resumable_service_session(
                 request.role_session,
                 self.name,
@@ -170,7 +195,7 @@ class CodexService:
             RunKind.RESUME,
             provider_session_id,
             exact_transcript_match=exact_transcript_match,
-            persist_provider_session_id=selection.persist_provider_session_id,
+            persist_provider_session_id=persist_provider_session_id,
         )
 
     def valid_models(self) -> frozenset[str]:
