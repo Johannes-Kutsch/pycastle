@@ -233,6 +233,10 @@ def test_preflight_tool_classifier_returns_setup_failure_for_missing_pyproject_d
     "command, output",
     [
         (
+            "python -X dev -m ruff check .",
+            "Command failed (exit 1): /usr/bin/python: No module named ruff",
+        ),
+        (
             "python3 -m ruff check .",
             "Command failed (exit 1): /usr/bin/python3: No module named ruff",
         ),
