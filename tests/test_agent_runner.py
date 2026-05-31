@@ -581,6 +581,171 @@ def test_agent_runner_uses_service_owned_provider_run_state_and_state_dir(
     ]
 
 
+def test_agent_runner_dispatches_codex_resume_from_recovered_rollout_thread_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    state_dir = tmp_path / ".pycastle-session" / "reviewer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "31"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-recovered"}\n',
+        encoding="utf-8",
+    )
+
+    work_calls: list[tuple[RunKind, str | None]] = []
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"codex": CodexService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Review",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.REVIEWER,
+                    service="codex",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [(RunKind.RESUME, "thread-recovered")]
+
+
+def test_agent_runner_dispatches_codex_fresh_when_rollout_thread_ids_are_ambiguous(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    state_dir = tmp_path / ".pycastle-session" / "reviewer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "31"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-old"}\n',
+        encoding="utf-8",
+    )
+    (sessions_dir / "rollout-002.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-new"}\n',
+        encoding="utf-8",
+    )
+
+    work_calls: list[tuple[RunKind, str | None]] = []
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"codex": CodexService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Review",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.REVIEWER,
+                    service="codex",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [(RunKind.FRESH, None)]
+
+
+def test_agent_runner_records_codex_provider_session_metadata_after_successful_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del run_kind, session_uuid
+        assert on_provider_session_id is not None
+        on_provider_session_id("thread-success")
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"codex": CodexService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Review",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.REVIEWER,
+                    service="codex",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert RoleSession(tmp_path, AgentRole.REVIEWER).service_session_metadata(
+        "codex"
+    ) == {
+        "service": "codex",
+        "provider_session_id": "thread-success",
+    }
+
+
 def test_agent_runner_does_not_fall_back_to_claude_for_unknown_requested_service(
     tmp_path,
 ):
