@@ -270,12 +270,12 @@ class PreflightCache:
 
     async def _handle_failure(
         self,
-        failures: tuple[PreflightCommandFailure, ...],
+        failures: tuple[OrdinaryCheckFailure, ...],
         deps: _PreflightDeps,
         mount_path: Path,
         sha: str,
     ) -> PreflightHITL | PreflightAFK:
-        failure = failures[0]
+        failure = failures[0].failure
         override = self._resolved_preflight_issue_override(deps)
         agent_result = await deps.agent_runner.run(
             RunRequest(
@@ -357,7 +357,7 @@ class PreflightCache:
                     ordinary_failures: tuple[OrdinaryCheckFailure, ...] = analysis
                     try:
                         result = await self._handle_failure(
-                            tuple(ordinary.failure for ordinary in ordinary_failures),
+                            ordinary_failures,
                             deps,
                             mount_path,
                             sha,
