@@ -13,6 +13,7 @@ from ._provider_session_decision import (
 )
 
 if TYPE_CHECKING:
+    from ..services import ServiceRegistry
     from ..services.agent_service import AgentService
 
 
@@ -224,6 +225,27 @@ def has_exact_provider_transcript_for_service(
     return exact_provider_session_id == provider_session_id
 
 
+def has_exact_provider_transcript_for_selected_service(
+    *,
+    worktree: Path,
+    role: AgentRole,
+    namespace: str,
+    registry: "ServiceRegistry | None",
+    service_name: str,
+) -> bool:
+    if registry is None or not service_name:
+        return False
+    service = registry[service_name]
+    if service is None:
+        return False
+    return has_exact_provider_transcript_for_service(
+        worktree=worktree,
+        role=role,
+        namespace=namespace,
+        service=service,
+    )
+
+
 def _role_session_path(worktree: Path, role: AgentRole, namespace: str) -> Path:
     base = worktree / ".pycastle-session" / role.value
     return base / namespace if namespace else base
@@ -253,6 +275,7 @@ def _exact_provider_session_id_from_state_dir(
 __all__ = [
     "AuthSeedingRequirement",
     "clear_service_session_metadata",
+    "has_exact_provider_transcript_for_selected_service",
     "has_exact_provider_transcript_for_service",
     "is_service_session_metadata_path",
     "load_exact_transcript_service_name",
