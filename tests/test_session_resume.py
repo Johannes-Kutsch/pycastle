@@ -443,8 +443,13 @@ def test_role_session_reports_exact_provider_transcript_available_for_selected_o
     )
     rs.save_service_session_id("opencode", "sess-opencode-123")
     rs.save_service_session_metadata("opencode", "sess-opencode-123")
+    registry = ServiceRegistry({"opencode": cast(AgentService, service)})
 
     assert rs.has_exact_provider_transcript_for_service(service) is True
+    assert (
+        rs.has_exact_transcript_handoff_for_selected_service(registry, "opencode")
+        is True
+    )
 
 
 @pytest.mark.parametrize(
@@ -486,6 +491,43 @@ def test_role_session_reports_exact_provider_transcript_unavailable_for_missing_
             selected_service_name,
         )
         is False
+    )
+    assert (
+        rs.has_exact_transcript_handoff_for_selected_service(
+            registry,
+            selected_service_name,
+        )
+        is False
+    )
+
+
+def test_role_session_reports_exact_transcript_handoff_unavailable_for_ambiguous_codex_identity(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    state_dir = rs.path / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "30"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "31"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    dir_a.joinpath("rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-old"}\n',
+        encoding="utf-8",
+    )
+    dir_b.joinpath("rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-new"}\n',
+        encoding="utf-8",
+    )
+    rs.save_service_session_id("codex", "thread-old")
+    rs.save_service_session_metadata("codex", "thread-old")
+    registry = ServiceRegistry({"codex": CodexService()})
+
+    assert (
+        rs.has_exact_provider_transcript_for_selected_service(registry, "codex")
+        is False
+    )
+    assert (
+        rs.has_exact_transcript_handoff_for_selected_service(registry, "codex") is False
     )
 
 
