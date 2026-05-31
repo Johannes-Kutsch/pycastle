@@ -1,8 +1,8 @@
+from .provider_run_state import ProviderFreshFallbackReason, ProviderRunState
 from .resume import (
     ExactTranscriptHandoff,
     ProviderIdentity,
     ProviderIdentityKind,
-    ProviderRunState,
     SESSION_DIR_NAME,
     RunKind,
     RoleSession,
@@ -13,6 +13,7 @@ from ._provider_session_state import has_exact_transcript_match
 
 __all__ = [
     "ExactTranscriptHandoff",
+    "ProviderFreshFallbackReason",
     "ProviderIdentity",
     "ProviderIdentityKind",
     "ProviderRunState",

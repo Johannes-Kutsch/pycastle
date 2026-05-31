@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
 from ..services.provider_session_state import ProviderSessionStateRequest
+from .provider_run_state import ProviderFreshFallbackReason, ProviderRunState
 from .provider_session_state import (
     load_exact_transcript_service_name,
     is_service_session_metadata_path,
@@ -65,13 +66,6 @@ class RunKind(Enum):
     RESUME = "resume"
 
 
-@dataclass(frozen=True)
-class ProviderRunState:
-    run_kind: RunKind
-    provider_session_id: str | None
-    persist_provider_session_id: bool = field(default=False, compare=False)
-
-
 class ProviderIdentityKind(Enum):
     FRESH = "fresh"
     RESUME = "resume"
@@ -84,6 +78,23 @@ class ProviderIdentity:
     run_kind: RunKind
     provider_session_id: str | None
     persist_provider_session_id: bool = field(default=False, compare=False)
+
+    def provider_run_state(
+        self,
+        *,
+        provider_state_dir: Path | None,
+    ) -> ProviderRunState:
+        return ProviderRunState(
+            run_kind=self.run_kind,
+            provider_session_id=self.provider_session_id,
+            persist_provider_session_id=self.persist_provider_session_id,
+            provider_state_dir=provider_state_dir,
+            fresh_fallback_reason=(
+                ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY
+                if self.kind is ProviderIdentityKind.UNRECOVERABLE
+                else None
+            ),
+        )
 
 
 @dataclass(frozen=True)
