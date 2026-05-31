@@ -185,17 +185,21 @@ class OpenCodeService:
     def provider_session_state(
         self, request: ProviderSessionStateRequest
     ) -> ProviderSessionState:
+        state_dir_session_id = load_state_dir_provider_session_id(
+            request.provider_state_dir,
+            self.name,
+        )
+        if not request.has_resumable_provider_state or state_dir_session_id is None:
+            return ProviderSessionState(
+                RunKind.FRESH,
+                None,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
+            )
         if request.preferred_provider_session_id is not None:
             return ProviderSessionState(
                 RunKind.RESUME,
                 request.preferred_provider_session_id,
-                state_dir_relpath=request.state_dir_relpath,
-                state_dir_path=request.provider_state_dir,
-            )
-        if not request.has_resumable_provider_state:
-            return ProviderSessionState(
-                RunKind.FRESH,
-                None,
                 state_dir_relpath=request.state_dir_relpath,
                 state_dir_path=request.provider_state_dir,
             )
@@ -217,10 +221,6 @@ class OpenCodeService:
 
         exact_transcript_match = False
         if request.require_exact_transcript_match:
-            state_dir_session_id = load_state_dir_provider_session_id(
-                request.provider_state_dir,
-                self.name,
-            )
             exact_transcript_match = (
                 state_dir_session_id == provider_session_id
                 and is_exact_resumable_service_session(

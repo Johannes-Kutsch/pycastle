@@ -105,6 +105,29 @@ class _FakeAgentService:
         )
 
 
+@dataclass
+class _FakeResumeIdentityStore:
+    provider_session_id: str | None = None
+
+    def session_uuid(self) -> str:
+        return "unused-session-uuid"
+
+    def service_session_id(self, service_name: str) -> str | None:
+        del service_name
+        return self.provider_session_id
+
+    def save_service_session_id(self, service_name: str, session_id: str) -> None:
+        del service_name
+        self.provider_session_id = session_id
+
+    def service_session_metadata(self, service_name: str) -> dict[str, str] | None:
+        del service_name
+        return None
+
+    def exact_transcript_service_name(self) -> str | None:
+        return None
+
+
 def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: Path):
     service = cast(
         AgentService, _FakeAgentService(".pycastle-session/improve/main/codex/")
@@ -283,6 +306,31 @@ def test_run_session_plan_reports_resume_for_claude_with_populated_state_dir(
     assert plan.provider_session_id == expected_session_id
 
 
+def test_claude_provider_session_state_uses_role_session_uuid_even_with_preferred_override(
+    tmp_path: Path,
+) -> None:
+    service = ClaudeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    decision = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/claude/",
+            preferred_provider_session_id="wrong-id",
+        )
+    )
+
+    assert decision.run_kind is RunKind.RESUME
+    assert decision.provider_session_id == role_session.session_uuid()
+    assert decision.state_dir_relpath == ".pycastle-session/implementer/claude/"
+    assert decision.state_dir_path == state_dir
+
+
 def test_run_session_plan_preserves_claude_provider_session_persistence_from_service_run_state(
     tmp_path: Path,
 ):
@@ -443,6 +491,29 @@ def test_run_session_plan_never_generates_pycastle_uuid_for_fresh_opencode(
 
     assert plan.run_kind is RunKind.FRESH
     assert plan.provider_session_id is None
+
+
+def test_opencode_provider_session_state_returns_fresh_without_state_dir_session_id(
+    tmp_path: Path,
+) -> None:
+    service = OpenCodeService()
+    resume_identity = _FakeResumeIdentityStore(provider_session_id="sess-stale")
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "opencode"
+    state_dir.mkdir(parents=True)
+
+    decision = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=resume_identity,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/opencode/",
+        )
+    )
+
+    assert decision.run_kind is RunKind.FRESH
+    assert decision.provider_session_id is None
+    assert decision.state_dir_relpath == ".pycastle-session/implementer/opencode/"
+    assert decision.state_dir_path == state_dir
 
 
 def test_codex_provider_session_state_returns_resume_decision_for_saved_sidecar(

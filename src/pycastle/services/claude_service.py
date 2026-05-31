@@ -228,9 +228,7 @@ class ClaudeService:
             if request.force_resume or request.has_resumable_provider_state
             else RunKind.FRESH
         )
-        provider_session_id = (
-            request.preferred_provider_session_id or request.role_session.session_uuid()
-        )
+        provider_session_id = request.role_session.session_uuid()
         if (
             request.require_exact_transcript_match
             and request.has_resumable_provider_state
