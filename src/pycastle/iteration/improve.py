@@ -293,7 +293,7 @@ async def improve_phase(
                 main_session = RoleSession(sandbox_path, AgentRole.IMPROVE, "main")
                 service_name = deps.cfg.improve_override.service
                 has_exact_main_transcript = (
-                    main_session.has_exact_provider_transcript_for_selected_service(
+                    main_session.has_exact_transcript_handoff_for_selected_service(
                         deps.service_registry,
                         service_name,
                     )
