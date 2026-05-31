@@ -780,6 +780,24 @@ def test_local_auth_seed_action_copies_only_host_auth_json(
     assert not (provider_state_dir / "sessions").exists()
 
 
+def test_local_auth_seed_action_preserves_host_auth_file_mode(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "host" / "auth.json"
+    source.parent.mkdir(parents=True)
+    source.write_text('{"mode":"oauth","origin":"host"}', encoding="utf-8")
+    source.chmod(0o600)
+
+    destination = tmp_path / "provider" / "auth.json"
+
+    LocalAuthSeedAction(source=source, destination=destination).apply()
+
+    assert destination.read_text(encoding="utf-8") == (
+        '{"mode":"oauth","origin":"host"}'
+    )
+    assert destination.stat().st_mode & 0o777 == source.stat().st_mode & 0o777
+
+
 def test_local_auth_seed_action_require_source_raises_hard_agent_error_when_missing(
     tmp_path: Path,
 ) -> None:

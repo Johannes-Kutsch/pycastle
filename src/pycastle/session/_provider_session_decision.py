@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import shutil
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -37,7 +38,7 @@ class LocalAuthSeedAction:
         if self.destination.exists():
             return
         self.destination.parent.mkdir(parents=True, exist_ok=True)
-        self.destination.write_bytes(self.require_source().read_bytes())
+        shutil.copy2(self.require_source(), self.destination)
 
 
 class RecoveredSessionIdPersistence(Enum):
