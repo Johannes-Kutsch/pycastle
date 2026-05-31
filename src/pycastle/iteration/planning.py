@@ -186,6 +186,16 @@ async def planning_phase(
             issue["number"]: readiness for issue, readiness in ready_classified
         }
 
+        if not well_formed:
+            blocker_summary = _planning_blocker_summary(
+                readiness_result.blocker_summary_inputs
+            )
+            lines = ["All ready-for-agent issues are blocked."]
+            if blocker_summary:
+                lines.append(blocker_summary)
+            row.close("\n".join(lines))
+            return AllBlocked(blocked=[])
+
         if len(well_formed) == 1:
             row.close(
                 f"only one open issue (#{well_formed[0]['number']}) labeled"

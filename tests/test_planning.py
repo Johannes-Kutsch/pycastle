@@ -1600,6 +1600,29 @@ def test_planning_phase_single_issue_with_short_body_excluded_from_short_circuit
     assert isinstance(result, AllBlocked)
 
 
+def test_planning_phase_single_malformed_issue_skips_planner_and_returns_all_blocked(
+    tmp_path, git_svc
+):
+    malformed = {
+        "number": 1,
+        "title": "A",
+        "body": "short",
+        "comments": [],
+        "labels": [],
+    }
+    fake = FakeAgentRunner([])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(planning_phase(deps, [malformed], []))
+
+    assert isinstance(result, AllBlocked)
+    assert result.blocked == []
+    assert len(fake.calls) == 0, (
+        "Planner must not be called when no readiness candidates exist"
+    )
+    git_svc.create_worktree.assert_not_called()
+
+
 def test_planning_phase_all_blocked_summary_reports_missing_slice_mode_labels(
     tmp_path, git_svc
 ):
