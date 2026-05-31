@@ -18,6 +18,7 @@ from .provider_session_state import (
 )
 from .resume import (
     RoleSession,
+    _provider_identity_from_session_state,
     _normalize_state_dir_relpath,
 )
 from ..services.provider_session_state import (
@@ -130,10 +131,10 @@ def plan_provider_session(
             ),
         )
     )
-    exact_transcript_handoff = role_session.exact_transcript_handoff_for_service(
-        request.service
+    provider_identity = _provider_identity_from_session_state(
+        provider_session_state,
+        has_resumable_provider_state=service_state.has_resumable_provider_state,
     )
-    provider_identity = exact_transcript_handoff.provider_identity
     recovered_session_id_persistence = RecoveredSessionIdPersistence.SKIP
     if provider_identity.persist_provider_session_id:
         recovered_session_id_persistence = RecoveredSessionIdPersistence.PERSIST
@@ -144,7 +145,7 @@ def plan_provider_session(
         state_dir_path=provider_session_state.state_dir_path or host_state_dir,
         service_state_dir=service_state.state_dir,
         recovered_session_id_persistence=recovered_session_id_persistence,
-        exact_transcript_match=exact_transcript_handoff.is_eligible,
+        exact_transcript_match=provider_session_state.exact_transcript_match,
         auth_seeding_requirement=(
             provider_session_state.auth_seeding_requirement
             or AuthSeedingRequirement.NOT_REQUIRED

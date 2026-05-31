@@ -519,6 +519,36 @@ def test_codex_provider_session_state_recovers_unique_rollout_and_persists_sidec
     assert decision.state_dir_path == state_dir
 
 
+def test_run_session_plan_persists_recovered_codex_rollout_thread_id(
+    tmp_path: Path,
+) -> None:
+    service = CodexService()
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == "thread-from-rollout"
+    assert (
+        plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
+    )
+    assert (
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex")
+        == "thread-from-rollout"
+    )
+
+
 def test_codex_provider_session_state_returns_fresh_for_ambiguous_rollouts(
     tmp_path: Path,
 ) -> None:
