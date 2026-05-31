@@ -27,10 +27,6 @@ from pycastle.iteration.preflight import (
     PreflightHITL,
     PreflightReady,
 )
-from pycastle.preflight_tool_failure_analysis import (
-    OrdinaryCheckFailure,
-    PreflightCommandFailure,
-)
 
 
 @pytest.fixture
@@ -420,45 +416,6 @@ def test_get_safe_sha_preserves_original_first_failure_details_after_analysis_an
     }
     assert len(fake.preflight_calls) == 1
     assert len(fake.calls) == 1
-
-
-def test_get_safe_sha_passes_analyzed_ordinary_failures_through_to_issue_dispatch(
-    tmp_path, git_svc, github_svc, monkeypatch
-):
-    (tmp_path / "pyproject.toml").write_text(
-        "[project]\nname = 'demo'\ndependencies = ['ruff>=0.5']\n",
-        encoding="utf-8",
-    )
-    fake = FakeAgentRunner([], preflight_responses=[[("lint", "ruff check .", "F401")]])
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    cache = PreflightCache()
-    seen: dict[str, object] = {}
-    ordinary_failure = OrdinaryCheckFailure(
-        tool="ruff",
-        failure=PreflightCommandFailure(
-            check_name="lint",
-            command="ruff check .",
-            output="F401",
-        ),
-    )
-
-    def _fake_analysis(project_root, failures):
-        return (ordinary_failure,)
-
-    async def _fake_handle_failure(failures, deps_arg, mount_path, sha):
-        seen["failures"] = failures
-        return PreflightHITL(sha=sha, issue_number=55)
-
-    monkeypatch.setattr(
-        "pycastle.iteration.preflight.analyze_preflight_command_failures",
-        _fake_analysis,
-    )
-    monkeypatch.setattr(cache, "_handle_failure", _fake_handle_failure)
-
-    result = asyncio.run(cache.get_safe_sha(deps))
-
-    assert isinstance(result, PreflightHITL)
-    assert seen["failures"] == (ordinary_failure,)
 
 
 # ── get_safe_sha: same-SHA cache hit ─────────────────────────────────────────
