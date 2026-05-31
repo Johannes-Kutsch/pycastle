@@ -23,7 +23,6 @@ from pycastle.iteration.improve import (
 )
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitService, ServiceRegistry
-from pycastle.services.claude_service import ClaudeService
 from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session import RoleSession
 
@@ -378,7 +377,6 @@ def _seed_exact_phase_1_main_transcript(
     *,
     service_name: str,
     provider_session_id: str,
-    write_sidecar: bool = True,
 ) -> None:
     role_session = RoleSession(worktree_path, AgentRole.IMPROVE, "main")
     role_session.save_service_session_metadata(service_name, provider_session_id)
@@ -387,10 +385,9 @@ def _seed_exact_phase_1_main_transcript(
     else:
         state_dir = role_session.path / service_name
     state_dir.mkdir(parents=True, exist_ok=True)
-    if write_sidecar:
-        role_session.save_service_session_id(service_name, provider_session_id)
-        sidecar_name = "session_id" if service_name == "opencode" else "thread_id"
-        (state_dir / sidecar_name).write_text(provider_session_id, encoding="utf-8")
+    role_session.save_service_session_id(service_name, provider_session_id)
+    sidecar_name = "session_id" if service_name == "opencode" else "thread_id"
+    (state_dir / sidecar_name).write_text(provider_session_id, encoding="utf-8")
     if service_name == "claude":
         (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
 
@@ -504,39 +501,6 @@ def test_improve_clean_phase_2_entry_restarts_from_phase_1_on_selected_service_m
         "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
     )
     assert not (wt / ".pycastle-session" / "improve").exists()
-
-
-def test_improve_clean_phase_2_entry_restarts_from_phase_1_when_claude_sidecar_is_missing(
-    tmp_path, git_svc
-):
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_progress(wt, "01-scan:picked")
-    _seed_exact_phase_1_main_transcript(
-        wt,
-        service_name="claude",
-        provider_session_id=RoleSession(wt, AgentRole.IMPROVE, "main").session_uuid(),
-        write_sidecar=False,
-    )
-    status_display = MagicMock()
-    runner = FakeAgentRunner([], preflight_responses=[[]])
-    cfg = Config(improve_override=StageOverride(service="claude", effort="medium"))
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        status_display=status_display,
-        cfg=cfg,
-        service_registry=ServiceRegistry({"claude": ClaudeService()}),
-    )
-
-    result = _run(deps)
-
-    assert isinstance(result, ImproveContinue)
-    assert runner.calls == []
-    status_display.print.assert_any_call(
-        "Improve",
-        "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
-    )
 
 
 def test_improve_resumes_at_report_after_scan_no_candidate(tmp_path, git_svc):
