@@ -3,6 +3,8 @@
 import os
 import stat
 import uuid
+from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -17,6 +19,19 @@ from pycastle.session import (
     is_stage_done_for,
 )
 from pycastle.session._provider_session_sidecars import service_session_metadata_path
+
+
+@dataclass(frozen=True)
+class _FakeService:
+    name: str
+    relpath: str | None
+    resumable: bool
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        return self.relpath
+
+    def is_resumable(self, state_dir: Path) -> bool:
+        return self.resumable
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -241,6 +256,25 @@ def test_provider_identity_provider_run_state_reports_unrecoverable_fallback_rea
         provider_session_id=None,
         provider_state_dir=provider_state_dir,
         fresh_fallback_reason=(ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY),
+    )
+
+
+def test_provider_run_state_for_non_codex_service_is_fresh_without_provider_session_id_when_state_dir_is_not_resumable(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    service = _FakeService(
+        name="opencode",
+        relpath="custom/opencode-state/",
+        resumable=False,
+    )
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.FRESH,
+        provider_session_id=None,
+        provider_state_dir=worktree / "custom" / "opencode-state",
     )
 
 
