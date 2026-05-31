@@ -31,15 +31,12 @@ from ..errors import (
     UsageLimitError,
 )
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
-from ..session._provider_session_state import (
-    ProviderSessionStateRequest,
-    prepare_provider_session_state,
-)
 from ..session import RunKind
 from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
 from ..display.status_display import ModelDisplayMetadata, PlainStatusDisplay
+from .session_dispatch import SessionDispatchRequest, prepare_agent_session
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
 
@@ -217,12 +214,13 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError(reset_time=None, stage_key=_stage_key_for_role(role))
 
-        prepared_session = prepare_provider_session_state(
-            ProviderSessionStateRequest(
-                worktree=mount_path,
+        prepared_session = prepare_agent_session(
+            SessionDispatchRequest(
+                mount_path=mount_path,
                 role=role,
                 session_namespace=request.session_namespace,
                 service=service,
+                container_workspace=_CONTAINER_WORKSPACE,
             )
         )
         non_typed_retry_done = False
@@ -250,9 +248,7 @@ class AgentRunner:
             session = self._build_session(
                 mount_path,
                 service,
-                prepared_session.provider_state_dir_container_path(
-                    _CONTAINER_WORKSPACE
-                ),
+                prepared_session.provider_state_dir_container_path,
             )
             runner = ContainerRunner(
                 name,
