@@ -23,7 +23,7 @@ from pycastle.services import (
     GitService,
     ServiceRegistry,
 )
-from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
+from tests.support import FakeAgentRunner, RecordingStatusDisplay
 from pycastle.infrastructure.worktree import prune_orphan_worktrees
 from pycastle.iteration.orchestrator import (
     ensure_session_excludes,
@@ -3885,13 +3885,12 @@ def test_orchestrator_routes_missing_pyproject_declared_preflight_tool_as_setup_
     runner = FakeAgentRunner(
         [CompletionOutput()],
         preflight_responses=[
-            [
-                (
-                    "ruff",
-                    "ruff check .",
-                    "Command failed (exit 127): bash: ruff: command not found",
-                )
-            ]
+            SetupPhaseError(
+                "preflight",
+                "Missing expected preflight tool 'ruff' declared in pyproject.toml.",
+                command="ruff check .",
+                output="Command failed (exit 127): bash: ruff: command not found",
+            )
         ],
     )
 
@@ -3911,6 +3910,10 @@ def test_orchestrator_routes_missing_pyproject_declared_preflight_tool_as_setup_
     assert runner.calls == []
     print_calls = [c for c in display.calls if c[0] == "print"]
     final_message = str(print_calls[-1][2])
+    assert "Command: ruff check ." in final_message
+    assert "Output: Command failed (exit 127): bash: ruff: command not found" in (
+        final_message
+    )
     report_url = next(
         line.removeprefix("Report: ")
         for line in final_message.splitlines()
@@ -3938,13 +3941,12 @@ def test_orchestrator_includes_command_and_output_in_upstream_setup_failure_repo
     runner = FakeAgentRunner(
         [CompletionOutput()],
         preflight_responses=[
-            [
-                (
-                    "ruff",
-                    "ruff check .",
-                    "Command failed (exit 127): bash: ruff: command not found",
-                )
-            ]
+            SetupPhaseError(
+                "preflight",
+                "Missing expected preflight tool 'ruff' declared in pyproject.toml.",
+                command="ruff check .",
+                output="Command failed (exit 127): bash: ruff: command not found",
+            )
         ],
     )
 
@@ -3984,13 +3986,12 @@ def test_orchestrator_files_setup_failure_via_api_when_auto_file_bugs_is_enabled
     runner = FakeAgentRunner(
         [CompletionOutput()],
         preflight_responses=[
-            [
-                (
-                    "ruff",
-                    "ruff check .",
-                    "Command failed (exit 127): bash: ruff: command not found",
-                )
-            ]
+            SetupPhaseError(
+                "preflight",
+                "Missing expected preflight tool 'ruff' declared in pyproject.toml.",
+                command="ruff check .",
+                output="Command failed (exit 127): bash: ruff: command not found",
+            )
         ],
     )
     display = RecordingStatusDisplay()
@@ -4035,13 +4036,12 @@ def test_orchestrator_prints_setup_failure_details_locally(tmp_path):
     runner = FakeAgentRunner(
         [CompletionOutput()],
         preflight_responses=[
-            [
-                (
-                    "ruff",
-                    "ruff check .",
-                    "Command failed (exit 127): bash: ruff: command not found",
-                )
-            ]
+            SetupPhaseError(
+                "preflight",
+                "Missing expected preflight tool 'ruff' declared in pyproject.toml.",
+                command="ruff check .",
+                output="Command failed (exit 127): bash: ruff: command not found",
+            )
         ],
     )
     display = RecordingStatusDisplay()

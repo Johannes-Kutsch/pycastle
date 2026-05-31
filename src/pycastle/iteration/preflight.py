@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 import re
 from pathlib import Path
-from typing import Protocol, TypeAlias, cast
+from typing import Protocol, Sequence, TypeAlias, cast
 
 from ..agents.output_protocol import (
     AgentOutputProtocolError,
@@ -19,17 +19,15 @@ from ..services import (
     ServiceRegistry,
     UnrelatedHistoriesError,
 )
-from ..errors import SetupPhaseError
 from ..session import RoleSession
-from ..agents.classifier import WellFormed, classify_slice, slice_labels
-from ..display.status_display import StatusDisplay
-from ..infrastructure.preflight_tool_classifier import (
-    MissingDeclaredTool,
-    PreflightCommandFailure,
-    classify_preflight_tool_failure,
-    load_python_dependency_metadata,
+from ..issue_readiness import (
+    IssueReadiness,
+    IssueReadinessKind,
+    WellFormed,
+    classify_issue_readiness,
 )
-from ._utils import _wait_for_clean_working_tree, is_well_formed_body
+from ..display.status_display import StatusDisplay
+from ._utils import _wait_for_clean_working_tree
 from .. import _time as _time_module
 
 
@@ -71,21 +69,60 @@ def validate_issue_report(
 ) -> str:
     if cfg.hitl_label in issue_output.labels:
         return "hitl"
-    result = classify_slice({"labels": list(issue_output.labels)}, cfg)
-    if not isinstance(result, WellFormed):
-        expected = slice_labels(cfg)
+    readiness = classify_issue_readiness({"labels": list(issue_output.labels)}, cfg)
+    if not isinstance(readiness.slice_status, WellFormed):
+        expected = readiness.slice_status.configured
         raise RuntimeError(
             f"{caller} filed issue #{issue_output.number} on the AFK branch "
             f"without exactly one slice-mode label — got labels={issue_output.labels!r}. "
             f"Expected exactly one of {sorted(expected)!r}."
         )
-    filed_issue = github_svc.get_issue(issue_output.number)
-    if not is_well_formed_body(filed_issue):
-        raise RuntimeError(
-            f"{caller} filed issue #{issue_output.number} whose body is "
+    filed_readiness = classify_issue_readiness(
+        {
+            **github_svc.get_issue(issue_output.number),
+            "labels": list(issue_output.labels),
+        },
+        cfg,
+    )
+    readiness_error = _diagnostic_issue_readiness_error(
+        caller=caller,
+        issue_number=issue_output.number,
+        issue_labels=issue_output.labels,
+        readiness=filed_readiness,
+    )
+    if readiness_error is not None:
+        raise RuntimeError(readiness_error)
+    return "afk"
+
+
+def _diagnostic_issue_readiness_error(
+    *,
+    caller: str,
+    issue_number: int,
+    issue_labels: Sequence[str],
+    readiness: IssueReadiness,
+) -> str | None:
+    if readiness.kind in {
+        IssueReadinessKind.MISSING_SLICE_MODE,
+        IssueReadinessKind.MULTIPLE_SLICE_MODES,
+        IssueReadinessKind.MALFORMED,
+    }:
+        malformed = readiness.slice_status
+        if not isinstance(malformed, WellFormed):
+            return (
+                f"{caller} filed issue #{issue_number} on the AFK branch "
+                f"without exactly one slice-mode label — got labels={issue_labels!r}. "
+                f"Expected exactly one of {sorted(malformed.configured)!r}."
+            )
+    if readiness.kind in {
+        IssueReadinessKind.SHORT_BODY,
+        IssueReadinessKind.MALFORMED,
+    }:
+        return (
+            f"{caller} filed issue #{issue_number} whose body is "
             f"below the minimum length floor — body too short to be valid."
         )
-    return "afk"
+    return None
 
 
 def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
@@ -212,31 +249,6 @@ class PreflightCache:
             return override
         return registry.resolve(override, _time_module.now_local())
 
-    def _raise_if_declared_tool_missing(
-        self,
-        failures: tuple[tuple[str, str, str], ...],
-        project_root: Path,
-    ) -> None:
-        metadata = load_python_dependency_metadata(project_root)
-        for check_name, command, output in failures:
-            classification = classify_preflight_tool_failure(
-                metadata,
-                PreflightCommandFailure(
-                    check_name=check_name,
-                    command=command,
-                    output=output,
-                ),
-            )
-            if isinstance(classification, MissingDeclaredTool):
-                raise SetupPhaseError(
-                    "preflight",
-                    "Missing expected preflight tool "
-                    f"'{classification.tool}' declared in "
-                    f"{classification.dependency_source}.",
-                    command=command,
-                    output=output,
-                )
-
     async def _handle_failure(
         self,
         failures: tuple[tuple[str, str, str], ...],
@@ -317,9 +329,6 @@ class PreflightCache:
 
                 result: PreflightResult
                 if failures:
-                    self._raise_if_declared_tool_missing(
-                        tuple(failures), deps.repo_root
-                    )
                     try:
                         result = await self._handle_failure(
                             tuple(failures), deps, mount_path, sha

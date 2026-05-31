@@ -4,10 +4,13 @@ import dataclasses
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from ..agents.output_protocol import AgentRole
-from ..session import RunKind
+from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
+
+if TYPE_CHECKING:
+    from ..session.resume import RunKind
 
 
 @dataclasses.dataclass
@@ -83,7 +86,7 @@ class AgentService(Protocol):
     def run(
         self,
         lines: Iterable[str],
-        on_thread_id: Callable[[str], None] | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
     ) -> Iterator[ParsedTurn]: ...
 
     def is_available(self, now: datetime | None = None) -> bool: ...
@@ -95,6 +98,10 @@ class AgentService(Protocol):
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None: ...
 
     def is_resumable(self, state_dir: Path) -> bool: ...
+
+    def provider_session_state(
+        self, request: ProviderSessionStateRequest
+    ) -> ProviderSessionState: ...
 
     def valid_models(self) -> frozenset[str]: ...
 

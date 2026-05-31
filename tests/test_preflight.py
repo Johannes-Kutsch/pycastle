@@ -1,8 +1,6 @@
 """Tests for PreflightCache.get_safe_sha: observable behaviour via the public interface."""
 
 import asyncio
-import dataclasses
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -21,7 +19,7 @@ from pycastle.services import (
     UnrelatedHistoriesError,
 )
 from pycastle.services.agent_service import AgentService
-from pycastle.iteration._deps import FakeAgentRunner
+from tests.support import FakeAgentRunner, _make_deps
 from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.iteration.preflight import (
     PreflightAFK,
@@ -29,17 +27,6 @@ from pycastle.iteration.preflight import (
     PreflightHITL,
     PreflightReady,
 )
-
-
-@dataclasses.dataclass
-class _CacheDeps:
-    git_svc: GitService
-    github_svc: GithubService
-    cfg: Config
-    status_display: PlainStatusDisplay
-    agent_runner: FakeAgentRunner
-    repo_root: Path
-    service_registry: ServiceRegistry | None = None
 
 
 @pytest.fixture
@@ -53,19 +40,6 @@ def git_svc():
 @pytest.fixture
 def github_svc():
     return MagicMock(spec=GithubService)
-
-
-def _make_deps(
-    tmp_path, agent_runner, *, git_svc, github_svc, cfg: Config | None = None
-):
-    return _CacheDeps(
-        repo_root=tmp_path,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        agent_runner=agent_runner,
-        cfg=cfg or Config(max_parallel=4, max_iterations=1),
-        status_display=PlainStatusDisplay(),
-    )
 
 
 # ── get_safe_sha: basic return variants ──────────────────────────────────────
@@ -157,8 +131,8 @@ def test_get_safe_sha_preflight_issue_resolves_override_at_failure_dispatch(
                 ),
             ),
         ),
+        service_registry=ServiceRegistry({"claude": unavailable, "codex": available}),
     )
-    deps.service_registry = ServiceRegistry({"claude": unavailable, "codex": available})
     cache = PreflightCache()
 
     result = asyncio.run(cache.get_safe_sha(deps))
@@ -190,13 +164,61 @@ def test_get_safe_sha_returns_afk_when_checks_fail_with_afk_label(
 def test_get_safe_sha_routes_requirements_declared_missing_tool_to_setup_failure(
     tmp_path, git_svc, github_svc
 ):
-    (tmp_path / "pyproject.toml").write_text(
-        "[project]\ndependencies = ['click']\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "requirements.txt").write_text("ruff==0.6.9\n", encoding="utf-8")
     fake = FakeAgentRunner(
         [],
+        preflight_responses=[
+            SetupPhaseError(
+                "preflight",
+                "Missing expected preflight tool 'ruff' declared in requirements.txt.",
+                command="ruff check .",
+                output="Command failed (exit 127): bash: ruff: command not found",
+            )
+        ],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(cache.get_safe_sha(deps))
+
+    err = exc_info.value
+    assert (
+        str(err)
+        == "Missing expected preflight tool 'ruff' declared in requirements.txt."
+    )
+    assert err.command == "ruff check ."
+    assert err.output == "Command failed (exit 127): bash: ruff: command not found"
+    assert fake.calls == []
+
+
+def test_get_safe_sha_propagates_setup_phase_error_metadata_unchanged(
+    tmp_path, git_svc, github_svc
+):
+    err = SetupPhaseError(
+        "setup",
+        "pip install failed",
+        command="pip install -e '.[dev]'",
+        output="No matching distribution found",
+    )
+    fake = FakeAgentRunner([], preflight_responses=[err])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(cache.get_safe_sha(deps))
+
+    assert exc_info.value is err
+    assert exc_info.value.phase == "setup"
+    assert exc_info.value.command == "pip install -e '.[dev]'"
+    assert exc_info.value.output == "No matching distribution found"
+    assert fake.calls == []
+
+
+def test_get_safe_sha_treats_runner_failure_tuple_as_ordinary_pre_flight_failure(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
         preflight_responses=[
             [
                 (
@@ -210,13 +232,12 @@ def test_get_safe_sha_routes_requirements_declared_missing_tool_to_setup_failure
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 
-    with pytest.raises(
-        SetupPhaseError,
-        match=r"Missing expected preflight tool 'ruff' declared in requirements\.txt\.",
-    ):
-        asyncio.run(cache.get_safe_sha(deps))
+    result = asyncio.run(cache.get_safe_sha(deps))
 
-    assert fake.calls == []
+    assert isinstance(result, PreflightHITL)
+    assert result.issue_number == 55
+    assert len(fake.preflight_calls) == 1
+    assert len(fake.calls) == 1
 
 
 # ── get_safe_sha: same-SHA cache hit ─────────────────────────────────────────
@@ -289,7 +310,13 @@ def test_get_safe_sha_propagates_git_command_error_on_pull_failure(
         "git pull --ff-only failed"
     )
     fake = FakeAgentRunner([], preflight_responses=[])
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        status_display=PlainStatusDisplay(),
+    )
     cache = PreflightCache()
 
     with pytest.raises(GitCommandError):
@@ -584,7 +611,13 @@ def test_get_safe_sha_propagates_non_conflict_pull_error_without_spawning_agent(
     )
 
     fake = FakeAgentRunner([], preflight_responses=[])
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        status_display=PlainStatusDisplay(),
+    )
     cache = PreflightCache()
 
     with pytest.raises(GitCommandError):
@@ -653,7 +686,13 @@ def test_get_safe_sha_halts_with_guidance_when_unrelated_histories_and_local_com
     ]
 
     fake = FakeAgentRunner([], preflight_responses=[])
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        status_display=PlainStatusDisplay(),
+    )
     cache = PreflightCache()
 
     with pytest.raises(UnrelatedHistoriesError):
@@ -676,7 +715,13 @@ def test_get_safe_sha_reports_commit_count_when_unrelated_histories_has_no_subje
     git_svc.get_local_only_commit_subjects.return_value = []
 
     fake = FakeAgentRunner([], preflight_responses=[])
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        status_display=PlainStatusDisplay(),
+    )
     cache = PreflightCache()
 
     with pytest.raises(UnrelatedHistoriesError):

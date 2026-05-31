@@ -5,7 +5,7 @@ import json
 import logging
 import re
 from collections.abc import Callable, Iterable, Iterator
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +13,15 @@ from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
 from ..agents.output_protocol import AgentOutputProtocolError
 from ..session import SESSION_DIR_NAME, RunKind
+from ..session._provider_session_decision import (
+    AuthSeedingRequirement,
+    LocalAuthSeedAction,
+)
+from ..session.provider_session_state import recover_state_dir_provider_session_id
+from ..session.service_resume_identity import (
+    is_exact_resumable_service_session,
+    select_resumable_provider_session_id,
+)
 from .agent_service import (
     AssistantTurn,
     HardError,
@@ -21,47 +30,14 @@ from .agent_service import (
     TransientError,
     UsageLimit,
 )
+from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
+from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time
 
 _log = logging.getLogger(__name__)
 
 _USAGE_LIMIT_SUBSTRING = "You've hit your usage limit"
-
-# Matches "try again at 3:30 PM" (same-day) or "try again at March 15th, 2026 3:30 PM" (cross-day)
-_RESET_TIME_RE = re.compile(
-    r"(?:or\s+)?try again at\s+"
-    r"(?:(?P<month>[A-Za-z]+)\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?,\s+(?P<year>\d{4})\s+)?"
-    r"(?P<hour>\d{1,2}):(?P<minute>\d{2})\s*(?P<ampm>AM|PM)",
-    re.IGNORECASE,
-)
-
-_MONTHS = {
-    "january": 1,
-    "jan": 1,
-    "february": 2,
-    "feb": 2,
-    "march": 3,
-    "mar": 3,
-    "april": 4,
-    "apr": 4,
-    "may": 5,
-    "june": 6,
-    "jun": 6,
-    "july": 7,
-    "jul": 7,
-    "august": 8,
-    "aug": 8,
-    "september": 9,
-    "sep": 9,
-    "sept": 9,
-    "october": 10,
-    "oct": 10,
-    "november": 11,
-    "nov": 11,
-    "december": 12,
-    "dec": 12,
-}
 
 _UNAUTHORIZED_RE = re.compile(
     r"\b(?:401|unauthorized|missing bearer|basic authentication)\b",
@@ -86,60 +62,13 @@ def _classify_error_message(message: str) -> HardError | TransientError | None:
     return None
 
 
-def _parse_reset_time(message: str) -> datetime | None:
-    """Extract a reset datetime from a Codex usage-limit error message.
-
-    Codex reports reset times in UTC.  We parse as UTC and convert to local
-    so the displayed wake time matches the user's clock.
-    """
-    match = _RESET_TIME_RE.search(message)
-    if not match:
-        return None
-
-    hour = int(match.group("hour"))
-    minute = int(match.group("minute"))
-    ampm = match.group("ampm").upper()
-    if ampm == "PM" and hour != 12:
-        hour += 12
-    elif ampm == "AM" and hour == 12:
-        hour = 0
-
-    year_str = match.group("year")
-    month_str = match.group("month")
-    day_str = match.group("day")
-
-    now_local = _time_module.now_local()
-    now_utc = now_local.astimezone(timezone.utc)
-
-    if year_str and month_str and day_str:
-        month = _MONTHS.get(month_str.lower())
-        if month is None:
-            return None
-        try:
-            utc_dt = datetime(
-                int(year_str),
-                month,
-                int(day_str),
-                hour,
-                minute,
-                tzinfo=timezone.utc,
-            )
-        except ValueError:
-            return None
-        return utc_dt.astimezone()
-
-    utc_dt = now_utc.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    local_dt = utc_dt.astimezone()
-    if local_dt < now_local - timedelta(minutes=2):
-        local_dt += timedelta(days=1)
-    return local_dt
-
-
 def _extract_usage_limit(message: str) -> UsageLimit | None:
     """Return a UsageLimit if message contains the usage-limit substring."""
     if _USAGE_LIMIT_SUBSTRING not in message:
         return None
-    reset_time = _parse_reset_time(message)
+    reset_time = parse_reset_time(
+        message, ResetTimeSyntaxMode.TRY_AGAIN_UTC_OPTIONAL_DATE
+    )
     raw = message if reset_time is None else None
     return UsageLimit(reset_time=reset_time, raw_message=raw)
 
@@ -200,6 +129,102 @@ class CodexService:
         if not sessions_dir.is_dir():
             return False
         return any(sessions_dir.rglob("rollout-*.jsonl"))
+
+    def provider_session_state(
+        self, request: ProviderSessionStateRequest
+    ) -> ProviderSessionState:
+        auth_seeding_requirement = _codex_auth_seeding_requirement(
+            request.provider_state_dir
+        )
+        auth_seed_action = _codex_auth_seed_action(request.provider_state_dir)
+        if request.preferred_provider_session_id is not None:
+            return ProviderSessionState(
+                RunKind.RESUME,
+                request.preferred_provider_session_id,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
+                auth_seeding_requirement=auth_seeding_requirement,
+                auth_seed_action=auth_seed_action,
+            )
+        saved_provider_session_id = request.role_session.service_session_id(self.name)
+        if saved_provider_session_id is not None:
+            exact_transcript_match = False
+            if request.require_exact_transcript_match:
+                exact_transcript_match = is_exact_resumable_service_session(
+                    request.role_session,
+                    self.name,
+                    provider_session_id=saved_provider_session_id,
+                    provider_state_dir=request.provider_state_dir,
+                )
+            return ProviderSessionState(
+                RunKind.RESUME,
+                saved_provider_session_id,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
+                exact_transcript_match=exact_transcript_match,
+                auth_seeding_requirement=auth_seeding_requirement,
+                auth_seed_action=auth_seed_action,
+            )
+        if not request.has_resumable_provider_state:
+            return ProviderSessionState(
+                RunKind.FRESH,
+                None,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
+                auth_seeding_requirement=auth_seeding_requirement,
+                auth_seed_action=auth_seed_action,
+                allow_protocol_reprompt=not request.force_resume,
+            )
+
+        selection = select_resumable_provider_session_id(
+            request.role_session,
+            self.name,
+            provider_state_dir=request.provider_state_dir,
+            has_resumable_provider_state=request.has_resumable_provider_state,
+        )
+        provider_session_id = selection.provider_session_id
+        persist_provider_session_id = selection.persist_provider_session_id
+        if provider_session_id is None:
+            provider_session_id = recover_state_dir_provider_session_id(
+                request.provider_state_dir,
+                self.name,
+            )
+            if provider_session_id is not None:
+                request.role_session.save_service_session_id(
+                    self.name,
+                    provider_session_id,
+                )
+                persist_provider_session_id = True
+        if provider_session_id is None:
+            return ProviderSessionState(
+                RunKind.FRESH,
+                None,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
+                auth_seeding_requirement=auth_seeding_requirement,
+                auth_seed_action=auth_seed_action,
+                allow_protocol_reprompt=not request.force_resume,
+            )
+
+        exact_transcript_match = False
+        if request.require_exact_transcript_match and not persist_provider_session_id:
+            exact_transcript_match = is_exact_resumable_service_session(
+                request.role_session,
+                self.name,
+                provider_session_id=provider_session_id,
+                provider_state_dir=request.provider_state_dir,
+            )
+
+        return ProviderSessionState(
+            RunKind.RESUME,
+            provider_session_id,
+            state_dir_relpath=request.state_dir_relpath,
+            state_dir_path=request.provider_state_dir,
+            exact_transcript_match=exact_transcript_match,
+            persist_provider_session_id=persist_provider_session_id,
+            auth_seeding_requirement=auth_seeding_requirement,
+            auth_seed_action=auth_seed_action,
+        )
 
     def valid_models(self) -> frozenset[str]:
         return frozenset(
@@ -262,7 +287,7 @@ class CodexService:
     def run(
         self,
         lines: Iterable[str],
-        on_thread_id: Callable[[str], None] | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
     ) -> Iterator[ParsedTurn]:
         saw_exact_live_prompt_tokens = False
         for line in lines:
@@ -284,8 +309,8 @@ class CodexService:
 
             if event_type == "thread.started":
                 thread_id = obj.get("thread_id")
-                if thread_id and on_thread_id is not None:
-                    on_thread_id(thread_id)
+                if thread_id and on_provider_session_id is not None:
+                    on_provider_session_id(thread_id)
                 continue
 
             if event_type == "item.completed":
@@ -333,3 +358,26 @@ class CodexService:
                         yield classified
                     _log.warning("codex error: %s", message)
                 return
+
+
+def _codex_auth_seeding_requirement(
+    provider_state_dir: Path | None,
+) -> AuthSeedingRequirement:
+    if provider_state_dir is None or (provider_state_dir / "auth.json").exists():
+        return AuthSeedingRequirement.NOT_REQUIRED
+    return AuthSeedingRequirement.REQUIRED
+
+
+def _codex_auth_seed_action(
+    provider_state_dir: Path | None,
+) -> LocalAuthSeedAction | None:
+    if _codex_auth_seeding_requirement(provider_state_dir) is (
+        AuthSeedingRequirement.NOT_REQUIRED
+    ):
+        return None
+    if provider_state_dir is None:
+        return None
+    return LocalAuthSeedAction(
+        source=Path.home() / ".codex" / "auth.json",
+        destination=provider_state_dir / "auth.json",
+    )

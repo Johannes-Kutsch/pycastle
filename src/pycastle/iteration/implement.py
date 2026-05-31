@@ -22,13 +22,12 @@ from ..prompts.pipeline import (
     build_interrupted_work_clause,
     build_issue_scope_args,
 )
-from ..agents.classifier import WellFormed, classify_slice
+from ..issue_readiness import selected_mode_for_issue
 from ..session import RoleSession, is_stage_done_for
 from ..display.status_display import StatusDisplay
 from ..services import GitService, GithubService
 from ..infrastructure.worktree import (
     managed_worktree,
-    patch_gitdir_for_container,
     worktree_name_for_branch,
     worktree_path,
 )
@@ -50,9 +49,16 @@ def branch_for(issue_number: int) -> str:
 
 
 def _resolve_slice(issue: dict, cfg: Config) -> tuple[str, PromptTemplate]:
-    result = classify_slice(issue, cfg)
-    assert isinstance(result, WellFormed)
-    return result.mode.display_name, result.mode.template
+    mode = selected_mode_for_issue(issue, cfg)
+    if mode is None:
+        raise RuntimeError(
+            f"Issue #{issue['number']} is not implement-ready: missing a ready "
+            "slice-mode selection."
+        )
+    return (
+        mode.display_name,
+        mode.template,
+    )
 
 
 def pick_implement_template(issue: dict, cfg: Config) -> PromptTemplate:
@@ -148,39 +154,34 @@ async def run_issue(
                     deps=deps,
                 ) as impl_mount_path,
             ):
-                _impl_overlay = patch_gitdir_for_container(impl_mount_path)
                 _impl_scope_args = _scope_args_for(
                     impl_mount_path, AgentRole.IMPLEMENTER
                 )
-                try:
-                    result = await _bounded_run_agent(
-                        RunRequest(
-                            name=f"Implement Agent #{issue['number']}",
-                            template=_impl_template,
-                            mount_path=impl_mount_path,
-                            role=AgentRole.IMPLEMENTER,
-                            scope_args=_impl_scope_args,
-                            model=deps.cfg.implement_override.model,
-                            effort=deps.cfg.implement_override.effort,
-                            service=deps.cfg.implement_override.service,
-                            stage="pre-implementation",
-                            status_display=deps.status_display,
-                            issue_title=issue["title"],
-                            work_body=f'implementing {_slice_mode} "{issue["title"]}"',
-                            token=_token,
-                        )
+                result = await _bounded_run_agent(
+                    RunRequest(
+                        name=f"Implement Agent #{issue['number']}",
+                        template=_impl_template,
+                        mount_path=impl_mount_path,
+                        role=AgentRole.IMPLEMENTER,
+                        scope_args=_impl_scope_args,
+                        model=deps.cfg.implement_override.model,
+                        effort=deps.cfg.implement_override.effort,
+                        service=deps.cfg.implement_override.service,
+                        stage="pre-implementation",
+                        status_display=deps.status_display,
+                        issue_title=issue["title"],
+                        work_body=f'implementing {_slice_mode} "{issue["title"]}"',
+                        token=_token,
                     )
-                    if isinstance(result, CommitMessageOutput):
-                        _msg = result.message or issue["title"]
-                        deps.git_svc.commit(
-                            impl_mount_path,
-                            deps.repo_root,
-                            f"Implement #{issue['number']} - {_msg}",
-                        )
-                        RoleSession(impl_mount_path, AgentRole.IMPLEMENTER).mark_done()
-                finally:
-                    if _impl_overlay is not None:
-                        _impl_overlay.unlink(missing_ok=True)
+                )
+                if isinstance(result, CommitMessageOutput):
+                    _msg = result.message or issue["title"]
+                    deps.git_svc.commit(
+                        impl_mount_path,
+                        deps.repo_root,
+                        f"Implement #{issue['number']} - {_msg}",
+                    )
+                    RoleSession(impl_mount_path, AgentRole.IMPLEMENTER).mark_done()
 
         async with (
             worktree_semaphore or contextlib.nullcontext(),
@@ -192,37 +193,32 @@ async def run_issue(
                 deps=deps,
             ) as review_mount_path,
         ):
-            _review_overlay = patch_gitdir_for_container(review_mount_path)
             _review_scope_args = _scope_args_for(review_mount_path, AgentRole.REVIEWER)
-            try:
-                review_result = await _bounded_run_agent(
-                    RunRequest(
-                        name=f"Review Agent #{issue['number']}",
-                        template=PromptTemplate.REVIEW,
-                        mount_path=review_mount_path,
-                        role=AgentRole.REVIEWER,
-                        scope_args=_review_scope_args,
-                        model=deps.cfg.review_override.model,
-                        effort=deps.cfg.review_override.effort,
-                        service=deps.cfg.review_override.service,
-                        stage="pre-review",
-                        status_display=deps.status_display,
-                        issue_title=issue["title"],
-                        work_body=f'reviewing {_slice_mode} "{issue["title"]}"',
-                        token=_token,
-                    )
+            review_result = await _bounded_run_agent(
+                RunRequest(
+                    name=f"Review Agent #{issue['number']}",
+                    template=PromptTemplate.REVIEW,
+                    mount_path=review_mount_path,
+                    role=AgentRole.REVIEWER,
+                    scope_args=_review_scope_args,
+                    model=deps.cfg.review_override.model,
+                    effort=deps.cfg.review_override.effort,
+                    service=deps.cfg.review_override.service,
+                    stage="pre-review",
+                    status_display=deps.status_display,
+                    issue_title=issue["title"],
+                    work_body=f'reviewing {_slice_mode} "{issue["title"]}"',
+                    token=_token,
                 )
-                if isinstance(review_result, CommitMessageOutput):
-                    _rev_msg = review_result.message or issue["title"]
-                    deps.git_svc.commit(
-                        review_mount_path,
-                        deps.repo_root,
-                        f"Review #{issue['number']} - {_rev_msg}",
-                    )
-                    RoleSession(review_mount_path, AgentRole.REVIEWER).mark_done()
-            finally:
-                if _review_overlay is not None:
-                    _review_overlay.unlink(missing_ok=True)
+            )
+            if isinstance(review_result, CommitMessageOutput):
+                _rev_msg = review_result.message or issue["title"]
+                deps.git_svc.commit(
+                    review_mount_path,
+                    deps.repo_root,
+                    f"Review #{issue['number']} - {_rev_msg}",
+                )
+                RoleSession(review_mount_path, AgentRole.REVIEWER).mark_done()
     finally:
         if lock is not None and lock.locked():
             lock.release()

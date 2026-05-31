@@ -3,14 +3,16 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from datetime import timezone
+from pathlib import Path
 
 from pycastle.services.agent_service import AssistantTurn, Result
 from pycastle.services.agent_service import HardError
 from pycastle.services.agent_service import TransientError
 from pycastle.services.agent_service import UsageLimit
+from pycastle.services.provider_session_state import ProviderSessionStateRequest
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services.opencode_service import OpenCodeService
-from pycastle.session import RunKind
+from pycastle.session import RoleSession, RunKind
 
 
 def test_opencode_service_builds_json_commands_and_go_api_env() -> None:
@@ -94,7 +96,7 @@ def test_opencode_service_surfaces_assistant_turns_final_result_and_session_id()
                     '"status":{"type":"idle"}}'
                 ),
             ],
-            on_thread_id=session_ids.append,
+            on_provider_session_id=session_ids.append,
         )
     )
 
@@ -143,6 +145,33 @@ def test_opencode_service_maps_usage_limit_errors_with_and_without_reset_time() 
         UsageLimit(
             reset_time=None,
             raw_message="You have reached your OpenCode Go usage limit.",
+        )
+    ]
+
+
+def test_opencode_service_leaves_malformed_explicit_retry_at_as_raw_message() -> None:
+    service = OpenCodeService()
+
+    events = list(
+        service.run(
+            [
+                (
+                    '{"type":"error","timestamp":1,"sessionID":"sess_123","error":{'
+                    '"name":"RateLimitError","data":{"message":"You have reached your '
+                    'OpenCode Go usage limit. Try again at Apr 28th, 2026 0:02 PM.",'
+                    '"statusCode":429,"isRetryable":true}}}'
+                )
+            ]
+        )
+    )
+
+    assert events == [
+        UsageLimit(
+            reset_time=None,
+            raw_message=(
+                "You have reached your OpenCode Go usage limit. "
+                "Try again at Apr 28th, 2026 0:02 PM."
+            ),
         )
     ]
 
@@ -236,11 +265,117 @@ def test_opencode_service_session_id_callback_fires_once_for_repeated_id() -> No
                 ),
                 '{"type":"session.status","sessionID":"sess_1","status":{"type":"idle"}}',
             ],
-            on_thread_id=session_ids.append,
+            on_provider_session_id=session_ids.append,
         )
     )
 
     assert session_ids == ["sess_1"]
+
+
+def test_opencode_service_exact_transcript_requires_metadata_saved_id_and_resumable_state_to_match(
+    tmp_path,
+) -> None:
+    service = OpenCodeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    role_session.save_service_session_id("opencode", "sess-opencode-123")
+    role_session.save_service_session_metadata("opencode", "sess-opencode-123")
+    provider_state_dir = tmp_path / "selected-opencode-state"
+    provider_state_dir.mkdir(parents=True)
+    (provider_state_dir / "session_id").write_text(
+        "sess-opencode-other",
+        encoding="utf-8",
+    )
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=True,
+            require_exact_transcript_match=True,
+        )
+    )
+
+    assert provider_session_state.exact_transcript_match is False
+
+
+def test_opencode_service_resolves_resume_with_saved_session_id_when_state_is_resumable(
+    tmp_path: Path,
+) -> None:
+    service = OpenCodeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    role_session.save_service_session_id("opencode", "sess-opencode-123")
+    provider_state_dir = tmp_path / "selected-opencode-state"
+    provider_state_dir.mkdir(parents=True)
+    (provider_state_dir / "session_id").write_text(
+        "sess-opencode-other",
+        encoding="utf-8",
+    )
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=True,
+        )
+    )
+
+    assert provider_session_state.run_kind is RunKind.RESUME
+    assert provider_session_state.provider_session_id == "sess-opencode-123"
+    assert provider_session_state.persist_provider_session_id is False
+
+
+def test_opencode_service_recovers_resume_from_selected_state_dir_without_saved_session_id(
+    tmp_path: Path,
+) -> None:
+    service = OpenCodeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    provider_state_dir = tmp_path / "selected-opencode-state"
+    provider_state_dir.mkdir(parents=True)
+    (provider_state_dir / "session_id").write_text(
+        "sess-opencode-123",
+        encoding="utf-8",
+    )
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=True,
+        )
+    )
+
+    assert provider_session_state.run_kind is RunKind.RESUME
+    assert provider_session_state.provider_session_id == "sess-opencode-123"
+    assert provider_session_state.persist_provider_session_id is True
+    assert role_session.service_session_id("opencode") == "sess-opencode-123"
+
+
+def test_opencode_service_exact_transcript_recovers_saved_session_id_before_matching(
+    tmp_path: Path,
+) -> None:
+    service = OpenCodeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    role_session.save_service_session_metadata("opencode", "sess-opencode-123")
+    provider_state_dir = tmp_path / "selected-opencode-state"
+    provider_state_dir.mkdir(parents=True)
+    (provider_state_dir / "session_id").write_text(
+        "sess-opencode-123",
+        encoding="utf-8",
+    )
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=True,
+            require_exact_transcript_match=True,
+        )
+    )
+
+    assert provider_session_state.run_kind is RunKind.RESUME
+    assert provider_session_state.provider_session_id == "sess-opencode-123"
+    assert provider_session_state.persist_provider_session_id is True
+    assert provider_session_state.exact_transcript_match is True
 
 
 def test_opencode_service_skips_malformed_json_and_non_dict_values() -> None:

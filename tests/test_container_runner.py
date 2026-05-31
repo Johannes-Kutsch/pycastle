@@ -14,9 +14,14 @@ from pycastle.agents.output_protocol import AgentRole, CommitMessageOutput
 from pycastle.config import Config, load_config
 from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.infrastructure.docker_session import DockerSession
-from pycastle.errors import AgentTimeoutError, DockerError, UsageLimitError
-from pycastle.iteration._deps import RecordingStatusDisplay
+from pycastle.errors import (
+    AgentTimeoutError,
+    DockerError,
+    UsageLimitError,
+)
+from tests.support import RecordingStatusDisplay
 from pycastle.session import RunKind
+from pycastle.services.agent_service import Result
 from pycastle.services.claude_service import ClaudeService
 
 _ROLE = AgentRole.IMPLEMENTER
@@ -245,6 +250,27 @@ def test_preflight_runs_all_checks_when_one_fails(tmp_path):
     assert any("pytest" in c for c in session.exec_calls)
 
 
+def test_preflight_collects_raw_failures_without_classifying_missing_tools(tmp_path):
+    session = FakeDockerSession(
+        exec_handlers={
+            "ruff check": DockerError("bash: ruff: command not found"),
+            "mypy .": DockerError("src/app.py:1: error: boom"),
+        }
+    )
+    runner, _ = _make_runner(session=session, tmp_path=tmp_path)
+
+    result = asyncio.run(
+        runner.preflight([("ruff", "ruff check ."), ("mypy", "mypy .")])
+    )
+
+    assert result == [
+        ("ruff", "ruff check .", "bash: ruff: command not found"),
+        ("mypy", "mypy .", "src/app.py:1: error: boom"),
+    ]
+    assert any("ruff check" in c for c in session.exec_calls)
+    assert any("mypy" in c for c in session.exec_calls)
+
+
 def test_preflight_with_empty_checks_returns_empty(tmp_path):
     runner, _ = _make_runner(tmp_path=tmp_path)
     assert asyncio.run(runner.preflight([])) == []
@@ -270,6 +296,45 @@ def test_work_calls_session_exec_stream_with_claude_command(tmp_path):
     asyncio.run(runner.work(_ROLE, "prompt"))
     assert any("claude" in c for c in session.stream_calls)
     assert any("--model claude-sonnet-4-6" in c for c in session.stream_calls)
+
+
+def test_work_forwards_provider_session_callback_to_service_run(tmp_path):
+    captured: list[str] = []
+
+    class FakeService:
+        name = "fake"
+
+        def build_command(
+            self,
+            role=AgentRole.IMPLEMENTER,
+            model="",
+            effort="",
+            run_kind=RunKind.FRESH,
+            session_uuid=None,
+        ) -> str:
+            del role, model, effort, run_kind, session_uuid
+            return "fake run"
+
+        def run(self, lines, on_provider_session_id=None):
+            list(lines)
+            if on_provider_session_id is not None:
+                on_provider_session_id("provider-session-123")
+            yield Result("<commit_message>done</commit_message>")
+
+    session = FakeDockerSession(stream_chunks=[b'{"type":"ignored"}\n'])
+    runner = ContainerRunner(
+        "agent",
+        cast(DockerSession, session),
+        cfg=Config(logs_dir=tmp_path),
+        service=cast(ClaudeService, FakeService()),
+    )
+
+    result = asyncio.run(
+        runner.work(_ROLE, "prompt", on_provider_session_id=captured.append)
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert captured == ["provider-session-123"]
 
 
 def test_work_called_twice_writes_each_prompt(tmp_path):

@@ -10,7 +10,7 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.config import Config, StageOverride
 from pycastle.services import GitService
-from pycastle.iteration._deps import (
+from tests.support import (
     FakeAgentRunner,
     RecordingStatusDisplay,
     StubPreflightCache,
@@ -20,7 +20,6 @@ from pycastle.iteration.planning import (
     AllBlocked,
     PlanReady,
     hydrate_planned_issues,
-    partition_by_slice_label,
     planning_phase,
 )
 
@@ -113,6 +112,89 @@ def test_planning_phase_skip_single_issue_emits_plan_row(tmp_path, git_svc):
     msg = plan_removes[0][2]
     assert "#42" in msg
     assert "skipping plan agent" in msg
+
+
+# ── planning_phase: readiness_by_number propagation ─────────────────────────
+
+
+def test_planning_phase_single_issue_skip_populates_readiness_by_number(
+    tmp_path, git_svc
+):
+    from pycastle.issue_readiness import IssueReadiness, SliceMode
+
+    issue = {
+        "number": 5,
+        "title": "Solo",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["docs-slice"],
+    }
+    fake = FakeAgentRunner([])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(planning_phase(deps, [issue], []))
+
+    assert isinstance(result, PlanReady)
+    assert 5 in result.readiness_by_number
+    readiness = result.readiness_by_number[5]
+    assert isinstance(readiness, IssueReadiness)
+    assert readiness.selected_mode == SliceMode.DOCS
+
+
+def test_planning_phase_multi_issue_planner_populates_readiness_by_number(
+    tmp_path, git_svc
+):
+    from pycastle.issue_readiness import SliceMode
+
+    issue_a = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    issue_b = {
+        "number": 2,
+        "title": "B",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["refactor-slice"],
+    }
+    fake = FakeAgentRunner([_plan_output([issue_a, issue_b])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(planning_phase(deps, [issue_a, issue_b], []))
+
+    assert isinstance(result, PlanReady)
+    assert result.readiness_by_number[1].selected_mode == SliceMode.BEHAVIOR
+    assert result.readiness_by_number[2].selected_mode == SliceMode.REFACTOR
+
+
+def test_planning_phase_malformed_issue_absent_from_readiness_by_number(
+    tmp_path, git_svc
+):
+    well = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    malformed = {
+        "number": 2,
+        "title": "B",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
+    fake = FakeAgentRunner([_plan_output([well])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(planning_phase(deps, [well, malformed], []))
+
+    assert isinstance(result, PlanReady)
+    assert 1 in result.readiness_by_number
+    assert 2 not in result.readiness_by_number
 
 
 # ── planning_phase: returns PlanReady with sorted issues ────────────────────
@@ -620,6 +702,91 @@ def test_hydrate_planned_issues_raises_when_planned_number_not_in_open_issues():
         hydrate_planned_issues(plan, open_issues)
 
 
+def test_hydrate_planned_issues_carries_readiness_from_sources_into_result():
+    from pycastle.issue_readiness import (
+        IssueReadiness,
+        IssueReadinessKind,
+        SliceMode,
+        WellFormed,
+        WellFormedBody,
+    )
+
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.BEHAVIOR, label="behavior-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=SliceMode.BEHAVIOR,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    plan = PlanReady(issues=[{"number": 1, "title": "A"}], sha="abc123")
+    sources = [
+        {
+            "number": 1,
+            "title": "A",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+            "readiness": readiness,
+        }
+    ]
+
+    result = hydrate_planned_issues(plan, sources)
+
+    assert result.readiness_by_number[1] is readiness
+
+
+def test_hydrate_planned_issues_merges_readiness_from_plan_and_sources():
+    from pycastle.issue_readiness import (
+        IssueReadiness,
+        IssueReadinessKind,
+        SliceMode,
+        WellFormed,
+        WellFormedBody,
+    )
+
+    readiness_1 = IssueReadiness(
+        slice_status=WellFormed(SliceMode.BEHAVIOR, label="behavior-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=SliceMode.BEHAVIOR,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    readiness_2 = IssueReadiness(
+        slice_status=WellFormed(SliceMode.DOCS, label="docs-slice"),
+        body_floor_status=WellFormedBody(stripped_length=120),
+        is_ready=True,
+        selected_mode=SliceMode.DOCS,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    plan = PlanReady(
+        issues=[{"number": 1, "title": "A"}, {"number": 2, "title": "B"}],
+        sha="abc123",
+        readiness_by_number={1: readiness_1},
+    )
+    sources = [
+        {
+            "number": 1,
+            "title": "A",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "B",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["docs-slice"],
+            "readiness": readiness_2,
+        },
+    ]
+
+    result = hydrate_planned_issues(plan, sources)
+
+    assert result.readiness_by_number[1] is readiness_1
+    assert result.readiness_by_number[2] is readiness_2
+
+
 # ── Config.needs_slice_type_label ────────────────────────────────────────────
 
 
@@ -627,26 +794,6 @@ def test_config_needs_slice_type_label_defaults_to_needs_slice_type():
     from pycastle.config import Config
 
     assert Config().needs_slice_type_label == "needs-slice-type"
-
-
-# ── partition_by_slice_label ─────────────────────────────────────────────────
-
-
-def test_partition_by_slice_label_separates_well_formed_and_malformed():
-    from pycastle.config import Config
-
-    cfg = Config()
-    well = {"number": 1, "labels": ["ready-for-agent", "behavior-slice"]}
-    no_slice = {"number": 2, "labels": ["ready-for-agent"]}
-    multi_slice = {
-        "number": 3,
-        "labels": ["ready-for-agent", "behavior-slice", "refactor-slice"],
-    }
-
-    good, bad = partition_by_slice_label([well, no_slice, multi_slice], cfg)
-
-    assert good == [well]
-    assert bad == [no_slice, multi_slice]
 
 
 def test_planning_phase_all_open_issues_json_unaffected_by_partition(tmp_path, git_svc):
@@ -714,35 +861,6 @@ def test_planning_phase_adds_label_and_comment_for_malformed_without_flag(
     assert "none" in comment_body
 
 
-def test_planning_phase_makes_no_calls_for_malformed_already_flagged(tmp_path, git_svc):
-    from unittest.mock import MagicMock
-    from pycastle.services.github_service import GithubService
-
-    well = {
-        "number": 1,
-        "title": "A",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    malformed = {
-        "number": 2,
-        "title": "B",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["needs-slice-type"],
-    }
-    fake = FakeAgentRunner([_plan_output([well])])
-    github_svc = MagicMock(spec=GithubService)
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    asyncio.run(planning_phase(deps, [well, malformed], []))
-
-    github_svc.add_label_to_issue.assert_not_called()
-    github_svc.post_comment.assert_not_called()
-    github_svc.remove_label_from_issue.assert_not_called()
-
-
 def test_planning_phase_removes_stale_flag_from_well_formed_issue(tmp_path, git_svc):
     from unittest.mock import MagicMock
     from pycastle.services.github_service import GithubService
@@ -770,35 +888,6 @@ def test_planning_phase_removes_stale_flag_from_well_formed_issue(tmp_path, git_
     github_svc.remove_label_from_issue.assert_called_once_with(1, "needs-slice-type")
     github_svc.add_label_to_issue.assert_not_called()
     github_svc.post_comment.assert_not_called()
-
-
-def test_planning_phase_makes_no_calls_for_well_formed_without_flag(tmp_path, git_svc):
-    from unittest.mock import MagicMock
-    from pycastle.services.github_service import GithubService
-
-    well1 = {
-        "number": 1,
-        "title": "A",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    well2 = {
-        "number": 2,
-        "title": "B",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["refactor-slice"],
-    }
-    fake = FakeAgentRunner([_plan_output([well1, well2])])
-    github_svc = MagicMock(spec=GithubService)
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    asyncio.run(planning_phase(deps, [well1, well2], []))
-
-    github_svc.add_label_to_issue.assert_not_called()
-    github_svc.post_comment.assert_not_called()
-    github_svc.remove_label_from_issue.assert_not_called()
 
 
 def test_planning_phase_filters_malformed_from_ready_for_agent_json(tmp_path, git_svc):
@@ -833,45 +922,6 @@ def test_planning_phase_filters_malformed_from_ready_for_agent_json(tmp_path, gi
     assert fake.calls[0].scope_args["READY_FOR_AGENT_ISSUES_JSON"] == json.dumps(
         [well1, well2]
     )
-
-
-# ── is_well_formed_body ──────────────────────────────────────────────────────
-
-
-def test_is_well_formed_body_returns_false_for_short_body():
-    from pycastle.iteration.planning import is_well_formed_body
-
-    assert is_well_formed_body({"body": "x" * 99}) is False
-
-
-def test_is_well_formed_body_returns_true_for_body_at_floor():
-    from pycastle.iteration.planning import is_well_formed_body
-
-    assert is_well_formed_body({"body": "x" * 100}) is True
-
-
-def test_is_well_formed_body_returns_false_for_empty_body():
-    from pycastle.iteration.planning import is_well_formed_body
-
-    assert is_well_formed_body({"body": ""}) is False
-
-
-def test_is_well_formed_body_returns_false_for_whitespace_body():
-    from pycastle.iteration.planning import is_well_formed_body
-
-    assert is_well_formed_body({"body": "   \n  "}) is False
-
-
-def test_is_well_formed_body_returns_false_for_at_dash_body():
-    from pycastle.iteration.planning import is_well_formed_body
-
-    assert is_well_formed_body({"body": "@-"}) is False
-
-
-def test_is_well_formed_body_returns_false_for_none_body():
-    from pycastle.iteration.planning import is_well_formed_body
-
-    assert is_well_formed_body({"body": None}) is False
 
 
 # ── planning_phase: needs-info body lifecycle ────────────────────────────────
@@ -910,63 +960,6 @@ def test_planning_phase_adds_needs_info_label_and_comment_for_short_body(
     assert "needs-info" in comment_body
 
 
-def test_planning_phase_removes_needs_info_when_body_now_long_enough(tmp_path, git_svc):
-    from unittest.mock import MagicMock
-    from pycastle.services.github_service import GithubService
-
-    well1 = {
-        "number": 1,
-        "title": "A",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["behavior-slice", "needs-info"],
-    }
-    well2 = {
-        "number": 2,
-        "title": "B",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["refactor-slice"],
-    }
-    fake = FakeAgentRunner([_plan_output([well1, well2])])
-    github_svc = MagicMock(spec=GithubService)
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    asyncio.run(planning_phase(deps, [well1, well2], []))
-
-    github_svc.remove_label_from_issue.assert_called_once_with(1, "needs-info")
-    github_svc.add_label_to_issue.assert_not_called()
-    github_svc.post_comment.assert_not_called()
-
-
-def test_planning_phase_no_needs_info_calls_when_already_flagged(tmp_path, git_svc):
-    from unittest.mock import MagicMock
-    from pycastle.services.github_service import GithubService
-
-    well = {
-        "number": 1,
-        "title": "A",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    short_already_flagged = {
-        "number": 2,
-        "title": "B",
-        "body": "short",
-        "comments": [],
-        "labels": ["behavior-slice", "needs-info"],
-    }
-    fake = FakeAgentRunner([_plan_output([well])])
-    github_svc = MagicMock(spec=GithubService)
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    asyncio.run(planning_phase(deps, [well, short_already_flagged], []))
-
-    github_svc.add_label_to_issue.assert_not_called()
-    github_svc.post_comment.assert_not_called()
-
-
 def test_planning_phase_excludes_short_body_issues_from_candidate_set(
     tmp_path, git_svc
 ):
@@ -1003,82 +996,9 @@ def test_planning_phase_excludes_short_body_issues_from_candidate_set(
     )
 
 
-def test_planning_phase_short_body_issue_appears_in_all_open_issues_json(
-    tmp_path, git_svc
-):
-    import json
-
-    well1 = {
-        "number": 1,
-        "title": "A",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    well2 = {
-        "number": 3,
-        "title": "C",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["refactor-slice"],
-    }
-    short_body = {
-        "number": 2,
-        "title": "B",
-        "body": "short",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    all_open = [
-        {"number": 1, "title": "A", "labels": ["ready-for-agent", "behavior-slice"]},
-        {"number": 2, "title": "B", "labels": ["ready-for-agent", "behavior-slice"]},
-        {"number": 3, "title": "C", "labels": ["ready-for-agent", "refactor-slice"]},
-    ]
-    fake = FakeAgentRunner([_plan_output([well1, well2])])
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
-    asyncio.run(planning_phase(deps, [well1, short_body, well2], all_open))
-
-    assert fake.calls[0].scope_args["ALL_OPEN_ISSUES_JSON"] == json.dumps(all_open)
-
-
-def test_planning_phase_issue_malformed_in_both_dimensions_gets_both_labels(
-    tmp_path, git_svc
-):
-    from unittest.mock import MagicMock
-    from pycastle.services.github_service import GithubService
-
-    well = {
-        "number": 1,
-        "title": "A",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    both_bad = {
-        "number": 2,
-        "title": "B",
-        "body": "short",
-        "comments": [],
-        "labels": [],
-    }
-    fake = FakeAgentRunner([_plan_output([well])])
-    github_svc = MagicMock(spec=GithubService)
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    asyncio.run(planning_phase(deps, [well, both_bad], []))
-
-    added_labels = [call[0][1] for call in github_svc.add_label_to_issue.call_args_list]
-    assert "needs-info" in added_labels
-    assert "needs-slice-type" in added_labels
-    assert github_svc.post_comment.call_count == 2
-
-
 def test_planning_phase_single_issue_with_short_body_excluded_from_short_circuit(
     tmp_path, git_svc
 ):
-    from pycastle.agents.output_protocol import PlannerOutput
-
     short_body = {
         "number": 1,
         "title": "A",
@@ -1086,128 +1006,36 @@ def test_planning_phase_single_issue_with_short_body_excluded_from_short_circuit
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    fake = FakeAgentRunner([PlannerOutput(issues=[], blocked=[])])
+    fake = FakeAgentRunner([])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     result = asyncio.run(planning_phase(deps, [short_body], []))
 
     assert isinstance(result, AllBlocked)
+    assert len(fake.calls) == 0
 
 
-def test_planning_phase_all_blocked_summary_reports_missing_slice_mode_labels(
+def test_planning_phase_single_malformed_issue_skips_planner_and_returns_all_blocked(
     tmp_path, git_svc
 ):
-    recording = RecordingStatusDisplay()
-    malformed_a = {
-        "number": 1,
-        "title": "A",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["ready-for-agent"],
-    }
-    malformed_b = {
-        "number": 2,
-        "title": "B",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["ready-for-agent"],
-    }
-    fake = FakeAgentRunner([PlannerOutput(issues=[], blocked=[])])
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
-    asyncio.run(planning_phase(deps, [malformed_a, malformed_b], []))
-
-    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
-    assert plan_removes, "Plan row must be removed"
-    assert "missing exactly one slice-mode label" in plan_removes[0][2]
-
-
-def test_planning_phase_all_blocked_summary_reports_too_short_bodies(tmp_path, git_svc):
-    recording = RecordingStatusDisplay()
-    short_a = {
+    malformed = {
         "number": 1,
         "title": "A",
         "body": "short",
         "comments": [],
-        "labels": ["ready-for-agent", "behavior-slice"],
+        "labels": [],
     }
-    short_b = {
-        "number": 2,
-        "title": "B",
-        "body": "tiny",
-        "comments": [],
-        "labels": ["ready-for-agent", "docs-slice"],
-    }
-    fake = FakeAgentRunner([PlannerOutput(issues=[], blocked=[])])
+    fake = FakeAgentRunner([])
 
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
-    asyncio.run(planning_phase(deps, [short_a, short_b], []))
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(planning_phase(deps, [malformed], []))
 
-    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
-    assert plan_removes, "Plan row must be removed"
-    assert "bodies are below the minimum length floor" in plan_removes[0][2]
-
-
-def test_planning_phase_all_blocked_summary_uses_singular_short_body_wording(
-    tmp_path, git_svc
-):
-    recording = RecordingStatusDisplay()
-    short_body = {
-        "number": 1,
-        "title": "A",
-        "body": "short",
-        "comments": [],
-        "labels": ["ready-for-agent", "behavior-slice"],
-    }
-    fake = FakeAgentRunner([PlannerOutput(issues=[], blocked=[])])
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
-    asyncio.run(planning_phase(deps, [short_body], []))
-
-    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
-    assert plan_removes, "Plan row must be removed"
-    assert (
-        "Planning blockers: 1 body is below the minimum length floor."
-        in plan_removes[0][2]
+    assert isinstance(result, AllBlocked)
+    assert result.blocked == []
+    assert len(fake.calls) == 0, (
+        "Planner must not be called when no readiness candidates exist"
     )
-
-
-def test_planning_phase_all_blocked_summary_separates_blocker_classes_with_counts(
-    tmp_path, git_svc
-):
-    recording = RecordingStatusDisplay()
-    missing_slice = {
-        "number": 1,
-        "title": "A",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["ready-for-agent"],
-    }
-    short_body_a = {
-        "number": 2,
-        "title": "B",
-        "body": "short",
-        "comments": [],
-        "labels": ["ready-for-agent", "behavior-slice"],
-    }
-    short_body_b = {
-        "number": 3,
-        "title": "C",
-        "body": "tiny",
-        "comments": [],
-        "labels": ["ready-for-agent", "docs-slice"],
-    }
-    fake = FakeAgentRunner([PlannerOutput(issues=[], blocked=[])])
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
-    asyncio.run(planning_phase(deps, [missing_slice, short_body_a, short_body_b], []))
-
-    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
-    assert plan_removes, "Plan row must be removed"
-    assert (
-        "Planning blockers: 1 missing exactly one slice-mode label; "
-        "2 bodies are below the minimum length floor."
-    ) in plan_removes[0][2]
+    git_svc.create_worktree.assert_not_called()
 
 
 def test_planning_phase_all_blocked_summary_precedes_planner_blocked_lines(

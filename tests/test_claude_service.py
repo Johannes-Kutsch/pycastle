@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+import pycastle._time as _time_module
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.errors import (
     ClaudeCliNotFoundError,
@@ -19,6 +21,8 @@ from pycastle.services.agent_service import (
     Result,
     UsageLimit,
 )
+from pycastle.services.provider_session_state import ProviderSessionStateRequest
+from pycastle.session import RoleSession
 from pycastle.session import RunKind
 
 
@@ -279,6 +283,30 @@ def test_build_env_omits_config_dir_key_when_path_is_none():
     assert "CLAUDE_CONFIG_DIR" not in env
 
 
+# ── ClaudeService.provider_session_state ─────────────────────────────────────
+
+
+def test_provider_session_state_forced_resume_uses_preferred_session_id_without_files(
+    tmp_path,
+):
+    service = ClaudeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=None,
+            has_resumable_provider_state=False,
+            preferred_provider_session_id=role_session.session_uuid(),
+            force_resume=True,
+        )
+    )
+
+    assert provider_session_state.run_kind is RunKind.RESUME
+    assert provider_session_state.provider_session_id == role_session.session_uuid()
+    assert provider_session_state.exact_transcript_match is False
+
+
 # ── ClaudeService.run ─────────────────────────────────────────────────────────
 
 
@@ -341,6 +369,20 @@ def test_run_yields_usage_limit_for_429_line():
     assert any(isinstance(e, UsageLimit) for e in events)
 
 
+def test_run_accepts_provider_session_callback_without_emitting_session_id():
+    captured: list[str] = []
+
+    events = list(
+        ClaudeService().run(
+            [_assistant_line("hello"), _result_line("done")],
+            on_provider_session_id=captured.append,
+        )
+    )
+
+    assert events == [AssistantTurn(text="hello"), Result(text="done")]
+    assert captured == []
+
+
 def test_run_stops_after_result():
     lines = [_result_line("done"), _assistant_line("after")]
     events = list(ClaudeService().run(lines))
@@ -387,3 +429,20 @@ def test_run_usage_limit_has_no_raw_message_when_reset_time_parsed_successfully(
     limit = next(e for e in events if isinstance(e, UsageLimit))
     assert limit.reset_time is not None
     assert limit.raw_message is None
+
+
+def test_run_usage_limit_uses_local_timezone_from_now_local(monkeypatch):
+    pacific = timezone(-timedelta(hours=7))
+    monkeypatch.setattr(
+        _time_module,
+        "now_local",
+        lambda: datetime(2026, 5, 27, 7, 0, tzinfo=pacific),
+    )
+    line = json.dumps({"api_error_status": 429, "result": "limit resets 3:30pm (UTC)"})
+
+    events = list(ClaudeService().run([line]))
+
+    limit = next(e for e in events if isinstance(e, UsageLimit))
+    assert limit.reset_time == datetime(2026, 5, 27, 8, 30, tzinfo=pacific)
+    assert limit.reset_time is not None
+    assert limit.reset_time.utcoffset() == pacific.utcoffset(None)

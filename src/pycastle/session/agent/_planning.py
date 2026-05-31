@@ -1,0 +1,176 @@
+from __future__ import annotations
+
+import dataclasses
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from ...agents.output_protocol import AgentRole
+from .._provider_session_decision import (
+    AuthSeedingRequirement,
+    LocalAuthSeedAction,
+    RecoveredSessionIdPersistence,
+)
+from .._provider_session_plan import (
+    ProviderSessionDecision,
+    ProviderSessionPlanRequest,
+    plan_provider_session,
+    record_observed_provider_session_id,
+    record_successful_provider_session_metadata,
+)
+from ..resume import RunKind
+
+if TYPE_CHECKING:
+    from ...services.agent_service import AgentService
+
+
+@dataclasses.dataclass(frozen=True)
+class RunSessionPlanRequest:
+    role: AgentRole
+    worktree: Path
+    namespace: str
+    service: AgentService
+
+
+@dataclasses.dataclass(frozen=True)
+class RunSessionPlan:
+    role: AgentRole
+    worktree: Path
+    namespace: str
+    service: AgentService
+    run_kind: RunKind
+    service_state_dir: Path | None
+    provider_state_dir_relpath: str | None
+    host_provider_state_dir: Path | None
+    provider_session_id: str | None
+    auth_seeding_requirement: AuthSeedingRequirement
+    recovered_session_id_persistence: RecoveredSessionIdPersistence
+    provider_session_plan: ProviderSessionDecision | None = None
+    auth_seed_action: LocalAuthSeedAction | None = None
+    exact_transcript_match: bool = False
+
+    def __post_init__(self) -> None:
+        if self.provider_session_plan is not None:
+            return
+        object.__setattr__(
+            self,
+            "provider_session_plan",
+            ProviderSessionDecision(
+                run_kind=self.run_kind,
+                provider_session_id=self.provider_session_id,
+                state_dir_relpath=self.provider_state_dir_relpath,
+                state_dir_path=self.host_provider_state_dir,
+                recovered_session_id_persistence=(
+                    self.recovered_session_id_persistence
+                ),
+                service_state_dir=self.service_state_dir,
+                exact_transcript_match=self.exact_transcript_match,
+                auth_seeding_requirement=self.auth_seeding_requirement,
+                auth_seed_action=self.auth_seed_action,
+            ),
+        )
+
+    def provider_state_dir_container_path(self, container_workspace: str) -> str | None:
+        provider_session_plan = self.provider_session_plan
+        if provider_session_plan is None:
+            return None
+        return provider_session_plan.container_state_dir_path(
+            worktree=self.worktree,
+            service_name=self.service.name,
+            container_workspace=container_workspace,
+        )
+
+    def prepared_provider_session_id(self) -> str | None:
+        provider_session_id = self.provider_session_id
+        if provider_session_id is None:
+            return None
+        if (
+            self.recovered_session_id_persistence
+            is RecoveredSessionIdPersistence.PERSIST
+        ):
+            self.capture_provider_session_id(provider_session_id)
+        return provider_session_id
+
+    def prepare_host_provider_state_dir(self) -> None:
+        if self.host_provider_state_dir is None:
+            return
+        self.host_provider_state_dir.mkdir(parents=True, exist_ok=True)
+        if self.auth_seed_action is not None:
+            self.auth_seed_action.apply()
+
+    def capture_provider_session_id(self, provider_session_id: str) -> None:
+        object.__setattr__(self, "provider_session_id", provider_session_id)
+        record_observed_provider_session_id(
+            worktree=self.worktree,
+            role=self.role,
+            namespace=self.namespace,
+            service_name=self.service.name,
+            service_state_dir=self.service_state_dir,
+            provider_session_id=provider_session_id,
+        )
+
+    def record_successful_run(self, provider_session_id: str | None = None) -> None:
+        session_id = provider_session_id or self.provider_session_id
+        record_successful_provider_session_metadata(
+            worktree=self.worktree,
+            role=self.role,
+            namespace=self.namespace,
+            service_name=self.service.name,
+            provider_session_id=session_id,
+        )
+
+    @classmethod
+    def for_service(
+        cls,
+        *,
+        role: AgentRole,
+        worktree: Path,
+        namespace: str,
+        service: AgentService,
+    ) -> RunSessionPlan:
+        return plan_run_session(
+            RunSessionPlanRequest(
+                role=role,
+                worktree=worktree,
+                namespace=namespace,
+                service=service,
+            )
+        )
+
+
+def plan_run_session(request: RunSessionPlanRequest) -> RunSessionPlan:
+    provider_session = plan_provider_session(
+        ProviderSessionPlanRequest(
+            worktree=request.worktree,
+            role=request.role,
+            namespace=request.namespace,
+            service=request.service,
+        )
+    )
+    return RunSessionPlan(
+        role=request.role,
+        worktree=request.worktree,
+        namespace=request.namespace,
+        service=request.service,
+        provider_session_plan=provider_session,
+        run_kind=provider_session.run_kind,
+        service_state_dir=provider_session.service_state_dir,
+        provider_state_dir_relpath=provider_session.state_dir_relpath,
+        host_provider_state_dir=provider_session.state_dir_path,
+        provider_session_id=provider_session.provider_session_id,
+        auth_seeding_requirement=provider_session.auth_seeding_requirement,
+        recovered_session_id_persistence=(
+            provider_session.recovered_session_id_persistence
+        ),
+        auth_seed_action=provider_session.auth_seed_action,
+        exact_transcript_match=provider_session.exact_transcript_match,
+    )
+
+
+__all__ = [
+    "AuthSeedingRequirement",
+    "LocalAuthSeedAction",
+    "RecoveredSessionIdPersistence",
+    "RunSessionPlan",
+    "RunSessionPlanRequest",
+    "plan_run_session",
+]

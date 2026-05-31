@@ -17,7 +17,11 @@ from pycastle.services.agent_service import (
     TransientError,
     UsageLimit,
 )
-from pycastle.session import RunKind
+from pycastle.services.provider_session_state import ProviderSessionStateRequest
+from pycastle.session import RoleSession, RunKind
+from pycastle.session.service_resume_identity import (
+    select_resumable_provider_session_id,
+)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -316,6 +320,264 @@ def test_is_resumable_false_when_sessions_has_non_rollout_files(tmp_path):
     assert CodexService().is_resumable(state_dir) is False
 
 
+def test_provider_session_state_is_fresh_without_resumable_provider_state(tmp_path):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=None,
+            has_resumable_provider_state=False,
+        )
+    )
+
+    assert provider_session_state.run_kind is RunKind.FRESH
+    assert provider_session_state.provider_session_id is None
+    assert provider_session_state.persist_provider_session_id is False
+
+
+def test_select_resumable_provider_session_id_does_not_recover_codex_rollout_thread_id_without_sidecar(
+    tmp_path,
+):
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
+    )
+
+    selection = select_resumable_provider_session_id(
+        role_session,
+        "codex",
+        provider_state_dir=state_dir,
+        has_resumable_provider_state=True,
+    )
+
+    assert selection.provider_session_id is None
+    assert selection.persist_provider_session_id is False
+    assert role_session.service_session_id("codex") is None
+
+
+def test_provider_session_state_recovers_single_nested_codex_rollout_thread_id(
+    tmp_path,
+):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29" / "nested"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
+    )
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+        )
+    )
+
+    assert provider_session_state.run_kind is RunKind.RESUME
+    assert provider_session_state.provider_session_id == "thread-from-rollout"
+    assert provider_session_state.persist_provider_session_id is True
+    assert role_session.service_session_id("codex") == "thread-from-rollout"
+
+
+def test_provider_session_state_is_fresh_for_malformed_only_codex_rollouts(
+    tmp_path,
+):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                "{not-json",
+                '["not-an-object"]',
+                '{"type":"turn.completed","thread_id":"ignored"}',
+                '{"type":"thread.started","thread_id":"   "}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+        )
+    )
+
+    assert provider_session_state.run_kind is RunKind.FRESH
+    assert provider_session_state.provider_session_id is None
+    assert provider_session_state.persist_provider_session_id is False
+    assert role_session.service_session_id("codex") is None
+
+
+def test_provider_session_state_is_fresh_for_distinct_codex_rollout_thread_ids(
+    tmp_path,
+):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-alpha"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-beta"}\n',
+        encoding="utf-8",
+    )
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+        )
+    )
+
+    assert provider_session_state.run_kind is RunKind.FRESH
+    assert provider_session_state.provider_session_id is None
+    assert provider_session_state.persist_provider_session_id is False
+    assert role_session.service_session_id("codex") is None
+
+
+def test_provider_session_state_resumes_when_same_codex_rollout_thread_id_appears_in_multiple_files(
+    tmp_path,
+):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-002.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+        )
+    )
+
+    assert provider_session_state.run_kind is RunKind.RESUME
+    assert provider_session_state.provider_session_id == "thread-abc"
+    assert provider_session_state.persist_provider_session_id is True
+    assert role_session.service_session_id("codex") == "thread-abc"
+
+
+def test_provider_session_state_marks_exact_transcript_match_for_matching_codex_identity(
+    tmp_path,
+):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+    role_session.save_service_session_id("codex", "thread-abc")
+    role_session.save_service_session_metadata("codex", "thread-abc")
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+            require_exact_transcript_match=True,
+        )
+    )
+
+    assert provider_session_state.persist_provider_session_id is False
+    assert provider_session_state.exact_transcript_match is True
+
+
+def test_provider_session_state_skips_exact_transcript_match_for_recovered_codex_identity(
+    tmp_path,
+):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
+        encoding="utf-8",
+    )
+    role_session.save_service_session_metadata("codex", "thread-abc")
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+            require_exact_transcript_match=True,
+        )
+    )
+
+    assert provider_session_state.persist_provider_session_id is True
+    assert provider_session_state.exact_transcript_match is False
+
+
+def test_provider_session_state_skips_exact_transcript_match_for_conflicting_codex_rollouts(
+    tmp_path,
+):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-old"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-new"}\n',
+        encoding="utf-8",
+    )
+    role_session.save_service_session_id("codex", "thread-new")
+    role_session.save_service_session_metadata("codex", "thread-new")
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+            require_exact_transcript_match=True,
+        )
+    )
+
+    assert provider_session_state.persist_provider_session_id is False
+    assert provider_session_state.exact_transcript_match is False
+
+
 # ── CodexService.run: JSONL parsing ──────────────────────────────────────────
 
 
@@ -487,7 +749,7 @@ def test_run_thread_started_surfaces_thread_id():
         _item_completed("agent_message", "Hi"),
         _turn_completed(),
     ]
-    list(CodexService().run(lines, on_thread_id=captured.append))
+    list(CodexService().run(lines, on_provider_session_id=captured.append))
     assert captured == ["thread-test-id"]
 
 

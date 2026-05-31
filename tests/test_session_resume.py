@@ -1,18 +1,68 @@
-"""Tests for session_resume: RoleSession lifecycle and module-level helpers."""
+"""Tests for session_resume: RoleSession lifecycle and stage/session helpers."""
+
+from __future__ import annotations
 
 import os
 import stat
 import uuid
+from dataclasses import dataclass
+from pathlib import Path
+from typing import cast
 
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.services.agent_service import AgentService
+from pycastle.services.codex_service import CodexService
+from pycastle.services.provider_session_state import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
+from pycastle.services.service_registry import ServiceRegistry
 from pycastle.session import (
+    ProviderFreshFallbackReason,
+    ProviderRunState,
     RoleSession,
     RunKind,
     any_role_dir_present,
     is_stage_done_for,
 )
+from pycastle.session._provider_session_sidecars import service_session_metadata_path
+
+
+@dataclass(frozen=True)
+class _FakeService:
+    name: str
+    relpath: str | None
+    resumable: bool
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        return self.relpath
+
+    def is_resumable(self, state_dir: Path) -> bool:
+        return self.resumable
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        if self.name == "claude":
+            provider_session_id = (
+                request.preferred_provider_session_id
+                or request.role_session.session_uuid()
+            )
+            return ProviderSessionState(
+                RunKind.RESUME
+                if request.has_resumable_provider_state
+                else RunKind.FRESH,
+                provider_session_id,
+            )
+        if not request.has_resumable_provider_state:
+            return ProviderSessionState(RunKind.FRESH, None)
+        saved_provider_session_id = request.role_session.service_session_id(self.name)
+        if saved_provider_session_id is None:
+            return ProviderSessionState(RunKind.FRESH, None)
+        return ProviderSessionState(RunKind.RESUME, saved_provider_session_id)
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -141,6 +191,233 @@ def test_service_session_ids_are_isolated_by_role_and_worktree(tmp_path):
     assert reviewer_a.service_session_id("opencode") == "sess-review"
 
 
+def test_service_session_ids_use_service_specific_sidecars(worktree):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+
+    rs.save_service_session_id("codex", "thread-123")
+    rs.save_service_session_id("opencode", "sess-123")
+    rs.save_service_session_id("unknown-service", "default-123")
+
+    assert rs.service_session_id("codex") == "thread-123"
+    assert rs.service_session_id("opencode") == "sess-123"
+    assert rs.service_session_id("unknown-service") == "default-123"
+
+
+def test_provider_run_state_for_codex_service_recovers_single_nested_rollout_thread_id(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    service = CodexService()
+    state_dir = rs.path / "codex"
+    rollout_dir = state_dir / "sessions" / "2026" / "05" / "30" / "nested"
+    rollout_dir.mkdir(parents=True)
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"   "}',
+                '{"type":"thread.started","thread_id":"thread-from-rollout"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.RESUME,
+        provider_session_id="thread-from-rollout",
+        persist_provider_session_id=True,
+        provider_state_dir=state_dir,
+    )
+    assert rs.service_session_id("codex") == "thread-from-rollout"
+
+
+def test_provider_identity_provider_run_state_preserves_provider_state_dir_and_session_id(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    provider_state_dir = rs.path / "codex"
+    provider_state_dir.mkdir(parents=True)
+    provider_state_dir.joinpath("thread_id").write_text(
+        "thread-from-sidecar\n",
+        encoding="utf-8",
+    )
+
+    provider_run_state = rs.provider_identity(
+        "codex",
+        has_resumable_provider_state=True,
+        provider_state_dir=provider_state_dir,
+    ).provider_run_state(provider_state_dir=provider_state_dir)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.RESUME,
+        provider_session_id="thread-from-sidecar",
+        provider_state_dir=provider_state_dir,
+    )
+
+
+def test_provider_identity_provider_run_state_reports_unrecoverable_fallback_reason(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    provider_state_dir = rs.path / "codex"
+    dir_a = provider_state_dir / "sessions" / "2026" / "05" / "30"
+    dir_b = provider_state_dir / "sessions" / "2026" / "05" / "31"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    dir_a.joinpath("rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-old"}\n',
+        encoding="utf-8",
+    )
+    dir_b.joinpath("rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-new"}\n',
+        encoding="utf-8",
+    )
+
+    provider_run_state = rs.provider_identity(
+        "codex",
+        has_resumable_provider_state=True,
+        provider_state_dir=provider_state_dir,
+    ).provider_run_state(provider_state_dir=provider_state_dir)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.FRESH,
+        provider_session_id=None,
+        provider_state_dir=provider_state_dir,
+        fresh_fallback_reason=(ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY),
+    )
+
+
+def test_provider_run_state_for_non_codex_service_is_fresh_without_provider_session_id_when_state_dir_is_not_resumable(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    service = _FakeService(
+        name="opencode",
+        relpath="custom/opencode-state/",
+        resumable=False,
+    )
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.FRESH,
+        provider_session_id=None,
+        provider_state_dir=worktree / "custom" / "opencode-state",
+    )
+
+
+def test_provider_run_state_for_claude_service_resumes_with_role_session_uuid_without_sidecar(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    service = _FakeService(
+        name="claude",
+        relpath="custom/claude-state/",
+        resumable=True,
+    )
+    provider_state_dir = worktree / "custom" / "claude-state"
+    provider_state_dir.mkdir(parents=True)
+    provider_state_dir.joinpath("session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.RESUME,
+        provider_session_id=rs.session_uuid(),
+        provider_state_dir=provider_state_dir,
+    )
+
+
+def test_provider_run_state_for_codex_service_prefers_saved_thread_id_without_sessions_dir(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    service = CodexService()
+    provider_state_dir = worktree / ".pycastle-session" / "implementer" / "codex"
+    provider_state_dir.mkdir(parents=True)
+    rs.save_service_session_id("codex", "thread-from-sidecar")
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.RESUME,
+        provider_session_id="thread-from-sidecar",
+        provider_state_dir=provider_state_dir,
+    )
+
+
+def test_provider_run_state_for_codex_service_is_fresh_when_rollouts_are_unreadable(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    service = CodexService()
+    provider_state_dir = worktree / ".pycastle-session" / "implementer" / "codex"
+    rollout_path = (
+        provider_state_dir / "sessions" / "2026" / "05" / "31" / "rollout-001.jsonl"
+    )
+    rollout_path.parent.mkdir(parents=True)
+    rollout_path.write_bytes(b"\xff\xfe\x00")
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.FRESH,
+        provider_session_id=None,
+        provider_state_dir=provider_state_dir,
+        fresh_fallback_reason=ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY,
+    )
+
+
+def test_provider_run_state_for_sidecar_backed_service_resumes_with_saved_service_session_id(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    service = _FakeService(
+        name="opencode",
+        relpath="custom/opencode-state/",
+        resumable=True,
+    )
+    provider_state_dir = worktree / "custom" / "opencode-state"
+    provider_state_dir.mkdir(parents=True)
+    provider_state_dir.joinpath("session_id").write_text(
+        "sess-opencode-123\n",
+        encoding="utf-8",
+    )
+    rs.save_service_session_id("opencode", "sess-opencode-123")
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.RESUME,
+        provider_session_id="sess-opencode-123",
+        provider_state_dir=provider_state_dir,
+    )
+
+
+def test_provider_run_state_for_sidecar_backed_service_falls_back_to_fresh_without_inventing_session_id(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    service = _FakeService(
+        name="opencode",
+        relpath="custom/opencode-state/",
+        resumable=True,
+    )
+    provider_state_dir = worktree / "custom" / "opencode-state"
+    provider_state_dir.mkdir(parents=True)
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.FRESH,
+        provider_session_id=None,
+        provider_state_dir=provider_state_dir,
+        fresh_fallback_reason=ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY,
+    )
+
+
 def test_mark_done_preserves_service_session_metadata_without_counting_as_resumable(rs):
     rs.start_fresh()
     rs.save_service_session_metadata("codex", "thread-from-run")
@@ -159,11 +436,202 @@ def test_mark_done_preserves_service_session_metadata_without_counting_as_resuma
 
 def test_malformed_service_session_metadata_is_ignored(rs):
     rs.start_fresh()
-    rs.service_session_metadata_path.write_text("{not-json", encoding="utf-8")
+    service_session_metadata_path(rs.path).write_text("{not-json", encoding="utf-8")
 
     assert rs.service_session_metadata("claude") is None
+    assert rs.exact_transcript_service_name() is None
     assert rs.is_resumable() is False
     assert rs.run_kind() == RunKind.FRESH
+
+
+def test_exact_transcript_service_name_is_ambiguous_with_multiple_services(rs):
+    rs.start_fresh()
+    rs.save_service_session_metadata("claude", "thread-claude")
+    rs.save_service_session_metadata("opencode", "sess-opencode")
+
+    assert rs.exact_transcript_service_name() is None
+
+
+def test_role_session_reports_exact_provider_transcript_available_for_selected_opencode_service(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.REVIEWER, "main")
+    service = _FakeService(
+        name="opencode",
+        relpath="custom/opencode-state/",
+        resumable=True,
+    )
+    state_dir = worktree / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    state_dir.joinpath("session_id").write_text(
+        "sess-opencode-123\n",
+        encoding="utf-8",
+    )
+    rs.save_service_session_id("opencode", "sess-opencode-123")
+    rs.save_service_session_metadata("opencode", "sess-opencode-123")
+    registry = ServiceRegistry({"opencode": cast(AgentService, service)})
+
+    assert rs.has_exact_provider_transcript_for_service(service) is True
+    assert (
+        rs.has_exact_transcript_handoff_for_selected_service(registry, "opencode")
+        is True
+    )
+
+
+@pytest.mark.parametrize(
+    ("registry_services", "selected_service_name"),
+    [
+        ({}, "codex"),
+        (
+            {
+                "claude": _FakeService(
+                    name="claude",
+                    relpath="custom/claude-state/",
+                    resumable=True,
+                )
+            },
+            "claude",
+        ),
+    ],
+)
+def test_role_session_reports_exact_provider_transcript_unavailable_for_missing_or_different_selected_service(
+    worktree,
+    registry_services: dict[str, _FakeService],
+    selected_service_name: str,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    state_dir = rs.path / "codex"
+    rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    rollout_dir.mkdir(parents=True)
+    rollout_dir.joinpath("rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-exact"}\n',
+        encoding="utf-8",
+    )
+    rs.save_service_session_id("codex", "thread-exact")
+    rs.save_service_session_metadata("codex", "thread-exact")
+    registry = ServiceRegistry(cast(dict[str, AgentService], registry_services))
+
+    assert (
+        rs.has_exact_provider_transcript_for_selected_service(
+            registry,
+            selected_service_name,
+        )
+        is False
+    )
+    assert (
+        rs.has_exact_transcript_handoff_for_selected_service(
+            registry,
+            selected_service_name,
+        )
+        is False
+    )
+
+
+def test_role_session_reports_exact_transcript_handoff_unavailable_for_ambiguous_codex_identity(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    state_dir = rs.path / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "30"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "31"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    dir_a.joinpath("rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-old"}\n',
+        encoding="utf-8",
+    )
+    dir_b.joinpath("rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-new"}\n',
+        encoding="utf-8",
+    )
+    rs.save_service_session_id("codex", "thread-old")
+    rs.save_service_session_metadata("codex", "thread-old")
+    registry = ServiceRegistry({"codex": CodexService()})
+
+    assert (
+        rs.has_exact_provider_transcript_for_selected_service(registry, "codex")
+        is False
+    )
+    assert (
+        rs.has_exact_transcript_handoff_for_selected_service(registry, "codex") is False
+    )
+
+
+@pytest.mark.parametrize(
+    ("metadata_value", "sidecar_value", "resumable"),
+    [
+        (None, "sess-opencode-123", True),
+        ("sess-opencode-123", None, True),
+        ("sess-opencode-metadata", "sess-opencode-sidecar", True),
+        ("sess-opencode-123", "sess-opencode-123", False),
+    ],
+)
+def test_role_session_reports_exact_provider_transcript_unavailable_without_exact_identity_evidence(
+    worktree,
+    metadata_value: str | None,
+    sidecar_value: str | None,
+    resumable: bool,
+):
+    rs = RoleSession(worktree, AgentRole.REVIEWER, "main")
+    service = _FakeService(
+        name="opencode",
+        relpath="custom/opencode-state/",
+        resumable=resumable,
+    )
+    state_dir = worktree / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    state_dir.joinpath("session_id").write_text(
+        "sess-opencode-123\n",
+        encoding="utf-8",
+    )
+    if sidecar_value is not None:
+        rs.save_service_session_id("opencode", sidecar_value)
+    if metadata_value is not None:
+        rs.save_service_session_metadata("opencode", metadata_value)
+
+    assert (
+        rs.has_exact_provider_transcript_for_service(cast(AgentService, service))
+        is False
+    )
+
+
+def test_role_session_reports_exact_provider_transcript_codex_availability_for_duplicate_and_ambiguous_rollouts(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    service = CodexService()
+    state_dir = rs.path / "codex"
+    rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    rollout_dir.mkdir(parents=True)
+    rollout_path = rollout_dir / "rollout-001.jsonl"
+
+    rollout_path.write_text(
+        "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"thread-exact"}',
+                '{"type":"thread.started","thread_id":"thread-exact"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    rs.save_service_session_id("codex", "thread-exact")
+    rs.save_service_session_metadata("codex", "thread-exact")
+
+    assert rs.has_exact_provider_transcript_for_service(service) is True
+
+    rollout_path.write_text(
+        "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"thread-exact"}',
+                '{"type":"thread.started","thread_id":"thread-other"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert rs.has_exact_provider_transcript_for_service(service) is False
 
 
 # ── any_role_dir_present ──────────────────────────────────────────────────────

@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import re
 import shlex
 from collections.abc import Callable, Iterable, Iterator
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..agents.output_protocol import AgentRole
 from .. import _time as _time_module
 from ..session import SESSION_DIR_NAME, RunKind
+from ..session.service_resume_identity import is_exact_resumable_service_session
 from .flag_profiles import flag_profile_for
 from .agent_service import (
     AssistantTurn,
@@ -21,7 +21,9 @@ from .agent_service import (
     TransientError,
     UsageLimit,
 )
+from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
 from ._wake_time import compute_wake_time
+from .reset_time_parser import parse_claude_reset_time
 
 
 # ── private account pool ──────────────────────────────────────────────────────
@@ -85,92 +87,10 @@ class _AccountPool:
         return [a.name for a in self._accounts]
 
 
-_RESET_TIME_RE = re.compile(
-    r"resets\s+"
-    r"(?:(?P<month>[A-Za-z]+)\s+(?P<day>\d{1,2}),\s+)?"
-    r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?(?P<ampm>am|pm)\s+\(UTC\)",
-    re.IGNORECASE,
-)
-
-_MONTHS = {
-    "january": 1,
-    "jan": 1,
-    "february": 2,
-    "feb": 2,
-    "march": 3,
-    "mar": 3,
-    "april": 4,
-    "apr": 4,
-    "may": 5,
-    "june": 6,
-    "jun": 6,
-    "july": 7,
-    "jul": 7,
-    "august": 8,
-    "aug": 8,
-    "september": 9,
-    "sept": 9,
-    "sep": 9,
-    "october": 10,
-    "oct": 10,
-    "november": 11,
-    "nov": 11,
-    "december": 12,
-    "dec": 12,
-}
-
 _SUBSCRIPTION_ACCESS_DENIAL_PHRASE = (
     "disabled Claude subscription access for Claude Code"
 )
 _PERMANENT_EXHAUSTION_WAKE = datetime(9999, 12, 31, 23, 59, tzinfo=timezone.utc)
-
-
-def _parse_reset_time(result: object) -> datetime | None:
-    if not isinstance(result, str):
-        return None
-    match = _RESET_TIME_RE.search(result)
-    if not match:
-        return None
-
-    hour = int(match.group("hour"))
-    minute = int(match.group("minute") or 0)
-    ampm = match.group("ampm").lower()
-    if not (1 <= hour <= 12) or not (0 <= minute <= 59):
-        return None
-    if ampm == "pm" and hour != 12:
-        hour += 12
-    elif ampm == "am" and hour == 12:
-        hour = 0
-
-    now_l = _time_module.now_local()
-    now_utc = now_l.astimezone(timezone.utc)
-
-    month_str = match.group("month")
-    if month_str is not None:
-        month = _MONTHS.get(month_str.lower())
-        if month is None:
-            return None
-        day = int(match.group("day"))
-        try:
-            utc_dt = datetime(
-                now_utc.year, month, day, hour, minute, tzinfo=timezone.utc
-            )
-        except ValueError:
-            return None
-        local_dt = utc_dt.astimezone()
-        if local_dt < now_l - timedelta(days=31):
-            try:
-                utc_dt = utc_dt.replace(year=utc_dt.year + 1)
-            except ValueError:
-                return None
-            local_dt = utc_dt.astimezone()
-        return local_dt
-
-    utc_dt = datetime.combine(now_utc.date(), time(hour, minute), tzinfo=timezone.utc)
-    local_dt = utc_dt.astimezone()
-    if local_dt < now_l - timedelta(minutes=2):
-        local_dt += timedelta(days=1)
-    return local_dt
 
 
 def _is_subscription_access_denial(
@@ -193,7 +113,7 @@ def _classify_line(line: str) -> list[ParsedTurn]:
         return []
 
     if obj.get("api_error_status") == 429:
-        reset_time = _parse_reset_time(obj.get("result"))
+        reset_time = parse_claude_reset_time(obj.get("result"))
         raw = line if reset_time is None else None
         return [UsageLimit(reset_time=reset_time, raw_message=raw)]
 
@@ -299,6 +219,35 @@ class ClaudeService:
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(f.is_file() for f in state_dir.rglob("*"))
 
+    def provider_session_state(
+        self, request: ProviderSessionStateRequest
+    ) -> ProviderSessionState:
+        exact_transcript_match = False
+        run_kind = (
+            RunKind.RESUME
+            if request.force_resume or request.has_resumable_provider_state
+            else RunKind.FRESH
+        )
+        provider_session_id = request.role_session.session_uuid()
+        if (
+            request.require_exact_transcript_match
+            and request.has_resumable_provider_state
+            and run_kind is RunKind.RESUME
+        ):
+            exact_transcript_match = is_exact_resumable_service_session(
+                request.role_session,
+                self.name,
+                provider_session_id=provider_session_id,
+                provider_state_dir=request.provider_state_dir,
+            )
+        return ProviderSessionState(
+            run_kind=run_kind,
+            provider_session_id=provider_session_id,
+            state_dir_relpath=request.state_dir_relpath,
+            state_dir_path=request.provider_state_dir,
+            exact_transcript_match=exact_transcript_match,
+        )
+
     def account_names(self) -> list[str]:
         if self._pool is None:
             return []
@@ -360,7 +309,7 @@ class ClaudeService:
     def run(
         self,
         lines: Iterable[str],
-        on_thread_id: Callable[[str], None] | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
     ) -> Iterator[ParsedTurn]:
         for line in lines:
             for event in _classify_line(line):

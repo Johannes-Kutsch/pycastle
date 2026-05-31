@@ -32,12 +32,16 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.session import RoleSession, RunKind
+from pycastle.session import ProviderRunState, RoleSession, RunKind
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
+from pycastle.services.provider_session_state import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
 from pycastle.display.status_display import ModelDisplayMetadata
-from pycastle.iteration._deps import FakeAgentRunner, RecordingStatusDisplay
+from tests.support import FakeAgentRunner, RecordingStatusDisplay
 
 
 @pytest.fixture(autouse=True)
@@ -89,35 +93,6 @@ _CODEX_COMPLETE_STREAM = [
     b'{"type":"item.completed","item":{"type":"agent_message",'
     b'"content":"<commit_message>done</commit_message>"}}\n',
 ]
-
-_CODEX_PROTOCOL_ERROR_STREAM = [
-    b'{"type":"thread.started","thread_id":"thread-from-fresh"}\n',
-    b'{"type":"item.completed","item":{"type":"agent_message",'
-    b'"content":"missing required tag"}}\n',
-    b'{"type":"turn.completed","usage":{}}\n',
-]
-
-_CODEX_PLAN_COMPLETE_STREAM = [
-    b'{"type":"item.completed","item":{"type":"agent_message",'
-    b'"text":"<plan>{\\"issues\\": [], \\"blocked\\": []}</plan>"}}\n'
-]
-
-_OPENCODE_PROTOCOL_ERROR_STREAM = [
-    b'{"type":"text","sessionID":"sess-from-fresh",'
-    b'"part":{"type":"text","text":"missing required tag",'
-    b'"time":{"start":1,"end":2}}}\n',
-    b'{"type":"session.status","sessionID":"sess-from-fresh",'
-    b'"status":{"type":"idle"}}\n',
-]
-
-_OPENCODE_PLAN_COMPLETE_STREAM = [
-    b'{"type":"text","sessionID":"sess-from-fresh",'
-    b'"part":{"type":"text","text":"<plan>{\\"issues\\": [], \\"blocked\\": []}</plan>",'
-    b'"time":{"start":1,"end":2}}}\n',
-    b'{"type":"session.status","sessionID":"sess-from-fresh",'
-    b'"status":{"type":"idle"}}\n',
-]
-
 
 # ── FakeAgentRunner: queue behaviour ─────────────────────────────────────────
 
@@ -397,8 +372,18 @@ def _never_yields():
 
 
 class _RecordingAgentService:
-    def __init__(self, name: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        *,
+        state_dir_relpath: str | None = None,
+        provider_run_state: ProviderRunState | None = None,
+    ) -> None:
         self.name = name
+        self._state_dir_relpath = state_dir_relpath
+        self._provider_run_state = provider_run_state or ProviderRunState(
+            RunKind.FRESH, None
+        )
         self.commands: list[str] = []
         self.env_state_dirs: list[str | None] = []
 
@@ -425,7 +410,7 @@ class _RecordingAgentService:
     def run(
         self,
         lines: Iterable[str],
-        on_thread_id: Callable[[str], None] | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
     ) -> Iterator[ParsedTurn]:
         list(lines)
         yield Result("<commit_message>done</commit_message>")
@@ -440,13 +425,28 @@ class _RecordingAgentService:
         pass
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        return None
+        del role, namespace
+        return self._state_dir_relpath
 
     def is_resumable(self, state_dir: Path) -> bool:
         return False
 
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        del request
+        return ProviderSessionState(
+            self._provider_run_state.run_kind,
+            self._provider_run_state.provider_session_id,
+            persist_provider_session_id=self._provider_run_state.persist_provider_session_id,
+        )
+
     def valid_efforts(self) -> frozenset[str]:
         return frozenset({"low", "medium", "high"})
+
+    def valid_models(self) -> frozenset[str]:
+        return frozenset({"test-model"})
 
 
 # ── AgentRunner: run() return values ─────────────────────────────────────────
@@ -527,6 +527,109 @@ def test_agent_runner_uses_requested_service_from_registry(tmp_path):
     assert isinstance(result, CommitMessageOutput)
     assert requested_service.commands == ["codex exec"]
     assert claude_service.commands == []
+
+
+def test_agent_runner_uses_service_owned_provider_run_state_and_state_dir(
+    tmp_path: Path,
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    requested_service = _RecordingAgentService(
+        "fake",
+        state_dir_relpath=".pycastle-session/improve/fake/",
+        provider_run_state=ProviderRunState(
+            RunKind.RESUME,
+            "provider-session-123",
+        ),
+    )
+    work_calls: list[tuple[RunKind, str | None]] = []
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"fake": requested_service},
+    )
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        return CommitMessageOutput(message="done")
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Improve",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPROVE,
+                    service="fake",
+                    session_namespace="main",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [(RunKind.RESUME, "provider-session-123")]
+    assert requested_service.env_state_dirs == [
+        "/home/agent/workspace/.pycastle-session/improve/main/fake/"
+    ]
+
+
+def test_agent_runner_records_codex_provider_session_metadata_after_successful_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del run_kind, session_uuid
+        assert on_provider_session_id is not None
+        on_provider_session_id("thread-success")
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"codex": CodexService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Review",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.REVIEWER,
+                    service="codex",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert RoleSession(tmp_path, AgentRole.REVIEWER).service_session_metadata(
+        "codex"
+    ) == {
+        "service": "codex",
+        "provider_session_id": "thread-success",
+    }
 
 
 def test_agent_runner_does_not_fall_back_to_claude_for_unknown_requested_service(
@@ -672,93 +775,6 @@ def test_agent_runner_fails_when_no_explicit_service_even_if_default_service_is_
         )
 
     docker_client.containers.run.assert_not_called()
-
-
-def test_agent_runner_mixed_services_use_service_command_env_and_parser(
-    tmp_path, monkeypatch
-):
-    from pycastle.services.claude_service import ClaudeService
-
-    home = tmp_path / "home"
-    host_auth = home / ".codex" / "auth.json"
-    host_auth.parent.mkdir(parents=True)
-    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
-    monkeypatch.setattr(Path, "home", lambda: home)
-
-    started: list[tuple[str, dict[str, str]]] = []
-    stream_commands: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-
-    def _start_container(image_name: str, **kwargs):
-        started.append((image_name, dict(kwargs.get("environment") or {})))
-        return mock_container
-
-    def _exec_run(cmd, **kwargs):
-        if not kwargs.get("stream"):
-            return MagicMock(exit_code=0, output=(b"", b""))
-        command = cmd[2] if isinstance(cmd, list) and len(cmd) > 2 else ""
-        stream_commands.append(command)
-        chunks = _COMPLETE_STREAM if "claude " in command else _CODEX_COMPLETE_STREAM
-        return MagicMock(output=iter(chunks))
-
-    mock_client.containers.run.side_effect = _start_container
-    mock_container.exec_run.side_effect = _exec_run
-
-    runner = AgentRunner(
-        {"GH_TOKEN": "gh-token"},
-        _make_cfg(tmp_path, docker_image_name="pycastle-test"),
-        _make_git_service(),
-        docker_client=mock_client,
-        service_registry={
-            "claude": ClaudeService(accounts=[("primary", "tok-primary")]),
-            "codex": CodexService(),
-        },
-    )
-
-    implement = asyncio.run(
-        runner.run(
-            _run_request(
-                name="Implement",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.IMPLEMENTER,
-                model="sonnet",
-                effort="medium",
-                service="claude",
-            )
-        )
-    )
-    review = asyncio.run(
-        runner.run(
-            _run_request(
-                name="Review",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.REVIEWER,
-                model="gpt-5.3-codex",
-                effort="medium",
-                service="codex",
-            )
-        )
-    )
-
-    assert isinstance(implement, CommitMessageOutput)
-    assert isinstance(review, CommitMessageOutput)
-    assert "claude " in stream_commands[0]
-    assert "--output-format stream-json" in stream_commands[0]
-    assert "codex exec " in stream_commands[1]
-    assert "--json" in stream_commands[1]
-
-    assert started[0][0] == "pycastle-test"
-    assert started[0][1]["CLAUDE_CODE_OAUTH_TOKEN"] == "tok-primary"
-    assert "CODEX_HOME" not in started[0][1]
-    assert started[1][0] == "pycastle-test"
-    assert started[1][1]["TZ"] == "UTC"
-    assert started[1][1]["CODEX_HOME"].endswith("/.pycastle-session/reviewer/codex/")
-    assert "CLAUDE_CODE_OAUTH_TOKEN" not in started[1][1]
 
 
 # ── AgentRunner: error propagation ───────────────────────────────────────────
@@ -1359,6 +1375,197 @@ def test_agent_runner_run_preflight_raises_setup_phase_error_when_pip_install_fa
         asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     assert exc_info.value.phase == "preflight"
+
+
+def test_agent_runner_run_preflight_raises_setup_phase_error_for_missing_pyproject_declared_tool(
+    tmp_path,
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 't'\ndependencies = ['ruff>=0.5']\n", encoding="utf-8"
+    )
+    mock_client = _make_preflight_docker_client(
+        exit_code=127, stdout=b"bash: ruff: command not found"
+    )
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    err = exc_info.value
+    assert err.phase == "preflight"
+    assert "ruff" in str(err)
+    assert "pyproject.toml" in str(err)
+    assert err.command == "ruff check ."
+    assert err.output == "Command failed (exit 127): bash: ruff: command not found"
+
+
+def test_agent_runner_run_preflight_raises_setup_phase_error_for_missing_requirements_declared_tool(
+    tmp_path,
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 't'\ndependencies = ['click>=8']\n", encoding="utf-8"
+    )
+    (tmp_path / "requirements.txt").write_text("ruff==0.6.9\n", encoding="utf-8")
+    mock_client = _make_preflight_docker_client(
+        exit_code=127, stdout=b"bash: ruff: command not found"
+    )
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert exc_info.value.phase == "preflight"
+    assert "ruff" in str(exc_info.value)
+    assert "requirements.txt" in str(exc_info.value)
+
+
+def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_undeclared_tool(
+    tmp_path,
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 't'\ndependencies = ['ruff>=0.5']\n", encoding="utf-8"
+    )
+    mock_client = _make_preflight_docker_client(
+        exit_code=127, stdout=b"bash: black: command not found"
+    )
+    cfg = _make_cfg(tmp_path, preflight_checks=(("black", "black --check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == [
+        (
+            "black",
+            "black --check .",
+            "Command failed (exit 127): bash: black: command not found",
+        )
+    ]
+
+
+def test_agent_runner_run_preflight_keeps_missing_tool_without_python_declaration_as_ordinary_failure(
+    tmp_path,
+):
+    (tmp_path / "requirements.txt").write_text("pytest==9.0.0\n", encoding="utf-8")
+    mock_client = _make_preflight_docker_client(
+        exit_code=127, stdout=b"bash: shellcheck: command not found"
+    )
+    cfg = _make_cfg(tmp_path, preflight_checks=(("shellcheck", "shellcheck ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == [
+        (
+            "shellcheck",
+            "shellcheck .",
+            "Command failed (exit 127): bash: shellcheck: command not found",
+        )
+    ]
+
+
+def test_agent_runner_run_preflight_returns_failure_tuple_for_declared_tool_project_failure(
+    tmp_path,
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 't'\ndependencies = ['ruff>=0.5']\n", encoding="utf-8"
+    )
+    mock_client = _make_preflight_docker_client(
+        exit_code=1, stdout=b"src/app.py:1:1: F401 imported but unused"
+    )
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == [
+        (
+            "ruff",
+            "ruff check .",
+            "Command failed (exit 1): src/app.py:1:1: F401 imported but unused",
+        )
+    ]
+
+
+def test_agent_runner_run_preflight_raises_setup_phase_error_after_running_later_checks(
+    tmp_path,
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 't'\ndependencies = ['ruff>=0.5']\n", encoding="utf-8"
+    )
+    exec_calls: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def _exec_run(cmd, **kwargs):
+        command_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+        exec_calls.append(command_str)
+        if "git config" in command_str or "pip install" in command_str:
+            return MagicMock(exit_code=0, output=(b"", b""))
+        if "ruff check ." in command_str:
+            return MagicMock(
+                exit_code=127, output=(b"bash: ruff: command not found", b"")
+            )
+        if "mypy ." in command_str:
+            return MagicMock(exit_code=1, output=(b"src/app.py:1: error: boom", b""))
+        raise AssertionError(f"unexpected command: {command_str}")
+
+    mock_container.exec_run.side_effect = _exec_run
+    cfg = _make_cfg(
+        tmp_path,
+        preflight_checks=(("ruff", "ruff check ."), ("mypy", "mypy .")),
+    )
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    with pytest.raises(SetupPhaseError, match="Missing expected preflight tool 'ruff'"):
+        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    ruff_idx = next(i for i, call in enumerate(exec_calls) if "ruff check ." in call)
+    mypy_idx = next(i for i, call in enumerate(exec_calls) if "mypy ." in call)
+    assert ruff_idx < mypy_idx
+
+
+def test_agent_runner_run_preflight_returns_all_ordinary_failures_in_configured_order(
+    tmp_path,
+):
+    exec_calls: list[str] = []
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def _exec_run(cmd, **kwargs):
+        command_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+        exec_calls.append(command_str)
+        if "git config" in command_str or "pip install" in command_str:
+            return MagicMock(exit_code=0, output=(b"", b""))
+        if "ruff check ." in command_str:
+            return MagicMock(exit_code=1, output=(b"src/app.py:1:1: F401", b""))
+        if "mypy ." in command_str:
+            return MagicMock(exit_code=0, output=(b"", b""))
+        if "pytest" in command_str:
+            return MagicMock(exit_code=1, output=(b"FAILED tests/test_app.py", b""))
+        raise AssertionError(f"unexpected command: {command_str}")
+
+    mock_container.exec_run.side_effect = _exec_run
+    cfg = _make_cfg(
+        tmp_path,
+        preflight_checks=(
+            ("ruff", "ruff check ."),
+            ("mypy", "mypy ."),
+            ("pytest", "pytest"),
+        ),
+    )
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == [
+        ("ruff", "ruff check .", "Command failed (exit 1): src/app.py:1:1: F401"),
+        ("pytest", "pytest", "Command failed (exit 1): FAILED tests/test_app.py"),
+    ]
+    assert any("mypy ." in call for call in exec_calls)
 
 
 def test_agent_runner_run_preflight_passes_checks_that_require_installed_tools(
@@ -2081,6 +2288,301 @@ def test_agent_runner_treats_unrelated_403_as_hard_error(tmp_path):
         )
 
 
+def test_agent_runner_codex_missing_host_auth_fails_before_container_setup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    docker_client = _make_docker_client([])
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=docker_client,
+        service_registry={"codex": CodexService()},
+    )
+
+    with pytest.raises(HardAgentError) as exc_info:
+        asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Codex",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service="codex",
+                )
+            )
+        )
+
+    assert exc_info.value.status_code == 401
+    docker_client.containers.run.assert_not_called()
+
+
+def test_agent_runner_codex_resume_with_provider_auth_keeps_existing_auth_without_host_auth(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    state_dir = tmp_path / ".pycastle-session" / "reviewer" / "codex"
+    state_dir.mkdir(parents=True)
+    auth_path = state_dir / "auth.json"
+    auth_path.write_text(
+        '{"mode":"oauth","origin":"provider"}',
+        encoding="utf-8",
+    )
+    RoleSession(tmp_path, AgentRole.REVIEWER).save_service_session_id(
+        "codex", "thread-existing"
+    )
+    work_calls: list[tuple[RunKind, str | None]] = []
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"codex": CodexService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Review",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.REVIEWER,
+                    service="codex",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [(RunKind.RESUME, "thread-existing")]
+    assert auth_path.read_text(encoding="utf-8") == (
+        '{"mode":"oauth","origin":"provider"}'
+    )
+
+
+def test_agent_runner_claude_resumes_with_derived_role_session_uuid_from_local_state(
+    tmp_path: Path,
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    _seed_claude_resumable_state(
+        tmp_path,
+        role=AgentRole.IMPROVE,
+        namespace="main",
+    )
+    work_calls: list[tuple[RunKind, str | None]] = []
+    expected_session_id = RoleSession(
+        tmp_path,
+        AgentRole.IMPROVE,
+        "main",
+    ).session_uuid()
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"claude": ClaudeService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Improve",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPROVE,
+                    service="claude",
+                    session_namespace="main",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [(RunKind.RESUME, expected_session_id)]
+
+
+def test_agent_runner_codex_resumes_with_recovered_thread_id_from_local_rollout_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+    _seed_codex_rollout_state(
+        tmp_path,
+        role=AgentRole.REVIEWER,
+        thread_id="thread-from-rollout",
+    )
+    work_calls: list[tuple[RunKind, str | None]] = []
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"codex": CodexService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Review",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.REVIEWER,
+                    service="codex",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [(RunKind.RESUME, "thread-from-rollout")]
+
+
+def test_agent_runner_codex_starts_fresh_without_provider_session_id_when_local_thread_identity_is_ambiguous(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+    _seed_ambiguous_codex_rollout_state(tmp_path, role=AgentRole.REVIEWER)
+    work_calls: list[tuple[RunKind, str | None]] = []
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"codex": CodexService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Review",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.REVIEWER,
+                    service="codex",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [(RunKind.FRESH, None)]
+
+
+@pytest.mark.parametrize(
+    ("session_id", "expected_call"),
+    [
+        ("sess-opencode-123", (RunKind.RESUME, "sess-opencode-123")),
+        (None, (RunKind.FRESH, None)),
+    ],
+)
+def test_agent_runner_opencode_chooses_resume_only_when_local_session_id_sidecar_exists(
+    tmp_path: Path,
+    session_id: str | None,
+    expected_call: tuple[RunKind, str | None],
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    _seed_opencode_state(
+        tmp_path,
+        role=AgentRole.IMPROVE,
+        namespace="main",
+        session_id=session_id,
+    )
+    work_calls: list[tuple[RunKind, str | None]] = []
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"opencode": OpenCodeService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Improve",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPROVE,
+                    service="opencode",
+                    session_namespace="main",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [expected_call]
+
+
 def test_fake_agent_runner_accepts_run_request_and_records_it():
     completion = CompletionOutput()
     fake = FakeAgentRunner([completion])
@@ -2094,317 +2596,6 @@ def test_fake_agent_runner_accepts_run_request_and_records_it():
     assert fake.calls[0] is req
 
 
-# ── AgentRunner: CLAUDE_CONFIG_DIR injection ──────────────────────────────────
-
-
-def test_agent_runner_injects_claude_config_dir_for_implementer(tmp_path):
-    """AgentRunner.run() must set CLAUDE_CONFIG_DIR to the role session dir inside the worktree."""
-    from pycastle.agents.output_protocol import AgentRole
-
-    captured_env: dict = {}
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def _run(*args, **kwargs):
-        captured_env.update(kwargs.get("environment") or {})
-        return mock_container
-
-    mock_client.containers.run.side_effect = _run
-
-    def exec_side_effect(*args, **kwargs):
-        if kwargs.get("stream"):
-            r = MagicMock()
-            r.output = iter(_COMPLETE_STREAM)
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Test",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.IMPLEMENTER,
-            )
-        )
-    )
-
-    assert "CLAUDE_CONFIG_DIR" in captured_env
-    assert captured_env["CLAUDE_CONFIG_DIR"].endswith(
-        "/.pycastle-session/implementer/claude/"
-    )
-
-
-# ── AgentRunner: namespaced session dir ───────────────────────────────────────
-
-
-def test_agent_runner_injects_namespaced_claude_config_dir_when_session_namespace_set(
-    tmp_path,
-):
-    """When session_namespace is set, CLAUDE_CONFIG_DIR must include the namespace subdir."""
-    captured_env: dict = {}
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def _run(*args, **kwargs):
-        captured_env.update(kwargs.get("environment") or {})
-        return mock_container
-
-    mock_client.containers.run.side_effect = _run
-
-    def exec_side_effect(*args, **kwargs):
-        if kwargs.get("stream"):
-            r = MagicMock()
-            r.output = iter(_COMPLETE_STREAM)
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Test",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.IMPLEMENTER,
-                session_namespace="main",
-            )
-        )
-    )
-
-    assert "CLAUDE_CONFIG_DIR" in captured_env
-    assert captured_env["CLAUDE_CONFIG_DIR"].endswith(
-        "/.pycastle-session/implementer/main/claude/"
-    )
-
-
-def test_agent_runner_uses_namespace_subdir_for_resume_check(tmp_path):
-    """When session_namespace is set, Fresh/Resume decision uses the namespaced service subdir."""
-    # Seed the namespaced claude service dir (not the role-level dir)
-    namespace_dir = tmp_path / ".pycastle-session" / "implementer" / "main" / "claude"
-    namespace_dir.mkdir(parents=True)
-    (namespace_dir / "session.jsonl").write_text("{}")
-
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            r = MagicMock()
-            r.output = iter(_COMPLETE_STREAM)
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Impl",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.IMPLEMENTER,
-                session_namespace="main",
-            )
-        )
-    )
-
-    # Namespaced dir was non-empty → should Resume
-    assert captured_cmds, "No streaming exec recorded"
-    assert any("--resume" in c for c in captured_cmds)
-
-
-def test_agent_runner_uses_fresh_for_different_namespace_when_other_namespace_has_session(
-    tmp_path,
-):
-    """When the 'issues' namespace has a session, a 'main' namespace run must still be Fresh."""
-    # Seed the 'issues' namespace claude service dir only
-    issues_dir = tmp_path / ".pycastle-session" / "implementer" / "issues" / "claude"
-    issues_dir.mkdir(parents=True)
-    (issues_dir / "session.jsonl").write_text("{}")
-
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            r = MagicMock()
-            r.output = iter(_COMPLETE_STREAM)
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Impl",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.IMPLEMENTER,
-                session_namespace="main",
-            )
-        )
-    )
-
-    # 'main' namespace dir was empty → should be Fresh
-    assert captured_cmds, "No streaming exec recorded"
-    assert any("--session-id" in c for c in captured_cmds)
-    assert all("--resume" not in c for c in captured_cmds)
-
-
-# ── AgentRunner: session-id in claude command ─────────────────────────────────
-
-
-def test_agent_runner_passes_session_id_flag_to_claude_on_fresh_run(tmp_path):
-    """On a Fresh run AgentRunner must invoke claude with --session-id <uuid>."""
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            r = MagicMock()
-            r.output = iter(_COMPLETE_STREAM)
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Impl",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-            )
-        )
-    )
-
-    assert captured_cmds, "No streaming exec recorded"
-    assert any("--session-id" in c for c in captured_cmds)
-    assert all("--resume" not in c for c in captured_cmds)
-
-
-def test_agent_runner_records_claude_service_session_metadata_on_success(tmp_path):
-    mock_client = _make_docker_client(_COMPLETE_STREAM)
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Impl",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-            )
-        )
-    )
-
-    session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    assert session.service_session_metadata("claude") == {
-        "service": "claude",
-        "provider_session_id": session.session_uuid(),
-    }
-
-
-def test_agent_runner_records_codex_service_session_metadata_on_success(
-    tmp_path, monkeypatch
-):
-    home = tmp_path / "home"
-    host_auth = home / ".codex" / "auth.json"
-    host_auth.parent.mkdir(parents=True)
-    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
-    monkeypatch.setattr(Path, "home", lambda: home)
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_docker_client(_CODEX_COMPLETE_STREAM),
-        service_registry={"codex": CodexService()},
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Codex",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                service="codex",
-            )
-        )
-    )
-
-    session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    assert session.service_session_metadata("codex") == {
-        "service": "codex",
-        "provider_session_id": "thread-from-fresh",
-    }
-
-
 def _seed_implementer_session(tmp_path: Path) -> None:
     """Seed the claude service state dir so ClaudeService.is_resumable returns True."""
     claude_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
@@ -2412,50 +2603,68 @@ def _seed_implementer_session(tmp_path: Path) -> None:
     (claude_dir / "session.json").write_text("{}")
 
 
-def test_agent_runner_passes_resume_flag_to_claude_when_session_exists(tmp_path):
-    """On a Resume run AgentRunner must invoke claude with --resume <uuid>."""
-    from pycastle.agents.output_protocol import AgentRole
+def _seed_claude_resumable_state(
+    tmp_path: Path,
+    *,
+    role: AgentRole,
+    namespace: str = "",
+) -> None:
+    claude_dir = RoleSession(tmp_path, role, namespace).path / "claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "session.json").write_text("{}")
 
-    _seed_implementer_session(tmp_path)
 
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            r = MagicMock()
-            r.output = iter(_COMPLETE_STREAM)
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
+def _seed_codex_rollout_state(
+    tmp_path: Path,
+    *,
+    role: AgentRole,
+    thread_id: str,
+    namespace: str = "",
+) -> None:
+    codex_dir = RoleSession(tmp_path, role, namespace).path / "codex"
+    rollout_dir = codex_dir / "sessions" / "2026" / "05" / "31"
+    rollout_dir.mkdir(parents=True)
+    (codex_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        json.dumps({"type": "thread.started", "thread_id": thread_id}) + "\n",
+        encoding="utf-8",
     )
 
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Impl",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.IMPLEMENTER,
-            )
+
+def _seed_ambiguous_codex_rollout_state(
+    tmp_path: Path,
+    *,
+    role: AgentRole,
+    namespace: str = "",
+) -> None:
+    codex_dir = RoleSession(tmp_path, role, namespace).path / "codex"
+    rollout_dir = codex_dir / "sessions" / "2026" / "05" / "31"
+    rollout_dir.mkdir(parents=True)
+    (codex_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": "thread-a"}),
+                json.dumps({"type": "thread.started", "thread_id": "thread-b"}),
+            ]
         )
+        + "\n",
+        encoding="utf-8",
     )
 
-    assert captured_cmds, "No streaming exec recorded"
-    assert any("--resume" in c for c in captured_cmds)
-    assert all("--session-id" not in c for c in captured_cmds)
+
+def _seed_opencode_state(
+    tmp_path: Path,
+    *,
+    role: AgentRole,
+    session_id: str | None,
+    namespace: str = "",
+) -> None:
+    opencode_dir = RoleSession(tmp_path, role, namespace).path / "opencode"
+    opencode_dir.mkdir(parents=True)
+    (opencode_dir / "resume.jsonl").write_text("{}\n", encoding="utf-8")
+    if session_id is not None:
+        (opencode_dir / "session_id").write_text(f"{session_id}\n", encoding="utf-8")
 
 
 # ── AgentRunner: non-typed Resume retry ───────────────────────────────────────
@@ -2599,169 +2808,6 @@ def test_fresh_run_non_typed_exception_propagates(tmp_path):
                 )
             )
         )
-
-
-# ── AgentRunner: Reviewer resume parity ───────────────────────────────────────
-
-
-def _seed_reviewer_session(tmp_path: Path) -> None:
-    """Seed the reviewer claude service state dir so ClaudeService.is_resumable returns True."""
-    claude_dir = tmp_path / ".pycastle-session" / "reviewer" / "claude"
-    claude_dir.mkdir(parents=True)
-    (claude_dir / "session.json").write_text("{}")
-
-
-def test_agent_runner_injects_claude_config_dir_for_reviewer(tmp_path):
-    """AgentRunner.run() must set CLAUDE_CONFIG_DIR to the reviewer session dir."""
-    from pycastle.agents.output_protocol import AgentRole
-
-    captured_env: dict = {}
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def _run(*args, **kwargs):
-        captured_env.update(kwargs.get("environment") or {})
-        return mock_container
-
-    mock_client.containers.run.side_effect = _run
-
-    def exec_side_effect(*args, **kwargs):
-        if kwargs.get("stream"):
-            r = MagicMock()
-            r.output = iter(_REVIEWER_COMPLETE_STREAM)
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Review",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.REVIEWER,
-            )
-        )
-    )
-
-    assert "CLAUDE_CONFIG_DIR" in captured_env
-    assert captured_env["CLAUDE_CONFIG_DIR"].endswith(
-        "/.pycastle-session/reviewer/claude/"
-    )
-
-
-def test_agent_runner_passes_resume_flag_to_claude_when_reviewer_session_exists(
-    tmp_path,
-):
-    """On a Reviewer Resume run AgentRunner must invoke claude with --resume <uuid>."""
-    from pycastle.agents.output_protocol import AgentRole
-
-    _seed_reviewer_session(tmp_path)
-
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            r = MagicMock()
-            r.output = iter(_REVIEWER_COMPLETE_STREAM)
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Review",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.REVIEWER,
-            )
-        )
-    )
-
-    assert captured_cmds, "No streaming exec recorded"
-    assert any("--resume" in c for c in captured_cmds)
-    assert all("--session-id" not in c for c in captured_cmds)
-
-
-# ── AgentRunner: Merger resume parity ─────────────────────────────────────────
-
-
-def _seed_merger_session(tmp_path: Path) -> None:
-    """Seed the merger claude service state dir so ClaudeService.is_resumable returns True."""
-    claude_dir = tmp_path / ".pycastle-session" / "merger" / "claude"
-    claude_dir.mkdir(parents=True)
-    (claude_dir / "session.json").write_text("{}")
-
-
-def test_agent_runner_passes_resume_flag_to_claude_when_merger_session_exists(tmp_path):
-    """On a Merger Resume run AgentRunner must invoke claude with --resume <uuid>."""
-    from pycastle.agents.output_protocol import AgentRole
-
-    _seed_merger_session(tmp_path)
-
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            r = MagicMock()
-            r.output = iter(_MERGER_COMPLETE_STREAM)
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Merge",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.MERGER,
-            )
-        )
-    )
-
-    assert captured_cmds, "No streaming exec recorded"
-    assert any("--resume" in c for c in captured_cmds)
-    assert all("--session-id" not in c for c in captured_cmds)
 
 
 # ── AgentRunner: _build_prompt ────────────────────────────────────────────────
@@ -2933,445 +2979,58 @@ def test_agent_runner_does_not_call_mark_exhausted_on_hard_agent_error(tmp_path)
     assert svc.is_available() is True
 
 
-def test_agent_runner_seeds_codex_auth_for_fresh_state_dir(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    host_auth = home / ".codex" / "auth.json"
-    host_auth.parent.mkdir(parents=True)
-    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
-    monkeypatch.setattr(Path, "home", lambda: home)
-
-    mock_client = _make_docker_client(_CODEX_COMPLETE_STREAM)
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-        service_registry={"codex": CodexService()},
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Codex",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                service="codex",
-            )
-        )
-    )
-
-    seeded = tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
-    assert seeded.read_text(encoding="utf-8") == '{"mode":"oauth"}'
-
-
-def test_agent_runner_codex_reprompt_resumes_with_captured_thread_id(
-    tmp_path, monkeypatch
+def test_agent_runner_claude_reprompt_retries_as_resume_with_same_derived_uuid(
+    tmp_path: Path,
 ):
-    home = tmp_path / "home"
-    host_auth = home / ".codex" / "auth.json"
-    host_auth.parent.mkdir(parents=True)
-    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
-    monkeypatch.setattr(Path, "home", lambda: home)
+    from unittest.mock import patch
+    from pycastle.agents.output_protocol import PlanParseError
+    from pycastle.infrastructure.container_runner import ContainerRunner
 
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-    streams = iter([_CODEX_PROTOCOL_ERROR_STREAM, _CODEX_PLAN_COMPLETE_STREAM])
+    work_calls: list[tuple[RunKind, str | None]] = []
+    expected_session_id = RoleSession(
+        tmp_path,
+        AgentRole.PLANNER,
+    ).session_uuid()
 
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            r = MagicMock()
-            r.output = iter(next(streams))
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del role, prompt, on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        if len(work_calls) == 1:
+            raise PlanParseError("missing required tag")
+        return PlannerOutput(issues=[])
 
-    mock_container.exec_run.side_effect = exec_side_effect
     runner = AgentRunner(
         {},
         _make_cfg(tmp_path),
         _make_git_service(),
-        docker_client=mock_client,
-        service_registry={"codex": CodexService()},
+        docker_client=_make_setup_docker_client(),
+        service_registry={"claude": ClaudeService()},
     )
 
-    result = asyncio.run(
-        runner.run(
-            _run_request(
-                name="Codex",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.PLANNER,
-                service="codex",
-            )
-        )
-    )
-
-    assert isinstance(result, PlannerOutput)
-    assert "codex exec " in captured_cmds[0]
-    assert "resume" not in captured_cmds[0]
-    assert "codex exec resume " in captured_cmds[1]
-    assert "thread-from-fresh" in captured_cmds[1]
-    saved = tmp_path / ".pycastle-session" / "planner" / "codex" / "thread_id"
-    assert saved.read_text(encoding="utf-8") == "thread-from-fresh"
-
-
-def test_agent_runner_opencode_reprompt_resumes_with_persisted_session_id(tmp_path):
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-    streams = iter([_OPENCODE_PROTOCOL_ERROR_STREAM, _OPENCODE_PLAN_COMPLETE_STREAM])
-
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            result = MagicMock()
-            result.output = iter(next(streams))
-            return result
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-        service_registry={"opencode": OpenCodeService()},
-    )
-
-    result = asyncio.run(
-        runner.run(
-            _run_request(
-                name="OpenCode",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.PLANNER,
-                service="opencode",
-            )
-        )
-    )
-
-    assert isinstance(result, PlannerOutput)
-    assert "opencode run --format json " in captured_cmds[0]
-    assert "--session" not in captured_cmds[0]
-    assert "--session sess-from-fresh" in captured_cmds[1]
-    saved = tmp_path / ".pycastle-session" / "planner" / "opencode" / "session_id"
-    assert saved.read_text(encoding="utf-8") == "sess-from-fresh"
-
-
-def test_agent_runner_records_opencode_service_session_metadata_on_success(tmp_path):
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_docker_client(_OPENCODE_PLAN_COMPLETE_STREAM),
-        service_registry={"opencode": OpenCodeService()},
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="OpenCode",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.PLANNER,
-                service="opencode",
-            )
-        )
-    )
-
-    session = RoleSession(tmp_path, AgentRole.PLANNER)
-    assert session.service_session_metadata("opencode") == {
-        "service": "opencode",
-        "provider_session_id": "sess-from-fresh",
-    }
-
-
-def test_agent_runner_does_not_record_metadata_on_failed_run(tmp_path):
-    # Stream with no <plan> tag forces PlanParseError on every attempt; after 3
-    # retries the runner returns FailedOutput without saving metadata.
-    no_plan_stream = [
-        b'{"type": "result", "result": "no plan tag here", "is_error": false}\n'
-    ]
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_docker_client(no_plan_stream),
-    )
-
-    with pytest.raises(AgentFailedError):
-        asyncio.run(
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
             runner.run(
                 _run_request(
-                    name="Planner",
+                    name="Claude",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
                     role=AgentRole.PLANNER,
+                    service="claude",
                 )
             )
         )
 
-    session = RoleSession(tmp_path, AgentRole.PLANNER)
-    assert session.service_session_metadata("claude") is None
-
-
-def test_agent_runner_opencode_resume_uses_persisted_session_id_on_later_run(tmp_path):
-    state_dir = tmp_path / ".pycastle-session" / "planner" / "opencode"
-    state_dir.mkdir(parents=True)
-    (state_dir / "session_id").write_text("sess-from-prior-run", encoding="utf-8")
-
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            result = MagicMock()
-            result.output = iter(_OPENCODE_PLAN_COMPLETE_STREAM)
-            return result
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-        service_registry={"opencode": OpenCodeService()},
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="OpenCode",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                role=AgentRole.PLANNER,
-                service="opencode",
-            )
-        )
-    )
-
-    assert captured_cmds == [
-        'export PATH="/home/agent/.local/bin:$PATH"; opencode run --format json --session sess-from-prior-run "$(cat /tmp/.pycastle_prompt)"'
+    assert isinstance(result, PlannerOutput)
+    assert work_calls == [
+        (RunKind.FRESH, expected_session_id),
+        (RunKind.RESUME, expected_session_id),
     ]
 
 
-def test_agent_runner_opencode_keeps_api_key_out_of_session_files_across_resume_runs(
-    tmp_path,
-):
-    service = OpenCodeService(api_key="go-key")
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_docker_client(_OPENCODE_PLAN_COMPLETE_STREAM),
-        service_registry={"opencode": service},
-    )
-
-    request = _run_request(
-        name="OpenCode",
-        template=_PLAN_TEMPLATE,
-        scope_args=_PLAN_SCOPE_ARGS,
-        mount_path=tmp_path,
-        role=AgentRole.PLANNER,
-        service="opencode",
-    )
-    asyncio.run(runner.run(request))
-    asyncio.run(runner.run(request))
-
-    session_files = sorted(
-        path for path in (tmp_path / ".pycastle-session").rglob("*") if path.is_file()
-    )
-
-    assert session_files == [
-        tmp_path / ".pycastle-session" / "planner" / "_service_session_metadata.json",
-        tmp_path / ".pycastle-session" / "planner" / "opencode" / "session_id",
-    ]
-    assert session_files[1].read_text(encoding="utf-8") == "sess-from-fresh"
-    assert all(
-        "go-key" not in path.read_text(encoding="utf-8") for path in session_files
-    )
-
-
-def test_agent_runner_codex_resume_uses_thread_id_from_rollout(tmp_path):
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    sessions_dir = state_dir / "sessions"
-    sessions_dir.mkdir(parents=True)
-    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
-    (sessions_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
-        encoding="utf-8",
-    )
-
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            r = MagicMock()
-            r.output = iter(_CODEX_COMPLETE_STREAM)
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-        service_registry={"codex": CodexService()},
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Codex",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                service="codex",
-            )
-        )
-    )
-
-    assert captured_cmds
-    assert "codex exec resume " in captured_cmds[0]
-    assert "thread-from-rollout" in captured_cmds[0]
-
-
-def test_agent_runner_codex_resume_recovers_thread_id_from_nested_rollout_and_persists(
-    tmp_path,
-):
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    nested_sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
-    nested_sessions_dir.mkdir(parents=True)
-    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
-    (nested_sessions_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-from-nested-rollout"}\n',
-        encoding="utf-8",
-    )
-
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            r = MagicMock()
-            r.output = iter(_CODEX_PLAN_COMPLETE_STREAM)
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-        service_registry={"codex": CodexService()},
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Codex",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                service="codex",
-            )
-        )
-    )
-
-    assert captured_cmds
-    assert "codex exec resume " in captured_cmds[0]
-    assert "thread-from-nested-rollout" in captured_cmds[0]
-    assert (state_dir / "thread_id").read_text(
-        encoding="utf-8"
-    ) == "thread-from-nested-rollout"
-
-
-def test_agent_runner_codex_resume_with_duplicate_same_thread_id_is_not_ambiguous(
-    tmp_path,
-):
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
-    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
-    dir_a.mkdir(parents=True)
-    dir_b.mkdir(parents=True)
-    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
-    (dir_a / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
-        encoding="utf-8",
-    )
-    (dir_b / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-same-id"}\n',
-        encoding="utf-8",
-    )
-
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            r = MagicMock()
-            r.output = iter(_CODEX_PLAN_COMPLETE_STREAM)
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=mock_client,
-        service_registry={"codex": CodexService()},
-    )
-
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Codex",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                service="codex",
-            )
-        )
-    )
-
-    assert captured_cmds
-    assert "codex exec resume " in captured_cmds[0]
-    assert "thread-same-id" in captured_cmds[0]
-
-
-def test_agent_runner_codex_resume_with_distinct_thread_ids_falls_to_fresh(
+def test_agent_runner_codex_fails_with_protocol_error_when_no_thread_id_captured(
     tmp_path, monkeypatch
 ):
     home = tmp_path / "home"
@@ -3380,36 +3039,13 @@ def test_agent_runner_codex_resume_with_distinct_thread_ids_falls_to_fresh(
     host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
     monkeypatch.setattr(Path, "home", lambda: home)
 
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
-    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
-    dir_a.mkdir(parents=True)
-    dir_b.mkdir(parents=True)
-    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
-    (dir_a / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-id-old"}\n',
-        encoding="utf-8",
+    mock_client = _make_docker_client(
+        [
+            b'{"type":"item.completed","item":{"type":"agent_message",'
+            b'"content":"missing required tag"}}\n',
+            b'{"type":"turn.completed","usage":{}}\n',
+        ]
     )
-    (dir_b / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-id-new"}\n',
-        encoding="utf-8",
-    )
-
-    captured_cmds: list[str] = []
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_client.containers.run.return_value = mock_container
-
-    def exec_side_effect(*args, **kwargs):
-        cmd = args[0][2] if isinstance(args[0], list) and len(args[0]) > 2 else ""
-        if kwargs.get("stream"):
-            captured_cmds.append(cmd)
-            r = MagicMock()
-            r.output = iter(_CODEX_COMPLETE_STREAM)
-            return r
-        return MagicMock(exit_code=0, output=(b"", b""))
-
-    mock_container.exec_run.side_effect = exec_side_effect
     runner = AgentRunner(
         {},
         _make_cfg(tmp_path),
@@ -3418,38 +3054,7 @@ def test_agent_runner_codex_resume_with_distinct_thread_ids_falls_to_fresh(
         service_registry={"codex": CodexService()},
     )
 
-    asyncio.run(
-        runner.run(
-            _run_request(
-                name="Codex",
-                template=_PLAN_TEMPLATE,
-                scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
-                service="codex",
-            )
-        )
-    )
-
-    assert captured_cmds
-    assert "resume" not in captured_cmds[0]
-
-
-def test_agent_runner_codex_missing_host_auth_raises_hard_error(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setattr(Path, "home", lambda: home)
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_docker_client(_CODEX_COMPLETE_STREAM),
-        service_registry={"codex": CodexService()},
-    )
-
-    with pytest.raises(
-        HardAgentError, match="Codex authentication missing"
-    ) as exc_info:
+    with pytest.raises(AgentFailedError) as exc_info:
         asyncio.run(
             runner.run(
                 _run_request(
@@ -3457,45 +3062,13 @@ def test_agent_runner_codex_missing_host_auth_raises_hard_error(tmp_path, monkey
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
                     service="codex",
                 )
             )
         )
 
-    assert exc_info.value.status_code == 401
-
-
-def test_agent_runner_codex_missing_host_auth_leaves_no_done_session_state(
-    tmp_path, monkeypatch
-):
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setattr(Path, "home", lambda: home)
-
-    runner = AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_docker_client(_CODEX_COMPLETE_STREAM),
-        service_registry={"codex": CodexService()},
-    )
-
-    with pytest.raises(HardAgentError, match="Codex authentication missing"):
-        asyncio.run(
-            runner.run(
-                _run_request(
-                    name="Codex",
-                    template=_PLAN_TEMPLATE,
-                    scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
-                    service="codex",
-                )
-            )
-        )
-
-    session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    assert session.is_done() is False
-    assert not session.path.exists()
+    assert exc_info.value.failure_class == "protocol_error"
 
 
 # ── AgentRunner: protocol-error retry semantics ───────────────────────────────
@@ -3521,7 +3094,9 @@ def test_agent_runner_run_returns_success_after_protocol_error_on_first_attempt(
     success_output = CommitMessageOutput(message="done")
     work_calls: list[tuple[str, RunKind]] = []
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid):
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         work_calls.append((prompt, run_kind))
         if len(work_calls) == 1:
             raise PlanParseError("no tag")
@@ -3561,7 +3136,9 @@ def test_agent_runner_run_raises_agent_failed_error_after_three_protocol_errors(
 
     call_count = 0
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid):
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         nonlocal call_count
         call_count += 1
         raise PromiseParseError("no tag")
@@ -3596,7 +3173,9 @@ def test_agent_runner_run_does_not_reprompt_when_work_returns_failed_output(tmp_
 
     call_count = 0
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid):
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         nonlocal call_count
         call_count += 1
         return FailedOutput(failure_class="agent_failed")
@@ -3633,7 +3212,9 @@ def test_agent_runner_run_decrements_timeout_budget_when_protocol_error_precedes
 
     call_count = 0
 
-    async def _fake_work(role, prompt, *, run_kind, session_uuid):
+    async def _fake_work(
+        role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
         nonlocal call_count
         call_count += 1
         if call_count == 1:

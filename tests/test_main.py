@@ -38,8 +38,10 @@ def test_load_env_uses_fixed_project_local_env_file_with_global_layering(
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "from-global"
 
 
-def test_load_env_returns_only_known_keys(tmp_path, monkeypatch):
-    """_load_env returns only known credential keys; never reads host fs."""
+def test_load_env_returns_only_known_keys_with_isolated_global_layer(
+    tmp_path, monkeypatch
+):
+    """_load_env returns only known credential keys from isolated test-owned env layers."""
     from pycastle.main import _load_env
 
     pycastle_dir = tmp_path / "pycastle"
@@ -52,7 +54,7 @@ def test_load_env_returns_only_known_keys(tmp_path, monkeypatch):
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
     monkeypatch.delenv("OPENCODE_GO_API_KEY", raising=False)
-    monkeypatch.delenv("PYCASTLE_HOME", raising=False)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
 
     def _no_home() -> None:
         raise AssertionError("_load_env must not read from the host filesystem")

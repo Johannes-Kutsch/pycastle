@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import re
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +9,11 @@ from pathlib import Path
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
 from ..session import SESSION_DIR_NAME, RunKind
+from ..session.provider_session_state import load_state_dir_provider_session_id
+from ..session.service_resume_identity import (
+    is_exact_resumable_service_session,
+    select_resumable_provider_session_id,
+)
 from .agent_service import (
     AssistantTurn,
     HardError,
@@ -18,42 +22,10 @@ from .agent_service import (
     TransientError,
     UsageLimit,
 )
+from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
-
-_RESET_TIME_RE = re.compile(
-    r"try again at\s+"
-    r"(?:(?P<month>[A-Za-z]+)\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?,\s+(?P<year>\d{4})\s+)?"
-    r"(?P<hour>\d{1,2}):(?P<minute>\d{2})\s*(?P<ampm>AM|PM)",
-    re.IGNORECASE,
-)
-
-_MONTHS = {
-    "january": 1,
-    "jan": 1,
-    "february": 2,
-    "feb": 2,
-    "march": 3,
-    "mar": 3,
-    "april": 4,
-    "apr": 4,
-    "may": 5,
-    "june": 6,
-    "jun": 6,
-    "july": 7,
-    "jul": 7,
-    "august": 8,
-    "aug": 8,
-    "september": 9,
-    "sep": 9,
-    "sept": 9,
-    "october": 10,
-    "oct": 10,
-    "november": 11,
-    "nov": 11,
-    "december": 12,
-    "dec": 12,
-}
+from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time
 
 _OPENCODE_GO_PROVIDER_ID = "opencode-go"
 _OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1"
@@ -117,42 +89,6 @@ def _opencode_go_config_content() -> str:
     )
 
 
-def _parse_reset_time(message: str) -> datetime | None:
-    match = _RESET_TIME_RE.search(message)
-    if match is None:
-        return None
-
-    hour = int(match.group("hour"))
-    minute = int(match.group("minute"))
-    ampm = match.group("ampm").upper()
-    if ampm == "PM" and hour != 12:
-        hour += 12
-    elif ampm == "AM" and hour == 12:
-        hour = 0
-
-    month = match.group("month")
-    day = match.group("day")
-    year = match.group("year")
-    if month is None or day is None or year is None:
-        return None
-
-    month_num = _MONTHS.get(month.lower())
-    if month_num is None:
-        return None
-
-    try:
-        return datetime(
-            int(year),
-            month_num,
-            int(day),
-            hour,
-            minute,
-            tzinfo=timezone.utc,
-        ).astimezone()
-    except ValueError:
-        return None
-
-
 def _extract_usage_limit(event: dict[str, object]) -> UsageLimit | None:
     data = _error_data(event)
     if data is None:
@@ -162,7 +98,9 @@ def _extract_usage_limit(event: dict[str, object]) -> UsageLimit | None:
     message = data.get("message")
     if not isinstance(message, str):
         return UsageLimit(reset_time=None, raw_message=None)
-    reset_time = _parse_reset_time(message)
+    reset_time = parse_reset_time(
+        message, ResetTimeSyntaxMode.TRY_AGAIN_UTC_REQUIRED_DATE
+    )
     raw_message = None if reset_time is not None else message
     return UsageLimit(reset_time=reset_time, raw_message=raw_message)
 
@@ -244,10 +182,67 @@ class OpenCodeService:
             env["OPENCODE_CONFIG_CONTENT"] = _opencode_go_config_content()
         return env
 
+    def provider_session_state(
+        self, request: ProviderSessionStateRequest
+    ) -> ProviderSessionState:
+        state_dir_session_id = load_state_dir_provider_session_id(
+            request.provider_state_dir,
+            self.name,
+        )
+        if not request.has_resumable_provider_state or state_dir_session_id is None:
+            return ProviderSessionState(
+                RunKind.FRESH,
+                None,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
+            )
+        if request.preferred_provider_session_id is not None:
+            return ProviderSessionState(
+                RunKind.RESUME,
+                request.preferred_provider_session_id,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
+            )
+
+        selection = select_resumable_provider_session_id(
+            request.role_session,
+            self.name,
+            provider_state_dir=request.provider_state_dir,
+            has_resumable_provider_state=request.has_resumable_provider_state,
+        )
+        provider_session_id = selection.provider_session_id
+        if provider_session_id is None:
+            return ProviderSessionState(
+                RunKind.FRESH,
+                None,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
+            )
+
+        exact_transcript_match = False
+        if request.require_exact_transcript_match:
+            exact_transcript_match = (
+                state_dir_session_id == provider_session_id
+                and is_exact_resumable_service_session(
+                    request.role_session,
+                    self.name,
+                    provider_session_id=provider_session_id,
+                    provider_state_dir=request.provider_state_dir,
+                )
+            )
+        return ProviderSessionState(
+            RunKind.RESUME,
+            provider_session_id,
+            state_dir_relpath=request.state_dir_relpath,
+            state_dir_path=request.provider_state_dir,
+            exact_transcript_match=exact_transcript_match,
+            persist_provider_session_id=selection.persist_provider_session_id,
+        )
+
     def run(
         self,
         lines: Iterable[str],
-        on_thread_id: Callable[[str], None] | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
     ) -> Iterator[ParsedTurn]:
         assistant_turns: list[str] = []
         seen_session_id: str | None = None
@@ -264,10 +259,10 @@ class OpenCodeService:
                 isinstance(session_id, str)
                 and session_id
                 and session_id != seen_session_id
-                and on_thread_id is not None
+                and on_provider_session_id is not None
             ):
                 seen_session_id = session_id
-                on_thread_id(session_id)
+                on_provider_session_id(session_id)
 
             if event.get("type") == "text":
                 part = event.get("part")

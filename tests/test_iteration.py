@@ -30,14 +30,11 @@ from pycastle.iteration import (
     run_iteration,
 )
 from pycastle.iteration.merge import merge_phase
+from pycastle.iteration.preflight import PreflightCache
 from pycastle.agents.runner import RunRequest
 from pycastle.iteration._deps import (
     Deps,
-    FakeAgentRunner,
-    RecordingLogger,
-    RecordingStatusDisplay,
 )
-from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.agents.output_protocol import (
     AgentRole,
     CommitMessageOutput,
@@ -47,6 +44,12 @@ from pycastle.agents.output_protocol import (
     NoCandidateOutput,
     PlannerOutput,
     PromiseParseError,
+)
+from tests.support import (
+    FakeAgentRunner,
+    RecordingLogger,
+    RecordingStatusDisplay,
+    _make_deps as _make_test_deps,
 )
 
 
@@ -115,42 +118,19 @@ def _make_deps(
     status_display=None,
     preflight_responses=None,
 ) -> Deps:
-    import shutil as _shutil
-
-    _cfg = cfg or Config(max_parallel=4, max_iterations=1)
-    _registered: list = []
-
-    def _fake_list_worktrees(repo):
-        return list(_registered)
-
-    def _fake_create_worktree(repo, path, branch, sha=None):
-        path.mkdir(parents=True, exist_ok=True)
-        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
-        _registered.append(path)
-
-    def _fake_remove_worktree(repo, path):
-        _shutil.rmtree(path, ignore_errors=True)
-        _registered[:] = [p for p in _registered if p != path]
-
-    git_svc.list_worktrees.side_effect = _fake_list_worktrees
-    git_svc.create_worktree.side_effect = _fake_create_worktree
-    git_svc.remove_worktree.side_effect = _fake_remove_worktree
-    if isinstance(github_svc.get_all_open_issues_lightweight.return_value, MagicMock):
-        github_svc.get_all_open_issues_lightweight.return_value = []
-
-    return Deps(
-        repo_root=tmp_path,
+    return _make_test_deps(
+        tmp_path,
+        run_agent_fn,
         git_svc=git_svc,
         github_svc=github_svc,
-        agent_runner=FakeAgentRunner(
-            side_effect=run_agent_fn,
-            preflight_responses=[[]]
-            if preflight_responses is None
-            else preflight_responses,
-        ),
-        cfg=_cfg,
+        cfg=cfg or Config(max_parallel=4, max_iterations=1),
         logger=logger,
-        status_display=status_display or PlainStatusDisplay(),  # type: ignore[arg-type]
+        status_display=status_display,
+        preflight_responses=[[]]
+        if preflight_responses is None
+        else preflight_responses,
+        preflight_cache=PreflightCache(),
+        setup_worktrees=True,
     )
 
 
@@ -1520,114 +1500,15 @@ def test_run_iteration_registers_implement_row_with_running_phase(
     ) in recording.calls
 
 
-# ── Planning skip when in-flight branches or worktrees exist ─────────────────
+# ── In-flight selector integration ───────────────────────────────────────────
 
 
-def test_run_iteration_skips_planning_when_all_issues_have_existing_branches(
+def test_run_iteration_passes_full_ready_for_agent_fetch_to_in_flight_selector(
     tmp_path, git_svc, logger
 ):
-    """When all open issues have an existing branch, planning_phase is not invoked
-    and the iteration proceeds with those issues as the working set."""
+    """The initial ready-for-agent fetch is classified once as a whole list before planning."""
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [
-        {
-            "number": 1,
-            "title": "Fix A",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-        {
-            "number": 2,
-            "title": "Fix B",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-    ]
-    git_svc.verify_ref_exists.return_value = True
-
-    agent_names: list[str] = []
-
-    async def _fake_agent(request: RunRequest):
-        agent_names.append(request.name)
-        return CompletionOutput()
-
-    deps = _make_deps(
-        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
-    result = asyncio.run(run_iteration(deps))
-
-    assert isinstance(result, Continue)
-    assert "Plan Agent" not in agent_names, (
-        "Plan Agent must not be called when all branches exist"
-    )
-    assert any("Implement Agent" in n for n in agent_names), (
-        "Implement Agent must still run"
-    )
-
-
-def test_run_iteration_skips_planning_when_all_issues_have_existing_worktrees(
-    tmp_path, git_svc, logger
-):
-    """When all open issues have an existing worktree with a started role session dir
-    (but no branch), planning_phase is not invoked."""
-    from pycastle.agents.output_protocol import AgentRole
-    from pycastle.session.resume import SESSION_DIR_NAME
-
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [
-        {
-            "number": 3,
-            "title": "Fix C",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-        {
-            "number": 4,
-            "title": "Fix D",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-    ]
-    git_svc.verify_ref_exists.return_value = False
-    for n in [3, 4]:
-        role_dir = (
-            tmp_path
-            / "pycastle"
-            / ".worktrees"
-            / f"issue-{n}"
-            / SESSION_DIR_NAME
-            / AgentRole.IMPLEMENTER.value
-        )
-        role_dir.mkdir(parents=True)
-
-    agent_names: list[str] = []
-
-    async def _fake_agent(request: RunRequest):
-        agent_names.append(request.name)
-        return CompletionOutput()
-
-    deps = _make_deps(
-        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
-    )
-    result = asyncio.run(run_iteration(deps))
-
-    assert isinstance(result, Continue)
-    assert "Plan Agent" not in agent_names, (
-        "Plan Agent must not be called when all worktrees have started role sessions"
-    )
-
-
-def test_run_iteration_uses_only_in_flight_issues_when_some_have_existing_branch(
-    tmp_path, git_svc, logger
-):
-    """When only some open issues have an existing branch, only those in-flight issues
-    are used as the working set and planning_phase is not invoked."""
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [
+    issues = [
         {
             "number": 5,
             "title": "In flight",
@@ -1637,13 +1518,13 @@ def test_run_iteration_uses_only_in_flight_issues_when_some_have_existing_branch
         },
         {
             "number": 6,
-            "title": "Deferred",
+            "title": "Also in flight",
             "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
     ]
-    git_svc.verify_ref_exists.side_effect = lambda ref, path: ref == "pycastle/issue-5"
+    github_svc.get_open_issues.return_value = issues
 
     agent_names: list[str] = []
 
@@ -1651,125 +1532,101 @@ def test_run_iteration_uses_only_in_flight_issues_when_some_have_existing_branch
         agent_names.append(request.name)
         return CompletionOutput()
 
+    def _selector(candidates, *, repo_root, git_svc):
+        del repo_root, git_svc
+        if [issue["number"] for issue in candidates] == [5, 6]:
+            return list(candidates)
+        return []
+
     deps = _make_deps(
         tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
     )
-    result = asyncio.run(run_iteration(deps))
+
+    with patch("pycastle.iteration.select_in_flight_issues", side_effect=_selector):
+        result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, Continue)
     assert "Plan Agent" not in agent_names, (
-        "Plan Agent must not be called when some branches exist"
+        "Plan Agent must be skipped when the selector classifies the full fetched list"
     )
-    assert "Implement Agent #5" in agent_names, "In-flight issue must be implemented"
-    assert not any("Implement Agent #6" in n for n in agent_names), (
-        "Deferred issue must not be implemented"
-    )
+    assert "Implement Agent #5" in agent_names
+    assert "Implement Agent #6" in agent_names
 
 
-def test_run_iteration_in_flight_worktree_uses_existing_branch_path(
+def test_run_iteration_selected_in_flight_issues_resume_through_planning(
     tmp_path, git_svc, logger
 ):
-    """On the in-flight path, planning pins the current safe SHA before implementation."""
+    """Selected in-flight issues still traverse planning's preflight gate and skip Plan Agent."""
     github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [
+    issues = [
         {
-            "number": 7,
+            "number": 5,
             "title": "In flight",
             "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
-        }
-    ]
-    git_svc.verify_ref_exists.return_value = True
-
-    async def _fake_agent(request: RunRequest):
-        return CompletionOutput()
-
-    deps = _make_deps(
-        tmp_path,
-        _fake_agent,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        logger=logger,
-    )
-    asyncio.run(run_iteration(deps))
-
-    git_svc.pull_with_merge_fallback.assert_called_once_with(tmp_path)
-    implementer_sha = git_svc.create_worktree.call_args_list[0].args[3]
-    assert implementer_sha == "abc123", (
-        "In-flight implementer worktree must use the safe SHA returned by planning"
-    )
-
-
-def test_run_iteration_detects_in_flight_via_both_branch_and_worktree_signals(
-    tmp_path, git_svc, logger
-):
-    """Both detection signals are checked independently: an issue with a branch that
-    has commits ahead of merge-base, an issue with a worktree with a started role
-    session dir, and an issue with neither are handled correctly in a single iteration."""
-    from pycastle.agents.output_protocol import AgentRole
-    from pycastle.session.resume import SESSION_DIR_NAME
-
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [
-        {
-            "number": 8,
-            "title": "Branch with commits",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
         },
         {
-            "number": 9,
-            "title": "Worktree with session",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-        {
-            "number": 10,
-            "title": "Deferred",
+            "number": 6,
+            "title": "Also in flight",
             "body": "x" * 100,
             "comments": [],
             "labels": ["behavior-slice"],
         },
     ]
-    git_svc.verify_ref_exists.side_effect = lambda ref, path: ref == "pycastle/issue-8"
-    git_svc.branch_has_commits_ahead_of_merge_base.return_value = True
-    role_dir = (
-        tmp_path
-        / "pycastle"
-        / ".worktrees"
-        / "issue-9"
-        / SESSION_DIR_NAME
-        / AgentRole.IMPLEMENTER.value
-    )
-    role_dir.mkdir(parents=True)
-    # A non-empty role dir marks the session as "in progress" (resumable, not done)
-    # so the Implementer will run (rather than being skipped as already complete).
-    (role_dir / "session.jsonl").write_text("{}\n")
-
+    github_svc.get_open_issues.return_value = issues
+    recording = RecordingStatusDisplay()
     agent_names: list[str] = []
+    call_count = 0
+
+    class _SequentialCache:
+        async def get_safe_sha(self, deps):
+            del deps
+            nonlocal call_count
+            call_count += 1
+            from pycastle.iteration.preflight import PreflightReady
+
+            return PreflightReady(sha="sha-x1")
 
     async def _fake_agent(request: RunRequest):
         agent_names.append(request.name)
         return CompletionOutput()
 
-    deps = _make_deps(
-        tmp_path, _fake_agent, git_svc=git_svc, github_svc=github_svc, logger=logger
+    def _selector(candidates, *, repo_root, git_svc):
+        del repo_root, git_svc
+        if [issue["number"] for issue in candidates] == [5, 6]:
+            return list(candidates)
+        return []
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            status_display=recording,
+        ),
+        preflight_cache=_SequentialCache(),  # type: ignore[arg-type]
     )
-    result = asyncio.run(run_iteration(deps))
+
+    with patch("pycastle.iteration.select_in_flight_issues", side_effect=_selector):
+        result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, Continue)
+    assert call_count == 1, (
+        "selected in-flight issues must still use planning's preflight gate exactly once"
+    )
     assert "Plan Agent" not in agent_names
-    assert "Implement Agent #8" in agent_names, (
-        "Branch-with-commits in-flight issue must run"
-    )
-    assert "Implement Agent #9" in agent_names, (
-        "Worktree-with-session in-flight issue must run"
-    )
-    assert not any("Implement Agent #10" in n for n in agent_names), (
-        "Deferred issue must not run"
+    assert "Implement Agent #5" in agent_names
+    assert "Implement Agent #6" in agent_names
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must close on the in-flight resume path"
+    assert "resuming 2 in-flight branch(es) (#5, #6)" in plan_removes[0][2]
+    assert "skipping plan agent" in plan_removes[0][2]
+    implementer_sha = git_svc.create_worktree.call_args_list[0][0][3]
+    assert implementer_sha == "sha-x1", (
+        "selected in-flight issues must hand planning's SHA to implementation"
     )
 
 
@@ -1872,98 +1729,6 @@ def test_run_iteration_plan_row_rendered_for_two_afk_issues(tmp_path, git_svc, l
     plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
     assert plan_removes, "[Plan] row must be removed for multi-issue path"
     assert "Planning complete" in plan_removes[0][2]
-
-
-def test_run_iteration_plan_row_rendered_for_one_in_flight_zero_afk(
-    tmp_path, git_svc, logger
-):
-    """One in-flight branch + zero AFK issues: planning skips with in-flight message, [Plan] row appears."""
-    recording = RecordingStatusDisplay()
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [
-        {
-            "number": 20,
-            "title": "In flight",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        }
-    ]
-    git_svc.verify_ref_exists.return_value = True
-
-    async def _fake_agent(request: RunRequest):
-        return CompletionOutput()
-
-    deps = _make_deps(
-        tmp_path,
-        _fake_agent,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        logger=logger,
-        status_display=recording,
-    )
-    result = asyncio.run(run_iteration(deps))
-
-    assert isinstance(result, Continue)
-    plan_registers = [
-        c for c in recording.calls if c[0] == "register" and c[1] == "Plan"
-    ]
-    assert plan_registers, "[Plan] row must be registered for in-flight path"
-    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
-    assert plan_removes, "[Plan] row must be removed for in-flight path"
-    msg = plan_removes[0][2]
-    assert "in-flight" in msg
-    assert "#20" in msg
-    assert "skipping plan agent" in msg
-
-
-def test_run_iteration_plan_row_rendered_for_two_in_flight_branches(
-    tmp_path, git_svc, logger
-):
-    """Two in-flight branches: planning skips with in-flight message, [Plan] row appears."""
-    recording = RecordingStatusDisplay()
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = [
-        {
-            "number": 30,
-            "title": "In flight A",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-        {
-            "number": 31,
-            "title": "In flight B",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-    ]
-    git_svc.verify_ref_exists.return_value = True
-
-    async def _fake_agent(request: RunRequest):
-        return CompletionOutput()
-
-    deps = _make_deps(
-        tmp_path,
-        _fake_agent,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        logger=logger,
-        status_display=recording,
-    )
-    result = asyncio.run(run_iteration(deps))
-
-    assert isinstance(result, Continue)
-    plan_registers = [
-        c for c in recording.calls if c[0] == "register" and c[1] == "Plan"
-    ]
-    assert plan_registers, "[Plan] row must be registered for in-flight path"
-    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
-    assert plan_removes, "[Plan] row must be removed for in-flight path"
-    msg = plan_removes[0][2]
-    assert "in-flight" in msg
-    assert "skipping plan agent" in msg
 
 
 # ── Plan phase row.close() message ────────────────────────────────────────────
@@ -4558,258 +4323,3 @@ def test_merge_phase_only_shows_removing_counter_during_active_deletion(
         merge_updates
     )
     assert "merging 2/2 branches, closing 2/2 issues" in merge_updates
-
-
-# ── In-flight classification ──────────────────────────────────────────────────
-
-
-def test_leftover_branch_ref_with_no_commits_is_not_in_flight(
-    tmp_path, git_svc, github_svc, logger
-):
-    """An issue with only a leftover branch ref (no worktree, no commits ahead of
-    merge-base) must not be classified in-flight; run_iteration must run a fresh
-    planning attempt for it."""
-    github_svc.get_open_issues.return_value = [
-        {
-            "number": 1,
-            "title": "Fix A",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-        {
-            "number": 2,
-            "title": "Fix B",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-    ]
-    # Branch ref exists (leftover from a crashed agent) but no commits ahead of main
-    git_svc.verify_ref_exists.return_value = True
-    git_svc.branch_has_commits_ahead_of_merge_base.return_value = False
-
-    async def _fake_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output([github_svc.get_open_issues.return_value[0]])
-        return CompletionOutput()
-
-    deps = _make_deps(
-        tmp_path,
-        _fake_agent,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        logger=logger,
-        preflight_responses=[[], []],
-    )
-    asyncio.run(run_iteration(deps))
-
-    plan_calls = [r for r in deps.agent_runner.calls if r.name == "Plan Agent"]
-    assert plan_calls, (
-        "Plan Agent must be called for a fresh planning run when the branch has no "
-        "commits ahead of merge-base (leftover ref is not evidence of real work)"
-    )
-
-
-def test_branch_with_commits_ahead_of_merge_base_is_in_flight(
-    tmp_path, git_svc, github_svc, logger
-):
-    """An issue whose branch has commits ahead of its merge-base with main is
-    in-flight regardless of whether main has advanced past its fork point; the
-    Plan Agent must be skipped."""
-    github_svc.get_open_issues.return_value = [
-        {
-            "number": 1,
-            "title": "Fix A",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-        {
-            "number": 2,
-            "title": "Fix B",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-    ]
-
-    # Branch for issue #1 has commits ahead of merge-base with main
-    def _verify(ref, path):
-        return ref == "pycastle/issue-1"
-
-    git_svc.verify_ref_exists.side_effect = _verify
-    git_svc.branch_has_commits_ahead_of_merge_base.return_value = True
-
-    async def _fake_agent(request: RunRequest):
-        return CompletionOutput()
-
-    deps = _make_deps(
-        tmp_path,
-        _fake_agent,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        logger=logger,
-        preflight_responses=[[]],
-    )
-    asyncio.run(run_iteration(deps))
-
-    plan_calls = [r for r in deps.agent_runner.calls if r.name == "Plan Agent"]
-    assert not plan_calls, (
-        "Plan Agent must NOT be called when an issue branch has commits ahead of "
-        "merge-base — it should resume as in-flight"
-    )
-
-
-def test_worktree_with_role_session_dir_is_in_flight(
-    tmp_path, git_svc, github_svc, logger
-):
-    """An issue whose worktree dir exists AND contains a started role session dir is
-    in-flight even when its branch has zero commits ahead of main."""
-    from pycastle.session.resume import SESSION_DIR_NAME
-    from pycastle.agents.output_protocol import AgentRole
-    from pycastle.config import Config
-
-    github_svc.get_open_issues.return_value = [
-        {
-            "number": 1,
-            "title": "Fix A",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-        {
-            "number": 2,
-            "title": "Fix B",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-    ]
-    git_svc.verify_ref_exists.return_value = False
-    git_svc.branch_has_commits_ahead_of_merge_base.return_value = False
-
-    cfg = Config(max_parallel=4, max_iterations=1)
-    # Create worktree dir with a role session dir for issue #1
-    wt_dir = tmp_path / "pycastle" / ".worktrees" / "issue-1"
-    role_dir = wt_dir / SESSION_DIR_NAME / AgentRole.IMPLEMENTER.value
-    role_dir.mkdir(parents=True)
-
-    async def _fake_agent(request: RunRequest):
-        return CompletionOutput()
-
-    deps = _make_deps(
-        tmp_path,
-        _fake_agent,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        logger=logger,
-        cfg=cfg,
-        preflight_responses=[[]],
-    )
-    asyncio.run(run_iteration(deps))
-
-    plan_calls = [r for r in deps.agent_runner.calls if r.name == "Plan Agent"]
-    assert not plan_calls, (
-        "Plan Agent must NOT be called when the worktree has a started role session dir"
-        " — it should resume as in-flight"
-    )
-
-
-def test_worktree_without_role_session_dir_is_not_in_flight(
-    tmp_path, git_svc, github_svc, logger
-):
-    """An issue with a worktree dir but no role session dir is NOT in-flight;
-    run_iteration must run a fresh planning attempt for it."""
-    from pycastle.config import Config
-
-    github_svc.get_open_issues.return_value = [
-        {
-            "number": 1,
-            "title": "Fix A",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-        {
-            "number": 2,
-            "title": "Fix B",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-    ]
-    git_svc.verify_ref_exists.return_value = False
-    git_svc.branch_has_commits_ahead_of_merge_base.return_value = False
-
-    cfg = Config(max_parallel=4, max_iterations=1)
-    # Worktree dir exists but has no role session dir inside
-    wt_dir = tmp_path / "pycastle" / ".worktrees" / "issue-1"
-    wt_dir.mkdir(parents=True)
-
-    async def _fake_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output([github_svc.get_open_issues.return_value[0]])
-        return CompletionOutput()
-
-    deps = _make_deps(
-        tmp_path,
-        _fake_agent,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        logger=logger,
-        cfg=cfg,
-        preflight_responses=[[], []],
-    )
-    asyncio.run(run_iteration(deps))
-
-    plan_calls = [r for r in deps.agent_runner.calls if r.name == "Plan Agent"]
-    assert plan_calls, (
-        "Plan Agent must be called when the worktree has no role session dir "
-        "(no evidence of real work started)"
-    )
-
-
-def test_issue_with_no_worktree_and_no_branch_is_not_in_flight(
-    tmp_path, git_svc, github_svc, logger
-):
-    """An issue with neither a worktree nor a branch ref is NOT in-flight;
-    run_iteration must run a fresh planning attempt."""
-    github_svc.get_open_issues.return_value = [
-        {
-            "number": 1,
-            "title": "Fix A",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-        {
-            "number": 2,
-            "title": "Fix B",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-    ]
-    # No branch ref, no worktree (default fixture state)
-    git_svc.verify_ref_exists.return_value = False
-
-    async def _fake_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output([github_svc.get_open_issues.return_value[0]])
-        return CompletionOutput()
-
-    deps = _make_deps(
-        tmp_path,
-        _fake_agent,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        logger=logger,
-        preflight_responses=[[], []],
-    )
-    asyncio.run(run_iteration(deps))
-
-    plan_calls = [r for r in deps.agent_runner.calls if r.name == "Plan Agent"]
-    assert plan_calls, (
-        "Plan Agent must be called when there is no branch and no worktree"
-    )

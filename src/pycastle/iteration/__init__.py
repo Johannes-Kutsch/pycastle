@@ -1,5 +1,6 @@
 import dataclasses
 import json
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import TypeAlias
@@ -18,15 +19,11 @@ from ..errors import (
 )
 from ..services import OperatorActionableGitError
 from ..prompts.pipeline import PromptTemplate
-from ..infrastructure.worktree import (
-    worktree_name_for_branch,
-    worktree_path,
-)
-from ..session import any_role_dir_present
 from ._deps import Deps
 from ._rows import StatusRow as StatusRow
 from ._rows import status_row as status_row
 from .implement import branch_for, implement_phase
+from .in_flight import select_in_flight_issues
 from .improve import ImproveContinue as ImproveContinue
 from .improve import ImproveNoCandidate as ImproveNoCandidate
 from .improve import improve_phase
@@ -120,16 +117,6 @@ IterationOutcome: TypeAlias = (
 )
 
 
-def _is_in_flight(issue: dict, deps: Deps) -> bool:
-    branch = branch_for(issue["number"])
-    wt_path = worktree_path(worktree_name_for_branch(branch), deps.repo_root)
-    if any_role_dir_present(wt_path):
-        return True
-    if not deps.git_svc.verify_ref_exists(branch, deps.repo_root):
-        return False
-    return deps.git_svc.branch_has_commits_ahead_of_merge_base(deps.repo_root, branch)
-
-
 async def _run_implement_and_merge(
     issues: list[dict],
     deps: Deps,
@@ -184,6 +171,19 @@ async def _run_implement_and_merge(
     return Continue()
 
 
+def _issues_with_readiness(
+    issues: list[dict], readiness_by_number: Mapping[int, object]
+) -> list[dict]:
+    return [
+        (
+            {**issue, "readiness": readiness}
+            if (readiness := readiness_by_number.get(issue["number"])) is not None
+            else issue
+        )
+        for issue in issues
+    ]
+
+
 async def _handle_preflight_outcome(
     result: PreflightHITL | PreflightAFK, deps: Deps
 ) -> IterationOutcome:
@@ -205,7 +205,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
         all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
 
-        in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
+        in_flight = select_in_flight_issues(
+            open_issues, repo_root=deps.repo_root, git_svc=deps.git_svc
+        )
 
         # ── (Improve) — runs when idle: no open issues, no in-flight ────────
         if not open_issues and not in_flight:
@@ -230,7 +232,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
                 if not open_issues:
                     return Continue()
-                in_flight = [i for i in open_issues if _is_in_flight(i, deps)]
+                in_flight = select_in_flight_issues(
+                    open_issues, repo_root=deps.repo_root, git_svc=deps.git_svc
+                )
             else:
                 cap_hit = (
                     deps.cfg.improve_max is not None
@@ -248,7 +252,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         if isinstance(plan_result, (PreflightHITL, PreflightAFK)):
             return await _handle_preflight_outcome(plan_result, deps)
 
-        issues: list[dict] = plan_result.issues
+        issues = _issues_with_readiness(
+            plan_result.issues, plan_result.readiness_by_number
+        )
 
         # ── Implement ────────────────────────────────────────────────────────
         return await _run_implement_and_merge(issues, deps, plan_result.sha)

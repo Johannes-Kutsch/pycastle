@@ -1,7 +1,5 @@
 import asyncio
 import dataclasses
-import json
-import shutil
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any, Protocol
@@ -17,7 +15,12 @@ from .result import CancellationToken
 from ..config import Config, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
 from ..infrastructure.docker_session import DockerSession, build_volume_spec
-from ..infrastructure.preflight_tool_classifier import load_python_dependency_metadata
+from ..infrastructure.preflight_tool_classifier import (
+    MissingDeclaredTool,
+    PreflightCommandFailure,
+    classify_preflight_tool_failure,
+    load_python_dependency_metadata,
+)
 from ..errors import (
     AgentFailedError,
     AgentTimeoutError,
@@ -28,7 +31,11 @@ from ..errors import (
     UsageLimitError,
 )
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
-from ..session import RoleSession, RunKind
+from ..session import RunKind
+from ..session._provider_session_state import (
+    ProviderSessionStateRequest,
+    prepare_provider_session_state,
+)
 from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
@@ -146,14 +153,11 @@ class AgentRunner:
         self,
         mount_path: Path,
         service: AgentService,
-        state_dir_relpath: str | None = None,
+        state_dir_container_path: str | None = None,
     ) -> DockerSession:
         volumes, auto_overlay = build_volume_spec(mount_path)
         container_env = self._container_base_env()
-        state_dir: str | None = None
-        if state_dir_relpath is not None:
-            state_dir = f"{_CONTAINER_WORKSPACE}/{state_dir_relpath}"
-        container_env.update(service.build_env(state_dir))
+        container_env.update(service.build_env(state_dir_container_path))
         return DockerSession(
             volumes=volumes,
             container_env=container_env,
@@ -173,47 +177,6 @@ class AgentRunner:
             docker_client=self._docker_client,
             auto_overlay=auto_overlay,
         )
-
-    def _host_codex_auth_path(self) -> Path:
-        host_auth = Path.home() / ".codex" / "auth.json"
-        if not host_auth.exists():
-            raise HardAgentError(
-                "Codex authentication missing: run `codex login` on the host.",
-                status_code=401,
-            )
-        return host_auth
-
-    def _seed_codex_auth(self, state_dir: Path, host_auth: Path) -> None:
-        dest = state_dir / "auth.json"
-        if dest.exists():
-            return
-
-        state_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(host_auth, dest)
-
-    def _codex_thread_id_from_rollouts(self, state_dir: Path) -> str | None:
-        sessions_dir = state_dir / "sessions"
-        if not sessions_dir.is_dir():
-            return None
-        found: set[str] = set()
-        for rollout in sessions_dir.rglob("rollout-*.jsonl"):
-            try:
-                lines = rollout.read_text(encoding="utf-8").splitlines()
-            except OSError:
-                continue
-            for line in lines:
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(obj, dict):
-                    continue
-                if obj.get("type") != "thread.started":
-                    continue
-                thread_id = obj.get("thread_id")
-                if isinstance(thread_id, str) and thread_id.strip():
-                    found.add(thread_id.strip())
-        return next(iter(found)) if len(found) == 1 else None
 
     async def _build_prompt(
         self,
@@ -254,40 +217,16 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError(reset_time=None, stage_key=_stage_key_for_role(role))
 
-        session_namespace = request.session_namespace
-        role_session = RoleSession(mount_path, role, session_namespace)
-        session_uuid = role_session.session_uuid()
-        svc_state_relpath = service.state_dir_relpath(role, session_namespace)
-        state_dir = mount_path / svc_state_relpath if svc_state_relpath else None
-        run_kind = (
-            RunKind.RESUME
-            if svc_state_relpath
-            and state_dir is not None
-            and service.is_resumable(state_dir)
-            else RunKind.FRESH
+        prepared_session = prepare_provider_session_state(
+            ProviderSessionStateRequest(
+                worktree=mount_path,
+                role=role,
+                session_namespace=request.session_namespace,
+                service=service,
+            )
         )
-        service_session_id: str | None = session_uuid
-        if service.name == "codex":
-            service_session_id = None
-            if run_kind == RunKind.RESUME and state_dir is not None:
-                service_session_id = role_session.service_session_id(
-                    "codex"
-                ) or self._codex_thread_id_from_rollouts(state_dir)
-                if service_session_id is not None:
-                    role_session.save_service_session_id("codex", service_session_id)
-                else:
-                    run_kind = RunKind.FRESH
-        elif service.name == "opencode" and run_kind == RunKind.RESUME:
-            service_session_id = role_session.service_session_id("opencode")
-            if service_session_id is None:
-                run_kind = RunKind.FRESH
-        host_codex_auth: Path | None = None
-        if state_dir is not None and service.name == "codex":
-            auth_missing_from_state_dir = not (state_dir / "auth.json").exists()
-            if run_kind == RunKind.FRESH or auth_missing_from_state_dir:
-                host_codex_auth = self._host_codex_auth_path()
-
         non_typed_retry_done = False
+        initial_attempt = True
 
         color_key: int | None = None
         if role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
@@ -308,7 +247,13 @@ class AgentRunner:
                 effort=effort,
             ),
         ) as row:
-            session = self._build_session(mount_path, service, svc_state_relpath)
+            session = self._build_session(
+                mount_path,
+                service,
+                prepared_session.provider_state_dir_container_path(
+                    _CONTAINER_WORKSPACE
+                ),
+            )
             runner = ContainerRunner(
                 name,
                 session,
@@ -326,19 +271,7 @@ class AgentRunner:
                 except DockerError as exc:
                     raise SetupPhaseError(role.value, str(exc)) from exc
 
-                if run_kind == RunKind.FRESH:
-                    role_session.start_fresh()
-
-                if state_dir is not None:
-                    state_dir.mkdir(parents=True, exist_ok=True)
-                    if host_codex_auth is not None:
-                        self._seed_codex_auth(state_dir, host_codex_auth)
-
-                def remember_thread_id(thread_id: str) -> None:
-                    nonlocal service_session_id
-                    service_session_id = thread_id
-                    if service.name in {"codex", "opencode"}:
-                        role_session.save_service_session_id(service.name, thread_id)
+                prepared_session.prepare_for_run()
 
                 loop = asyncio.get_running_loop()
 
@@ -348,52 +281,44 @@ class AgentRunner:
                 retries_left = self._cfg.timeout_retries
                 while True:
                     try:
+                        provider_run_session = (
+                            prepared_session.initial_provider_run_session()
+                            if initial_attempt
+                            else prepared_session.resumable_provider_run_session()
+                        )
                         prompt = await self._build_prompt(
                             template,
                             scope_args,
                             container_exec,
-                            run_kind=run_kind,
+                            run_kind=provider_run_session.run_kind,
                             send_role_prompt_on_resume=request.send_role_prompt_on_resume,
                         )
 
                         work_prompt = prompt
-                        work_run_kind = run_kind
+                        work_run_session = provider_run_session
                         for _ in range(3):
                             try:
-                                if service.name in {"codex", "opencode"}:
-                                    output = await runner.work(
-                                        role,
-                                        work_prompt,
-                                        run_kind=work_run_kind,
-                                        session_uuid=service_session_id,
-                                        on_thread_id=remember_thread_id,
-                                    )
-                                else:
-                                    output = await runner.work(
-                                        role,
-                                        work_prompt,
-                                        run_kind=work_run_kind,
-                                        session_uuid=service_session_id,
-                                    )
-                                if (
-                                    not isinstance(output, FailedOutput)
-                                    and service_session_id is not None
-                                ):
-                                    role_session.save_service_session_metadata(
-                                        service.name, service_session_id
-                                    )
+                                output = await runner.work(
+                                    role,
+                                    work_prompt,
+                                    run_kind=work_run_session.run_kind,
+                                    session_uuid=work_run_session.provider_session_id,
+                                    on_provider_session_id=(
+                                        work_run_session.record_provider_session_id
+                                    ),
+                                )
+                                if not isinstance(output, FailedOutput):
+                                    work_run_session.record_successful_run()
                                 if isinstance(output, FailedOutput):
                                     row.close("failed", shutdown_style="error")
                                 return output
                             except AgentOutputProtocolError:
-                                if (
-                                    service.name == "codex"
-                                    and service_session_id is None
-                                ):
+                                next_run_session = prepared_session.protocol_reprompt_provider_run_session()
+                                if next_run_session is None:
                                     row.close("failed", shutdown_style="error")
                                     return FailedOutput(failure_class="protocol_error")
                                 work_prompt = REPROMPT_MESSAGE
-                                work_run_kind = RunKind.RESUME
+                                work_run_session = next_run_session
                         row.close("failed", shutdown_style="error")
                         return FailedOutput(failure_class="protocol_error")
                     except AgentTimeoutError:
@@ -406,6 +331,7 @@ class AgentRunner:
                             f" (attempt {restart_num}/{self._cfg.timeout_retries})",
                         )
                         retries_left -= 1
+                        initial_attempt = False
                     except UsageLimitError as err:
                         if err.stage_key is None:
                             err.stage_key = _stage_key_for_role(role)
@@ -433,7 +359,7 @@ class AgentRunner:
                         err.service_name = service.name
                         raise
                     except Exception:
-                        if run_kind != RunKind.RESUME:
+                        if provider_run_session.run_kind != RunKind.RESUME:
                             raise
                         if non_typed_retry_done:
                             row.close("failed", shutdown_style="error")
@@ -482,10 +408,25 @@ class AgentRunner:
                     await runner.setup(git_name, git_email, work_body)
                 except DockerError as exc:
                     raise SetupPhaseError("preflight", str(exc)) from exc
-                failures = await runner.preflight(
-                    list(self._cfg.preflight_checks),
-                    python_dependency_metadata=python_dependency_metadata,
-                )
+                failures = await runner.preflight(list(self._cfg.preflight_checks))
+                for check_name, command, output in failures:
+                    classification = classify_preflight_tool_failure(
+                        python_dependency_metadata,
+                        PreflightCommandFailure(
+                            check_name=check_name,
+                            command=command,
+                            output=output,
+                        ),
+                    )
+                    if isinstance(classification, MissingDeclaredTool):
+                        raise SetupPhaseError(
+                            "preflight",
+                            "Missing expected preflight tool "
+                            f"'{classification.tool}' declared in "
+                            f"{classification.dependency_source}.",
+                            command=command,
+                            output=output,
+                        )
                 if not failures:
                     row.close("finished, all tests green")
                 return failures
