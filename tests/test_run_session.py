@@ -26,6 +26,7 @@ from pycastle.session import (
     ProviderIdentityKind,
     RoleSession,
     RunKind,
+    has_exact_transcript_match,
 )
 from pycastle.session.service_resume_identity import (
     is_exact_resumable_service_session,
@@ -385,6 +386,38 @@ def test_role_session_exact_transcript_handoff_for_service_reports_unrecoverable
     assert handoff.provider_identity.run_kind is RunKind.FRESH
     assert handoff.provider_identity.provider_session_id is None
     assert handoff.is_eligible is False
+
+
+def test_has_exact_transcript_match_accepts_sidecar_backed_opencode_handoff_without_state_dir_session_id_sidecar(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService(
+            "custom/opencode-state/",
+            name="opencode",
+            resumable=True,
+        ),
+    )
+    role_session = RoleSession(tmp_path, AgentRole.REVIEWER, "main")
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "resume.jsonl").write_text("{}\n", encoding="utf-8")
+    role_session.save_service_session_id("opencode", "sess-opencode-123")
+    role_session.save_service_session_metadata("opencode", "sess-opencode-123")
+
+    assert (
+        has_exact_transcript_match(
+            worktree=tmp_path,
+            role=AgentRole.REVIEWER,
+            session_namespace="main",
+            service=service,
+        )
+        is True
+    )
+    assert (
+        role_session.exact_transcript_handoff_for_service(service).is_eligible is True
+    )
 
 
 def test_run_session_plan_namespaces_claude_provider_session_identity_only_when_non_empty(
