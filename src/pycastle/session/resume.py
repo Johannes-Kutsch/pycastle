@@ -234,6 +234,22 @@ class RoleSession:
             ),
         )
 
+    def provider_run_state_for_service(
+        self,
+        service: "AgentService",
+    ) -> ProviderRunState:
+        state = self.service_session_state(service)
+        derived_provider_session_id = None
+        if service.name == "claude":
+            derived_provider_session_id = self.session_uuid()
+
+        return self.provider_identity(
+            service.name,
+            has_resumable_provider_state=state.has_resumable_provider_state,
+            provider_state_dir=state.state_dir,
+            derived_provider_session_id=derived_provider_session_id,
+        ).provider_run_state(provider_state_dir=state.state_dir)
+
     def exact_transcript_handoff(
         self,
         service_name: str,

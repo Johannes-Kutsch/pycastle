@@ -278,6 +278,76 @@ def test_provider_run_state_for_non_codex_service_is_fresh_without_provider_sess
     )
 
 
+def test_provider_run_state_for_claude_service_resumes_with_role_session_uuid_without_sidecar(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    service = _FakeService(
+        name="claude",
+        relpath="custom/claude-state/",
+        resumable=True,
+    )
+    provider_state_dir = worktree / "custom" / "claude-state"
+    provider_state_dir.mkdir(parents=True)
+    provider_state_dir.joinpath("session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.RESUME,
+        provider_session_id=rs.session_uuid(),
+        provider_state_dir=provider_state_dir,
+    )
+
+
+def test_provider_run_state_for_sidecar_backed_service_resumes_with_saved_service_session_id(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    service = _FakeService(
+        name="opencode",
+        relpath="custom/opencode-state/",
+        resumable=True,
+    )
+    provider_state_dir = worktree / "custom" / "opencode-state"
+    provider_state_dir.mkdir(parents=True)
+    provider_state_dir.joinpath("session_id").write_text(
+        "sess-opencode-123\n",
+        encoding="utf-8",
+    )
+    rs.save_service_session_id("opencode", "sess-opencode-123")
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.RESUME,
+        provider_session_id="sess-opencode-123",
+        provider_state_dir=provider_state_dir,
+    )
+
+
+def test_provider_run_state_for_sidecar_backed_service_falls_back_to_fresh_without_inventing_session_id(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    service = _FakeService(
+        name="opencode",
+        relpath="custom/opencode-state/",
+        resumable=True,
+    )
+    provider_state_dir = worktree / "custom" / "opencode-state"
+    provider_state_dir.mkdir(parents=True)
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.FRESH,
+        provider_session_id=None,
+        provider_state_dir=provider_state_dir,
+        fresh_fallback_reason=ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY,
+    )
+
+
 def test_mark_done_preserves_service_session_metadata_without_counting_as_resumable(rs):
     rs.start_fresh()
     rs.save_service_session_metadata("codex", "thread-from-run")
