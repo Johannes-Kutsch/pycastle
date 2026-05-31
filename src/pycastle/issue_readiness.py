@@ -95,7 +95,7 @@ def selected_mode_for_issue(issue: dict, cfg: Config) -> SliceMode | None:
     return None
 
 
-def _classify_slice(issue: dict, cfg: Config) -> SliceClassification:
+def classify_slice(issue: dict, cfg: Config) -> SliceClassification:
     label_to_mode = {
         cfg.refactor_slice_label: SliceMode.REFACTOR,
         cfg.behavior_slice_label: SliceMode.BEHAVIOR,
@@ -116,7 +116,7 @@ def _classify_body_floor(issue: dict) -> BodyFloorClassification:
 
 
 def classify_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
-    slice_status = _classify_slice(issue, cfg)
+    slice_status = classify_slice(issue, cfg)
     body_floor_status = _classify_body_floor(issue)
     issue_labels: list[str] = issue.get("labels") or []
     is_ready = False
