@@ -260,6 +260,37 @@ def test_get_safe_sha_routes_declared_missing_tool_with_shell_not_found_output_t
     assert fake.calls == []
 
 
+def test_get_safe_sha_does_not_cache_verdict_when_missing_declared_tool_raises_setup_failure(
+    tmp_path, git_svc, github_svc
+):
+    (tmp_path / "requirements.txt").write_text("ruff==0.6.9\n", encoding="utf-8")
+    fake = FakeAgentRunner(
+        [],
+        preflight_responses=[
+            [
+                (
+                    "ruff",
+                    "ruff check .",
+                    "Command failed (exit 127): /bin/sh: 1: ruff: not found",
+                )
+            ],
+            [],
+        ],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(SetupPhaseError):
+        asyncio.run(cache.get_safe_sha(deps))
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightReady)
+    assert result.sha == "abc123"
+    assert len(fake.preflight_calls) == 2
+    assert fake.calls == []
+
+
 def test_get_safe_sha_propagates_setup_phase_error_metadata_unchanged(
     tmp_path, git_svc, github_svc
 ):
