@@ -33,6 +33,7 @@ from pycastle.errors import (
 )
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session import ProviderRunState, RoleSession, RunKind
+from pycastle.session.agent import RunSessionPlan
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
@@ -93,6 +94,33 @@ _CODEX_COMPLETE_STREAM = [
     b'{"type":"item.completed","item":{"type":"agent_message",'
     b'"content":"<commit_message>done</commit_message>"}}\n',
 ]
+
+
+class _PlanRecordingClaudeService(ClaudeService):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_provider_session_state = False
+        self.build_env_state_dir_args: list[str | None] = []
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        if self.fail_provider_session_state:
+            raise AssertionError("provider_session_state should not be recomputed")
+        return super().provider_session_state(request)
+
+    def build_env(
+        self,
+        state_dir_container_path: str | None = None,
+        token: str | None = None,
+    ) -> dict[str, str]:
+        self.build_env_state_dir_args.append(state_dir_container_path)
+        return super().build_env(
+            state_dir_container_path=state_dir_container_path,
+            token=token,
+        )
+
 
 # ── FakeAgentRunner: queue behaviour ─────────────────────────────────────────
 
@@ -2426,6 +2454,171 @@ def test_agent_runner_claude_resumes_with_derived_role_session_uuid_from_local_s
 
     assert isinstance(result, CommitMessageOutput)
     assert work_calls == [(RunKind.RESUME, expected_session_id)]
+
+
+def test_agent_runner_claude_fresh_dispatch_uses_supplied_run_session_plan(
+    tmp_path: Path,
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    service = _PlanRecordingClaudeService()
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.PLANNER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+    service.fail_provider_session_state = True
+    work_calls: list[tuple[RunKind, str | None, str]] = []
+
+    async def _fake_work(
+        _role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid, prompt))
+        return PlannerOutput(issues=[])
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"claude": service},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Planner",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service="claude",
+                    run_session_plan=plan,
+                )
+            )
+        )
+
+    assert isinstance(result, PlannerOutput)
+    assert work_calls == [(RunKind.FRESH, plan.provider_session_id, "[] []")]
+    assert service.build_env_state_dir_args == [
+        "/home/agent/workspace/.pycastle-session/planner/claude/"
+    ]
+
+
+def test_agent_runner_claude_resume_dispatch_uses_supplied_run_session_plan(
+    tmp_path: Path,
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    state_dir = tmp_path / ".pycastle-session" / "planner" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    service = _PlanRecordingClaudeService()
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.PLANNER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+    service.fail_provider_session_state = True
+    work_calls: list[tuple[RunKind, str | None, str]] = []
+
+    async def _fake_work(
+        _role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid, prompt))
+        return PlannerOutput(issues=[])
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"claude": service},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Planner",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service="claude",
+                    run_session_plan=plan,
+                )
+            )
+        )
+
+    assert isinstance(result, PlannerOutput)
+    assert work_calls == [(RunKind.RESUME, plan.provider_session_id, "resume")]
+    assert service.build_env_state_dir_args == [
+        "/home/agent/workspace/.pycastle-session/planner/claude/"
+    ]
+
+
+def test_agent_runner_claude_resume_dispatch_with_role_prompt_flag_uses_role_prompt_from_supplied_run_session_plan(
+    tmp_path: Path,
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    state_dir = tmp_path / ".pycastle-session" / "planner" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    service = _PlanRecordingClaudeService()
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.PLANNER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+    service.fail_provider_session_state = True
+    work_calls: list[tuple[RunKind, str | None, str]] = []
+
+    async def _fake_work(
+        _role, prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid, prompt))
+        return PlannerOutput(issues=[])
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"claude": service},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Planner",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service="claude",
+                    send_role_prompt_on_resume=True,
+                    run_session_plan=plan,
+                )
+            )
+        )
+
+    assert isinstance(result, PlannerOutput)
+    assert work_calls == [(RunKind.RESUME, plan.provider_session_id, "[] []")]
 
 
 def test_agent_runner_codex_resumes_with_recovered_thread_id_from_local_rollout_state(
