@@ -224,16 +224,19 @@ def plan_provider_run_state(
     recovered_session_id_persistence = RecoveredSessionIdPersistence.SKIP
     if provider_identity.persist_provider_session_id:
         recovered_session_id_persistence = RecoveredSessionIdPersistence.PERSIST
-    auth_seeding_requirement = (
-        provider_session_state.auth_seeding_requirement
-        or AuthSeedingRequirement.NOT_REQUIRED
+    selected_provider_state_dir = (
+        provider_session_state.state_dir_path or host_state_dir
+    )
+    auth_seeding_requirement = _plan_auth_seeding_requirement(
+        service_name=request.service.name,
+        provider_state_dir=selected_provider_state_dir,
     )
     return ProviderRunStatePlan(
         role_session=role_session,
         service_name=request.service.name,
         run_kind=provider_identity.run_kind,
         provider_session_id=provider_identity.provider_session_id,
-        provider_state_dir=provider_session_state.state_dir_path or host_state_dir,
+        provider_state_dir=selected_provider_state_dir,
         provider_state_dir_relpath=(
             provider_session_state.state_dir_relpath or state_dir_relpath
         ),
@@ -243,7 +246,43 @@ def plan_provider_run_state(
         recovered_session_id_persistence=recovered_session_id_persistence,
         service_state_dir=service_state.state_dir,
         exact_transcript_match=provider_session_state.exact_transcript_match,
-        auth_seed_action=provider_session_state.auth_seed_action,
+        auth_seed_action=_plan_auth_seed_action(
+            service_name=request.service.name,
+            provider_state_dir=selected_provider_state_dir,
+        ),
+    )
+
+
+def _plan_auth_seeding_requirement(
+    *,
+    service_name: str,
+    provider_state_dir: Path | None,
+) -> AuthSeedingRequirement:
+    if service_name != "codex":
+        return AuthSeedingRequirement.NOT_REQUIRED
+    if provider_state_dir is None or (provider_state_dir / "auth.json").exists():
+        return AuthSeedingRequirement.NOT_REQUIRED
+    return AuthSeedingRequirement.REQUIRED
+
+
+def _plan_auth_seed_action(
+    *,
+    service_name: str,
+    provider_state_dir: Path | None,
+) -> LocalAuthSeedAction | None:
+    if (
+        _plan_auth_seeding_requirement(
+            service_name=service_name,
+            provider_state_dir=provider_state_dir,
+        )
+        is AuthSeedingRequirement.NOT_REQUIRED
+    ):
+        return None
+    if provider_state_dir is None:
+        return None
+    return LocalAuthSeedAction(
+        source=Path.home() / ".codex" / "auth.json",
+        destination=provider_state_dir / "auth.json",
     )
 
 

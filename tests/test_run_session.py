@@ -129,6 +129,36 @@ class _FakeResumeIdentityStore:
         return None
 
 
+@dataclass
+class _CodexWithoutAuthPolicyService:
+    relpath: str = ".pycastle-session/implementer/codex/"
+    resumable: bool = False
+    provider_session_id: str | None = None
+    name: str = "codex"
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        del role, namespace
+        return self.relpath
+
+    def is_resumable(self, state_dir: Path) -> bool:
+        del state_dir
+        return self.resumable
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        run_kind = (
+            RunKind.RESUME if request.has_resumable_provider_state else RunKind.FRESH
+        )
+        return ProviderSessionState(
+            run_kind,
+            self.provider_session_id,
+            state_dir_relpath=request.state_dir_relpath,
+            state_dir_path=request.provider_state_dir,
+        )
+
+
 def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: Path):
     service = cast(
         AgentService, _FakeAgentService(".pycastle-session/improve/main/codex/")
@@ -729,6 +759,26 @@ def test_run_session_plan_requires_auth_seeding_for_fresh_codex_without_auth_jso
     assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
 
 
+def test_run_session_plan_requires_auth_seeding_for_fresh_codex_without_service_auth_policy(
+    tmp_path: Path,
+):
+    service = cast(AgentService, _CodexWithoutAuthPolicyService("custom/codex-state"))
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
+    assert plan.auth_seed_action is not None
+    assert plan.auth_seed_action.destination == (
+        tmp_path / "custom" / "codex-state" / "auth.json"
+    )
+
+
 def test_run_session_plan_exposes_auth_seed_action_for_fresh_codex_without_auth_json(
     tmp_path: Path,
 ):
@@ -896,6 +946,34 @@ def test_run_session_plan_exposes_auth_seed_action_for_resume_codex_without_auth
     assert action.destination == state_dir / "auth.json"
 
 
+def test_run_session_plan_requires_auth_seeding_for_resume_codex_without_service_auth_policy(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / "custom" / "codex-state"
+    (state_dir / "sessions").mkdir(parents=True)
+    service = cast(
+        AgentService,
+        _CodexWithoutAuthPolicyService(
+            relpath="custom/codex-state",
+            resumable=True,
+            provider_session_id="thread-resume",
+        ),
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == "thread-resume"
+    assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
+    assert plan.auth_seed_action is not None
+    assert plan.auth_seed_action.destination == state_dir / "auth.json"
+
+
 def test_run_session_plan_skips_auth_seeding_for_resume_codex_with_auth_json(
     tmp_path: Path,
 ):
@@ -917,6 +995,37 @@ def test_run_session_plan_skips_auth_seeding_for_resume_codex_with_auth_json(
     )
 
     assert plan.run_kind is RunKind.RESUME
+    assert plan.auth_seeding_requirement is AuthSeedingRequirement.NOT_REQUIRED
+    assert plan.auth_seed_action is None
+
+
+def test_run_session_plan_skips_auth_seeding_for_resume_codex_with_provider_auth_without_service_auth_policy(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / "custom" / "codex-state"
+    (state_dir / "sessions").mkdir(parents=True)
+    (state_dir / "auth.json").write_text(
+        '{"mode":"oauth","origin":"provider"}',
+        encoding="utf-8",
+    )
+    service = cast(
+        AgentService,
+        _CodexWithoutAuthPolicyService(
+            relpath="custom/codex-state",
+            resumable=True,
+            provider_session_id="thread-resume",
+        ),
+    )
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == "thread-resume"
     assert plan.auth_seeding_requirement is AuthSeedingRequirement.NOT_REQUIRED
     assert plan.auth_seed_action is None
 
