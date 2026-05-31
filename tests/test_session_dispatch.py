@@ -16,6 +16,14 @@ from pycastle.agents.session_dispatch import (
 )
 from pycastle.session import RoleSession, RunKind
 from pycastle.session._provider_session_sidecars import service_session_metadata_path
+from pycastle.session._provider_session_decision import (
+    ProviderSessionDecision,
+    RecoveredSessionIdPersistence,
+)
+from pycastle.session._provider_session_plan import (
+    ProviderRunStatePlanRequest,
+    plan_provider_run_state,
+)
 from pycastle.session._provider_session_state import (
     ProviderSessionStateRequest as PreparedProviderSessionStateRequest,
     prepare_provider_session_state,
@@ -103,6 +111,19 @@ class _CustomOpenCodeStateDirService:
             exact_transcript_match=exact_transcript_match,
             persist_provider_session_id=selection.persist_provider_session_id,
         )
+
+
+@dataclass
+class _NoRecomputeOpenCodeService(_CustomOpenCodeStateDirService):
+    fail_provider_session_state: bool = False
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        if self.fail_provider_session_state:
+            raise AssertionError("provider_session_state should not be recomputed")
+        return super().provider_session_state(request)
 
 
 @dataclass
@@ -1069,6 +1090,78 @@ def test_prepare_provider_session_state_resume_opencode_uses_persisted_session_i
     assert resumed_state.provider_session_id == "sess-opencode-resume"
     assert initial_run.run_kind is RunKind.RESUME
     assert initial_run.provider_session_id == "sess-opencode-resume"
+
+
+def test_prepare_provider_session_state_uses_supplied_provider_run_state_plan_without_recomputing_resume_state(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session_id").write_text("sess-planned\n", encoding="utf-8")
+    service = _NoRecomputeOpenCodeService()
+    request = ProviderRunStatePlanRequest(
+        worktree=tmp_path,
+        role=AgentRole.IMPROVE,
+        namespace="main",
+        service=cast(AgentService, service),
+    )
+    planned_state = plan_provider_run_state(request)
+    (state_dir / "session_id").write_text("\n", encoding="utf-8")
+    service.fail_provider_session_state = True
+
+    state = prepare_provider_session_state(
+        PreparedProviderSessionStateRequest(
+            tmp_path,
+            AgentRole.IMPROVE,
+            "main",
+            cast(AgentService, service),
+            provider_run_state_plan=planned_state,
+        )
+    )
+    initial_run = state.initial_provider_run_session()
+    resumable_run = state.resumable_provider_run_session()
+
+    assert state.run_kind is RunKind.RESUME
+    assert state.provider_session_id == "sess-planned"
+    assert initial_run.run_kind is RunKind.RESUME
+    assert initial_run.provider_session_id == "sess-planned"
+    assert resumable_run.run_kind is RunKind.RESUME
+    assert resumable_run.provider_session_id == "sess-planned"
+
+
+def test_prepare_provider_session_state_uses_supplied_provider_session_decision_for_opencode_resume_container_path(
+    tmp_path: Path,
+):
+    selected_state_dir = tmp_path / "custom" / "opencode-state"
+    role_service_state_dir = (
+        tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
+    )
+    service = _NoRecomputeOpenCodeService(fail_provider_session_state=True)
+    decision = ProviderSessionDecision(
+        run_kind=RunKind.RESUME,
+        provider_session_id="sess-planned",
+        state_dir_relpath="custom/opencode-state/",
+        state_dir_path=selected_state_dir,
+        recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
+        service_state_dir=role_service_state_dir,
+    )
+
+    state = prepare_provider_session_state(
+        PreparedProviderSessionStateRequest(
+            worktree=tmp_path,
+            role=AgentRole.IMPROVE,
+            session_namespace="main",
+            service=cast(AgentService, service),
+            provider_session_decision=decision,
+        )
+    )
+
+    assert state.run_kind is RunKind.RESUME
+    assert state.provider_session_id == "sess-planned"
+    assert state.service_state_dir_path == selected_state_dir
+    assert state.provider_state_dir_container_path("/home/agent/workspace") == (
+        "/home/agent/workspace/.pycastle-session/improve/main/opencode/"
+    )
 
 
 def test_prepare_agent_session_opencode_run_session_switches_from_fresh_to_resume_after_capture(
