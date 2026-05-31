@@ -80,13 +80,17 @@ def test_classify_preflight_tool_failure_marks_declared_python_module_as_missing
     )
 
 
-def test_classify_preflight_tool_failure_preserves_requirements_source_for_mixed_metadata() -> (
+def test_classify_preflight_tool_failure_uses_package_source_for_mixed_metadata() -> (
     None
 ):
     classification = classify_preflight_tool_failure(
         PythonDependencyMetadata(
             declared_packages=frozenset({"click", "ruff"}),
             source="pyproject.toml, requirements.txt",
+            package_sources={
+                "click": "pyproject.toml",
+                "ruff": "requirements.txt",
+            },
         ),
         PreflightCommandFailure(
             check_name="ruff",
@@ -99,6 +103,82 @@ def test_classify_preflight_tool_failure_preserves_requirements_source_for_mixed
         tool="ruff",
         dependency_source="requirements.txt",
     )
+
+
+def test_load_python_dependency_metadata_prefers_pyproject_source_when_tool_declared_in_both_metadata_files(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\ndependencies = ['ruff>=0.6']\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "requirements.txt").write_text("ruff==0.6.0\n", encoding="utf-8")
+
+    metadata = load_python_dependency_metadata(tmp_path)
+
+    assert metadata.declared_packages == frozenset({"ruff"})
+    assert metadata.source == "pyproject.toml"
+    assert metadata.package_sources["ruff"] == "pyproject.toml"
+
+
+def test_preflight_tool_classifier_returns_setup_failure_for_missing_requirements_declared_command_with_mixed_metadata(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['click>=8']\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "requirements.txt").write_text("ruff==0.6.0\n", encoding="utf-8")
+
+    result = setup_phase_error_for_preflight_command_failures(
+        tmp_path,
+        (
+            PreflightCommandFailure(
+                check_name="ruff",
+                command="ruff check .",
+                output="Command failed (exit 127): bash: ruff: command not found",
+            ),
+        ),
+    )
+
+    assert isinstance(result, SetupPhaseError)
+    assert result.phase == "preflight"
+    assert (
+        str(result)
+        == "Missing expected preflight tool 'ruff' declared in requirements.txt."
+    )
+    assert result.command == "ruff check ."
+    assert result.output == "Command failed (exit 127): bash: ruff: command not found"
+
+
+def test_preflight_tool_classifier_returns_setup_failure_with_pyproject_precedence_when_tool_declared_in_both_metadata_files(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['ruff>=0.5']\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "requirements.txt").write_text("ruff==0.6.0\n", encoding="utf-8")
+
+    result = setup_phase_error_for_preflight_command_failures(
+        tmp_path,
+        (
+            PreflightCommandFailure(
+                check_name="ruff",
+                command="ruff check .",
+                output="Command failed (exit 127): bash: ruff: command not found",
+            ),
+        ),
+    )
+
+    assert isinstance(result, SetupPhaseError)
+    assert result.phase == "preflight"
+    assert (
+        str(result)
+        == "Missing expected preflight tool 'ruff' declared in pyproject.toml."
+    )
+    assert result.command == "ruff check ."
+    assert result.output == "Command failed (exit 127): bash: ruff: command not found"
 
 
 def test_classify_preflight_tool_failure_keeps_undeclared_missing_tool_as_ordinary_check_failure() -> (
