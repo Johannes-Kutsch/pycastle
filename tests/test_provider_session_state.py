@@ -233,6 +233,35 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_opencode_wit
     )
 
 
+def test_has_exact_provider_transcript_for_service_returns_true_for_opencode_without_state_dir_session_id_sidecar(
+    tmp_path: Path,
+) -> None:
+    service = cast(
+        Any,
+        _FakeService(
+            name="opencode",
+            relpath="custom/opencode-state/",
+            resumable=True,
+        ),
+    )
+    role_dir = tmp_path / ".pycastle-session" / "reviewer" / "main"
+    state_dir = tmp_path / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "resume.jsonl").write_text("{}\n", encoding="utf-8")
+    save_service_session_id(role_dir, "opencode", "sess-opencode-123")
+    save_service_session_metadata(role_dir, "opencode", "sess-opencode-123")
+
+    assert (
+        has_exact_provider_transcript_for_service(
+            worktree=tmp_path,
+            role=AgentRole.REVIEWER,
+            namespace="main",
+            service=service,
+        )
+        is True
+    )
+
+
 def test_has_exact_provider_transcript_for_service_returns_true_for_claude_with_matching_sidecar_metadata_and_selected_resumable_state_dir(
     tmp_path: Path,
 ) -> None:

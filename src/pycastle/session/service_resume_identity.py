@@ -90,7 +90,7 @@ def _is_exact_resumable_provider_session(
 ) -> bool:
     if provider_session_id is None or provider_state_dir is None:
         return False
-    if service_name not in {"codex", "opencode"}:
+    if service_name != "codex":
         return True
     exact_provider_session_id = _exact_provider_session_id_from_state_dir(
         service_name,
@@ -105,6 +105,4 @@ def _exact_provider_session_id_from_state_dir(
 ) -> str | None:
     if service_name == "codex":
         return recover_state_dir_provider_session_id(state_dir, service_name)
-    if service_name == "opencode":
-        return load_state_dir_provider_session_id(state_dir, service_name)
     return None

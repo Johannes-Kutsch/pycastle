@@ -215,7 +215,7 @@ def has_exact_provider_transcript_for_service(
     if state_dir is None or not service.is_resumable(state_dir):
         return False
 
-    if service.name not in {"codex", "opencode"}:
+    if service.name != "codex":
         return True
 
     exact_provider_session_id = _exact_provider_session_id_from_state_dir(
@@ -247,8 +247,6 @@ def _exact_provider_session_id_from_state_dir(
 ) -> str | None:
     if service_name == "codex":
         return recover_state_dir_provider_session_id(state_dir, service_name)
-    if service_name == "opencode":
-        return load_state_dir_provider_session_id(state_dir, service_name)
     return None
 
 
