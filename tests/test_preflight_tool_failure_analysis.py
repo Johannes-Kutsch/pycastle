@@ -80,6 +80,27 @@ def test_classify_preflight_tool_failure_marks_declared_python_module_as_missing
     )
 
 
+def test_classify_preflight_tool_failure_preserves_requirements_source_for_mixed_metadata() -> (
+    None
+):
+    classification = classify_preflight_tool_failure(
+        PythonDependencyMetadata(
+            declared_packages=frozenset({"click", "ruff"}),
+            source="pyproject.toml, requirements.txt",
+        ),
+        PreflightCommandFailure(
+            check_name="ruff",
+            command="ruff check .",
+            output="Command failed (exit 127): bash: ruff: command not found",
+        ),
+    )
+
+    assert classification == MissingDeclaredTool(
+        tool="ruff",
+        dependency_source="requirements.txt",
+    )
+
+
 def test_classify_preflight_tool_failure_keeps_undeclared_missing_tool_as_ordinary_check_failure() -> (
     None
 ):
