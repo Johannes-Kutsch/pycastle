@@ -40,6 +40,7 @@ class GithubNetworkError(GithubServiceError):
 
 
 _API_BASE = "https://api.github.com"
+_IMPROVE_PRD_TITLE_PREFIX = "[improve-PRD] "
 
 
 def _user_agent() -> str:
@@ -219,6 +220,26 @@ class GithubService:
             return []
         labels = payload.get("labels") or []
         return [str(label["name"]) for label in labels if "name" in label]
+
+    def get_recent_improve_prds(self) -> list[dict[str, Any]]:
+        results = self._paginate(f"/repos/{self.repo}/issues?state=all&per_page=100")
+        recent_prds: list[dict[str, Any]] = []
+        for item in results:
+            if not isinstance(item, dict) or "pull_request" in item:
+                continue
+            title = str(item.get("title") or "")
+            if not title.startswith(_IMPROVE_PRD_TITLE_PREFIX):
+                continue
+            recent_prds.append(
+                {
+                    "number": int(item["number"]),
+                    "state": str(item.get("state") or "").upper(),
+                    "title": title.removeprefix(_IMPROVE_PRD_TITLE_PREFIX),
+                }
+            )
+            if len(recent_prds) == 12:
+                break
+        return recent_prds
 
     def get_parent(self, number: int) -> int | None:
         payload, _ = self._request("GET", f"/repos/{self.repo}/issues/{number}")

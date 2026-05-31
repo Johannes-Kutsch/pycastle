@@ -196,7 +196,9 @@ def test_scope_improve_scan_is_empty():
 
 
 def test_scope_improve_session_placeholders():
-    assert Scope.IMPROVE_SESSION.placeholders == frozenset({"IMPROVE_SHORT_SID"})
+    assert Scope.IMPROVE_SESSION.placeholders == frozenset(
+        {"IMPROVE_SHORT_SID", "RECENT_IMPROVE_PRDS"}
+    )
 
 
 def test_scope_resume_is_empty():
@@ -552,7 +554,12 @@ def test_render_design_standards_available_in_improve_prd(cfg, prompts_dir):
 
     result = _run(
         renderer.render(
-            PromptTemplate.IMPROVE_PRD, {"IMPROVE_SHORT_SID": "abc"}, _noop_exec
+            PromptTemplate.IMPROVE_PRD,
+            {
+                "IMPROVE_SHORT_SID": "abc",
+                "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+            },
+            _noop_exec,
         )
     )
 
@@ -779,7 +786,10 @@ def test_renderer_renders_local_issue_tracker_override_through_bundled_prompt(
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_NO_CANDIDATE,
-            {"IMPROVE_SHORT_SID": "abc"},
+            {
+                "IMPROVE_SHORT_SID": "abc",
+                "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+            },
             _noop_exec,
         )
     )
@@ -799,7 +809,10 @@ def test_renderer_allows_empty_local_issue_tracker_override(tmp_path, monkeypatc
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_NO_CANDIDATE,
-            {"IMPROVE_SHORT_SID": "abc"},
+            {
+                "IMPROVE_SHORT_SID": "abc",
+                "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+            },
             _noop_exec,
         )
     )
