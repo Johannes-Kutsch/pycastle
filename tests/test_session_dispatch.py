@@ -705,6 +705,23 @@ def test_prepare_agent_session_prefers_persisted_codex_thread_id_for_resume(
     assert session.provider_session_id == "thread-from-sidecar"
 
 
+def test_prepare_agent_session_resumes_codex_from_saved_thread_id_without_sessions_dir(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    state_dir.mkdir(parents=True)
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+    RoleSession(tmp_path, AgentRole.IMPLEMENTER).save_service_session_id(
+        "codex",
+        "thread-from-sidecar",
+    )
+
+    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
+
+    assert session.run_kind is RunKind.RESUME
+    assert session.provider_session_id == "thread-from-sidecar"
+
+
 def test_prepare_agent_session_codex_resume_never_uses_role_session_uuid_as_provider_session_id(
     tmp_path: Path,
 ):

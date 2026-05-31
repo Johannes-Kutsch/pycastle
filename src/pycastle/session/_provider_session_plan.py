@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
-from ..services.provider_session_state import ProviderSessionStateRequest
 from .provider_session_state import (
     AuthSeedingRequirement,
     clear_service_session_metadata,
@@ -112,25 +111,21 @@ def plan_provider_session(
     if state_dir_relpath is not None and state_dir_relpath != raw_state_dir_relpath:
         host_state_dir = request.worktree / state_dir_relpath.rstrip("/")
 
-    provider_session_state = request.service.provider_session_state(
-        ProviderSessionStateRequest(
-            role_session=role_session,
-            provider_state_dir=service_state.state_dir,
-            has_resumable_provider_state=service_state.has_resumable_provider_state,
-            require_exact_transcript_match=True,
-        )
+    exact_transcript_handoff = role_session.exact_transcript_handoff_for_service(
+        request.service
     )
+    provider_identity = exact_transcript_handoff.provider_identity
     recovered_session_id_persistence = RecoveredSessionIdPersistence.SKIP
-    if provider_session_state.persist_provider_session_id:
+    if provider_identity.persist_provider_session_id:
         recovered_session_id_persistence = RecoveredSessionIdPersistence.PERSIST
     return ProviderSessionDecision(
-        run_kind=provider_session_state.run_kind,
-        provider_session_id=provider_session_state.provider_session_id,
+        run_kind=provider_identity.run_kind,
+        provider_session_id=provider_identity.provider_session_id,
         state_dir_relpath=state_dir_relpath,
         state_dir_path=host_state_dir,
         service_state_dir=service_state.state_dir,
         recovered_session_id_persistence=recovered_session_id_persistence,
-        exact_transcript_match=provider_session_state.exact_transcript_match,
+        exact_transcript_match=exact_transcript_handoff.is_eligible,
         auth_seeding_requirement=_codex_auth_seeding_requirement(
             request.service.name,
             host_state_dir,

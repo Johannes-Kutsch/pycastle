@@ -171,6 +171,15 @@ class RoleSession:
                 persist_provider_session_id=persist_provider_session_id,
             )
 
+        if service_name == "codex":
+            provider_session_id = self.service_session_id(service_name)
+            if provider_session_id is not None:
+                return ProviderIdentity(
+                    ProviderIdentityKind.RESUME,
+                    RunKind.RESUME,
+                    provider_session_id,
+                )
+
         if not has_resumable_provider_state:
             return ProviderIdentity(ProviderIdentityKind.FRESH, RunKind.FRESH, None)
 
@@ -286,24 +295,52 @@ class RoleSession:
         self, service: "AgentService"
     ) -> ExactTranscriptHandoff:
         state = self.service_session_state(service)
-        provider_session_state = service.provider_session_state(
-            ProviderSessionStateRequest(
-                role_session=self,
-                provider_state_dir=state.state_dir,
-                has_resumable_provider_state=state.has_resumable_provider_state,
-                require_exact_transcript_match=True,
+        if service.name != "codex":
+            provider_session_state = service.provider_session_state(
+                ProviderSessionStateRequest(
+                    role_session=self,
+                    provider_state_dir=state.state_dir,
+                    has_resumable_provider_state=state.has_resumable_provider_state,
+                    require_exact_transcript_match=True,
+                )
             )
-        )
+            provider_identity = ProviderIdentity(
+                (
+                    ProviderIdentityKind.RESUME
+                    if provider_session_state.run_kind is RunKind.RESUME
+                    else ProviderIdentityKind.FRESH
+                ),
+                provider_session_state.run_kind,
+                provider_session_state.provider_session_id,
+                persist_provider_session_id=provider_session_state.persist_provider_session_id,
+            )
+            return ExactTranscriptHandoff(
+                provider_identity=provider_identity,
+                is_eligible=provider_session_state.exact_transcript_match,
+            )
+
+        derived_provider_session_id = None
+        if service.name == "claude":
+            derived_provider_session_id = self.session_uuid()
+
         provider_identity = self.provider_identity(
             service.name,
             has_resumable_provider_state=state.has_resumable_provider_state,
             provider_state_dir=state.state_dir,
-            derived_provider_session_id=provider_session_state.provider_session_id,
-            persist_provider_session_id=provider_session_state.persist_provider_session_id,
+            derived_provider_session_id=derived_provider_session_id,
         )
         return ExactTranscriptHandoff(
             provider_identity=provider_identity,
-            is_eligible=provider_session_state.exact_transcript_match,
+            is_eligible=(
+                provider_identity.run_kind is RunKind.RESUME
+                and not provider_identity.persist_provider_session_id
+                and is_exact_resumable_service_session(
+                    self,
+                    service.name,
+                    provider_session_id=provider_identity.provider_session_id,
+                    provider_state_dir=state.state_dir,
+                )
+            ),
         )
 
     def has_exact_transcript_handoff_for_selected_service(

@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.services.codex_service import CodexService
 from pycastle.session import (
     ProviderFreshFallbackReason,
     ProviderIdentityKind,
@@ -296,6 +297,24 @@ def test_provider_run_state_for_claude_service_resumes_with_role_session_uuid_wi
     assert provider_run_state == ProviderRunState(
         run_kind=RunKind.RESUME,
         provider_session_id=rs.session_uuid(),
+        provider_state_dir=provider_state_dir,
+    )
+
+
+def test_provider_run_state_for_codex_service_prefers_saved_thread_id_without_sessions_dir(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    service = CodexService()
+    provider_state_dir = worktree / ".pycastle-session" / "implementer" / "codex"
+    provider_state_dir.mkdir(parents=True)
+    rs.save_service_session_id("codex", "thread-from-sidecar")
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.RESUME,
+        provider_session_id="thread-from-sidecar",
         provider_state_dir=provider_state_dir,
     )
 
