@@ -5,16 +5,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ...agents.output_protocol import AgentRole
-from .._provider_session_plan import (
+from .._provider_session_decision import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
+    RecoveredSessionIdPersistence,
+)
+from .._provider_session_plan import (
     ProviderSessionDecision,
     ProviderSessionPlanRequest,
     plan_provider_session,
     record_observed_provider_session_id,
     record_successful_provider_session_metadata,
 )
-from ..provider_session_state import RecoveredSessionIdPersistence
 from ..resume import RunKind
 
 if TYPE_CHECKING:

@@ -5,12 +5,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
-from .provider_session_state import (
+from ._provider_session_decision import (
     AuthSeedingRequirement,
-    clear_service_session_metadata,
     LocalAuthSeedAction,
     ProviderSessionDecision,
     RecoveredSessionIdPersistence,
+)
+from .provider_session_state import (
+    clear_service_session_metadata,
     save_service_session_id,
     save_service_session_metadata,
 )

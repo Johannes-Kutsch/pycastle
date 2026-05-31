@@ -7,16 +7,18 @@ from collections.abc import Callable
 
 from ..agents.output_protocol import AgentRole
 from ..errors import HardAgentError
-from ._provider_session_plan import (
+from ._provider_session_decision import (
     AuthSeedingRequirement,
-    capture_provider_session_id,
     LocalAuthSeedAction,
     ProviderSessionDecision,
+    RecoveredSessionIdPersistence,
+)
+from ._provider_session_plan import (
+    capture_provider_session_id,
     ProviderSessionPlanRequest,
     plan_provider_session,
     record_successful_provider_session_metadata,
 )
-from .provider_session_state import RecoveredSessionIdPersistence
 from .resume import RoleSession, RunKind
 
 if TYPE_CHECKING:
