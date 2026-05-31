@@ -225,6 +225,30 @@ def test_improve_phase_threads_short_sid_to_prd_phase(deps, agent_runner):
     assert len(prd_call.scope_args.get("IMPROVE_SHORT_SID", "")) == 8
 
 
+def test_improve_phase_threads_formatted_recent_improve_prd_titles_to_fresh_scan(
+    tmp_path, git_svc
+):
+    github_svc = MagicMock()
+    github_svc.get_recent_improve_prds.return_value = [
+        {"number": 12, "state": "OPEN", "title": "First candidate"},
+        {"number": 11, "state": "CLOSED", "title": "Second candidate"},
+    ]
+    runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    _run(deps)
+
+    scan_call = next(
+        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_SCAN
+    )
+    assert scan_call.scope_args["RECENT_IMPROVE_PRD_TITLES"] == (
+        "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
+    )
+
+
 def test_improve_phase_threads_formatted_recent_improve_prds_to_prd_phase(
     tmp_path, git_svc
 ):
@@ -245,6 +269,33 @@ def test_improve_phase_threads_formatted_recent_improve_prds_to_prd_phase(
     assert prd_call.scope_args["RECENT_IMPROVE_PRDS"] == (
         "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
     )
+
+
+def test_improve_phase_1_resume_does_not_refetch_recent_improve_prd_titles(
+    tmp_path, git_svc
+):
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    role_session_dir = wt / ".pycastle-session" / "improve"
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    (role_session_dir / "_phase_in_flight").write_text("01-scan", encoding="utf-8")
+    github_svc = MagicMock()
+    runner = FakeAgentRunner([NoCandidateOutput()], preflight_responses=[[]])
+    cfg = dataclasses.replace(Config(), diagnose_on_failure=False)
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=cfg,
+    )
+
+    _run(deps)
+
+    scan_call = next(
+        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_SCAN
+    )
+    assert "RECENT_IMPROVE_PRD_TITLES" in scan_call.scope_args
+    github_svc.get_recent_improve_prds.assert_not_called()
 
 
 def test_improve_phase_threads_empty_recent_improve_prd_message_to_prd_phase(
@@ -269,14 +320,13 @@ def test_improve_phase_propagates_recent_improve_prd_lookup_failures(tmp_path, g
     github_svc.get_recent_improve_prds.side_effect = GithubNetworkError(
         "transport error", cause=RuntimeError("boom")
     )
-    runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=[[]],
-    )
+    runner = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
 
     with pytest.raises(GithubNetworkError):
         _run(deps)
+
+    assert runner.calls == []
 
 
 def test_improve_phase_threads_short_sid_to_issues_phase(deps, agent_runner):

@@ -67,6 +67,7 @@ class Step:
     prompt_key: str
     cfg: _PhaseConfig
     send_role_prompt_on_resume: bool
+    fetch_recent_prd_titles: bool
     scope_args: dict[str, str]
 
 
@@ -166,6 +167,8 @@ class ImprovePhaseDriver:
             prompt_key=prompt_key,
             cfg=phase,
             send_role_prompt_on_resume=send_role_prompt_on_resume,
+            fetch_recent_prd_titles=prompt_key == "01-scan.md"
+            and not is_mid_phase_retry,
             scope_args=partial_scope_args,
         )
 
@@ -253,6 +256,14 @@ def _build_improve_session_scope_args(
     }
 
 
+def _build_scan_scope_args(github_svc: GithubService) -> dict[str, str]:
+    return {
+        "RECENT_IMPROVE_PRD_TITLES": _format_recent_improve_prds(
+            github_svc.get_recent_improve_prds()
+        )
+    }
+
+
 def _build_issues_scope_args(
     short_sid: str,
     prd_number: int | None,
@@ -332,7 +343,13 @@ async def improve_phase(
                     return ImproveContinue()
 
             while step is not None:
-                if step.cfg.template.scope is Scope.IMPROVE_ISSUES:
+                if step.fetch_recent_prd_titles:
+                    scope_args = _build_scan_scope_args(deps.github_svc)
+                elif step.cfg.template.scope is Scope.IMPROVE_SCAN:
+                    scope_args = {
+                        "RECENT_IMPROVE_PRD_TITLES": _format_recent_improve_prds([])
+                    }
+                elif step.cfg.template.scope is Scope.IMPROVE_ISSUES:
                     scope_args = _build_issues_scope_args(
                         short_sid, driver.prd_number, deps.github_svc
                     )

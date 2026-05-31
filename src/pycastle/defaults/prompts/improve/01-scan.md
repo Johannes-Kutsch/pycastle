@@ -32,6 +32,12 @@ The forbidden list is about **reversibility**: internal seam decisions are rever
 
 If every candidate fails the filter, emit `<promise>NO-CANDIDATE</promise>` and stop.
 
+## Recent Improve PRD titles
+
+Use this novelty context to avoid picking work that duplicates a recent Improve PRD:
+
+{{RECENT_IMPROVE_PRD_TITLES}}
+
 </context>
 
 <workflow>

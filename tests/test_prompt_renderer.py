@@ -191,8 +191,8 @@ def test_scope_host_check_placeholders():
     )
 
 
-def test_scope_improve_scan_is_empty():
-    assert Scope.IMPROVE_SCAN.placeholders == frozenset()
+def test_scope_improve_scan_placeholders():
+    assert Scope.IMPROVE_SCAN.placeholders == frozenset({"RECENT_IMPROVE_PRD_TITLES"})
 
 
 def test_scope_improve_session_placeholders():
@@ -530,7 +530,13 @@ def test_render_implementation_standards_available_in_improve_scan(cfg, prompts_
     (prompts_dir / "improve" / "01-scan.md").write_text("{{IMPLEMENTATION_STANDARDS}}")
     renderer = PromptRenderer(cfg)
 
-    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPROVE_SCAN,
+            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            _noop_exec,
+        )
+    )
 
     assert result == "implementation guidelines"
 
@@ -541,9 +547,34 @@ def test_render_design_standards_available_in_improve_scan(cfg, prompts_dir):
     (prompts_dir / "improve" / "01-scan.md").write_text("{{DESIGN_STANDARDS}}")
     renderer = PromptRenderer(cfg)
 
-    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPROVE_SCAN,
+            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            _noop_exec,
+        )
+    )
 
     assert result == "design guidelines"
+
+
+def test_render_recent_improve_prd_titles_available_in_improve_scan(cfg, prompts_dir):
+    (prompts_dir / "improve" / "01-scan.md").write_text(
+        "recent:\n{{RECENT_IMPROVE_PRD_TITLES}}"
+    )
+    renderer = PromptRenderer(cfg)
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPROVE_SCAN,
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert result == "recent:\n#12 OPEN - First candidate"
 
 
 def test_render_design_standards_available_in_improve_prd(cfg, prompts_dir):
@@ -649,7 +680,13 @@ def test_renderer_loads_both_standards_keys(prompts_dir):
     cfg = Config()
     renderer = PromptRenderer(cfg)
 
-    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPROVE_SCAN,
+            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            _noop_exec,
+        )
+    )
 
     assert result == "design content|implementation content"
 
@@ -667,7 +704,13 @@ def test_renderer_returns_empty_string_for_missing_standards_file(prompts_dir):
     cfg = _cfg_for_prompts_dir(custom_prompts_dir)
     renderer = PromptRenderer(cfg)
 
-    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPROVE_SCAN,
+            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            _noop_exec,
+        )
+    )
 
     assert result == "design content|"
 
@@ -682,7 +725,13 @@ def test_renderer_returns_all_empty_standards_when_dir_absent(tmp_path):
     cfg = _cfg_for_prompts_dir(prompts_dir)
     renderer = PromptRenderer(cfg)
 
-    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPROVE_SCAN,
+            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            _noop_exec,
+        )
+    )
 
     assert result == "|"
 
@@ -738,7 +787,13 @@ def test_renderer_renders_issue_tracker_fragment(prompts_dir):
     cfg = Config()
     renderer = PromptRenderer(cfg)
 
-    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPROVE_SCAN,
+            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            _noop_exec,
+        )
+    )
 
     assert result == "issue-tracker recipes"
 
@@ -1227,7 +1282,13 @@ def test_renderer_mixes_local_and_bundled_shared_prompt_files(tmp_path, monkeypa
     (standards_dir / "_design.md").write_text("local design guidance")
     renderer = PromptRenderer(Config())
 
-    result = _run(renderer.render(PromptTemplate.IMPROVE_SCAN, {}, _noop_exec))
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPROVE_SCAN,
+            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            _noop_exec,
+        )
+    )
     bundled_implementation = (
         _SHIPPED_PROMPTS_DIR / "shared/standards" / "_implementation.md"
     ).read_text(encoding="utf-8")
@@ -1283,6 +1344,22 @@ def test_render_shipped_host_check_issue_prompt():
     assert "pytest host suite" in result
     assert "pytest tests/host" in result
     assert "boom" in result
+
+
+def test_render_shipped_improve_scan_prompt_includes_recent_improve_prd_titles():
+    renderer = PromptRenderer(Config())
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPROVE_SCAN,
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert "#12 OPEN - First candidate" in result
 
 
 # ── No legacy standards placeholders in defaults-tree prompts ────────────────
