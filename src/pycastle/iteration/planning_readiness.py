@@ -4,6 +4,8 @@ from typing import Literal, TypeAlias
 from ..config import Config
 from ..issue_readiness import (
     BODY_FLOOR,
+    IssueReadiness,
+    IssueReadinessKind,
     Malformed,
     WellFormed,
     WellFormedBody,
@@ -27,17 +29,39 @@ class LabelSyncAction:
 class BlockerSummaryInputs:
     malformed_slice_mode_issues: tuple[dict, ...] = ()
     malformed_body_issues: tuple[dict, ...] = ()
+    malformed_slice_mode_readiness: tuple[IssueReadiness, ...] = ()
+    malformed_body_readiness: tuple[IssueReadiness, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
 class PlanningReadinessResult:
     ready_candidates: tuple[dict, ...] = ()
+    ready_readiness_by_number: dict[int, IssueReadiness] = dataclasses.field(
+        default_factory=dict
+    )
     malformed_body_issues: tuple[dict, ...] = ()
     malformed_slice_mode_issues: tuple[dict, ...] = ()
     label_sync_actions: tuple[LabelSyncAction, ...] = ()
     blocker_summary_inputs: BlockerSummaryInputs = dataclasses.field(
         default_factory=BlockerSummaryInputs
     )
+
+
+def planning_blocker_summary(blocker_inputs: BlockerSummaryInputs) -> str | None:
+    slice_malformed = blocker_inputs.malformed_slice_mode_readiness
+    bad_body = blocker_inputs.malformed_body_readiness
+    blocker_parts: list[str] = []
+    if slice_malformed:
+        noun = "label" if len(slice_malformed) == 1 else "labels"
+        blocker_parts.append(
+            f"{len(slice_malformed)} missing exactly one slice-mode {noun}"
+        )
+    if bad_body:
+        noun = "body is" if len(bad_body) == 1 else "bodies are"
+        blocker_parts.append(f"{len(bad_body)} {noun} below the minimum length floor")
+    if not blocker_parts:
+        return None
+    return "Planning blockers: " + "; ".join(blocker_parts) + "."
 
 
 _NEEDS_INFO_COMMENT = f"""\
@@ -142,14 +166,28 @@ def _needs_slice_type_actions(
 def evaluate_planning_readiness(
     issues: list[dict], cfg: Config
 ) -> PlanningReadinessResult:
-    slice_classifications = [(issue, classify_slice(issue, cfg)) for issue in issues]
     classified_issues = [
         (issue, classify_issue_readiness(issue, cfg)) for issue in issues
     ]
     slice_malformed = [
         issue
-        for issue, slice_status in slice_classifications
-        if not isinstance(slice_status, WellFormed)
+        for issue, readiness in classified_issues
+        if readiness.kind
+        in {
+            IssueReadinessKind.MISSING_SLICE_MODE,
+            IssueReadinessKind.MULTIPLE_SLICE_MODES,
+            IssueReadinessKind.MALFORMED,
+        }
+    ]
+    slice_malformed_readiness = [
+        readiness
+        for _, readiness in classified_issues
+        if readiness.kind
+        in {
+            IssueReadinessKind.MISSING_SLICE_MODE,
+            IssueReadinessKind.MULTIPLE_SLICE_MODES,
+            IssueReadinessKind.MALFORMED,
+        }
     ]
     body_well_formed = [
         issue
@@ -161,11 +199,22 @@ def evaluate_planning_readiness(
         for issue, readiness in classified_issues
         if not isinstance(readiness.body_floor_status, WellFormedBody)
     ]
+    body_malformed_readiness = [
+        readiness
+        for _, readiness in classified_issues
+        if not isinstance(readiness.body_floor_status, WellFormedBody)
+    ]
     ready_candidates = tuple(
         issue for issue, readiness in classified_issues if readiness.is_ready
     )
+    ready_readiness_by_number = {
+        issue["number"]: readiness
+        for issue, readiness in classified_issues
+        if readiness.is_ready
+    }
     return PlanningReadinessResult(
         ready_candidates=ready_candidates,
+        ready_readiness_by_number=ready_readiness_by_number,
         malformed_body_issues=tuple(body_malformed),
         malformed_slice_mode_issues=tuple(slice_malformed),
         label_sync_actions=(
@@ -175,5 +224,7 @@ def evaluate_planning_readiness(
         blocker_summary_inputs=BlockerSummaryInputs(
             malformed_slice_mode_issues=tuple(slice_malformed),
             malformed_body_issues=tuple(body_malformed),
+            malformed_slice_mode_readiness=tuple(slice_malformed_readiness),
+            malformed_body_readiness=tuple(body_malformed_readiness),
         ),
     )

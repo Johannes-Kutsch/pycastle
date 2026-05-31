@@ -14,17 +14,14 @@ from ..prompts.pipeline import PromptTemplate
 from ..services import GitService
 from ..services.github_service import GithubService
 from ..display.status_display import StatusDisplay
-from ..issue_readiness import (
-    IssueReadiness,
-    classify_issue_readiness,
-)
+from ..issue_readiness import IssueReadiness
 from ..infrastructure.worktree import transient_worktree
 from ._rows import status_row
 from .implement import branch_for
 from .planning_readiness import (
-    BlockerSummaryInputs,
     LabelSyncAction,
     evaluate_planning_readiness,
+    planning_blocker_summary,
 )
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
@@ -116,25 +113,6 @@ def _fill_fields(issues: list[dict]) -> list[dict]:
     ]
 
 
-def _planning_blocker_summary(
-    blocker_inputs: BlockerSummaryInputs,
-) -> str | None:
-    slice_malformed = blocker_inputs.malformed_slice_mode_issues
-    bad_body = blocker_inputs.malformed_body_issues
-    blocker_parts: list[str] = []
-    if slice_malformed:
-        noun = "label" if len(slice_malformed) == 1 else "labels"
-        blocker_parts.append(
-            f"{len(slice_malformed)} missing exactly one slice-mode {noun}"
-        )
-    if bad_body:
-        noun = "body is" if len(bad_body) == 1 else "bodies are"
-        blocker_parts.append(f"{len(bad_body)} {noun} below the minimum length floor")
-    if not blocker_parts:
-        return None
-    return "Planning blockers: " + "; ".join(blocker_parts) + "."
-
-
 async def planning_phase(
     deps: _PlanningDeps,
     open_issues: list[dict],
@@ -177,17 +155,11 @@ async def planning_phase(
         readiness_result = evaluate_planning_readiness(open_issues, deps.cfg)
         _apply_label_sync_actions(readiness_result.label_sync_actions, deps.github_svc)
 
-        ready_classified = [
-            (issue, classify_issue_readiness(issue, deps.cfg))
-            for issue in readiness_result.ready_candidates
-        ]
-        well_formed = [issue for issue, _ in ready_classified]
-        readiness_by_number = {
-            issue["number"]: readiness for issue, readiness in ready_classified
-        }
+        well_formed = list(readiness_result.ready_candidates)
+        readiness_by_number = dict(readiness_result.ready_readiness_by_number)
 
         if not well_formed:
-            blocker_summary = _planning_blocker_summary(
+            blocker_summary = planning_blocker_summary(
                 readiness_result.blocker_summary_inputs
             )
             lines = ["All ready-for-agent issues are blocked."]
@@ -236,7 +208,7 @@ async def planning_phase(
                 )
             if not output.issues:
                 blocked = _hydrate_blocked_issues(output.blocked, well_formed)
-                blocker_summary = _planning_blocker_summary(
+                blocker_summary = planning_blocker_summary(
                     readiness_result.blocker_summary_inputs
                 )
                 blocked_lines = [
@@ -260,8 +232,8 @@ async def planning_phase(
                 readiness_by_number=readiness_by_number,
             )
             ready_sources = [
-                {**issue, "readiness": readiness}
-                for issue, readiness in ready_classified
+                {**issue, "readiness": readiness_by_number[issue["number"]]}
+                for issue in well_formed
             ]
             hydrated = hydrate_planned_issues(plan, ready_sources)
             issue_lines = [

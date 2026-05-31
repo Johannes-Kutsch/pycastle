@@ -23,8 +23,10 @@ from pycastle.iteration.planning import (
     planning_phase,
 )
 from pycastle.iteration.planning_readiness import (
+    BlockerSummaryInputs,
     LabelSyncAction,
     evaluate_planning_readiness,
+    planning_blocker_summary,
 )
 
 
@@ -229,6 +231,111 @@ def test_evaluate_planning_readiness_syncs_needs_slice_type_for_missing_and_mult
             label_name="needs-mode",
             intent="remove",
         ),
+    )
+
+
+def test_evaluate_planning_readiness_exposes_blocker_summary_readiness_groups():
+    from pycastle.issue_readiness import IssueReadinessKind
+
+    cfg = Config()
+    missing_slice = {
+        "number": 1,
+        "title": "Missing mode",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
+    short_body = {
+        "number": 2,
+        "title": "Short body",
+        "body": "short",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    doubly_malformed = {
+        "number": 3,
+        "title": "Both",
+        "body": "tiny",
+        "comments": [],
+        "labels": ["docs-slice", "behavior-slice"],
+    }
+
+    result = evaluate_planning_readiness(
+        [missing_slice, short_body, doubly_malformed],
+        cfg,
+    )
+
+    assert [
+        readiness.kind
+        for readiness in result.blocker_summary_inputs.malformed_slice_mode_readiness
+    ] == [
+        IssueReadinessKind.MISSING_SLICE_MODE,
+        IssueReadinessKind.MALFORMED,
+    ]
+    assert [
+        readiness.kind
+        for readiness in result.blocker_summary_inputs.malformed_body_readiness
+    ] == [
+        IssueReadinessKind.SHORT_BODY,
+        IssueReadinessKind.MALFORMED,
+    ]
+    assert result.ready_readiness_by_number == {}
+
+
+def test_evaluate_planning_readiness_exposes_ready_readiness_by_number():
+    from pycastle.issue_readiness import IssueReadinessKind, SliceMode
+
+    cfg = Config()
+    ready = {
+        "number": 9,
+        "title": "Ready",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["docs-slice"],
+    }
+
+    result = evaluate_planning_readiness([ready], cfg)
+
+    assert result.ready_candidates == (ready,)
+    assert result.ready_readiness_by_number[9].kind == IssueReadinessKind.READY_AFK
+    assert result.ready_readiness_by_number[9].selected_mode == SliceMode.DOCS
+
+
+def test_planning_blocker_summary_uses_readiness_groups():
+    from pycastle.issue_readiness import (
+        IssueReadiness,
+        IssueReadinessKind,
+        Malformed,
+        MalformedBody,
+        WellFormedBody,
+    )
+
+    summary = planning_blocker_summary(
+        BlockerSummaryInputs(
+            malformed_slice_mode_readiness=(
+                IssueReadiness(
+                    slice_status=Malformed(found=[]),
+                    body_floor_status=WellFormedBody(stripped_length=100),
+                    is_ready=False,
+                    selected_mode=None,
+                    kind=IssueReadinessKind.MISSING_SLICE_MODE,
+                ),
+            ),
+            malformed_body_readiness=(
+                IssueReadiness(
+                    slice_status=Malformed(found=["behavior-slice", "docs-slice"]),
+                    body_floor_status=MalformedBody(stripped_length=4),
+                    is_ready=False,
+                    selected_mode=None,
+                    kind=IssueReadinessKind.MALFORMED,
+                ),
+            ),
+        )
+    )
+
+    assert (
+        summary == "Planning blockers: 1 missing exactly one slice-mode label; "
+        "1 body is below the minimum length floor."
     )
 
 
