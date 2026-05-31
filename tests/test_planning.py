@@ -129,6 +129,26 @@ def test_evaluate_planning_readiness_reports_needs_info_label_actions():
     )
 
 
+def test_evaluate_planning_readiness_both_malformed_body_and_missing_slice_produces_both_actions():
+    cfg = Config()
+    issue = {
+        "number": 1,
+        "title": "Doubly malformed",
+        "body": "short",
+        "comments": [],
+        "labels": [],
+    }
+
+    result = evaluate_planning_readiness([issue], cfg)
+
+    assert result.ready_candidates == ()
+    assert result.malformed_body_issues == (issue,)
+    assert result.malformed_slice_mode_issues == (issue,)
+    action_intents = [(a.label_name, a.intent) for a in result.label_sync_actions]
+    assert (cfg.needs_info_label, "add") in action_intents
+    assert (cfg.needs_slice_type_label, "add") in action_intents
+
+
 def test_evaluate_planning_readiness_syncs_needs_slice_type_for_missing_and_multiple_modes():
     cfg = Config(needs_slice_type_label="needs-mode")
     ready_flagged = {
