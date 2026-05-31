@@ -339,6 +339,35 @@ def test_planning_blocker_summary_uses_readiness_groups():
     )
 
 
+def test_planning_blocker_summary_returns_none_when_no_blockers():
+    assert planning_blocker_summary(BlockerSummaryInputs()) is None
+
+
+def test_planning_blocker_summary_uses_plural_label_noun_for_multiple_slice_issues():
+    from pycastle.issue_readiness import (
+        IssueReadiness,
+        IssueReadinessKind,
+        Malformed,
+        WellFormedBody,
+    )
+
+    two_missing_slice = tuple(
+        IssueReadiness(
+            slice_status=Malformed(found=[]),
+            body_floor_status=WellFormedBody(stripped_length=100),
+            is_ready=False,
+            selected_mode=None,
+            kind=IssueReadinessKind.MISSING_SLICE_MODE,
+        )
+        for _ in range(2)
+    )
+    summary = planning_blocker_summary(
+        BlockerSummaryInputs(malformed_slice_mode_readiness=two_missing_slice)
+    )
+
+    assert summary == "Planning blockers: 2 missing exactly one slice-mode labels."
+
+
 @pytest.fixture
 def git_svc():
     svc = MagicMock(spec=GitService)
