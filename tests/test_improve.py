@@ -23,6 +23,7 @@ from pycastle.iteration.improve import (
 )
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitService, ServiceRegistry
+from pycastle.services.codex_service import CodexService
 from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session import RoleSession
 
@@ -382,12 +383,21 @@ def _seed_exact_phase_1_main_transcript(
     role_session.save_service_session_metadata(service_name, provider_session_id)
     if service_name == "opencode":
         state_dir = worktree_path / "opencode"
+    elif service_name == "codex":
+        state_dir = role_session.path / service_name
     else:
         state_dir = role_session.path / service_name
     state_dir.mkdir(parents=True, exist_ok=True)
     role_session.save_service_session_id(service_name, provider_session_id)
     sidecar_name = "session_id" if service_name == "opencode" else "thread_id"
     (state_dir / sidecar_name).write_text(provider_session_id, encoding="utf-8")
+    if service_name == "codex":
+        rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
+        rollout_dir.mkdir(parents=True, exist_ok=True)
+        (rollout_dir / "rollout-001.jsonl").write_text(
+            f'{{"type":"thread.started","thread_id":"{provider_session_id}"}}\n',
+            encoding="utf-8",
+        )
     if service_name == "claude":
         (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
 
@@ -414,15 +424,15 @@ def test_improve_resumes_at_prd_after_scan_picked(tmp_path, git_svc):
     assert len(runner.calls) == 2
 
 
-def test_improve_clean_phase_2_entry_requires_matching_resumable_main_transcript(
+def test_improve_clean_phase_2_entry_dispatches_prd_prompt_for_exact_codex_transcript(
     tmp_path, git_svc
 ):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "01-scan:picked")
     _seed_exact_phase_1_main_transcript(
         wt,
-        service_name="opencode",
-        provider_session_id="sess-opencode-123",
+        service_name="codex",
+        provider_session_id="thread-exact",
     )
     github_svc = MagicMock()
     github_svc.get_issue.return_value = {"number": 17, "title": "PRD", "body": "body"}
@@ -431,14 +441,14 @@ def test_improve_clean_phase_2_entry_requires_matching_resumable_main_transcript
         [IssueOutput(number=17, labels=[]), CompletionOutput()],
         preflight_responses=[[]],
     )
-    cfg = Config(improve_override=StageOverride(service="opencode", effort="medium"))
+    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
     deps = _make_deps(
         tmp_path,
         runner,
         git_svc=git_svc,
         github_svc=github_svc,
         cfg=cfg,
-        service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
+        service_registry=ServiceRegistry({"codex": CodexService()}),
     )
 
     _run(deps)
@@ -446,6 +456,55 @@ def test_improve_clean_phase_2_entry_requires_matching_resumable_main_transcript
     assert runner.calls[0].template == PromptTemplate.IMPROVE_PRD
     assert runner.calls[0].send_role_prompt_on_resume is True
     assert len(runner.calls) == 2
+
+
+def test_improve_clean_phase_2_entry_restarts_when_codex_rollout_thread_is_not_exact(
+    tmp_path, git_svc
+):
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_progress(wt, "01-scan:picked")
+    _seed_exact_phase_1_main_transcript(
+        wt,
+        service_name="codex",
+        provider_session_id="thread-recorded",
+    )
+    rollout_path = (
+        wt
+        / ".pycastle-session"
+        / "improve"
+        / "main"
+        / "codex"
+        / "sessions"
+        / "2026"
+        / "05"
+        / "30"
+        / "rollout-001.jsonl"
+    )
+    rollout_path.write_text(
+        '{"type":"thread.started","thread_id":"thread-other"}\n',
+        encoding="utf-8",
+    )
+    status_display = MagicMock()
+    runner = FakeAgentRunner([], preflight_responses=[[]])
+    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        status_display=status_display,
+        cfg=cfg,
+        service_registry=ServiceRegistry({"codex": CodexService()}),
+    )
+
+    result = _run(deps)
+
+    assert isinstance(result, ImproveContinue)
+    assert runner.calls == []
+    status_display.print.assert_any_call(
+        "Improve",
+        "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
+    )
+    assert not (wt / ".pycastle-session" / "improve").exists()
 
 
 def test_improve_gate_failure_restarts_next_entry_from_scan_phase(tmp_path, git_svc):
