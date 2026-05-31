@@ -76,7 +76,7 @@ class MissingDeclaredTool:
     dependency_source: str
 
 
-PreflightToolFailureClassification = OrdinaryCheckFailure | MissingDeclaredTool
+_PreflightToolFailureClassification = OrdinaryCheckFailure | MissingDeclaredTool
 
 
 def load_python_dependency_metadata(project_root: Path) -> PythonDependencyMetadata:
@@ -125,10 +125,10 @@ def load_python_dependency_metadata(project_root: Path) -> PythonDependencyMetad
     )
 
 
-def classify_preflight_tool_failure(
+def _classify_preflight_tool_failure(
     metadata: PythonDependencyMetadata,
     failure: PreflightCommandFailure,
-) -> PreflightToolFailureClassification:
+) -> _PreflightToolFailureClassification:
     tool = _configured_tool_name(failure.command, failure.check_name)
     missing_tool = None
     normalized_output = failure.output.strip()
@@ -158,7 +158,7 @@ def analyze_preflight_command_failures(
     python_dependency_metadata = load_python_dependency_metadata(project_root)
     ordinary_failures: list[OrdinaryCheckFailure] = []
     for failure in failures:
-        classification = classify_preflight_tool_failure(
+        classification = _classify_preflight_tool_failure(
             python_dependency_metadata, failure
         )
         if isinstance(classification, MissingDeclaredTool):
@@ -172,13 +172,3 @@ def analyze_preflight_command_failures(
             )
         ordinary_failures.append(classification)
     return tuple(ordinary_failures)
-
-
-def setup_phase_error_for_preflight_command_failures(
-    project_root: Path,
-    failures: Sequence[PreflightCommandFailure],
-) -> SetupPhaseError | None:
-    analysis = analyze_preflight_command_failures(project_root, failures)
-    if isinstance(analysis, SetupPhaseError):
-        return analysis
-    return None
