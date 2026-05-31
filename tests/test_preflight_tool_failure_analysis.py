@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pycastle.infrastructure.preflight_tool_classifier import (
+from pycastle.preflight_tool_failure_analysis import (
     MissingDeclaredTool,
     OrdinaryCheckFailure,
     PreflightCommandFailure,
