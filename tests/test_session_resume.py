@@ -8,7 +8,9 @@ import pytest
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.session import (
+    ProviderFreshFallbackReason,
     ProviderIdentityKind,
+    ProviderRunState,
     RoleSession,
     RunKind,
     any_role_dir_present,
@@ -184,6 +186,62 @@ def test_provider_identity_recovers_single_nested_codex_rollout_thread_id_and_pe
     assert identity.provider_session_id == "thread-from-rollout"
     assert identity.persist_provider_session_id is True
     assert rs.service_session_id("codex") == "thread-from-rollout"
+
+
+def test_provider_identity_provider_run_state_preserves_provider_state_dir_and_session_id(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    provider_state_dir = rs.path / "codex"
+    provider_state_dir.mkdir(parents=True)
+    provider_state_dir.joinpath("thread_id").write_text(
+        "thread-from-sidecar\n",
+        encoding="utf-8",
+    )
+
+    provider_run_state = rs.provider_identity(
+        "codex",
+        has_resumable_provider_state=True,
+        provider_state_dir=provider_state_dir,
+    ).provider_run_state(provider_state_dir=provider_state_dir)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.RESUME,
+        provider_session_id="thread-from-sidecar",
+        provider_state_dir=provider_state_dir,
+    )
+
+
+def test_provider_identity_provider_run_state_reports_unrecoverable_fallback_reason(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    provider_state_dir = rs.path / "codex"
+    dir_a = provider_state_dir / "sessions" / "2026" / "05" / "30"
+    dir_b = provider_state_dir / "sessions" / "2026" / "05" / "31"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    dir_a.joinpath("rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-old"}\n',
+        encoding="utf-8",
+    )
+    dir_b.joinpath("rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-new"}\n',
+        encoding="utf-8",
+    )
+
+    provider_run_state = rs.provider_identity(
+        "codex",
+        has_resumable_provider_state=True,
+        provider_state_dir=provider_state_dir,
+    ).provider_run_state(provider_state_dir=provider_state_dir)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.FRESH,
+        provider_session_id=None,
+        provider_state_dir=provider_state_dir,
+        fresh_fallback_reason=(ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY),
+    )
 
 
 def test_mark_done_preserves_service_session_metadata_without_counting_as_resumable(rs):
