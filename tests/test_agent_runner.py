@@ -1405,7 +1405,7 @@ def test_agent_runner_run_preflight_raises_setup_phase_error_when_pip_install_fa
     assert exc_info.value.phase == "preflight"
 
 
-def test_agent_runner_run_preflight_raises_setup_phase_error_for_missing_pyproject_declared_tool(
+def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_pyproject_declared_tool(
     tmp_path,
 ):
     (tmp_path / "pyproject.toml").write_text(
@@ -1417,18 +1417,18 @@ def test_agent_runner_run_preflight_raises_setup_phase_error_for_missing_pyproje
     cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    with pytest.raises(SetupPhaseError) as exc_info:
-        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
-    err = exc_info.value
-    assert err.phase == "preflight"
-    assert "ruff" in str(err)
-    assert "pyproject.toml" in str(err)
-    assert err.command == "ruff check ."
-    assert err.output == "Command failed (exit 127): bash: ruff: command not found"
+    assert result == [
+        (
+            "ruff",
+            "ruff check .",
+            "Command failed (exit 127): bash: ruff: command not found",
+        )
+    ]
 
 
-def test_agent_runner_run_preflight_raises_setup_phase_error_for_missing_requirements_declared_tool(
+def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_requirements_declared_tool(
     tmp_path,
 ):
     (tmp_path / "pyproject.toml").write_text(
@@ -1441,12 +1441,15 @@ def test_agent_runner_run_preflight_raises_setup_phase_error_for_missing_require
     cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    with pytest.raises(SetupPhaseError) as exc_info:
-        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
-    assert exc_info.value.phase == "preflight"
-    assert "ruff" in str(exc_info.value)
-    assert "requirements.txt" in str(exc_info.value)
+    assert result == [
+        (
+            "ruff",
+            "ruff check .",
+            "Command failed (exit 127): bash: ruff: command not found",
+        )
+    ]
 
 
 def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_undeclared_tool(
@@ -1516,7 +1519,7 @@ def test_agent_runner_run_preflight_returns_failure_tuple_for_declared_tool_proj
     ]
 
 
-def test_agent_runner_run_preflight_raises_setup_phase_error_after_running_later_checks(
+def test_agent_runner_run_preflight_returns_all_failures_after_running_later_checks(
     tmp_path,
 ):
     (tmp_path / "pyproject.toml").write_text(
@@ -1547,12 +1550,19 @@ def test_agent_runner_run_preflight_raises_setup_phase_error_after_running_later
     )
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    with pytest.raises(SetupPhaseError, match="Missing expected preflight tool 'ruff'"):
-        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     ruff_idx = next(i for i, call in enumerate(exec_calls) if "ruff check ." in call)
     mypy_idx = next(i for i, call in enumerate(exec_calls) if "mypy ." in call)
     assert ruff_idx < mypy_idx
+    assert result == [
+        (
+            "ruff",
+            "ruff check .",
+            "Command failed (exit 127): bash: ruff: command not found",
+        ),
+        ("mypy", "mypy .", "Command failed (exit 1): src/app.py:1: error: boom"),
+    ]
 
 
 def test_agent_runner_run_preflight_returns_all_ordinary_failures_in_configured_order(

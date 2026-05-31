@@ -164,15 +164,17 @@ def test_get_safe_sha_returns_afk_when_checks_fail_with_afk_label(
 def test_get_safe_sha_routes_requirements_declared_missing_tool_to_setup_failure(
     tmp_path, git_svc, github_svc
 ):
+    (tmp_path / "requirements.txt").write_text("ruff==0.6.9\n", encoding="utf-8")
     fake = FakeAgentRunner(
         [],
         preflight_responses=[
-            SetupPhaseError(
-                "preflight",
-                "Missing expected preflight tool 'ruff' declared in requirements.txt.",
-                command="ruff check .",
-                output="Command failed (exit 127): bash: ruff: command not found",
-            )
+            [
+                (
+                    "ruff",
+                    "ruff check .",
+                    "Command failed (exit 127): bash: ruff: command not found",
+                )
+            ]
         ],
     )
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)

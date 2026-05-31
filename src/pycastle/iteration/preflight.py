@@ -11,6 +11,7 @@ from ..agents.output_protocol import (
 )
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..errors import SetupPhaseError
 from ..prompts.pipeline import PromptTemplate
 from ..services import (
     GitCommandError,
@@ -28,6 +29,12 @@ from ..issue_readiness import (
 )
 from ..display.status_display import StatusDisplay
 from ._utils import _wait_for_clean_working_tree
+from ..preflight_tool_failure_analysis import (
+    MissingDeclaredTool,
+    PreflightCommandFailure,
+    classify_preflight_tool_failure,
+    load_python_dependency_metadata,
+)
 from .. import _time as _time_module
 
 
@@ -249,6 +256,31 @@ class PreflightCache:
             return override
         return registry.resolve(override, _time_module.now_local())
 
+    def _raise_if_missing_declared_tool(
+        self,
+        failures: tuple[tuple[str, str, str], ...],
+        project_root: Path,
+    ) -> None:
+        python_dependency_metadata = load_python_dependency_metadata(project_root)
+        for check_name, command, output in failures:
+            classification = classify_preflight_tool_failure(
+                python_dependency_metadata,
+                PreflightCommandFailure(
+                    check_name=check_name,
+                    command=command,
+                    output=output,
+                ),
+            )
+            if isinstance(classification, MissingDeclaredTool):
+                raise SetupPhaseError(
+                    "preflight",
+                    "Missing expected preflight tool "
+                    f"'{classification.tool}' declared in "
+                    f"{classification.dependency_source}.",
+                    command=command,
+                    output=output,
+                )
+
     async def _handle_failure(
         self,
         failures: tuple[tuple[str, str, str], ...],
@@ -329,6 +361,9 @@ class PreflightCache:
 
                 result: PreflightResult
                 if failures:
+                    self._raise_if_missing_declared_tool(
+                        tuple(failures), deps.repo_root
+                    )
                     try:
                         result = await self._handle_failure(
                             tuple(failures), deps, mount_path, sha

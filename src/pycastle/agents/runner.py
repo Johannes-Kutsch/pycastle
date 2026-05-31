@@ -15,12 +15,6 @@ from .result import CancellationToken
 from ..config import Config, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
 from ..infrastructure.docker_session import DockerSession, build_volume_spec
-from ..preflight_tool_failure_analysis import (
-    MissingDeclaredTool,
-    PreflightCommandFailure,
-    classify_preflight_tool_failure,
-    load_python_dependency_metadata,
-)
 from ..errors import (
     AgentFailedError,
     AgentTimeoutError,
@@ -386,7 +380,6 @@ class AgentRunner:
 
         git_name = self._git_service.get_user_name()
         git_email = self._git_service.get_user_email()
-        python_dependency_metadata = load_python_dependency_metadata(mount_path)
         async with status_row(
             status_display,
             name,
@@ -408,24 +401,6 @@ class AgentRunner:
                 except DockerError as exc:
                     raise SetupPhaseError("preflight", str(exc)) from exc
                 failures = await runner.preflight(list(self._cfg.preflight_checks))
-                for check_name, command, output in failures:
-                    classification = classify_preflight_tool_failure(
-                        python_dependency_metadata,
-                        PreflightCommandFailure(
-                            check_name=check_name,
-                            command=command,
-                            output=output,
-                        ),
-                    )
-                    if isinstance(classification, MissingDeclaredTool):
-                        raise SetupPhaseError(
-                            "preflight",
-                            "Missing expected preflight tool "
-                            f"'{classification.tool}' declared in "
-                            f"{classification.dependency_source}.",
-                            command=command,
-                            output=output,
-                        )
                 if not failures:
                     row.close("finished, all tests green")
                 return failures
