@@ -19,7 +19,6 @@ from ..infrastructure.worktree import transient_worktree
 from ._rows import status_row
 from .implement import branch_for
 from .planning_readiness import (
-    LabelSyncAction,
     evaluate_planning_readiness,
     planning_blocker_summary,
 )
@@ -94,18 +93,6 @@ def hydrate_planned_issues(
     )
 
 
-def _apply_label_sync_actions(
-    actions: tuple[LabelSyncAction, ...], github_svc: "GithubService"
-) -> None:
-    for action in actions:
-        if action.intent == "add":
-            github_svc.add_label_to_issue(action.issue_number, action.label_name)
-            if action.comment_body is not None:
-                github_svc.post_comment(action.issue_number, action.comment_body)
-            continue
-        github_svc.remove_label_from_issue(action.issue_number, action.label_name)
-
-
 def _fill_fields(issues: list[dict]) -> list[dict]:
     return [
         {**i, "body": i.get("body") or "", "comments": i.get("comments") or []}
@@ -153,7 +140,19 @@ async def planning_phase(
         sha = verdict.sha
 
         readiness_result = evaluate_planning_readiness(open_issues, deps.cfg)
-        _apply_label_sync_actions(readiness_result.label_sync_actions, deps.github_svc)
+        for action in readiness_result.label_sync_actions:
+            if action.intent == "add":
+                deps.github_svc.add_label_to_issue(
+                    action.issue_number, action.label_name
+                )
+                if action.comment_body is not None:
+                    deps.github_svc.post_comment(
+                        action.issue_number, action.comment_body
+                    )
+                continue
+            deps.github_svc.remove_label_from_issue(
+                action.issue_number, action.label_name
+            )
 
         well_formed = list(readiness_result.ready_candidates)
         readiness_by_number = dict(readiness_result.ready_readiness_by_number)
