@@ -11,6 +11,7 @@ from .errors import SetupPhaseError
 
 _DECLARED_TOOL_MISSING_PATTERNS = (
     re.compile(r"\b(?P<tool>[A-Za-z0-9_.-]+): command not found\b", re.IGNORECASE),
+    re.compile(r"\b(?P<tool>[A-Za-z0-9_.-]+): not found\b", re.IGNORECASE),
     re.compile(
         r"\bNo module named ['\"]?(?P<tool>[A-Za-z0-9_.-]+)['\"]?\b", re.IGNORECASE
     ),

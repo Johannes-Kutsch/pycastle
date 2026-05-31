@@ -193,6 +193,73 @@ def test_get_safe_sha_routes_requirements_declared_missing_tool_to_setup_failure
     assert fake.calls == []
 
 
+def test_get_safe_sha_aborts_before_issue_dispatch_when_later_failure_is_missing_declared_tool(
+    tmp_path, git_svc, github_svc
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['mypy>=1.0']\n",
+        encoding="utf-8",
+    )
+    fake = FakeAgentRunner(
+        [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
+        preflight_responses=[
+            [
+                ("pytest", "pytest", "FAILED tests/test_demo.py::test_it"),
+                (
+                    "mypy",
+                    "mypy .",
+                    "Command failed (exit 127): bash: mypy: command not found",
+                ),
+            ]
+        ],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(cache.get_safe_sha(deps))
+
+    err = exc_info.value
+    assert (
+        str(err) == "Missing expected preflight tool 'mypy' declared in pyproject.toml."
+    )
+    assert err.command == "mypy ."
+    assert err.output == "Command failed (exit 127): bash: mypy: command not found"
+    assert fake.calls == []
+
+
+def test_get_safe_sha_routes_declared_missing_tool_with_shell_not_found_output_to_setup_failure(
+    tmp_path, git_svc, github_svc
+):
+    (tmp_path / "requirements.txt").write_text("ruff==0.6.9\n", encoding="utf-8")
+    fake = FakeAgentRunner(
+        [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
+        preflight_responses=[
+            [
+                (
+                    "ruff",
+                    "ruff check .",
+                    "Command failed (exit 127): /bin/sh: 1: ruff: not found",
+                )
+            ]
+        ],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(cache.get_safe_sha(deps))
+
+    err = exc_info.value
+    assert (
+        str(err)
+        == "Missing expected preflight tool 'ruff' declared in requirements.txt."
+    )
+    assert err.command == "ruff check ."
+    assert err.output == "Command failed (exit 127): /bin/sh: 1: ruff: not found"
+    assert fake.calls == []
+
+
 def test_get_safe_sha_propagates_setup_phase_error_metadata_unchanged(
     tmp_path, git_svc, github_svc
 ):
