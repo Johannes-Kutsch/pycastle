@@ -852,6 +852,37 @@ def test_run_session_plan_records_service_session_metadata_on_success(
     }
 
 
+@pytest.mark.parametrize(
+    ("service", "role", "namespace", "runtime_session_id"),
+    [
+        (CodexService(), AgentRole.IMPLEMENTER, "", "thread-codex-runtime"),
+        (OpenCodeService(), AgentRole.IMPROVE, "main", "sess-opencode-runtime"),
+    ],
+)
+def test_run_session_plan_records_runtime_provider_session_id_in_sidecar_and_metadata_on_success(
+    tmp_path: Path,
+    service: AgentService,
+    role: AgentRole,
+    namespace: str,
+    runtime_session_id: str,
+) -> None:
+    plan = RunSessionPlan.for_service(
+        role=role,
+        worktree=tmp_path,
+        namespace=namespace,
+        service=service,
+    )
+
+    plan.record_successful_run(runtime_session_id)
+
+    role_session = RoleSession(tmp_path, role, namespace)
+    assert role_session.service_session_id(service.name) == runtime_session_id
+    assert role_session.service_session_metadata(service.name) == {
+        "service": service.name,
+        "provider_session_id": runtime_session_id,
+    }
+
+
 def test_run_session_plan_captures_codex_provider_session_id_for_same_plan_reuse(
     tmp_path: Path,
 ):
