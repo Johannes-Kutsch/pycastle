@@ -34,9 +34,19 @@ If every candidate fails the filter, emit `<promise>NO-CANDIDATE</promise>` and 
 
 ## Recent Improve PRD titles
 
+Apply a novelty gate during candidate selection.
+Treat repeated domain terms, module names, and architectural themes in recent PRD titles as negative evidence, even when the titles are not exact matches.
+Allow same-theme work only when the candidate names materially unresolved friction that prior PRDs did not address.
+Do not pick a weaker unrelated candidate merely to avoid repeating a recent theme. If the strongest candidates fail AFK-safety or novelty, emit NO-CANDIDATE.
+Keep novelty-rejected shortlist candidates visible with rejection reasons.
+
 Use this novelty context to avoid picking work that duplicates a recent Improve PRD:
 
+<recent_improve_prds>
+
 {{RECENT_IMPROVE_PRD_TITLES}}
+
+</recent_improve_prds>
 
 </context>
 
@@ -69,6 +79,9 @@ For each candidate:
 Use `CONTEXT.md` vocabulary. If a candidate contradicts an existing ADR, only surface it when the friction is real enough to warrant revisiting — mark it clearly.
 
 Drop any candidate that fails the AFK-safety filter.
+Drop any candidate that fails the novelty gate, but keep it in the shortlist with the rejection reason.
+
+If you keep a same-theme candidate in the shortlist, include a `Novelty Check` covering matching recent PRDs, material remaining friction, and why prior PRDs did not cover it.
 
 ### 3. Self-grilling
 
