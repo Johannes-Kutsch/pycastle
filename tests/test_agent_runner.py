@@ -1452,6 +1452,27 @@ def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_requiremen
     ]
 
 
+def test_agent_runner_run_preflight_ignores_malformed_pyproject_and_returns_raw_failure(
+    tmp_path,
+):
+    (tmp_path / "pyproject.toml").write_text("[project\nname = 't'\n", encoding="utf-8")
+    mock_client = _make_preflight_docker_client(
+        exit_code=127, stdout=b"bash: ruff: command not found"
+    )
+    cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
+    runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
+
+    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+
+    assert result == [
+        (
+            "ruff",
+            "ruff check .",
+            "Command failed (exit 127): bash: ruff: command not found",
+        )
+    ]
+
+
 def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_undeclared_tool(
     tmp_path,
 ):
