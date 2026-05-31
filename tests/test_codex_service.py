@@ -337,7 +337,7 @@ def test_provider_session_state_is_fresh_without_resumable_provider_state(tmp_pa
     assert provider_session_state.persist_provider_session_id is False
 
 
-def test_select_resumable_provider_session_id_recovers_codex_rollout_thread_id_without_sidecar(
+def test_select_resumable_provider_session_id_does_not_recover_codex_rollout_thread_id_without_sidecar(
     tmp_path,
 ):
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
@@ -356,9 +356,9 @@ def test_select_resumable_provider_session_id_recovers_codex_rollout_thread_id_w
         has_resumable_provider_state=True,
     )
 
-    assert selection.provider_session_id == "thread-from-rollout"
-    assert selection.persist_provider_session_id is True
-    assert role_session.service_session_id("codex") == "thread-from-rollout"
+    assert selection.provider_session_id is None
+    assert selection.persist_provider_session_id is False
+    assert role_session.service_session_id("codex") is None
 
 
 def test_provider_session_state_recovers_single_nested_codex_rollout_thread_id(
