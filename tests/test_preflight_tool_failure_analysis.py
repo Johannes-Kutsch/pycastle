@@ -11,6 +11,7 @@ from pycastle.preflight_tool_failure_analysis import (
     OrdinaryCheckFailure,
     PreflightCommandFailure,
     PythonDependencyMetadata,
+    analyze_preflight_command_failures,
     classify_preflight_tool_failure,
     load_python_dependency_metadata,
 )
@@ -186,19 +187,20 @@ def test_preflight_tool_classifier_returns_setup_failure_with_pyproject_preceden
 def test_classify_preflight_tool_failure_keeps_undeclared_missing_tool_as_ordinary_check_failure() -> (
     None
 ):
+    failure = PreflightCommandFailure(
+        check_name="ruff",
+        command="ruff check .",
+        output="Command failed (exit 127): bash: ruff: command not found",
+    )
     classification = classify_preflight_tool_failure(
         PythonDependencyMetadata(
             declared_packages=frozenset({"pytest"}),
             source="pyproject.toml",
         ),
-        PreflightCommandFailure(
-            check_name="ruff",
-            command="ruff check .",
-            output="Command failed (exit 127): bash: ruff: command not found",
-        ),
+        failure,
     )
 
-    assert classification == OrdinaryCheckFailure(tool="ruff")
+    assert classification == OrdinaryCheckFailure(tool="ruff", failure=failure)
 
 
 def test_preflight_tool_classifier_returns_setup_failure_for_missing_pyproject_declared_command(
@@ -227,6 +229,24 @@ def test_preflight_tool_classifier_returns_setup_failure_for_missing_pyproject_d
     )
     assert result.command == "ruff check ."
     assert result.output == "Command failed (exit 127): bash: ruff: command not found"
+
+
+def test_analyze_preflight_command_failures_keeps_declared_source_quality_failure_as_ordinary(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['ruff>=0.5']\n",
+        encoding="utf-8",
+    )
+    failure = PreflightCommandFailure(
+        check_name="ruff",
+        command="ruff check .",
+        output="src/demo.py:1:1: F401 `os` imported but unused",
+    )
+
+    result = analyze_preflight_command_failures(tmp_path, (failure,))
+
+    assert result == (OrdinaryCheckFailure(tool="ruff", failure=failure),)
 
 
 @pytest.mark.parametrize(

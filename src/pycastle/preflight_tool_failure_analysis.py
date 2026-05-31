@@ -67,6 +67,7 @@ class PreflightCommandFailure:
 @dataclasses.dataclass(frozen=True)
 class OrdinaryCheckFailure:
     tool: str
+    failure: PreflightCommandFailure
 
 
 @dataclasses.dataclass(frozen=True)
@@ -147,14 +148,15 @@ def classify_preflight_tool_failure(
         and metadata.source.strip()
     ):
         return MissingDeclaredTool(tool=tool, dependency_source=metadata.source)
-    return OrdinaryCheckFailure(tool=tool)
+    return OrdinaryCheckFailure(tool=tool, failure=failure)
 
 
-def setup_phase_error_for_preflight_command_failures(
+def analyze_preflight_command_failures(
     project_root: Path,
     failures: Sequence[PreflightCommandFailure],
-) -> SetupPhaseError | None:
+) -> tuple[OrdinaryCheckFailure, ...] | SetupPhaseError:
     python_dependency_metadata = load_python_dependency_metadata(project_root)
+    ordinary_failures: list[OrdinaryCheckFailure] = []
     for failure in failures:
         classification = classify_preflight_tool_failure(
             python_dependency_metadata, failure
@@ -168,4 +170,15 @@ def setup_phase_error_for_preflight_command_failures(
                 command=failure.command,
                 output=failure.output,
             )
+        ordinary_failures.append(classification)
+    return tuple(ordinary_failures)
+
+
+def setup_phase_error_for_preflight_command_failures(
+    project_root: Path,
+    failures: Sequence[PreflightCommandFailure],
+) -> SetupPhaseError | None:
+    analysis = analyze_preflight_command_failures(project_root, failures)
+    if isinstance(analysis, SetupPhaseError):
+        return analysis
     return None

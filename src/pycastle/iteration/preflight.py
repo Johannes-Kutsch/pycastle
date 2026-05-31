@@ -20,6 +20,7 @@ from ..services import (
     UnrelatedHistoriesError,
 )
 from ..session import RoleSession
+from ..errors import SetupPhaseError
 from ..issue_readiness import (
     IssueReadiness,
     IssueReadinessKind,
@@ -29,8 +30,9 @@ from ..issue_readiness import (
 from ..display.status_display import StatusDisplay
 from ._utils import _wait_for_clean_working_tree
 from ..preflight_tool_failure_analysis import (
+    analyze_preflight_command_failures,
+    OrdinaryCheckFailure,
     PreflightCommandFailure,
-    setup_phase_error_for_preflight_command_failures,
 )
 from .. import _time as _time_module
 
@@ -347,14 +349,18 @@ class PreflightCache:
                 result: PreflightResult
                 if failures:
                     command_failures = self._preflight_command_failures(failures)
-                    setup_error = setup_phase_error_for_preflight_command_failures(
+                    analysis = analyze_preflight_command_failures(
                         deps.repo_root, command_failures
                     )
-                    if setup_error is not None:
-                        raise setup_error
+                    if isinstance(analysis, SetupPhaseError):
+                        raise analysis
+                    ordinary_failures: tuple[OrdinaryCheckFailure, ...] = analysis
                     try:
                         result = await self._handle_failure(
-                            command_failures, deps, mount_path, sha
+                            tuple(ordinary.failure for ordinary in ordinary_failures),
+                            deps,
+                            mount_path,
+                            sha,
                         )
                     except AgentOutputProtocolError as parse_exc:
                         raise RuntimeError(str(parse_exc)) from parse_exc
