@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from pycastle.errors import SetupPhaseError
 from pycastle.infrastructure.preflight_tool_classifier import (
     setup_phase_error_for_preflight_command_failures,
@@ -225,3 +227,49 @@ def test_preflight_tool_classifier_returns_setup_failure_for_missing_pyproject_d
     )
     assert result.command == "ruff check ."
     assert result.output == "Command failed (exit 127): bash: ruff: command not found"
+
+
+@pytest.mark.parametrize(
+    "command, output",
+    [
+        (
+            "python3 -m ruff check .",
+            "Command failed (exit 1): /usr/bin/python3: No module named ruff",
+        ),
+        (
+            "py -m ruff check .",
+            "Command failed (exit 1): C:\\Python312\\python.exe: No module named ruff",
+        ),
+        (
+            "py -3 -m ruff check .",
+            "Command failed (exit 1): C:\\Python312\\python.exe: No module named ruff",
+        ),
+    ],
+)
+def test_preflight_tool_classifier_uses_python_module_name_for_launcher_variants(
+    tmp_path: Path, command: str, output: str
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['ruff>=0.5']\n",
+        encoding="utf-8",
+    )
+
+    result = setup_phase_error_for_preflight_command_failures(
+        tmp_path,
+        (
+            PreflightCommandFailure(
+                check_name="lint",
+                command=command,
+                output=output,
+            ),
+        ),
+    )
+
+    assert isinstance(result, SetupPhaseError)
+    assert result.phase == "preflight"
+    assert (
+        str(result)
+        == "Missing expected preflight tool 'ruff' declared in pyproject.toml."
+    )
+    assert result.command == command
+    assert result.output == output

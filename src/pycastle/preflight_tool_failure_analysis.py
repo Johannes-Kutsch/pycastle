@@ -38,10 +38,13 @@ def _configured_tool_name(command: str, check_name: str) -> str:
         parts = command.split()
     if len(parts) >= 3:
         launcher = _normalize_package_name(Path(parts[0]).name)
-        if (launcher in _PYTHON_MODULE_LAUNCHERS or launcher.startswith("python")) and (
-            parts[1] == "-m"
-        ):
-            return _normalize_package_name(parts[2])
+        if launcher in _PYTHON_MODULE_LAUNCHERS or launcher.startswith("python"):
+            try:
+                module_flag_index = parts.index("-m", 1)
+            except ValueError:
+                module_flag_index = -1
+            if module_flag_index >= 1 and module_flag_index + 1 < len(parts):
+                return _normalize_package_name(parts[module_flag_index + 1])
     if parts:
         return _normalize_package_name(Path(parts[0]).name)
     return _normalize_package_name(check_name)
