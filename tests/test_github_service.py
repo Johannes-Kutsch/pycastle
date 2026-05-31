@@ -579,6 +579,29 @@ def test_get_recent_improve_prds_returns_newest_12_canonical_titles_across_state
     ]
 
 
+def test_get_recent_improve_prds_returns_empty_list_when_no_matching_issues():
+    svc = _make_service()
+    issues = [
+        {"number": 1, "title": "Regular issue", "state": "open"},
+        {"number": 2, "title": "Follow-up [improve-PRD] mention", "state": "closed"},
+    ]
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(json.dumps(issues).encode()),
+    ):
+        assert svc.get_recent_improve_prds() == []
+
+
+def test_get_recent_improve_prds_propagates_github_api_error():
+    svc = _make_service()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_http_error(500, b"server error"),
+    ):
+        with pytest.raises(GithubAPIError):
+            svc.get_recent_improve_prds()
+
+
 # ── get_parent ───────────────────────────────────────────────────────────────
 
 
