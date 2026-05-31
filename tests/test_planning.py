@@ -1583,8 +1583,6 @@ def test_planning_phase_removes_custom_stale_readiness_blocker_labels_from_ready
 def test_planning_phase_single_issue_with_short_body_excluded_from_short_circuit(
     tmp_path, git_svc
 ):
-    from pycastle.agents.output_protocol import PlannerOutput
-
     short_body = {
         "number": 1,
         "title": "A",
@@ -1592,12 +1590,13 @@ def test_planning_phase_single_issue_with_short_body_excluded_from_short_circuit
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    fake = FakeAgentRunner([PlannerOutput(issues=[], blocked=[])])
+    fake = FakeAgentRunner([])
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     result = asyncio.run(planning_phase(deps, [short_body], []))
 
     assert isinstance(result, AllBlocked)
+    assert len(fake.calls) == 0
 
 
 def test_planning_phase_single_malformed_issue_skips_planner_and_returns_all_blocked(
