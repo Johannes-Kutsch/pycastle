@@ -11,6 +11,7 @@ from ..agents.output_protocol import AgentRole
 from ..services.provider_session_state import ProviderSessionStateRequest
 from .provider_run_state import ProviderFreshFallbackReason, ProviderRunState
 from .provider_session_state import (
+    has_exact_provider_transcript_for_service,
     load_exact_transcript_service_name,
     is_service_session_metadata_path,
     load_service_session_id,
@@ -224,6 +225,29 @@ class RoleSession:
     def save_service_session_metadata(self, service_name: str, session_id: str) -> None:
         save_service_session_metadata(self.path, service_name, session_id)
 
+    def has_exact_provider_transcript_for_service(
+        self,
+        service: "AgentService",
+    ) -> bool:
+        return has_exact_provider_transcript_for_service(
+            worktree=self._worktree,
+            role=self._role,
+            namespace=self._namespace,
+            service=service,
+        )
+
+    def has_exact_provider_transcript_for_selected_service(
+        self,
+        registry: "ServiceRegistry | None",
+        service_name: str,
+    ) -> bool:
+        if registry is None or not service_name:
+            return False
+        service = registry[service_name]
+        if service is None:
+            return False
+        return self.has_exact_provider_transcript_for_service(service)
+
     def service_session_state(self, service: "AgentService") -> ServiceSessionState:
         state_dir_relpath = _normalize_state_dir_relpath(
             self._role,
@@ -330,12 +354,10 @@ class RoleSession:
         registry: "ServiceRegistry | None",
         service_name: str,
     ) -> bool:
-        if registry is None or not service_name:
-            return False
-        service = registry[service_name]
-        if service is None:
-            return False
-        return self.exact_transcript_handoff_for_service(service).is_eligible
+        return self.has_exact_provider_transcript_for_selected_service(
+            registry,
+            service_name,
+        )
 
     def is_resumable(self) -> bool:
         return self.path.is_dir() and any(

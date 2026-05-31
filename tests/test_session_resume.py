@@ -5,11 +5,14 @@ import stat
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.services.agent_service import AgentService
 from pycastle.services.codex_service import CodexService
+from pycastle.services.service_registry import ServiceRegistry
 from pycastle.session import (
     ProviderFreshFallbackReason,
     ProviderIdentityKind,
@@ -421,6 +424,146 @@ def test_exact_transcript_service_name_is_ambiguous_with_multiple_services(rs):
     rs.save_service_session_metadata("opencode", "sess-opencode")
 
     assert rs.exact_transcript_service_name() is None
+
+
+def test_role_session_reports_exact_provider_transcript_available_for_selected_opencode_service(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.REVIEWER, "main")
+    service = _FakeService(
+        name="opencode",
+        relpath="custom/opencode-state/",
+        resumable=True,
+    )
+    state_dir = worktree / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    state_dir.joinpath("session_id").write_text(
+        "sess-opencode-123\n",
+        encoding="utf-8",
+    )
+    rs.save_service_session_id("opencode", "sess-opencode-123")
+    rs.save_service_session_metadata("opencode", "sess-opencode-123")
+
+    assert rs.has_exact_provider_transcript_for_service(service) is True
+
+
+@pytest.mark.parametrize(
+    ("registry_services", "selected_service_name"),
+    [
+        ({}, "codex"),
+        (
+            {
+                "claude": _FakeService(
+                    name="claude",
+                    relpath="custom/claude-state/",
+                    resumable=True,
+                )
+            },
+            "claude",
+        ),
+    ],
+)
+def test_role_session_reports_exact_provider_transcript_unavailable_for_missing_or_different_selected_service(
+    worktree,
+    registry_services: dict[str, _FakeService],
+    selected_service_name: str,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    state_dir = rs.path / "codex"
+    rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    rollout_dir.mkdir(parents=True)
+    rollout_dir.joinpath("rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-exact"}\n',
+        encoding="utf-8",
+    )
+    rs.save_service_session_id("codex", "thread-exact")
+    rs.save_service_session_metadata("codex", "thread-exact")
+    registry = ServiceRegistry(cast(dict[str, AgentService], registry_services))
+
+    assert (
+        rs.has_exact_provider_transcript_for_selected_service(
+            registry,
+            selected_service_name,
+        )
+        is False
+    )
+
+
+@pytest.mark.parametrize(
+    ("metadata_value", "sidecar_value", "resumable"),
+    [
+        (None, "sess-opencode-123", True),
+        ("sess-opencode-123", None, True),
+        ("sess-opencode-metadata", "sess-opencode-sidecar", True),
+        ("sess-opencode-123", "sess-opencode-123", False),
+    ],
+)
+def test_role_session_reports_exact_provider_transcript_unavailable_without_exact_identity_evidence(
+    worktree,
+    metadata_value: str | None,
+    sidecar_value: str | None,
+    resumable: bool,
+):
+    rs = RoleSession(worktree, AgentRole.REVIEWER, "main")
+    service = _FakeService(
+        name="opencode",
+        relpath="custom/opencode-state/",
+        resumable=resumable,
+    )
+    state_dir = worktree / "custom" / "opencode-state"
+    state_dir.mkdir(parents=True)
+    state_dir.joinpath("session_id").write_text(
+        "sess-opencode-123\n",
+        encoding="utf-8",
+    )
+    if sidecar_value is not None:
+        rs.save_service_session_id("opencode", sidecar_value)
+    if metadata_value is not None:
+        rs.save_service_session_metadata("opencode", metadata_value)
+
+    assert (
+        rs.has_exact_provider_transcript_for_service(cast(AgentService, service))
+        is False
+    )
+
+
+def test_role_session_reports_exact_provider_transcript_codex_availability_for_duplicate_and_ambiguous_rollouts(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+    service = CodexService()
+    state_dir = rs.path / "codex"
+    rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    rollout_dir.mkdir(parents=True)
+    rollout_path = rollout_dir / "rollout-001.jsonl"
+
+    rollout_path.write_text(
+        "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"thread-exact"}',
+                '{"type":"thread.started","thread_id":"thread-exact"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    rs.save_service_session_id("codex", "thread-exact")
+    rs.save_service_session_metadata("codex", "thread-exact")
+
+    assert rs.has_exact_provider_transcript_for_service(service) is True
+
+    rollout_path.write_text(
+        "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"thread-exact"}',
+                '{"type":"thread.started","thread_id":"thread-other"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert rs.has_exact_provider_transcript_for_service(service) is False
 
 
 # ── any_role_dir_present ──────────────────────────────────────────────────────
