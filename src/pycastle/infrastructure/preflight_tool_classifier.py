@@ -6,6 +6,7 @@ from ..preflight_tool_failure_analysis import (
     PythonDependencyMetadata,
     classify_preflight_tool_failure,
     load_python_dependency_metadata,
+    setup_phase_error_for_preflight_command_failures,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "PythonDependencyMetadata",
     "classify_preflight_tool_failure",
     "load_python_dependency_metadata",
+    "setup_phase_error_for_preflight_command_failures",
 ]
