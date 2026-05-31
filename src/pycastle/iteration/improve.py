@@ -13,7 +13,7 @@ from ..config import Config
 from ..prompts.pipeline import PromptTemplate, Scope, build_issue_scope_args
 from ..services import GitService, ServiceRegistry
 from ..services.github_service import GithubService
-from ..session import RoleSession, has_exact_transcript_match
+from ..session import RoleSession
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import managed_worktree
 from ._rows import status_row
@@ -290,19 +290,12 @@ async def improve_phase(
                 and step.prompt_key == "02-prd.md"
                 and step.send_role_prompt_on_resume
             ):
+                main_session = RoleSession(sandbox_path, AgentRole.IMPROVE, "main")
                 service_name = deps.cfg.improve_override.service
-                service = (
-                    deps.service_registry[service_name]
-                    if deps.service_registry is not None and service_name
-                    else None
-                )
                 has_exact_main_transcript = (
-                    service is not None
-                    and has_exact_transcript_match(
-                        worktree=sandbox_path,
-                        role=AgentRole.IMPROVE,
-                        session_namespace="main",
-                        service=service,
+                    main_session.has_exact_provider_transcript_for_selected_service(
+                        deps.service_registry,
+                        service_name,
                     )
                 )
                 if not has_exact_main_transcript:
