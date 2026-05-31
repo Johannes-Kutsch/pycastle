@@ -345,6 +345,10 @@ async def improve_phase(
             while step is not None:
                 if step.fetch_recent_prd_titles:
                     scope_args = _build_scan_scope_args(deps.github_svc)
+                elif step.cfg.template.scope is Scope.IMPROVE_SCAN:
+                    scope_args = {
+                        "RECENT_IMPROVE_PRD_TITLES": _format_recent_improve_prds([])
+                    }
                 elif step.cfg.template.scope is Scope.IMPROVE_ISSUES:
                     scope_args = _build_issues_scope_args(
                         short_sid, driver.prd_number, deps.github_svc

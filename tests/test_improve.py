@@ -294,7 +294,7 @@ def test_improve_phase_1_resume_does_not_refetch_recent_improve_prd_titles(
     scan_call = next(
         c for c in runner.calls if c.template == PromptTemplate.IMPROVE_SCAN
     )
-    assert scan_call.scope_args == {}
+    assert "RECENT_IMPROVE_PRD_TITLES" in scan_call.scope_args
     github_svc.get_recent_improve_prds.assert_not_called()
 
 
