@@ -319,6 +319,28 @@ def test_provider_run_state_for_codex_service_prefers_saved_thread_id_without_se
     )
 
 
+def test_provider_run_state_for_codex_service_is_fresh_when_rollouts_are_unreadable(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    service = CodexService()
+    provider_state_dir = worktree / ".pycastle-session" / "implementer" / "codex"
+    rollout_path = (
+        provider_state_dir / "sessions" / "2026" / "05" / "31" / "rollout-001.jsonl"
+    )
+    rollout_path.parent.mkdir(parents=True)
+    rollout_path.write_bytes(b"\xff\xfe\x00")
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.FRESH,
+        provider_session_id=None,
+        provider_state_dir=provider_state_dir,
+        fresh_fallback_reason=ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY,
+    )
+
+
 def test_provider_run_state_for_sidecar_backed_service_resumes_with_saved_service_session_id(
     worktree,
 ):

@@ -319,28 +319,10 @@ class RoleSession:
                 is_eligible=provider_session_state.exact_transcript_match,
             )
 
-        derived_provider_session_id = None
-        if service.name == "claude":
-            derived_provider_session_id = self.session_uuid()
-
-        provider_identity = self.provider_identity(
+        return self.exact_transcript_handoff(
             service.name,
             has_resumable_provider_state=state.has_resumable_provider_state,
-            provider_state_dir=state.state_dir,
-            derived_provider_session_id=derived_provider_session_id,
-        )
-        return ExactTranscriptHandoff(
-            provider_identity=provider_identity,
-            is_eligible=(
-                provider_identity.run_kind is RunKind.RESUME
-                and not provider_identity.persist_provider_session_id
-                and is_exact_resumable_service_session(
-                    self,
-                    service.name,
-                    provider_session_id=provider_identity.provider_session_id,
-                    provider_state_dir=state.state_dir,
-                )
-            ),
+            state_dir=state.state_dir,
         )
 
     def has_exact_transcript_handoff_for_selected_service(

@@ -799,6 +799,34 @@ def test_prepare_agent_session_falls_back_to_fresh_for_codex_with_distinct_rollo
     )
 
 
+def test_prepare_agent_session_falls_back_to_fresh_for_codex_without_thread_started_rollouts_without_writing_sidecar(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "05" / "30"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                '{"type":"item.completed","item":{"type":"agent_message","text":"hi"}}',
+                '{"type":"thread.started","thread_id":"   "}',
+                '{"type":"not-thread-started","thread_id":"thread-ignored"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+
+    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
+
+    assert session.run_kind is RunKind.FRESH
+    assert session.provider_session_id is None
+    assert (
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex") is None
+    )
+
+
 def test_prepare_agent_session_start_fresh_preserves_existing_codex_auth_json(
     tmp_path: Path,
 ):
