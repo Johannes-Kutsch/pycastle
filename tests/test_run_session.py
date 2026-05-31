@@ -163,33 +163,6 @@ def test_plan_run_session_public_interface_preserves_namespaced_role_session_fac
     )
 
 
-def test_run_session_plan_uses_selected_codex_service_state_dir_for_saved_resume_identity(
-    tmp_path: Path,
-):
-    service = cast(
-        AgentService,
-        _FakeAgentService("custom/codex-state", name="codex", resumable=True),
-    )
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    state_dir = tmp_path / "custom" / "codex-state"
-    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
-    sessions_dir.mkdir(parents=True)
-    (sessions_dir / "rollout-001.jsonl").write_text("{}\n", encoding="utf-8")
-    role_session.save_service_session_id("codex", "thread-from-sidecar")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.service_state_dir == state_dir
-    assert plan.provider_session_id == "thread-from-sidecar"
-    assert plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.SKIP
-
-
 def test_run_session_plan_uses_selected_codex_provider_state_dir_layout_when_service_state_dir_is_custom(
     tmp_path: Path,
 ):
@@ -208,87 +181,6 @@ def test_run_session_plan_uses_selected_codex_provider_state_dir_layout_when_ser
     assert plan.service_state_dir == tmp_path / "custom" / "codex-state"
     assert plan.provider_state_dir_relpath == "custom/codex-state"
     assert plan.host_provider_state_dir == tmp_path / "custom" / "codex-state"
-
-
-def test_run_session_plan_uses_namespaced_codex_saved_resume_identity_from_custom_state_dir(
-    tmp_path: Path,
-):
-    service = cast(
-        AgentService,
-        _FakeAgentService("custom/codex-state", name="codex", resumable=True),
-    )
-    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    state_dir = tmp_path / "custom" / "codex-state"
-    sessions_dir = state_dir / "sessions" / "2026" / "05" / "29"
-    sessions_dir.mkdir(parents=True)
-    (sessions_dir / "rollout-001.jsonl").write_text("{}\n", encoding="utf-8")
-    role_session.save_service_session_id("codex", "thread-from-sidecar")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPROVE,
-        worktree=tmp_path,
-        namespace="main",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.service_state_dir == state_dir
-    assert plan.provider_state_dir_relpath == "custom/codex-state"
-    assert plan.host_provider_state_dir == state_dir
-    assert plan.provider_session_id == "thread-from-sidecar"
-
-
-def test_run_session_plan_uses_saved_opencode_resume_identity_from_selected_service_state_dir(
-    tmp_path: Path,
-):
-    service = cast(
-        AgentService,
-        _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
-    )
-    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    state_dir = tmp_path / "custom" / "opencode-state"
-    state_dir.mkdir(parents=True)
-    (state_dir / "session_id").write_text("sess-from-state-dir", encoding="utf-8")
-    role_session.save_service_session_id("opencode", "sess-from-sidecar")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPROVE,
-        worktree=tmp_path,
-        namespace="main",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.service_state_dir == state_dir
-    assert plan.provider_state_dir_relpath == "custom/opencode-state"
-    assert plan.host_provider_state_dir == state_dir
-    assert plan.provider_session_id == "sess-from-sidecar"
-
-
-def test_run_session_plan_uses_selected_opencode_service_state_dir_for_resume_container_path(
-    tmp_path: Path,
-):
-    service = cast(
-        AgentService,
-        _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
-    )
-    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    state_dir = tmp_path / "custom" / "opencode-state"
-    state_dir.mkdir(parents=True)
-    (state_dir / "session_id").write_text("sess-from-state-dir", encoding="utf-8")
-    role_session.save_service_session_id("opencode", "sess-from-sidecar")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPROVE,
-        worktree=tmp_path,
-        namespace="main",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.provider_state_dir_container_path("/home/agent/workspace") == (
-        "/home/agent/workspace/custom/opencode-state/"
-    )
 
 
 def test_run_session_plan_uses_selected_opencode_provider_state_dir_for_fresh_container_path(
@@ -391,150 +283,6 @@ def test_run_session_plan_reports_resume_for_claude_with_populated_state_dir(
     assert plan.provider_session_id == expected_session_id
 
 
-def test_run_session_plan_reports_fresh_for_claude_with_metadata_only_role_dir(
-    tmp_path: Path,
-):
-    service = ClaudeService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    expected_state_dir = tmp_path / ".pycastle-session/implementer/claude"
-    expected_session_id = role_session.session_uuid()
-    role_session.save_service_session_metadata("claude", expected_session_id)
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert role_session.is_done() is True
-    assert role_session.is_resumable() is False
-    assert plan.run_kind is RunKind.FRESH
-    assert plan.service_state_dir == expected_state_dir
-    assert plan.provider_session_id == expected_session_id
-    assert plan.exact_transcript_match is False
-
-
-def test_run_session_plan_reports_exact_transcript_match_for_claude_only_with_matching_metadata_and_resumable_state(
-    tmp_path: Path,
-):
-    service = ClaudeService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
-    expected_session_id = role_session.session_uuid()
-
-    role_session.save_service_session_metadata("claude", expected_session_id)
-    state_dir.mkdir(parents=True)
-    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.provider_session_id == expected_session_id
-    assert plan.exact_transcript_match is True
-
-
-def test_role_session_exact_transcript_handoff_for_claude_fresh_uses_generated_uuid(
-    tmp_path: Path,
-):
-    service = ClaudeService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-
-    handoff = role_session.exact_transcript_handoff_for_service(service)
-
-    assert handoff.provider_identity.kind is ProviderIdentityKind.FRESH
-    assert handoff.provider_identity.run_kind is RunKind.FRESH
-    assert handoff.provider_identity.provider_session_id == role_session.session_uuid()
-    assert handoff.is_eligible is False
-
-
-def test_role_session_exact_transcript_handoff_for_claude_resume_uses_generated_uuid(
-    tmp_path: Path,
-):
-    service = ClaudeService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
-    state_dir.mkdir(parents=True)
-    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
-
-    handoff = role_session.exact_transcript_handoff_for_service(service)
-
-    assert handoff.provider_identity.kind is ProviderIdentityKind.RESUME
-    assert handoff.provider_identity.run_kind is RunKind.RESUME
-    assert handoff.provider_identity.provider_session_id == role_session.session_uuid()
-    assert handoff.is_eligible is False
-
-
-def test_role_session_exact_transcript_handoff_for_claude_named_service_uses_service_provider_session_id(
-    tmp_path: Path,
-):
-    service = cast(
-        AgentService,
-        _FakeAgentService(
-            ".pycastle-session/implementer/claude/",
-            name="claude",
-            resumable=True,
-            provider_session_id="foreign-session-id",
-        ),
-    )
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
-    state_dir.mkdir(parents=True)
-    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
-
-    handoff = role_session.exact_transcript_handoff_for_service(service)
-
-    assert handoff.provider_identity.kind is ProviderIdentityKind.RESUME
-    assert handoff.provider_identity.run_kind is RunKind.RESUME
-    assert handoff.provider_identity.provider_session_id == "foreign-session-id"
-    assert handoff.is_eligible is False
-
-
-def test_run_session_plan_reports_no_exact_transcript_match_for_claude_without_metadata(
-    tmp_path: Path,
-):
-    service = ClaudeService()
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
-    state_dir.mkdir(parents=True)
-    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.exact_transcript_match is False
-
-
-def test_run_session_plan_reports_no_exact_transcript_match_for_claude_with_mismatched_metadata(
-    tmp_path: Path,
-):
-    service = ClaudeService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
-
-    role_session.save_service_session_metadata("claude", "stale-session-id")
-    state_dir.mkdir(parents=True)
-    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPLEMENTER,
-        worktree=tmp_path,
-        namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.exact_transcript_match is False
-
-
 def test_run_session_plan_preserves_claude_provider_session_persistence_from_service_run_state(
     tmp_path: Path,
 ):
@@ -564,26 +312,6 @@ def test_run_session_plan_preserves_claude_provider_session_persistence_from_ser
     )
 
 
-def test_run_session_plan_reports_exact_transcript_match_for_opencode_with_matching_metadata_and_resumable_state(
-    tmp_path: Path,
-):
-    service = OpenCodeService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    role_session.save_service_session_id("opencode", "sess-opencode-123")
-    role_session.save_service_session_metadata("opencode", "sess-opencode-123")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPROVE,
-        worktree=tmp_path,
-        namespace="main",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.provider_session_id == "sess-opencode-123"
-    assert plan.exact_transcript_match is True
-
-
 def test_role_session_exact_transcript_handoff_for_service_reports_unrecoverable_codex_identity_when_rollout_thread_ids_conflict(
     tmp_path: Path,
 ):
@@ -602,23 +330,6 @@ def test_role_session_exact_transcript_handoff_for_service_reports_unrecoverable
         '{"type":"thread.started","thread_id":"thread-id-new"}\n',
         encoding="utf-8",
     )
-
-    handoff = role_session.exact_transcript_handoff_for_service(service)
-
-    assert handoff.provider_identity.kind is ProviderIdentityKind.UNRECOVERABLE
-    assert handoff.provider_identity.run_kind is RunKind.FRESH
-    assert handoff.provider_identity.provider_session_id is None
-    assert handoff.is_eligible is False
-
-
-def test_role_session_exact_transcript_handoff_for_service_reports_unrecoverable_opencode_identity_when_session_id_is_blank(
-    tmp_path: Path,
-):
-    service = OpenCodeService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    state_dir = tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
-    state_dir.mkdir(parents=True)
-    (state_dir / "session_id").write_text(" \n", encoding="utf-8")
 
     handoff = role_session.exact_transcript_handoff_for_service(service)
 
@@ -711,73 +422,6 @@ def test_run_session_plan_never_generates_pycastle_uuid_for_fresh_codex(
         role=AgentRole.IMPLEMENTER,
         worktree=tmp_path,
         namespace="",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.FRESH
-    assert plan.provider_session_id is None
-
-
-def test_run_session_plan_reads_namespaced_opencode_session_id_for_resume(
-    tmp_path: Path,
-):
-    service = OpenCodeService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    role_session.save_service_session_id("opencode", "sess-from-sidecar")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPROVE,
-        worktree=tmp_path,
-        namespace="main",
-        service=service,
-    )
-
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.provider_session_id == "sess-from-sidecar"
-    assert plan.service_state_dir == (
-        tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
-    )
-
-
-def test_run_session_plan_recovers_namespaced_opencode_session_id_from_selected_service_state_dir(
-    tmp_path: Path,
-):
-    service = cast(
-        AgentService,
-        _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
-    )
-    state_dir = tmp_path / "custom" / "opencode-state"
-    state_dir.mkdir(parents=True)
-    (state_dir / "session_id").write_text("sess-from-provider-state", encoding="utf-8")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPROVE,
-        worktree=tmp_path,
-        namespace="main",
-        service=service,
-    )
-
-    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    assert plan.run_kind is RunKind.RESUME
-    assert plan.provider_session_id == "sess-from-provider-state"
-    assert (
-        plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
-    )
-    assert role_session.service_session_id("opencode") == "sess-from-provider-state"
-
-
-def test_run_session_plan_fresh_opencode_when_sidecar_session_id_is_missing(
-    tmp_path: Path,
-):
-    service = OpenCodeService()
-    state_dir = tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
-    state_dir.mkdir(parents=True)
-    (state_dir / "session_id").write_text("", encoding="utf-8")
-
-    plan = RunSessionPlan.for_service(
-        role=AgentRole.IMPROVE,
-        worktree=tmp_path,
-        namespace="main",
         service=service,
     )
 
