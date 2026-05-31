@@ -9,6 +9,7 @@ from pycastle.agents.session_state import (
     record_observed_provider_session_id,
 )
 from pycastle.services import ClaudeService, CodexService, OpenCodeService
+from pycastle.session.agent import RunSessionPlan
 from pycastle.session import RoleSession, RunKind
 
 
@@ -174,6 +175,39 @@ def test_prepare_agent_run_session_state_resume_opencode_uses_persisted_session_
     assert (
         state.provider_state_dir_relpath == ".pycastle-session/improve/main/opencode/"
     )
+
+
+def test_prepare_agent_run_session_state_reuses_planned_opencode_session_id_on_resume_retries(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
+    state_dir.mkdir(parents=True)
+    (state_dir / "resume.jsonl").write_text("{}\n", encoding="utf-8")
+    (state_dir / "session_id").write_text("sess-persisted\n", encoding="utf-8")
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=OpenCodeService(),
+    )
+
+    (state_dir / "session_id").write_text("\n", encoding="utf-8")
+
+    state = prepare_agent_run_session_state(
+        AgentRunSessionStateRequest(
+            worktree=tmp_path,
+            role=AgentRole.IMPROVE,
+            session_namespace="main",
+            service=OpenCodeService(),
+            run_session_plan=plan,
+        )
+    )
+
+    resumable_run = state.resumable_provider_run_session()
+
+    assert resumable_run.run_kind is RunKind.RESUME
+    assert resumable_run.provider_session_id == "sess-persisted"
 
 
 def test_record_observed_provider_session_id_writes_exact_codex_thread_id_file(

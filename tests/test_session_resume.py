@@ -14,6 +14,7 @@ import pytest
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services.agent_service import AgentService
 from pycastle.services.codex_service import CodexService
+from pycastle.services.opencode_service import OpenCodeService
 from pycastle.services.provider_session_state import (
     ProviderSessionState,
     ProviderSessionStateRequest,
@@ -407,6 +408,28 @@ def test_provider_run_state_for_sidecar_backed_service_falls_back_to_fresh_witho
     )
     provider_state_dir = worktree / "custom" / "opencode-state"
     provider_state_dir.mkdir(parents=True)
+
+    provider_run_state = rs.provider_run_state_for_service(service)
+
+    assert provider_run_state == ProviderRunState(
+        run_kind=RunKind.FRESH,
+        provider_session_id=None,
+        provider_state_dir=provider_state_dir,
+        fresh_fallback_reason=ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY,
+    )
+
+
+def test_provider_run_state_for_opencode_downgrades_resumable_state_without_session_id_to_fresh(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    service = OpenCodeService()
+    provider_state_dir = worktree / ".pycastle-session" / "implementer" / "opencode"
+    provider_state_dir.mkdir(parents=True)
+    provider_state_dir.joinpath("resume.jsonl").write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
 
     provider_run_state = rs.provider_run_state_for_service(service)
 

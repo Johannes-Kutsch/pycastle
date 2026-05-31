@@ -11,6 +11,7 @@ from ..session.agent import LocalAuthSeedAction, RunSessionPlan, RunSessionPlanR
 from ..session.agent import plan_run_session as _plan_run_session
 from ..services.agent_service import AgentService
 from ..services.provider_session_state import (
+    ProviderSessionState,
     ProviderSessionStateRequest as ServiceProviderSessionStateRequest,
 )
 
@@ -112,6 +113,14 @@ class AgentRunSessionState:
         return host_provider_state_dir / "auth.json"
 
     def _resume_provider_session_state(self):
+        if self.provider_session_id is not None:
+            return ProviderSessionState(
+                run_kind=RunKind.RESUME,
+                provider_session_id=self.provider_session_id,
+                state_dir_relpath=self.provider_state_dir_relpath,
+                state_dir_path=self.service_state_dir_path,
+                exact_transcript_match=self.exact_transcript_match,
+            )
         service_state = self.role_session.service_session_state(self._plan.service)
         return self._plan.service.provider_session_state(
             ServiceProviderSessionStateRequest(

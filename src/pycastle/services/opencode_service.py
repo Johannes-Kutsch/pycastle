@@ -331,7 +331,9 @@ class OpenCodeService:
         return f"{SESSION_DIR_NAME}/{role.value}/opencode/"
 
     def is_resumable(self, state_dir: Path) -> bool:
-        return (state_dir / "session_id").is_file()
+        return (state_dir / "resume.jsonl").is_file() or (
+            state_dir / "session_id"
+        ).is_file()
 
     def valid_models(self) -> frozenset[str]:
         return frozenset(_OPENCODE_GO_MODELS)

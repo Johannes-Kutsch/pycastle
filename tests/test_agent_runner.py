@@ -2723,6 +2723,7 @@ def test_agent_runner_codex_starts_fresh_without_provider_session_id_when_local_
     ("session_id", "expected_call"),
     [
         ("sess-opencode-123", (RunKind.RESUME, "sess-opencode-123")),
+        ("", (RunKind.FRESH, None)),
         (None, (RunKind.FRESH, None)),
     ],
 )
