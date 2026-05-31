@@ -61,6 +61,13 @@ For improve-mode work the actor is typically a maintainer, a downstream Implemen
 
 This list should be extensive and cover all aspects of the change.
 
+## Novelty Check
+
+Record the novelty decision from phase 1 durably in every PRD.
+
+- For same-theme candidates, name the matching recent Improve PRDs, the material remaining friction, and why prior PRDs did not cover it.
+- For non-overlapping candidates, use this exact wording: `Recent Improve PRDs do not share this candidate's architectural theme.`
+
 ## Implementation Decisions
 
 A list of implementation decisions that were made. This can include:

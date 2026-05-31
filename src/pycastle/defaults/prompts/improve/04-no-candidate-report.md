@@ -27,6 +27,7 @@ Before filing, search for existing PRDs for this session with `[improve-{{IMPROV
 ### 1. Pull the rejected shortlist
 
 Read the rejected-candidate shortlist from your phase-1 conversation history. Do not re-scan the codebase.
+If novelty is why phase 1 emitted `NO-CANDIDATE`, keep the novelty-gate rejection reasons with the affected candidates and carry that context into the filed PRD bodies.
 
 ### 2. Prioritise and group
 
@@ -47,6 +48,7 @@ PRDs are **peer-level** — no parent/child relationships, no sub-issue registra
 ### Issue body template
 
 The body opens with a short paragraph naming the AFK-safety constraint(s) the candidate tripped, then follows the phase 2 PRD template.
+When novelty contributed to the rejection, the opening paragraph must also name the novelty-gate rejection and summarize the overlapping recent Improve PRD theme.
 
 ```
 ## Why human decision needed

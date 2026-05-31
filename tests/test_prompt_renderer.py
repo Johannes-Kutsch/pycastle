@@ -1362,6 +1362,62 @@ def test_render_shipped_improve_scan_prompt_includes_recent_improve_prd_titles()
     assert "#12 OPEN - First candidate" in result
 
 
+def test_shipped_improve_scan_prompt_defines_novelty_gate_contract():
+    text = (_SHIPPED_PROMPTS_DIR / "improve/01-scan.md").read_text(encoding="utf-8")
+
+    assert "<recent_improve_prds>" in text
+    assert "</recent_improve_prds>" in text
+    assert "novelty gate" in text
+    assert (
+        "Treat repeated domain terms, module names, and architectural themes in "
+        "recent PRD titles as negative evidence, even when the titles are not exact "
+        "matches." in text
+    )
+    assert (
+        "Allow same-theme work only when the candidate names materially unresolved "
+        "friction that prior PRDs did not address." in text
+    )
+    assert "Novelty Check" in text
+    assert "matching recent PRDs" in text
+    assert "material remaining friction" in text
+    assert "why prior PRDs did not cover it" in text
+    assert (
+        "Do not pick a weaker unrelated candidate merely to avoid repeating a recent "
+        "theme. If the strongest candidates fail AFK-safety or novelty, emit "
+        "NO-CANDIDATE." in text
+    )
+    assert (
+        "novelty-rejected shortlist candidates visible with rejection reasons" in text
+    )
+
+
+def test_shipped_improve_prd_prompt_requires_durable_novelty_check():
+    prd_text = (_SHIPPED_PROMPTS_DIR / "improve/02-prd.md").read_text(encoding="utf-8")
+    issues_text = (_SHIPPED_PROMPTS_DIR / "improve/03-issues.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "## Novelty Check" in prd_text
+    assert (
+        "Recent Improve PRDs do not share this candidate's architectural theme."
+        in prd_text
+    )
+    assert prd_text.index("## Novelty Check") < prd_text.index(
+        "## Implementation Decisions"
+    )
+    assert "## Novelty Check" not in issues_text
+
+
+def test_shipped_no_candidate_report_prompt_mentions_novelty_rejections():
+    text = (_SHIPPED_PROMPTS_DIR / "improve/04-no-candidate-report.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "novelty-gate rejection" in text
+    assert "novelty" in text
+    assert "NO-CANDIDATE" in text
+
+
 # ── No legacy standards placeholders in defaults-tree prompts ────────────────
 
 _LEGACY_STANDARDS_NAMES = {
