@@ -338,6 +338,46 @@ def test_get_safe_sha_treats_runner_failure_tuple_as_ordinary_pre_flight_failure
     assert result.issue_number == 55
     assert len(fake.preflight_calls) == 1
     assert len(fake.calls) == 1
+    assert fake.calls[0].scope_args == {
+        "CHECK_NAME": "ruff",
+        "COMMAND": "ruff check .",
+        "OUTPUT": "Command failed (exit 127): bash: ruff: command not found",
+    }
+
+
+def test_get_safe_sha_keeps_declared_source_quality_failure_on_preflight_issue_route(
+    tmp_path, git_svc, github_svc
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['ruff>=0.5']\n",
+        encoding="utf-8",
+    )
+    fake = FakeAgentRunner(
+        [IssueOutput(number=56, labels=["bug", "ready-for-human"])],
+        preflight_responses=[
+            [
+                (
+                    "ruff",
+                    "ruff check .",
+                    "src/demo.py:1:1: F401 `os` imported but unused",
+                )
+            ]
+        ],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightHITL)
+    assert result.issue_number == 56
+    assert len(fake.preflight_calls) == 1
+    assert len(fake.calls) == 1
+    assert fake.calls[0].scope_args == {
+        "CHECK_NAME": "ruff",
+        "COMMAND": "ruff check .",
+        "OUTPUT": "src/demo.py:1:1: F401 `os` imported but unused",
+    }
 
 
 # ── get_safe_sha: same-SHA cache hit ─────────────────────────────────────────
