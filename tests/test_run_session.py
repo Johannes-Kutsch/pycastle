@@ -445,6 +445,140 @@ def test_run_session_plan_never_generates_pycastle_uuid_for_fresh_opencode(
     assert plan.provider_session_id is None
 
 
+def test_codex_provider_session_state_returns_resume_decision_for_saved_sidecar(
+    tmp_path: Path,
+) -> None:
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
+        encoding="utf-8",
+    )
+    role_session.save_service_session_id("codex", "thread-from-sidecar")
+
+    decision = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/codex/",
+        )
+    )
+
+    assert decision.run_kind is RunKind.RESUME
+    assert decision.provider_session_id == "thread-from-sidecar"
+    assert (
+        getattr(decision, "state_dir_relpath") == ".pycastle-session/implementer/codex/"
+    )
+    assert getattr(decision, "state_dir_path") == state_dir
+    assert (
+        getattr(decision, "auth_seeding_requirement") is AuthSeedingRequirement.REQUIRED
+    )
+    action = getattr(decision, "auth_seed_action")
+    assert action is not None
+    assert action.source == Path.home() / ".codex" / "auth.json"
+    assert action.destination == state_dir / "auth.json"
+
+
+def test_codex_provider_session_state_recovers_unique_rollout_and_persists_sidecar(
+    tmp_path: Path,
+) -> None:
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"thread-from-rollout"}',
+                '{"type":"thread.started","thread_id":"thread-from-rollout"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    decision = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/codex/",
+        )
+    )
+
+    assert decision.run_kind is RunKind.RESUME
+    assert decision.provider_session_id == "thread-from-rollout"
+    assert role_session.service_session_id("codex") == "thread-from-rollout"
+    assert decision.persist_provider_session_id is True
+    assert decision.state_dir_relpath == ".pycastle-session/implementer/codex/"
+    assert decision.state_dir_path == state_dir
+
+
+def test_codex_provider_session_state_returns_fresh_for_ambiguous_rollouts(
+    tmp_path: Path,
+) -> None:
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-a"}\n',
+        encoding="utf-8",
+    )
+    (sessions_dir / "rollout-002.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-b"}\n',
+        encoding="utf-8",
+    )
+
+    decision = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/codex/",
+        )
+    )
+
+    assert decision.run_kind is RunKind.FRESH
+    assert decision.provider_session_id is None
+    assert role_session.service_session_id("codex") is None
+    assert decision.state_dir_relpath == ".pycastle-session/implementer/codex/"
+    assert decision.state_dir_path == state_dir
+    assert decision.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
+
+
+def test_codex_provider_session_state_exposes_auth_seed_action_for_fresh_execution(
+    tmp_path: Path,
+) -> None:
+    service = CodexService()
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+
+    decision = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=RoleSession(tmp_path, AgentRole.IMPLEMENTER),
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=False,
+            state_dir_relpath=".pycastle-session/implementer/codex/",
+        )
+    )
+
+    assert decision.run_kind is RunKind.FRESH
+    assert decision.provider_session_id is None
+    assert decision.state_dir_relpath == ".pycastle-session/implementer/codex/"
+    assert decision.state_dir_path == state_dir
+    assert decision.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
+    action = decision.auth_seed_action
+    assert action is not None
+    assert action.source == Path.home() / ".codex" / "auth.json"
+    assert action.destination == state_dir / "auth.json"
+
+
 def test_run_session_plan_requires_auth_seeding_for_fresh_codex_without_auth_json(
     tmp_path: Path,
 ):

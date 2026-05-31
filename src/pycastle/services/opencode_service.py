@@ -189,9 +189,16 @@ class OpenCodeService:
             return ProviderSessionState(
                 RunKind.RESUME,
                 request.preferred_provider_session_id,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
             )
         if not request.has_resumable_provider_state:
-            return ProviderSessionState(RunKind.FRESH, None)
+            return ProviderSessionState(
+                RunKind.FRESH,
+                None,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
+            )
 
         selection = select_resumable_provider_session_id(
             request.role_session,
@@ -201,7 +208,12 @@ class OpenCodeService:
         )
         provider_session_id = selection.provider_session_id
         if provider_session_id is None:
-            return ProviderSessionState(RunKind.FRESH, None)
+            return ProviderSessionState(
+                RunKind.FRESH,
+                None,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
+            )
 
         exact_transcript_match = False
         if request.require_exact_transcript_match:
@@ -221,6 +233,8 @@ class OpenCodeService:
         return ProviderSessionState(
             RunKind.RESUME,
             provider_session_id,
+            state_dir_relpath=request.state_dir_relpath,
+            state_dir_path=request.provider_state_dir,
             exact_transcript_match=exact_transcript_match,
             persist_provider_session_id=selection.persist_provider_session_id,
         )

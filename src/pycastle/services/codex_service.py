@@ -13,6 +13,10 @@ from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
 from ..agents.output_protocol import AgentOutputProtocolError
 from ..session import SESSION_DIR_NAME, RunKind
+from ..session._provider_session_decision import (
+    AuthSeedingRequirement,
+    LocalAuthSeedAction,
+)
 from ..session.provider_session_state import recover_state_dir_provider_session_id
 from ..session.service_resume_identity import (
     is_exact_resumable_service_session,
@@ -129,10 +133,18 @@ class CodexService:
     def provider_session_state(
         self, request: ProviderSessionStateRequest
     ) -> ProviderSessionState:
+        auth_seeding_requirement = _codex_auth_seeding_requirement(
+            request.provider_state_dir
+        )
+        auth_seed_action = _codex_auth_seed_action(request.provider_state_dir)
         if request.preferred_provider_session_id is not None:
             return ProviderSessionState(
                 RunKind.RESUME,
                 request.preferred_provider_session_id,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
+                auth_seeding_requirement=auth_seeding_requirement,
+                auth_seed_action=auth_seed_action,
             )
         saved_provider_session_id = request.role_session.service_session_id(self.name)
         if saved_provider_session_id is not None:
@@ -147,12 +159,20 @@ class CodexService:
             return ProviderSessionState(
                 RunKind.RESUME,
                 saved_provider_session_id,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
                 exact_transcript_match=exact_transcript_match,
+                auth_seeding_requirement=auth_seeding_requirement,
+                auth_seed_action=auth_seed_action,
             )
         if not request.has_resumable_provider_state:
             return ProviderSessionState(
                 RunKind.FRESH,
                 None,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
+                auth_seeding_requirement=auth_seeding_requirement,
+                auth_seed_action=auth_seed_action,
                 allow_protocol_reprompt=not request.force_resume,
             )
 
@@ -179,6 +199,10 @@ class CodexService:
             return ProviderSessionState(
                 RunKind.FRESH,
                 None,
+                state_dir_relpath=request.state_dir_relpath,
+                state_dir_path=request.provider_state_dir,
+                auth_seeding_requirement=auth_seeding_requirement,
+                auth_seed_action=auth_seed_action,
                 allow_protocol_reprompt=not request.force_resume,
             )
 
@@ -194,8 +218,12 @@ class CodexService:
         return ProviderSessionState(
             RunKind.RESUME,
             provider_session_id,
+            state_dir_relpath=request.state_dir_relpath,
+            state_dir_path=request.provider_state_dir,
             exact_transcript_match=exact_transcript_match,
             persist_provider_session_id=persist_provider_session_id,
+            auth_seeding_requirement=auth_seeding_requirement,
+            auth_seed_action=auth_seed_action,
         )
 
     def valid_models(self) -> frozenset[str]:
@@ -330,3 +358,26 @@ class CodexService:
                         yield classified
                     _log.warning("codex error: %s", message)
                 return
+
+
+def _codex_auth_seeding_requirement(
+    provider_state_dir: Path | None,
+) -> AuthSeedingRequirement:
+    if provider_state_dir is None or (provider_state_dir / "auth.json").exists():
+        return AuthSeedingRequirement.NOT_REQUIRED
+    return AuthSeedingRequirement.REQUIRED
+
+
+def _codex_auth_seed_action(
+    provider_state_dir: Path | None,
+) -> LocalAuthSeedAction | None:
+    if _codex_auth_seeding_requirement(provider_state_dir) is (
+        AuthSeedingRequirement.NOT_REQUIRED
+    ):
+        return None
+    if provider_state_dir is None:
+        return None
+    return LocalAuthSeedAction(
+        source=Path.home() / ".codex" / "auth.json",
+        destination=provider_state_dir / "auth.json",
+    )

@@ -20,6 +20,9 @@ from .resume import (
     RoleSession,
     _normalize_state_dir_relpath,
 )
+from ..services.provider_session_state import (
+    ProviderSessionStateRequest as ServiceProviderSessionStateRequest,
+)
 
 if TYPE_CHECKING:
     from ..services.agent_service import AgentService
@@ -113,6 +116,20 @@ def plan_provider_session(
     if state_dir_relpath is not None and state_dir_relpath != raw_state_dir_relpath:
         host_state_dir = request.worktree / state_dir_relpath.rstrip("/")
 
+    provider_session_state = request.service.provider_session_state(
+        ServiceProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=host_state_dir,
+            has_resumable_provider_state=service_state.has_resumable_provider_state,
+            state_dir_relpath=state_dir_relpath,
+            require_exact_transcript_match=True,
+            preferred_provider_session_id=(
+                role_session.session_uuid()
+                if request.service.name == "claude"
+                else None
+            ),
+        )
+    )
     exact_transcript_handoff = role_session.exact_transcript_handoff_for_service(
         request.service
     )
@@ -123,53 +140,16 @@ def plan_provider_session(
     return ProviderSessionDecision(
         run_kind=provider_identity.run_kind,
         provider_session_id=provider_identity.provider_session_id,
-        state_dir_relpath=state_dir_relpath,
-        state_dir_path=host_state_dir,
+        state_dir_relpath=provider_session_state.state_dir_relpath or state_dir_relpath,
+        state_dir_path=provider_session_state.state_dir_path or host_state_dir,
         service_state_dir=service_state.state_dir,
         recovered_session_id_persistence=recovered_session_id_persistence,
         exact_transcript_match=exact_transcript_handoff.is_eligible,
-        auth_seeding_requirement=_codex_auth_seeding_requirement(
-            request.service.name,
-            host_state_dir,
+        auth_seeding_requirement=(
+            provider_session_state.auth_seeding_requirement
+            or AuthSeedingRequirement.NOT_REQUIRED
         ),
-        auth_seed_action=_codex_auth_seed_action(
-            request.service.name,
-            host_state_dir,
-        ),
-    )
-
-
-def _requires_codex_auth_seed(
-    service_name: str,
-    host_state_dir: Path | None,
-) -> bool:
-    return (
-        service_name == "codex"
-        and host_state_dir is not None
-        and not (host_state_dir / "auth.json").exists()
-    )
-
-
-def _codex_auth_seeding_requirement(
-    service_name: str,
-    host_state_dir: Path | None,
-) -> AuthSeedingRequirement:
-    if _requires_codex_auth_seed(service_name, host_state_dir):
-        return AuthSeedingRequirement.REQUIRED
-    return AuthSeedingRequirement.NOT_REQUIRED
-
-
-def _codex_auth_seed_action(
-    service_name: str,
-    host_state_dir: Path | None,
-) -> LocalAuthSeedAction | None:
-    if not _requires_codex_auth_seed(service_name, host_state_dir):
-        return None
-    if host_state_dir is None:
-        return None
-    return LocalAuthSeedAction(
-        source=Path.home() / ".codex" / "auth.json",
-        destination=host_state_dir / "auth.json",
+        auth_seed_action=provider_session_state.auth_seed_action,
     )
 
 

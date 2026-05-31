@@ -108,6 +108,7 @@ class ExactTranscriptHandoff:
 class ServiceSessionState:
     state_dir: Path | None
     has_resumable_provider_state: bool
+    state_dir_relpath: str | None = None
 
 
 def is_stage_done_for(worktree: Path, role: AgentRole) -> bool:
@@ -291,6 +292,7 @@ class RoleSession:
             has_resumable_provider_state=(
                 state_dir is not None and service.is_resumable(state_dir)
             ),
+            state_dir_relpath=state_dir_relpath,
         )
 
     def provider_run_state_for_service(
@@ -303,6 +305,7 @@ class RoleSession:
                 role_session=self,
                 provider_state_dir=state.state_dir,
                 has_resumable_provider_state=state.has_resumable_provider_state,
+                state_dir_relpath=state.state_dir_relpath,
                 preferred_provider_session_id=(
                     self.session_uuid() if service.name == "claude" else None
                 ),
@@ -354,6 +357,7 @@ class RoleSession:
                 role_session=self,
                 provider_state_dir=state.state_dir,
                 has_resumable_provider_state=state.has_resumable_provider_state,
+                state_dir_relpath=state.state_dir_relpath,
                 require_exact_transcript_match=True,
                 preferred_provider_session_id=(
                     self.session_uuid() if service.name == "claude" else None

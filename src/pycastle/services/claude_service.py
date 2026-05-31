@@ -245,6 +245,8 @@ class ClaudeService:
         return ProviderSessionState(
             run_kind=run_kind,
             provider_session_id=provider_session_id,
+            state_dir_relpath=request.state_dir_relpath,
+            state_dir_path=request.provider_state_dir,
             exact_transcript_match=exact_transcript_match,
         )
 

@@ -149,6 +149,7 @@ class PreparedProviderSessionState:
                 role_session=self.role_session,
                 provider_state_dir=service_state.state_dir,
                 has_resumable_provider_state=service_state.has_resumable_provider_state,
+                state_dir_relpath=service_state.state_dir_relpath,
                 preferred_provider_session_id=self.provider_session_id,
                 force_resume=True,
             )
