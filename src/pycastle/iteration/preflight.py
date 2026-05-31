@@ -11,7 +11,6 @@ from ..agents.output_protocol import (
 )
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..errors import SetupPhaseError
 from ..prompts.pipeline import PromptTemplate
 from ..services import (
     GitCommandError,
@@ -30,10 +29,8 @@ from ..issue_readiness import (
 from ..display.status_display import StatusDisplay
 from ._utils import _wait_for_clean_working_tree
 from ..preflight_tool_failure_analysis import (
-    MissingDeclaredTool,
     PreflightCommandFailure,
-    classify_preflight_tool_failure,
-    load_python_dependency_metadata,
+    setup_phase_error_for_preflight_command_failures,
 )
 from .. import _time as _time_module
 
@@ -256,39 +253,27 @@ class PreflightCache:
             return override
         return registry.resolve(override, _time_module.now_local())
 
-    def _raise_if_missing_declared_tool(
+    def _preflight_command_failures(
         self,
-        failures: tuple[tuple[str, str, str], ...],
-        project_root: Path,
-    ) -> None:
-        python_dependency_metadata = load_python_dependency_metadata(project_root)
-        for check_name, command, output in failures:
-            classification = classify_preflight_tool_failure(
-                python_dependency_metadata,
-                PreflightCommandFailure(
-                    check_name=check_name,
-                    command=command,
-                    output=output,
-                ),
+        failures: Sequence[tuple[str, str, str]],
+    ) -> tuple[PreflightCommandFailure, ...]:
+        return tuple(
+            PreflightCommandFailure(
+                check_name=check_name,
+                command=command,
+                output=output,
             )
-            if isinstance(classification, MissingDeclaredTool):
-                raise SetupPhaseError(
-                    "preflight",
-                    "Missing expected preflight tool "
-                    f"'{classification.tool}' declared in "
-                    f"{classification.dependency_source}.",
-                    command=command,
-                    output=output,
-                )
+            for check_name, command, output in failures
+        )
 
     async def _handle_failure(
         self,
-        failures: tuple[tuple[str, str, str], ...],
+        failures: tuple[PreflightCommandFailure, ...],
         deps: _PreflightDeps,
         mount_path: Path,
         sha: str,
     ) -> PreflightHITL | PreflightAFK:
-        check_name, command, output = failures[0]
+        failure = failures[0]
         override = self._resolved_preflight_issue_override(deps)
         agent_result = await deps.agent_runner.run(
             RunRequest(
@@ -297,15 +282,15 @@ class PreflightCache:
                 mount_path=mount_path,
                 role=AgentRole.PREFLIGHT_ISSUE,
                 scope_args={
-                    "CHECK_NAME": check_name,
-                    "COMMAND": command,
-                    "OUTPUT": output,
+                    "CHECK_NAME": failure.check_name,
+                    "COMMAND": failure.command,
+                    "OUTPUT": failure.output,
                 },
                 model=override.model,
                 effort=override.effort,
                 service=override.service,
                 status_display=deps.status_display,
-                work_body=f"reporting {check_name} issue",
+                work_body=f"reporting {failure.check_name} issue",
             )
         )
         if not isinstance(agent_result, IssueOutput):
@@ -361,12 +346,15 @@ class PreflightCache:
 
                 result: PreflightResult
                 if failures:
-                    self._raise_if_missing_declared_tool(
-                        tuple(failures), deps.repo_root
+                    command_failures = self._preflight_command_failures(failures)
+                    setup_error = setup_phase_error_for_preflight_command_failures(
+                        deps.repo_root, command_failures
                     )
+                    if setup_error is not None:
+                        raise setup_error
                     try:
                         result = await self._handle_failure(
-                            tuple(failures), deps, mount_path, sha
+                            command_failures, deps, mount_path, sha
                         )
                     except AgentOutputProtocolError as parse_exc:
                         raise RuntimeError(str(parse_exc)) from parse_exc

@@ -5,6 +5,9 @@ import re
 import shlex
 import tomllib
 from pathlib import Path
+from typing import Sequence
+
+from .errors import SetupPhaseError
 
 _DECLARED_TOOL_MISSING_PATTERNS = (
     re.compile(r"\b(?P<tool>[A-Za-z0-9_.-]+): command not found\b", re.IGNORECASE),
@@ -141,3 +144,24 @@ def classify_preflight_tool_failure(
     ):
         return MissingDeclaredTool(tool=tool, dependency_source=metadata.source)
     return OrdinaryCheckFailure(tool=tool)
+
+
+def setup_phase_error_for_preflight_command_failures(
+    project_root: Path,
+    failures: Sequence[PreflightCommandFailure],
+) -> SetupPhaseError | None:
+    python_dependency_metadata = load_python_dependency_metadata(project_root)
+    for failure in failures:
+        classification = classify_preflight_tool_failure(
+            python_dependency_metadata, failure
+        )
+        if isinstance(classification, MissingDeclaredTool):
+            return SetupPhaseError(
+                "preflight",
+                "Missing expected preflight tool "
+                f"'{classification.tool}' declared in "
+                f"{classification.dependency_source}.",
+                command=failure.command,
+                output=failure.output,
+            )
+    return None
