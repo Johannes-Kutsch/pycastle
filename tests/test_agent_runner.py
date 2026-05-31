@@ -2376,6 +2376,213 @@ def test_agent_runner_codex_resume_with_provider_auth_keeps_existing_auth_withou
     )
 
 
+def test_agent_runner_claude_resumes_with_derived_role_session_uuid_from_local_state(
+    tmp_path: Path,
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    _seed_claude_resumable_state(
+        tmp_path,
+        role=AgentRole.IMPROVE,
+        namespace="main",
+    )
+    work_calls: list[tuple[RunKind, str | None]] = []
+    expected_session_id = RoleSession(
+        tmp_path,
+        AgentRole.IMPROVE,
+        "main",
+    ).session_uuid()
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"claude": ClaudeService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Improve",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPROVE,
+                    service="claude",
+                    session_namespace="main",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [(RunKind.RESUME, expected_session_id)]
+
+
+def test_agent_runner_codex_resumes_with_recovered_thread_id_from_local_rollout_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+    _seed_codex_rollout_state(
+        tmp_path,
+        role=AgentRole.REVIEWER,
+        thread_id="thread-from-rollout",
+    )
+    work_calls: list[tuple[RunKind, str | None]] = []
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"codex": CodexService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Review",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.REVIEWER,
+                    service="codex",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [(RunKind.RESUME, "thread-from-rollout")]
+
+
+def test_agent_runner_codex_starts_fresh_without_provider_session_id_when_local_thread_identity_is_ambiguous(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    home = tmp_path / "home"
+    host_auth = home / ".codex" / "auth.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text('{"mode":"oauth"}', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home)
+    _seed_ambiguous_codex_rollout_state(tmp_path, role=AgentRole.REVIEWER)
+    work_calls: list[tuple[RunKind, str | None]] = []
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"codex": CodexService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Review",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.REVIEWER,
+                    service="codex",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [(RunKind.FRESH, None)]
+
+
+@pytest.mark.parametrize(
+    ("session_id", "expected_call"),
+    [
+        ("sess-opencode-123", (RunKind.RESUME, "sess-opencode-123")),
+        (None, (RunKind.FRESH, None)),
+    ],
+)
+def test_agent_runner_opencode_chooses_resume_only_when_local_session_id_sidecar_exists(
+    tmp_path: Path,
+    session_id: str | None,
+    expected_call: tuple[RunKind, str | None],
+):
+    from unittest.mock import patch
+    from pycastle.infrastructure.container_runner import ContainerRunner
+
+    _seed_opencode_state(
+        tmp_path,
+        role=AgentRole.IMPROVE,
+        namespace="main",
+        session_id=session_id,
+    )
+    work_calls: list[tuple[RunKind, str | None]] = []
+
+    async def _fake_work(
+        _role, _prompt, *, run_kind, session_uuid, on_provider_session_id=None
+    ):
+        del on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        return CommitMessageOutput(message="done")
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_setup_docker_client(),
+        service_registry={"opencode": OpenCodeService()},
+    )
+
+    with patch.object(ContainerRunner, "work", side_effect=_fake_work):
+        result = asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Improve",
+                    template=_PLAN_TEMPLATE,
+                    scope_args=_PLAN_SCOPE_ARGS,
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPROVE,
+                    service="opencode",
+                    session_namespace="main",
+                )
+            )
+        )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert work_calls == [expected_call]
+
+
 def test_fake_agent_runner_accepts_run_request_and_records_it():
     completion = CompletionOutput()
     fake = FakeAgentRunner([completion])
@@ -2394,6 +2601,70 @@ def _seed_implementer_session(tmp_path: Path) -> None:
     claude_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
     claude_dir.mkdir(parents=True)
     (claude_dir / "session.json").write_text("{}")
+
+
+def _seed_claude_resumable_state(
+    tmp_path: Path,
+    *,
+    role: AgentRole,
+    namespace: str = "",
+) -> None:
+    claude_dir = RoleSession(tmp_path, role, namespace).path / "claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "session.json").write_text("{}")
+
+
+def _seed_codex_rollout_state(
+    tmp_path: Path,
+    *,
+    role: AgentRole,
+    thread_id: str,
+    namespace: str = "",
+) -> None:
+    codex_dir = RoleSession(tmp_path, role, namespace).path / "codex"
+    rollout_dir = codex_dir / "sessions" / "2026" / "05" / "31"
+    rollout_dir.mkdir(parents=True)
+    (codex_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        json.dumps({"type": "thread.started", "thread_id": thread_id}) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _seed_ambiguous_codex_rollout_state(
+    tmp_path: Path,
+    *,
+    role: AgentRole,
+    namespace: str = "",
+) -> None:
+    codex_dir = RoleSession(tmp_path, role, namespace).path / "codex"
+    rollout_dir = codex_dir / "sessions" / "2026" / "05" / "31"
+    rollout_dir.mkdir(parents=True)
+    (codex_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": "thread-a"}),
+                json.dumps({"type": "thread.started", "thread_id": "thread-b"}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _seed_opencode_state(
+    tmp_path: Path,
+    *,
+    role: AgentRole,
+    session_id: str | None,
+    namespace: str = "",
+) -> None:
+    opencode_dir = RoleSession(tmp_path, role, namespace).path / "opencode"
+    opencode_dir.mkdir(parents=True)
+    (opencode_dir / "resume.jsonl").write_text("{}\n", encoding="utf-8")
+    if session_id is not None:
+        (opencode_dir / "session_id").write_text(f"{session_id}\n", encoding="utf-8")
 
 
 # ── AgentRunner: non-typed Resume retry ───────────────────────────────────────
