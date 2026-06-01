@@ -122,3 +122,75 @@ def test_run_host_check_run_executes_passing_checks_in_checked_sha_worktree_and_
     out = capsys.readouterr()
     assert "passing stdout" not in out.out
     assert "passing stderr" not in out.out
+
+
+def test_run_host_check_run_collects_structured_failed_checks_without_leaking_command_text(
+    tmp_path,
+):
+    from pycastle.commands import host_check_run as run_mod
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+
+    seen_checks: list[tuple[str, str, Path]] = []
+    transient_shas: list[str] = []
+    multi_line_command = "python -c lint\npython -c more-lint"
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        seen_checks.append((name, command, cwd))
+        if name == "format":
+            return
+        raise RuntimeError(
+            f"Host check {name!r} failed: {command}\n{name} stdout\n{name} stderr"
+        )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_transient_worktree(name: str, *, sha: str | None, deps):
+        assert name == "host-check-checked"
+        assert deps.repo_root == tmp_path
+        transient_shas.append(sha or "")
+        return _TransientWorktree()
+
+    result = asyncio.run(
+        run_mod.run_host_check_run(
+            host_checks=(
+                ("lint", multi_line_command),
+                ("format", "python -c format"),
+                ("tests", "python -c tests"),
+            ),
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            run_host_check=fake_run_host_check,
+            transient_worktree_factory=fake_transient_worktree,
+        )
+    )
+
+    assert result == run_mod.HostCheckRunFailed(
+        checked_sha="checked-sha",
+        failures=(
+            run_mod.HostCheckFailure(
+                name="lint",
+                command=multi_line_command,
+                output="lint stdout\nlint stderr",
+            ),
+            run_mod.HostCheckFailure(
+                name="tests",
+                command="python -c tests",
+                output="tests stdout\ntests stderr",
+            ),
+        ),
+        issue_numbers=(),
+    )
+    assert seen_checks == [
+        ("lint", multi_line_command, tmp_path),
+        ("format", "python -c format", tmp_path),
+        ("tests", "python -c tests", tmp_path),
+    ]
+    assert transient_shas == ["checked-sha"]

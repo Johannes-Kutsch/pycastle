@@ -11,6 +11,15 @@ from ..infrastructure.worktree import transient_worktree
 from ..services import GitService
 
 
+class HostCheckFailedError(RuntimeError):
+    def __init__(self, *, name: str, command: str, output: str) -> None:
+        self.name = name
+        self.command = command
+        self.output = output
+        detail = f"\n{output}" if output else ""
+        super().__init__(f"Host check {name!r} failed: {command}{detail}")
+
+
 @dataclass(frozen=True)
 class HostCheckFailure:
     name: str
@@ -50,17 +59,22 @@ def _run_host_check(name: str, command: str, cwd: Path) -> None:
     if result.returncode == 0:
         return
     output = (result.stdout + result.stderr).strip()
-    raise RuntimeError(f"Host check {name!r} failed: {command}\n{output}")
+    raise HostCheckFailedError(name=name, command=command, output=output)
 
 
 def _failure_from_exception(
     name: str, command: str, exc: RuntimeError
 ) -> HostCheckFailure:
+    if isinstance(exc, HostCheckFailedError):
+        return HostCheckFailure(
+            name=exc.name,
+            command=exc.command,
+            output=exc.output.strip(),
+        )
+
     text = str(exc)
-    if "\n" in text:
-        _, output = text.split("\n", 1)
-    else:
-        output = ""
+    prefix = f"Host check {name!r} failed: {command}"
+    output = text.removeprefix(prefix).lstrip("\n")
     return HostCheckFailure(name=name, command=command, output=output.strip())
 
 

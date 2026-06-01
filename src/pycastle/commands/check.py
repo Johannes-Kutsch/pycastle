@@ -27,6 +27,7 @@ from ..prompts.pipeline import PromptTemplate
 from ..services import GitService, GithubService, ServiceRegistry
 from .host_check_run import (
     HostCheckFailure,
+    HostCheckFailedError,
     HostCheckRunFailed,
     HostCheckRunOutcome,
     HostCheckRunPassed,
@@ -39,15 +40,6 @@ class _CheckDeps:
     repo_root: Path
     cfg: Config
     git_svc: GitService
-
-
-class HostCheckFailedError(RuntimeError):
-    def __init__(self, *, name: str, command: str, output: str) -> None:
-        self.name = name
-        self.command = command
-        self.output = output
-        detail = f"\n{output}" if output else ""
-        super().__init__(f"Host check {name!r} failed: {command}{detail}")
 
 
 def _surface_current_host_check(status_display: StatusDisplay, name: str) -> None:
