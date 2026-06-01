@@ -60,7 +60,7 @@ def _failure_from_exception(
     if "\n" in text:
         _, output = text.split("\n", 1)
     else:
-        output = text
+        output = ""
     return HostCheckFailure(name=name, command=command, output=output.strip())
 
 
