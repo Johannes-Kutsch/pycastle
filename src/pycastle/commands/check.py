@@ -30,6 +30,7 @@ from .host_check_run import (
     HostCheckRunFailed,
     HostCheckRunOutcome,
     HostCheckRunPassed,
+    prepare_host_check_run,
 )
 
 
@@ -212,13 +213,7 @@ def main(
             kind="phase",
             must_close=True,
         ) as row:
-            git_svc.pull_with_merge_fallback(repo_root)
-            if not git_svc.is_working_tree_clean(repo_root):
-                raise RuntimeError(
-                    "Working tree must be clean before running host checks."
-                )
-
-            sha = git_svc.get_head_sha(repo_root)
+            sha = prepare_host_check_run(git_svc=git_svc, repo_root=repo_root)
             deps = _CheckDeps(repo_root=repo_root, cfg=resolved_cfg, git_svc=git_svc)
 
             async with transient_worktree(
