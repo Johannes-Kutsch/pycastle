@@ -223,15 +223,8 @@ def refresh() -> None:
         )
         sys.exit(1)
 
-    overwrote = [
-        (entry.status, entry.path) for entry in report if entry.status == "overwrote"
-    ]
-    created = any(entry.status == "created" for entry in report)
-    if overwrote:
-        for verb, path in sorted(overwrote, key=lambda x: x[1]):
-            print(f"{verb} {path}")
-    elif not created:
-        print("pycastle directory is already up to date.")
+    for line in report.display_lines():
+        print(line)
 
 
 def main(scope: Literal["global", "local"] | None = None) -> None:

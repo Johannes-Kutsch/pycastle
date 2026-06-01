@@ -5,7 +5,7 @@ import stat
 from dataclasses import dataclass
 from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Literal
+from typing import Literal, overload
 
 ScaffoldStatus = Literal["created", "overwrote", "unchanged", "preserved"]
 
@@ -28,6 +28,43 @@ class ScaffoldArtifactReport:
 
 
 @dataclass(frozen=True)
+class ScaffoldRefreshReport:
+    artifacts: tuple[ScaffoldArtifactReport, ...]
+
+    def __iter__(self):
+        return iter(self.artifacts)
+
+    def __len__(self) -> int:
+        return len(self.artifacts)
+
+    @overload
+    def __getitem__(self, index: int) -> ScaffoldArtifactReport: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> tuple[ScaffoldArtifactReport, ...]: ...
+
+    def __getitem__(
+        self, index: int | slice
+    ) -> ScaffoldArtifactReport | tuple[ScaffoldArtifactReport, ...]:
+        return self.artifacts[index]
+
+    def display_lines(self) -> tuple[str, ...]:
+        overwrote_paths = sorted(
+            entry.path for entry in self.artifacts if entry.status == "overwrote"
+        )
+        if overwrote_paths:
+            return tuple(f"overwrote {path}" for path in overwrote_paths)
+        if self.is_up_to_date():
+            return ("pycastle directory is already up to date.",)
+        return ()
+
+    def is_up_to_date(self) -> bool:
+        return not any(
+            entry.status in {"created", "overwrote"} for entry in self.artifacts
+        )
+
+
+@dataclass(frozen=True)
 class InitScaffold:
     pycastle_dir: Path
     pycastle_home: Path
@@ -42,7 +79,7 @@ class InitScaffold:
         for rel in sorted(MANAGED_SCAFFOLD_ALLOWLIST):
             self._copy_default(rel, self.pycastle_dir / rel)
 
-    def refresh(self) -> tuple[ScaffoldArtifactReport, ...]:
+    def refresh(self) -> ScaffoldRefreshReport:
         self.pycastle_dir.mkdir(parents=True, exist_ok=True)
 
         config_example_path = self.pycastle_dir / "config.py.example"
@@ -80,7 +117,7 @@ class InitScaffold:
             if (self.pycastle_dir / rel).exists():
                 report.append(ScaffoldArtifactReport(status="preserved", path=rel))
 
-        return tuple(report)
+        return ScaffoldRefreshReport(tuple(report))
 
     def _default_path(self, rel: str) -> Traversable:
         default = self.defaults
