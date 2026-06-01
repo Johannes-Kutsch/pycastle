@@ -272,7 +272,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         )
 
     try:
-        scaffold.install_defaults()
+        scaffold.refresh()
     except Exception as e:
         click.echo(
             click.style(f"Error: could not write pycastle scaffold — {e}", fg="red"),

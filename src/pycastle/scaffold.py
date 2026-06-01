@@ -71,15 +71,16 @@ class InitScaffold:
     defaults: Traversable
 
     def install_defaults(self) -> None:
-        self.pycastle_dir.mkdir(parents=True, exist_ok=True)
-        self._write_config_example(self.pycastle_dir)
-        if (self.pycastle_home / "config.py.example").exists():
-            self._write_config_example(self.pycastle_home)
-
-        for rel in sorted(MANAGED_SCAFFOLD_ALLOWLIST):
-            self._copy_default(rel, self.pycastle_dir / rel)
+        self._apply_managed_scaffold(include_preserved=False)
 
     def refresh(self) -> ScaffoldRefreshReport:
+        return ScaffoldRefreshReport(
+            tuple(self._apply_managed_scaffold(include_preserved=True))
+        )
+
+    def _apply_managed_scaffold(
+        self, *, include_preserved: bool
+    ) -> list[ScaffoldArtifactReport]:
         self.pycastle_dir.mkdir(parents=True, exist_ok=True)
 
         config_example_path = self.pycastle_dir / "config.py.example"
@@ -113,11 +114,12 @@ class InitScaffold:
             )
             self._copy_default(rel, target)
 
-        for rel in ("config.py", ".env"):
-            if (self.pycastle_dir / rel).exists():
-                report.append(ScaffoldArtifactReport(status="preserved", path=rel))
+        if include_preserved:
+            for rel in ("config.py", ".env"):
+                if (self.pycastle_dir / rel).exists():
+                    report.append(ScaffoldArtifactReport(status="preserved", path=rel))
 
-        return ScaffoldRefreshReport(tuple(report))
+        return report
 
     def _default_path(self, rel: str) -> Traversable:
         default = self.defaults
