@@ -30,7 +30,7 @@ from .host_check_run import (
     HostCheckRunFailed,
     HostCheckRunOutcome,
     HostCheckRunPassed,
-    prepare_host_check_run,
+    run_host_check_run,
 )
 
 
@@ -61,19 +61,6 @@ def _surface_failed_host_checks(
 ) -> None:
     for failure in failures:
         status_display.print("Host Check", f"failed {failure.name}", style="error")
-
-
-def _failure_from_exception(
-    name: str, command: str, exc: RuntimeError
-) -> HostCheckFailure:
-    if isinstance(exc, HostCheckFailedError):
-        return HostCheckFailure(name=exc.name, command=exc.command, output=exc.output)
-    text = str(exc)
-    if "\n" in text:
-        _, output = text.split("\n", 1)
-    else:
-        output = text
-    return HostCheckFailure(name=name, command=command, output=output.strip())
 
 
 def _run_host_check(name: str, command: str, cwd: Path) -> None:
@@ -213,63 +200,69 @@ def main(
             kind="phase",
             must_close=True,
         ) as row:
-            sha = prepare_host_check_run(git_svc=git_svc, repo_root=repo_root)
-            deps = _CheckDeps(repo_root=repo_root, cfg=resolved_cfg, git_svc=git_svc)
-
-            async with transient_worktree(
-                f"host-check-{sha[:7]}", sha=sha, deps=deps
-            ) as path:
-                failures: list[HostCheckFailure] = []
-                for name, command in resolved_cfg.host_checks:
-                    _surface_current_host_check(resolved_status_display, name)
-                    try:
-                        _run_host_check(name, command, path)
-                    except RuntimeError as exc:
-                        failures.append(_failure_from_exception(name, command, exc))
-                if failures:
-                    _surface_failed_host_checks(resolved_status_display, failures)
-                    resolved_agent_runner = agent_runner
-                    resolved_service_registry = service_registry
-                    if resolved_agent_runner is None:
-                        (
-                            resolved_agent_runner,
-                            resolved_service_registry,
-                        ) = _resolve_agent_runner(resolved_cfg, git_svc)
-                    resolved_github_service = github_service or _resolve_github_service(
-                        repo_root, resolved_cfg, git_svc
-                    )
-                    issue_numbers = []
-                    for failure in failures:
-                        try:
-                            issue_numbers.append(
-                                await _file_host_check_issue(
-                                    failure=failure,
-                                    mount_path=path,
-                                    sha=sha,
-                                    cfg=resolved_cfg,
-                                    github_svc=resolved_github_service,
-                                    agent_runner=resolved_agent_runner,
-                                    status_display=resolved_status_display,
-                                    service_registry=resolved_service_registry,
-                                )
-                            )
-                        except SetupPhaseError as exc:
-                            raise _preserve_host_check_context(exc, failure) from exc
-                    row.close(
-                        f"failed {failures[0].name}",
-                        shutdown_style="error",
-                    )
-                    issue_numbers_tuple = tuple(issue_numbers)
-                    joined = ", ".join(f"#{number}" for number in issue_numbers_tuple)
-                    print(f"Host checks filed or updated issues: {joined}")
-                    sys.stdout.flush()
-                    return HostCheckRunFailed(
-                        checked_sha=sha,
-                        failures=tuple(failures),
-                        issue_numbers=issue_numbers_tuple,
-                    )
+            outcome = await run_host_check_run(
+                host_checks=resolved_cfg.host_checks,
+                git_svc=git_svc,
+                repo_root=repo_root,
+                on_check_start=lambda name: _surface_current_host_check(
+                    resolved_status_display, name
+                ),
+                run_host_check=_run_host_check,
+                transient_worktree_factory=transient_worktree,
+            )
+            if isinstance(outcome, HostCheckRunPassed):
                 row.close("finished")
-                return HostCheckRunPassed(checked_sha=sha)
+                return outcome
+
+            _surface_failed_host_checks(resolved_status_display, list(outcome.failures))
+            resolved_agent_runner = agent_runner
+            resolved_service_registry = service_registry
+            if resolved_agent_runner is None:
+                (
+                    resolved_agent_runner,
+                    resolved_service_registry,
+                ) = _resolve_agent_runner(resolved_cfg, git_svc)
+            resolved_github_service = github_service or _resolve_github_service(
+                repo_root, resolved_cfg, git_svc
+            )
+
+            deps = _CheckDeps(repo_root=repo_root, cfg=resolved_cfg, git_svc=git_svc)
+            issue_numbers = []
+            async with transient_worktree(
+                f"host-check-{outcome.checked_sha[:7]}",
+                sha=outcome.checked_sha,
+                deps=deps,
+            ) as path:
+                for failure in outcome.failures:
+                    try:
+                        issue_numbers.append(
+                            await _file_host_check_issue(
+                                failure=failure,
+                                mount_path=path,
+                                sha=outcome.checked_sha,
+                                cfg=resolved_cfg,
+                                github_svc=resolved_github_service,
+                                agent_runner=resolved_agent_runner,
+                                status_display=resolved_status_display,
+                                service_registry=resolved_service_registry,
+                            )
+                        )
+                    except SetupPhaseError as exc:
+                        raise _preserve_host_check_context(exc, failure) from exc
+
+            row.close(
+                f"failed {outcome.failures[0].name}",
+                shutdown_style="error",
+            )
+            issue_numbers_tuple = tuple(issue_numbers)
+            joined = ", ".join(f"#{number}" for number in issue_numbers_tuple)
+            print(f"Host checks filed or updated issues: {joined}")
+            sys.stdout.flush()
+            return HostCheckRunFailed(
+                checked_sha=outcome.checked_sha,
+                failures=outcome.failures,
+                issue_numbers=issue_numbers_tuple,
+            )
 
     outcome = asyncio.run(_run_checks())
     if isinstance(outcome, HostCheckRunPassed):
