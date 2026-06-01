@@ -1,3 +1,5 @@
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -82,14 +84,13 @@ def test_init_scaffold_refresh_reports_overwrote_unchanged_and_preserved_statuse
         ("overwrote", "setup/cron.sh"),
         ("preserved", "config.py"),
         ("preserved", ".env"),
-        ("preserved", "prompts/plan.md"),
     ]
     assert (pycastle_dir / "config.py").read_text() == "# user-owned config\n"
     assert (pycastle_dir / ".env").read_text() == "GH_TOKEN=secret\n"
     assert (pycastle_dir / "prompts" / "plan.md").read_text() == "user override\n"
 
 
-def test_init_scaffold_refresh_preserves_non_managed_artifacts_and_reports_them(
+def test_init_scaffold_refresh_preserves_non_managed_artifacts_without_reporting_them(
     init_scaffold: InitScaffold,
 ):
     pycastle_dir = init_scaffold.pycastle_dir
@@ -109,9 +110,6 @@ def test_init_scaffold_refresh_preserves_non_managed_artifacts_and_reports_them(
         ("created", "setup/cron-install.sh"),
         ("created", "setup/cron-uninstall.sh"),
         ("created", "setup/cron.sh"),
-        ("preserved", "Dockerfile"),
-        ("preserved", "__pycache__/config.cpython-313.pyc"),
-        ("preserved", "prompts/coordination.md"),
     ]
     assert (
         pycastle_dir / "prompts" / "coordination.md"
@@ -120,6 +118,25 @@ def test_init_scaffold_refresh_preserves_non_managed_artifacts_and_reports_them(
     assert (
         pycastle_dir / "__pycache__" / "config.cpython-313.pyc"
     ).read_bytes() == b"\0pyc cache"
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="POSIX executable bit not meaningful on Windows"
+)
+def test_init_scaffold_refresh_marks_setup_scaffold_scripts_executable(
+    init_scaffold: InitScaffold,
+):
+    pycastle_dir = init_scaffold.pycastle_dir
+
+    init_scaffold.refresh(config_example_text="example = 1\n")
+
+    for rel_path in (
+        "setup/cron.sh",
+        "setup/cron-install.sh",
+        "setup/cron-uninstall.sh",
+    ):
+        mode = (pycastle_dir / rel_path).stat().st_mode
+        assert mode & stat.S_IXUSR
 
 
 def test_init_scaffold_install_defaults_refreshes_existing_global_config_example(
