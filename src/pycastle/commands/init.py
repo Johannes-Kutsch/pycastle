@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 import os
 import re
-import stat
 import sys
 from importlib.resources import files
 from importlib.resources.abc import Traversable
@@ -16,13 +15,7 @@ from ..config.loader import (
     derive_docker_image_name,
     resolve_global_dir,
 )
-
-_INIT_REFRESHED_FILES = {
-    ".gitignore",
-    "setup/cron.sh",
-    "setup/cron-install.sh",
-    "setup/cron-uninstall.sh",
-}
+from ..scaffold import InitScaffold
 
 _ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
 _OPENCODE_ENV_TEMPLATE = "OPENCODE_GO_API_KEY=\n"
@@ -103,7 +96,9 @@ def _parse_stage_override_services(node: ast.AST) -> tuple[str, ...]:
     return tuple(services)
 
 
-def _load_bundled_default_stage_chains(pkg: Traversable) -> tuple[tuple[str, ...], ...]:
+def _load_bundled_default_stage_chains(
+    pkg: Traversable,
+) -> tuple[tuple[str, ...], ...]:
     tree = ast.parse((pkg / "config.py").read_text())
     chains: list[tuple[str, ...]] = []
     for node in tree.body:
@@ -157,30 +152,6 @@ def _read_env_values(env_file: Path) -> dict[str, str]:
         if value:
             out[key] = value
     return out
-
-
-def _pkg_path(pkg: Traversable, rel: str) -> Traversable:
-    src = pkg
-    for part in rel.split("/"):
-        src = src / part
-    return src
-
-
-def _copy_template(rel: str, target: Path, pkg: Traversable) -> None:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    src = _pkg_path(pkg, rel)
-    try:
-        target.write_bytes(src.read_bytes())
-        if target.suffix == ".sh":
-            target.chmod(
-                target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
-            )
-    except Exception as e:
-        click.echo(
-            click.style(f"Error: could not write {target} — {e}", fg="red"),
-            err=True,
-        )
-        sys.exit(1)
 
 
 def _merge_env_template(env_file: Path, template: str) -> None:
@@ -245,11 +216,6 @@ def _warn_for_missing_host_codex_auth(service_set: tuple[str, ...]) -> None:
     click.echo("Warning: Codex authentication missing: run `codex login` on the host.")
 
 
-def _write_config_example(target_dir: Path, content: str) -> None:
-    target_dir.mkdir(parents=True, exist_ok=True)
-    (target_dir / "config.py.example").write_text(content)
-
-
 def _prompt_credential_with_overwrite(
     env_file: Path,
     key: str,
@@ -279,52 +245,30 @@ def _prompt_and_save_credential(env_file: Path, key: str, prompt_text: str) -> s
     return value
 
 
-def _refresh_status(rel: str, target: Path, pkg: Traversable) -> str:
-    """Return the status verb for copying rel to target without writing."""
-    if not target.exists():
-        return "created"
-    return (
-        "unchanged"
-        if target.read_bytes() == _pkg_path(pkg, rel).read_bytes()
-        else "overwrote"
-    )
-
-
-def _refresh_status_text(target: Path, expected: str) -> str:
-    """Return the status verb for writing expected text to target."""
-    if not target.exists():
-        return "created"
-    return "unchanged" if target.read_text() == expected else "overwrote"
-
-
 def refresh() -> None:
     project_dir = Path("pycastle")
-    project_dir.mkdir(parents=True, exist_ok=True)
     pkg = files("pycastle").joinpath("defaults")
     config_example_template = _load_config_example_template(pkg)
     pycastle_home = resolve_global_dir(None, os.environ)
-    config_example_path = project_dir / "config.py.example"
-    config_example_verb = _refresh_status_text(
-        config_example_path, config_example_template
+    scaffold = InitScaffold(
+        pycastle_dir=project_dir,
+        pycastle_home=pycastle_home,
+        defaults=pkg,
     )
-    _write_config_example(project_dir, config_example_template)
-    if (pycastle_home / "config.py.example").exists():
-        _write_config_example(pycastle_home, config_example_template)
 
-    report: list[tuple[str, str]] = [(config_example_verb, "config.py.example")]
+    try:
+        report = scaffold.refresh(config_example_text=config_example_template)
+    except Exception as e:
+        click.echo(
+            click.style(f"Error: could not refresh pycastle scaffold — {e}", fg="red"),
+            err=True,
+        )
+        sys.exit(1)
 
-    for rel in sorted(_INIT_REFRESHED_FILES):
-        target = project_dir / rel
-        verb = _refresh_status(rel, target, pkg)
-        _copy_template(rel, target, pkg)
-        report.append((verb, rel))
-
-    for path in ("config.py", ".env"):
-        if (project_dir / path).exists():
-            report.append(("preserved", path))
-
-    overwrote = [(verb, path) for verb, path in report if verb == "overwrote"]
-    created = any(verb == "created" for verb, _ in report)
+    overwrote = [
+        (entry.status, entry.path) for entry in report if entry.status == "overwrote"
+    ]
+    created = any(entry.status == "created" for entry in report)
     if overwrote:
         for verb, path in sorted(overwrote, key=lambda x: x[1]):
             print(f"{verb} {path}")
@@ -335,6 +279,11 @@ def refresh() -> None:
 def main(scope: Literal["global", "local"] | None = None) -> None:
     project_dir = Path("pycastle")
     pkg = files("pycastle").joinpath("defaults")
+    scaffold = InitScaffold(
+        pycastle_dir=project_dir,
+        pycastle_home=resolve_global_dir(None, os.environ),
+        defaults=pkg,
+    )
 
     service_selection = click.prompt(
         "Which agent services do you want to use? [claude/codex/opencode/all]",
@@ -351,7 +300,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         )
         scope = "global" if use_global else "local"
 
-    pycastle_home = resolve_global_dir(None, os.environ)
+    pycastle_home = scaffold.pycastle_home
     scoped_dir = pycastle_home if scope == "global" else project_dir
     local_env_file = project_dir / ".env"
     manage_env_file = True
@@ -371,14 +320,15 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             default=False,
         )
 
-    for rel in sorted(_INIT_REFRESHED_FILES):
-        target = project_dir / rel
-        _copy_template(rel, target, pkg)
-
     config_example_template = _load_config_example_template(pkg)
-    _write_config_example(project_dir, config_example_template)
-    if (pycastle_home / "config.py.example").exists():
-        _write_config_example(pycastle_home, config_example_template)
+    try:
+        scaffold.install_defaults(config_example_text=config_example_template)
+    except Exception as e:
+        click.echo(
+            click.style(f"Error: could not write pycastle scaffold — {e}", fg="red"),
+            err=True,
+        )
+        sys.exit(1)
 
     config_file = scoped_dir / "config.py"
     if config_file.exists():
@@ -387,7 +337,15 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
                 f"global config.py already exists at {config_file}; leaving it untouched"
             )
     else:
-        _copy_template("config.py", config_file, pkg)
+        try:
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            config_file.write_bytes((pkg / "config.py").read_bytes())
+        except Exception as e:
+            click.echo(
+                click.style(f"Error: could not write {config_file} — {e}", fg="red"),
+                err=True,
+            )
+            sys.exit(1)
 
     if scope == "local":
         image_name = derive_docker_image_name(Path.cwd().name)
