@@ -69,6 +69,9 @@ class InitScaffold:
             if (self.pycastle_dir / rel).exists():
                 report.append(ScaffoldArtifactReport(status="preserved", path=rel))
 
+        for rel in self._preserved_user_owned_paths():
+            report.append(ScaffoldArtifactReport(status="preserved", path=rel))
+
         return tuple(report)
 
     def _default_path(self, rel: str) -> Traversable:
@@ -96,6 +99,22 @@ class InitScaffold:
             "unchanged"
             if target.read_bytes() == self._default_path(rel).read_bytes()
             else "overwrote"
+        )
+
+    def _preserved_user_owned_paths(self) -> tuple[str, ...]:
+        ignored = MANAGED_SCAFFOLD_ALLOWLIST | {
+            "config.py.example",
+            "config.py",
+            ".env",
+        }
+        return tuple(
+            sorted(
+                str(path.relative_to(self.pycastle_dir)).replace("\\", "/")
+                for path in self.pycastle_dir.rglob("*")
+                if path.is_file()
+                and str(path.relative_to(self.pycastle_dir)).replace("\\", "/")
+                not in ignored
+            )
         )
 
     @staticmethod
