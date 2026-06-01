@@ -25,8 +25,6 @@ _SUPPORTED_SERVICE_SELECTIONS: dict[str, tuple[str, ...]] = {
     "opencode": ("opencode",),
     "all": ("claude", "codex", "opencode"),
 }
-
-_CONFIG_FIELD_RE = re.compile(r"[a-z_]+\s*=")
 _BUNDLED_DEFAULT_STAGE_OVERRIDE_NAMES = (
     "plan_override",
     "implement_override",
@@ -35,47 +33,6 @@ _BUNDLED_DEFAULT_STAGE_OVERRIDE_NAMES = (
     "preflight_issue_override",
     "improve_override",
 )
-
-
-def _render_config_example(defaults_text: str) -> str:
-    out = ["from pathlib import Path", ""]
-    uncomment_block = False
-    preserve_commented_block = False
-
-    for line in defaults_text.splitlines():
-        if line == "from pathlib import Path":
-            continue
-        if line.startswith("# "):
-            body = line[2:]
-            if uncomment_block:
-                out.append(body)
-                if body.strip() == ")":
-                    uncomment_block = False
-                continue
-            if preserve_commented_block:
-                out.append(line)
-                if body.strip() == ")":
-                    preserve_commented_block = False
-                continue
-            if _CONFIG_FIELD_RE.match(body):
-                if body.startswith("opencode_") or (
-                    body.startswith("plan_override")
-                    and 'model="kimi-k2.6"' in body
-                    and 'service="opencode"' in body
-                ):
-                    out.append(line)
-                    preserve_commented_block = body.rstrip().endswith("(")
-                else:
-                    out.append(body)
-                    uncomment_block = body.rstrip().endswith("(")
-                continue
-        out.append(line)
-
-    return "\n".join(out).rstrip() + "\n"
-
-
-def _load_config_example_template(pkg: Traversable) -> str:
-    return _render_config_example((pkg / "config.py").read_text())
 
 
 def _parse_stage_override_services(node: ast.AST) -> tuple[str, ...]:
@@ -114,9 +71,11 @@ def _load_bundled_default_stage_chains(
     return tuple(chains)
 
 
-_CONFIG_EXAMPLE_TEMPLATE = _load_config_example_template(
-    files("pycastle").joinpath("defaults")
-)
+_CONFIG_EXAMPLE_TEMPLATE = InitScaffold(
+    pycastle_dir=Path("pycastle"),
+    pycastle_home=Path(),
+    defaults=files("pycastle").joinpath("defaults"),
+).render_config_example()
 _BUNDLED_DEFAULT_STAGE_CHAINS = _load_bundled_default_stage_chains(
     files("pycastle").joinpath("defaults")
 )
@@ -248,7 +207,6 @@ def _prompt_and_save_credential(env_file: Path, key: str, prompt_text: str) -> s
 def refresh() -> None:
     project_dir = Path("pycastle")
     pkg = files("pycastle").joinpath("defaults")
-    config_example_template = _load_config_example_template(pkg)
     pycastle_home = resolve_global_dir(None, os.environ)
     scaffold = InitScaffold(
         pycastle_dir=project_dir,
@@ -257,7 +215,7 @@ def refresh() -> None:
     )
 
     try:
-        report = scaffold.refresh(config_example_text=config_example_template)
+        report = scaffold.refresh()
     except Exception as e:
         click.echo(
             click.style(f"Error: could not refresh pycastle scaffold — {e}", fg="red"),
@@ -320,9 +278,8 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             default=False,
         )
 
-    config_example_template = _load_config_example_template(pkg)
     try:
-        scaffold.install_defaults(config_example_text=config_example_template)
+        scaffold.install_defaults()
     except Exception as e:
         click.echo(
             click.style(f"Error: could not write pycastle scaffold — {e}", fg="red"),
