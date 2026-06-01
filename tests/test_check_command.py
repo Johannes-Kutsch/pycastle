@@ -118,10 +118,12 @@ def test_check_surfaces_host_check_phase_row_before_orchestration_steps(
             return None
 
     monkeypatch.setattr(
-        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+        check_mod._host_check_run,
+        "transient_worktree",
+        lambda *a, **kw: _TransientWorktree(),
     )
     monkeypatch.setattr(
-        check_mod,
+        check_mod._host_check_run,
         "_run_host_check",
         lambda name, command, cwd: events.append(("host-check", name, command, cwd)),
     )
@@ -168,9 +170,13 @@ def test_check_names_current_host_check_through_host_check_status_surface(
             return None
 
     monkeypatch.setattr(
-        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+        check_mod._host_check_run,
+        "transient_worktree",
+        lambda *a, **kw: _TransientWorktree(),
     )
-    monkeypatch.setattr(check_mod, "_run_host_check", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        check_mod._host_check_run, "_run_host_check", lambda *a, **kw: None
+    )
     display = RecordingStatusDisplay()
 
     check_mod.main(
@@ -214,7 +220,9 @@ def test_check_surfaces_current_host_check_without_streaming_passing_command_out
             return None
 
     monkeypatch.setattr(
-        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+        check_mod._host_check_run,
+        "transient_worktree",
+        lambda *a, **kw: _TransientWorktree(),
     )
 
     check_mod.main(
@@ -243,7 +251,9 @@ def test_check_keeps_clean_tree_abort_behavior_with_host_check_phase_row(
     git_svc = MagicMock()
     git_svc.is_working_tree_clean.return_value = False
 
-    monkeypatch.setattr(check_mod, "transient_worktree", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        check_mod._host_check_run, "transient_worktree", lambda *a, **kw: None
+    )
 
     with pytest.raises(
         RuntimeError, match="Working tree must be clean before running host checks."
@@ -297,9 +307,13 @@ def test_check_files_one_host_check_issue_per_failed_command_and_reports_numbers
     )
     github_svc = MagicMock()
 
-    monkeypatch.setattr(check_mod, "_run_host_check", fake_run_host_check)
     monkeypatch.setattr(
-        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+        check_mod._host_check_run, "_run_host_check", fake_run_host_check
+    )
+    monkeypatch.setattr(
+        check_mod._host_check_run,
+        "transient_worktree",
+        lambda *a, **kw: _TransientWorktree(),
     )
 
     cfg = Config(
@@ -386,9 +400,13 @@ def test_check_surfaces_each_failed_host_check_before_host_check_reporter_startu
     runner = _RecordingAgentRunner()
     github_svc = MagicMock()
 
-    monkeypatch.setattr(check_mod, "_run_host_check", fake_run_host_check)
     monkeypatch.setattr(
-        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+        check_mod._host_check_run, "_run_host_check", fake_run_host_check
+    )
+    monkeypatch.setattr(
+        check_mod._host_check_run,
+        "transient_worktree",
+        lambda *a, **kw: _TransientWorktree(),
     )
 
     check_mod.main(
@@ -451,9 +469,13 @@ def test_check_passes_raw_failed_command_output_to_host_check_issue_agent(
     )
     github_svc = MagicMock()
 
-    monkeypatch.setattr(check_mod, "_run_host_check", fake_run_host_check)
     monkeypatch.setattr(
-        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+        check_mod._host_check_run, "_run_host_check", fake_run_host_check
+    )
+    monkeypatch.setattr(
+        check_mod._host_check_run,
+        "transient_worktree",
+        lambda *a, **kw: _TransientWorktree(),
     )
 
     check_mod.main(
@@ -502,9 +524,13 @@ def test_check_preserves_failed_host_check_context_when_host_check_reporter_setu
 
     github_svc = MagicMock()
 
-    monkeypatch.setattr(check_mod, "_run_host_check", fake_run_host_check)
     monkeypatch.setattr(
-        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+        check_mod._host_check_run, "_run_host_check", fake_run_host_check
+    )
+    monkeypatch.setattr(
+        check_mod._host_check_run,
+        "transient_worktree",
+        lambda *a, **kw: _TransientWorktree(),
     )
 
     with pytest.raises(SetupPhaseError) as exc_info:
@@ -554,9 +580,13 @@ def test_check_rejects_afk_host_check_issue_without_slice_mode_label(
     )
     github_svc = MagicMock()
 
-    monkeypatch.setattr(check_mod, "_run_host_check", fake_run_host_check)
     monkeypatch.setattr(
-        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+        check_mod._host_check_run, "_run_host_check", fake_run_host_check
+    )
+    monkeypatch.setattr(
+        check_mod._host_check_run,
+        "transient_worktree",
+        lambda *a, **kw: _TransientWorktree(),
     )
 
     with pytest.raises(RuntimeError, match="Host-Check Reporter"):
@@ -595,9 +625,13 @@ def test_check_rejects_afk_host_check_issue_with_short_body(tmp_path, monkeypatc
     github_svc = MagicMock()
     github_svc.get_issue.return_value = {"body": "short"}
 
-    monkeypatch.setattr(check_mod, "_run_host_check", fake_run_host_check)
     monkeypatch.setattr(
-        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+        check_mod._host_check_run, "_run_host_check", fake_run_host_check
+    )
+    monkeypatch.setattr(
+        check_mod._host_check_run,
+        "transient_worktree",
+        lambda *a, **kw: _TransientWorktree(),
     )
 
     with pytest.raises(RuntimeError, match="body is"):
@@ -637,9 +671,13 @@ def test_check_hitl_host_check_issue_skips_body_and_slice_validation(
     )
     github_svc = MagicMock()
 
-    monkeypatch.setattr(check_mod, "_run_host_check", fake_run_host_check)
     monkeypatch.setattr(
-        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+        check_mod._host_check_run, "_run_host_check", fake_run_host_check
+    )
+    monkeypatch.setattr(
+        check_mod._host_check_run,
+        "transient_worktree",
+        lambda *a, **kw: _TransientWorktree(),
     )
 
     check_mod.main(
@@ -669,9 +707,13 @@ def test_check_prints_passed_and_files_no_issues_when_all_host_checks_succeed(
         async def __aexit__(self, exc_type, exc, tb) -> None:
             return None
 
-    monkeypatch.setattr(check_mod, "_run_host_check", lambda *a, **kw: None)
     monkeypatch.setattr(
-        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+        check_mod._host_check_run, "_run_host_check", lambda *a, **kw: None
+    )
+    monkeypatch.setattr(
+        check_mod._host_check_run,
+        "transient_worktree",
+        lambda *a, **kw: _TransientWorktree(),
     )
 
     check_mod.main(
@@ -706,9 +748,13 @@ def test_check_keeps_passing_host_checks_report_only_after_issue_filing_exists(
 
     github_svc = MagicMock()
 
-    monkeypatch.setattr(check_mod, "_run_host_check", lambda *a, **kw: None)
     monkeypatch.setattr(
-        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+        check_mod._host_check_run, "_run_host_check", lambda *a, **kw: None
+    )
+    monkeypatch.setattr(
+        check_mod._host_check_run,
+        "transient_worktree",
+        lambda *a, **kw: _TransientWorktree(),
     )
 
     check_mod.main(
@@ -749,9 +795,13 @@ def test_check_reports_the_checked_sha_in_success_summary(
         async def __aexit__(self, exc_type, exc, tb) -> None:
             return None
 
-    monkeypatch.setattr(check_mod, "_run_host_check", lambda *a, **kw: None)
     monkeypatch.setattr(
-        check_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+        check_mod._host_check_run, "_run_host_check", lambda *a, **kw: None
+    )
+    monkeypatch.setattr(
+        check_mod._host_check_run,
+        "transient_worktree",
+        lambda *a, **kw: _TransientWorktree(),
     )
 
     check_mod.main(
