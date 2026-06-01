@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from pycastle.commands.host_check_run import HostCheckRunPassed, prepare_host_check_run
+from tests.support import FakeAgentRunner
 
 
 def test_prepare_host_check_run_refreshes_before_clean_tree_and_fails_early():
@@ -194,3 +195,111 @@ def test_run_host_check_run_collects_structured_failed_checks_without_leaking_co
         ("tests", "python -c tests", tmp_path),
     ]
     assert transient_shas == ["checked-sha"]
+
+
+def test_run_host_check_run_files_and_validates_one_issue_per_failed_check_in_order(
+    tmp_path,
+):
+    from pycastle.agents.output_protocol import IssueOutput
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+    from pycastle.prompts.pipeline import PromptTemplate
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        if name == "format":
+            return
+        raise run_mod.HostCheckFailedError(
+            name=name,
+            command=command,
+            output=f"{name} stdout\n{name} stderr",
+        )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_transient_worktree(name: str, *, sha: str | None, deps):
+        assert name == "host-check-checked"
+        assert sha == "checked-sha"
+        assert deps.repo_root == tmp_path
+        assert deps.git_svc is git_svc
+        return _TransientWorktree()
+
+    agent_runner = FakeAgentRunner(
+        [
+            IssueOutput(number=41, labels=["bug", "ready-for-human"]),
+            IssueOutput(number=42, labels=["bug", "behavior-slice", "ready-for-agent"]),
+        ]
+    )
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {"body": "x" * 100}
+    status_display = MagicMock()
+
+    result = asyncio.run(
+        run_mod.run_host_check_run(
+            host_checks=(
+                ("lint", "python -c lint"),
+                ("format", "python -c format"),
+                ("tests", "python -c tests"),
+            ),
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            cfg=Config(),
+            github_svc=github_svc,
+            agent_runner=agent_runner,
+            status_display=status_display,
+            run_host_check=fake_run_host_check,
+            transient_worktree_factory=fake_transient_worktree,
+        )
+    )
+
+    assert result == run_mod.HostCheckRunFailed(
+        checked_sha="checked-sha",
+        failures=(
+            run_mod.HostCheckFailure(
+                name="lint",
+                command="python -c lint",
+                output="lint stdout\nlint stderr",
+            ),
+            run_mod.HostCheckFailure(
+                name="tests",
+                command="python -c tests",
+                output="tests stdout\ntests stderr",
+            ),
+        ),
+        issue_numbers=(41, 42),
+    )
+    assert [call.template for call in agent_runner.calls] == [
+        PromptTemplate.HOST_CHECK_ISSUE,
+        PromptTemplate.HOST_CHECK_ISSUE,
+    ]
+    assert [call.scope_args["CHECK_NAME"] for call in agent_runner.calls] == [
+        "lint",
+        "tests",
+    ]
+    assert [call.scope_args["COMMAND"] for call in agent_runner.calls] == [
+        "python -c lint",
+        "python -c tests",
+    ]
+    assert [call.scope_args["OUTPUT"] for call in agent_runner.calls] == [
+        "lint stdout\nlint stderr",
+        "tests stdout\ntests stderr",
+    ]
+    assert all(
+        call.scope_args["CHECKED_SHA"] == "checked-sha" for call in agent_runner.calls
+    )
+    assert all(
+        call.scope_args["HOST_OS"] == platform.system() for call in agent_runner.calls
+    )
+    assert all(
+        call.scope_args["HOST_PLATFORM"] == platform.platform()
+        for call in agent_runner.calls
+    )
+    github_svc.get_issue.assert_called_once_with(42)

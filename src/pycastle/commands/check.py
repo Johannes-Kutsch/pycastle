@@ -3,43 +3,34 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
-import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
-from ..agents.output_protocol import AgentRole, IssueOutput
-from ..agents.runner import AgentRunnerProtocol, RunRequest
+from ..agents.runner import AgentRunnerProtocol
 from ..config import (
     DEFAULT_ENV_FILE,
     Config,
+    StageOverride,
     load_config,
     load_credential_env,
     resolve_global_dir,
 )
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
-from ..errors import SetupPhaseError
 from ..infrastructure.worktree import transient_worktree
 from ..iteration import status_row
-from ..iteration.preflight import validate_issue_report
 from ..main import _configured_service_registry
-from ..prompts.pipeline import PromptTemplate
 from ..services import GitService, GithubService, ServiceRegistry
+from . import host_check_run as _host_check_run
 from .host_check_run import (
     HostCheckFailure,
-    HostCheckFailedError,
-    HostCheckRunFailed,
+    HostCheckIssueDeps,
     HostCheckRunOutcome,
     HostCheckRunPassed,
+    _run_host_check,
     run_host_check_run,
 )
 
-
-@dataclass
-class _CheckDeps:
-    repo_root: Path
-    cfg: Config
-    git_svc: GitService
+HostCheckFailedError = _host_check_run.HostCheckFailedError
 
 
 def _surface_current_host_check(status_display: StatusDisplay, name: str) -> None:
@@ -53,32 +44,6 @@ def _surface_failed_host_checks(
 ) -> None:
     for failure in failures:
         status_display.print("Host Check", f"failed {failure.name}", style="error")
-
-
-def _run_host_check(name: str, command: str, cwd: Path) -> None:
-    result = subprocess.run(
-        command,
-        cwd=cwd,
-        shell=True,
-        text=True,
-        capture_output=True,
-    )
-    if result.returncode == 0:
-        return
-    output = (result.stdout + result.stderr).strip()
-    raise HostCheckFailedError(name=name, command=command, output=output)
-
-
-def _preserve_host_check_context(
-    exc: SetupPhaseError, failure: HostCheckFailure
-) -> SetupPhaseError:
-    return SetupPhaseError(
-        exc.phase,
-        "Host-Check Reporter setup failed while reporting "
-        f"failed host check {failure.name!r}: {exc}",
-        command=exc.command or failure.command,
-        output=exc.output or failure.output,
-    )
 
 
 def _resolve_github_service(
@@ -121,54 +86,15 @@ def _resolve_agent_runner(
     )
 
 
-async def _file_host_check_issue(
-    *,
-    failure: HostCheckFailure,
-    mount_path: Path,
-    sha: str,
-    cfg: Config,
-    github_svc: GithubService,
-    agent_runner: AgentRunnerProtocol,
-    status_display: StatusDisplay,
-    service_registry: ServiceRegistry | None,
-) -> int:
+def _resolve_reporter_override(
+    cfg: Config, service_registry: ServiceRegistry | None
+) -> StageOverride:
     override = cfg.preflight_issue_override
-    if service_registry is not None:
-        from .. import _time as _time_module
+    if service_registry is None:
+        return override
+    from .. import _time as _time_module
 
-        override = service_registry.resolve(override, _time_module.now_local())
-    agent_result = await agent_runner.run(
-        RunRequest(
-            name="Host-Check Reporter",
-            template=PromptTemplate.HOST_CHECK_ISSUE,
-            mount_path=mount_path,
-            role=AgentRole.PREFLIGHT_ISSUE,
-            scope_args={
-                "HOST_OS": platform.system(),
-                "HOST_PLATFORM": platform.platform(),
-                "CHECKED_SHA": sha,
-                "CHECK_NAME": failure.name,
-                "COMMAND": failure.command,
-                "OUTPUT": failure.output,
-            },
-            model=override.model,
-            effort=override.effort,
-            service=override.service,
-            status_display=status_display,
-            work_body=f"reporting {failure.name} host-check issue",
-        )
-    )
-    if not isinstance(agent_result, IssueOutput):
-        raise RuntimeError(
-            f"Host-check issue agent returned unexpected output type: {type(agent_result).__name__}"
-        )
-    validate_issue_report(
-        caller="Host-Check Reporter",
-        issue_output=agent_result,
-        cfg=cfg,
-        github_svc=github_svc,
-    )
-    return agent_result.number
+    return service_registry.resolve(override, _time_module.now_local())
 
 
 def main(
@@ -192,12 +118,38 @@ def main(
             kind="phase",
             must_close=True,
         ) as row:
+
+            def _issue_deps_factory() -> HostCheckIssueDeps:
+                resolved_agent_runner = agent_runner
+                resolved_service_registry = service_registry
+                if resolved_agent_runner is None:
+                    (
+                        resolved_agent_runner,
+                        resolved_service_registry,
+                    ) = _resolve_agent_runner(resolved_cfg, git_svc)
+                resolved_github_service = github_service or _resolve_github_service(
+                    repo_root, resolved_cfg, git_svc
+                )
+                return HostCheckIssueDeps(
+                    cfg=resolved_cfg,
+                    github_svc=resolved_github_service,
+                    agent_runner=resolved_agent_runner,
+                    status_display=resolved_status_display,
+                    reporter_override=_resolve_reporter_override(
+                        resolved_cfg, resolved_service_registry
+                    ),
+                )
+
             outcome = await run_host_check_run(
                 host_checks=resolved_cfg.host_checks,
                 git_svc=git_svc,
                 repo_root=repo_root,
+                issue_deps_factory=_issue_deps_factory,
                 on_check_start=lambda name: _surface_current_host_check(
                     resolved_status_display, name
+                ),
+                on_failures_detected=lambda failures: _surface_failed_host_checks(
+                    resolved_status_display, failures
                 ),
                 run_host_check=_run_host_check,
                 transient_worktree_factory=transient_worktree,
@@ -206,55 +158,11 @@ def main(
                 row.close("finished")
                 return outcome
 
-            _surface_failed_host_checks(resolved_status_display, list(outcome.failures))
-            resolved_agent_runner = agent_runner
-            resolved_service_registry = service_registry
-            if resolved_agent_runner is None:
-                (
-                    resolved_agent_runner,
-                    resolved_service_registry,
-                ) = _resolve_agent_runner(resolved_cfg, git_svc)
-            resolved_github_service = github_service or _resolve_github_service(
-                repo_root, resolved_cfg, git_svc
-            )
-
-            deps = _CheckDeps(repo_root=repo_root, cfg=resolved_cfg, git_svc=git_svc)
-            issue_numbers = []
-            async with transient_worktree(
-                f"host-check-{outcome.checked_sha[:7]}",
-                sha=outcome.checked_sha,
-                deps=deps,
-            ) as path:
-                for failure in outcome.failures:
-                    try:
-                        issue_numbers.append(
-                            await _file_host_check_issue(
-                                failure=failure,
-                                mount_path=path,
-                                sha=outcome.checked_sha,
-                                cfg=resolved_cfg,
-                                github_svc=resolved_github_service,
-                                agent_runner=resolved_agent_runner,
-                                status_display=resolved_status_display,
-                                service_registry=resolved_service_registry,
-                            )
-                        )
-                    except SetupPhaseError as exc:
-                        raise _preserve_host_check_context(exc, failure) from exc
-
-            row.close(
-                f"failed {outcome.failures[0].name}",
-                shutdown_style="error",
-            )
-            issue_numbers_tuple = tuple(issue_numbers)
-            joined = ", ".join(f"#{number}" for number in issue_numbers_tuple)
+            row.close(f"failed {outcome.failures[0].name}", shutdown_style="error")
+            joined = ", ".join(f"#{number}" for number in outcome.issue_numbers)
             print(f"Host checks filed or updated issues: {joined}")
             sys.stdout.flush()
-            return HostCheckRunFailed(
-                checked_sha=outcome.checked_sha,
-                failures=outcome.failures,
-                issue_numbers=issue_numbers_tuple,
-            )
+            return outcome
 
     outcome = asyncio.run(_run_checks())
     if isinstance(outcome, HostCheckRunPassed):

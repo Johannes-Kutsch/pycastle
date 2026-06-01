@@ -3,12 +3,29 @@ from __future__ import annotations
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
+import platform
 import subprocess
 from typing import Callable, TypeAlias
 
+from ..agents.output_protocol import AgentRole, IssueOutput
+from ..agents.runner import AgentRunnerProtocol, RunRequest
+from ..config import Config, StageOverride
+from ..display.status_display import StatusDisplay
+from ..errors import SetupPhaseError
 from ..infrastructure.worktree import transient_worktree
-
+from ..iteration.preflight import validate_issue_report
+from ..prompts.pipeline import PromptTemplate
+from ..services import GithubService
 from ..services import GitService
+
+
+@dataclass(frozen=True)
+class HostCheckIssueDeps:
+    cfg: Config
+    github_svc: GithubService
+    agent_runner: AgentRunnerProtocol
+    status_display: StatusDisplay
+    reporter_override: StageOverride | None = None
 
 
 class HostCheckFailedError(RuntimeError):
@@ -46,6 +63,18 @@ HostCheckRunOutcome: TypeAlias = HostCheckRunPassed | HostCheckRunFailed
 class _CheckDeps:
     repo_root: Path
     git_svc: GitService
+
+
+def _preserve_host_check_context(
+    exc: SetupPhaseError, failure: HostCheckFailure
+) -> SetupPhaseError:
+    return SetupPhaseError(
+        exc.phase,
+        "Host-Check Reporter setup failed while reporting "
+        f"failed host check {failure.name!r}: {exc}",
+        command=exc.command or failure.command,
+        output=exc.output or failure.output,
+    )
 
 
 def _run_host_check(name: str, command: str, cwd: Path) -> None:
@@ -88,12 +117,66 @@ def prepare_host_check_run(
     return git_svc.get_head_sha(resolved_repo_root)
 
 
+async def _file_host_check_issue(
+    *,
+    failure: HostCheckFailure,
+    mount_path: Path,
+    sha: str,
+    cfg: Config,
+    github_svc: GithubService,
+    agent_runner: AgentRunnerProtocol,
+    status_display: StatusDisplay,
+    reporter_override: StageOverride | None,
+) -> int:
+    override = reporter_override or cfg.preflight_issue_override
+    agent_result = await agent_runner.run(
+        RunRequest(
+            name="Host-Check Reporter",
+            template=PromptTemplate.HOST_CHECK_ISSUE,
+            mount_path=mount_path,
+            role=AgentRole.PREFLIGHT_ISSUE,
+            scope_args={
+                "HOST_OS": platform.system(),
+                "HOST_PLATFORM": platform.platform(),
+                "CHECKED_SHA": sha,
+                "CHECK_NAME": failure.name,
+                "COMMAND": failure.command,
+                "OUTPUT": failure.output,
+            },
+            model=override.model,
+            effort=override.effort,
+            service=override.service,
+            status_display=status_display,
+            work_body=f"reporting {failure.name} host-check issue",
+        )
+    )
+    if not isinstance(agent_result, IssueOutput):
+        raise RuntimeError(
+            "Host-check issue agent returned unexpected output type: "
+            f"{type(agent_result).__name__}"
+        )
+    validate_issue_report(
+        caller="Host-Check Reporter",
+        issue_output=agent_result,
+        cfg=cfg,
+        github_svc=github_svc,
+    )
+    return agent_result.number
+
+
 async def run_host_check_run(
     *,
     host_checks: tuple[tuple[str, str], ...],
     git_svc: GitService,
     repo_root: Path | None = None,
+    cfg: Config | None = None,
+    github_svc: GithubService | None = None,
+    agent_runner: AgentRunnerProtocol | None = None,
+    status_display: StatusDisplay | None = None,
+    reporter_override: StageOverride | None = None,
+    issue_deps_factory: Callable[[], HostCheckIssueDeps] | None = None,
     on_check_start: Callable[[str], None] | None = None,
+    on_failures_detected: Callable[[list[HostCheckFailure]], None] | None = None,
     run_host_check: Callable[[str, str, Path], None] | None = None,
     transient_worktree_factory: (
         Callable[..., AbstractAsyncContextManager[Path]] | None
@@ -117,9 +200,53 @@ async def run_host_check_run(
             except RuntimeError as exc:
                 failures.append(_failure_from_exception(name, command, exc))
         if failures:
+            if on_failures_detected is not None:
+                on_failures_detected(failures)
+            issue_numbers: tuple[int, ...] = ()
+            resolved_cfg = cfg
+            resolved_github_svc = github_svc
+            resolved_agent_runner = agent_runner
+            resolved_status_display = status_display
+            resolved_reporter_override = reporter_override
+            if issue_deps_factory is not None and (
+                resolved_cfg is None
+                or resolved_github_svc is None
+                or resolved_agent_runner is None
+                or resolved_status_display is None
+            ):
+                issue_deps = issue_deps_factory()
+                resolved_cfg = issue_deps.cfg
+                resolved_github_svc = issue_deps.github_svc
+                resolved_agent_runner = issue_deps.agent_runner
+                resolved_status_display = issue_deps.status_display
+                resolved_reporter_override = issue_deps.reporter_override
+            if (
+                resolved_cfg is not None
+                and resolved_github_svc is not None
+                and resolved_agent_runner is not None
+                and resolved_status_display is not None
+            ):
+                filed_issue_numbers: list[int] = []
+                for failure in failures:
+                    try:
+                        filed_issue_numbers.append(
+                            await _file_host_check_issue(
+                                failure=failure,
+                                mount_path=path,
+                                sha=checked_sha,
+                                cfg=resolved_cfg,
+                                github_svc=resolved_github_svc,
+                                agent_runner=resolved_agent_runner,
+                                status_display=resolved_status_display,
+                                reporter_override=resolved_reporter_override,
+                            )
+                        )
+                    except SetupPhaseError as exc:
+                        raise _preserve_host_check_context(exc, failure) from exc
+                issue_numbers = tuple(filed_issue_numbers)
             return HostCheckRunFailed(
                 checked_sha=checked_sha,
                 failures=tuple(failures),
-                issue_numbers=(),
+                issue_numbers=issue_numbers,
             )
         return HostCheckRunPassed(checked_sha=checked_sha)
