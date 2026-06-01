@@ -25,6 +25,12 @@ from ..iteration.preflight import validate_issue_report
 from ..main import _configured_service_registry
 from ..prompts.pipeline import PromptTemplate
 from ..services import GitService, GithubService, ServiceRegistry
+from .host_check_run import (
+    HostCheckFailure,
+    HostCheckRunFailed,
+    HostCheckRunOutcome,
+    HostCheckRunPassed,
+)
 
 
 @dataclass
@@ -32,13 +38,6 @@ class _CheckDeps:
     repo_root: Path
     cfg: Config
     git_svc: GitService
-
-
-@dataclass(frozen=True)
-class _HostCheckFailure:
-    name: str
-    command: str
-    output: str
 
 
 class HostCheckFailedError(RuntimeError):
@@ -57,7 +56,7 @@ def _surface_current_host_check(status_display: StatusDisplay, name: str) -> Non
 
 
 def _surface_failed_host_checks(
-    status_display: StatusDisplay, failures: list[_HostCheckFailure]
+    status_display: StatusDisplay, failures: list[HostCheckFailure]
 ) -> None:
     for failure in failures:
         status_display.print("Host Check", f"failed {failure.name}", style="error")
@@ -65,15 +64,15 @@ def _surface_failed_host_checks(
 
 def _failure_from_exception(
     name: str, command: str, exc: RuntimeError
-) -> _HostCheckFailure:
+) -> HostCheckFailure:
     if isinstance(exc, HostCheckFailedError):
-        return _HostCheckFailure(name=exc.name, command=exc.command, output=exc.output)
+        return HostCheckFailure(name=exc.name, command=exc.command, output=exc.output)
     text = str(exc)
     if "\n" in text:
         _, output = text.split("\n", 1)
     else:
         output = text
-    return _HostCheckFailure(name=name, command=command, output=output.strip())
+    return HostCheckFailure(name=name, command=command, output=output.strip())
 
 
 def _run_host_check(name: str, command: str, cwd: Path) -> None:
@@ -91,7 +90,7 @@ def _run_host_check(name: str, command: str, cwd: Path) -> None:
 
 
 def _preserve_host_check_context(
-    exc: SetupPhaseError, failure: _HostCheckFailure
+    exc: SetupPhaseError, failure: HostCheckFailure
 ) -> SetupPhaseError:
     return SetupPhaseError(
         exc.phase,
@@ -144,7 +143,7 @@ def _resolve_agent_runner(
 
 async def _file_host_check_issue(
     *,
-    failure: _HostCheckFailure,
+    failure: HostCheckFailure,
     mount_path: Path,
     sha: str,
     cfg: Config,
@@ -206,7 +205,7 @@ def main(
     git_svc = git_service or GitService(resolved_cfg)
     resolved_status_display = status_display or PlainStatusDisplay()
 
-    async def _run_checks() -> str | None:
+    async def _run_checks() -> HostCheckRunOutcome:
         async with status_row(
             resolved_status_display,
             "Host Check",
@@ -225,7 +224,7 @@ def main(
             async with transient_worktree(
                 f"host-check-{sha[:7]}", sha=sha, deps=deps
             ) as path:
-                failures: list[_HostCheckFailure] = []
+                failures: list[HostCheckFailure] = []
                 for name, command in resolved_cfg.host_checks:
                     _surface_current_host_check(resolved_status_display, name)
                     try:
@@ -265,17 +264,22 @@ def main(
                         f"failed {failures[0].name}",
                         shutdown_style="error",
                     )
-                    joined = ", ".join(f"#{number}" for number in issue_numbers)
+                    issue_numbers_tuple = tuple(issue_numbers)
+                    joined = ", ".join(f"#{number}" for number in issue_numbers_tuple)
                     print(f"Host checks filed or updated issues: {joined}")
                     sys.stdout.flush()
-                    return None
+                    return HostCheckRunFailed(
+                        checked_sha=sha,
+                        failures=tuple(failures),
+                        issue_numbers=issue_numbers_tuple,
+                    )
                 row.close("finished")
-                return sha
+                return HostCheckRunPassed(checked_sha=sha)
 
-    sha = asyncio.run(_run_checks())
-    if sha is not None:
+    outcome = asyncio.run(_run_checks())
+    if isinstance(outcome, HostCheckRunPassed):
         print(
             "Host checks passed on "
-            f"{platform.system()} ({platform.platform()}) at {sha}."
+            f"{platform.system()} ({platform.platform()}) at {outcome.checked_sha}."
         )
         sys.stdout.flush()
