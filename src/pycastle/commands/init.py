@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import ast
 import os
 import re
 import sys
 from importlib.resources import files
-from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Literal
 
@@ -25,60 +23,6 @@ _SUPPORTED_SERVICE_SELECTIONS: dict[str, tuple[str, ...]] = {
     "opencode": ("opencode",),
     "all": ("claude", "codex", "opencode"),
 }
-_BUNDLED_DEFAULT_STAGE_OVERRIDE_NAMES = (
-    "plan_override",
-    "implement_override",
-    "review_override",
-    "merge_override",
-    "preflight_issue_override",
-    "improve_override",
-)
-
-
-def _parse_stage_override_services(node: ast.AST) -> tuple[str, ...]:
-    if not isinstance(node, ast.Call):
-        return ()
-
-    service = ""
-    fallback_services: tuple[str, ...] = ()
-    for keyword in node.keywords:
-        if keyword.arg == "service" and isinstance(keyword.value, ast.Constant):
-            if isinstance(keyword.value.value, str):
-                service = keyword.value.value
-        if keyword.arg == "fallback":
-            fallback_services = _parse_stage_override_services(keyword.value)
-
-    services = [service] if service else []
-    services.extend(fallback_services)
-    return tuple(services)
-
-
-def _load_bundled_default_stage_chains(
-    pkg: Traversable,
-) -> tuple[tuple[str, ...], ...]:
-    tree = ast.parse((pkg / "config.py").read_text())
-    chains: list[tuple[str, ...]] = []
-    for node in tree.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        for target in node.targets:
-            if (
-                isinstance(target, ast.Name)
-                and target.id in _BUNDLED_DEFAULT_STAGE_OVERRIDE_NAMES
-            ):
-                chains.append(_parse_stage_override_services(node.value))
-                break
-    return tuple(chains)
-
-
-_CONFIG_EXAMPLE_TEMPLATE = InitScaffold(
-    pycastle_dir=Path("pycastle"),
-    pycastle_home=Path(),
-    defaults=files("pycastle").joinpath("defaults"),
-).render_config_example()
-_BUNDLED_DEFAULT_STAGE_CHAINS = _load_bundled_default_stage_chains(
-    files("pycastle").joinpath("defaults")
-)
 
 
 def _write_env_key(env_file: Path, key: str, value: str) -> None:
@@ -147,18 +91,20 @@ def _managed_env_template(service_set: tuple[str, ...]) -> str:
 
 def _selected_services_cover_bundled_default_stage_chains(
     service_set: tuple[str, ...],
+    scaffold: InitScaffold,
 ) -> bool:
     selected = set(service_set)
     return all(
         any(service in selected for service in stage)
-        for stage in _BUNDLED_DEFAULT_STAGE_CHAINS
+        for stage in scaffold.bundled_default_stage_chains()
     )
 
 
 def _warn_for_uncovered_bundled_default_stage_chains(
     service_set: tuple[str, ...],
+    scaffold: InitScaffold,
 ) -> None:
-    if _selected_services_cover_bundled_default_stage_chains(service_set):
+    if _selected_services_cover_bundled_default_stage_chains(service_set, scaffold):
         return
     click.echo(
         "Warning: selected services do not cover every bundled default stage "
@@ -241,7 +187,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         default="all",
     )
     service_set = _parse_service_selection(service_selection)
-    _warn_for_uncovered_bundled_default_stage_chains(service_set)
+    _warn_for_uncovered_bundled_default_stage_chains(service_set, scaffold)
     _warn_for_missing_host_codex_auth(service_set)
 
     if scope is None:

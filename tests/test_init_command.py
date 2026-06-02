@@ -2345,6 +2345,59 @@ def test_init_codex_only_does_not_warn_when_bundled_stage_chains_are_covered(
     )
 
 
+def test_init_warns_from_the_same_bundled_defaults_used_for_config_example(
+    tmp_path, monkeypatch, capsys
+):
+    """Custom bundled defaults must drive both the config.py.example refresh and stage-chain warning."""
+    from pycastle.commands.init import main
+
+    bundled_pkg = tmp_path / "bundled-pycastle"
+    defaults_dir = bundled_pkg / "defaults"
+    (defaults_dir / "setup").mkdir(parents=True)
+    (defaults_dir / "config.py").write_text(
+        "from pathlib import Path\n"
+        "from pycastle import StageOverride\n\n"
+        "# --- Behaviour ---\n"
+        '# bug_label = "bundle-specific-bug"\n\n'
+        "# --- Stage overrides ---\n"
+        "plan_override = StageOverride(\n"
+        '    service="claude",\n'
+        '    model="sonnet",\n'
+        '    effort="medium",\n'
+        ")\n"
+    )
+    (defaults_dir / ".gitignore").write_text(".env\nsetup/\n")
+    (defaults_dir / "setup" / "cron.sh").write_text("#!/bin/sh\necho cron\n")
+    (defaults_dir / "setup" / "cron-install.sh").write_text("#!/bin/sh\necho install\n")
+    (defaults_dir / "setup" / "cron-uninstall.sh").write_text(
+        "#!/bin/sh\necho uninstall\n"
+    )
+    monkeypatch.setattr("pycastle.commands.init.files", lambda _pkg: bundled_pkg)
+
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_bytes(b"{}")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+    monkeypatch.chdir(tmp_path)
+
+    with (
+        patch("click.prompt", side_effect=["codex", "my-gh-token"]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    out = capsys.readouterr().out.lower()
+    assert (
+        "selected services do not cover every bundled default stage priority chain"
+        in out
+    )
+    assert (
+        'bug_label = "bundle-specific-bug"'
+        in (tmp_path / "pycastle" / "config.py.example").read_text()
+    )
+
+
 @pytest.mark.parametrize("selection", ["both", "unknown"])
 def test_init_invalid_service_selection_exits_with_clear_error(
     tmp_path, monkeypatch, selection

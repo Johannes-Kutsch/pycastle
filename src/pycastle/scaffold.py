@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 import stat
 from dataclasses import dataclass
@@ -19,6 +20,16 @@ MANAGED_SCAFFOLD_ALLOWLIST = frozenset(
 )
 _CONFIG_FIELD_RE = re.compile(r"[a-z_]+\s*=")
 _EXCLUDED_CONFIG_EXAMPLE_FIELDS = frozenset({"auto_file_bugs", "bug_report_repo"})
+_BUNDLED_DEFAULT_STAGE_OVERRIDE_NAMES = frozenset(
+    {
+        "plan_override",
+        "implement_override",
+        "review_override",
+        "merge_override",
+        "preflight_issue_override",
+        "improve_override",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -138,6 +149,21 @@ class InitScaffold:
     def render_config_example(self) -> str:
         return _render_config_example((self.defaults / "config.py").read_text())
 
+    def bundled_default_stage_chains(self) -> tuple[tuple[str, ...], ...]:
+        tree = ast.parse((self.defaults / "config.py").read_text())
+        chains: list[tuple[str, ...]] = []
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            for target in node.targets:
+                if (
+                    isinstance(target, ast.Name)
+                    and target.id in _BUNDLED_DEFAULT_STAGE_OVERRIDE_NAMES
+                ):
+                    chains.append(_parse_stage_override_services(node.value))
+                    break
+        return tuple(chains)
+
     def _write_config_example(self, target_dir: Path) -> None:
         target_dir.mkdir(parents=True, exist_ok=True)
         (target_dir / "config.py.example").write_text(self.render_config_example())
@@ -156,6 +182,24 @@ class InitScaffold:
         if not target.exists():
             return "created"
         return "unchanged" if target.read_text() == expected else "overwrote"
+
+
+def _parse_stage_override_services(node: ast.AST) -> tuple[str, ...]:
+    if not isinstance(node, ast.Call):
+        return ()
+
+    service = ""
+    fallback_services: tuple[str, ...] = ()
+    for keyword in node.keywords:
+        if keyword.arg == "service" and isinstance(keyword.value, ast.Constant):
+            if isinstance(keyword.value.value, str):
+                service = keyword.value.value
+        if keyword.arg == "fallback":
+            fallback_services = _parse_stage_override_services(keyword.value)
+
+    services = [service] if service else []
+    services.extend(fallback_services)
+    return tuple(services)
 
 
 def _render_config_example(defaults_text: str) -> str:
