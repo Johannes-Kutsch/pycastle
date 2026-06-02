@@ -13,6 +13,12 @@ class _RemoteRetryDecision(Enum):
 
 
 @dataclass(frozen=True)
+class _RemoteRetryAction:
+    decision: _RemoteRetryDecision
+    delay_seconds: int | None = None
+
+
+@dataclass(frozen=True)
 class _RemoteRetryProfile:
     max_attempts: int
     backoff_seconds: tuple[int, ...]
@@ -40,7 +46,31 @@ _NON_FAST_FORWARD_PUSH_PATTERNS = ("[rejected]",)
 
 
 class _PrivateGitRemotePolicy:
-    def classify_fetch_or_pull(self, stderr: str, attempt: int) -> _RemoteRetryDecision:
+    @property
+    def max_attempts(self) -> int:
+        return _REMOTE_RETRY_PROFILE.max_attempts
+
+    def action_for_fetch_or_pull(self, stderr: str, attempt: int) -> _RemoteRetryAction:
+        return self._action_from_decision(
+            self._classify_fetch_or_pull(stderr, attempt), attempt
+        )
+
+    def action_for_push(self, stderr: str, attempt: int) -> _RemoteRetryAction:
+        return self._action_from_decision(self._classify_push(stderr, attempt), attempt)
+
+    def _action_from_decision(
+        self, decision: _RemoteRetryDecision, attempt: int
+    ) -> _RemoteRetryAction:
+        if decision is _RemoteRetryDecision.RETRY_TRANSIENT:
+            return _RemoteRetryAction(
+                decision=decision,
+                delay_seconds=_REMOTE_RETRY_PROFILE.backoff_seconds[attempt - 1],
+            )
+        return _RemoteRetryAction(decision=decision)
+
+    def _classify_fetch_or_pull(
+        self, stderr: str, attempt: int
+    ) -> _RemoteRetryDecision:
         stderr_lower = stderr.lower()
         if any(pattern in stderr_lower for pattern in _OPERATOR_ACTIONABLE_PATTERNS):
             return _RemoteRetryDecision.ESCALATE_OPERATOR_ACTIONABLE
@@ -50,7 +80,7 @@ class _PrivateGitRemotePolicy:
             return _RemoteRetryDecision.ESCALATE_RETRY_EXHAUSTED
         return _RemoteRetryDecision.RETRY_TRANSIENT
 
-    def classify_push(self, stderr: str, attempt: int) -> _RemoteRetryDecision:
+    def _classify_push(self, stderr: str, attempt: int) -> _RemoteRetryDecision:
         stderr_lower = stderr.lower()
         if any(pattern in stderr_lower for pattern in _OPERATOR_ACTIONABLE_PATTERNS):
             return _RemoteRetryDecision.ESCALATE_OPERATOR_ACTIONABLE
