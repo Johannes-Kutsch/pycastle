@@ -905,6 +905,79 @@ def test_get_open_issues_does_not_filter_issue_when_close_failed():
     assert [r["number"] for r in result] == [42]
 
 
+def test_get_open_issues_normalizes_mixed_open_issue_payload():
+    svc = _make_service()
+    issues_body = json.dumps(
+        [
+            "skip",
+            {"title": "missing number"},
+            {
+                "number": "1",
+                "title": None,
+                "body": None,
+                "labels": [{"name": "bug"}],
+                "comments": 0,
+            },
+            {
+                "number": 2,
+                "title": "PR",
+                "body": "",
+                "labels": [],
+                "comments": 3,
+                "pull_request": {"url": "x"},
+            },
+            {
+                "number": "3",
+                "title": "Has comments",
+                "body": "details",
+                "labels": [{"name": "feat"}],
+                "comments": 1,
+            },
+        ]
+    ).encode()
+    comments_body = json.dumps(
+        [
+            {
+                "user": {"login": "alice"},
+                "created_at": "2026-01-01T00:00:00Z",
+                "body": "hi",
+            }
+        ]
+    ).encode()
+
+    def fake_urlopen(req: Any, **_: Any) -> MagicMock:
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        if "/issues/3/comments" in url:
+            return _make_response(comments_body, headers={})
+        return _make_response(issues_body, headers={})
+
+    with patch("pycastle.services.github_service.urlopen", side_effect=fake_urlopen):
+        result = svc.get_open_issues("bug")
+
+    assert result == [
+        {
+            "number": 1,
+            "title": "",
+            "body": "",
+            "labels": ["bug"],
+            "comments": [],
+        },
+        {
+            "number": 3,
+            "title": "Has comments",
+            "body": "details",
+            "labels": ["feat"],
+            "comments": [
+                {
+                    "author": "alice",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "body": "hi",
+                }
+            ],
+        },
+    ]
+
+
 # ── get_all_open_issues_lightweight ─────────────────────────────────────────
 
 
@@ -1008,6 +1081,34 @@ def test_get_all_open_issues_lightweight_paginates():
 
     assert [r["number"] for r in result] == [1, 2]
     assert result[1]["labels"] == ["feat"]
+
+
+def test_get_all_open_issues_lightweight_normalizes_mixed_open_issue_payload():
+    svc = _make_service()
+    body = json.dumps(
+        [
+            "skip",
+            {"title": "missing number"},
+            {"number": "1", "title": None, "labels": [{"name": "bug"}]},
+            {
+                "number": 2,
+                "title": "PR",
+                "labels": [],
+                "pull_request": {"url": "x"},
+            },
+            {"number": "3", "title": "Keep me", "labels": [{"name": "feat"}]},
+        ]
+    ).encode()
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        return_value=_make_response(body, headers={}),
+    ):
+        result = svc.get_all_open_issues_lightweight()
+
+    assert result == [
+        {"number": 1, "title": "", "labels": ["bug"]},
+        {"number": 3, "title": "Keep me", "labels": ["feat"]},
+    ]
 
 
 # ── close_completed_parent_issues ────────────────────────────────────────────
