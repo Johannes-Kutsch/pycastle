@@ -20,6 +20,52 @@ from pycastle.services import (
 _cfg = Config()
 
 
+def _git_result(
+    *, returncode: int = 0, stdout: bytes = b"", stderr: bytes = b""
+) -> MagicMock:
+    return MagicMock(returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+def _git_failure(
+    stderr: bytes, *, returncode: int = 1, stdout: bytes = b""
+) -> MagicMock:
+    return _git_result(returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+def _run_pull(svc: GitService, repo_path: Path) -> None:
+    svc.pull(repo_path)
+
+
+def _run_fetch(svc: GitService, repo_path: Path) -> None:
+    svc.fetch(repo_path)
+
+
+def _run_push(svc: GitService, repo_path: Path) -> None:
+    asyncio.run(svc.push(repo_path))
+
+
+_PERMISSION_DENIED_STDERR = b"Permission denied (publickey)."
+_STABLE_MISCONFIG_STDERRS = (
+    b"fatal: 'origin' does not appear to be a git repository",
+    b"remote: Repository not found.",
+    b"remote: not found",
+)
+_PULL_FETCH_DIVERGENCE_STDERRS = (
+    b"fatal: Not possible to fast-forward, aborting.",
+    b"hint: Need to specify how to reconcile divergent branches.",
+    b"fatal: refusing to merge unrelated histories",
+    b"CONFLICT (content): Merge conflict in README.md",
+)
+_PUSH_DIVERGENCE_STDERRS = (
+    b"hint: Need to specify how to reconcile divergent branches.",
+    b"fatal: refusing to merge unrelated histories",
+    b"CONFLICT (content): Merge conflict in README.md",
+)
+_NON_FAST_FORWARD_PUSH_STDERR = (
+    b"! [rejected] main -> main (fetch first)\nerror: failed to push some refs"
+)
+
+
 # ── Exception hierarchy ────────────────────────────────────────────────────────
 
 
@@ -1318,13 +1364,9 @@ def test_pull_retries_on_transient_failure_and_succeeds(tmp_path):
     svc = GitService(_cfg)
     responses = iter(
         [
-            MagicMock(returncode=1, stdout=b"", stderr=b"RPC failed; connection reset"),
-            MagicMock(
-                returncode=1,
-                stdout=b"",
-                stderr=b"Another git process seems to be running",
-            ),
-            MagicMock(returncode=0, stdout=b"Already up to date.\n", stderr=b""),
+            _git_failure(b"RPC failed; connection reset"),
+            _git_failure(b"Another git process seems to be running"),
+            _git_result(stdout=b"Already up to date.\n"),
         ]
     )
 
@@ -1346,11 +1388,7 @@ def test_pull_raises_immediately_on_permanent_failure(tmp_path):
     def fake_run(*a, **kw):
         nonlocal attempts
         attempts += 1
-        return MagicMock(
-            returncode=1,
-            stdout=b"",
-            stderr=b"fatal: Not possible to fast-forward, aborting.",
-        )
+        return _git_failure(b"fatal: Not possible to fast-forward, aborting.")
 
     with (
         patch("subprocess.run", side_effect=fake_run),
@@ -1365,12 +1403,7 @@ def test_pull_raises_immediately_on_permanent_failure(tmp_path):
 
 @pytest.mark.parametrize(
     "stderr",
-    [
-        b"fatal: Not possible to fast-forward, aborting.",
-        b"hint: Need to specify how to reconcile divergent branches.",
-        b"fatal: refusing to merge unrelated histories",
-        b"CONFLICT (content): Merge conflict in README.md",
-    ],
+    _PULL_FETCH_DIVERGENCE_STDERRS,
 )
 def test_pull_raises_git_command_error_immediately_for_divergence_patterns(
     tmp_path, stderr
@@ -1381,7 +1414,7 @@ def test_pull_raises_git_command_error_immediately_for_divergence_patterns(
     def fake_run(*a, **kw):
         nonlocal attempts
         attempts += 1
-        return MagicMock(returncode=1, stdout=b"", stderr=stderr)
+        return _git_failure(stderr)
 
     with (
         patch("subprocess.run", side_effect=fake_run),
@@ -1395,15 +1428,16 @@ def test_pull_raises_git_command_error_immediately_for_divergence_patterns(
 
 
 @pytest.mark.parametrize(
-    "stderr",
+    ("run_remote_op", "op", "returncode"),
     [
-        b"fatal: 'origin' does not appear to be a git repository",
-        b"remote: Repository not found.",
-        b"remote: not found",
+        pytest.param(_run_pull, "pull", 1, id="pull"),
+        pytest.param(_run_fetch, "fetch", 1, id="fetch"),
+        pytest.param(_run_push, "push", 128, id="push"),
     ],
 )
-def test_pull_raises_operator_actionable_error_immediately_for_stable_misconfig(
-    tmp_path, stderr
+@pytest.mark.parametrize("stderr", _STABLE_MISCONFIG_STDERRS)
+def test_remote_op_raises_operator_actionable_error_immediately_for_stable_misconfig(
+    tmp_path, run_remote_op, op, returncode, stderr
 ):
     svc = GitService(_cfg)
     attempts = 0
@@ -1411,16 +1445,19 @@ def test_pull_raises_operator_actionable_error_immediately_for_stable_misconfig(
     def fake_run(*a, **kw):
         nonlocal attempts
         attempts += 1
-        return MagicMock(returncode=1, stdout=b"", stderr=stderr)
+        return _git_failure(stderr, returncode=returncode)
 
     with (
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep") as mock_sleep,
     ):
-        with pytest.raises(OperatorActionableGitError):
-            svc.pull(tmp_path)
+        with pytest.raises(OperatorActionableGitError) as exc_info:
+            run_remote_op(svc, tmp_path)
 
     assert attempts == 1
+    assert exc_info.value.op == op
+    assert exc_info.value.attempt_count == 1
+    assert exc_info.value.stderr == stderr.decode()
     mock_sleep.assert_not_called()
 
 
@@ -1428,10 +1465,10 @@ def test_pull_final_exception_carries_last_attempt_stderr(tmp_path):
     svc = GitService(_cfg)
     responses = iter(
         [
-            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 1"),
-            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 2"),
-            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 3"),
-            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 4"),
+            _git_failure(b"transient error attempt 1"),
+            _git_failure(b"transient error attempt 2"),
+            _git_failure(b"transient error attempt 3"),
+            _git_failure(b"transient error attempt 4"),
         ]
     )
 
@@ -1449,8 +1486,8 @@ def test_pull_successful_retry_emits_warning(tmp_path, caplog):
     svc = GitService(_cfg)
     responses = iter(
         [
-            MagicMock(returncode=1, stdout=b"", stderr=b"transient network error"),
-            MagicMock(returncode=0, stdout=b"Already up to date.\n", stderr=b""),
+            _git_failure(b"transient network error"),
+            _git_result(stdout=b"Already up to date.\n"),
         ]
     )
 
@@ -1510,10 +1547,8 @@ def test_push_retries_on_transient_failure(tmp_path):
     svc = GitService(_cfg)
     responses = iter(
         [
-            MagicMock(
-                returncode=1, stdout=b"", stderr=b"error: failed to push some refs"
-            ),
-            MagicMock(returncode=0, stdout=b"", stderr=b""),
+            _git_failure(b"error: failed to push some refs"),
+            _git_result(),
         ]
     )
 
@@ -1530,8 +1565,8 @@ def test_push_successful_retry_emits_warning(tmp_path, caplog):
     svc = GitService(_cfg)
     responses = iter(
         [
-            MagicMock(returncode=1, stdout=b"", stderr=b"transient network error"),
-            MagicMock(returncode=0, stdout=b"", stderr=b""),
+            _git_failure(b"transient network error"),
+            _git_result(),
         ]
     )
 
@@ -1550,17 +1585,14 @@ def test_push_successful_retry_emits_warning(tmp_path, caplog):
 def test_push_raises_after_four_non_fast_forward_rejections(tmp_path):
     """All 4 push attempts rejected → raises GitCommandError with final stderr."""
     svc = GitService(_cfg)
-    nff_stderr = (
-        b"! [rejected] main -> main (fetch first)\nerror: failed to push some refs"
-    )
     push_count = 0
 
     def fake_run(cmd, **kwargs):
         nonlocal push_count
         if cmd == ["git", "push"]:
             push_count += 1
-            return MagicMock(returncode=1, stdout=b"", stderr=nff_stderr)
-        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+            return _git_failure(_NON_FAST_FORWARD_PUSH_STDERR)
+        return _git_result()
 
     with patch("subprocess.run", side_effect=fake_run):
         with pytest.raises(GitCommandError) as exc_info:
@@ -1587,7 +1619,7 @@ def test_push_pulls_with_merge_fallback_on_rejection_then_succeeds(tmp_path):
         push_count = sum(1 for c in captured if c == ["git", "push"])
         if cmd == ["git", "push"] and push_count == 1:
             return MagicMock(returncode=1, stdout=b"", stderr=nff_stderr)
-        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+        return _git_result()
 
     with patch("subprocess.run", side_effect=fake_run):
         asyncio.run(svc.push(tmp_path))  # must not raise
@@ -1606,26 +1638,15 @@ def test_push_pulls_with_merge_fallback_on_rejection_then_succeeds(tmp_path):
 def test_push_raises_when_pull_with_merge_fallback_fails_on_conflict(tmp_path):
     """If pull_with_merge_fallback raises conflict after push rejection, push raises."""
     svc = GitService(_cfg)
-    nff_stderr = (
-        b"! [rejected] main -> main (fetch first)\nerror: failed to push some refs"
-    )
 
     def fake_run(cmd, **kwargs):
         if cmd == ["git", "push"]:
-            return MagicMock(returncode=1, stdout=b"", stderr=nff_stderr)
+            return _git_failure(_NON_FAST_FORWARD_PUSH_STDERR)
         if cmd == ["git", "pull", "--ff-only"]:
-            return MagicMock(
-                returncode=1,
-                stdout=b"",
-                stderr=b"fatal: Not possible to fast-forward, aborting.",
-            )
+            return _git_failure(b"fatal: Not possible to fast-forward, aborting.")
         if cmd[:2] == ["git", "merge"]:
-            return MagicMock(
-                returncode=1,
-                stdout=b"",
-                stderr=b"CONFLICT (content): conflict in file.py",
-            )
-        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+            return _git_failure(b"CONFLICT (content): conflict in file.py")
+        return _git_result()
 
     with patch("subprocess.run", side_effect=fake_run):
         with pytest.raises(GitCommandError):
@@ -1646,7 +1667,7 @@ def test_push_does_not_fetch_rebase_on_transient_failure(tmp_path):
             return MagicMock(
                 returncode=1, stdout=b"", stderr=b"RPC failed; connection reset"
             )
-        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+        return _git_result()
 
     with (
         patch("subprocess.run", side_effect=fake_run),
@@ -1663,16 +1684,13 @@ def test_push_uses_pull_with_merge_fallback_on_nff_rejection(tmp_path):
     """On NFF push rejection, push calls pull_with_merge_fallback instead of git rebase."""
     svc = GitService(_cfg)
     captured: list[list[str]] = []
-    nff_stderr = (
-        b"! [rejected] main -> main (fetch first)\nerror: failed to push some refs"
-    )
 
     def fake_run(cmd, **kwargs):
         captured.append(list(cmd))
         push_count = sum(1 for c in captured if c == ["git", "push"])
         if cmd == ["git", "push"] and push_count == 1:
-            return MagicMock(returncode=1, stdout=b"", stderr=nff_stderr)
-        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+            return _git_failure(_NON_FAST_FORWARD_PUSH_STDERR)
+        return _git_result()
 
     with patch("subprocess.run", side_effect=fake_run):
         asyncio.run(svc.push(tmp_path))  # must not raise
@@ -1686,9 +1704,6 @@ def test_push_uses_pull_with_merge_fallback_on_nff_rejection(tmp_path):
 def test_push_calls_async_resolver_on_textual_conflict_and_retries(tmp_path):
     """When pull_with_merge_fallback raises a textual conflict, the async resolver is called and push retries."""
     svc = GitService(_cfg)
-    nff_stderr = (
-        b"! [rejected] main -> main (fetch first)\nerror: failed to push some refs"
-    )
     resolver_called = False
     push_attempt = 0
 
@@ -1701,23 +1716,15 @@ def test_push_calls_async_resolver_on_textual_conflict_and_retries(tmp_path):
         if cmd == ["git", "push"]:
             push_attempt += 1
             if push_attempt == 1:
-                return MagicMock(returncode=1, stdout=b"", stderr=nff_stderr)
-            return MagicMock(returncode=0, stdout=b"", stderr=b"")
+                return _git_failure(_NON_FAST_FORWARD_PUSH_STDERR)
+            return _git_result()
         if cmd == ["git", "pull", "--ff-only"]:
-            return MagicMock(
-                returncode=1,
-                stdout=b"",
-                stderr=b"fatal: Not possible to fast-forward, aborting.",
-            )
+            return _git_failure(b"fatal: Not possible to fast-forward, aborting.")
         if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
-            return MagicMock(returncode=0, stdout=b"main\n", stderr=b"")
+            return _git_result(stdout=b"main\n")
         if len(cmd) >= 4 and cmd[:3] == ["git", "merge", "--no-edit"]:
-            return MagicMock(
-                returncode=1,
-                stdout=b"",
-                stderr=b"CONFLICT (content): Merge conflict in file.py",
-            )
-        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+            return _git_failure(b"CONFLICT (content): Merge conflict in file.py")
+        return _git_result()
 
     with patch("subprocess.run", side_effect=fake_run):
         asyncio.run(svc.push(tmp_path, resolver=resolver))
@@ -1863,10 +1870,10 @@ def test_fetch_final_exception_carries_last_attempt_stderr(tmp_path):
     svc = GitService(_cfg)
     responses = iter(
         [
-            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 1"),
-            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 2"),
-            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 3"),
-            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 4"),
+            _git_failure(b"transient error attempt 1"),
+            _git_failure(b"transient error attempt 2"),
+            _git_failure(b"transient error attempt 3"),
+            _git_failure(b"transient error attempt 4"),
         ]
     )
 
@@ -1884,8 +1891,8 @@ def test_fetch_retries_on_transient_failure(tmp_path):
     svc = GitService(_cfg)
     responses = iter(
         [
-            MagicMock(returncode=1, stdout=b"", stderr=b"error: RPC failed; curl 56"),
-            MagicMock(returncode=0, stdout=b"", stderr=b""),
+            _git_failure(b"error: RPC failed; curl 56"),
+            _git_result(),
         ]
     )
 
@@ -1902,8 +1909,8 @@ def test_fetch_successful_retry_emits_warning(tmp_path, caplog):
     svc = GitService(_cfg)
     responses = iter(
         [
-            MagicMock(returncode=1, stdout=b"", stderr=b"transient network error"),
-            MagicMock(returncode=0, stdout=b"", stderr=b""),
+            _git_failure(b"transient network error"),
+            _git_result(),
         ]
     )
 
@@ -1928,11 +1935,7 @@ def test_fetch_retries_on_auth_failure_and_raises_operator_actionable_on_exhaust
     def fake_run(*a, **kw):
         nonlocal attempts
         attempts += 1
-        return MagicMock(
-            returncode=128,
-            stdout=b"",
-            stderr=b"remote: Authentication failed",
-        )
+        return _git_failure(b"remote: Authentication failed", returncode=128)
 
     with (
         patch("subprocess.run", side_effect=fake_run),
@@ -1951,10 +1954,8 @@ def test_fetch_retries_permission_denied_and_succeeds_on_second_attempt(tmp_path
     svc = GitService(_cfg)
     responses = iter(
         [
-            MagicMock(
-                returncode=1, stdout=b"", stderr=b"Permission denied (publickey)."
-            ),
-            MagicMock(returncode=0, stdout=b"", stderr=b""),
+            _git_failure(_PERMISSION_DENIED_STDERR),
+            _git_result(),
         ]
     )
 
@@ -1969,45 +1970,7 @@ def test_fetch_retries_permission_denied_and_succeeds_on_second_attempt(tmp_path
 
 @pytest.mark.parametrize(
     "stderr",
-    [
-        b"fatal: 'origin' does not appear to be a git repository",
-        b"remote: Repository not found.",
-        b"remote: not found",
-    ],
-)
-def test_fetch_raises_operator_actionable_error_immediately_for_stable_misconfig(
-    tmp_path, stderr
-):
-    svc = GitService(_cfg)
-    attempts = 0
-
-    def fake_run(*a, **kw):
-        nonlocal attempts
-        attempts += 1
-        return MagicMock(returncode=1, stdout=b"", stderr=stderr)
-
-    with (
-        patch("subprocess.run", side_effect=fake_run),
-        patch("time.sleep") as mock_sleep,
-    ):
-        with pytest.raises(OperatorActionableGitError) as exc_info:
-            svc.fetch(tmp_path)
-
-    assert attempts == 1
-    assert exc_info.value.op == "fetch"
-    assert exc_info.value.attempt_count == 1
-    assert exc_info.value.stderr == stderr.decode()
-    mock_sleep.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "stderr",
-    [
-        b"fatal: Not possible to fast-forward, aborting.",
-        b"hint: Need to specify how to reconcile divergent branches.",
-        b"fatal: refusing to merge unrelated histories",
-        b"CONFLICT (content): Merge conflict in README.md",
-    ],
+    _PULL_FETCH_DIVERGENCE_STDERRS,
 )
 def test_fetch_raises_git_command_error_immediately_for_divergence_patterns(
     tmp_path, stderr
@@ -2018,7 +1981,7 @@ def test_fetch_raises_git_command_error_immediately_for_divergence_patterns(
     def fake_run(*a, **kw):
         nonlocal attempts
         attempts += 1
-        return MagicMock(returncode=1, stdout=b"", stderr=stderr)
+        return _git_failure(stderr)
 
     with (
         patch("subprocess.run", side_effect=fake_run),
@@ -2204,10 +2167,8 @@ def test_pull_retries_permission_denied_and_succeeds_on_second_attempt(tmp_path)
     svc = GitService(_cfg)
     responses = iter(
         [
-            MagicMock(
-                returncode=1, stdout=b"", stderr=b"Permission denied (publickey)."
-            ),
-            MagicMock(returncode=0, stdout=b"Already up to date.\n", stderr=b""),
+            _git_failure(_PERMISSION_DENIED_STDERR),
+            _git_result(stdout=b"Already up to date.\n"),
         ]
     )
 
@@ -2229,9 +2190,7 @@ def test_pull_raises_operator_actionable_error_when_all_four_attempts_permission
     def fake_run(*a, **kw):
         nonlocal attempts
         attempts += 1
-        return MagicMock(
-            returncode=1, stdout=b"", stderr=b"Permission denied (publickey)."
-        )
+        return _git_failure(_PERMISSION_DENIED_STDERR)
 
     with (
         patch("subprocess.run", side_effect=fake_run),
@@ -2255,9 +2214,7 @@ def test_pull_raises_operator_actionable_error_immediately_on_repository_not_fou
     def fake_run(*a, **kw):
         nonlocal attempts
         attempts += 1
-        return MagicMock(
-            returncode=128, stdout=b"", stderr=b"remote: Repository not found."
-        )
+        return _git_failure(b"remote: Repository not found.", returncode=128)
 
     with (
         patch("subprocess.run", side_effect=fake_run),
@@ -2279,10 +2236,8 @@ def test_pull_unrelated_histories_still_raises_git_command_error(tmp_path):
     def fake_run(*a, **kw):
         nonlocal attempts
         attempts += 1
-        return MagicMock(
-            returncode=128,
-            stdout=b"",
-            stderr=b"fatal: refusing to merge unrelated histories",
+        return _git_failure(
+            b"fatal: refusing to merge unrelated histories", returncode=128
         )
 
     with (
@@ -2306,11 +2261,7 @@ def test_pull_conflict_stderr_raises_git_command_error_not_operator_actionable(
     def fake_run(*a, **kw):
         nonlocal attempts
         attempts += 1
-        return MagicMock(
-            returncode=1,
-            stdout=b"",
-            stderr=b"CONFLICT (content): Merge conflict in README.md",
-        )
+        return _git_failure(b"CONFLICT (content): Merge conflict in README.md")
 
     with (
         patch("subprocess.run", side_effect=fake_run),
@@ -2333,9 +2284,7 @@ def test_push_raises_operator_actionable_error_after_four_permission_denied_atte
     def fake_run(*a, **kw):
         nonlocal attempts
         attempts += 1
-        return MagicMock(
-            returncode=128, stdout=b"", stderr=b"Permission denied (publickey)."
-        )
+        return _git_failure(_PERMISSION_DENIED_STDERR, returncode=128)
 
     with (
         patch("subprocess.run", side_effect=fake_run),
@@ -2351,44 +2300,7 @@ def test_push_raises_operator_actionable_error_after_four_permission_denied_atte
 
 @pytest.mark.parametrize(
     "stderr",
-    [
-        b"fatal: 'origin' does not appear to be a git repository",
-        b"remote: Repository not found.",
-        b"remote: not found",
-    ],
-)
-def test_push_raises_operator_actionable_error_immediately_for_stable_misconfig(
-    tmp_path, stderr
-):
-    svc = GitService(_cfg)
-    attempts = 0
-
-    def fake_run(*a, **kw):
-        nonlocal attempts
-        attempts += 1
-        return MagicMock(returncode=128, stdout=b"", stderr=stderr)
-
-    with (
-        patch("subprocess.run", side_effect=fake_run),
-        patch("time.sleep") as mock_sleep,
-    ):
-        with pytest.raises(OperatorActionableGitError) as exc_info:
-            asyncio.run(svc.push(tmp_path))
-
-    assert attempts == 1
-    mock_sleep.assert_not_called()
-    assert exc_info.value.op == "push"
-    assert exc_info.value.attempt_count == 1
-    assert exc_info.value.stderr == stderr.decode()
-
-
-@pytest.mark.parametrize(
-    "stderr",
-    [
-        b"hint: Need to specify how to reconcile divergent branches.",
-        b"fatal: refusing to merge unrelated histories",
-        b"CONFLICT (content): Merge conflict in README.md",
-    ],
+    _PUSH_DIVERGENCE_STDERRS,
 )
 def test_push_non_nff_divergence_patterns_raise_git_command_error(tmp_path, stderr):
     svc = GitService(_cfg)
@@ -2397,7 +2309,7 @@ def test_push_non_nff_divergence_patterns_raise_git_command_error(tmp_path, stde
     def fake_run(*a, **kw):
         nonlocal attempts
         attempts += 1
-        return MagicMock(returncode=1, stdout=b"", stderr=stderr)
+        return _git_failure(stderr)
 
     with (
         patch("subprocess.run", side_effect=fake_run),
@@ -2431,8 +2343,8 @@ def test_pull_with_merge_fallback_retries_transient_blip_on_inner_pull(tmp_path)
     svc = GitService(_cfg)
     responses = iter(
         [
-            MagicMock(returncode=1, stdout=b"", stderr=b"RPC failed; connection reset"),
-            MagicMock(returncode=0, stdout=b"Already up to date.\n", stderr=b""),
+            _git_failure(b"RPC failed; connection reset"),
+            _git_result(stdout=b"Already up to date.\n"),
         ]
     )
 
