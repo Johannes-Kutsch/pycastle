@@ -1526,6 +1526,27 @@ def test_push_retries_on_transient_failure(tmp_path):
     assert mock_sleep.call_count == 1
 
 
+def test_push_successful_retry_emits_warning(tmp_path, caplog):
+    svc = GitService(_cfg)
+    responses = iter(
+        [
+            MagicMock(returncode=1, stdout=b"", stderr=b"transient network error"),
+            MagicMock(returncode=0, stdout=b"", stderr=b""),
+        ]
+    )
+
+    with (
+        patch("subprocess.run", side_effect=lambda *a, **kw: next(responses)),
+        patch("time.sleep"),
+        caplog.at_level(logging.WARNING, logger="pycastle.services.git_service"),
+    ):
+        asyncio.run(svc.push(tmp_path))
+
+    assert any(
+        "push" in record.message and "2" in record.message for record in caplog.records
+    )
+
+
 def test_push_raises_after_four_non_fast_forward_rejections(tmp_path):
     """All 4 push attempts rejected → raises GitCommandError with final stderr."""
     svc = GitService(_cfg)
@@ -2306,6 +2327,69 @@ def test_push_raises_operator_actionable_error_after_four_permission_denied_atte
     assert attempts == 4
     assert exc_info.value.op == "push"
     assert exc_info.value.attempt_count == 4
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        b"fatal: 'origin' does not appear to be a git repository",
+        b"remote: Repository not found.",
+        b"remote: not found",
+    ],
+)
+def test_push_raises_operator_actionable_error_immediately_for_stable_misconfig(
+    tmp_path, stderr
+):
+    svc = GitService(_cfg)
+    attempts = 0
+
+    def fake_run(*a, **kw):
+        nonlocal attempts
+        attempts += 1
+        return MagicMock(returncode=128, stdout=b"", stderr=stderr)
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(OperatorActionableGitError) as exc_info:
+            asyncio.run(svc.push(tmp_path))
+
+    assert attempts == 1
+    mock_sleep.assert_not_called()
+    assert exc_info.value.op == "push"
+    assert exc_info.value.attempt_count == 1
+    assert exc_info.value.stderr == stderr.decode()
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        b"hint: Need to specify how to reconcile divergent branches.",
+        b"fatal: refusing to merge unrelated histories",
+        b"CONFLICT (content): Merge conflict in README.md",
+    ],
+)
+def test_push_non_nff_divergence_patterns_raise_git_command_error(tmp_path, stderr):
+    svc = GitService(_cfg)
+    attempts = 0
+
+    def fake_run(*a, **kw):
+        nonlocal attempts
+        attempts += 1
+        return MagicMock(returncode=1, stdout=b"", stderr=stderr)
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(GitCommandError) as exc_info:
+            asyncio.run(svc.push(tmp_path))
+
+    assert attempts == 1
+    assert exc_info.value.stderr == stderr.decode()
+    mock_sleep.assert_not_called()
+    assert not isinstance(exc_info.value, OperatorActionableGitError)
 
 
 def test_operator_actionable_git_error_is_not_subclass_of_git_command_error():
