@@ -1,10 +1,42 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 
 from ..config.types import StageOverride
 from ..service_availability import iter_stage_chain
 from .agent_service import AgentService
+
+
+@dataclass(frozen=True)
+class _ConfiguredCandidate:
+    override: StageOverride
+    service: AgentService
+    is_available: bool
+
+
+@dataclass(frozen=True)
+class _StageAvailability:
+    candidates: tuple[_ConfiguredCandidate, ...]
+
+    def has_configured_candidate(self) -> bool:
+        return bool(self.candidates)
+
+    def first_available_index(self) -> int | None:
+        for index, candidate in enumerate(self.candidates):
+            if candidate.is_available:
+                return index
+        return None
+
+    def next_wake_time(self) -> datetime | None:
+        exhausted = [
+            candidate.service
+            for candidate in self.candidates
+            if not candidate.is_available
+        ]
+        if not exhausted:
+            return None
+        return min(service.next_wake_time() for service in exhausted)
 
 
 class ServiceRegistry:
@@ -15,12 +47,29 @@ class ServiceRegistry:
     def services(self) -> dict[str, AgentService]:
         return dict(self._services)
 
-    def _configured_nodes(self, override: StageOverride) -> list[StageOverride]:
-        return [
+    def _configured_candidates(
+        self, override: StageOverride
+    ) -> tuple[StageOverride, ...]:
+        return tuple(
             node
             for node in iter_stage_chain(override)
             if node.service in self._services
-        ]
+        )
+
+    def _stage_availability(
+        self, override: StageOverride, now: datetime
+    ) -> _StageAvailability:
+        candidates: list[_ConfiguredCandidate] = []
+        for node in self._configured_candidates(override):
+            service = self._services[node.service]
+            candidates.append(
+                _ConfiguredCandidate(
+                    override=node,
+                    service=service,
+                    is_available=service.is_available(now=now),
+                )
+            )
+        return _StageAvailability(tuple(candidates))
 
     def _remaining_chain_is_fully_configured(self, override: StageOverride) -> bool:
         return all(
@@ -41,29 +90,36 @@ class ServiceRegistry:
         return chain
 
     def has_configured_candidate(self, override: StageOverride) -> bool:
-        return bool(self._configured_nodes(override))
+        return bool(self._configured_candidates(override))
 
     def resolve(self, override: StageOverride, now: datetime) -> StageOverride:
-        configured = self._configured_nodes(override)
-        for index, node in enumerate(configured):
-            svc = self._services[node.service]
-            if svc.is_available(now=now):
-                if self._remaining_chain_is_fully_configured(node):
-                    return node
-                return self._build_chain(configured[index:])
-        if configured:
-            if self._remaining_chain_is_fully_configured(configured[0]):
-                return configured[0]
-            return self._build_chain(configured)
+        stage_availability = self._stage_availability(override, now)
+        available_index = stage_availability.first_available_index()
+        if available_index is not None:
+            available_override = stage_availability.candidates[available_index].override
+            if self._remaining_chain_is_fully_configured(available_override):
+                return available_override
+            return self._build_chain(
+                [
+                    candidate.override
+                    for candidate in stage_availability.candidates[available_index:]
+                ]
+            )
+        if stage_availability.has_configured_candidate():
+            first_configured = stage_availability.candidates[0].override
+            if self._remaining_chain_is_fully_configured(first_configured):
+                return first_configured
+            return self._build_chain(
+                [candidate.override for candidate in stage_availability.candidates]
+            )
         return override
 
     def has_available(self, now: datetime) -> bool:
         return any(svc.is_available(now=now) for svc in self._services.values())
 
     def has_available_for(self, override: StageOverride, now: datetime) -> bool:
-        return any(
-            self._services[node.service].is_available(now=now)
-            for node in self._configured_nodes(override)
+        return (
+            self._stage_availability(override, now).first_available_index() is not None
         )
 
     def next_wake_time(self, now: datetime) -> datetime | None:
@@ -77,14 +133,7 @@ class ServiceRegistry:
     def next_wake_time_for(
         self, override: StageOverride, now: datetime
     ) -> datetime | None:
-        exhausted = [
-            self._services[node.service]
-            for node in self._configured_nodes(override)
-            if not self._services[node.service].is_available(now=now)
-        ]
-        if not exhausted:
-            return None
-        return min(svc.next_wake_time() for svc in exhausted)
+        return self._stage_availability(override, now).next_wake_time()
 
     def __getitem__(self, key: str) -> AgentService | None:
         return self._services.get(key)
