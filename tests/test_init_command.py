@@ -536,6 +536,210 @@ def test_refresh_config_example_uses_bundled_behavioral_contract(tmp_path, monke
     assert 'bug_label = "bug"' not in content
 
 
+def test_init_and_refresh_share_managed_scaffold_outcomes_from_bundled_defaults(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.init import main, refresh
+
+    bundled_pkg = tmp_path / "bundled-pycastle"
+    defaults_dir = bundled_pkg / "defaults"
+    (defaults_dir / "setup").mkdir(parents=True)
+    (defaults_dir / "config.py").write_text(
+        "from pathlib import Path\n"
+        "from pycastle import StageOverride\n\n"
+        "# --- Behaviour ---\n"
+        "# max_iterations = 77\n"
+        '# bug_label = "bundle-bug"\n\n'
+        "# --- Logging ---\n"
+        '# logs_dir = Path("bundle-logs")\n'
+    )
+    (defaults_dir / ".gitignore").write_text("managed-ignore\n")
+    (defaults_dir / "setup" / "cron.sh").write_text("#!/bin/sh\necho bundle-cron\n")
+    (defaults_dir / "setup" / "cron-install.sh").write_text(
+        "#!/bin/sh\necho bundle-install\n"
+    )
+    (defaults_dir / "setup" / "cron-uninstall.sh").write_text(
+        "#!/bin/sh\necho bundle-uninstall\n"
+    )
+    monkeypatch.setattr("pycastle.commands.init.files", lambda _pkg: bundled_pkg)
+
+    expected_example = (
+        "from pathlib import Path\n\n"
+        "from pycastle import StageOverride\n\n"
+        "# --- Behaviour ---\n"
+        "max_iterations = 77\n"
+        'bug_label = "bundle-bug"\n\n'
+        "# --- Logging ---\n"
+        'logs_dir = Path("bundle-logs")\n'
+    )
+    results: dict[str, tuple[str, str]] = {}
+
+    for command_name in ("init", "refresh"):
+        workspace = tmp_path / command_name
+        home = tmp_path / f"{command_name}-home"
+        pycastle_dir = workspace / "pycastle"
+        session_auth = (
+            workspace / ".pycastle-session" / "implementer" / "codex" / "auth.json"
+        )
+        prompts_override = pycastle_dir / "prompts" / "shared" / "_issue-tracker.md"
+        dockerfile_override = pycastle_dir / "Dockerfile"
+
+        prompts_override.parent.mkdir(parents=True)
+        prompts_override.write_text("user prompt override\n")
+        dockerfile_override.write_text("FROM user-owned\n")
+        session_auth.parent.mkdir(parents=True)
+        session_auth.write_text('{"token":"preserve-me"}\n')
+        (pycastle_dir / "config.py.example").write_text("# stale local example\n")
+        (pycastle_dir / ".gitignore").write_text("stale ignore\n")
+        (pycastle_dir / "setup").mkdir(exist_ok=True)
+        (pycastle_dir / "setup" / "cron.sh").write_text("#!/bin/sh\necho stale\n")
+        (pycastle_dir / "setup" / "cron-install.sh").write_text("stale install\n")
+        (pycastle_dir / "setup" / "cron-uninstall.sh").write_text("stale uninstall\n")
+        home.mkdir()
+        (home / "config.py.example").write_text("# stale home example\n")
+
+        monkeypatch.chdir(workspace)
+        monkeypatch.setenv("PYCASTLE_HOME", str(home))
+        if command_name == "init":
+            with (
+                patch("click.prompt", side_effect=["claude", "", ""]),
+                patch("click.confirm", return_value=False),
+            ):
+                main(scope="local")
+        else:
+            refresh()
+
+        assert (pycastle_dir / "config.py.example").read_text() == expected_example
+        assert (home / "config.py.example").read_text() == expected_example
+        assert (pycastle_dir / ".gitignore").read_text() == "managed-ignore\n"
+        assert (pycastle_dir / "setup" / "cron.sh").read_text() == (
+            "#!/bin/sh\necho bundle-cron\n"
+        )
+        assert (pycastle_dir / "setup" / "cron-install.sh").read_text() == (
+            "#!/bin/sh\necho bundle-install\n"
+        )
+        assert (pycastle_dir / "setup" / "cron-uninstall.sh").read_text() == (
+            "#!/bin/sh\necho bundle-uninstall\n"
+        )
+        assert prompts_override.read_text() == "user prompt override\n"
+        assert dockerfile_override.read_text() == "FROM user-owned\n"
+        assert session_auth.read_text() == '{"token":"preserve-me"}\n'
+        results[command_name] = (
+            (pycastle_dir / "config.py.example").read_text(),
+            (home / "config.py.example").read_text(),
+        )
+
+    assert results["init"] == results["refresh"]
+
+
+def test_init_and_refresh_only_update_home_config_example_when_it_exists(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.init import main, refresh
+
+    bundled_pkg = tmp_path / "bundled-pycastle"
+    defaults_dir = bundled_pkg / "defaults"
+    (defaults_dir / "setup").mkdir(parents=True)
+    (defaults_dir / "config.py").write_text(
+        'from pathlib import Path\n# --- Behaviour ---\n# bug_label = "bundle-bug"\n'
+    )
+    (defaults_dir / ".gitignore").write_text("managed-ignore\n")
+    (defaults_dir / "setup" / "cron.sh").write_text("#!/bin/sh\necho bundle-cron\n")
+    (defaults_dir / "setup" / "cron-install.sh").write_text(
+        "#!/bin/sh\necho bundle-install\n"
+    )
+    (defaults_dir / "setup" / "cron-uninstall.sh").write_text(
+        "#!/bin/sh\necho bundle-uninstall\n"
+    )
+    monkeypatch.setattr("pycastle.commands.init.files", lambda _pkg: bundled_pkg)
+
+    expected_example = (
+        'from pathlib import Path\n\n# --- Behaviour ---\nbug_label = "bundle-bug"\n'
+    )
+
+    for command_name in ("init", "refresh"):
+        for home_has_example in (False, True):
+            workspace = tmp_path / f"{command_name}-{home_has_example}"
+            home = tmp_path / f"{command_name}-{home_has_example}-home"
+            pycastle_dir = workspace / "pycastle"
+
+            pycastle_dir.mkdir(parents=True)
+            home.mkdir()
+            if home_has_example:
+                (home / "config.py.example").write_text("# stale home example\n")
+
+            monkeypatch.chdir(workspace)
+            monkeypatch.setenv("PYCASTLE_HOME", str(home))
+            if command_name == "init":
+                with (
+                    patch("click.prompt", side_effect=["claude", "", ""]),
+                    patch("click.confirm", return_value=False),
+                ):
+                    main(scope="local")
+            else:
+                refresh()
+
+            assert (pycastle_dir / "config.py.example").read_text() == expected_example
+            if home_has_example:
+                assert (home / "config.py.example").read_text() == expected_example
+            else:
+                assert not (home / "config.py.example").exists()
+
+
+def test_init_runs_wizard_prompts_while_refresh_is_non_interactive(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.init import main, refresh
+
+    init_workspace = tmp_path / "init-workspace"
+    init_workspace.mkdir()
+    monkeypatch.chdir(init_workspace)
+
+    prompt_calls: list[str] = []
+    confirm_calls: list[str] = []
+
+    def capture_prompt(message: str, *args: object, **kwargs: object) -> str:
+        prompt_calls.append(message)
+        if "agent services" in message.lower():
+            return "claude"
+        if "github token" in message.lower():
+            return "gh-token"
+        if "claude oauth token" in message.lower():
+            return "claude-token"
+        return ""
+
+    def capture_confirm(message: str, *args: object, **kwargs: object) -> bool:
+        confirm_calls.append(message)
+        return False
+
+    with (
+        patch("click.prompt", side_effect=capture_prompt),
+        patch("click.confirm", side_effect=capture_confirm),
+    ):
+        main()
+
+    assert any("agent services" in message.lower() for message in prompt_calls)
+    assert any("github token" in message.lower() for message in prompt_calls)
+    assert any("claude oauth token" in message.lower() for message in prompt_calls)
+    assert any("global pycastle home" in message.lower() for message in confirm_calls)
+    assert any("create github labels" in message.lower() for message in confirm_calls)
+
+    refresh_workspace = tmp_path / "refresh-workspace"
+    refresh_workspace.mkdir()
+    monkeypatch.chdir(refresh_workspace)
+    with (
+        patch(
+            "click.prompt",
+            side_effect=AssertionError("refresh must not prompt interactively"),
+        ),
+        patch(
+            "click.confirm",
+            side_effect=AssertionError("refresh must not confirm interactively"),
+        ),
+    ):
+        refresh()
+
+
 def test_init_writes_config_example_to_existing_pycastle_home(tmp_path, monkeypatch):
     """init also writes config.py.example to pycastle home when that directory exists."""
     from pycastle.commands.init import main
