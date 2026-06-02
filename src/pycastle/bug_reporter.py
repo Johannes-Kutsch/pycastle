@@ -112,13 +112,9 @@ def _safe_resolve_token(cfg: Config | None) -> str | None:
     if cfg is None:
         return None
     try:
-        from .config import DEFAULT_ENV_FILE, load_credential_env, resolve_global_dir
+        from .config import load_credential_env
 
-        env = load_credential_env(
-            global_dir=resolve_global_dir(None, os.environ),
-            local_env_file=DEFAULT_ENV_FILE,
-            process_env=os.environ,
-        )
+        env = load_credential_env()
         return env.get("GH_TOKEN")
     except Exception:
         return None

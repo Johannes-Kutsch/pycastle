@@ -103,6 +103,25 @@ def test_stale_local_env_path_does_not_relocate_fixed_local_env_layer(
     assert env["OTHER"] == "fromglobal"
 
 
+def test_load_env_uses_explicit_repo_root_when_cwd_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = tmp_path / "workspace"
+    repo_root.mkdir()
+    (repo_root / "pycastle").mkdir()
+    (repo_root / "pycastle" / ".env").write_text("GH_TOKEN=from-local\n")
+    monkeypatch.chdir(tmp_path)
+
+    env = load_env(
+        global_dir=tmp_path / "no-global",
+        local_env_file=DEFAULT_ENV_FILE,
+        process_env={},
+        repo_root=repo_root,
+    )
+
+    assert env["GH_TOKEN"] == "from-local"
+
+
 # ── load_credential_env tests ──────────────────────────────────────────────────
 
 

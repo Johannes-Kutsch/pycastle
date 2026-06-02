@@ -56,6 +56,16 @@ _GLOBAL_FORBIDDEN_FIELDS = frozenset(
 )
 
 
+@dataclasses.dataclass(frozen=True)
+class _ResolvedConfigPaths:
+    repo_root: Path
+    global_dir: Path
+    global_config_file: Path
+    local_config_file: Path
+    global_env_file: Path
+    local_env_file: Path
+
+
 def derive_docker_image_name(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
@@ -212,6 +222,23 @@ def resolve_global_dir(explicit: Path | None, env: Mapping[str, str]) -> Path:
     return Path(platformdirs.user_config_dir("pycastle"))
 
 
+def _resolve_config_paths(
+    repo_root: Path | None,
+    global_dir: Path | None,
+    env: Mapping[str, str],
+) -> _ResolvedConfigPaths:
+    resolved_repo_root = repo_root if repo_root is not None else Path.cwd()
+    resolved_global_dir = resolve_global_dir(global_dir, env)
+    return _ResolvedConfigPaths(
+        repo_root=resolved_repo_root,
+        global_dir=resolved_global_dir,
+        global_config_file=resolved_global_dir / "config.py",
+        local_config_file=resolved_repo_root / "pycastle" / "config.py",
+        global_env_file=resolved_global_dir / ".env",
+        local_env_file=resolved_repo_root / "pycastle" / ".env",
+    )
+
+
 def _display_global_path(path: Path) -> str:
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
@@ -234,13 +261,10 @@ def describe_config_layers(
     global_dir: Path | None = None,
 ) -> str:
     parts = ["defaults"]
-    resolved_global = resolve_global_dir(global_dir, os.environ)
-    global_file = resolved_global / "config.py"
-    if global_file.exists():
-        parts.append(_display_global_path(global_file))
-    root = repo_root if repo_root is not None else Path.cwd()
-    local = root / "pycastle" / "config.py"
-    if local.exists():
+    paths = _resolve_config_paths(repo_root, global_dir, os.environ)
+    if paths.global_config_file.exists():
+        parts.append(_display_global_path(paths.global_config_file))
+    if paths.local_config_file.exists():
         parts.append("pycastle/config.py")
     return "Config: " + " + ".join(parts)
 
@@ -272,12 +296,11 @@ def load_config(
     kwargs: dict[str, Any] = {}
     valid_fields = {f.name for f in dataclasses.fields(Config) if f.init}
     global_logs_dir_set = False
+    paths = _resolve_config_paths(repo_root, global_dir, os.environ)
 
-    resolved_global = resolve_global_dir(global_dir, os.environ)
-    global_file = resolved_global / "config.py"
-    if global_file.exists():
+    if paths.global_config_file.exists():
         global_kwargs = _read_config_file(
-            global_file, "_pycastle_global_config", valid_fields
+            paths.global_config_file, "_pycastle_global_config", valid_fields
         )
         forbidden = sorted(_GLOBAL_FORBIDDEN_FIELDS & global_kwargs.keys())
         if forbidden:
@@ -289,11 +312,11 @@ def load_config(
         global_logs_dir_set = "logs_dir" in global_kwargs
         kwargs.update(global_kwargs)
 
-    root = repo_root if repo_root is not None else Path.cwd()
-    local = root / "pycastle" / "config.py"
     local_logs_dir_set = False
-    if local.exists():
-        local_kwargs = _read_config_file(local, "_pycastle_local_config", valid_fields)
+    if paths.local_config_file.exists():
+        local_kwargs = _read_config_file(
+            paths.local_config_file, "_pycastle_local_config", valid_fields
+        )
         local_logs_dir_set = "logs_dir" in local_kwargs
         kwargs.update(local_kwargs)
 
@@ -306,12 +329,12 @@ def load_config(
     cfg = Config(**kwargs)
     if cfg.docker_image_name == "":
         cfg = dataclasses.replace(
-            cfg, docker_image_name=derive_docker_image_name(root.name)
+            cfg, docker_image_name=derive_docker_image_name(paths.repo_root.name)
         )
     _validate_bug_report_repo(cfg)
     _validate_improve_max(cfg)
     _validate_improve_mode(cfg)
-    object.__setattr__(cfg, "repo_root", root)
+    object.__setattr__(cfg, "repo_root", paths.repo_root)
     object.__setattr__(
         cfg,
         "_global_logs_dir_parent",

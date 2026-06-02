@@ -265,6 +265,38 @@ def test_auto_file_bugs_true_with_token_and_200_uses_api_path(monkeypatch):
     assert result.exit_code == 1
 
 
+def test_auto_file_bugs_true_reads_gh_token_from_local_env_layer(monkeypatch, tmp_path):
+    from pycastle.config import Config
+    from pycastle.main import main as cli
+
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / ".env").write_text("GH_TOKEN=from-local-env\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("PYCASTLE_HOME", raising=False)
+    monkeypatch.setattr(
+        "pycastle.bug_reporter._safe_load_config",
+        lambda: Config(auto_file_bugs=True),
+    )
+
+    def _fake_create_issue_in(self, owner_repo, title, body, labels):
+        assert self._token == "from-local-env"
+        return 42
+
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.create_issue_in",
+        _fake_create_issue_in,
+    )
+
+    _install_crashing_subcommand(monkeypatch, RuntimeError("boom"))
+    result = CliRunner().invoke(cli, ["build"])
+
+    assert "Filed issue #42:" in result.stdout
+    assert "issues/new" not in result.stdout
+    assert result.exit_code == 1
+
+
 def test_api_path_503_falls_through_to_url(monkeypatch):
     from pycastle.config import Config
     from pycastle.main import main as cli

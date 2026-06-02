@@ -1,20 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import platform
 import sys
 from pathlib import Path
 
 from ..agents.runner import AgentRunnerProtocol
-from ..config import (
-    DEFAULT_ENV_FILE,
-    Config,
-    StageOverride,
-    load_config,
-    load_credential_env,
-    resolve_global_dir,
-)
+from ..config import Config, StageOverride, load_config, load_credential_env
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
 from ..main import _configured_service_registry
 from ..services import GitService, GithubService, ServiceRegistry
@@ -34,11 +26,7 @@ def _resolve_github_service(
     cfg: Config,
     git_svc: GitService,
 ) -> GithubService:
-    resolved = load_credential_env(
-        global_dir=resolve_global_dir(None, os.environ),
-        local_env_file=DEFAULT_ENV_FILE,
-        process_env=os.environ,
-    )
+    resolved = load_credential_env()
     token = resolved.get("GH_TOKEN", "").strip()
     if not token:
         raise RuntimeError("GH_TOKEN is required to file host-check issues.")
@@ -57,11 +45,7 @@ def _resolve_agent_runner(
 ) -> tuple[AgentRunnerProtocol, ServiceRegistry]:
     from ..agents.runner import AgentRunner
 
-    env = load_credential_env(
-        global_dir=resolve_global_dir(None, os.environ),
-        local_env_file=DEFAULT_ENV_FILE,
-        process_env=os.environ,
-    )
+    env = load_credential_env()
     service_registry = ServiceRegistry(_configured_service_registry(cfg, env))
     return (
         AgentRunner(env, cfg, git_svc, service_registry=service_registry.services),
