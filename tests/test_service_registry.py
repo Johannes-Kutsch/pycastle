@@ -153,6 +153,37 @@ def test_resolve_falls_through_exhausted_opencode_before_sleep() -> None:
     assert result.fallback is None
 
 
+# --- has_available_for ---
+
+
+def test_has_available_for_ignores_unconfigured_stage_candidates() -> None:
+    claude = _make_svc(available=True)
+    registry = ServiceRegistry(services={"claude": claude})
+    override = StageOverride(
+        service="missing-primary",
+        fallback=StageOverride(service="claude"),
+    )
+
+    assert registry.has_available_for(override, _now()) is True
+
+
+def test_has_available_for_returns_false_when_all_configured_candidates_exhausted() -> (
+    None
+):
+    codex = _make_svc(available=False)
+    claude = _make_svc(available=False)
+    registry = ServiceRegistry(services={"codex": codex, "claude": claude})
+    override = StageOverride(
+        service="missing-primary",
+        fallback=StageOverride(
+            service="codex",
+            fallback=StageOverride(service="claude"),
+        ),
+    )
+
+    assert registry.has_available_for(override, _now()) is False
+
+
 # --- has_available ---
 
 
@@ -232,6 +263,22 @@ def test_next_wake_time_for_includes_configured_exhausted_opencode_only() -> Non
     assert registry.next_wake_time_for(override, _now()) == datetime(
         2025, 1, 1, 13, 2, 0, tzinfo=timezone.utc
     )
+
+
+def test_next_wake_time_for_skips_available_configured_fallbacks() -> None:
+    exhausted_wake = datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
+    codex = _make_svc(available=False, wake=exhausted_wake)
+    claude = _make_svc(available=True)
+    registry = ServiceRegistry(services={"codex": codex, "claude": claude})
+    override = StageOverride(
+        service="missing-primary",
+        fallback=StageOverride(
+            service="codex",
+            fallback=StageOverride(service="claude"),
+        ),
+    )
+
+    assert registry.next_wake_time_for(override, _now()) == exhausted_wake
 
 
 # --- summary_lines ---
