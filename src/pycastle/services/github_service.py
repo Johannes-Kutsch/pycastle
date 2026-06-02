@@ -290,7 +290,7 @@ class GithubService:
             and "pull_request" not in item
         ]
 
-    def _filter_open_issue_items(self, results: list[Any]) -> list[dict[str, Any]]:
+    def _normalize_open_issue_items(self, results: list[Any]) -> list[dict[str, Any]]:
         response_numbers = {
             int(item["number"])
             for item in results
@@ -299,13 +299,27 @@ class GithubService:
         self._recently_closed = {
             n for n in self._recently_closed if n in response_numbers
         }
-        return [
-            item
-            for item in results
-            if isinstance(item, dict)
-            and "pull_request" not in item
-            and int(item["number"]) not in self._recently_closed
-        ]
+        issues: list[dict[str, Any]] = []
+        for item in results:
+            normalized = self._normalize_open_issue_item(item)
+            if normalized is None:
+                continue
+            if normalized["number"] in self._recently_closed:
+                continue
+            issues.append(normalized)
+        return issues
+
+    @staticmethod
+    def _normalize_open_issue_item(item: Any) -> dict[str, Any] | None:
+        if not isinstance(item, dict) or "pull_request" in item or "number" not in item:
+            return None
+        return {
+            "number": int(item["number"]),
+            "title": str(item.get("title") or ""),
+            "body": item.get("body") or "",
+            "labels": GithubService._extract_label_names(item),
+            "comments_count": int(item.get("comments") or 0),
+        }
 
     @staticmethod
     def _extract_label_names(item: dict[str, Any]) -> list[str]:
@@ -320,31 +334,28 @@ class GithubService:
             f"/repos/{self.repo}/issues?state=open"
             f"&labels={quote(label, safe='')}&per_page=100"
         )
-        issues: list[dict[str, Any]] = []
-        for item in self._filter_open_issue_items(results):
-            number = int(item["number"])
-            issues.append(
-                {
-                    "number": number,
-                    "title": str(item.get("title") or ""),
-                    "body": item.get("body") or "",
-                    "labels": self._extract_label_names(item),
-                    "comments": self.get_issue_comments(number)
-                    if item.get("comments")
-                    else [],
-                }
-            )
-        return issues
+        return [
+            {
+                "number": issue["number"],
+                "title": issue["title"],
+                "body": issue["body"],
+                "labels": issue["labels"],
+                "comments": self.get_issue_comments(issue["number"])
+                if issue["comments_count"]
+                else [],
+            }
+            for issue in self._normalize_open_issue_items(results)
+        ]
 
     def get_all_open_issues_lightweight(self) -> list[dict[str, Any]]:
         results = self._paginate(f"/repos/{self.repo}/issues?state=open&per_page=100")
         return [
             {
-                "number": int(item["number"]),
-                "title": str(item.get("title") or ""),
-                "labels": self._extract_label_names(item),
+                "number": issue["number"],
+                "title": issue["title"],
+                "labels": issue["labels"],
             }
-            for item in self._filter_open_issue_items(results)
+            for issue in self._normalize_open_issue_items(results)
         ]
 
     def close_completed_parent_issues(self) -> None:
