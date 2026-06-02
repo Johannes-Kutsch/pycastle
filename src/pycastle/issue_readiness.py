@@ -80,18 +80,49 @@ class IssueReadiness:
     is_hitl_exempt: bool = dataclasses.field(default=False, compare=False)
 
 
-def selected_mode_for_issue(issue: dict, cfg: Config) -> SliceMode | None:
-    readiness = issue.get("readiness")
-    if isinstance(readiness, IssueReadiness):
-        if readiness.selected_mode is not None:
-            return readiness.selected_mode
-        if isinstance(readiness.slice_status, WellFormed):
-            return readiness.slice_status.mode
-        return None
+def resolve_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
+    carried = issue.get("readiness")
+    if isinstance(carried, IssueReadiness):
+        return carried
+    return classify_issue_readiness(issue, cfg)
 
-    fallback = classify_issue_readiness(issue, cfg).slice_status
-    if isinstance(fallback, WellFormed):
-        return fallback.mode
+
+def selected_mode_for_issue(issue: dict, cfg: Config) -> SliceMode | None:
+    readiness = resolve_issue_readiness(issue, cfg)
+    if readiness.selected_mode is not None:
+        return readiness.selected_mode
+    if isinstance(readiness.slice_status, WellFormed):
+        return readiness.slice_status.mode
+    return None
+
+
+def diagnostic_issue_readiness_error(
+    *,
+    caller: str,
+    issue_number: int,
+    issue_labels: list[str] | tuple[str, ...],
+    readiness: IssueReadiness,
+) -> str | None:
+    if readiness.kind in {
+        IssueReadinessKind.MISSING_SLICE_MODE,
+        IssueReadinessKind.MULTIPLE_SLICE_MODES,
+        IssueReadinessKind.MALFORMED,
+    }:
+        malformed = readiness.slice_status
+        if not isinstance(malformed, WellFormed):
+            return (
+                f"{caller} filed issue #{issue_number} on the AFK branch "
+                f"without exactly one slice-mode label — got labels={issue_labels!r}. "
+                f"Expected exactly one of {sorted(malformed.configured)!r}."
+            )
+    if readiness.kind in {
+        IssueReadinessKind.SHORT_BODY,
+        IssueReadinessKind.MALFORMED,
+    }:
+        return (
+            f"{caller} filed issue #{issue_number} whose body is "
+            f"below the minimum length floor — body too short to be valid."
+        )
     return None
 
 

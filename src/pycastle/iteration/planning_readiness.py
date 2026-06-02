@@ -7,10 +7,8 @@ from ..issue_readiness import (
     IssueReadiness,
     IssueReadinessKind,
     Malformed,
-    WellFormed,
     WellFormedBody,
-    classify_slice,
-    classify_issue_readiness,
+    resolve_issue_readiness,
 )
 
 
@@ -121,17 +119,21 @@ def _needs_info_actions(
 
 
 def _needs_slice_type_actions(
-    issues: list[dict],
+    issues_with_readiness: list[tuple[dict, IssueReadiness]],
     cfg: Config,
 ) -> tuple[LabelSyncAction, ...]:
     flag = cfg.needs_slice_type_label
     malformed_actions: list[LabelSyncAction] = []
     well_formed_actions: list[LabelSyncAction] = []
 
-    for issue in issues:
+    for issue, readiness in issues_with_readiness:
         labels: list[str] = issue.get("labels") or []
-        slice_status = classify_slice(issue, cfg)
-        is_well_formed = isinstance(slice_status, WellFormed)
+        slice_status = readiness.slice_status
+        is_well_formed = readiness.kind not in {
+            IssueReadinessKind.MISSING_SLICE_MODE,
+            IssueReadinessKind.MULTIPLE_SLICE_MODES,
+            IssueReadinessKind.MALFORMED,
+        }
 
         if is_well_formed:
             if flag in labels:
@@ -167,7 +169,7 @@ def evaluate_planning_readiness(
     issues: list[dict], cfg: Config
 ) -> PlanningReadinessResult:
     classified_issues = [
-        (issue, classify_issue_readiness(issue, cfg)) for issue in issues
+        (issue, resolve_issue_readiness(issue, cfg)) for issue in issues
     ]
     slice_malformed = [
         issue
@@ -219,7 +221,7 @@ def evaluate_planning_readiness(
         malformed_slice_mode_issues=tuple(slice_malformed),
         label_sync_actions=(
             _needs_info_actions(body_well_formed, body_malformed, cfg)
-            + _needs_slice_type_actions(issues, cfg)
+            + _needs_slice_type_actions(classified_issues, cfg)
         ),
         blocker_summary_inputs=BlockerSummaryInputs(
             malformed_slice_mode_issues=tuple(slice_malformed),
