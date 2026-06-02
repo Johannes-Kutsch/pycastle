@@ -223,6 +223,20 @@ def test_init_scaffold_refresh_renders_local_config_example_from_bundled_default
     )
 
 
+def test_init_scaffold_refresh_treats_crlf_config_example_as_unchanged(
+    init_scaffold: InitScaffold,
+):
+    config_example = init_scaffold.pycastle_dir / "config.py.example"
+    config_example.parent.mkdir(parents=True)
+    config_example.write_bytes(
+        init_scaffold.render_config_example().replace("\n", "\r\n").encode()
+    )
+
+    report = init_scaffold.refresh()
+
+    assert (report[0].status, report[0].path) == ("unchanged", "config.py.example")
+
+
 def test_init_scaffold_refresh_reports_existing_pycastle_home_config_example_status(
     init_scaffold: InitScaffold,
 ):

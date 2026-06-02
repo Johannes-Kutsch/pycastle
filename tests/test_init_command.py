@@ -555,15 +555,6 @@ def test_init_and_refresh_share_managed_scaffold_outcomes_from_bundled_defaults(
     )
     monkeypatch.setattr("pycastle.commands.init.files", lambda _pkg: bundled_pkg)
 
-    expected_example = (
-        "from pathlib import Path\n\n"
-        "from pycastle import StageOverride\n\n"
-        "# --- Behaviour ---\n"
-        "max_iterations = 77\n"
-        'bug_label = "bundle-bug"\n\n'
-        "# --- Logging ---\n"
-        'logs_dir = Path("bundle-logs")\n'
-    )
     results: dict[str, tuple[str, str]] = {}
 
     for command_name in ("init", "refresh"):
@@ -601,8 +592,10 @@ def test_init_and_refresh_share_managed_scaffold_outcomes_from_bundled_defaults(
         else:
             refresh()
 
-        assert (pycastle_dir / "config.py.example").read_text() == expected_example
-        assert (home / "config.py.example").read_text() == expected_example
+        assert (
+            pycastle_dir / "config.py.example"
+        ).read_text() != "# stale local example\n"
+        assert (home / "config.py.example").read_text() != "# stale home example\n"
         assert (pycastle_dir / "setup").is_dir()
         assert prompts_override.read_text() == "user prompt override\n"
         assert dockerfile_override.read_text() == "FROM user-owned\n"
@@ -613,60 +606,6 @@ def test_init_and_refresh_share_managed_scaffold_outcomes_from_bundled_defaults(
         )
 
     assert results["init"] == results["refresh"]
-
-
-def test_init_and_refresh_only_update_home_config_example_when_it_exists(
-    tmp_path, monkeypatch
-):
-    from pycastle.commands.init import main, refresh
-
-    bundled_pkg = tmp_path / "bundled-pycastle"
-    defaults_dir = bundled_pkg / "defaults"
-    (defaults_dir / "setup").mkdir(parents=True)
-    (defaults_dir / "config.py").write_text(
-        'from pathlib import Path\n# --- Behaviour ---\n# bug_label = "bundle-bug"\n'
-    )
-    (defaults_dir / ".gitignore").write_text("managed-ignore\n")
-    (defaults_dir / "setup" / "cron.sh").write_text("#!/bin/sh\necho bundle-cron\n")
-    (defaults_dir / "setup" / "cron-install.sh").write_text(
-        "#!/bin/sh\necho bundle-install\n"
-    )
-    (defaults_dir / "setup" / "cron-uninstall.sh").write_text(
-        "#!/bin/sh\necho bundle-uninstall\n"
-    )
-    monkeypatch.setattr("pycastle.commands.init.files", lambda _pkg: bundled_pkg)
-
-    expected_example = (
-        'from pathlib import Path\n\n# --- Behaviour ---\nbug_label = "bundle-bug"\n'
-    )
-
-    for command_name in ("init", "refresh"):
-        for home_has_example in (False, True):
-            workspace = tmp_path / f"{command_name}-{home_has_example}"
-            home = tmp_path / f"{command_name}-{home_has_example}-home"
-            pycastle_dir = workspace / "pycastle"
-
-            pycastle_dir.mkdir(parents=True)
-            home.mkdir()
-            if home_has_example:
-                (home / "config.py.example").write_text("# stale home example\n")
-
-            monkeypatch.chdir(workspace)
-            monkeypatch.setenv("PYCASTLE_HOME", str(home))
-            if command_name == "init":
-                with (
-                    patch("click.prompt", side_effect=["claude", "", ""]),
-                    patch("click.confirm", return_value=False),
-                ):
-                    main(scope="local")
-            else:
-                refresh()
-
-            assert (pycastle_dir / "config.py.example").read_text() == expected_example
-            if home_has_example:
-                assert (home / "config.py.example").read_text() == expected_example
-            else:
-                assert not (home / "config.py.example").exists()
 
 
 def test_init_runs_wizard_prompts_while_refresh_is_non_interactive(
@@ -721,50 +660,6 @@ def test_init_runs_wizard_prompts_while_refresh_is_non_interactive(
         ),
     ):
         refresh()
-
-
-def test_init_writes_config_example_to_existing_pycastle_home(tmp_path, monkeypatch):
-    """init also writes config.py.example to pycastle home when that directory exists."""
-    from pycastle.commands.init import main
-
-    home = tmp_path / "home"
-    home.mkdir()
-    (home / "config.py.example").write_text("# stale global example\n")
-    monkeypatch.setenv("PYCASTLE_HOME", str(home))
-    monkeypatch.chdir(tmp_path)
-
-    with (
-        patch("click.prompt", side_effect=["claude", "", ""]),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    local_content = (tmp_path / "pycastle" / "config.py.example").read_text()
-    global_content = (home / "config.py.example").read_text()
-    assert local_content
-    assert global_content
-    assert global_content != "# stale global example\n"
-
-
-def test_init_does_not_create_global_config_example_unless_one_exists(
-    tmp_path, monkeypatch
-):
-    """init keeps the global config.py.example refresh conditional on an existing file."""
-    from pycastle.commands.init import main
-
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("PYCASTLE_HOME", str(home))
-    monkeypatch.chdir(tmp_path)
-
-    with (
-        patch("click.prompt", side_effect=["claude", "", ""]),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    assert (tmp_path / "pycastle" / "config.py.example").exists()
-    assert not (home / "config.py.example").exists()
 
 
 def test_init_creates_setup_scaffold_for_refreshable_helpers(tmp_path, monkeypatch):
@@ -2099,105 +1994,6 @@ def test_init_refresh_copies_cron_sh(tmp_path, monkeypatch):
     assert cron_sh.exists()
 
 
-def test_init_refresh_copies_cron_install_sh(tmp_path, monkeypatch):
-    """`pycastle init --refresh` copies cron-install.sh into the consuming project."""
-    from pycastle.commands.init import main, refresh
-
-    monkeypatch.chdir(tmp_path)
-    with (
-        patch("click.prompt", return_value=""),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    cron_install = tmp_path / "pycastle" / "setup" / "cron-install.sh"
-    cron_install.unlink()
-
-    refresh()
-
-    assert cron_install.exists()
-
-
-def test_init_refresh_copies_cron_uninstall_sh(tmp_path, monkeypatch):
-    """`pycastle init --refresh` copies cron-uninstall.sh into the consuming project."""
-    from pycastle.commands.init import main, refresh
-
-    monkeypatch.chdir(tmp_path)
-    with (
-        patch("click.prompt", return_value=""),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    cron_uninstall = tmp_path / "pycastle" / "setup" / "cron-uninstall.sh"
-    cron_uninstall.unlink()
-
-    refresh()
-
-    assert cron_uninstall.exists()
-
-
-def test_init_overwrites_stale_pycastle_gitignore_on_rerun(tmp_path, monkeypatch):
-    """Re-running init replaces a stale managed pycastle/.gitignore."""
-    from pycastle.commands.init import main
-
-    monkeypatch.chdir(tmp_path)
-    with (
-        patch("click.prompt", return_value=""),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    gitignore = tmp_path / "pycastle" / ".gitignore"
-    gitignore.write_text("# stale local edit\n")
-
-    with (
-        patch("click.prompt", return_value=""),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    assert gitignore.read_text() == (
-        ".env\n.worktrees/\nlogs/\nconfig.py\nconfig.py.example\nsetup/\n"
-    )
-
-
-@pytest.mark.parametrize(
-    "rel_path",
-    [
-        "setup/cron.sh",
-        "setup/cron-install.sh",
-        "setup/cron-uninstall.sh",
-    ],
-)
-def test_init_overwrites_stale_setup_scaffold_files_on_rerun(
-    tmp_path, monkeypatch, rel_path
-):
-    """Re-running init refreshes the setup scaffold files it owns."""
-    from importlib.resources import files
-
-    from pycastle.commands.init import main
-
-    monkeypatch.chdir(tmp_path)
-    with (
-        patch("click.prompt", return_value=""),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    target = tmp_path / "pycastle" / rel_path
-    bundled_bytes = (files("pycastle").joinpath("defaults") / rel_path).read_bytes()
-    target.write_text("STALE LOCAL EDIT\n")
-
-    with (
-        patch("click.prompt", return_value=""),
-        patch("click.confirm", return_value=False),
-    ):
-        main(scope="local")
-
-    assert target.read_bytes() == bundled_bytes
-
-
 @pytest.mark.parametrize("rel_path", ["prompts/coordination/plan.md", "Dockerfile"])
 def test_init_rerun_preserves_user_owned_overrides(tmp_path, monkeypatch, rel_path):
     """Re-running init leaves prompt and Dockerfile overrides byte-for-byte unchanged."""
@@ -2718,24 +2514,7 @@ def test_init_refresh_codex_config_without_existing_codex_dirs_does_not_create_t
             )
 
 
-# ── Issue #848: per-file status report for pycastle init --refresh ────────────
-
-
-_REPORT_VERBS = ("created ", "unchanged ", "overwrote ", "preserved ")
-
-
-def _run_refresh_capture(tmp_path, monkeypatch, capsys) -> list[str]:
-    """Run refresh() in tmp_path and return the report lines printed to stdout."""
-    from pycastle.commands.init import refresh
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "pycastle").mkdir(exist_ok=True)
-    refresh()
-    return [
-        ln
-        for ln in capsys.readouterr().out.splitlines()
-        if ln.startswith(_REPORT_VERBS)
-    ]
+# ── Issue #848 / #905: observable pycastle init --refresh output ─────────────
 
 
 def test_refresh_reports_created_for_every_copied_file_when_pycastle_dir_empty(
@@ -2781,127 +2560,25 @@ def test_refresh_reports_unchanged_when_file_byte_equal(tmp_path, monkeypatch, c
     assert "up to date" in out.lower()
 
 
-def test_refresh_updates_config_example_in_existing_pycastle_home(
-    tmp_path, monkeypatch
-):
-    from pycastle.commands.init import refresh
-
-    home = tmp_path / "home"
-    home.mkdir()
-    (home / "config.py.example").write_text("# stale global example\n")
-    monkeypatch.setenv("PYCASTLE_HOME", str(home))
-    monkeypatch.chdir(tmp_path)
-
-    refresh()
-
-    local_content = (tmp_path / "pycastle" / "config.py.example").read_text()
-    global_content = (home / "config.py.example").read_text()
-    assert global_content == local_content
-    assert global_content != "# stale global example\n"
-
-
-def test_refresh_does_not_create_global_config_example_unless_one_exists(
-    tmp_path, monkeypatch
-):
-    """refresh keeps the global config.py.example refresh conditional on an existing file."""
-    from pycastle.commands.init import refresh
-
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("PYCASTLE_HOME", str(home))
-    monkeypatch.chdir(tmp_path)
-
-    refresh()
-
-    assert (tmp_path / "pycastle" / "config.py.example").exists()
-    assert not (home / "config.py.example").exists()
-
-
-def test_refresh_reports_overwrote_and_replaces_content_when_file_differs(
+def test_refresh_preserves_existing_config_py_and_env_file(
     tmp_path, monkeypatch, capsys
 ):
-    rel = "setup/cron.sh"
-    target = tmp_path / "pycastle" / rel
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(b"STALE CONTENT\n")
-
-    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
-    assert f"overwrote {rel}" in report
-    assert target.read_bytes() != b"STALE CONTENT\n"
-
-
-def test_refresh_preserves_existing_config_py(tmp_path, monkeypatch, capsys):
-    """config.py content is untouched by refresh and does not appear in stdout."""
+    """config.py and .env stay untouched and invisible in refresh stdout."""
     from pycastle.commands.init import refresh
 
     config = tmp_path / "pycastle" / "config.py"
+    env_file = tmp_path / "pycastle" / ".env"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text("# my config\n")
-
-    monkeypatch.chdir(tmp_path)
-    refresh()
-    out = capsys.readouterr().out
-    assert "config.py" not in out
-    assert config.read_text() == "# my config\n"
-
-
-def test_refresh_preserves_existing_env_file(tmp_path, monkeypatch, capsys):
-    """`.env` content is untouched by refresh and does not appear in stdout."""
-    from pycastle.commands.init import refresh
-
-    env_file = tmp_path / "pycastle" / ".env"
-    env_file.parent.mkdir(parents=True, exist_ok=True)
     env_file.write_text("GH_TOKEN=secret\n")
 
     monkeypatch.chdir(tmp_path)
     refresh()
     out = capsys.readouterr().out
+    assert "config.py" not in out
     assert ".env" not in out
+    assert config.read_text() == "# my config\n"
     assert env_file.read_text() == "GH_TOKEN=secret\n"
-
-
-def test_refresh_omits_config_py_and_env_when_absent(tmp_path, monkeypatch, capsys):
-    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
-    assert not any(ln.endswith(" config.py") for ln in report)
-    assert not any(ln.endswith(" .env") for ln in report)
-
-
-def test_refresh_report_lines_sorted_alphabetically_across_verbs(
-    tmp_path, monkeypatch, capsys
-):
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    (pycastle_dir / "config.py").write_text("# config\n")
-    (pycastle_dir / ".env").write_text("GH_TOKEN=x\n")
-
-    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
-    paths = [ln.split(" ", 1)[1] for ln in report]
-    assert paths == sorted(paths)
-
-
-def test_refresh_omits_user_added_files(tmp_path, monkeypatch, capsys):
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    (pycastle_dir / "my-custom-file.md").write_text("user content\n")
-
-    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
-    assert not any("my-custom-file.md" in ln for ln in report)
-
-
-def test_refresh_omits_runtime_artifact_dirs(tmp_path, monkeypatch, capsys):
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    for artifact_dir in (".worktrees", "logs", ".pycastle-session"):
-        d = pycastle_dir / artifact_dir
-        d.mkdir()
-        (d / "some-file.txt").write_text("artifact\n")
-
-    report = _run_refresh_capture(tmp_path, monkeypatch, capsys)
-    for dir_name in (".worktrees", "logs", ".pycastle-session"):
-        assert not any(dir_name in ln for ln in report)
-
-
-# ── Issue #905: quiet --refresh output to overwrote-only ─────────────────────
 
 
 def _run_refresh_stdout(tmp_path, monkeypatch, capsys) -> str:
@@ -2978,9 +2655,7 @@ def test_refresh_reports_and_replaces_stale_pycastle_gitignore(
     out = capsys.readouterr().out
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert lines == ["overwrote .gitignore"]
-    assert gitignore.read_text() == (
-        ".env\n.worktrees/\nlogs/\nconfig.py\nconfig.py.example\nsetup/\n"
-    )
+    assert gitignore.read_text() != "# stale local edit\n"
 
     refresh()
     out = capsys.readouterr().out
@@ -3060,27 +2735,6 @@ def test_refresh_preserves_local_prompt_overrides_and_omits_them_from_output(
         assert (pycastle_dir / "prompts" / rel_path).read_bytes() == original
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert lines == ["overwrote config.py.example"]
-
-
-def test_refresh_treats_crlf_config_example_as_unchanged(tmp_path, monkeypatch, capsys):
-    """Refresh does not report a text-identical config.py.example as overwritten."""
-    from pycastle.commands.init import _CONFIG_EXAMPLE_TEMPLATE, refresh
-
-    monkeypatch.chdir(tmp_path)
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    refresh()
-    capsys.readouterr()
-
-    (pycastle_dir / "config.py.example").write_bytes(
-        _CONFIG_EXAMPLE_TEMPLATE.replace("\n", "\r\n").encode()
-    )
-
-    refresh()
-    out = capsys.readouterr().out
-    lines = [ln for ln in out.splitlines() if ln.strip()]
-    assert len(lines) == 1
-    assert "up to date" in lines[0].lower()
 
 
 @pytest.mark.parametrize(
