@@ -1947,6 +1947,26 @@ def test_fetch_retries_on_auth_failure_and_raises_operator_actionable_on_exhaust
     assert exc_info.value.attempt_count == 4
 
 
+def test_fetch_retries_permission_denied_and_succeeds_on_second_attempt(tmp_path):
+    svc = GitService(_cfg)
+    responses = iter(
+        [
+            MagicMock(
+                returncode=1, stdout=b"", stderr=b"Permission denied (publickey)."
+            ),
+            MagicMock(returncode=0, stdout=b"", stderr=b""),
+        ]
+    )
+
+    with (
+        patch("subprocess.run", side_effect=lambda *a, **kw: next(responses)),
+        patch("time.sleep") as mock_sleep,
+    ):
+        svc.fetch(tmp_path)  # must not raise
+
+    mock_sleep.assert_called_once()
+
+
 @pytest.mark.parametrize(
     "stderr",
     [
