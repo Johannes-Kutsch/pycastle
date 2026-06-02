@@ -105,6 +105,56 @@ def test_renderer_renders_global_placeholder(cfg, prompts_dir):
     assert result == "Label: ready-for-agent"
 
 
+def test_renderer_preserves_all_label_global_placeholders(cfg, prompts_dir):
+    (prompts_dir / "work" / "behavior.md").write_text(
+        "\n".join(
+            (
+                "BUG={{BUG_LABEL}}",
+                "READY={{READY_FOR_AGENT_LABEL}}",
+                "HITL={{READY_FOR_HUMAN_LABEL}}",
+                "ENHANCEMENT={{ENHANCEMENT_LABEL}}",
+                "TRIAGE={{NEEDS_TRIAGE_LABEL}}",
+                "INFO={{NEEDS_INFO_LABEL}}",
+                "WONTFIX={{WONTFIX_LABEL}}",
+                "REFACTOR={{REFACTOR_SLICE_LABEL}}",
+                "BEHAVIOR={{BEHAVIOR_SLICE_LABEL}}",
+                "DOCS={{DOCS_SLICE_LABEL}}",
+            )
+        )
+    )
+    renderer = PromptRenderer(cfg)
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
+            {
+                "ISSUE_NUMBER": "1",
+                "ISSUE_TITLE": "title",
+                "ISSUE_BODY": "",
+                "ISSUE_COMMENTS": "",
+                "BRANCH": "pycastle/issue-1",
+                "INTERRUPTED_WORK": "",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert result == "\n".join(
+        (
+            "BUG=bug",
+            "READY=ready-for-agent",
+            "HITL=ready-for-human",
+            "ENHANCEMENT=enhancement",
+            "TRIAGE=needs-triage",
+            "INFO=needs-info",
+            "WONTFIX=wontfix",
+            "REFACTOR=refactor-slice",
+            "BEHAVIOR=behavior-slice",
+            "DOCS=docs-slice",
+        )
+    )
+
+
 def test_renderer_uses_fixed_project_local_prompt_overrides_when_config_is_stale(
     tmp_path: Path,
 ):
