@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any, Literal
 import click
 
 from .config import (
-    DEFAULT_ENV_FILE,
     Config,
     KNOWN_CREDENTIAL_ENV_KEYS,
     StageOverride,
@@ -96,11 +95,7 @@ def _validate_stage_overrides(
 def _load_env(cfg: Config | None = None) -> dict[str, str]:
     if cfg is None:
         load_config()
-    return load_credential_env(
-        global_dir=resolve_global_dir(None, os.environ),
-        local_env_file=DEFAULT_ENV_FILE,
-        process_env=os.environ,
-    )
+    return load_credential_env()
 
 
 def _configured_service_registry(

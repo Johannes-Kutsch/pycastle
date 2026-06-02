@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from pathlib import Path
 
 from dotenv import dotenv_values
+from pycastle.config.loader import _resolve_config_paths
 
 __all__ = [
     "DEFAULT_ENV_FILE",
@@ -28,30 +30,33 @@ def _read_env_file(path: Path) -> dict[str, str]:
 
 
 def load_env(
-    global_dir: Path | None,
-    local_env_file: Path,
-    process_env: Mapping[str, str],
+    global_dir: Path | None = None,
+    local_env_file: Path = DEFAULT_ENV_FILE,
+    process_env: Mapping[str, str] | None = None,
+    repo_root: Path | None = None,
 ) -> dict[str, str]:
     del local_env_file
+    resolved_process_env = os.environ if process_env is None else process_env
+    paths = _resolve_config_paths(repo_root, global_dir, resolved_process_env)
     merged: dict[str, str] = {}
 
-    if global_dir is not None:
-        merged.update(_read_env_file(global_dir / ".env"))
-
-    merged.update(_read_env_file(DEFAULT_ENV_FILE))
-    merged.update(process_env)
+    merged.update(_read_env_file(paths.global_env_file))
+    merged.update(_read_env_file(paths.local_env_file))
+    merged.update(resolved_process_env)
     return merged
 
 
 def load_credential_env(
-    global_dir: Path | None,
-    local_env_file: Path,
-    process_env: Mapping[str, str],
+    global_dir: Path | None = None,
+    local_env_file: Path = DEFAULT_ENV_FILE,
+    process_env: Mapping[str, str] | None = None,
+    repo_root: Path | None = None,
 ) -> dict[str, str]:
     resolved = load_env(
         global_dir=global_dir,
         local_env_file=local_env_file,
         process_env=process_env,
+        repo_root=repo_root,
     )
     return {
         key: value for key in KNOWN_CREDENTIAL_ENV_KEYS if (value := resolved.get(key))
