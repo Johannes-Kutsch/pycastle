@@ -191,3 +191,27 @@ def test_main_reads_gh_token_from_config_env_file(monkeypatch, tmp_path):
     labels_mod.main(cfg=Config())
 
     assert received == ["from-env-file"]
+
+
+def test_main_reads_gh_token_from_global_env_layer_when_local_absent(
+    monkeypatch, tmp_path
+):
+    import pycastle.commands.labels as labels_mod
+
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / ".env").write_text("GH_TOKEN=from-global-env\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.setenv("PYCASTLE_HOME", str(global_dir))
+
+    received: list[str] = []
+    monkeypatch.setattr(
+        labels_mod,
+        "create_labels_interactive",
+        lambda token, cfg=None: received.append(token),
+    )
+
+    labels_mod.main(cfg=Config())
+
+    assert received == ["from-global-env"]
