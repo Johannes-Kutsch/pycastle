@@ -9,6 +9,8 @@ from pycastle.issue_readiness import (
     WellFormed,
     WellFormedBody,
     classify_issue_readiness,
+    diagnostic_issue_readiness_error,
+    resolve_issue_readiness,
     selected_mode_for_issue,
 )
 
@@ -282,6 +284,62 @@ def test_classify_issue_readiness_custom_hitl_label_is_honoured():
     assert result.kind == IssueReadinessKind.HITL_EXEMPT
     assert result.hitl_label == "needs-human"
     assert result.is_hitl_exempt is True
+
+
+def test_resolve_issue_readiness_returns_carried_readiness_unchanged():
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.DOCS, label="docs-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=SliceMode.DOCS,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    issue = {
+        "number": 1,
+        "labels": ["behavior-slice"],
+        "body": "short",
+        "readiness": readiness,
+    }
+
+    assert resolve_issue_readiness(issue, _cfg) is readiness
+
+
+def test_resolve_issue_readiness_classifies_when_issue_has_no_carried_readiness():
+    issue = {"number": 1, "labels": ["refactor-slice"], "body": "x" * BODY_FLOOR}
+
+    assert resolve_issue_readiness(issue, _cfg) == classify_issue_readiness(issue, _cfg)
+
+
+def test_diagnostic_issue_readiness_error_reports_missing_slice_mode():
+    readiness = classify_issue_readiness({"number": 1, "body": "x" * BODY_FLOOR}, _cfg)
+
+    assert diagnostic_issue_readiness_error(
+        caller="Preflight Issue Agent",
+        issue_number=1,
+        issue_labels=["bug"],
+        readiness=readiness,
+    ) == (
+        "Preflight Issue Agent filed issue #1 on the AFK branch without exactly "
+        "one slice-mode label — got labels=['bug']. Expected exactly one of "
+        "['behavior-slice', 'docs-slice', 'refactor-slice']."
+    )
+
+
+def test_diagnostic_issue_readiness_error_reports_short_body():
+    readiness = classify_issue_readiness(
+        {"number": 1, "labels": ["behavior-slice"], "body": "short"},
+        _cfg,
+    )
+
+    assert diagnostic_issue_readiness_error(
+        caller="Host-Check Reporter",
+        issue_number=1,
+        issue_labels=["bug", "behavior-slice"],
+        readiness=readiness,
+    ) == (
+        "Host-Check Reporter filed issue #1 whose body is below the minimum "
+        "length floor — body too short to be valid."
+    )
 
 
 # ── selected_mode_for_issue ──────────────────────────────────────────────────
