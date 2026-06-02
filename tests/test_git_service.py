@@ -1838,6 +1838,27 @@ def test_fetch_raises_operator_actionable_error_after_exhausting_retries(tmp_pat
     assert exc_info.value.attempt_count == 4
 
 
+def test_fetch_final_exception_carries_last_attempt_stderr(tmp_path):
+    svc = GitService(_cfg)
+    responses = iter(
+        [
+            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 1"),
+            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 2"),
+            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 3"),
+            MagicMock(returncode=1, stdout=b"", stderr=b"transient error attempt 4"),
+        ]
+    )
+
+    with (
+        patch("subprocess.run", side_effect=lambda *a, **kw: next(responses)),
+        patch("time.sleep"),
+    ):
+        with pytest.raises(OperatorActionableGitError) as exc_info:
+            svc.fetch(tmp_path)
+
+    assert exc_info.value.stderr == "transient error attempt 4"
+
+
 def test_fetch_retries_on_transient_failure(tmp_path):
     svc = GitService(_cfg)
     responses = iter(
@@ -1854,6 +1875,27 @@ def test_fetch_retries_on_transient_failure(tmp_path):
         svc.fetch(tmp_path)  # must not raise
 
     assert mock_sleep.call_count == 1
+
+
+def test_fetch_successful_retry_emits_warning(tmp_path, caplog):
+    svc = GitService(_cfg)
+    responses = iter(
+        [
+            MagicMock(returncode=1, stdout=b"", stderr=b"transient network error"),
+            MagicMock(returncode=0, stdout=b"", stderr=b""),
+        ]
+    )
+
+    with (
+        patch("subprocess.run", side_effect=lambda *a, **kw: next(responses)),
+        patch("time.sleep"),
+        caplog.at_level(logging.WARNING, logger="pycastle.services.git_service"),
+    ):
+        svc.fetch(tmp_path)
+
+    assert any(
+        "fetch" in record.message and "2" in record.message for record in caplog.records
+    )
 
 
 def test_fetch_retries_on_auth_failure_and_raises_operator_actionable_on_exhaustion(
@@ -1882,6 +1924,71 @@ def test_fetch_retries_on_auth_failure_and_raises_operator_actionable_on_exhaust
     assert mock_sleep.call_count == 3
     assert exc_info.value.op == "fetch"
     assert exc_info.value.attempt_count == 4
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        b"fatal: 'origin' does not appear to be a git repository",
+        b"remote: Repository not found.",
+        b"remote: not found",
+    ],
+)
+def test_fetch_raises_operator_actionable_error_immediately_for_stable_misconfig(
+    tmp_path, stderr
+):
+    svc = GitService(_cfg)
+    attempts = 0
+
+    def fake_run(*a, **kw):
+        nonlocal attempts
+        attempts += 1
+        return MagicMock(returncode=1, stdout=b"", stderr=stderr)
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(OperatorActionableGitError) as exc_info:
+            svc.fetch(tmp_path)
+
+    assert attempts == 1
+    assert exc_info.value.op == "fetch"
+    assert exc_info.value.attempt_count == 1
+    assert exc_info.value.stderr == stderr.decode()
+    mock_sleep.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        b"fatal: Not possible to fast-forward, aborting.",
+        b"hint: Need to specify how to reconcile divergent branches.",
+        b"fatal: refusing to merge unrelated histories",
+        b"CONFLICT (content): Merge conflict in README.md",
+    ],
+)
+def test_fetch_raises_git_command_error_immediately_for_divergence_patterns(
+    tmp_path, stderr
+):
+    svc = GitService(_cfg)
+    attempts = 0
+
+    def fake_run(*a, **kw):
+        nonlocal attempts
+        attempts += 1
+        return MagicMock(returncode=1, stdout=b"", stderr=stderr)
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(GitCommandError) as exc_info:
+            svc.fetch(tmp_path)
+
+    assert attempts == 1
+    assert exc_info.value.stderr == stderr.decode()
+    mock_sleep.assert_not_called()
 
 
 def test_fetch_raises_git_timeout_error_on_timeout(tmp_path):
