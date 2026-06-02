@@ -6,26 +6,14 @@ from pathlib import Path
 
 from ..config import Config
 from ._base import _SubprocessService
+from ._git_remote_retry import (
+    _REMOTE_RETRY_PROFILE,
+    _RemoteRetryDecision,
+    _classify_push_retry,
+    _classify_remote_retry,
+)
 
 logger = logging.getLogger(__name__)
-
-_PERMANENT_FAILURE_PATTERNS = [
-    "not possible to fast-forward",
-    "need to specify how to reconcile divergent branches",
-    "refusing to merge unrelated histories",
-    "conflict",
-]
-
-_OPERATOR_ACTIONABLE_PATTERNS = [
-    "repository not found",
-    "remote: not found",
-    "does not appear to be a git repository",
-]
-
-_NFF_PUSH_PATTERNS = ["[rejected]"]
-
-_RETRY_DELAYS = [10, 60, 300]
-_MAX_ATTEMPTS = 4
 
 
 class GitServiceError(RuntimeError):
@@ -376,33 +364,36 @@ class GitService(_SubprocessService):
         operation: str,
         cwd: Path | None = None,
     ) -> None:
-        for attempt in range(1, _MAX_ATTEMPTS + 1):
+        for attempt in range(1, _REMOTE_RETRY_PROFILE.max_attempts + 1):
             try:
                 self._run_or_raise(cmd, message, cwd=cwd)
             except GitCommandError as exc:
-                stderr_lower = exc.stderr.lower()
-                if any(p in stderr_lower for p in _OPERATOR_ACTIONABLE_PATTERNS):
+                decision = _classify_remote_retry(exc.stderr, attempt)
+                if decision is _RemoteRetryDecision.ESCALATE_OPERATOR_ACTIONABLE:
                     raise OperatorActionableGitError(
                         message,
                         stderr=exc.stderr,
                         op=operation,
                         attempt_count=attempt,
                     ) from exc
-                if any(p in stderr_lower for p in _PERMANENT_FAILURE_PATTERNS):
+                if (
+                    decision
+                    is _RemoteRetryDecision.PASSTHROUGH_DIVERGENCE_OR_CONFLICT
+                ):
                     raise
-                if attempt == _MAX_ATTEMPTS:
+                if decision is _RemoteRetryDecision.ESCALATE_RETRY_EXHAUSTED:
                     raise OperatorActionableGitError(
                         message,
                         stderr=exc.stderr,
                         op=operation,
                         attempt_count=attempt,
                     ) from exc
-                delay = _RETRY_DELAYS[attempt - 1]
+                delay = _REMOTE_RETRY_PROFILE.backoff_seconds[attempt - 1]
                 logger.warning(
                     "git %s failed (attempt %d/%d), retrying in %ds: %s",
                     operation,
                     attempt,
-                    _MAX_ATTEMPTS,
+                    _REMOTE_RETRY_PROFILE.max_attempts,
                     delay,
                     exc.stderr,
                 )
@@ -478,7 +469,7 @@ class GitService(_SubprocessService):
         repo_path: Path,
         resolver: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
-        for attempt in range(1, _MAX_ATTEMPTS + 1):
+        for attempt in range(1, _REMOTE_RETRY_PROFILE.max_attempts + 1):
             result = self._run(["git", "push"], cwd=repo_path, capture_output=True)
             if result.returncode == 0:
                 if attempt > 1:
@@ -489,10 +480,8 @@ class GitService(_SubprocessService):
                 return
 
             stderr = self._decode(result.stderr)
-            stderr_lower = stderr.lower()
-            is_last = attempt == _MAX_ATTEMPTS
-
-            if any(p in stderr_lower for p in _OPERATOR_ACTIONABLE_PATTERNS):
+            decision = _classify_push_retry(stderr, attempt)
+            if decision is _RemoteRetryDecision.ESCALATE_OPERATOR_ACTIONABLE:
                 raise OperatorActionableGitError(
                     "git push failed",
                     stderr=stderr,
@@ -500,16 +489,16 @@ class GitService(_SubprocessService):
                     attempt_count=attempt,
                 )
 
-            if any(p in stderr_lower for p in _PERMANENT_FAILURE_PATTERNS):
+            if decision is _RemoteRetryDecision.PASSTHROUGH_DIVERGENCE_OR_CONFLICT:
                 raise GitCommandError("git push failed", result.returncode, stderr)
 
-            if any(p in stderr for p in _NFF_PUSH_PATTERNS):
-                if is_last:
+            if decision is _RemoteRetryDecision.RECOVER_PUSH_NON_FAST_FORWARD:
+                if attempt == _REMOTE_RETRY_PROFILE.max_attempts:
                     raise GitCommandError("git push failed", result.returncode, stderr)
                 logger.warning(
                     "git push rejected non-fast-forward (attempt %d/%d), pulling with merge fallback",
                     attempt,
-                    _MAX_ATTEMPTS,
+                    _REMOTE_RETRY_PROFILE.max_attempts,
                 )
                 try:
                     self.pull_with_merge_fallback(repo_path)
@@ -519,7 +508,7 @@ class GitService(_SubprocessService):
                     await resolver()
                 continue
 
-            if is_last:
+            if decision is _RemoteRetryDecision.ESCALATE_RETRY_EXHAUSTED:
                 raise OperatorActionableGitError(
                     "git push failed",
                     stderr=stderr,
@@ -527,11 +516,11 @@ class GitService(_SubprocessService):
                     attempt_count=attempt,
                 )
 
-            delay = _RETRY_DELAYS[attempt - 1]
+            delay = _REMOTE_RETRY_PROFILE.backoff_seconds[attempt - 1]
             logger.warning(
                 "git push failed (attempt %d/%d), retrying in %ds: %s",
                 attempt,
-                _MAX_ATTEMPTS,
+                _REMOTE_RETRY_PROFILE.max_attempts,
                 delay,
                 stderr,
             )

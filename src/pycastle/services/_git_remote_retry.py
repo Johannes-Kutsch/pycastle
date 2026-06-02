@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+
+
+class _RemoteRetryDecision(Enum):
+    RETRY_TRANSIENT = "retry_transient"
+    ESCALATE_OPERATOR_ACTIONABLE = "escalate_operator_actionable"
+    ESCALATE_RETRY_EXHAUSTED = "escalate_retry_exhausted"
+    PASSTHROUGH_DIVERGENCE_OR_CONFLICT = "passthrough_divergence_or_conflict"
+    RECOVER_PUSH_NON_FAST_FORWARD = "recover_push_non_fast_forward"
+
+
+@dataclass(frozen=True)
+class _RemoteRetryProfile:
+    max_attempts: int
+    backoff_seconds: tuple[int, ...]
+
+
+_REMOTE_RETRY_PROFILE = _RemoteRetryProfile(
+    max_attempts=4,
+    backoff_seconds=(10, 60, 300),
+)
+
+_DIVERGENCE_OR_CONFLICT_PATTERNS = (
+    "not possible to fast-forward",
+    "need to specify how to reconcile divergent branches",
+    "refusing to merge unrelated histories",
+    "conflict",
+)
+
+_OPERATOR_ACTIONABLE_PATTERNS = (
+    "repository not found",
+    "remote: not found",
+    "does not appear to be a git repository",
+)
+
+_NON_FAST_FORWARD_PUSH_PATTERNS = ("[rejected]",)
+
+
+def _classify_remote_retry(stderr: str, attempt: int) -> _RemoteRetryDecision:
+    stderr_lower = stderr.lower()
+    if any(pattern in stderr_lower for pattern in _OPERATOR_ACTIONABLE_PATTERNS):
+        return _RemoteRetryDecision.ESCALATE_OPERATOR_ACTIONABLE
+    if any(pattern in stderr_lower for pattern in _DIVERGENCE_OR_CONFLICT_PATTERNS):
+        return _RemoteRetryDecision.PASSTHROUGH_DIVERGENCE_OR_CONFLICT
+    if attempt >= _REMOTE_RETRY_PROFILE.max_attempts:
+        return _RemoteRetryDecision.ESCALATE_RETRY_EXHAUSTED
+    return _RemoteRetryDecision.RETRY_TRANSIENT
+
+
+def _classify_push_retry(stderr: str, attempt: int) -> _RemoteRetryDecision:
+    stderr_lower = stderr.lower()
+    if any(pattern in stderr_lower for pattern in _OPERATOR_ACTIONABLE_PATTERNS):
+        return _RemoteRetryDecision.ESCALATE_OPERATOR_ACTIONABLE
+    if any(pattern in stderr for pattern in _NON_FAST_FORWARD_PUSH_PATTERNS):
+        return _RemoteRetryDecision.RECOVER_PUSH_NON_FAST_FORWARD
+    if any(pattern in stderr_lower for pattern in _DIVERGENCE_OR_CONFLICT_PATTERNS):
+        return _RemoteRetryDecision.PASSTHROUGH_DIVERGENCE_OR_CONFLICT
+    if attempt >= _REMOTE_RETRY_PROFILE.max_attempts:
+        return _RemoteRetryDecision.ESCALATE_RETRY_EXHAUSTED
+    return _RemoteRetryDecision.RETRY_TRANSIENT
