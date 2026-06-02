@@ -73,6 +73,73 @@ def test_needs_slice_type_label_has_correct_color_and_description(label_setup):
     )
 
 
+def test_create_labels_interactive_preserves_all_canonical_label_metadata(label_setup):
+    git_svc, github_svc, posted = label_setup
+    cfg = Config()
+    create_labels_interactive(
+        "tok", git_service=git_svc, cfg=cfg, github_service=github_svc
+    )
+    entries_by_name = {entry["name"]: entry for entry in posted}
+
+    assert entries_by_name == {
+        cfg.bug_label: {
+            "name": cfg.bug_label,
+            "description": "Something isn't working",
+            "color": "d73a4a",
+        },
+        cfg.issue_label: {
+            "name": cfg.issue_label,
+            "description": "Fully specified, ready for afk agent",
+            "color": "0be348",
+        },
+        cfg.hitl_label: {
+            "name": cfg.hitl_label,
+            "description": "Requires human implementation",
+            "color": "5181b8",
+        },
+        cfg.enhancement_label: {
+            "name": cfg.enhancement_label,
+            "description": "New feature or request",
+            "color": "a2eeef",
+        },
+        cfg.needs_triage_label: {
+            "name": cfg.needs_triage_label,
+            "description": "Maintainer needs to evaluate this issue",
+            "color": "fbca04",
+        },
+        cfg.needs_info_label: {
+            "name": cfg.needs_info_label,
+            "description": "Waiting on reporter for more information",
+            "color": "b03176",
+        },
+        cfg.wontfix_label: {
+            "name": cfg.wontfix_label,
+            "description": "Will not be actioned",
+            "color": "ffffff",
+        },
+        cfg.refactor_slice_label: {
+            "name": cfg.refactor_slice_label,
+            "description": "Implementation scope: structural refactor only",
+            "color": "0be348",
+        },
+        cfg.behavior_slice_label: {
+            "name": cfg.behavior_slice_label,
+            "description": "Implementation scope: observable behavior change",
+            "color": "0be348",
+        },
+        cfg.docs_slice_label: {
+            "name": cfg.docs_slice_label,
+            "description": "Implementation scope: documentation only",
+            "color": "0be348",
+        },
+        cfg.needs_slice_type_label: {
+            "name": cfg.needs_slice_type_label,
+            "description": "ready-for-agent issue missing exactly one slice-mode label",
+            "color": "d73a4a",
+        },
+    }
+
+
 def test_create_labels_interactive_posts_entries_with_required_github_api_keys(
     label_setup,
 ):

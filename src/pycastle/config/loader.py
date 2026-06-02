@@ -13,6 +13,7 @@ import platformdirs
 
 from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
+from pycastle.label_catalog import CANONICAL_LABEL_DEFAULTS
 from pycastle.service_availability import iter_stage_chain
 
 __all__ = [
@@ -70,17 +71,17 @@ class Config:
     worktree_timeout: int = 30
     idle_timeout: int = 300
     docker_image_name: str = ""
-    bug_label: str = "bug"
-    issue_label: str = "ready-for-agent"
-    hitl_label: str = "ready-for-human"
-    enhancement_label: str = "enhancement"
-    needs_triage_label: str = "needs-triage"
-    needs_info_label: str = "needs-info"
-    wontfix_label: str = "wontfix"
-    refactor_slice_label: str = "refactor-slice"
-    behavior_slice_label: str = "behavior-slice"
-    docs_slice_label: str = "docs-slice"
-    needs_slice_type_label: str = "needs-slice-type"
+    bug_label: str = CANONICAL_LABEL_DEFAULTS["bug_label"]
+    issue_label: str = CANONICAL_LABEL_DEFAULTS["issue_label"]
+    hitl_label: str = CANONICAL_LABEL_DEFAULTS["hitl_label"]
+    enhancement_label: str = CANONICAL_LABEL_DEFAULTS["enhancement_label"]
+    needs_triage_label: str = CANONICAL_LABEL_DEFAULTS["needs_triage_label"]
+    needs_info_label: str = CANONICAL_LABEL_DEFAULTS["needs_info_label"]
+    wontfix_label: str = CANONICAL_LABEL_DEFAULTS["wontfix_label"]
+    refactor_slice_label: str = CANONICAL_LABEL_DEFAULTS["refactor_slice_label"]
+    behavior_slice_label: str = CANONICAL_LABEL_DEFAULTS["behavior_slice_label"]
+    docs_slice_label: str = CANONICAL_LABEL_DEFAULTS["docs_slice_label"]
+    needs_slice_type_label: str = CANONICAL_LABEL_DEFAULTS["needs_slice_type_label"]
     logs_dir: Path = dataclasses.field(default_factory=lambda: Path("pycastle/logs"))
     preflight_checks: tuple[tuple[str, str], ...] = dataclasses.field(
         default_factory=lambda: (

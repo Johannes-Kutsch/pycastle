@@ -10,6 +10,7 @@ from ..config import (
     load_credential_env,
     resolve_global_dir,
 )
+from ..label_catalog import CANONICAL_LABEL_SPECS
 from ..services import (
     GithubAPIError,
     GithubAuthError,
@@ -47,60 +48,11 @@ def create_labels_interactive(
     _cfg = cfg or load_config()
     labels = [
         {
-            "name": _cfg.bug_label,
-            "description": "Something isn't working",
-            "color": "d73a4a",
-        },
-        {
-            "name": _cfg.enhancement_label,
-            "description": "New feature or request",
-            "color": "a2eeef",
-        },
-        {
-            "name": _cfg.needs_triage_label,
-            "description": "Maintainer needs to evaluate this issue",
-            "color": "fbca04",
-        },
-        {
-            "name": _cfg.needs_info_label,
-            "description": "Waiting on reporter for more information",
-            "color": "b03176",
-        },
-        {
-            "name": _cfg.issue_label,
-            "description": "Fully specified, ready for afk agent",
-            "color": "0be348",
-        },
-        {
-            "name": _cfg.hitl_label,
-            "description": "Requires human implementation",
-            "color": "5181b8",
-        },
-        {
-            "name": _cfg.wontfix_label,
-            "description": "Will not be actioned",
-            "color": "ffffff",
-        },
-        {
-            "name": _cfg.refactor_slice_label,
-            "description": "Implementation scope: structural refactor only",
-            "color": "0be348",
-        },
-        {
-            "name": _cfg.behavior_slice_label,
-            "description": "Implementation scope: observable behavior change",
-            "color": "0be348",
-        },
-        {
-            "name": _cfg.docs_slice_label,
-            "description": "Implementation scope: documentation only",
-            "color": "0be348",
-        },
-        {
-            "name": _cfg.needs_slice_type_label,
-            "description": "ready-for-agent issue missing exactly one slice-mode label",
-            "color": "d73a4a",
-        },
+            "name": getattr(_cfg, spec.config_field),
+            "description": spec.description,
+            "color": spec.color,
+        }
+        for spec in CANONICAL_LABEL_SPECS
     ]
 
     resolved = _resolve_repo(git_service, _cfg)

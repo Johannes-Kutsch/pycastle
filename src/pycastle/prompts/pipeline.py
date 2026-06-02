@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 from ..config import Config
+from ..label_catalog import PROMPT_GLOBAL_LABEL_SPECS
 from ..session import RunKind
 from .source import EffectivePromptFile, PromptReference, PromptSource
 
@@ -333,16 +334,11 @@ class PromptRenderer:
     def _build_global_args(self, cfg: Config | PromptRendererConfig) -> dict[str, str]:
         checks = " && ".join(cmd for _, cmd in cfg.preflight_checks)
         return {
-            "BUG_LABEL": cfg.bug_label,
-            "READY_FOR_AGENT_LABEL": cfg.issue_label,
-            "READY_FOR_HUMAN_LABEL": cfg.hitl_label,
-            "ENHANCEMENT_LABEL": cfg.enhancement_label,
-            "NEEDS_TRIAGE_LABEL": cfg.needs_triage_label,
-            "NEEDS_INFO_LABEL": cfg.needs_info_label,
-            "WONTFIX_LABEL": cfg.wontfix_label,
-            "REFACTOR_SLICE_LABEL": cfg.refactor_slice_label,
-            "BEHAVIOR_SLICE_LABEL": cfg.behavior_slice_label,
-            "DOCS_SLICE_LABEL": cfg.docs_slice_label,
+            **{
+                spec.prompt_placeholder: getattr(cfg, spec.config_field)
+                for spec in PROMPT_GLOBAL_LABEL_SPECS
+                if spec.prompt_placeholder is not None
+            },
             "FEEDBACK_COMMANDS": _format_feedback_commands(cfg.implement_checks),
             "CHECKS": checks,
         }
