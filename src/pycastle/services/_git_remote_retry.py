@@ -39,25 +39,28 @@ _OPERATOR_ACTIONABLE_PATTERNS = (
 _NON_FAST_FORWARD_PUSH_PATTERNS = ("[rejected]",)
 
 
-def _classify_remote_retry(stderr: str, attempt: int) -> _RemoteRetryDecision:
-    stderr_lower = stderr.lower()
-    if any(pattern in stderr_lower for pattern in _OPERATOR_ACTIONABLE_PATTERNS):
-        return _RemoteRetryDecision.ESCALATE_OPERATOR_ACTIONABLE
-    if any(pattern in stderr_lower for pattern in _DIVERGENCE_OR_CONFLICT_PATTERNS):
-        return _RemoteRetryDecision.PASSTHROUGH_DIVERGENCE_OR_CONFLICT
-    if attempt >= _REMOTE_RETRY_PROFILE.max_attempts:
-        return _RemoteRetryDecision.ESCALATE_RETRY_EXHAUSTED
-    return _RemoteRetryDecision.RETRY_TRANSIENT
+class _PrivateGitRemotePolicy:
+    def classify_fetch_or_pull(self, stderr: str, attempt: int) -> _RemoteRetryDecision:
+        stderr_lower = stderr.lower()
+        if any(pattern in stderr_lower for pattern in _OPERATOR_ACTIONABLE_PATTERNS):
+            return _RemoteRetryDecision.ESCALATE_OPERATOR_ACTIONABLE
+        if any(pattern in stderr_lower for pattern in _DIVERGENCE_OR_CONFLICT_PATTERNS):
+            return _RemoteRetryDecision.PASSTHROUGH_DIVERGENCE_OR_CONFLICT
+        if attempt >= _REMOTE_RETRY_PROFILE.max_attempts:
+            return _RemoteRetryDecision.ESCALATE_RETRY_EXHAUSTED
+        return _RemoteRetryDecision.RETRY_TRANSIENT
+
+    def classify_push(self, stderr: str, attempt: int) -> _RemoteRetryDecision:
+        stderr_lower = stderr.lower()
+        if any(pattern in stderr_lower for pattern in _OPERATOR_ACTIONABLE_PATTERNS):
+            return _RemoteRetryDecision.ESCALATE_OPERATOR_ACTIONABLE
+        if any(pattern in stderr for pattern in _NON_FAST_FORWARD_PUSH_PATTERNS):
+            return _RemoteRetryDecision.RECOVER_PUSH_NON_FAST_FORWARD
+        if any(pattern in stderr_lower for pattern in _DIVERGENCE_OR_CONFLICT_PATTERNS):
+            return _RemoteRetryDecision.PASSTHROUGH_DIVERGENCE_OR_CONFLICT
+        if attempt >= _REMOTE_RETRY_PROFILE.max_attempts:
+            return _RemoteRetryDecision.ESCALATE_RETRY_EXHAUSTED
+        return _RemoteRetryDecision.RETRY_TRANSIENT
 
 
-def _classify_push_retry(stderr: str, attempt: int) -> _RemoteRetryDecision:
-    stderr_lower = stderr.lower()
-    if any(pattern in stderr_lower for pattern in _OPERATOR_ACTIONABLE_PATTERNS):
-        return _RemoteRetryDecision.ESCALATE_OPERATOR_ACTIONABLE
-    if any(pattern in stderr for pattern in _NON_FAST_FORWARD_PUSH_PATTERNS):
-        return _RemoteRetryDecision.RECOVER_PUSH_NON_FAST_FORWARD
-    if any(pattern in stderr_lower for pattern in _DIVERGENCE_OR_CONFLICT_PATTERNS):
-        return _RemoteRetryDecision.PASSTHROUGH_DIVERGENCE_OR_CONFLICT
-    if attempt >= _REMOTE_RETRY_PROFILE.max_attempts:
-        return _RemoteRetryDecision.ESCALATE_RETRY_EXHAUSTED
-    return _RemoteRetryDecision.RETRY_TRANSIENT
+_PRIVATE_GIT_REMOTE_POLICY = _PrivateGitRemotePolicy()

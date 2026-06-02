@@ -7,10 +7,9 @@ from pathlib import Path
 from ..config import Config
 from ._base import _SubprocessService
 from ._git_remote_retry import (
+    _PRIVATE_GIT_REMOTE_POLICY,
     _REMOTE_RETRY_PROFILE,
     _RemoteRetryDecision,
-    _classify_push_retry,
-    _classify_remote_retry,
 )
 
 logger = logging.getLogger(__name__)
@@ -368,7 +367,9 @@ class GitService(_SubprocessService):
             try:
                 self._run_or_raise(cmd, message, cwd=cwd)
             except GitCommandError as exc:
-                decision = _classify_remote_retry(exc.stderr, attempt)
+                decision = _PRIVATE_GIT_REMOTE_POLICY.classify_fetch_or_pull(
+                    exc.stderr, attempt
+                )
                 if decision is _RemoteRetryDecision.ESCALATE_OPERATOR_ACTIONABLE:
                     raise OperatorActionableGitError(
                         message,
@@ -376,10 +377,7 @@ class GitService(_SubprocessService):
                         op=operation,
                         attempt_count=attempt,
                     ) from exc
-                if (
-                    decision
-                    is _RemoteRetryDecision.PASSTHROUGH_DIVERGENCE_OR_CONFLICT
-                ):
+                if decision is _RemoteRetryDecision.PASSTHROUGH_DIVERGENCE_OR_CONFLICT:
                     raise
                 if decision is _RemoteRetryDecision.ESCALATE_RETRY_EXHAUSTED:
                     raise OperatorActionableGitError(
@@ -480,7 +478,7 @@ class GitService(_SubprocessService):
                 return
 
             stderr = self._decode(result.stderr)
-            decision = _classify_push_retry(stderr, attempt)
+            decision = _PRIVATE_GIT_REMOTE_POLICY.classify_push(stderr, attempt)
             if decision is _RemoteRetryDecision.ESCALATE_OPERATOR_ACTIONABLE:
                 raise OperatorActionableGitError(
                     "git push failed",
