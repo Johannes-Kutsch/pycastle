@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import time
 import warnings
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -24,12 +27,19 @@ class GithubAuthError(GithubServiceError):
 
 class GithubAPIError(GithubServiceError):
     def __init__(
-        self, message: str, status: int, body: str, method: str, path: str
+        self,
+        message: str,
+        status: int,
+        body: str,
+        method: str,
+        path: str,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.status = status
         self.body = body
         self.method = method
         self.path = path
+        self.headers = headers or {}
         super().__init__(message)
 
 
@@ -39,8 +49,26 @@ class GithubNetworkError(GithubServiceError):
         super().__init__(message)
 
 
+class OperatorActionableGithubError(GithubServiceError):
+    def __init__(
+        self,
+        message: str,
+        method: str,
+        path: str,
+        attempt_count: int,
+        cause: GithubServiceError,
+    ) -> None:
+        self.method = method
+        self.path = path
+        self.attempt_count = attempt_count
+        self.cause = cause
+        super().__init__(message)
+
+
 _API_BASE = "https://api.github.com"
 _IMPROVE_PRD_TITLE_PREFIX = "[improve-PRD] "
+_READ_RETRY_MAX_ATTEMPTS = 4
+_READ_RETRY_BACKOFF_SECONDS = (10, 60, 300)
 
 
 def _user_agent() -> str:
@@ -74,6 +102,40 @@ class GithubService:
         path: str,
         data: dict[str, Any] | None = None,
     ) -> tuple[Any, dict[str, str]]:
+        if method != "GET":
+            return self._request_once(method, path, data)
+
+        for attempt in range(1, _READ_RETRY_MAX_ATTEMPTS + 1):
+            try:
+                return self._request_once(method, path, data)
+            except GithubAuthError:
+                raise
+            except GithubAPIError as exc:
+                if not self._is_retryable_api_error(exc):
+                    raise
+                if attempt >= _READ_RETRY_MAX_ATTEMPTS:
+                    raise self._operator_actionable_error(
+                        method, path, attempt, exc
+                    ) from exc
+                delay = self._retry_delay_for_api_error(exc, attempt)
+                if attempt >= _READ_RETRY_MAX_ATTEMPTS:
+                    raise AssertionError("unreachable")
+                time.sleep(delay)
+            except GithubNetworkError as exc:
+                if attempt >= _READ_RETRY_MAX_ATTEMPTS:
+                    raise self._operator_actionable_error(
+                        method, path, attempt, exc
+                    ) from exc
+                time.sleep(_READ_RETRY_BACKOFF_SECONDS[attempt - 1])
+
+        raise AssertionError("unreachable")
+
+    def _request_once(
+        self,
+        method: str,
+        path: str,
+        data: dict[str, Any] | None = None,
+    ) -> tuple[Any, dict[str, str]]:
         url = path if path.startswith("http") else f"{_API_BASE}{path}"
         body = json.dumps(data).encode("utf-8") if data is not None else None
         headers = self._headers()
@@ -91,6 +153,7 @@ class GithubService:
             except Exception:
                 pass
             status = exc.code
+            err_headers = dict(exc.headers.items()) if exc.headers is not None else {}
             if status == 401:
                 raise GithubAuthError(
                     f"GitHub API {method} {path} returned 401: {err_body}",
@@ -103,6 +166,7 @@ class GithubService:
                 body=err_body,
                 method=method,
                 path=path,
+                headers=err_headers,
             ) from exc
         except URLError as exc:
             raise GithubNetworkError(
@@ -125,7 +189,53 @@ class GithubService:
                 body=raw.decode("utf-8", errors="replace"),
                 method=method,
                 path=path,
+                headers=resp_headers,
             ) from exc
+
+    def _retry_delay_for_api_error(self, exc: GithubAPIError, attempt: int) -> int:
+        fixed_delay = _fixed_retry_delay_seconds(exc.headers)
+        if fixed_delay is not None:
+            return fixed_delay
+        return _READ_RETRY_BACKOFF_SECONDS[attempt - 1]
+
+    @staticmethod
+    def _is_retryable_api_error(exc: GithubAPIError) -> bool:
+        if exc.status == 429:
+            return True
+        if 500 <= exc.status <= 599:
+            return True
+        if exc.status != 403:
+            return False
+        headers = {key.lower(): value for key, value in exc.headers.items()}
+        if headers.get("x-ratelimit-remaining") == "0":
+            return True
+        if _fixed_retry_delay_seconds(exc.headers) is not None:
+            return True
+        body = exc.body.lower()
+        return any(
+            pattern in body
+            for pattern in (
+                "rate limit",
+                "secondary rate limit",
+                "abuse detection",
+                "please wait a few minutes",
+            )
+        )
+
+    @staticmethod
+    def _operator_actionable_error(
+        method: str,
+        path: str,
+        attempt: int,
+        cause: GithubServiceError,
+    ) -> OperatorActionableGithubError:
+        return OperatorActionableGithubError(
+            f"GitHub API {method} {path} failed after {attempt} attempts: {cause}",
+            method=method,
+            path=path,
+            attempt_count=attempt,
+            cause=cause,
+        )
 
     def _paginate(self, path: str) -> list[Any]:
         results: list[Any] = []
@@ -443,4 +553,33 @@ def _next_link(link_header: str | None) -> str | None:
         params = segment[end + 1 :]
         if 'rel="next"' in params:
             return url
+    return None
+
+
+def _fixed_retry_delay_seconds(headers: dict[str, str]) -> int | None:
+    normalized_headers = {key.lower(): value for key, value in headers.items()}
+
+    retry_after = normalized_headers.get("retry-after")
+    if retry_after:
+        try:
+            return max(0, int(retry_after))
+        except ValueError:
+            try:
+                parsed = parsedate_to_datetime(retry_after)
+            except (TypeError, ValueError):
+                return None
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return max(
+                0,
+                int((parsed - datetime.now(timezone.utc)).total_seconds()),
+            )
+
+    rate_limit_reset = normalized_headers.get("x-ratelimit-reset")
+    if rate_limit_reset:
+        try:
+            return max(0, int(float(rate_limit_reset) - time.time()))
+        except ValueError:
+            return None
+
     return None
