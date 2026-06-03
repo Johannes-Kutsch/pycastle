@@ -557,12 +557,17 @@ def _next_link(link_header: str | None) -> str | None:
 
 
 def _fixed_retry_delay_seconds(headers: dict[str, str]) -> int | None:
-    retry_after = headers.get("Retry-After")
+    normalized_headers = {key.lower(): value for key, value in headers.items()}
+
+    retry_after = normalized_headers.get("retry-after")
     if retry_after:
         try:
             return max(0, int(retry_after))
         except ValueError:
-            parsed = parsedate_to_datetime(retry_after)
+            try:
+                parsed = parsedate_to_datetime(retry_after)
+            except (TypeError, ValueError):
+                return None
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
             return max(
@@ -570,7 +575,7 @@ def _fixed_retry_delay_seconds(headers: dict[str, str]) -> int | None:
                 int((parsed - datetime.now(timezone.utc)).total_seconds()),
             )
 
-    rate_limit_reset = headers.get("X-RateLimit-Reset")
+    rate_limit_reset = normalized_headers.get("x-ratelimit-reset")
     if rate_limit_reset:
         try:
             return max(0, int(float(rate_limit_reset) - time.time()))

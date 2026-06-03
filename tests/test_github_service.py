@@ -169,6 +169,29 @@ def test_check_auth_retries_transient_5xx_and_recovers():
     mock_sleep.assert_called_once_with(10)
 
 
+def test_check_auth_uses_retry_after_header_when_present():
+    svc = _make_service()
+    body = json.dumps({"login": "alice"}).encode()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=[
+                _make_http_error(
+                    429,
+                    b'{"message":"secondary rate limit"}',
+                    headers={"Retry-After": "6"},
+                ),
+                _make_response(body),
+            ],
+        ),
+        patch("time.sleep") as mock_sleep,
+    ):
+        assert svc.check_auth() == "alice"
+
+    mock_sleep.assert_called_once_with(6)
+
+
 # ── _request: headers ─────────────────────────────────────────────────────────
 
 
@@ -584,6 +607,56 @@ def test_get_issue_title_uses_retry_after_header_when_present():
         assert svc.get_issue_title(7) == "Fix bug"
 
     mock_sleep.assert_called_once_with(7)
+
+
+def test_get_issue_title_falls_back_to_exponential_retry_when_retry_after_is_malformed():
+    svc = _make_service()
+    issue_body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
+    comments_body = json.dumps([]).encode()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=[
+                _make_http_error(
+                    429,
+                    b'{"message":"secondary rate limit"}',
+                    headers={"Retry-After": "not-a-delay"},
+                ),
+                _make_response(issue_body),
+                _make_response(comments_body, headers={}),
+            ],
+        ),
+        patch("time.sleep") as mock_sleep,
+    ):
+        assert svc.get_issue_title(7) == "Fix bug"
+
+    mock_sleep.assert_called_once_with(10)
+
+
+def test_get_issue_title_retries_rate_limited_403_from_headers():
+    svc = _make_service()
+    issue_body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
+    comments_body = json.dumps([]).encode()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=[
+                _make_http_error(
+                    403,
+                    b'{"message":"Forbidden"}',
+                    headers={"X-RateLimit-Remaining": "0"},
+                ),
+                _make_response(issue_body),
+                _make_response(comments_body, headers={}),
+            ],
+        ),
+        patch("time.sleep") as mock_sleep,
+    ):
+        assert svc.get_issue_title(7) == "Fix bug"
+
+    mock_sleep.assert_called_once_with(10)
 
 
 def test_get_issue_title_raises_operator_actionable_error_after_retry_exhaustion():
