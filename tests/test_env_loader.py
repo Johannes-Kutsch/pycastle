@@ -7,6 +7,7 @@ import pytest
 from pycastle.config import (
     DEFAULT_ENV_FILE,
     KNOWN_CREDENTIAL_ENV_KEYS,
+    load_config,
     load_credential_env,
     load_env,
 )
@@ -122,6 +123,64 @@ def test_load_env_uses_explicit_repo_root_when_cwd_differs(
     )
 
     assert env["GH_TOKEN"] == "from-local"
+
+
+def test_load_config_and_credential_env_share_explicit_path_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = tmp_path / "workspace"
+    repo_root.mkdir()
+    pycastle_dir = repo_root / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "config.py").write_text("max_parallel = 7\n")
+    (pycastle_dir / ".env").write_text("GH_TOKEN=from-local\n")
+
+    global_dir = tmp_path / "pycastle-home"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text("max_parallel = 5\n")
+    (global_dir / ".env").write_text("CLAUDE_CODE_OAUTH_TOKEN=from-global\n")
+
+    monkeypatch.chdir(tmp_path)
+
+    cfg = load_config(repo_root=repo_root, global_dir=global_dir)
+    env = load_credential_env(
+        repo_root=repo_root,
+        global_dir=global_dir,
+        local_env_file=DEFAULT_ENV_FILE,
+        process_env={},
+    )
+
+    assert cfg.max_parallel == 7
+    assert env == {
+        "CLAUDE_CODE_OAUTH_TOKEN": "from-global",
+        "GH_TOKEN": "from-local",
+    }
+
+
+def test_load_config_and_credential_env_share_pycastle_home_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = tmp_path / "workspace"
+    repo_root.mkdir()
+    (repo_root / "pycastle").mkdir()
+
+    pycastle_home = tmp_path / "pycastle-home"
+    pycastle_home.mkdir()
+    (pycastle_home / "config.py").write_text("max_parallel = 6\n")
+    (pycastle_home / ".env").write_text("GH_TOKEN=from-global\n")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(pycastle_home))
+
+    cfg = load_config(repo_root=repo_root)
+    env = load_credential_env(
+        repo_root=repo_root,
+        local_env_file=DEFAULT_ENV_FILE,
+        process_env={},
+    )
+
+    assert cfg.max_parallel == 6
+    assert env == {"GH_TOKEN": "from-global"}
 
 
 # ── load_credential_env tests ──────────────────────────────────────────────────

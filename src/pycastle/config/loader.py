@@ -242,14 +242,6 @@ def _resolve_pycastle_paths(
     )
 
 
-def _resolve_config_paths(
-    repo_root: Path | None,
-    global_dir: Path | None,
-    env: Mapping[str, str],
-) -> _ResolvedPycastlePaths:
-    return _resolve_pycastle_paths(repo_root, global_dir, env)
-
-
 def _display_global_path(path: Path) -> str:
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
