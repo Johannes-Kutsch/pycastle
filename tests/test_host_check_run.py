@@ -7,7 +7,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from pycastle.commands.host_check_run import HostCheckRunPassed, prepare_host_check_run
+from pycastle.commands.host_check_run import (
+    HostCheckRunPassed,
+    prepare_host_check_run,
+)
+from pycastle.config import StageOverride
 from tests.support import FakeAgentRunner, RecordingStatusDisplay
 
 
@@ -60,6 +64,74 @@ def test_prepare_host_check_run_passes_explicit_repo_root_to_git_service(tmp_pat
     git_svc.is_working_tree_clean.assert_called_once_with(tmp_path)
     git_svc.get_head_sha.assert_called_once_with(tmp_path)
     assert result == "def456"
+
+
+def test_resolve_host_check_issue_deps_builds_defaults_for_issue_filing(
+    tmp_path, monkeypatch
+):
+    from pycastle.agents.runner import AgentRunner
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.get_github_remote_repo.return_value = ("owner", "repo")
+    status_display = RecordingStatusDisplay()
+    cfg = Config()
+
+    monkeypatch.setattr(
+        run_mod,
+        "load_credential_env",
+        lambda **kwargs: {"GH_TOKEN": "token"},
+    )
+    monkeypatch.setattr(run_mod, "_configured_service_registry", lambda cfg, env: {})
+
+    issue_deps = run_mod.resolve_host_check_issue_deps(
+        cfg=cfg,
+        git_svc=git_svc,
+        repo_root=tmp_path,
+        status_display=status_display,
+    )
+
+    assert issue_deps.cfg is cfg
+    assert issue_deps.github_svc.repo == "owner/repo"
+    assert isinstance(issue_deps.agent_runner, AgentRunner)
+    assert issue_deps.status_display is status_display
+    assert issue_deps.reporter_override == cfg.preflight_issue_override
+
+
+def test_resolve_host_check_issue_deps_uses_service_registry_for_reporter_override(
+    tmp_path,
+):
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    status_display = RecordingStatusDisplay()
+    cfg = Config()
+    provided_service_registry = MagicMock()
+    github_svc = MagicMock()
+    agent_runner = MagicMock()
+    reporter_override = StageOverride(
+        service="codex",
+        model="gpt-5.4-mini",
+        effort="medium",
+    )
+    provided_service_registry.resolve.return_value = reporter_override
+
+    issue_deps = run_mod.resolve_host_check_issue_deps(
+        cfg=cfg,
+        git_svc=git_svc,
+        repo_root=tmp_path,
+        status_display=status_display,
+        github_svc=github_svc,
+        agent_runner=agent_runner,
+        service_registry=provided_service_registry,
+    )
+
+    assert issue_deps.github_svc is github_svc
+    assert issue_deps.agent_runner is agent_runner
+    assert issue_deps.reporter_override is reporter_override
+    provided_service_registry.resolve.assert_called_once()
 
 
 def test_run_host_check_run_executes_passing_checks_in_checked_sha_worktree_and_returns_sha(
