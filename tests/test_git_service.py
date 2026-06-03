@@ -1325,10 +1325,7 @@ def test_push_runs_git_push(tmp_path):
 
 def test_push_succeeds_on_zero_exit(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
-    ):
+    with patch("subprocess.run", return_value=_git_result()):
         asyncio.run(svc.push(tmp_path))  # must not raise
 
 
@@ -1337,7 +1334,7 @@ def test_push_raises_operator_actionable_error_after_exhausting_retries(tmp_path
     with (
         patch(
             "subprocess.run",
-            return_value=MagicMock(returncode=1, stdout=b"", stderr=b"network error"),
+            return_value=_git_failure(b"network error"),
         ),
         patch("time.sleep"),
     ):
@@ -1618,7 +1615,7 @@ def test_push_pulls_with_merge_fallback_on_rejection_then_succeeds(tmp_path):
         captured.append(list(cmd))
         push_count = sum(1 for c in captured if c == ["git", "push"])
         if cmd == ["git", "push"] and push_count == 1:
-            return MagicMock(returncode=1, stdout=b"", stderr=nff_stderr)
+            return _git_failure(nff_stderr)
         return _git_result()
 
     with patch("subprocess.run", side_effect=fake_run):
@@ -1844,10 +1841,7 @@ def test_push_preserves_merge_commits_after_nff_rejection(tmp_path):
 
 def test_fetch_succeeds_on_zero_exit(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
-    ):
+    with patch("subprocess.run", return_value=_git_result()):
         svc.fetch(tmp_path)  # must not raise
 
 
@@ -1856,7 +1850,7 @@ def test_fetch_raises_operator_actionable_error_after_exhausting_retries(tmp_pat
     with (
         patch(
             "subprocess.run",
-            return_value=MagicMock(returncode=1, stdout=b"", stderr=b"network error"),
+            return_value=_git_failure(b"network error"),
         ),
         patch("time.sleep"),
     ):
