@@ -33,6 +33,7 @@ if TYPE_CHECKING:
         GithubAPIError,
         GithubAuthError,
         GithubNetworkError,
+        OperatorActionableGithubError,
         GithubService,
         GithubServiceError,
     )
@@ -56,6 +57,7 @@ __all__ = [
     "GithubAPIError",
     "GithubAuthError",
     "GithubNetworkError",
+    "OperatorActionableGithubError",
     "GithubService",
     "GithubServiceError",
     "OpenCodeService",
@@ -101,6 +103,7 @@ def __getattr__(name: str):
         "GithubAPIError",
         "GithubAuthError",
         "GithubNetworkError",
+        "OperatorActionableGithubError",
         "GithubService",
         "GithubServiceError",
     }:

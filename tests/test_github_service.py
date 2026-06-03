@@ -14,6 +14,7 @@ from pycastle.services import (
     GithubAPIError,
     GithubAuthError,
     GithubNetworkError,
+    OperatorActionableGithubError,
     GithubService,
     GithubServiceError,
 )
@@ -77,14 +78,18 @@ def _make_response(
     return resp
 
 
-def _make_http_error(status: int, body: bytes | str = b"") -> HTTPError:
+def _make_http_error(
+    status: int,
+    body: bytes | str = b"",
+    headers: dict[str, str] | None = None,
+) -> HTTPError:
     if isinstance(body, str):
         body = body.encode("utf-8")
     return HTTPError(
         url="https://api.github.com/x",
         code=status,
         msg="err",
-        hdrs=None,  # type: ignore[arg-type]
+        hdrs=headers,  # type: ignore[arg-type]
         fp=io.BytesIO(body),
     )
 
@@ -143,6 +148,25 @@ def test_check_auth_raises_github_auth_error_on_401():
             svc.check_auth()
     assert ei.value.status == 401
     assert "Bad credentials" in ei.value.body
+
+
+def test_check_auth_retries_transient_5xx_and_recovers():
+    svc = _make_service()
+    body = json.dumps({"login": "alice"}).encode()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=[
+                _make_http_error(500, b"server boom"),
+                _make_response(body),
+            ],
+        ),
+        patch("time.sleep") as mock_sleep,
+    ):
+        assert svc.check_auth() == "alice"
+
+    mock_sleep.assert_called_once_with(10)
 
 
 # ── _request: headers ─────────────────────────────────────────────────────────
@@ -218,35 +242,35 @@ def test_request_raises_github_api_error_on_non_401_4xx():
     assert "Not Found" in ei.value.body
 
 
-def test_request_raises_github_api_error_on_5xx():
+def test_request_post_raises_github_api_error_on_5xx_without_retry():
     svc = _make_service()
     with patch(
         "pycastle.services.github_service.urlopen",
         side_effect=_make_http_error(500, b"server boom"),
     ):
         with pytest.raises(GithubAPIError) as ei:
-            svc._request("GET", "/x")
+            svc._request("POST", "/x")
     assert ei.value.status == 500
 
 
-def test_request_raises_github_network_error_on_url_error():
+def test_request_post_raises_github_network_error_on_url_error():
     svc = _make_service()
     with patch(
         "pycastle.services.github_service.urlopen",
         side_effect=URLError("dns fail"),
     ):
         with pytest.raises(GithubNetworkError):
-            svc._request("GET", "/x")
+            svc._request("POST", "/x")
 
 
-def test_request_raises_github_network_error_on_socket_timeout():
+def test_request_post_raises_github_network_error_on_socket_timeout():
     svc = _make_service()
     with patch(
         "pycastle.services.github_service.urlopen",
         side_effect=socket.timeout("timed out"),
     ):
         with pytest.raises(GithubNetworkError):
-            svc._request("GET", "/x")
+            svc._request("POST", "/x")
 
 
 # ── _request: success/decoding ────────────────────────────────────────────────
@@ -516,6 +540,113 @@ def test_get_issue_title_returns_title_when_body_key_absent():
         assert svc.get_issue_title(7) == "Fix bug"
 
 
+def test_get_issue_title_retries_transient_5xx_and_recovers():
+    svc = _make_service()
+    issue_body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
+    comments_body = json.dumps([]).encode()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=[
+                _make_http_error(500, b"server boom"),
+                _make_response(issue_body),
+                _make_response(comments_body, headers={}),
+            ],
+        ),
+        patch("time.sleep") as mock_sleep,
+    ):
+        assert svc.get_issue_title(7) == "Fix bug"
+
+    mock_sleep.assert_called_once_with(10)
+
+
+def test_get_issue_title_uses_retry_after_header_when_present():
+    svc = _make_service()
+    issue_body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
+    comments_body = json.dumps([]).encode()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=[
+                _make_http_error(
+                    429,
+                    b'{"message":"secondary rate limit"}',
+                    headers={"Retry-After": "7"},
+                ),
+                _make_response(issue_body),
+                _make_response(comments_body, headers={}),
+            ],
+        ),
+        patch("time.sleep") as mock_sleep,
+    ):
+        assert svc.get_issue_title(7) == "Fix bug"
+
+    mock_sleep.assert_called_once_with(7)
+
+
+def test_get_issue_title_raises_operator_actionable_error_after_retry_exhaustion():
+    svc = _make_service()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=[_make_http_error(500, b"server boom")] * 4,
+        ),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(OperatorActionableGithubError) as exc_info:
+            svc.get_issue_title(7)
+
+    assert exc_info.value.method == "GET"
+    assert exc_info.value.path == "/repos/owner/repo/issues/7"
+    assert exc_info.value.attempt_count == 4
+    assert isinstance(exc_info.value.cause, GithubAPIError)
+    assert [call.args[0] for call in mock_sleep.call_args_list] == [10, 60, 300]
+
+
+def test_get_issue_title_retries_transport_error_and_recovers():
+    svc = _make_service()
+    issue_body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
+    comments_body = json.dumps([]).encode()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=[
+                URLError("dns fail"),
+                _make_response(issue_body),
+                _make_response(comments_body, headers={}),
+            ],
+        ),
+        patch("time.sleep") as mock_sleep,
+    ):
+        assert svc.get_issue_title(7) == "Fix bug"
+
+    mock_sleep.assert_called_once_with(10)
+
+
+def test_get_issue_title_does_not_retry_stable_403():
+    svc = _make_service()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=_make_http_error(
+                403,
+                b'{"message":"Resource not accessible by personal access token"}',
+            ),
+        ),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(GithubAPIError) as exc_info:
+            svc.get_issue_title(7)
+
+    assert exc_info.value.status == 403
+    mock_sleep.assert_not_called()
+
+
 def test_get_labels_returns_label_names():
     svc = _make_service()
     body = json.dumps(
@@ -592,14 +723,20 @@ def test_get_recent_improve_prds_returns_empty_list_when_no_matching_issues():
         assert svc.get_recent_improve_prds() == []
 
 
-def test_get_recent_improve_prds_propagates_github_api_error():
+def test_get_recent_improve_prds_raises_operator_actionable_error_after_retry_exhaustion():
     svc = _make_service()
-    with patch(
-        "pycastle.services.github_service.urlopen",
-        side_effect=_make_http_error(500, b"server error"),
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=[_make_http_error(500, b"server error")] * 4,
+        ),
+        patch("time.sleep") as mock_sleep,
     ):
-        with pytest.raises(GithubAPIError):
+        with pytest.raises(OperatorActionableGithubError) as exc_info:
             svc.get_recent_improve_prds()
+
+    assert exc_info.value.path == "/repos/owner/repo/issues?state=all&per_page=100"
+    assert [call.args[0] for call in mock_sleep.call_args_list] == [10, 60, 300]
 
 
 # ── get_parent ───────────────────────────────────────────────────────────────
