@@ -416,15 +416,42 @@ def test_close_issue_sends_patch_with_state_closed():
     assert json.loads(req.data.decode()) == {"state": "closed"}
 
 
-def test_close_issue_raises_github_api_error_on_500():
+def test_close_issue_raises_operator_actionable_error_after_retry_exhaustion():
     svc = _make_service()
-    with patch(
-        "pycastle.services.github_service.urlopen",
-        side_effect=_make_http_error(500, b"server error"),
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=[_make_http_error(500, b"server error")] * 4,
+        ),
+        patch("time.sleep") as mock_sleep,
     ):
-        with pytest.raises(GithubAPIError) as ei:
+        with pytest.raises(OperatorActionableGithubError) as exc_info:
             svc.close_issue(42)
-    assert ei.value.status == 500
+
+    assert exc_info.value.method == "PATCH"
+    assert exc_info.value.path == "/repos/owner/repo/issues/42"
+    assert exc_info.value.attempt_count == 4
+    assert isinstance(exc_info.value.cause, GithubAPIError)
+    assert [call.args[0] for call in mock_sleep.call_args_list] == [10, 60, 300]
+
+
+def test_close_issue_retries_transient_5xx_and_recovers():
+    svc = _make_service()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=[
+                _make_http_error(500, b"server boom"),
+                _make_response(b'{"state":"closed"}'),
+            ],
+        ),
+        patch("time.sleep") as mock_sleep,
+    ):
+        svc.close_issue(42)
+
+    mock_sleep.assert_called_once_with(10)
 
 
 @pytest.mark.parametrize("status", [404, 410])
@@ -943,7 +970,7 @@ def test_close_issue_with_parents_closes_parent_when_no_open_siblings():
     svc = _make_service()
     closed: list[int] = []
 
-    def fake_request(method, path, data=None):
+    def fake_request(method, path, data=None, **kwargs):
         if method == "PATCH":
             closed.append(int(path.rsplit("/", 1)[-1]))
             return None, {}
@@ -965,7 +992,7 @@ def test_close_issue_with_parents_stops_when_open_siblings_remain():
     svc = _make_service()
     closed: list[int] = []
 
-    def fake_request(method, path, data=None):
+    def fake_request(method, path, data=None, **kwargs):
         if method == "PATCH":
             closed.append(int(path.rsplit("/", 1)[-1]))
             return None, {}
@@ -1059,7 +1086,7 @@ def test_get_open_issues_filters_recently_closed_issue():
     svc = _make_service()
     issue_payload = [{"number": 42, "title": "T", "body": "", "labels": []}]
 
-    def fake_request(method, path, data=None):
+    def fake_request(method, path, data=None, **kwargs):
         if method == "PATCH":
             return None, {}
         return issue_payload, {"Link": ""}
@@ -1076,7 +1103,7 @@ def test_get_open_issues_does_not_filter_after_self_heal_reopen():
     issue_payload = [{"number": 42, "title": "T", "body": "", "labels": []}]
     call_count = 0
 
-    def fake_request(method, path, data=None):
+    def fake_request(method, path, data=None, **kwargs):
         nonlocal call_count
         if method == "PATCH":
             return None, {}
@@ -1100,7 +1127,7 @@ def test_get_open_issues_does_not_filter_issue_when_close_failed():
     svc = _make_service()
     issue_payload = [{"number": 42, "title": "T", "body": "", "labels": []}]
 
-    def fake_request(method, path, data=None):
+    def fake_request(method, path, data=None, **kwargs):
         if method == "PATCH":
             raise GithubAPIError(
                 "fail", status=500, body="err", method=method, path=path
@@ -1236,7 +1263,7 @@ def test_get_all_open_issues_lightweight_filters_recently_closed():
     svc = _make_service()
     issue_payload = [{"number": 42, "title": "T", "labels": []}]
 
-    def fake_request(method, path, data=None):
+    def fake_request(method, path, data=None, **kwargs):
         if method == "PATCH":
             return None, {}
         return issue_payload, {"Link": ""}
@@ -1253,7 +1280,7 @@ def test_get_all_open_issues_lightweight_self_heals_after_disappears():
     issue_payload = [{"number": 42, "title": "T", "labels": []}]
     call_count = 0
 
-    def fake_request(method, path, data=None):
+    def fake_request(method, path, data=None, **kwargs):
         nonlocal call_count
         if method == "PATCH":
             return None, {}
@@ -1329,7 +1356,7 @@ def test_close_completed_parent_issues_closes_parents_with_all_closed_subs():
     closed: list[int] = []
     open_numbers = [10, 11]
 
-    def fake_request(method, path, data=None):
+    def fake_request(method, path, data=None, **kwargs):
         if method == "PATCH":
             num = int(path.rsplit("/", 1)[-1])
             closed.append(num)
@@ -1387,6 +1414,46 @@ def test_delete_label_sends_delete_with_url_encoded_name():
     assert req.full_url == (
         "https://api.github.com/repos/owner/repo/labels/needs%20triage"
     )
+
+
+def test_remove_label_from_issue_retries_transport_error_and_recovers():
+    svc = _make_service()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=[
+                URLError("dns fail"),
+                _make_response(b""),
+            ],
+        ),
+        patch("time.sleep") as mock_sleep,
+    ):
+        svc.remove_label_from_issue(42, "bug")
+
+    mock_sleep.assert_called_once_with(10)
+
+
+def test_add_label_to_issue_uses_retry_after_header_when_present():
+    svc = _make_service()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=[
+                _make_http_error(
+                    429,
+                    b'{"message":"secondary rate limit"}',
+                    headers={"Retry-After": "9"},
+                ),
+                _make_response(b"[]"),
+            ],
+        ),
+        patch("time.sleep") as mock_sleep,
+    ):
+        svc.add_label_to_issue(42, "bug")
+
+    mock_sleep.assert_called_once_with(9)
 
 
 # ── create_issue_in ──────────────────────────────────────────────────────────

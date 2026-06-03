@@ -101,8 +101,10 @@ class GithubService:
         method: str,
         path: str,
         data: dict[str, Any] | None = None,
+        *,
+        retry_safe_write: bool = False,
     ) -> tuple[Any, dict[str, str]]:
-        if method != "GET":
+        if method != "GET" and not retry_safe_write:
             return self._request_once(method, path, data)
 
         for attempt in range(1, _READ_RETRY_MAX_ATTEMPTS + 1):
@@ -272,6 +274,7 @@ class GithubService:
                 "PATCH",
                 f"/repos/{self.repo}/issues/{number}",
                 data={"state": "closed"},
+                retry_safe_write=True,
             )
         except GithubAPIError as exc:
             if exc.status not in (404, 410):
@@ -493,6 +496,7 @@ class GithubService:
             "POST",
             f"/repos/{self.repo}/issues/{issue_number}/labels",
             data={"labels": [label]},
+            retry_safe_write=True,
         )
 
     def remove_label_from_issue(self, issue_number: int, label: str) -> None:
@@ -500,6 +504,7 @@ class GithubService:
             self._request(
                 "DELETE",
                 f"/repos/{self.repo}/issues/{issue_number}/labels/{quote(label, safe='')}",
+                retry_safe_write=True,
             )
         except GithubAPIError as exc:
             if exc.status not in (404, 410):
