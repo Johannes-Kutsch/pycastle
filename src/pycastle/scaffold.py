@@ -4,6 +4,7 @@ import ast
 import re
 import stat
 from dataclasses import dataclass
+from functools import cached_property
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Literal, overload
@@ -73,6 +74,34 @@ class ScaffoldRefreshReport:
         return not any(
             entry.status in {"created", "overwrote"} for entry in self.artifacts
         )
+
+
+@dataclass(frozen=True)
+class _BundledDefaultsIntrospection:
+    text: str
+    tree: ast.Module
+
+    @classmethod
+    def from_defaults(cls, defaults: Traversable) -> _BundledDefaultsIntrospection:
+        text = (defaults / "config.py").read_text()
+        return cls(text=text, tree=ast.parse(text))
+
+    def render_config_example(self) -> str:
+        return _render_config_example(self.text)
+
+    def bundled_default_stage_chains(self) -> tuple[tuple[str, ...], ...]:
+        chains: list[tuple[str, ...]] = []
+        for node in self.tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            for target in node.targets:
+                if (
+                    isinstance(target, ast.Name)
+                    and target.id in _BUNDLED_DEFAULT_STAGE_OVERRIDE_NAMES
+                ):
+                    chains.append(_parse_stage_override_services(node.value))
+                    break
+        return tuple(chains)
 
 
 @dataclass(frozen=True)
@@ -146,23 +175,15 @@ class InitScaffold:
                 target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
             )
 
+    @cached_property
+    def _bundled_defaults(self) -> _BundledDefaultsIntrospection:
+        return _BundledDefaultsIntrospection.from_defaults(self.defaults)
+
     def render_config_example(self) -> str:
-        return _render_config_example((self.defaults / "config.py").read_text())
+        return self._bundled_defaults.render_config_example()
 
     def bundled_default_stage_chains(self) -> tuple[tuple[str, ...], ...]:
-        tree = ast.parse((self.defaults / "config.py").read_text())
-        chains: list[tuple[str, ...]] = []
-        for node in tree.body:
-            if not isinstance(node, ast.Assign):
-                continue
-            for target in node.targets:
-                if (
-                    isinstance(target, ast.Name)
-                    and target.id in _BUNDLED_DEFAULT_STAGE_OVERRIDE_NAMES
-                ):
-                    chains.append(_parse_stage_override_services(node.value))
-                    break
-        return tuple(chains)
+        return self._bundled_defaults.bundled_default_stage_chains()
 
     def _write_config_example(self, target_dir: Path) -> None:
         target_dir.mkdir(parents=True, exist_ok=True)
