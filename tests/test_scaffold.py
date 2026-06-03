@@ -249,3 +249,28 @@ def test_init_scaffold_refresh_reports_existing_pycastle_home_config_example_sta
         ("created", "config.py.example"),
         ("overwrote", "pycastle home/config.py.example"),
     ]
+
+
+def test_init_scaffold_uses_one_bundled_defaults_snapshot_per_instance(
+    init_scaffold: InitScaffold, bundled_defaults: Path
+):
+    assert init_scaffold.bundled_default_stage_chains() == (("codex",),)
+
+    (bundled_defaults / "config.py").write_text(
+        "from pathlib import Path\n"
+        "from pycastle import StageOverride\n\n"
+        "# --- Behaviour ---\n"
+        '# bug_label = "changed-after-read"\n\n'
+        "# --- Stage overrides ---\n"
+        "implement_override = StageOverride(\n"
+        '    service="claude",\n'
+        '    model="sonnet",\n'
+        '    effort="medium",\n'
+        ")\n"
+    )
+
+    assert init_scaffold.bundled_default_stage_chains() == (("codex",),)
+    assert 'bug_label = "bug"' in init_scaffold.render_config_example()
+    assert (
+        'bug_label = "changed-after-read"' not in init_scaffold.render_config_example()
+    )
