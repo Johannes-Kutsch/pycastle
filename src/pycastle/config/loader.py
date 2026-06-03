@@ -57,8 +57,9 @@ _GLOBAL_FORBIDDEN_FIELDS = frozenset(
 
 
 @dataclasses.dataclass(frozen=True)
-class _ResolvedConfigPaths:
+class _ResolvedPycastlePaths:
     repo_root: Path
+    pycastle_dir: Path
     global_dir: Path
     global_config_file: Path
     local_config_file: Path
@@ -222,20 +223,22 @@ def resolve_global_dir(explicit: Path | None, env: Mapping[str, str]) -> Path:
     return Path(platformdirs.user_config_dir("pycastle"))
 
 
-def _resolve_config_paths(
+def _resolve_pycastle_paths(
     repo_root: Path | None,
     global_dir: Path | None,
     env: Mapping[str, str],
-) -> _ResolvedConfigPaths:
+) -> _ResolvedPycastlePaths:
     resolved_repo_root = repo_root if repo_root is not None else Path.cwd()
+    resolved_pycastle_dir = resolved_repo_root / "pycastle"
     resolved_global_dir = resolve_global_dir(global_dir, env)
-    return _ResolvedConfigPaths(
+    return _ResolvedPycastlePaths(
         repo_root=resolved_repo_root,
+        pycastle_dir=resolved_pycastle_dir,
         global_dir=resolved_global_dir,
         global_config_file=resolved_global_dir / "config.py",
-        local_config_file=resolved_repo_root / "pycastle" / "config.py",
+        local_config_file=resolved_pycastle_dir / "config.py",
         global_env_file=resolved_global_dir / ".env",
-        local_env_file=resolved_repo_root / "pycastle" / ".env",
+        local_env_file=resolved_pycastle_dir / ".env",
     )
 
 
@@ -261,7 +264,7 @@ def describe_config_layers(
     global_dir: Path | None = None,
 ) -> str:
     parts = ["defaults"]
-    paths = _resolve_config_paths(repo_root, global_dir, os.environ)
+    paths = _resolve_pycastle_paths(repo_root, global_dir, os.environ)
     if paths.global_config_file.exists():
         parts.append(_display_global_path(paths.global_config_file))
     if paths.local_config_file.exists():
@@ -296,7 +299,7 @@ def load_config(
     kwargs: dict[str, Any] = {}
     valid_fields = {f.name for f in dataclasses.fields(Config) if f.init}
     global_logs_dir_set = False
-    paths = _resolve_config_paths(repo_root, global_dir, os.environ)
+    paths = _resolve_pycastle_paths(repo_root, global_dir, os.environ)
 
     if paths.global_config_file.exists():
         global_kwargs = _read_config_file(
