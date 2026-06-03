@@ -29,6 +29,7 @@ from ..services import (
     GitCommandError,
     GithubAPIError,
     GithubAuthError,
+    OperatorActionableGithubError,
     GithubService,
     GitService,
     ServiceRegistry,
@@ -110,6 +111,14 @@ def _override_for_stage_key(cfg, stage_key: str | None):
     if stage_key == "improve":
         return cfg.improve_override
     return None
+
+
+def _github_retry_exhaustion_message(exc: OperatorActionableGithubError) -> str:
+    return (
+        "GitHub request retry limit reached: "
+        f"{exc.method} {exc.path} failed after {exc.attempt_count} attempts. "
+        "Check GitHub availability or network connectivity and retry."
+    )
 
 
 def _print_permanent_exhaustion_warning(
@@ -201,6 +210,9 @@ async def run(
             file=sys.stderr,
         )
         sys.exit(1)
+    except OperatorActionableGithubError as exc:
+        print(_github_retry_exhaustion_message(exc), file=sys.stderr)
+        sys.exit(1)
 
     status_display.print("", f"GitHub auth: authenticated as @{login}")  # type: ignore[union-attr]
 
@@ -276,6 +288,12 @@ async def run(
                 status_display.print(  # type: ignore[union-attr]
                     "",
                     f"GitHub repository access failed: {exc}",
+                )
+                sys.exit(1)
+            except OperatorActionableGithubError as exc:
+                status_display.print(  # type: ignore[union-attr]
+                    "",
+                    _github_retry_exhaustion_message(exc),
                 )
                 sys.exit(1)
             improve_dispatched_count = deps.improve_dispatched_count

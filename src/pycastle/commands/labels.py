@@ -9,6 +9,7 @@ from ..services import (
     GithubAuthError,
     GithubService,
     GitService,
+    OperatorActionableGithubError,
 )
 
 
@@ -58,6 +59,17 @@ def create_labels_interactive(
         service.check_auth()
     except GithubAuthError as exc:
         click.echo(click.style(f"Error: {exc.body}", fg="red"), err=True)
+        sys.exit(1)
+    except OperatorActionableGithubError as exc:
+        click.echo(
+            click.style(
+                "Error: GitHub request retry limit reached: "
+                f"{exc.method} {exc.path} failed after {exc.attempt_count} attempts. "
+                "Check GitHub availability or network connectivity and retry.",
+                fg="red",
+            ),
+            err=True,
+        )
         sys.exit(1)
 
     reset = click.confirm("Delete all existing labels first?", default=False)

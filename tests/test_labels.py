@@ -2,7 +2,12 @@ import pytest
 from unittest.mock import MagicMock
 
 from pycastle.config import Config
-from pycastle.services import GithubAPIError, GithubService, GitService
+from pycastle.services import (
+    GithubAPIError,
+    GithubService,
+    GitService,
+    OperatorActionableGithubError,
+)
 from pycastle.commands.labels import _resolve_repo, create_labels_interactive
 
 
@@ -159,6 +164,47 @@ def test_create_labels_interactive_calls_check_auth(label_setup):
         "tok", git_service=git_svc, cfg=Config(), github_service=github_svc
     )
     github_svc.check_auth.assert_called_once()
+
+
+def test_create_labels_interactive_exits_on_github_retry_exhaustion(monkeypatch):
+    git_svc = MagicMock(spec=GitService)
+    git_svc.get_github_remote_repo.return_value = ("owner", "repo")
+    monkeypatch.setattr(
+        "pycastle.commands.labels.click.confirm",
+        lambda msg, **kw: "Target repo" in msg,
+    )
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "pycastle.commands.labels.click.echo",
+        lambda message, err=False: messages.append(str(message)),
+    )
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.check_auth.side_effect = OperatorActionableGithubError(
+        "GitHub API GET /user failed after 4 attempts: GitHub API GET /user returned 502: Bad Gateway",
+        method="GET",
+        path="/user",
+        attempt_count=4,
+        cause=GithubAPIError(
+            "GitHub API GET /user returned 502: Bad Gateway",
+            status=502,
+            body="Bad Gateway",
+            method="GET",
+            path="/user",
+        ),
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        create_labels_interactive(
+            "tok", git_service=git_svc, cfg=Config(), github_service=github_svc
+        )
+
+    assert exc_info.value.code == 1
+    assert any(
+        "GitHub request retry limit reached:" in message
+        and "failed after 4 attempts" in message
+        for message in messages
+    )
 
 
 def test_create_labels_interactive_returns_early_when_repo_not_resolved(monkeypatch):

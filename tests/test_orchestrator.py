@@ -19,6 +19,7 @@ from pycastle.services import (
     GitCommandError,
     GithubAPIError,
     GithubAuthError,
+    OperatorActionableGithubError,
     GithubService,
     GitService,
     ServiceRegistry,
@@ -4113,6 +4114,51 @@ def test_orchestrator_exits_nonzero_on_github_api_error(tmp_path):
         call[0] == "print"
         and "GitHub repository access failed:" in str(call[2])
         and "404" in str(call[2])
+        for call in recording.calls
+    )
+
+
+def test_orchestrator_exits_nonzero_on_github_retry_exhaustion_without_auto_file(
+    tmp_path,
+):
+    """Retry-exhausted GitHub requests must surface as handled terminal failures."""
+    github_svc = _make_github_svc()
+    github_svc.check_auth.return_value = "alice"
+    github_svc.get_open_issues.side_effect = OperatorActionableGithubError(
+        "GitHub API GET /repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100 failed after 4 attempts: "
+        "GitHub API GET /repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100 returned 502: Bad Gateway",
+        method="GET",
+        path="/repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100",
+        attempt_count=4,
+        cause=GithubAPIError(
+            "GitHub API GET /repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100 returned 502: Bad Gateway",
+            status=502,
+            body="Bad Gateway",
+            method="GET",
+            path="/repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100",
+        ),
+    )
+    recording = RecordingStatusDisplay()
+    auto_file_calls: list[tuple] = []
+
+    with patch(
+        "pycastle.iteration.auto_file_issue",
+        side_effect=lambda *args, **kwargs: auto_file_calls.append(args),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            _run(
+                tmp_path,
+                github_service=github_svc,
+                git_service=_make_git_svc(),
+                status_display=recording,
+            )
+
+    assert exc_info.value.code == 1
+    assert auto_file_calls == []
+    assert any(
+        call[0] == "print"
+        and "GitHub request retry limit reached:" in str(call[2])
+        and "failed after 4 attempts" in str(call[2])
         for call in recording.calls
     )
 
