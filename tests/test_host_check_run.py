@@ -7,7 +7,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from pycastle.commands.host_check_run import HostCheckRunPassed, prepare_host_check_run
+from pycastle.commands.host_check_run import (
+    HostCheckRunPassed,
+    prepare_host_check_run,
+)
+from pycastle.config import StageOverride
 from tests.support import FakeAgentRunner, RecordingStatusDisplay
 
 
@@ -60,6 +64,161 @@ def test_prepare_host_check_run_passes_explicit_repo_root_to_git_service(tmp_pat
     git_svc.is_working_tree_clean.assert_called_once_with(tmp_path)
     git_svc.get_head_sha.assert_called_once_with(tmp_path)
     assert result == "def456"
+
+
+def test_run_host_check_command_builds_default_issue_filing_deps_when_host_check_fails(
+    tmp_path, monkeypatch
+):
+    from pycastle.agents.output_protocol import IssueOutput
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+    git_svc.get_github_remote_repo.return_value = ("owner", "repo")
+    cfg = Config()
+    check_name, check_command = cfg.host_checks[0]
+    created_github_services: list[tuple[str, str, Config]] = []
+    runner_requests = []
+
+    monkeypatch.setattr(
+        run_mod,
+        "load_credential_env",
+        lambda **kwargs: {"GH_TOKEN": "token"},
+    )
+    monkeypatch.setattr(run_mod, "_configured_service_registry", lambda cfg, env: {})
+
+    class _FakeGithubService:
+        def __init__(self, repo: str, token: str, cfg: Config) -> None:
+            created_github_services.append((repo, token, cfg))
+            self.repo = repo
+
+        def get_issue(self, number: int) -> dict[str, str]:
+            return {"body": "x" * 100}
+
+    class _FakeAgentRunner:
+        def __init__(self, env, cfg, git_svc, *, service_registry) -> None:
+            self.calls = runner_requests
+
+        async def run(self, request):
+            self.calls.append(request)
+            return IssueOutput(number=41, labels=["bug", "ready-for-human"])
+
+    monkeypatch.setattr(run_mod, "GithubService", _FakeGithubService)
+    monkeypatch.setattr(
+        sys.modules["pycastle.agents.runner"], "AgentRunner", _FakeAgentRunner
+    )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        raise run_mod.HostCheckFailedError(
+            name=name,
+            command=command,
+            output="tests broke",
+        )
+
+    monkeypatch.setattr(
+        run_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+    )
+    monkeypatch.setattr(run_mod, "_run_host_check", fake_run_host_check)
+
+    result = asyncio.run(
+        run_mod.run_host_check_command(
+            cfg=cfg,
+            git_svc=git_svc,
+            repo_root=tmp_path,
+        )
+    )
+
+    assert result == run_mod.HostCheckRunFailed(
+        checked_sha="checked-sha",
+        failures=(
+            run_mod.HostCheckFailure(
+                name=check_name,
+                command=check_command,
+                output="tests broke",
+            ),
+        ),
+        issue_numbers=(41,),
+    )
+    assert created_github_services == [("owner/repo", "token", cfg)]
+    assert len(runner_requests) == 1
+    assert runner_requests[0].service == cfg.preflight_issue_override.service
+    assert runner_requests[0].model == cfg.preflight_issue_override.model
+    assert runner_requests[0].effort == cfg.preflight_issue_override.effort
+    assert runner_requests[0].scope_args["CHECK_NAME"] == check_name
+    assert runner_requests[0].scope_args["CHECKED_SHA"] == "checked-sha"
+
+
+def test_run_host_check_command_uses_service_registry_for_reporter_override(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    status_display = RecordingStatusDisplay()
+    cfg = Config()
+    provided_service_registry = MagicMock()
+    github_svc = MagicMock()
+    agent_runner = MagicMock()
+    reporter_override = StageOverride(
+        service="codex",
+        model="gpt-5.4-mini",
+        effort="medium",
+    )
+    provided_service_registry.resolve.return_value = reporter_override
+
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+    github_svc.get_issue.return_value = {"body": "x" * 100}
+    agent_runner = FakeAgentRunner(
+        [run_mod.IssueOutput(number=41, labels=["bug", "ready-for-human"])]
+    )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        raise run_mod.HostCheckFailedError(
+            name=name,
+            command=command,
+            output="tests broke",
+        )
+
+    monkeypatch.setattr(
+        run_mod, "transient_worktree", lambda *a, **kw: _TransientWorktree()
+    )
+    monkeypatch.setattr(run_mod, "_run_host_check", fake_run_host_check)
+
+    result = asyncio.run(
+        run_mod.run_host_check_command(
+            cfg=cfg,
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            github_svc=github_svc,
+            agent_runner=agent_runner,
+            status_display=status_display,
+            service_registry=provided_service_registry,
+        )
+    )
+
+    assert result.issue_numbers == (41,)
+    assert agent_runner.calls[0].service == reporter_override.service
+    assert agent_runner.calls[0].model == reporter_override.model
+    assert agent_runner.calls[0].effort == reporter_override.effort
+    provided_service_registry.resolve.assert_called_once()
 
 
 def test_run_host_check_run_executes_passing_checks_in_checked_sha_worktree_and_returns_sha(

@@ -9,15 +9,15 @@ from typing import Callable, TypeAlias
 
 from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
-from ..config import Config, StageOverride
+from ..config import Config, StageOverride, load_credential_env
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
 from ..errors import SetupPhaseError
 from ..infrastructure.worktree import transient_worktree
 from ..iteration import status_row
 from ..iteration.preflight import validate_issue_report
+from ..main import _configured_service_registry
 from ..prompts.pipeline import PromptTemplate
-from ..services import GithubService
-from ..services import GitService
+from ..services import GitService, GithubService, ServiceRegistry
 
 
 @dataclass(frozen=True)
@@ -64,6 +64,76 @@ HostCheckRunOutcome: TypeAlias = HostCheckRunPassed | HostCheckRunFailed
 class _CheckDeps:
     repo_root: Path
     git_svc: GitService
+
+
+def _resolve_github_service(
+    repo_root: Path,
+    cfg: Config,
+    git_svc: GitService,
+) -> GithubService:
+    resolved = load_credential_env()
+    token = resolved.get("GH_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("GH_TOKEN is required to file host-check issues.")
+    remote = git_svc.get_github_remote_repo(repo_root)
+    if remote is None:
+        raise RuntimeError(
+            "Could not resolve GitHub origin repo for host-check issues."
+        )
+    owner, repo = remote
+    return GithubService(f"{owner}/{repo}", token, cfg)
+
+
+def _resolve_agent_runner(
+    cfg: Config,
+    git_svc: GitService,
+) -> tuple[AgentRunnerProtocol, ServiceRegistry]:
+    from ..agents.runner import AgentRunner
+
+    env = load_credential_env()
+    service_registry = ServiceRegistry(_configured_service_registry(cfg, env))
+    return (
+        AgentRunner(env, cfg, git_svc, service_registry=service_registry.services),
+        service_registry,
+    )
+
+
+def _resolve_reporter_override(
+    cfg: Config, service_registry: ServiceRegistry | None
+) -> StageOverride:
+    override = cfg.preflight_issue_override
+    if service_registry is None:
+        return override
+    from .. import _time as _time_module
+
+    return service_registry.resolve(override, _time_module.now_local())
+
+
+def resolve_host_check_issue_deps(
+    *,
+    cfg: Config,
+    git_svc: GitService,
+    repo_root: Path,
+    status_display: StatusDisplay,
+    github_svc: GithubService | None = None,
+    agent_runner: AgentRunnerProtocol | None = None,
+    service_registry: ServiceRegistry | None = None,
+) -> HostCheckIssueDeps:
+    resolved_agent_runner = agent_runner
+    resolved_service_registry = service_registry
+    if resolved_agent_runner is None:
+        (
+            resolved_agent_runner,
+            resolved_service_registry,
+        ) = _resolve_agent_runner(cfg, git_svc)
+    resolved_github_svc = github_svc or _resolve_github_service(repo_root, cfg, git_svc)
+    return HostCheckIssueDeps(
+        cfg=cfg,
+        github_svc=resolved_github_svc,
+        agent_runner=resolved_agent_runner,
+        status_display=status_display,
+        reporter_override=_resolve_reporter_override(cfg, resolved_service_registry),
+    )
 
 
 def _surface_current_host_check(status_display: StatusDisplay, name: str) -> None:
@@ -176,6 +246,35 @@ async def _file_host_check_issue(
         github_svc=github_svc,
     )
     return agent_result.number
+
+
+async def run_host_check_command(
+    *,
+    cfg: Config,
+    git_svc: GitService,
+    repo_root: Path | None = None,
+    github_svc: GithubService | None = None,
+    agent_runner: AgentRunnerProtocol | None = None,
+    status_display: StatusDisplay | None = None,
+    service_registry: ServiceRegistry | None = None,
+) -> HostCheckRunOutcome:
+    resolved_repo_root = repo_root or Path(".").resolve()
+    resolved_status_display = status_display or PlainStatusDisplay()
+    return await run_host_check_run(
+        host_checks=cfg.host_checks,
+        git_svc=git_svc,
+        repo_root=resolved_repo_root,
+        status_display=resolved_status_display,
+        issue_deps_factory=lambda: resolve_host_check_issue_deps(
+            cfg=cfg,
+            git_svc=git_svc,
+            repo_root=resolved_repo_root,
+            status_display=resolved_status_display,
+            github_svc=github_svc,
+            agent_runner=agent_runner,
+            service_registry=service_registry,
+        ),
+    )
 
 
 async def run_host_check_run(
