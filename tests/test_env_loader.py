@@ -19,10 +19,12 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def test_local_env_resolves(repo: Path) -> None:
+def test_local_env_resolves(repo: Path, tmp_path: Path) -> None:
     (repo / "pycastle" / ".env").write_text("GH_TOKEN=local\n")
+    global_dir = tmp_path / "home"
+    global_dir.mkdir()
     env = load_env(
-        global_dir=None,
+        global_dir=global_dir,
         local_env_file=DEFAULT_ENV_FILE,
         process_env={},
     )
@@ -125,10 +127,14 @@ def test_load_env_uses_explicit_repo_root_when_cwd_differs(
 # ── load_credential_env tests ──────────────────────────────────────────────────
 
 
-def test_credential_env_excludes_unrelated_process_env_variables(repo: Path) -> None:
+def test_credential_env_excludes_unrelated_process_env_variables(
+    repo: Path, tmp_path: Path
+) -> None:
     (repo / "pycastle" / ".env").write_text("GH_TOKEN=tok\n")
+    global_dir = tmp_path / "home"
+    global_dir.mkdir()
     env = load_credential_env(
-        global_dir=None,
+        global_dir=global_dir,
         local_env_file=DEFAULT_ENV_FILE,
         process_env={
             "GH_TOKEN": "tok",
@@ -180,10 +186,18 @@ def test_credential_env_honours_process_env_wins_precedence(
 
 
 def test_credential_env_returns_empty_when_no_credential_keys_present(
-    repo: Path,
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    fallback_home = tmp_path / "xdg"
+    fallback_pycastle_home = fallback_home / "pycastle"
+    fallback_pycastle_home.mkdir(parents=True)
+    (fallback_pycastle_home / ".env").write_text("GH_TOKEN=fromglobal\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(fallback_home))
+    global_dir = tmp_path / "isolated-home"
+    global_dir.mkdir()
+
     env = load_credential_env(
-        global_dir=None,
+        global_dir=global_dir,
         local_env_file=DEFAULT_ENV_FILE,
         process_env={"PATH": "/usr/bin", "HOME": "/home/user"},
     )

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import tomllib
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 
@@ -14,6 +16,16 @@ _UTC = timezone.utc
 def _utc(result: datetime | None) -> datetime:
     assert result is not None
     return result.astimezone(_UTC)
+
+
+def test_dev_extra_declares_windows_tzdata_dependency() -> None:
+    pyproject = Path("pyproject.toml")
+    data = tomllib.loads(pyproject.read_text())
+
+    assert (
+        'tzdata; platform_system == "Windows"'
+        in data["project"]["optional-dependencies"]["dev"]
+    )
 
 
 # ── CLAUDE_RESETS_UTC ─────────────────────────────────────────────────────────
