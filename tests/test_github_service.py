@@ -1456,6 +1456,37 @@ def test_add_label_to_issue_uses_retry_after_header_when_present():
     mock_sleep.assert_called_once_with(9)
 
 
+def test_add_label_to_issue_does_not_retry_stable_403():
+    svc = _make_service()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=_make_http_error(
+                403,
+                b'{"message":"Resource not accessible by personal access token"}',
+            ),
+        ) as mock_urlopen,
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(GithubAPIError) as exc_info:
+            svc.add_label_to_issue(42, "bug")
+
+    assert exc_info.value.status == 403
+    assert mock_urlopen.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_remove_label_from_issue_treats_gone_as_no_op():
+    svc = _make_service()
+
+    with patch(
+        "pycastle.services.github_service.urlopen",
+        side_effect=_make_http_error(404, b'{"message":"Not Found"}'),
+    ):
+        svc.remove_label_from_issue(42, "bug")
+
+
 # ── create_issue_in ──────────────────────────────────────────────────────────
 
 
@@ -1495,6 +1526,23 @@ def test_create_issue_in_uses_owner_repo_arg_not_self_repo():
         svc.create_issue_in("target-owner/target-repo", "t", "b", [])
     req = m.call_args[0][0]
     assert "/repos/target-owner/target-repo/issues" in req.full_url
+
+
+def test_create_issue_in_does_not_retry_transport_error():
+    svc = _make_service()
+
+    with (
+        patch(
+            "pycastle.services.github_service.urlopen",
+            side_effect=URLError("dns fail"),
+        ) as mock_urlopen,
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(GithubNetworkError):
+            svc.create_issue_in("Johannes-Kutsch/pycastle", "title", "body", ["bug"])
+
+    assert mock_urlopen.call_count == 1
+    mock_sleep.assert_not_called()
 
 
 # ── search_open_issues_by_title ──────────────────────────────────────────────
