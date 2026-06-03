@@ -2594,6 +2594,33 @@ def test_run_exits_when_github_auth_error(tmp_path, capsys):
     assert "Bad credentials" in err
 
 
+def test_run_exits_when_github_auth_retry_exhausts(tmp_path, capsys):
+    """Startup GitHub retry exhaustion must print a terminal error and exit 1."""
+    mock_github = _make_github_svc()
+    mock_github.check_auth.side_effect = OperatorActionableGithubError(
+        "GitHub API GET /user failed after 4 attempts: "
+        "GitHub API GET /user returned 502: Bad Gateway",
+        method="GET",
+        path="/user",
+        attempt_count=4,
+        cause=GithubAPIError(
+            "GitHub API GET /user returned 502: Bad Gateway",
+            status=502,
+            body="Bad Gateway",
+            method="GET",
+            path="/user",
+        ),
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run(tmp_path, github_service=mock_github)
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "GitHub request retry limit reached:" in err
+    assert "GET /user failed after 4 attempts" in err
+
+
 def test_run_exits_when_gh_token_missing(tmp_path, capsys):
     """run() without an injected github_service must exit 1 when GH_TOKEN is missing."""
     with pytest.raises(SystemExit) as exc_info:

@@ -207,6 +207,50 @@ def test_create_labels_interactive_exits_on_github_retry_exhaustion(monkeypatch)
     )
 
 
+def test_create_labels_interactive_exits_on_label_creation_retry_exhaustion(
+    monkeypatch,
+):
+    git_svc = MagicMock(spec=GitService)
+    git_svc.get_github_remote_repo.return_value = ("owner", "repo")
+    monkeypatch.setattr(
+        "pycastle.commands.labels.click.confirm",
+        lambda msg, **kw: "Target repo" in msg,
+    )
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "pycastle.commands.labels.click.echo",
+        lambda message, err=False: messages.append(str(message)),
+    )
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.create_label.side_effect = OperatorActionableGithubError(
+        "GitHub API POST /repos/owner/repo/labels failed after 4 attempts: "
+        "GitHub API POST /repos/owner/repo/labels returned 502: Bad Gateway",
+        method="POST",
+        path="/repos/owner/repo/labels",
+        attempt_count=4,
+        cause=GithubAPIError(
+            "GitHub API POST /repos/owner/repo/labels returned 502: Bad Gateway",
+            status=502,
+            body="Bad Gateway",
+            method="POST",
+            path="/repos/owner/repo/labels",
+        ),
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        create_labels_interactive(
+            "tok", git_service=git_svc, cfg=Config(), github_service=github_svc
+        )
+
+    assert exc_info.value.code == 1
+    assert any(
+        "GitHub request retry limit reached:" in message
+        and "POST /repos/owner/repo/labels" in message
+        for message in messages
+    )
+
+
 def test_create_labels_interactive_returns_early_when_repo_not_resolved(monkeypatch):
     git_svc = MagicMock(spec=GitService)
     git_svc.get_github_remote_repo.return_value = None

@@ -13,6 +13,14 @@ from ..services import (
 )
 
 
+def _github_retry_exhaustion_message(exc: OperatorActionableGithubError) -> str:
+    return (
+        "Error: GitHub request retry limit reached: "
+        f"{exc.method} {exc.path} failed after {exc.attempt_count} attempts. "
+        "Check GitHub availability or network connectivity and retry."
+    )
+
+
 def _resolve_repo(
     git_service: GitService | None = None, cfg: Config | None = None
 ) -> tuple[str, str] | None:
@@ -57,64 +65,58 @@ def create_labels_interactive(
     service = github_service or GithubService(f"{owner}/{repo}", token, _cfg)
     try:
         service.check_auth()
+        reset = click.confirm("Delete all existing labels first?", default=False)
+
+        if reset:
+            try:
+                existing = service.list_labels()
+            except GithubAPIError:
+                existing = []
+            for label in existing:
+                try:
+                    service.delete_label(label["name"])
+                except GithubAPIError:
+                    pass
+
+        counts = {"created": 0, "skipped": 0, "failed": 0}
+        failures: list[str] = []
+        for label in labels:
+            try:
+                service.create_label(label)
+                counts["created"] += 1
+            except GithubAPIError as exc:
+                if exc.status == 422:
+                    counts["skipped"] += 1
+                else:
+                    counts["failed"] += 1
+                    failures.append(f"{label['name']}: HTTP {exc.status}")
+
+        for name in failures:
+            click.echo(
+                click.style(f"Error: failed to create label {name}.", fg="red"),
+                err=True,
+            )
+
+        parts = []
+        if counts["created"]:
+            parts.append(f"Created {counts['created']} labels.")
+        if counts["skipped"]:
+            parts.append(f"{counts['skipped']} skipped.")
+        if counts["failed"]:
+            parts.append(f"{counts['failed']} failed.")
+        if parts:
+            click.echo(" ".join(parts))
+
+        if counts["failed"] or counts["skipped"]:
+            click.echo("To rerun: pycastle labels")
     except GithubAuthError as exc:
         click.echo(click.style(f"Error: {exc.body}", fg="red"), err=True)
         sys.exit(1)
     except OperatorActionableGithubError as exc:
         click.echo(
-            click.style(
-                "Error: GitHub request retry limit reached: "
-                f"{exc.method} {exc.path} failed after {exc.attempt_count} attempts. "
-                "Check GitHub availability or network connectivity and retry.",
-                fg="red",
-            ),
-            err=True,
+            click.style(_github_retry_exhaustion_message(exc), fg="red"), err=True
         )
         sys.exit(1)
-
-    reset = click.confirm("Delete all existing labels first?", default=False)
-
-    if reset:
-        try:
-            existing = service.list_labels()
-        except GithubAPIError:
-            existing = []
-        for label in existing:
-            try:
-                service.delete_label(label["name"])
-            except GithubAPIError:
-                pass
-
-    counts = {"created": 0, "skipped": 0, "failed": 0}
-    failures: list[str] = []
-    for label in labels:
-        try:
-            service.create_label(label)
-            counts["created"] += 1
-        except GithubAPIError as exc:
-            if exc.status == 422:
-                counts["skipped"] += 1
-            else:
-                counts["failed"] += 1
-                failures.append(f"{label['name']}: HTTP {exc.status}")
-
-    for name in failures:
-        click.echo(
-            click.style(f"Error: failed to create label {name}.", fg="red"), err=True
-        )
-
-    parts = []
-    if counts["created"]:
-        parts.append(f"Created {counts['created']} labels.")
-    if counts["skipped"]:
-        parts.append(f"{counts['skipped']} skipped.")
-    if counts["failed"]:
-        parts.append(f"{counts['failed']} failed.")
-    if parts:
-        click.echo(" ".join(parts))
-
-    if counts["failed"] or counts["skipped"]:
-        click.echo("To rerun: pycastle labels")
 
 
 def main(cfg: Config | None = None) -> None:
