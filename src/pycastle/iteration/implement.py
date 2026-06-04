@@ -27,8 +27,7 @@ from ..display.status_display import StatusDisplay
 from ..services import GitService, GithubService
 from ..infrastructure.worktree import (
     managed_worktree,
-    worktree_name_for_branch,
-    worktree_path,
+    worktree_identity,
 )
 from ._deps import Logger
 
@@ -129,8 +128,9 @@ async def run_issue(
         await lock.acquire()
 
     try:
-        _wt_name = worktree_name_for_branch(_branch)
-        _wt_path = worktree_path(_wt_name, deps.repo_root)
+        _worktree = worktree_identity(_branch, deps.repo_root)
+        _wt_name = _worktree.name
+        _wt_path = _worktree.path
 
         implement_done = is_stage_done_for(_wt_path, AgentRole.IMPLEMENTER)
         review_done = is_stage_done_for(_wt_path, AgentRole.REVIEWER)
@@ -239,10 +239,7 @@ async def implement_phase(
     def _stage_done_count(role: AgentRole) -> int:
         return sum(
             is_stage_done_for(
-                worktree_path(
-                    worktree_name_for_branch(branch_for(issue["number"])),
-                    deps.repo_root,
-                ),
+                worktree_identity(branch_for(issue["number"]), deps.repo_root).path,
                 role,
             )
             for issue in issues
