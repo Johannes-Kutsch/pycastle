@@ -2208,42 +2208,69 @@ def test_remove_label_from_issue_propagates_non_gone_api_errors():
 # ── create_issue_in ──────────────────────────────────────────────────────────
 
 
-def test_create_issue_in_posts_to_target_repo_with_payload():
-    svc = _make_service()
-    body = json.dumps({"number": 42, "html_url": "https://x"}).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body),
-    ) as m:
-        result = svc.create_issue_in(
-            "Johannes-Kutsch/pycastle",
-            "title",
-            "body",
-            ["bug", "needs-triage"],
-        )
-    req = m.call_args[0][0]
-    assert req.get_method() == "POST"
-    assert req.full_url == (
-        "https://api.github.com/repos/Johannes-Kutsch/pycastle/issues"
+def test_create_issue_in_with_scripted_transport_returns_number_for_normal_payload():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/Johannes-Kutsch/pycastle/issues",
+                data={
+                    "title": "title",
+                    "body": "body",
+                    "labels": ["bug", "needs-triage"],
+                },
+                payload={"number": 42, "html_url": "https://x"},
+            )
+        ]
     )
-    assert json.loads(req.data.decode()) == {
-        "title": "title",
-        "body": "body",
-        "labels": ["bug", "needs-triage"],
-    }
+    svc = _make_service(transport=transport)
+
+    result = svc.create_issue_in(
+        "Johannes-Kutsch/pycastle",
+        "title",
+        "body",
+        ["bug", "needs-triage"],
+    )
+
     assert result == 42
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/Johannes-Kutsch/pycastle/issues",
+            {
+                "title": "title",
+                "body": "body",
+                "labels": ["bug", "needs-triage"],
+            },
+        )
+    ]
+    transport.assert_exhausted()
 
 
-def test_create_issue_in_uses_owner_repo_arg_not_self_repo():
-    svc = _make_service(repo="some/other-repo")
-    body = json.dumps({"number": 1}).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body),
-    ) as m:
-        svc.create_issue_in("target-owner/target-repo", "t", "b", [])
-    req = m.call_args[0][0]
-    assert "/repos/target-owner/target-repo/issues" in req.full_url
+def test_create_issue_in_with_scripted_transport_uses_owner_repo_arg_not_self_repo():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/target-owner/target-repo/issues",
+                data={"title": "t", "body": "b", "labels": []},
+                payload={"number": 1},
+            )
+        ]
+    )
+    svc = _make_service(repo="some/other-repo", transport=transport)
+
+    result = svc.create_issue_in("target-owner/target-repo", "t", "b", [])
+
+    assert result == 1
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/target-owner/target-repo/issues",
+            {"title": "t", "body": "b", "labels": []},
+        )
+    ]
+    transport.assert_exhausted()
 
 
 def test_create_issue_in_does_not_retry_transport_error():
@@ -2282,6 +2309,36 @@ def test_create_issue_in_with_scripted_transport_preserves_original_network_caus
 
     assert exc_info.value.cause is cause
     assert exc_info.value.__cause__ is cause
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/Johannes-Kutsch/pycastle/issues",
+            {"title": "title", "body": "body", "labels": ["bug"]},
+        )
+    ]
+    transport.assert_exhausted()
+
+
+def test_create_issue_in_with_scripted_transport_raises_api_error_when_number_missing():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/Johannes-Kutsch/pycastle/issues",
+                data={"title": "title", "body": "body", "labels": ["bug"]},
+                payload={"html_url": "https://x"},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubAPIError) as exc_info:
+        svc.create_issue_in("Johannes-Kutsch/pycastle", "title", "body", ["bug"])
+
+    assert exc_info.value.status == 200
+    assert exc_info.value.body == "{'html_url': 'https://x'}"
+    assert exc_info.value.method == "POST"
+    assert exc_info.value.path == "/repos/Johannes-Kutsch/pycastle/issues"
     assert transport.requests == [
         _GithubTransportRequest(
             "POST",
