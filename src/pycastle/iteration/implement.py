@@ -17,8 +17,8 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from ..prompts.pipeline import (
-    PromptTemplate,
+from ..prompts.pipeline import PromptTemplate
+from ..prompts.scope_args import (
     build_interrupted_work_clause,
     build_issue_scope_args,
 )

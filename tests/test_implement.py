@@ -21,7 +21,8 @@ from pycastle.iteration.implement import (
     pick_implement_template,
     run_issue,
 )
-from pycastle.prompts.pipeline import PromptRenderError, build_issue_scope_args
+from pycastle.prompts.pipeline import PromptRenderError
+from pycastle.prompts.scope_args import build_issue_scope_args
 from pycastle.services import GitService, GithubService
 from tests.support import (
     FakeAgentRunner,

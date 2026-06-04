@@ -9,7 +9,6 @@ from typing import Protocol
 
 from ..config import Config
 from ..label_catalog import PROMPT_GLOBAL_LABEL_SPECS
-from ..session import RunKind
 from .source import EffectivePromptFile, PromptReference, PromptSource
 
 PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
@@ -144,11 +143,6 @@ class PromptTemplate(enum.Enum):
         return PromptReference(self.name, self.filename)
 
 
-_ISSUE_PLACEHOLDER_KEYS = frozenset(
-    {"ISSUE_NUMBER", "ISSUE_TITLE", "ISSUE_BODY", "ISSUE_COMMENTS"}
-)
-
-
 class PromptRendererConfig(Protocol):
     prompts_dir: Path
     preflight_checks: Sequence[tuple[str, str]]
@@ -163,45 +157,6 @@ class PromptRendererConfig(Protocol):
     behavior_slice_label: str
     docs_slice_label: str
     implement_checks: Sequence[str]
-
-
-def _format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
-    parts: list[str] = []
-    for c in comments:
-        author = c.get("author") or "unknown"
-        when = c.get("created_at") or "unknown time"
-        body = c.get("body") or ""
-        parts.append(f"## Comment by @{author} at {when}\n\n{body}")
-    return "\n\n".join(parts)
-
-
-def build_issue_scope_args(
-    issue: dict, *, extra_scope_args: dict[str, str]
-) -> dict[str, str]:
-    collisions = _ISSUE_PLACEHOLDER_KEYS & extra_scope_args.keys()
-    if collisions:
-        raise PromptRenderError(
-            f"extra_scope_args collides with reserved ISSUE_* keys: {collisions}"
-        )
-    return {
-        "ISSUE_NUMBER": str(issue["number"]),
-        "ISSUE_TITLE": issue["title"],
-        "ISSUE_BODY": str(issue["body"] or ""),
-        "ISSUE_COMMENTS": _format_issue_comments(issue["comments"]),
-        **extra_scope_args,
-    }
-
-
-def build_interrupted_work_clause(run_kind: RunKind, is_dirty: bool) -> str:
-    """Return interrupted-work instructions for fresh dispatches on dirty worktrees."""
-    if run_kind != RunKind.FRESH or not is_dirty:
-        return ""
-    return (
-        "\n# Interrupted Work\n\n"
-        "This worktree has uncommitted changes from a previous agent run. "
-        "Run `git diff` and `git status` to understand the current state, "
-        "then continue from where the previous agent left off.\n"
-    )
 
 
 def _format_feedback_commands(checks: Sequence[str]) -> str:

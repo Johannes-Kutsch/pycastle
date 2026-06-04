@@ -11,8 +11,8 @@ from pycastle.prompts.pipeline import (
     PromptRenderer,
     PromptTemplate,
     Scope,
-    build_interrupted_work_clause,
 )
+from pycastle.prompts.scope_args import build_interrupted_work_clause
 from pycastle.prompts.source import PromptReference, PromptSource
 from pycastle.session import RunKind
 
