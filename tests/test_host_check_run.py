@@ -468,6 +468,38 @@ def test_run_host_check_command_returns_passed_verdict_when_passing_adapter_only
     assert result == run_mod.HostCheckRunPassed(checked_sha="checked-sha")
 
 
+def test_run_host_check_run_does_not_resolve_host_check_issue_deps_when_checks_pass(
+    tmp_path,
+):
+    from pycastle.commands import host_check_run as run_mod
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+    issue_deps_factory = MagicMock()
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    result = asyncio.run(
+        run_mod.run_host_check_run(
+            host_checks=(("configured", "python -c configured"),),
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            issue_deps_factory=issue_deps_factory,
+            run_host_check=lambda name, command, cwd: None,
+            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+        )
+    )
+
+    assert result == run_mod.HostCheckRunPassed(checked_sha="checked-sha")
+    issue_deps_factory.assert_not_called()
+
+
 def test_run_host_check_run_executes_passing_checks_in_checked_sha_worktree_and_returns_sha(
     tmp_path, monkeypatch, capsys
 ):
