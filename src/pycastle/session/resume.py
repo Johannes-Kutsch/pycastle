@@ -167,6 +167,18 @@ class RoleSession:
         base = self._worktree / SESSION_DIR_NAME / self._role.value
         return base / self._namespace if self._namespace else base
 
+    @classmethod
+    def provider_state_relpath(
+        cls,
+        role: AgentRole,
+        provider_name: str,
+        namespace: str = "",
+    ) -> str:
+        del cls
+        if namespace:
+            return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
+        return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
+
     def session_uuid(self) -> str:
         role_key = (
             f"pycastle.{self._role.value}.{self._namespace}"
