@@ -85,6 +85,8 @@ class DockerBuildOutputInterpreter:
             return False
 
         if self._pending_classic_step:
+            if not stripped:
+                return False
             self._pending_classic_step = False
             if "---> Using cache" in stripped:
                 self._classic_steps_cached += 1

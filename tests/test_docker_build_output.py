@@ -65,6 +65,22 @@ def test_interpreter_signals_rebuild_start_on_first_non_cache_classic_step_body(
     assert interpreter.final_outcome == BuildOutcome.REBUILT
 
 
+def test_interpreter_signals_rebuild_start_for_classic_step_body_after_blank_line():
+    interpreter = DockerBuildOutputInterpreter()
+
+    signals = [
+        interpreter.observe_line("Step 1/2 : FROM python:3.12\n"),
+        interpreter.observe_line(" ---> Using cache\n"),
+        interpreter.observe_line(" ---> abc123\n"),
+        interpreter.observe_line("Step 2/2 : COPY . .\n"),
+        interpreter.observe_line("\n"),
+        interpreter.observe_line(" ---> Running in 789abc\n"),
+    ]
+
+    assert signals == [False, False, False, False, False, True]
+    assert interpreter.final_outcome == BuildOutcome.REBUILT
+
+
 def test_interpreter_ignores_internal_buildkit_done_before_first_executed_layer():
     interpreter = DockerBuildOutputInterpreter()
 

@@ -441,6 +441,36 @@ def test_streaming_rebuild_start_callback_not_called_for_all_cached_classic_outp
     callback.assert_not_called()
 
 
+def test_streaming_rebuild_start_callback_waits_through_blank_line_in_classic_output(
+    tmp_path,
+):
+    callback = MagicMock()
+    classic_output = [
+        "Step 1/2 : FROM python:3.12\n",
+        " ---> Using cache\n",
+        " ---> abc123\n",
+        "Step 2/2 : COPY . .\n",
+        "\n",
+        " ---> Running in 789abc\n",
+        "Successfully built 789abc\n",
+    ]
+
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(classic_output),
+    ):
+        result = DockerService().build_image(
+            "img",
+            tmp_path / "Dockerfile",
+            tmp_path,
+            stream=True,
+            on_rebuild_start=callback,
+        )
+
+    assert result == BuildOutcome.REBUILT
+    callback.assert_called_once_with()
+
+
 # ── build_image: terse mode — full cache hit ──────────────────────────────────
 
 
