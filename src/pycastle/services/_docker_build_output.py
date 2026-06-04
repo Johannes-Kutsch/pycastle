@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
 
@@ -64,6 +64,7 @@ FINAL_OUTCOME_EXAMPLES: dict[str, FinalOutcomeExample] = {
 
 @dataclass
 class DockerBuildOutputInterpreter:
+    on_rebuild_start: Callable[[], None] | None = None
     _classic_steps_seen: int = 0
     _classic_steps_cached: int = 0
     _pending_classic_step: bool = False
@@ -121,6 +122,8 @@ class DockerBuildOutputInterpreter:
         if self._rebuild_started:
             return False
         self._rebuild_started = True
+        if self.on_rebuild_start is not None:
+            self.on_rebuild_start()
         return True
 
 

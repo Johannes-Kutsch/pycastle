@@ -183,15 +183,11 @@ class DockerService:
             ) from exc
 
         assert proc.stdout is not None
-        lines: list[str] = []
-        interpreter = DockerBuildOutputInterpreter()
+        interpreter = DockerBuildOutputInterpreter(on_rebuild_start=on_rebuild_start)
         for line in proc.stdout:
             sys.stdout.write(line)
             sys.stdout.flush()
-            lines.append(line)
-
-            if on_rebuild_start is not None and interpreter.observe_line(line):
-                on_rebuild_start()
+            interpreter.observe_line(line)
 
         try:
             returncode = proc.wait(timeout=timeout)
@@ -202,4 +198,4 @@ class DockerService:
         if returncode != 0:
             raise DockerBuildError(f"docker build failed (exit {returncode})")
 
-        return interpret_final_build_outcome("".join(lines))
+        return interpreter.final_outcome
