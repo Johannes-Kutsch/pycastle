@@ -28,6 +28,8 @@ from pycastle.iteration.preflight import (
     PreflightReady,
     validate_issue_report,
 )
+from pycastle.infrastructure.worktree import worktree_identity
+from pycastle.session import RoleSession
 
 
 @pytest.fixture
@@ -850,6 +852,45 @@ def test_get_safe_sha_dispatches_divergence_resolver_for_current_branch(
     assert fake.calls[0].role == AgentRole.DIVERGENCE_RESOLVER
     assert fake.calls[0].work_body == "Resolving divergence"
     git_svc.get_current_branch.assert_called_once_with(tmp_path)
+
+
+def test_get_safe_sha_routes_divergence_recovery_through_sandbox_identity(
+    tmp_path, git_svc, github_svc
+):
+    _setup_worktree_mocks(git_svc)
+
+    git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
+        "git merge origin/main failed due to conflicts"
+    )
+    git_svc.get_current_branch.return_value = "main"
+    git_svc.get_head_sha.side_effect = ["abc123", "merged-sha"]
+
+    async def _resolve(request):
+        RoleSession(request.mount_path, AgentRole.DIVERGENCE_RESOLVER).start_fresh()
+        return CompletionOutput()
+
+    fake = FakeAgentRunner(side_effect=_resolve, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    expected_identity = worktree_identity("pycastle/diverge-sandbox", tmp_path)
+
+    assert isinstance(result, PreflightReady)
+    assert fake.calls[0].mount_path == expected_identity.path
+    git_svc.fast_forward_branch.assert_called_once_with(
+        tmp_path,
+        "main",
+        "pycastle/diverge-sandbox",
+    )
+    assert (
+        RoleSession(
+            expected_identity.path,
+            AgentRole.DIVERGENCE_RESOLVER,
+        ).path.exists()
+        is False
+    )
 
 
 def test_get_safe_sha_propagates_pull_error_when_divergence_agent_fails(

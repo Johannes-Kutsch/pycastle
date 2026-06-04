@@ -163,7 +163,7 @@ class BranchRefreshBoundary:
 
     async def pull_with_resolution(self, deps: _PreflightDeps) -> None:
         """Pull from origin, escalating to the divergence-resolver agent on textual conflict."""
-        from ..infrastructure.worktree import managed_worktree
+        from ..infrastructure.worktree import managed_worktree, worktree_identity
 
         try:
             deps.git_svc.pull_with_merge_fallback(deps.repo_root)
@@ -176,10 +176,10 @@ class BranchRefreshBoundary:
                 raise
             branch = deps.git_svc.get_current_branch(deps.repo_root)
             current_sha = deps.git_svc.get_head_sha(deps.repo_root)
+            sandbox_identity = worktree_identity(self._DIVERGE_SANDBOX, deps.repo_root)
             try:
                 async with managed_worktree(
-                    "diverge-sandbox",
-                    branch=self._DIVERGE_SANDBOX,
+                    identity=sandbox_identity,
                     sha=current_sha,
                     delete_branch_on_teardown=True,
                     deps=deps,
