@@ -157,17 +157,23 @@ class RoleSession:
         base = self._worktree / SESSION_DIR_NAME / self._role.value
         return base / self._namespace if self._namespace else base
 
-    @classmethod
     def provider_state_relpath(
-        cls,
-        role: AgentRole,
+        self_or_role: "RoleSession | AgentRole",
         provider_name: str,
         namespace: str = "",
     ) -> str:
-        del cls
+        strip_trailing_slash = False
+        if isinstance(self_or_role, RoleSession):
+            role = self_or_role._role
+            namespace = self_or_role._namespace
+            strip_trailing_slash = True
+        else:
+            role = self_or_role
         if namespace:
-            return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
-        return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
+            relpath = f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
+        else:
+            relpath = f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
+        return relpath.rstrip("/") if strip_trailing_slash else relpath
 
     def session_uuid(self) -> str:
         role_key = (
@@ -180,11 +186,7 @@ class RoleSession:
         return str(session_id)
 
     def provider_state_dir(self, provider_name: str) -> Path:
-        return self._worktree / self.provider_state_relpath(
-            self._role,
-            provider_name,
-            self._namespace,
-        ).rstrip("/")
+        return self._worktree / self.provider_state_relpath(provider_name)
 
     def service_session_id_path(self, service_name: str) -> Path:
         return provider_state_session_id_path(

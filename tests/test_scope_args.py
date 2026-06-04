@@ -467,6 +467,27 @@ def test_build_failure_report_scope_args_accepts_equivalent_failed_agent_data():
     }
 
 
+def test_agent_failed_error_session_dir_preserves_worktree_local_provider_layout():
+    from pathlib import Path
+
+    planner_failure = AgentFailedError(
+        role_value="planner",
+        worktree_path=Path("/tmp/worktree"),
+        failure_class="protocol_error",
+        service_name="opencode",
+    )
+    namespaced_failure = AgentFailedError(
+        role_value="reviewer",
+        worktree_path=Path("/tmp/worktree"),
+        namespace="main",
+        failure_class="non_typed_crash",
+        service_name="codex",
+    )
+
+    assert planner_failure.session_dir == ".pycastle-session/planner/opencode"
+    assert namespaced_failure.session_dir == ".pycastle-session/reviewer/main/codex"
+
+
 def test_build_host_check_scope_args_builds_exact_renderable_host_check_args(
     cfg, prompts_dir, monkeypatch
 ):
