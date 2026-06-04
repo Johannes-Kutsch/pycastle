@@ -21,7 +21,7 @@ from ..prompts.pipeline import PromptTemplate
 from ..prompts.scope_args import (
     build_per_issue_scope_args,
 )
-from ..issue_readiness import selected_mode_for_issue
+from ..issue_readiness import ready_slice_outcome_for_issue
 from ..session import RoleSession, is_stage_done_for
 from ..display.status_display import StatusDisplay
 from ..services import GitService, GithubService
@@ -47,16 +47,13 @@ def branch_for(issue_number: int) -> str:
 
 
 def _resolve_slice(issue: dict, cfg: Config) -> tuple[str, PromptTemplate]:
-    mode = selected_mode_for_issue(issue, cfg)
-    if mode is None:
+    ready = ready_slice_outcome_for_issue(issue, cfg)
+    if ready is None:
         raise RuntimeError(
             f"Issue #{issue['number']} is not implement-ready: missing a ready "
             "slice-mode selection."
         )
-    return (
-        mode.display_name,
-        mode.template,
-    )
+    return (ready.display_name, ready.template)
 
 
 def pick_implement_template(issue: dict, cfg: Config) -> PromptTemplate:

@@ -16,6 +16,7 @@ from pycastle.issue_readiness import (
     classify_issue_readiness,
     diagnostic_issue_readiness_error,
     evaluate_issue_afk_readiness,
+    ready_slice_outcome_for_issue,
     resolve_issue_readiness,
     selected_mode_for_issue,
 )
@@ -587,3 +588,42 @@ def test_selected_mode_for_issue_returns_none_for_multiple_labels_without_readin
     issue = {"number": 1, "labels": ["behavior-slice", "refactor-slice"], "body": "x"}
 
     assert selected_mode_for_issue(issue, _cfg) is None
+
+
+# ── ready_slice_outcome_for_issue ────────────────────────────────────────────
+
+
+def test_ready_slice_outcome_for_issue_prefers_carried_ready_payload_over_fallback_mode():
+    ready = ReadyIssueOutcome(
+        display_name="docs",
+        template=SliceMode.DOCS.template,
+    )
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=None,
+        ready=ready,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    issue = {
+        "number": 1,
+        "labels": ["behavior-slice"],
+        "body": "x" * 100,
+        "readiness": readiness,
+    }
+
+    assert ready_slice_outcome_for_issue(issue, _cfg) is ready
+
+
+def test_ready_slice_outcome_for_issue_returns_none_when_no_ready_result_can_be_constructed():
+    readiness = IssueReadiness(
+        slice_status=Malformed(found=[]),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=False,
+        selected_mode=None,
+        kind=IssueReadinessKind.MISSING_SLICE_MODE,
+    )
+    issue = {"number": 1, "labels": [], "body": "x" * 100, "readiness": readiness}
+
+    assert ready_slice_outcome_for_issue(issue, _cfg) is None
