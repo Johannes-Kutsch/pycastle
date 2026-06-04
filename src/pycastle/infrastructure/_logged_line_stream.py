@@ -1,13 +1,39 @@
 import codecs
+import inspect
 import json
 import queue
 import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
+from typing import cast
 
 from ..agents.output_protocol import AgentRole
 from ..errors import AgentTimeoutError
 from ..session.resume import RunKind
+
+
+def _build_progress_notifier(
+    on_chunk: Callable[[], None] | Callable[[bytes], None],
+) -> Callable[[bytes], None]:
+    try:
+        params = inspect.signature(on_chunk).parameters.values()
+    except (TypeError, ValueError):
+        return cast(Callable[[bytes], None], on_chunk)
+
+    accepts_chunk = any(
+        param.kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.VAR_POSITIONAL,
+        )
+        for param in params
+    )
+    if accepts_chunk:
+        return cast(Callable[[bytes], None], on_chunk)
+
+    no_arg_callback = cast(Callable[[], None], on_chunk)
+    return lambda _chunk: no_arg_callback()
 
 
 def stream_logged_lines(
@@ -16,10 +42,11 @@ def stream_logged_lines(
     log_path: Path,
     input_record: Mapping[str, object],
     idle_timeout: float,
-    on_chunk: Callable[[], None],
+    on_chunk: Callable[[], None] | Callable[[bytes], None],
 ) -> Iterator[str]:
     q: queue.Queue[bytes | object] = queue.Queue()
     sentinel = object()
+    notify_progress = _build_progress_notifier(on_chunk)
 
     def _feed() -> None:
         try:
@@ -59,7 +86,7 @@ def stream_logged_lines(
             assert isinstance(chunk, bytes)
             log.write(chunk)
             log.flush()
-            on_chunk()
+            notify_progress(chunk)
             line_buf += decoder.decode(chunk)
             while "\n" in line_buf:
                 line, line_buf = line_buf.split("\n", 1)
@@ -75,7 +102,7 @@ def stream_logged_work_lines(
     session_uuid: str | None,
     prompt: str,
     idle_timeout: float,
-    on_chunk: Callable[[], None],
+    on_chunk: Callable[[], None] | Callable[[bytes], None],
 ) -> Iterator[str]:
     return stream_logged_lines(
         chunks,

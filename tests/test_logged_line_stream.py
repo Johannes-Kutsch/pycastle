@@ -127,6 +127,30 @@ def test_stream_logged_lines_logs_input_record_and_chunk_bytes(tmp_path):
     assert rest == b"".join(chunks)
 
 
+def test_stream_logged_lines_reports_each_provider_chunk_to_progress_callback(
+    tmp_path,
+):
+    log_path = tmp_path / "agent.log"
+    chunks = [b"first ", b"second\n"]
+    reported_chunks: list[bytes] = []
+
+    lines = list(
+        stream_logged_lines(
+            chunks,
+            log_path=log_path,
+            input_record={
+                "type": "pycastle_input",
+                "prompt": "prompt",
+            },
+            idle_timeout=1.0,
+            on_chunk=lambda chunk: reported_chunks.append(chunk),
+        )
+    )
+
+    assert lines == ["first second"]
+    assert reported_chunks == chunks
+
+
 def test_stream_logged_lines_appends_new_record_after_blank_separator(tmp_path):
     log_path = tmp_path / "agent.log"
     log_path.write_bytes(b"previous line")
