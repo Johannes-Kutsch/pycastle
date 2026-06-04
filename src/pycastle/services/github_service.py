@@ -391,7 +391,7 @@ class GithubService:
     @staticmethod
     def _extract_label_names(item: dict[str, Any]) -> list[str]:
         return [
-            str(label_obj["name"])
+            str(label_obj["name"] or "")
             for label_obj in (item.get("labels") or [])
             if "name" in label_obj
         ]
