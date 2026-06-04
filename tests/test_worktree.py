@@ -796,6 +796,14 @@ def test_worktree_identity_uses_module_owned_sandbox_name_and_path(tmp_path):
     assert identity.path == worktree_path("merge-sandbox", tmp_path)
 
 
+def test_worktree_identity_uses_module_owned_issue_sandbox_name_and_path(tmp_path):
+    identity = worktree_identity("pycastle/merge-sandbox-issue-42", tmp_path)
+
+    assert identity.branch == "pycastle/merge-sandbox-issue-42"
+    assert identity.name == "merge-sandbox-issue-42"
+    assert identity.path == worktree_path("merge-sandbox-issue-42", tmp_path)
+
+
 def test_worktree_identity_preserves_current_caller_name_override(tmp_path):
     identity = worktree_identity(
         "pycastle/issue-42-add-worktree-identity",
