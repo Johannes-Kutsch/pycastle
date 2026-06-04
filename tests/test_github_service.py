@@ -425,6 +425,18 @@ def test_request_raises_github_api_error_on_non_401_4xx():
     assert "Not Found" in ei.value.body
 
 
+def test_request_raises_github_auth_error_on_401():
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
+    with patch(
+        "pycastle.services._github_http_transport.urlopen",
+        side_effect=_make_http_error(401, b'{"message":"Bad credentials"}'),
+    ):
+        with pytest.raises(GithubHttpTransportAuthError) as ei:
+            transport.request("GET", "/user")
+    assert ei.value.status == 401
+    assert "Bad credentials" in ei.value.body
+
+
 def test_check_auth_with_scripted_transport_raises_github_api_error_on_http_failure():
     transport = _ScriptedGithubTransport(
         [
@@ -522,6 +534,20 @@ def test_request_sends_json_body_when_data_provided():
     assert req.get_method() == "POST"
     assert json.loads(req.data.decode()) == {"hello": "world"}
     assert req.get_header("Content-type") == "application/json"
+
+
+def test_request_raises_github_api_error_on_invalid_json():
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
+    with patch(
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(b"{not-json"),
+    ):
+        with pytest.raises(GithubHttpTransportAPIError) as ei:
+            transport.request("GET", "/x")
+    assert ei.value.status == 200
+    assert ei.value.method == "GET"
+    assert ei.value.path == "/x"
+    assert ei.value.body == "{not-json"
 
 
 # ── pagination through public methods ────────────────────────────────────────
