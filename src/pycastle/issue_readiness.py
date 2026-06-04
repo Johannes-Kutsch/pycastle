@@ -67,11 +67,25 @@ BodyFloorClassification = WellFormedBody | MalformedBody
 
 
 @dataclasses.dataclass(frozen=True)
+class ReadyIssueOutcome:
+    display_name: str
+    template: PromptTemplate
+
+
+@dataclasses.dataclass(frozen=True)
+class BlockedIssueOutcome:
+    slice_status: SliceClassification
+    body_floor_status: BodyFloorClassification
+
+
+@dataclasses.dataclass(frozen=True)
 class IssueReadiness:
     slice_status: SliceClassification
     body_floor_status: BodyFloorClassification
     is_ready: bool
     selected_mode: SliceMode | None
+    ready: ReadyIssueOutcome | None = dataclasses.field(default=None, compare=False)
+    blocked: BlockedIssueOutcome | None = dataclasses.field(default=None, compare=False)
     kind: IssueReadinessKind = dataclasses.field(
         default=IssueReadinessKind.MALFORMED,
         compare=False,
@@ -89,6 +103,8 @@ def resolve_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
 
 def selected_mode_for_issue(issue: dict, cfg: Config) -> SliceMode | None:
     readiness = resolve_issue_readiness(issue, cfg)
+    if readiness.ready is not None:
+        return readiness.selected_mode
     if readiness.selected_mode is not None:
         return readiness.selected_mode
     if isinstance(readiness.slice_status, WellFormed):
@@ -155,6 +171,8 @@ def classify_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
     hitl_label = cfg.hitl_label if cfg.hitl_label in issue_labels else None
     is_hitl_exempt = hitl_label is not None
     kind = IssueReadinessKind.MALFORMED
+    ready = None
+    blocked = None
 
     if is_hitl_exempt:
         kind = IssueReadinessKind.HITL_EXEMPT
@@ -163,6 +181,10 @@ def classify_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
     ):
         is_ready = True
         selected_mode = slice_status.mode
+        ready = ReadyIssueOutcome(
+            display_name=slice_status.mode.display_name,
+            template=slice_status.mode.template,
+        )
         kind = IssueReadinessKind.READY_AFK
     elif isinstance(slice_status, Malformed):
         if isinstance(body_floor_status, MalformedBody):
@@ -174,11 +196,19 @@ def classify_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
     else:
         kind = IssueReadinessKind.SHORT_BODY
 
+    if not is_ready and not is_hitl_exempt:
+        blocked = BlockedIssueOutcome(
+            slice_status=slice_status,
+            body_floor_status=body_floor_status,
+        )
+
     return IssueReadiness(
         slice_status=slice_status,
         body_floor_status=body_floor_status,
         is_ready=is_ready,
         selected_mode=selected_mode,
+        ready=ready,
+        blocked=blocked,
         kind=kind,
         hitl_label=hitl_label,
         is_hitl_exempt=is_hitl_exempt,
