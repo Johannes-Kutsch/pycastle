@@ -69,3 +69,23 @@ def test_reserve_uses_container_runner_slug_rules_in_missing_effective_logs_dir(
     assert effective_logs_dir.is_dir()
     assert log_path.name == f"-{fixed_dt.strftime('%Y%m%dT%H%M')}.log"
     assert log_path.read_text() == ""
+
+
+def test_reserve_uses_supplied_falsey_clock_callable(tmp_path):
+    from pycastle.infrastructure.agent_invocation_log import AgentInvocationLog
+
+    fixed_dt = datetime(2026, 5, 17, 14, 30, tzinfo=timezone.utc).astimezone()
+
+    class FalseyClock:
+        def __call__(self) -> datetime:
+            return fixed_dt
+
+        def __bool__(self) -> bool:
+            return False
+
+    log_path = AgentInvocationLog(now_local=FalseyClock()).reserve(
+        agent_name="Plan Agent",
+        effective_logs_dir=tmp_path,
+    )
+
+    assert log_path.name == f"plan-agent-{fixed_dt.strftime('%Y%m%dT%H%M')}.log"

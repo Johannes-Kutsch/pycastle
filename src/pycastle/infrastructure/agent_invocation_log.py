@@ -12,7 +12,7 @@ class AgentInvocationLog:
         *,
         now_local: Callable[[], datetime] | None = None,
     ) -> None:
-        self._now_local = now_local or _time_module.now_local
+        self._now_local = _time_module.now_local if now_local is None else now_local
 
     def reserve(self, *, agent_name: str, effective_logs_dir: Path) -> Path:
         effective_logs_dir.mkdir(parents=True, exist_ok=True)
