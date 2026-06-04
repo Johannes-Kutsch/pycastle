@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 
 from .pipeline import PromptRenderError, PromptTemplate, Scope
@@ -70,6 +71,15 @@ def build_issue_scope_args(
         "ISSUE_BODY": str(issue["body"] or ""),
         "ISSUE_COMMENTS": _format_issue_comments(issue["comments"]),
         **extra_scope_args,
+    }
+
+
+def build_plan_scope_args(
+    *, all_open_issues: list[dict], ready_for_agent_issues: list[dict]
+) -> dict[str, str]:
+    return {
+        "ALL_OPEN_ISSUES_JSON": json.dumps(all_open_issues),
+        "READY_FOR_AGENT_ISSUES_JSON": json.dumps(ready_for_agent_issues),
     }
 
 

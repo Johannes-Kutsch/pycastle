@@ -1,5 +1,6 @@
 import pytest
 
+from pycastle.config import Config
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
 from pycastle.prompts.renderer import PromptRenderer
 from pycastle.prompts.scope_args import (
@@ -10,6 +11,23 @@ from pycastle.prompts.scope_args import (
     validated_scope_args_for_template,
 )
 from pycastle.session import RunKind
+
+
+@pytest.fixture(autouse=True)
+def _project_root(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+
+@pytest.fixture
+def prompts_dir(tmp_path):
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    (prompts_dir / "coordination").mkdir(parents=True)
+    return prompts_dir
+
+
+@pytest.fixture
+def cfg():
+    return Config()
 
 
 def test_validated_scope_args_for_template_and_scope_returns_input_unchanged():
@@ -180,9 +198,13 @@ def test_build_plan_scope_args_builds_renderable_plan_args(cfg, prompts_dir):
         ready_for_agent_issues=ready_for_agent_issues,
     )
 
-    assert validated_scope_args_for_template(PromptTemplate.PLAN, scope_args) is scope_args
+    assert (
+        validated_scope_args_for_template(PromptTemplate.PLAN, scope_args) is scope_args
+    )
     assert scope_args["ALL_OPEN_ISSUES_JSON"] == json.dumps(all_open_issues)
-    assert scope_args["READY_FOR_AGENT_ISSUES_JSON"] == json.dumps(ready_for_agent_issues)
+    assert scope_args["READY_FOR_AGENT_ISSUES_JSON"] == json.dumps(
+        ready_for_agent_issues
+    )
 
     renderer = PromptRenderer(cfg)
     rendered = asyncio.run(
@@ -197,3 +219,18 @@ def test_build_plan_scope_args_builds_renderable_plan_args(cfg, prompts_dir):
         f"All: {json.dumps(all_open_issues)}\n"
         f"Ready: {json.dumps(ready_for_agent_issues)}"
     )
+
+
+def test_build_plan_scope_args_accepts_empty_issue_lists():
+    scope_args = build_plan_scope_args(
+        all_open_issues=[],
+        ready_for_agent_issues=[],
+    )
+
+    assert (
+        validated_scope_args_for_template(PromptTemplate.PLAN, scope_args) is scope_args
+    )
+    assert scope_args == {
+        "ALL_OPEN_ISSUES_JSON": "[]",
+        "READY_FOR_AGENT_ISSUES_JSON": "[]",
+    }

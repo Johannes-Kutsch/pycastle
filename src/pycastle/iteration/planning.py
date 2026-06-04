@@ -1,5 +1,4 @@
 import dataclasses
-import json
 from pathlib import Path
 from typing import Protocol
 
@@ -11,6 +10,7 @@ from ..agents.output_protocol import (
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompts.pipeline import PromptTemplate
+from ..prompts.scope_args import build_plan_scope_args
 from ..services import GitService
 from ..services.github_service import GithubService
 from ..display.status_display import StatusDisplay
@@ -186,10 +186,10 @@ async def planning_phase(
                         template=PromptTemplate.PLAN,
                         mount_path=wt,
                         role=AgentRole.PLANNER,
-                        scope_args={
-                            "ALL_OPEN_ISSUES_JSON": json.dumps(all_open_issues),
-                            "READY_FOR_AGENT_ISSUES_JSON": json.dumps(well_formed),
-                        },
+                        scope_args=build_plan_scope_args(
+                            all_open_issues=all_open_issues,
+                            ready_for_agent_issues=well_formed,
+                        ),
                         model=deps.cfg.plan_override.model,
                         effort=deps.cfg.plan_override.effort,
                         service=deps.cfg.plan_override.service,
