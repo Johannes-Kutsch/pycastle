@@ -23,8 +23,6 @@ from pycastle.infrastructure.worktree import (
     patch_gitdir_for_container,
     transient_worktree,
     worktree_identity,
-    worktree_name_for_branch,
-    worktree_path,
 )
 
 
@@ -460,7 +458,9 @@ def test_managed_worktree_error_includes_path_and_listing(bare_branch_deps):
                 pass
 
         msg = str(exc_info.value)
-        expected_path = worktree_path("issue-42", bare_branch_deps.repo_root)
+        expected_path = worktree_identity(
+            "pycastle/issue-42", bare_branch_deps.repo_root, name="issue-42"
+        ).path
         assert str(expected_path) in msg, f"worktree path missing from error: {msg!r}"
         assert "README.md" in msg, f"directory listing missing from error: {msg!r}"
 
@@ -726,66 +726,12 @@ def test_patch_gitdir_rewrites_linux_path(tmp_path):
     assert git_file.read_text() == "gitdir: /home/user/repo/.git/worktrees/my-branch\n"
 
 
-# ── worktree_name_for_branch ──────────────────────────────────────────────────
-
-
-def test_worktree_name_for_branch_extracts_issue_number_from_slug():
-    assert worktree_name_for_branch("pycastle/issue-42-fix-the-bug") == "issue-42"
-
-
-def test_worktree_name_for_branch_extracts_issue_number_without_slug():
-    assert worktree_name_for_branch("pycastle/issue-7") == "issue-7"
-
-
-def test_worktree_name_for_branch_falls_back_to_sanitised_slug():
-    assert (
-        worktree_name_for_branch("feature/my-cool-branch") == "feature-my-cool-branch"
-    )
-
-
-def test_worktree_name_for_branch_sanitises_special_chars():
-    assert worktree_name_for_branch("UPPER/Case_Branch!") == "upper-case-branch"
-
-
-def test_worktree_name_for_branch_extracts_issue_zero():
-    assert worktree_name_for_branch("pycastle/issue-0") == "issue-0"
-
-
-def test_worktree_name_for_branch_extracts_sandbox_name():
-    assert worktree_name_for_branch("pycastle/merge-sandbox") == "merge-sandbox"
-
-
-def test_worktree_name_for_branch_does_not_match_issue_number_in_non_pycastle_branch():
-    # re.match anchors at the start: only pycastle/issue-N branches get the
-    # issue-N shortname; other branches containing issue-N fall back to the
-    # sanitised slug.
-    assert worktree_name_for_branch("feature/issue-5-work") == "feature-issue-5-work"
-
-
-# ── worktree_path ─────────────────────────────────────────────────────────────
-
-
-def test_worktree_path_constructs_correct_path(tmp_path):
-    result = worktree_path("issue-42", tmp_path)
-    assert result == tmp_path / "pycastle" / ".worktrees" / "issue-42"
-
-
-def test_worktree_path_uses_fixed_project_local_pycastle_dir(tmp_path):
-    result = worktree_path("issue-99", tmp_path)
-    assert result == tmp_path / "pycastle" / ".worktrees" / "issue-99"
-
-
-def test_worktree_path_accepts_repo_root_directly(tmp_path):
-    result = worktree_path("issue-100", tmp_path)
-    assert result == tmp_path / "pycastle" / ".worktrees" / "issue-100"
-
-
 def test_worktree_identity_uses_module_owned_issue_name_and_path(tmp_path):
     identity = worktree_identity("pycastle/issue-42-add-worktree-identity", tmp_path)
 
     assert identity.branch == "pycastle/issue-42-add-worktree-identity"
     assert identity.name == "issue-42"
-    assert identity.path == worktree_path("issue-42", tmp_path)
+    assert identity.path == tmp_path / "pycastle" / ".worktrees" / "issue-42"
 
 
 def test_worktree_identity_uses_module_owned_sandbox_name_and_path(tmp_path):
@@ -793,7 +739,7 @@ def test_worktree_identity_uses_module_owned_sandbox_name_and_path(tmp_path):
 
     assert identity.branch == "pycastle/merge-sandbox"
     assert identity.name == "merge-sandbox"
-    assert identity.path == worktree_path("merge-sandbox", tmp_path)
+    assert identity.path == tmp_path / "pycastle" / ".worktrees" / "merge-sandbox"
 
 
 def test_worktree_identity_uses_module_owned_issue_sandbox_name_and_path(tmp_path):
@@ -801,7 +747,9 @@ def test_worktree_identity_uses_module_owned_issue_sandbox_name_and_path(tmp_pat
 
     assert identity.branch == "pycastle/merge-sandbox-issue-42"
     assert identity.name == "merge-sandbox-issue-42"
-    assert identity.path == worktree_path("merge-sandbox-issue-42", tmp_path)
+    assert (
+        identity.path == tmp_path / "pycastle" / ".worktrees" / "merge-sandbox-issue-42"
+    )
 
 
 def test_worktree_identity_preserves_current_caller_name_override(tmp_path):
@@ -813,7 +761,7 @@ def test_worktree_identity_preserves_current_caller_name_override(tmp_path):
 
     assert identity.branch == "pycastle/issue-42-add-worktree-identity"
     assert identity.name == "issue-42"
-    assert identity.path == worktree_path("issue-42", tmp_path)
+    assert identity.path == tmp_path / "pycastle" / ".worktrees" / "issue-42"
 
 
 # ── managed_worktree: WorktreeIdentity interface ─────────────────────────────

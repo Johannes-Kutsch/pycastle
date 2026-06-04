@@ -13,7 +13,7 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.runner import RunRequest
 from pycastle.config import Config
-from pycastle.infrastructure.worktree import worktree_identity, worktree_name_for_branch
+from pycastle.infrastructure.worktree import worktree_identity
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitCommandError, GitService
 from pycastle.services import GithubAPIError, GithubService
@@ -74,12 +74,7 @@ def _merge_sandbox_branch(issue_number: int) -> str:
 
 
 def _merge_sandbox_path(repo_root, cfg, issue_number: int):
-    return (
-        repo_root
-        / "pycastle"
-        / ".worktrees"
-        / worktree_name_for_branch(_merge_sandbox_branch(issue_number))
-    )
+    return worktree_identity(_merge_sandbox_branch(issue_number), repo_root).path
 
 
 # ── Clean merge path ──────────────────────────────────────────────────────────
