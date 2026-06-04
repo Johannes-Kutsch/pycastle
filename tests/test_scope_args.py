@@ -330,11 +330,15 @@ def test_build_preflight_scope_args_builds_exact_renderable_preflight_args(
 
 
 def test_build_host_check_scope_args_builds_exact_renderable_host_check_args(
-    cfg, prompts_dir
+    cfg, prompts_dir, monkeypatch
 ):
     import asyncio
-    import platform
 
+    monkeypatch.setattr("pycastle.prompts.scope_args.platform.system", lambda: "TestOS")
+    monkeypatch.setattr(
+        "pycastle.prompts.scope_args.platform.platform",
+        lambda: "TestOS-1.0.0-x86_64",
+    )
     (prompts_dir / "diagnostics").mkdir(parents=True)
     (prompts_dir / "diagnostics/host-check-issue.md").write_text(
         "OS: {{HOST_OS}}\n"
@@ -357,8 +361,8 @@ def test_build_host_check_scope_args_builds_exact_renderable_host_check_args(
         is scope_args
     )
     assert scope_args == {
-        "HOST_OS": platform.system(),
-        "HOST_PLATFORM": platform.platform(),
+        "HOST_OS": "TestOS",
+        "HOST_PLATFORM": "TestOS-1.0.0-x86_64",
         "CHECKED_SHA": "abc123def456",
         "CHECK_NAME": "pytest-host",
         "COMMAND": "pytest tests/host",
@@ -375,13 +379,24 @@ def test_build_host_check_scope_args_builds_exact_renderable_host_check_args(
     )
 
     assert rendered == (
-        f"OS: {platform.system()}\n"
-        f"Platform: {platform.platform()}\n"
+        "OS: TestOS\n"
+        "Platform: TestOS-1.0.0-x86_64\n"
         "SHA: abc123def456\n"
         "Check: pytest-host\n"
         "Command: pytest tests/host\n"
         "Output: assertion failed"
     )
+
+
+def test_build_host_check_scope_args_preserves_empty_captured_output():
+    scope_args = build_host_check_scope_args(
+        checked_sha="abc123def456",
+        check_name="pytest-host",
+        command="pytest tests/host",
+        output="",
+    )
+
+    assert scope_args["OUTPUT"] == ""
 
 
 def test_build_improve_scope_args_builds_exact_args_for_each_improve_prompt():
