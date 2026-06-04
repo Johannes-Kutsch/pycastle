@@ -26,7 +26,6 @@ from pycastle.iteration.preflight import (
     PreflightCache,
     PreflightHITL,
     PreflightReady,
-    validate_issue_report,
 )
 from pycastle.infrastructure.worktree import worktree_identity
 from pycastle.session import RoleSession
@@ -164,68 +163,51 @@ def test_get_safe_sha_returns_afk_when_checks_fail_with_afk_label(
     assert result.sha == "abc123"
 
 
-def test_validate_issue_report_returns_hitl_for_hitl_exempt_labels(github_svc):
-    issue_output = IssueOutput(number=55, labels=["bug", "ready-for-human"])
-
-    assert (
-        validate_issue_report(
-            caller="Preflight Issue Agent",
-            issue_output=issue_output,
-            cfg=Config(),
-            github_svc=github_svc,
-        )
-        == "hitl"
+def test_get_safe_sha_raises_for_missing_slice_mode_on_afk_issue(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=42, labels=["bug", "ready-for-agent"])],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
-    github_svc.get_issue.assert_not_called()
-
-
-def test_validate_issue_report_raises_for_missing_slice_mode_on_afk_issue(github_svc):
     github_svc.get_issue.return_value = {"number": 42, "body": "x" * 100}
-    issue_output = IssueOutput(number=42, labels=["bug", "ready-for-agent"])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
 
     with pytest.raises(RuntimeError, match="without exactly one slice-mode label"):
-        validate_issue_report(
-            caller="Host-Check Reporter",
-            issue_output=issue_output,
-            cfg=Config(),
-            github_svc=github_svc,
-        )
+        asyncio.run(cache.get_safe_sha(deps))
 
 
-def test_validate_issue_report_uses_filed_issue_labels_for_afk_validation(github_svc):
+def test_get_safe_sha_uses_filed_issue_labels_for_afk_validation(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
     github_svc.get_issue.return_value = {
         "number": 42,
         "body": "x" * 100,
-        "labels": [],
+        "labels": ["behavior-slice", "docs-slice"],
     }
-    issue_output = IssueOutput(
-        number=42,
-        labels=["bug", "ready-for-agent", "behavior-slice"],
-    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
 
     with pytest.raises(RuntimeError, match="without exactly one slice-mode label"):
-        validate_issue_report(
-            caller="Pre-Flight Reporter",
-            issue_output=issue_output,
-            cfg=Config(),
-            github_svc=github_svc,
-        )
+        asyncio.run(cache.get_safe_sha(deps))
 
 
-def test_validate_issue_report_raises_for_short_body_on_afk_issue(github_svc):
-    github_svc.get_issue.return_value = {"number": 42, "body": "short"}
-    issue_output = IssueOutput(
-        number=42,
-        labels=["bug", "ready-for-agent", "behavior-slice"],
+def test_get_safe_sha_raises_for_short_body_on_afk_issue(tmp_path, git_svc, github_svc):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
     )
+    github_svc.get_issue.return_value = {"number": 42, "body": "short"}
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
 
     with pytest.raises(RuntimeError, match="below the minimum length floor"):
-        validate_issue_report(
-            caller="Preflight Issue Agent",
-            issue_output=issue_output,
-            cfg=Config(),
-            github_svc=github_svc,
-        )
+        asyncio.run(cache.get_safe_sha(deps))
 
 
 def test_get_safe_sha_routes_requirements_declared_missing_tool_to_setup_failure(
