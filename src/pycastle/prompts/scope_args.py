@@ -119,11 +119,10 @@ def build_improve_scope_args(
     prd_number: int | None = None,
     recent_prds: list[dict[str, str | int]] | None = None,
 ) -> dict[str, str]:
-    recent_improve_prds = (
-        github_svc.get_recent_improve_prds() if recent_prds is None else recent_prds
-    )
-
     if template is PromptTemplate.IMPROVE_SCAN:
+        recent_improve_prds = (
+            github_svc.get_recent_improve_prds() if recent_prds is None else recent_prds
+        )
         return validated_scope_args_for_template(
             template,
             {
@@ -137,6 +136,9 @@ def build_improve_scope_args(
         PromptTemplate.IMPROVE_PRD,
         PromptTemplate.IMPROVE_NO_CANDIDATE,
     }:
+        recent_improve_prds = (
+            github_svc.get_recent_improve_prds() if recent_prds is None else recent_prds
+        )
         return validated_scope_args_for_template(
             template,
             {

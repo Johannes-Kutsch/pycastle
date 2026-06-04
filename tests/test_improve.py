@@ -315,6 +315,40 @@ def test_improve_phase_threads_empty_recent_improve_prd_message_to_prd_phase(
     assert prd_call.scope_args["RECENT_IMPROVE_PRDS"] == "No recent improve PRDs found."
 
 
+def test_improve_phase_does_not_refetch_recent_improve_prds_for_issues_phase(
+    tmp_path, git_svc
+):
+    github_svc = MagicMock()
+    github_svc.get_recent_improve_prds.side_effect = [
+        [{"number": 12, "state": "OPEN", "title": "First candidate"}],
+        [{"number": 12, "state": "OPEN", "title": "First candidate"}],
+        AssertionError("issues phase should not re-fetch recent improve PRDs"),
+    ]
+    github_svc.get_issue.return_value = {
+        "number": 42,
+        "title": "Improve PRD",
+        "body": "PRD body",
+    }
+    github_svc.get_issue_comments.return_value = []
+    runner = FakeAgentRunner(
+        [
+            CompletionOutput(),
+            IssueOutput(number=42, labels=[]),
+            CompletionOutput(),
+        ],
+        preflight_responses=[[]],
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    _run(deps)
+
+    issues_call = next(
+        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
+    )
+    assert issues_call.scope_args["ISSUE_NUMBER"] == "42"
+    assert github_svc.get_recent_improve_prds.call_count == 2
+
+
 def test_improve_phase_propagates_recent_improve_prd_lookup_failures(tmp_path, git_svc):
     github_svc = MagicMock()
     github_svc.get_recent_improve_prds.side_effect = GithubNetworkError(

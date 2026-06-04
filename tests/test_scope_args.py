@@ -382,3 +382,30 @@ def test_build_improve_scope_args_uses_empty_issue_fields_without_prd_number():
     }
     github_svc.get_issue.assert_not_called()
     github_svc.get_issue_comments.assert_not_called()
+
+
+def test_build_improve_scope_args_does_not_lookup_recent_prds_for_issues_prompt():
+    github_svc = MagicMock()
+    github_svc.get_recent_improve_prds.side_effect = AssertionError(
+        "recent PRD lookup is not part of IMPROVE_ISSUES scope construction"
+    )
+    github_svc.get_issue.return_value = {
+        "number": 42,
+        "title": "Improve PRD",
+        "body": "PRD body",
+    }
+    github_svc.get_issue_comments.return_value = []
+
+    issues_args = build_improve_scope_args(
+        PromptTemplate.IMPROVE_ISSUES,
+        github_svc=github_svc,
+        short_sid="abcd1234",
+        prd_number=42,
+    )
+
+    assert (
+        validated_scope_args_for_template(PromptTemplate.IMPROVE_ISSUES, issues_args)
+        is issues_args
+    )
+    assert issues_args["ISSUE_NUMBER"] == "42"
+    github_svc.get_recent_improve_prds.assert_not_called()
