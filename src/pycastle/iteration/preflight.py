@@ -82,9 +82,12 @@ def validate_issue_report(
     if reported_readiness.is_hitl_exempt:
         return "hitl"
     filed_issue = github_svc.get_issue(issue_output.number)
+    filed_labels = (
+        filed_issue["labels"] if "labels" in filed_issue else list(issue_output.labels)
+    )
     filed_issue_with_labels = {
         **filed_issue,
-        "labels": filed_issue.get("labels") or list(issue_output.labels),
+        "labels": filed_labels,
     }
     filed_readiness = resolve_issue_readiness(filed_issue_with_labels, cfg)
     readiness_error = diagnostic_issue_readiness_error(
