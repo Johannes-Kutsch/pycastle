@@ -170,7 +170,10 @@ class RoleSession:
         return str(session_id)
 
     def provider_state_dir(self, provider_name: str) -> Path:
-        return self._worktree / provider_state_relpath(
+        return self._worktree / self.provider_state_relpath(provider_name)
+
+    def provider_state_relpath(self, provider_name: str) -> str:
+        return provider_state_relpath(
             self._role,
             provider_name,
             self._namespace,
