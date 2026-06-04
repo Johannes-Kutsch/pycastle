@@ -323,6 +323,17 @@ def test_streaming_classic_mixed_returns_rebuilt(tmp_path):
     assert result == BuildOutcome.REBUILT
 
 
+def test_streaming_empty_success_output_returns_rebuilt(tmp_path):
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen([]),
+    ):
+        result = DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True
+        )
+    assert result == BuildOutcome.REBUILT
+
+
 def test_default_non_streaming_path_returns_none(tmp_path):
     with patch(
         "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
@@ -485,6 +496,19 @@ def test_terse_classic_full_cache_hit(tmp_path, capsys):
     captured = capsys.readouterr()
     assert result == BuildOutcome.FULL_CACHE_HIT
     assert "Building Docker Image · up to date" in captured.out
+
+
+def test_terse_empty_success_output_returns_rebuilt(tmp_path, capsys):
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen([]),
+    ):
+        result = DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
+    captured = capsys.readouterr()
+    assert result == BuildOutcome.REBUILT
+    assert "Building Docker Image · completed" in captured.out
 
 
 # ── build_image: terse mode — non-TTY rendering ───────────────────────────────
