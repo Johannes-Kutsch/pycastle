@@ -14,9 +14,9 @@ from .provider_session_state import (
     has_exact_provider_transcript_for_service,
     load_exact_transcript_service_name,
     is_service_session_metadata_path,
-    load_service_session_id,
+    load_provider_state_session_id,
     load_service_session_metadata,
-    save_service_session_id,
+    provider_state_session_id_path,
     save_service_session_metadata,
 )
 from .service_resume_identity import (
@@ -176,11 +176,21 @@ class RoleSession:
             self._namespace,
         ).rstrip("/")
 
+    def service_session_id_path(self, service_name: str) -> Path:
+        return provider_state_session_id_path(
+            self.provider_state_dir(service_name),
+            service_name,
+        )
+
     def service_session_id(self, service_name: str) -> str | None:
-        return load_service_session_id(self.path, service_name)
+        return load_provider_state_session_id(
+            self.service_session_id_path(service_name)
+        )
 
     def save_service_session_id(self, service_name: str, session_id: str) -> None:
-        save_service_session_id(self.path, service_name, session_id)
+        path = self.service_session_id_path(service_name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(session_id, encoding="utf-8")
 
     def provider_identity(
         self,

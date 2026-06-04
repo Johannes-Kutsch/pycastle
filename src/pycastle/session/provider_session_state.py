@@ -21,9 +21,15 @@ _SERVICE_SESSION_ID_FILENAMES = {"codex": "thread_id", "opencode": "session_id"}
 _SERVICE_SESSION_METADATA_FILENAME = "_service_session_metadata.json"
 
 
-def service_session_id_path(role_session_path: Path, service_name: str) -> Path:
+def provider_state_session_id_path(state_dir: Path, service_name: str) -> Path:
     filename = _SERVICE_SESSION_ID_FILENAMES.get(service_name, "thread_id")
-    return role_session_path / service_name / filename
+    return state_dir / filename
+
+
+def service_session_id_path(role_session_path: Path, service_name: str) -> Path:
+    return provider_state_session_id_path(
+        role_session_path / service_name, service_name
+    )
 
 
 def service_session_metadata_path(role_session_path: Path) -> Path:
@@ -52,8 +58,9 @@ def load_state_dir_provider_session_id(
 ) -> str | None:
     if state_dir is None:
         return None
-    filename = _SERVICE_SESSION_ID_FILENAMES.get(service_name, "thread_id")
-    return load_provider_state_session_id(state_dir / filename)
+    return load_provider_state_session_id(
+        provider_state_session_id_path(state_dir, service_name)
+    )
 
 
 def recover_state_dir_provider_session_id(
@@ -286,6 +293,7 @@ __all__ = [
     "load_state_dir_provider_session_id",
     "LocalAuthSeedAction",
     "parse_service_session_metadata",
+    "provider_state_session_id_path",
     "ProviderSessionDecision",
     "RecoveredSessionIdPersistence",
     "save_service_session_id",
