@@ -1,5 +1,4 @@
 import asyncio
-import re
 import shlex
 from collections.abc import Callable
 from pathlib import Path
@@ -11,8 +10,8 @@ from .docker_session import DockerSession
 from ..errors import DockerError
 from ..services.agent_service import AgentService
 from ..session import RunKind
-from .. import _time as _time_module
 from ._logged_line_stream import stream_logged_work_lines
+from .agent_invocation_log import AgentInvocationLog
 
 
 class ContainerRunner:
@@ -37,22 +36,10 @@ class ContainerRunner:
         self._status_display = (
             status_display if status_display is not None else PlainStatusDisplay()
         )
-        slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-        ts = _time_module.now_local().strftime("%Y%m%dT%H%M")
-        self._log_path = self._reserve_log_path(slug, ts)
-
-    def _reserve_log_path(self, slug: str, ts: str) -> Path:
-        self._logs_dir.mkdir(parents=True, exist_ok=True)
-        stem = f"{slug}-{ts}"
-        for suffix in ["", *[f"-{n}" for n in range(2, 10_000)]]:
-            path = self._logs_dir / f"{stem}{suffix}.log"
-            try:
-                with open(path, "xb"):
-                    pass
-                return path
-            except FileExistsError:
-                continue
-        raise RuntimeError(f"could not reserve unique agent log path for {stem}")
+        self._log_path = AgentInvocationLog().reserve(
+            agent_name=name,
+            effective_logs_dir=self._logs_dir,
+        )
 
     @property
     def log_path(self) -> Path:

@@ -10,9 +10,9 @@ class AgentInvocationLog:
     def __init__(
         self,
         *,
-        now_local: Callable[[], datetime] = _time_module.now_local,
+        now_local: Callable[[], datetime] | None = None,
     ) -> None:
-        self._now_local = now_local
+        self._now_local = now_local or _time_module.now_local
 
     def reserve(self, *, agent_name: str, effective_logs_dir: Path) -> Path:
         effective_logs_dir.mkdir(parents=True, exist_ok=True)
