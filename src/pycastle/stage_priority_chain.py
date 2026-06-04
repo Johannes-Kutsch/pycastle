@@ -20,6 +20,15 @@ class ConfiguredCandidateSelection:
     selected_chain: StageOverride | None
 
 
+@dataclass(frozen=True)
+class ConfiguredCandidateChain:
+    candidates: tuple[StageOverride, ...]
+
+    @property
+    def has_configured_candidate(self) -> bool:
+        return bool(self.candidates)
+
+
 def iter_stage_chain(override: StageOverride) -> Iterator[StageOverride]:
     node: StageOverride | None = override
     while node is not None:
@@ -65,6 +74,17 @@ def referenced_service_names(override: StageOverride) -> tuple[str, ...]:
     return tuple(names)
 
 
+def configured_candidate_chain(
+    override: StageOverride, *, configured_service_names: tuple[str, ...]
+) -> ConfiguredCandidateChain:
+    configured = set(configured_service_names)
+    return ConfiguredCandidateChain(
+        candidates=tuple(
+            node for node in iter_stage_chain(override) if node.service in configured
+        )
+    )
+
+
 def _build_chain(nodes: tuple[StageOverride, ...]) -> StageOverride | None:
     chain: StageOverride | None = None
     for node in reversed(nodes):
@@ -91,15 +111,15 @@ def select_configured_candidate_chain(
 ) -> ConfiguredCandidateSelection:
     configured = set(configured_service_names)
     available = set(available_service_names)
-    configured_candidates = tuple(
-        node for node in iter_stage_chain(override) if node.service in configured
+    configured_candidates = configured_candidate_chain(
+        override, configured_service_names=configured_service_names
     )
-    if not configured_candidates:
+    if not configured_candidates.has_configured_candidate:
         return ConfiguredCandidateSelection(
             has_configured_candidate=False,
             selected_chain=None,
         )
-    for index, node in enumerate(configured_candidates):
+    for index, node in enumerate(configured_candidates.candidates):
         if node.service in available:
             if _remaining_chain_is_fully_configured(node, configured):
                 return ConfiguredCandidateSelection(
@@ -108,9 +128,9 @@ def select_configured_candidate_chain(
                 )
             return ConfiguredCandidateSelection(
                 has_configured_candidate=True,
-                selected_chain=_build_chain(configured_candidates[index:]),
+                selected_chain=_build_chain(configured_candidates.candidates[index:]),
             )
-    first_configured = configured_candidates[0]
+    first_configured = configured_candidates.candidates[0]
     if _remaining_chain_is_fully_configured(first_configured, configured):
         return ConfiguredCandidateSelection(
             has_configured_candidate=True,
@@ -118,5 +138,5 @@ def select_configured_candidate_chain(
         )
     return ConfiguredCandidateSelection(
         has_configured_candidate=True,
-        selected_chain=_build_chain(configured_candidates),
+        selected_chain=_build_chain(configured_candidates.candidates),
     )

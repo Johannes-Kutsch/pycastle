@@ -1,43 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 
 from ..config.types import StageOverride
-from ..service_availability import iter_stage_chain
-from ..stage_priority_chain import select_configured_candidate_chain
+from ..stage_priority_chain import (
+    configured_candidate_chain,
+    select_configured_candidate_chain,
+)
 from .agent_service import AgentService
-
-
-@dataclass(frozen=True)
-class _ConfiguredCandidate:
-    override: StageOverride
-    service: AgentService
-    is_available: bool
-
-
-@dataclass(frozen=True)
-class _StageAvailability:
-    candidates: tuple[_ConfiguredCandidate, ...]
-
-    def has_configured_candidate(self) -> bool:
-        return bool(self.candidates)
-
-    def first_available_index(self) -> int | None:
-        for index, candidate in enumerate(self.candidates):
-            if candidate.is_available:
-                return index
-        return None
-
-    def next_wake_time(self) -> datetime | None:
-        exhausted = [
-            candidate.service
-            for candidate in self.candidates
-            if not candidate.is_available
-        ]
-        if not exhausted:
-            return None
-        return min(service.next_wake_time() for service in exhausted)
 
 
 class ServiceRegistry:
@@ -48,53 +18,53 @@ class ServiceRegistry:
     def services(self) -> dict[str, AgentService]:
         return dict(self._services)
 
-    def _configured_candidates(
+    def _configured_candidate_overrides(
         self, override: StageOverride
     ) -> tuple[StageOverride, ...]:
+        return configured_candidate_chain(
+            override, configured_service_names=tuple(self._services)
+        ).candidates
+
+    def _availability_by_service(
+        self, overrides: tuple[StageOverride, ...], now: datetime
+    ) -> dict[str, bool]:
+        availability: dict[str, bool] = {}
+        for node in overrides:
+            if node.service in availability:
+                continue
+            availability[node.service] = self._services[node.service].is_available(
+                now=now
+            )
+        return availability
+
+    def _exhausted_services_for(
+        self, override: StageOverride, now: datetime
+    ) -> tuple[AgentService, ...]:
+        configured_overrides = self._configured_candidate_overrides(override)
+        availability = self._availability_by_service(configured_overrides, now)
         return tuple(
-            node
-            for node in iter_stage_chain(override)
-            if node.service in self._services
+            self._services[node.service]
+            for node in configured_overrides
+            if not availability[node.service]
         )
 
-    def _stage_availability(
-        self, override: StageOverride, now: datetime
-    ) -> _StageAvailability:
-        candidates: list[_ConfiguredCandidate] = []
-        configured_candidates = self._configured_candidates(override)
-        availability_by_service: dict[str, bool] = {}
-        for node in configured_candidates:
-            if node.service in availability_by_service:
-                continue
-            availability_by_service[node.service] = self._services[
-                node.service
-            ].is_available(now=now)
-        for node in configured_candidates:
-            service = self._services[node.service]
-            candidates.append(
-                _ConfiguredCandidate(
-                    override=node,
-                    service=service,
-                    is_available=availability_by_service[node.service],
-                )
-            )
-        return _StageAvailability(tuple(candidates))
-
     def has_configured_candidate(self, override: StageOverride) -> bool:
-        return bool(self._configured_candidates(override))
+        return configured_candidate_chain(
+            override, configured_service_names=tuple(self._services)
+        ).has_configured_candidate
 
     def resolve(self, override: StageOverride, now: datetime) -> StageOverride:
-        stage_availability = self._stage_availability(override, now)
+        configured_overrides = self._configured_candidate_overrides(override)
+        availability = self._availability_by_service(configured_overrides, now)
         selection = select_configured_candidate_chain(
             override,
             configured_service_names=tuple(
-                candidate.override.service
-                for candidate in stage_availability.candidates
+                node.service for node in configured_overrides
             ),
             available_service_names=tuple(
-                candidate.override.service
-                for candidate in stage_availability.candidates
-                if candidate.is_available
+                node.service
+                for node in configured_overrides
+                if availability[node.service]
             ),
         )
         return selection.selected_chain or override
@@ -103,9 +73,9 @@ class ServiceRegistry:
         return any(svc.is_available(now=now) for svc in self._services.values())
 
     def has_available_for(self, override: StageOverride, now: datetime) -> bool:
-        return (
-            self._stage_availability(override, now).first_available_index() is not None
-        )
+        configured_overrides = self._configured_candidate_overrides(override)
+        availability = self._availability_by_service(configured_overrides, now)
+        return any(availability[node.service] for node in configured_overrides)
 
     def next_wake_time(self, now: datetime) -> datetime | None:
         exhausted = [
@@ -118,7 +88,10 @@ class ServiceRegistry:
     def next_wake_time_for(
         self, override: StageOverride, now: datetime
     ) -> datetime | None:
-        return self._stage_availability(override, now).next_wake_time()
+        exhausted = self._exhausted_services_for(override, now)
+        if not exhausted:
+            return None
+        return min(service.next_wake_time() for service in exhausted)
 
     def __getitem__(self, key: str) -> AgentService | None:
         return self._services.get(key)
