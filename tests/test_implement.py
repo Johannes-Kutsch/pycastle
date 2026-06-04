@@ -21,6 +21,7 @@ from pycastle.iteration.implement import (
     branch_for,
     implement_phase,
     pick_implement_template,
+    pick_slice_mode,
     run_issue,
 )
 from pycastle.services import GitService, GithubService
@@ -111,6 +112,68 @@ def test_pick_implement_template_uses_carried_readiness_mode_over_labels():
     }
 
     assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_REFACTOR
+
+
+def test_pick_implement_template_prefers_carried_ready_outcome_over_fallback_mode():
+    from pycastle.issue_readiness import (
+        IssueReadiness,
+        IssueReadinessKind,
+        ReadyIssueOutcome,
+        SliceMode,
+        WellFormed,
+        WellFormedBody,
+    )
+
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=None,
+        ready=ReadyIssueOutcome(
+            display_name="docs",
+            template=PromptTemplate.IMPLEMENT_DOCS,
+        ),
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    issue = {
+        "number": 1,
+        "title": "T",
+        "labels": ["behavior-slice"],
+        "readiness": readiness,
+    }
+
+    assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_DOCS
+
+
+def test_pick_slice_mode_prefers_carried_ready_outcome_over_fallback_mode():
+    from pycastle.issue_readiness import (
+        IssueReadiness,
+        IssueReadinessKind,
+        ReadyIssueOutcome,
+        SliceMode,
+        WellFormed,
+        WellFormedBody,
+    )
+
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=None,
+        ready=ReadyIssueOutcome(
+            display_name="docs",
+            template=PromptTemplate.IMPLEMENT_DOCS,
+        ),
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    issue = {
+        "number": 1,
+        "title": "T",
+        "labels": ["behavior-slice"],
+        "readiness": readiness,
+    }
+
+    assert pick_slice_mode(issue, _cfg) == "docs"
 
 
 def test_pick_implement_template_raises_runtime_error_for_malformed_issue():
@@ -648,6 +711,45 @@ def test_run_issue_passes_issue_title_to_reviewer(tmp_path):
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert fake.calls[1].issue_title == "Fix auth timeout"
+
+
+def test_run_issue_uses_carried_ready_outcome_for_template_and_work_bodies(tmp_path):
+    from pycastle.issue_readiness import (
+        IssueReadiness,
+        IssueReadinessKind,
+        ReadyIssueOutcome,
+        SliceMode,
+        WellFormed,
+        WellFormedBody,
+    )
+
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=None,
+        ready=ReadyIssueOutcome(
+            display_name="docs",
+            template=PromptTemplate.IMPLEMENT_DOCS,
+        ),
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    issue = {
+        "number": 5,
+        "title": "Update ADR",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+        "readiness": readiness,
+    }
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    assert fake.calls[0].template == PromptTemplate.IMPLEMENT_DOCS
+    assert fake.calls[0].work_body == 'implementing docs "Update ADR"'
+    assert fake.calls[1].work_body == 'reviewing docs "Update ADR"'
 
 
 # ── run_issue: worktree lifecycle ─────────────────────────────────────────────
