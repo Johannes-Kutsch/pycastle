@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from .config.types import StageOverride
-from .stage_priority_chain import iter_stage_chain as _iter_stage_chain
 
 
 def iter_stage_chain(override: StageOverride) -> Iterator[StageOverride]:
-    yield from _iter_stage_chain(override)
+    node: StageOverride | None = override
+    while node is not None:
+        yield node
+        node = node.fallback
