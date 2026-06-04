@@ -176,6 +176,85 @@ def test_run_host_check_command_builds_default_issue_filing_deps_when_host_check
     assert runner_requests[0].work_body == f"reporting {check_name} host-check issue"
 
 
+def test_run_host_check_command_normalizes_in_memory_failed_command_outcome_through_module_seam(
+    tmp_path, monkeypatch
+):
+    from pycastle.agents.output_protocol import IssueOutput
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+    git_svc.get_github_remote_repo.return_value = ("owner", "repo")
+    cfg = Config()
+    check_name, check_command = cfg.host_checks[0]
+    runner_requests = []
+
+    monkeypatch.setattr(
+        run_mod,
+        "load_credential_env",
+        lambda **kwargs: {"GH_TOKEN": "token"},
+    )
+    monkeypatch.setattr(run_mod, "_configured_service_registry", lambda cfg, env: {})
+
+    class _FakeGithubService:
+        def __init__(self, repo: str, token: str, cfg: Config) -> None:
+            self.repo = repo
+
+        def get_issue(self, number: int) -> dict[str, str]:
+            return {"body": "x" * 100}
+
+    class _FakeAgentRunner:
+        def __init__(self, env, cfg, git_svc, *, service_registry) -> None:
+            self.calls = runner_requests
+
+        async def run(self, request):
+            self.calls.append(request)
+            return IssueOutput(number=41, labels=["bug", "ready-for-human"])
+
+    monkeypatch.setattr(run_mod, "GithubService", _FakeGithubService)
+    monkeypatch.setattr(
+        sys.modules["pycastle.agents.runner"], "AgentRunner", _FakeAgentRunner
+    )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    result = asyncio.run(
+        run_mod.run_host_check_command(
+            cfg=cfg,
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            run_host_check=lambda name, command, cwd: host_check_command_result(
+                name,
+                command,
+                returncode=1,
+                output="stdout line\nstderr line",
+            ),
+            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+        )
+    )
+
+    assert result == run_mod.HostCheckRunFailed(
+        checked_sha="checked-sha",
+        failures=(
+            run_mod.HostCheckFailure(
+                name=check_name,
+                command=check_command,
+                output="stdout line\nstderr line",
+            ),
+        ),
+        issue_numbers=(41,),
+    )
+    assert len(runner_requests) == 1
+    assert runner_requests[0].work_body == f"reporting {check_name} host-check issue"
+
+
 def test_run_host_check_command_uses_service_registry_for_reporter_override(
     tmp_path, monkeypatch
 ):
@@ -238,6 +317,85 @@ def test_run_host_check_command_uses_service_registry_for_reporter_override(
     assert agent_runner.calls[0].model == reporter_override.model
     assert agent_runner.calls[0].effort == reporter_override.effort
     provided_service_registry.resolve.assert_called_once()
+
+
+def test_run_host_check_command_preserves_raw_failed_command_diagnostic_payload(
+    tmp_path, monkeypatch
+):
+    from pycastle.agents.output_protocol import IssueOutput
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+    git_svc.get_github_remote_repo.return_value = ("owner", "repo")
+    cfg = Config()
+    check_name, check_command = cfg.host_checks[0]
+    runner_requests = []
+    raw_output = "\nstdout line\nstderr line\n"
+
+    monkeypatch.setattr(
+        run_mod,
+        "load_credential_env",
+        lambda **kwargs: {"GH_TOKEN": "token"},
+    )
+    monkeypatch.setattr(run_mod, "_configured_service_registry", lambda cfg, env: {})
+
+    class _FakeGithubService:
+        def __init__(self, repo: str, token: str, cfg: Config) -> None:
+            self.repo = repo
+
+        def get_issue(self, number: int) -> dict[str, str]:
+            return {"body": "x" * 100}
+
+    class _FakeAgentRunner:
+        def __init__(self, env, cfg, git_svc, *, service_registry) -> None:
+            self.calls = runner_requests
+
+        async def run(self, request):
+            self.calls.append(request)
+            return IssueOutput(number=41, labels=["bug", "ready-for-human"])
+
+    monkeypatch.setattr(run_mod, "GithubService", _FakeGithubService)
+    monkeypatch.setattr(
+        sys.modules["pycastle.agents.runner"], "AgentRunner", _FakeAgentRunner
+    )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    result = asyncio.run(
+        run_mod.run_host_check_command(
+            cfg=cfg,
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            run_host_check=lambda name, command, cwd: host_check_command_result(
+                name,
+                command,
+                returncode=1,
+                output=raw_output,
+            ),
+            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+        )
+    )
+
+    assert result == run_mod.HostCheckRunFailed(
+        checked_sha="checked-sha",
+        failures=(
+            run_mod.HostCheckFailure(
+                name=check_name,
+                command=check_command,
+                output=raw_output,
+            ),
+        ),
+        issue_numbers=(41,),
+    )
+    assert runner_requests[0].scope_args["OUTPUT"] == raw_output
 
 
 def test_run_host_check_run_executes_passing_checks_in_checked_sha_worktree_and_returns_sha(

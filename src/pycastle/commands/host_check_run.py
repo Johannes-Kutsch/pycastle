@@ -156,7 +156,7 @@ def _run_host_check(name: str, command: str, cwd: Path) -> HostCheckCommandResul
         name=name,
         command=command,
         returncode=result.returncode,
-        output=(result.stdout + result.stderr).strip(),
+        output=result.stdout + result.stderr,
     )
 
 
@@ -166,7 +166,7 @@ def _failure_from_command_result(
     return HostCheckFailure(
         name=command_result.name,
         command=command_result.command,
-        output=command_result.output.strip(),
+        output=command_result.output,
     )
 
 
@@ -177,13 +177,13 @@ def _failure_from_exception(
         return HostCheckFailure(
             name=exc.name,
             command=exc.command,
-            output=exc.output.strip(),
+            output=exc.output,
         )
 
     text = str(exc)
     prefix = f"Host check {name!r} failed: {command}"
     output = text.removeprefix(prefix).lstrip("\n")
-    return HostCheckFailure(name=name, command=command, output=output.strip())
+    return HostCheckFailure(name=name, command=command, output=output)
 
 
 def prepare_host_check_run(
@@ -250,6 +250,8 @@ async def run_host_check_command(
     agent_runner: AgentRunnerProtocol | None = None,
     status_display: StatusDisplay | None = None,
     service_registry: ServiceRegistry | None = None,
+    run_host_check: HostCheckCommandExecutor | None = None,
+    transient_worktree_factory: HostCheckWorktreeFactory | None = None,
 ) -> HostCheckRunOutcome:
     resolved_repo_root = repo_root or Path(".").resolve()
     resolved_status_display = status_display or PlainStatusDisplay()
@@ -267,6 +269,8 @@ async def run_host_check_command(
             agent_runner=agent_runner,
             service_registry=service_registry,
         ),
+        run_host_check=run_host_check,
+        transient_worktree_factory=transient_worktree_factory,
     )
 
 
