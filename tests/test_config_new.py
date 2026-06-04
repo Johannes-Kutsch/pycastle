@@ -1200,6 +1200,33 @@ def test_legacy_default_service_does_not_select_referenced_services(tmp_path):
     assert referenced_services(cfg) == {"claude", "codex", "opencode"}
 
 
+def test_referenced_services_collects_non_empty_stage_chain_service_names(tmp_path):
+    from pycastle.config.loader import Config, referenced_services
+
+    cfg = Config(
+        plan_override=StageOverride(
+            service=" ",
+            fallback=StageOverride(
+                service="codex",
+                fallback=StageOverride(service="claude"),
+            ),
+        ),
+        implement_override=StageOverride(
+            service="codex",
+            fallback=StageOverride(service=""),
+        ),
+        review_override=StageOverride(
+            service="opencode",
+            fallback=StageOverride(service="claude"),
+        ),
+        merge_override=StageOverride(service="opencode"),
+        preflight_issue_override=StageOverride(service=""),
+        improve_override=StageOverride(service="claude"),
+    )
+
+    assert referenced_services(cfg) == {"codex", "claude", "opencode"}
+
+
 def test_load_config_round_trips_stage_override_service_and_fallback(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(

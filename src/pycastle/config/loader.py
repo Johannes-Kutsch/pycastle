@@ -14,7 +14,7 @@ import platformdirs
 from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
 from pycastle.label_catalog import CANONICAL_LABEL_DEFAULTS
-from pycastle.service_availability import iter_stage_chain
+from pycastle.stage_priority_chain import referenced_service_names
 
 __all__ = [
     "Config",
@@ -182,19 +182,18 @@ class Config:
 
 def referenced_services(cfg: Config) -> set[str]:
     """Return the set of service names the resolved config references."""
-    names: set[str] = set()
-    for override in (
-        cfg.plan_override,
-        cfg.implement_override,
-        cfg.review_override,
-        cfg.merge_override,
-        cfg.preflight_issue_override,
-        cfg.improve_override,
-    ):
-        for node in iter_stage_chain(override):
-            if node.service:
-                names.add(node.service)
-    return names
+    return {
+        service
+        for override in (
+            cfg.plan_override,
+            cfg.implement_override,
+            cfg.review_override,
+            cfg.merge_override,
+            cfg.preflight_issue_override,
+            cfg.improve_override,
+        )
+        for service in referenced_service_names(override)
+    }
 
 
 def resolve_dockerfile(pycastle_dir: Path | str) -> Path:
