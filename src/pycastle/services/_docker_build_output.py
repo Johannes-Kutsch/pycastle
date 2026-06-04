@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import enum
 import re
+from collections.abc import Iterable
+from dataclasses import dataclass
 
 
 class BuildOutcome(enum.Enum):
@@ -9,14 +11,65 @@ class BuildOutcome(enum.Enum):
     FULL_CACHE_HIT = "full_cache_hit"
 
 
-def interpret_final_build_outcome(output: str) -> BuildOutcome:
+@dataclass(frozen=True)
+class FinalOutcomeExample:
+    lines: tuple[str, ...]
+    outcome: BuildOutcome
+
+
+FINAL_OUTCOME_EXAMPLES: dict[str, FinalOutcomeExample] = {
+    "buildkit_all_cached": FinalOutcomeExample(
+        lines=(
+            "#1 [1/2] FROM python:3.12\n",
+            "#1 CACHED\n",
+            "#2 [2/2] RUN pip install requests\n",
+            "#2 CACHED\n",
+        ),
+        outcome=BuildOutcome.FULL_CACHE_HIT,
+    ),
+    "buildkit_rebuilt": FinalOutcomeExample(
+        lines=(
+            "#1 [1/2] FROM python:3.12\n",
+            "#1 CACHED\n",
+            "#2 [2/2] COPY . .\n",
+            "#2 DONE 2.5s\n",
+        ),
+        outcome=BuildOutcome.REBUILT,
+    ),
+    "classic_all_cached": FinalOutcomeExample(
+        lines=(
+            "Step 1/2 : FROM python:3.12\n",
+            " ---> Using cache\n",
+            " ---> abc123\n",
+            "Step 2/2 : RUN pip install requests\n",
+            " ---> Using cache\n",
+            " ---> def456\n",
+            "Successfully built def456\n",
+        ),
+        outcome=BuildOutcome.FULL_CACHE_HIT,
+    ),
+    "classic_mixed": FinalOutcomeExample(
+        lines=(
+            "Step 1/2 : FROM python:3.12\n",
+            " ---> Using cache\n",
+            " ---> abc123\n",
+            "Step 2/2 : COPY . .\n",
+            " ---> Running in 789abc\n",
+            "Successfully built 789abc\n",
+        ),
+        outcome=BuildOutcome.REBUILT,
+    ),
+}
+
+
+def interpret_final_build_outcome(output: str | Iterable[str]) -> BuildOutcome:
     if _is_full_cache_hit(output):
         return BuildOutcome.FULL_CACHE_HIT
     return BuildOutcome.REBUILT
 
 
-def _is_full_cache_hit(output: str) -> bool:
-    lines = output.splitlines()
+def _is_full_cache_hit(output: str | Iterable[str]) -> bool:
+    lines = _output_lines(output)
 
     # Classic builder: look for Step N/M lines and check each for ---> Using cache
     classic_steps = [
@@ -38,3 +91,9 @@ def _is_full_cache_hit(output: str) -> bool:
     has_done = any(re.match(r"^#\d+\s+DONE\s+", line.strip()) for line in lines)
 
     return has_cached and not has_done
+
+
+def _output_lines(output: str | Iterable[str]) -> list[str]:
+    if isinstance(output, str):
+        return output.splitlines()
+    return list(output)
