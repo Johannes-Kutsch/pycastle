@@ -1232,23 +1232,45 @@ def test_get_issue_comments_returns_author_created_at_and_body():
 
 
 def test_get_issue_comments_returns_empty_list_when_no_comments():
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(b"[]", headers={}),
-    ):
-        assert svc.get_issue_comments(7) == []
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7/comments?per_page=100",
+                payload=[],
+                headers={"Link": ""},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.get_issue_comments(7) == []
+    transport.assert_exhausted()
 
 
 def test_get_issue_comments_hits_comments_endpoint():
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(b"[]", headers={}),
-    ) as m:
-        svc.get_issue_comments(42)
-    req = m.call_args[0][0]
-    assert "/repos/owner/repo/issues/42/comments" in req.full_url
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/42/comments?per_page=100",
+                payload=[],
+                headers={"Link": ""},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    svc.get_issue_comments(42)
+
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "GET",
+            "/repos/owner/repo/issues/42/comments?per_page=100",
+            None,
+        )
+    ]
+    transport.assert_exhausted()
 
 
 # ── close_issue_with_parents ─────────────────────────────────────────────────
@@ -1423,25 +1445,31 @@ def test_get_open_issues_with_scripted_transport_returns_projection_and_comment_
 
 
 def test_get_open_issues_filters_pull_requests():
-    svc = _make_service()
-    body = json.dumps(
+    transport = _ScriptedGithubTransport(
         [
-            {"number": 1, "title": "Issue", "body": "", "labels": []},
-            {
-                "number": 2,
-                "title": "PR",
-                "body": "",
-                "labels": [],
-                "pull_request": {"url": "x"},
-            },
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&labels=bug&per_page=100",
+                payload=[
+                    {"number": 1, "title": "Issue", "body": "", "labels": []},
+                    {
+                        "number": 2,
+                        "title": "PR",
+                        "body": "",
+                        "labels": [],
+                        "pull_request": {"url": "x"},
+                    },
+                ],
+                headers={"Link": ""},
+            )
         ]
-    ).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body, headers={}),
-    ):
-        result = svc.get_open_issues("bug")
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_open_issues("bug")
+
     assert [r["number"] for r in result] == [1]
+    transport.assert_exhausted()
 
 
 def test_get_open_issues_filters_recently_closed_issue():
