@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import socket
+from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
@@ -120,23 +121,64 @@ class _FakeGithubTransport:
         return self._request_fn(method, path, data)
 
 
-def _scripted_transport(
-    responses: dict[tuple[str, str], list[tuple[Any, dict[str, str]] | BaseException]],
-) -> _FakeGithubTransport:
-    remaining = {key: list(items) for key, items in responses.items()}
+@dataclass(frozen=True)
+class _GithubTransportRequest:
+    method: str
+    path: str
+    data: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class _GithubTransportReply:
+    payload: Any = None
+    headers: dict[str, str] = field(default_factory=dict)
+    error: BaseException | None = None
+
+
+@dataclass(frozen=True)
+class _GithubTransportStep:
+    request: _GithubTransportRequest
+    reply: _GithubTransportReply = field(default_factory=_GithubTransportReply)
+
+
+class _ScriptedGithubTransport:
+    def __init__(self, steps: list[_GithubTransportStep]) -> None:
+        self._remaining = list(steps)
+        self.requests: list[_GithubTransportRequest] = []
 
     def request(
-        method: str, path: str, data: dict[str, Any] | None
+        self, method: str, path: str, data: dict[str, Any] | None = None
     ) -> tuple[Any, dict[str, str]]:
-        key = (method, path)
-        if key not in remaining or not remaining[key]:
-            raise AssertionError(f"unexpected transport request: {key}")
-        result = remaining[key].pop(0)
-        if isinstance(result, BaseException):
-            raise result
-        return result
+        request = _GithubTransportRequest(method=method, path=path, data=data)
+        self.requests.append(request)
+        if not self._remaining:
+            raise AssertionError(f"unexpected transport request: {request}")
 
-    return _FakeGithubTransport(request)
+        step = self._remaining.pop(0)
+        assert request == step.request
+
+        if step.reply.error is not None:
+            raise step.reply.error
+        return step.reply.payload, step.reply.headers
+
+
+def _script_step(
+    method: str,
+    path: str,
+    *,
+    data: dict[str, Any] | None = None,
+    payload: Any = None,
+    headers: dict[str, str] | None = None,
+    error: BaseException | None = None,
+) -> _GithubTransportStep:
+    return _GithubTransportStep(
+        request=_GithubTransportRequest(method=method, path=path, data=data),
+        reply=_GithubTransportReply(
+            payload=payload,
+            headers=headers or {},
+            error=error,
+        ),
+    )
 
 
 # ── Construction ───────────────────────────────────────────────────────────────
@@ -551,19 +593,26 @@ def test_close_issue_raises_operator_actionable_error_after_retry_exhaustion():
 
 
 def test_close_issue_retries_transient_5xx_and_recovers():
-    transport = _scripted_transport(
-        {
-            ("PATCH", "/repos/owner/repo/issues/42"): [
-                GithubHttpTransportAPIError(
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/42",
+                data={"state": "closed"},
+                error=GithubHttpTransportAPIError(
                     "boom",
                     status=500,
                     body="server boom",
                     method="PATCH",
                     path="/repos/owner/repo/issues/42",
                 ),
-                (None, {}),
-            ]
-        }
+            ),
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/42",
+                data={"state": "closed"},
+            ),
+        ]
     )
     svc = _make_service(transport=transport)
 
@@ -571,9 +620,13 @@ def test_close_issue_retries_transient_5xx_and_recovers():
         svc.close_issue(42)
 
     mock_sleep.assert_called_once_with(10)
-    assert transport.calls == [
-        ("PATCH", "/repos/owner/repo/issues/42", {"state": "closed"}),
-        ("PATCH", "/repos/owner/repo/issues/42", {"state": "closed"}),
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "PATCH", "/repos/owner/repo/issues/42", {"state": "closed"}
+        ),
+        _GithubTransportRequest(
+            "PATCH", "/repos/owner/repo/issues/42", {"state": "closed"}
+        ),
     ]
 
 
@@ -1097,54 +1150,81 @@ def test_get_issue_comments_hits_comments_endpoint():
 
 
 def test_close_issue_with_parents_closes_parent_when_no_open_siblings():
-    transport = _scripted_transport(
-        {
-            ("PATCH", "/repos/owner/repo/issues/5"): [(None, {})],
-            ("GET", "/repos/owner/repo/issues/5"): [({"parent": {"number": 50}}, {})],
-            ("GET", "/repos/owner/repo/issues/50/sub_issues"): [
-                ([{"number": 5, "state": "closed"}], {"Link": ""})
-            ],
-            ("PATCH", "/repos/owner/repo/issues/50"): [(None, {})],
-            ("GET", "/repos/owner/repo/issues/50"): [({"parent": None}, {})],
-        }
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/5",
+                data={"state": "closed"},
+            ),
+            _script_step(
+                "GET", "/repos/owner/repo/issues/5", payload={"parent": {"number": 50}}
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/50/sub_issues",
+                payload=[{"number": 5, "state": "closed"}],
+                headers={"Link": ""},
+            ),
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/50",
+                data={"state": "closed"},
+            ),
+            _script_step(
+                "GET", "/repos/owner/repo/issues/50", payload={"parent": None}
+            ),
+        ]
     )
     svc = _make_service(transport=transport)
 
     svc.close_issue_with_parents(5)
 
-    assert transport.calls == [
-        ("PATCH", "/repos/owner/repo/issues/5", {"state": "closed"}),
-        ("GET", "/repos/owner/repo/issues/5", None),
-        ("GET", "/repos/owner/repo/issues/50/sub_issues", None),
-        ("PATCH", "/repos/owner/repo/issues/50", {"state": "closed"}),
-        ("GET", "/repos/owner/repo/issues/50", None),
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "PATCH", "/repos/owner/repo/issues/5", {"state": "closed"}
+        ),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/5", None),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/50/sub_issues", None),
+        _GithubTransportRequest(
+            "PATCH", "/repos/owner/repo/issues/50", {"state": "closed"}
+        ),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/50", None),
     ]
 
 
 def test_close_issue_with_parents_stops_when_open_siblings_remain():
-    transport = _scripted_transport(
-        {
-            ("PATCH", "/repos/owner/repo/issues/5"): [(None, {})],
-            ("GET", "/repos/owner/repo/issues/5"): [({"parent": {"number": 50}}, {})],
-            ("GET", "/repos/owner/repo/issues/50/sub_issues"): [
-                (
-                    [
-                        {"number": 5, "state": "closed"},
-                        {"number": 6, "state": "open"},
-                    ],
-                    {"Link": ""},
-                )
-            ],
-        }
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/5",
+                data={"state": "closed"},
+            ),
+            _script_step(
+                "GET", "/repos/owner/repo/issues/5", payload={"parent": {"number": 50}}
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/50/sub_issues",
+                payload=[
+                    {"number": 5, "state": "closed"},
+                    {"number": 6, "state": "open"},
+                ],
+                headers={"Link": ""},
+            ),
+        ]
     )
     svc = _make_service(transport=transport)
 
     svc.close_issue_with_parents(5)
 
-    assert transport.calls == [
-        ("PATCH", "/repos/owner/repo/issues/5", {"state": "closed"}),
-        ("GET", "/repos/owner/repo/issues/5", None),
-        ("GET", "/repos/owner/repo/issues/50/sub_issues", None),
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "PATCH", "/repos/owner/repo/issues/5", {"state": "closed"}
+        ),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/5", None),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/50/sub_issues", None),
     ]
 
 
@@ -1221,16 +1301,20 @@ def test_get_open_issues_filters_pull_requests():
 
 
 def test_get_open_issues_filters_recently_closed_issue():
-    transport = _scripted_transport(
-        {
-            ("PATCH", "/repos/owner/repo/issues/42"): [(None, {})],
-            (
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/42",
+                data={"state": "closed"},
+            ),
+            _script_step(
                 "GET",
                 "/repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100",
-            ): [
-                ([{"number": 42, "title": "T", "body": "", "labels": []}], {"Link": ""})
-            ],
-        }
+                payload=[{"number": 42, "title": "T", "body": "", "labels": []}],
+                headers={"Link": ""},
+            ),
+        ]
     )
     svc = _make_service(transport=transport)
 
@@ -1244,21 +1328,27 @@ def test_get_open_issues_does_not_filter_after_self_heal_reopen():
     list_path = (
         "/repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100"
     )
-    transport = _scripted_transport(
-        {
-            ("PATCH", "/repos/owner/repo/issues/42"): [(None, {})],
-            ("GET", list_path): [
-                (
-                    [{"number": 42, "title": "T", "body": "", "labels": []}],
-                    {"Link": ""},
-                ),
-                ([], {"Link": ""}),
-                (
-                    [{"number": 42, "title": "T", "body": "", "labels": []}],
-                    {"Link": ""},
-                ),
-            ],
-        }
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/42",
+                data={"state": "closed"},
+            ),
+            _script_step(
+                "GET",
+                list_path,
+                payload=[{"number": 42, "title": "T", "body": "", "labels": []}],
+                headers={"Link": ""},
+            ),
+            _script_step("GET", list_path, payload=[], headers={"Link": ""}),
+            _script_step(
+                "GET",
+                list_path,
+                payload=[{"number": 42, "title": "T", "body": "", "labels": []}],
+                headers={"Link": ""},
+            ),
+        ]
     )
     svc = _make_service(transport=transport)
 
@@ -1271,45 +1361,30 @@ def test_get_open_issues_does_not_filter_after_self_heal_reopen():
 
 
 def test_get_open_issues_does_not_filter_issue_when_close_failed():
-    transport = _scripted_transport(
-        {
-            ("PATCH", "/repos/owner/repo/issues/42"): [
-                GithubHttpTransportAPIError(
-                    "fail",
-                    status=500,
-                    body="err",
-                    method="PATCH",
-                    path="/repos/owner/repo/issues/42",
-                ),
-                GithubHttpTransportAPIError(
-                    "fail",
-                    status=500,
-                    body="err",
-                    method="PATCH",
-                    path="/repos/owner/repo/issues/42",
-                ),
-                GithubHttpTransportAPIError(
-                    "fail",
-                    status=500,
-                    body="err",
-                    method="PATCH",
-                    path="/repos/owner/repo/issues/42",
-                ),
-                GithubHttpTransportAPIError(
-                    "fail",
-                    status=500,
-                    body="err",
-                    method="PATCH",
-                    path="/repos/owner/repo/issues/42",
-                ),
+    transport = _ScriptedGithubTransport(
+        [
+            *[
+                _script_step(
+                    "PATCH",
+                    "/repos/owner/repo/issues/42",
+                    data={"state": "closed"},
+                    error=GithubHttpTransportAPIError(
+                        "fail",
+                        status=500,
+                        body="err",
+                        method="PATCH",
+                        path="/repos/owner/repo/issues/42",
+                    ),
+                )
+                for _ in range(4)
             ],
-            (
+            _script_step(
                 "GET",
                 "/repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100",
-            ): [
-                ([{"number": 42, "title": "T", "body": "", "labels": []}], {"Link": ""})
-            ],
-        }
+                payload=[{"number": 42, "title": "T", "body": "", "labels": []}],
+                headers={"Link": ""},
+            ),
+        ]
     )
     svc = _make_service(transport=transport)
 
@@ -1441,13 +1516,20 @@ def test_get_all_open_issues_lightweight_excludes_pull_requests():
 
 
 def test_get_all_open_issues_lightweight_filters_recently_closed():
-    transport = _scripted_transport(
-        {
-            ("PATCH", "/repos/owner/repo/issues/42"): [(None, {})],
-            ("GET", "/repos/owner/repo/issues?state=open&per_page=100"): [
-                ([{"number": 42, "title": "T", "labels": []}], {"Link": ""})
-            ],
-        }
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/42",
+                data={"state": "closed"},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&per_page=100",
+                payload=[{"number": 42, "title": "T", "labels": []}],
+                headers={"Link": ""},
+            ),
+        ]
     )
     svc = _make_service(transport=transport)
 
@@ -1459,15 +1541,27 @@ def test_get_all_open_issues_lightweight_filters_recently_closed():
 
 def test_get_all_open_issues_lightweight_self_heals_after_disappears():
     list_path = "/repos/owner/repo/issues?state=open&per_page=100"
-    transport = _scripted_transport(
-        {
-            ("PATCH", "/repos/owner/repo/issues/42"): [(None, {})],
-            ("GET", list_path): [
-                ([{"number": 42, "title": "T", "labels": []}], {"Link": ""}),
-                ([], {"Link": ""}),
-                ([{"number": 42, "title": "T", "labels": []}], {"Link": ""}),
-            ],
-        }
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/42",
+                data={"state": "closed"},
+            ),
+            _script_step(
+                "GET",
+                list_path,
+                payload=[{"number": 42, "title": "T", "labels": []}],
+                headers={"Link": ""},
+            ),
+            _script_step("GET", list_path, payload=[], headers={"Link": ""}),
+            _script_step(
+                "GET",
+                list_path,
+                payload=[{"number": 42, "title": "T", "labels": []}],
+                headers={"Link": ""},
+            ),
+        ]
     )
     svc = _make_service(transport=transport)
 
@@ -1480,21 +1574,21 @@ def test_get_all_open_issues_lightweight_self_heals_after_disappears():
 
 
 def test_get_all_open_issues_lightweight_paginates():
-    transport = _scripted_transport(
-        {
-            ("GET", "/repos/owner/repo/issues?state=open&per_page=100"): [
-                (
-                    [{"number": 1, "title": "A", "labels": []}],
-                    {"Link": '<https://api.github.com/page2>; rel="next"'},
-                )
-            ],
-            ("GET", "https://api.github.com/page2"): [
-                (
-                    [{"number": 2, "title": "B", "labels": [{"name": "feat"}]}],
-                    {"Link": ""},
-                )
-            ],
-        }
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&per_page=100",
+                payload=[{"number": 1, "title": "A", "labels": []}],
+                headers={"Link": '<https://api.github.com/page2>; rel="next"'},
+            ),
+            _script_step(
+                "GET",
+                "https://api.github.com/page2",
+                payload=[{"number": 2, "title": "B", "labels": [{"name": "feat"}]}],
+                headers={"Link": ""},
+            ),
+        ]
     )
     svc = _make_service(transport=transport)
 
@@ -1537,33 +1631,58 @@ def test_get_all_open_issues_lightweight_normalizes_mixed_open_issue_payload():
 
 def test_close_completed_parent_issues_closes_parents_with_all_closed_subs():
     open_list_path = "/repos/owner/repo/issues?state=open&per_page=100"
-    transport = _scripted_transport(
-        {
-            ("GET", open_list_path): [
-                ([{"number": 10}, {"number": 11}], {"Link": ""}),
-                ([{"number": 11}], {"Link": ""}),
-            ],
-            ("GET", "/repos/owner/repo/issues/10/sub_issues"): [
-                ([{"number": 1, "state": "closed"}], {"Link": ""})
-            ],
-            ("GET", "/repos/owner/repo/issues/11/sub_issues"): [
-                ([{"number": 2, "state": "open"}], {"Link": ""}),
-                ([{"number": 2, "state": "open"}], {"Link": ""}),
-            ],
-            ("PATCH", "/repos/owner/repo/issues/10"): [(None, {})],
-        }
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                open_list_path,
+                payload=[{"number": 10}, {"number": 11}],
+                headers={"Link": ""},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/10/sub_issues",
+                payload=[{"number": 1, "state": "closed"}],
+                headers={"Link": ""},
+            ),
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/10",
+                data={"state": "closed"},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/11/sub_issues",
+                payload=[{"number": 2, "state": "open"}],
+                headers={"Link": ""},
+            ),
+            _script_step(
+                "GET",
+                open_list_path,
+                payload=[{"number": 11}],
+                headers={"Link": ""},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/11/sub_issues",
+                payload=[{"number": 2, "state": "open"}],
+                headers={"Link": ""},
+            ),
+        ]
     )
     svc = _make_service(transport=transport)
 
     svc.close_completed_parent_issues()
 
-    assert transport.calls == [
-        ("GET", open_list_path, None),
-        ("GET", "/repos/owner/repo/issues/10/sub_issues", None),
-        ("PATCH", "/repos/owner/repo/issues/10", {"state": "closed"}),
-        ("GET", "/repos/owner/repo/issues/11/sub_issues", None),
-        ("GET", open_list_path, None),
-        ("GET", "/repos/owner/repo/issues/11/sub_issues", None),
+    assert transport.requests == [
+        _GithubTransportRequest("GET", open_list_path, None),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/10/sub_issues", None),
+        _GithubTransportRequest(
+            "PATCH", "/repos/owner/repo/issues/10", {"state": "closed"}
+        ),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/11/sub_issues", None),
+        _GithubTransportRequest("GET", open_list_path, None),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/11/sub_issues", None),
     ]
 
 
