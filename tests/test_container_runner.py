@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import threading
 from pathlib import Path
 from typing import cast
 
@@ -12,7 +13,7 @@ from pycastle.config import Config, load_config
 from pycastle.session import RunKind
 from pycastle.services.agent_service import AssistantTurn, Result
 from pycastle.services.claude_service import ClaudeService
-from pycastle.errors import DockerError, UsageLimitError
+from pycastle.errors import AgentTimeoutError, DockerError, UsageLimitError
 from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.infrastructure.docker_session import DockerSession
 from tests.support import RecordingStatusDisplay
@@ -275,6 +276,16 @@ def test_work_returns_agent_output(tmp_path):
     assert isinstance(result, CommitMessageOutput)
 
 
+def test_work_logs_success_to_reserved_work_log(tmp_path):
+    runner, _ = _make_runner(tmp_path=tmp_path)
+
+    asyncio.run(runner.work(_ROLE, "some prompt"))
+
+    log_lines = runner.log_path.read_text(encoding="utf-8").splitlines()
+    assert json.loads(log_lines[0])["prompt"] == "some prompt"
+    assert log_lines[1] == _COMPLETE_LINE.decode("utf-8").rstrip("\n")
+
+
 def test_work_executes_selected_service_command(tmp_path):
     session = FakeDockerSession(stream_chunks=[b'{"type":"ignored"}\n'])
     service = FakeService(command="fake run --model demo")
@@ -354,6 +365,34 @@ def test_work_reuses_reserved_log_path_across_invocations(tmp_path):
 
     assert runner.log_path == first_path
     assert runner.log_path.exists()
+    log_text = runner.log_path.read_text(encoding="utf-8")
+    assert '"prompt": "First prompt"' in log_text
+    assert '"prompt": "Second prompt"' in log_text
+
+
+def test_work_logs_partial_output_before_agent_timeout(tmp_path):
+    session = FakeDockerSession()
+    service = FakeService()
+
+    def _stalled_stream(_command: str):
+        yield b'{"type":"assistant","message":"still working"}\n'
+        threading.Event().wait(0.08)
+        yield b'{"type":"result","result":"too late"}\n'
+
+    session.exec_stream = _stalled_stream  # type: ignore[method-assign]
+    runner = ContainerRunner(
+        "agent",
+        cast(DockerSession, session),
+        cfg=Config(logs_dir=tmp_path, idle_timeout=0.05),
+        service=cast(ClaudeService, service),
+    )
+
+    with pytest.raises(AgentTimeoutError, match="Agent idle for more than 0.05s"):
+        asyncio.run(runner.work(_ROLE, "slow prompt"))
+
+    log_text = runner.log_path.read_text(encoding="utf-8")
+    assert '"prompt": "slow prompt"' in log_text
+    assert '{"type":"assistant","message":"still working"}' in log_text
 
 
 def test_work_updates_phase_to_work(tmp_path):
@@ -380,6 +419,9 @@ def test_work_cleans_up_prompt_file_when_stream_processing_fails(tmp_path):
     with pytest.raises(UsageLimitError):
         asyncio.run(runner.work(_ROLE, "prompt"))
     assert session.exec_calls[-1] == "rm -f /tmp/.pycastle_prompt"
+    log_text = runner.log_path.read_text(encoding="utf-8")
+    assert '"prompt": "prompt"' in log_text
+    assert line.decode("utf-8").rstrip("\n") in log_text
 
 
 def test_work_cleans_up_prompt_file_after_success(tmp_path):
