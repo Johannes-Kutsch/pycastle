@@ -189,6 +189,17 @@ def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: P
 
 def test_provider_state_relpath_formats_role_namespace_and_provider_name() -> None:
     assert (
+        RoleSession.provider_state_relpath(AgentRole.IMPLEMENTER, "codex")
+        == ".pycastle-session/implementer/codex/"
+    )
+    assert (
+        RoleSession.provider_state_relpath(AgentRole.IMPROVE, "codex", "main")
+        == ".pycastle-session/improve/main/codex/"
+    )
+    assert RoleSession.provider_state_relpath(AgentRole.IMPLEMENTER, "claude", "") == (
+        RoleSession.provider_state_relpath(AgentRole.IMPLEMENTER, "claude")
+    )
+    assert (
         provider_state_relpath(AgentRole.IMPLEMENTER, "codex")
         == ".pycastle-session/implementer/codex/"
     )

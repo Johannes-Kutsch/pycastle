@@ -43,9 +43,7 @@ def provider_state_relpath(
     provider_name: str,
     namespace: str = "",
 ) -> str:
-    if namespace:
-        return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
-    return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
+    return RoleSession.provider_state_relpath(role, provider_name, namespace)
 
 
 def _normalize_state_dir_relpath(
@@ -149,6 +147,16 @@ def _provider_identity_from_session_state(
 
 
 class RoleSession:
+    @staticmethod
+    def provider_state_relpath(
+        role: AgentRole,
+        provider_name: str,
+        namespace: str = "",
+    ) -> str:
+        if namespace:
+            return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
+        return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
+
     def __init__(self, worktree: Path, role: AgentRole, namespace: str = "") -> None:
         self._worktree = worktree
         self._role = role
@@ -170,7 +178,7 @@ class RoleSession:
         return str(session_id)
 
     def provider_state_dir(self, provider_name: str) -> Path:
-        return self._worktree / provider_state_relpath(
+        return self._worktree / self.provider_state_relpath(
             self._role,
             provider_name,
             self._namespace,
