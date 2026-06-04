@@ -1,12 +1,12 @@
 """Tests for PreflightCache.get_safe_sha: observable behaviour via the public interface."""
 
 import asyncio
+import inspect
+import shutil
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from unittest.mock import MagicMock
-
-import shutil
 
 from pycastle.agents.output_protocol import CompletionOutput, IssueOutput
 from pycastle.config import Config, StageOverride
@@ -22,6 +22,7 @@ from pycastle.services.agent_service import AgentService
 from tests.support import FakeAgentRunner, _make_deps
 from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.iteration.preflight import (
+    BranchRefreshBoundary,
     PreflightAFK,
     PreflightCache,
     PreflightHITL,
@@ -835,6 +836,13 @@ def test_get_safe_sha_divergence_resolver_uses_merge_override_service(
 
     assert isinstance(result, PreflightReady)
     assert fake.calls[0].service == "codex"
+
+
+def test_branch_refresh_delegates_divergence_scope_arg_construction():
+    source = inspect.getsource(BranchRefreshBoundary.pull_with_resolution)
+
+    assert "build_divergence_scope_args(" in source
+    assert '"BRANCH"' not in source
 
 
 def test_get_safe_sha_propagates_pull_error_when_divergence_agent_fails(

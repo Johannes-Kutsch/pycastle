@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import inspect
 import subprocess
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
@@ -147,6 +148,13 @@ def test_conflict_spawns_merger_with_conflict_branches_only(
     branches_arg = merger_calls[0].scope_args["BRANCHES"]
     assert "pycastle/issue-2" in branches_arg
     assert "pycastle/issue-1" not in branches_arg
+
+
+def test_merge_phase_delegates_merge_scope_arg_construction():
+    source = inspect.getsource(merge_phase)
+
+    assert "build_merge_scope_args(" in source
+    assert '"BRANCHES"' not in source
 
 
 def _git(cwd, *args):

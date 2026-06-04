@@ -12,7 +12,10 @@ from ..agents.output_protocol import (
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompts.pipeline import PromptTemplate
-from ..prompts.scope_args import build_preflight_scope_args
+from ..prompts.scope_args import (
+    build_divergence_scope_args,
+    build_preflight_scope_args,
+)
 from ..services import (
     GitCommandError,
     GitService,
@@ -187,7 +190,7 @@ class BranchRefreshBoundary:
                             template=PromptTemplate.DIVERGENCE_RESOLVE,
                             mount_path=sandbox_path,
                             role=AgentRole.DIVERGENCE_RESOLVER,
-                            scope_args={"BRANCH": branch},
+                            scope_args=build_divergence_scope_args(branch=branch),
                             service=deps.cfg.merge_override.service,
                             status_display=deps.status_display,
                             work_body="Resolving divergence",

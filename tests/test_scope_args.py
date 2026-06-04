@@ -8,10 +8,12 @@ from pycastle.errors import AgentFailedError
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
 from pycastle.prompts.renderer import PromptRenderer
 from pycastle.prompts.scope_args import (
+    build_divergence_scope_args,
     build_failure_report_scope_args,
     build_host_check_scope_args,
     build_preflight_scope_args,
     build_improve_scope_args,
+    build_merge_scope_args,
     build_plan_scope_args,
     build_per_issue_scope_args,
     build_interrupted_work_clause,
@@ -293,6 +295,51 @@ def test_build_plan_scope_args_accepts_empty_issue_lists():
     }
 
 
+def test_build_merge_scope_args_builds_exact_renderable_merge_args(cfg, prompts_dir):
+    import asyncio
+
+    (prompts_dir / "coordination/merge.md").write_text("Branches:\n{{BRANCHES}}")
+
+    scope_args = build_merge_scope_args(
+        conflict_issues=[
+            {"number": 1, "title": "Clean branch should be excluded"},
+            {"number": 2, "title": "First conflicting branch"},
+            {"number": 5, "title": "Active conflicting branch"},
+            {"number": 7, "title": "Later conflicting branch"},
+        ],
+        active_issue={"number": 5, "title": "Active conflicting branch"},
+    )
+
+    assert (
+        validated_scope_args_for_template(PromptTemplate.MERGE, scope_args)
+        is scope_args
+    )
+    assert scope_args == {
+        "BRANCHES": (
+            "- pycastle/issue-5\n"
+            "- pycastle/issue-1\n"
+            "- pycastle/issue-2\n"
+            "- pycastle/issue-7"
+        )
+    }
+
+    rendered = asyncio.run(
+        PromptRenderer(cfg).render(
+            PromptTemplate.MERGE,
+            scope_args,
+            lambda command: (_ for _ in ()).throw(AssertionError(command)),
+        )
+    )
+
+    assert rendered == (
+        "Branches:\n"
+        "- pycastle/issue-5\n"
+        "- pycastle/issue-1\n"
+        "- pycastle/issue-2\n"
+        "- pycastle/issue-7"
+    )
+
+
 def test_build_preflight_scope_args_builds_exact_renderable_preflight_args(
     cfg, prompts_dir
 ):
@@ -331,6 +378,32 @@ def test_build_preflight_scope_args_builds_exact_renderable_preflight_args(
     assert rendered == (
         "Check: [PREFLIGHT] ruff\nCommand: ruff check --fix\nOutput: E501 line too long"
     )
+
+
+def test_build_divergence_scope_args_builds_exact_renderable_diverge_args(
+    cfg, prompts_dir
+):
+    import asyncio
+
+    (prompts_dir / "coordination/diverge.md").write_text("Branch: {{BRANCH}}")
+
+    scope_args = build_divergence_scope_args(branch="pycastle/issue-1484")
+
+    assert (
+        validated_scope_args_for_template(PromptTemplate.DIVERGENCE_RESOLVE, scope_args)
+        is scope_args
+    )
+    assert scope_args == {"BRANCH": "pycastle/issue-1484"}
+
+    rendered = asyncio.run(
+        PromptRenderer(cfg).render(
+            PromptTemplate.DIVERGENCE_RESOLVE,
+            scope_args,
+            lambda command: (_ for _ in ()).throw(AssertionError(command)),
+        )
+    )
+
+    assert rendered == "Branch: pycastle/issue-1484"
 
 
 def test_build_failure_report_scope_args_builds_exact_renderable_failure_report_args(

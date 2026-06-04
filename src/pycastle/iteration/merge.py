@@ -14,6 +14,7 @@ from ..errors import (
     UsageLimitError,
 )
 from ..prompts.pipeline import PromptTemplate
+from ..prompts.scope_args import build_merge_scope_args
 from ..services import GitCommandError, GitService, GithubService
 from ..session import RoleSession
 from ..display.status_display import StatusDisplay
@@ -184,16 +185,6 @@ def _merge_sandbox_name(issue_number: int) -> str:
     return worktree_name_for_branch(_merge_sandbox_branch(issue_number))
 
 
-def _active_branch_scope(conflict_issues: list[dict], active_issue: dict) -> str:
-    branches = [branch_for(active_issue["number"])]
-    branches.extend(
-        branch_for(issue["number"])
-        for issue in conflict_issues
-        if issue["number"] != active_issue["number"]
-    )
-    return "\n".join(f"- {branch}" for branch in branches)
-
-
 async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
     async with status_row(
         deps.status_display,
@@ -325,11 +316,10 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                                 template=PromptTemplate.MERGE,
                                 mount_path=sandbox_path,
                                 role=AgentRole.MERGER,
-                                scope_args={
-                                    "BRANCHES": _active_branch_scope(
-                                        conflict_issues, active_issue
-                                    ),
-                                },
+                                scope_args=build_merge_scope_args(
+                                    conflict_issues=conflict_issues,
+                                    active_issue=active_issue,
+                                ),
                                 model=deps.cfg.merge_override.model,
                                 status_display=deps.status_display,
                                 effort=deps.cfg.merge_override.effort,

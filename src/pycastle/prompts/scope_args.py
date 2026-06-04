@@ -112,6 +112,22 @@ def build_plan_scope_args(
     }
 
 
+def build_merge_scope_args(
+    *, conflict_issues: list[dict], active_issue: dict
+) -> dict[str, str]:
+    active_branch = f"pycastle/issue-{active_issue['number']}"
+    branches = [active_branch]
+    branches.extend(
+        f"pycastle/issue-{issue['number']}"
+        for issue in conflict_issues
+        if issue["number"] != active_issue["number"]
+    )
+    return validated_scope_args_for_template(
+        PromptTemplate.MERGE,
+        {"BRANCHES": "\n".join(f"- {branch}" for branch in branches)},
+    )
+
+
 def build_preflight_scope_args(
     *, check_name: str, command: str, output: str
 ) -> dict[str, str]:
@@ -122,6 +138,13 @@ def build_preflight_scope_args(
             "COMMAND": command,
             "OUTPUT": output,
         },
+    )
+
+
+def build_divergence_scope_args(*, branch: str) -> dict[str, str]:
+    return validated_scope_args_for_template(
+        PromptTemplate.DIVERGENCE_RESOLVE,
+        {"BRANCH": branch},
     )
 
 
