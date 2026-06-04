@@ -746,8 +746,8 @@ def test_run_issue_handles_issue_without_body_or_comments(tmp_path):
     assert impl_call.scope_args["ISSUE_COMMENTS"] == ""
 
 
-def test_run_issue_builds_per_issue_scope_args_via_prompt_scope_module(
-    tmp_path, monkeypatch
+def test_run_issue_passes_exact_per_issue_scope_args_to_implementer_and_reviewer(
+    tmp_path,
 ):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
@@ -758,30 +758,10 @@ def test_run_issue_builds_per_issue_scope_args_via_prompt_scope_module(
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    calls: list[tuple[dict, str, object, bool]] = []
-
-    def _fake_builder(issue_arg, *, branch, run_kind, is_dirty):
-        calls.append((issue_arg, branch, run_kind, is_dirty))
-        return {
-            "ISSUE_NUMBER": "3",
-            "ISSUE_TITLE": "T",
-            "ISSUE_BODY": "body",
-            "ISSUE_COMMENTS": "",
-            "BRANCH": branch,
-            "INTERRUPTED_WORK": "",
-        }
-
-    monkeypatch.setattr(
-        "pycastle.iteration.implement.build_per_issue_scope_args",
-        _fake_builder,
-        raising=False,
-    )
+    deps.git_svc.is_working_tree_clean.return_value = True
 
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
-    assert len(calls) == 2
-    assert all(call[0] is issue for call in calls)
-    assert all(call[1] == "pycastle/issue-3" for call in calls)
     assert [call.scope_args for call in fake.calls] == [
         {
             "ISSUE_NUMBER": "3",
@@ -790,16 +770,8 @@ def test_run_issue_builds_per_issue_scope_args_via_prompt_scope_module(
             "ISSUE_COMMENTS": "",
             "BRANCH": "pycastle/issue-3",
             "INTERRUPTED_WORK": "",
-        },
-        {
-            "ISSUE_NUMBER": "3",
-            "ISSUE_TITLE": "T",
-            "ISSUE_BODY": "body",
-            "ISSUE_COMMENTS": "",
-            "BRANCH": "pycastle/issue-3",
-            "INTERRUPTED_WORK": "",
-        },
-    ]
+        }
+    ] * 2
 
 
 # ── Issue 349: issue_title threading ─────────────────────────────────────────

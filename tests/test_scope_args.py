@@ -197,6 +197,16 @@ def test_build_issue_scope_args_normalizes_missing_body_and_comments_to_empty():
     assert result["ISSUE_COMMENTS"] == ""
 
 
+def test_build_issue_scope_args_normalizes_none_body_and_comments_to_empty():
+    result = build_issue_scope_args(
+        {"number": 10, "title": "None fields", "body": None, "comments": None},
+        extra_scope_args={},
+    )
+
+    assert result["ISSUE_BODY"] == ""
+    assert result["ISSUE_COMMENTS"] == ""
+
+
 @pytest.mark.parametrize(
     ("run_kind", "is_dirty", "expected"),
     [
