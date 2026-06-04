@@ -135,3 +135,21 @@ def test_second_invocation_adds_one_blank_line_before_next_pycastle_input_header
         "prompt": "second prompt",
     }
     assert log_lines[4] == '{"type":"result","result":"second"}'
+
+
+def test_reserve_uses_supplied_falsey_clock_callable(tmp_path):
+    fixed_dt = datetime(2026, 5, 17, 14, 30, tzinfo=timezone.utc).astimezone()
+
+    class FalseyClock:
+        def __call__(self) -> datetime:
+            return fixed_dt
+
+        def __bool__(self) -> bool:
+            return False
+
+    log_path = AgentInvocationLog(now_local=FalseyClock()).reserve(
+        agent_name="Plan Agent",
+        effective_logs_dir=tmp_path,
+    )
+
+    assert log_path.name == f"plan-agent-{fixed_dt.strftime('%Y%m%dT%H%M')}.log"

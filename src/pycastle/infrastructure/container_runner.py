@@ -10,8 +10,8 @@ from .docker_session import DockerSession
 from ..errors import DockerError
 from ..services.agent_service import AgentService
 from ..session import RunKind
-from .agent_invocation_log import AgentInvocationLog
 from ._logged_line_stream import stream_logged_work_lines
+from .agent_invocation_log import AgentInvocationLog
 
 
 class ContainerRunner:
