@@ -186,6 +186,12 @@ def _failure_from_exception(
     return HostCheckFailure(name=name, command=command, output=output)
 
 
+def _is_failed_command_result(
+    command_result: HostCheckCommandResult | None,
+) -> bool:
+    return command_result is not None and command_result.returncode != 0
+
+
 def prepare_host_check_run(
     *, git_svc: GitService, repo_root: Path | None = None
 ) -> str:
@@ -313,7 +319,8 @@ async def run_host_check_run(
                 except RuntimeError as exc:
                     failures.append(_failure_from_exception(name, command, exc))
                     continue
-                if command_result.returncode != 0:
+                if _is_failed_command_result(command_result):
+                    assert command_result is not None
                     failures.append(_failure_from_command_result(command_result))
             if failures:
                 if status_display is not None:

@@ -51,7 +51,7 @@ class HostCheckFailedError(RuntimeError):
 class HostCheckCommandExecutor(Protocol):
     def __call__(
         self, name: str, command: str, cwd: Path
-    ) -> HostCheckCommandResult: ...
+    ) -> HostCheckCommandResult | None: ...
 
 
 class HostCheckGitAdapter(Protocol):
