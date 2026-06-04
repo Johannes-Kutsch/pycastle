@@ -6,7 +6,7 @@ import warnings
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any
+from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -81,58 +81,21 @@ def _user_agent() -> str:
 _USER_AGENT = _user_agent()
 
 
-class GithubService:
-    def __init__(self, repo: str, token: str, cfg: Config) -> None:
-        self.repo = repo
-        self._token = token
-        self._timeout = cfg.worktree_timeout
-        self._recently_closed: set[int] = set()
-
-    def _headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self._token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": _USER_AGENT,
-        }
-
-    def _request(
+class _GithubHttpTransport(Protocol):
+    def request(
         self,
         method: str,
         path: str,
         data: dict[str, Any] | None = None,
-        *,
-        retry_safe_write: bool = False,
-    ) -> tuple[Any, dict[str, str]]:
-        if method != "GET" and not retry_safe_write:
-            return self._request_once(method, path, data)
+    ) -> tuple[Any, dict[str, str]]: ...
 
-        for attempt in range(1, _READ_RETRY_MAX_ATTEMPTS + 1):
-            try:
-                return self._request_once(method, path, data)
-            except GithubAuthError:
-                raise
-            except GithubAPIError as exc:
-                if not self._is_retryable_api_error(exc):
-                    raise
-                if attempt >= _READ_RETRY_MAX_ATTEMPTS:
-                    raise self._operator_actionable_error(
-                        method, path, attempt, exc
-                    ) from exc
-                delay = self._retry_delay_for_api_error(exc, attempt)
-                if attempt >= _READ_RETRY_MAX_ATTEMPTS:
-                    raise AssertionError("unreachable")
-                time.sleep(delay)
-            except GithubNetworkError as exc:
-                if attempt >= _READ_RETRY_MAX_ATTEMPTS:
-                    raise self._operator_actionable_error(
-                        method, path, attempt, exc
-                    ) from exc
-                time.sleep(_READ_RETRY_BACKOFF_SECONDS[attempt - 1])
 
-        raise AssertionError("unreachable")
+class _UrllibGithubHttpTransport:
+    def __init__(self, token: str, timeout: int) -> None:
+        self._token = token
+        self._timeout = timeout
 
-    def _request_once(
+    def request(
         self,
         method: str,
         path: str,
@@ -140,7 +103,12 @@ class GithubService:
     ) -> tuple[Any, dict[str, str]]:
         url = path if path.startswith("http") else f"{_API_BASE}{path}"
         body = json.dumps(data).encode("utf-8") if data is not None else None
-        headers = self._headers()
+        headers = {
+            "Authorization": f"Bearer {self._token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": _USER_AGENT,
+        }
         if body is not None:
             headers["Content-Type"] = "application/json"
         req = Request(url, data=body, headers=headers, method=method)
@@ -193,6 +161,61 @@ class GithubService:
                 path=path,
                 headers=resp_headers,
             ) from exc
+
+
+class GithubService:
+    def __init__(self, repo: str, token: str, cfg: Config) -> None:
+        self.repo = repo
+        self._token = token
+        self._timeout = cfg.worktree_timeout
+        self._transport: _GithubHttpTransport = _UrllibGithubHttpTransport(
+            token=token, timeout=self._timeout
+        )
+        self._recently_closed: set[int] = set()
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        data: dict[str, Any] | None = None,
+        *,
+        retry_safe_write: bool = False,
+    ) -> tuple[Any, dict[str, str]]:
+        if method != "GET" and not retry_safe_write:
+            return self._request_once(method, path, data)
+
+        for attempt in range(1, _READ_RETRY_MAX_ATTEMPTS + 1):
+            try:
+                return self._request_once(method, path, data)
+            except GithubAuthError:
+                raise
+            except GithubAPIError as exc:
+                if not self._is_retryable_api_error(exc):
+                    raise
+                if attempt >= _READ_RETRY_MAX_ATTEMPTS:
+                    raise self._operator_actionable_error(
+                        method, path, attempt, exc
+                    ) from exc
+                delay = self._retry_delay_for_api_error(exc, attempt)
+                if attempt >= _READ_RETRY_MAX_ATTEMPTS:
+                    raise AssertionError("unreachable")
+                time.sleep(delay)
+            except GithubNetworkError as exc:
+                if attempt >= _READ_RETRY_MAX_ATTEMPTS:
+                    raise self._operator_actionable_error(
+                        method, path, attempt, exc
+                    ) from exc
+                time.sleep(_READ_RETRY_BACKOFF_SECONDS[attempt - 1])
+
+        raise AssertionError("unreachable")
+
+    def _request_once(
+        self,
+        method: str,
+        path: str,
+        data: dict[str, Any] | None = None,
+    ) -> tuple[Any, dict[str, str]]:
+        return self._transport.request(method, path, data)
 
     def _retry_delay_for_api_error(self, exc: GithubAPIError, attempt: int) -> int:
         fixed_delay = _fixed_retry_delay_seconds(exc.headers)
