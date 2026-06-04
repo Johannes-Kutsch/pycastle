@@ -2,9 +2,11 @@ import pytest
 from unittest.mock import MagicMock
 
 from pycastle.config import Config
+from pycastle.errors import AgentFailedError
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
 from pycastle.prompts.renderer import PromptRenderer
 from pycastle.prompts.scope_args import (
+    build_failure_report_scope_args,
     build_host_check_scope_args,
     build_preflight_scope_args,
     build_improve_scope_args,
@@ -326,6 +328,52 @@ def test_build_preflight_scope_args_builds_exact_renderable_preflight_args(
 
     assert rendered == (
         "Check: [PREFLIGHT] ruff\nCommand: ruff check --fix\nOutput: E501 line too long"
+    )
+
+
+def test_build_failure_report_scope_args_builds_exact_renderable_failure_report_args(
+    cfg, prompts_dir
+):
+    import asyncio
+    from pathlib import Path
+
+    (prompts_dir / "diagnostics").mkdir(parents=True)
+    (prompts_dir / "diagnostics/failure-report.md").write_text(
+        "Role: {{FAILED_ROLE}}\n"
+        "Session: {{SESSION_DIR}}\n"
+        "{{#if FAILURE_CLASS=non_typed_crash}}Recovery{{/if}}"
+    )
+    failed_agent = AgentFailedError(
+        role_value="reviewer",
+        worktree_path=Path("/tmp/worktree"),
+        namespace="main",
+        failure_class="non_typed_crash",
+        service_name="codex",
+    )
+
+    scope_args = build_failure_report_scope_args(failed_agent)
+
+    assert (
+        validated_scope_args_for_template(PromptTemplate.FAILURE_REPORT, scope_args)
+        is scope_args
+    )
+    assert scope_args == {
+        "FAILED_ROLE": "reviewer",
+        "SESSION_DIR": ".pycastle-session/reviewer/main/codex",
+        "FAILURE_CLASS": "non_typed_crash",
+    }
+
+    renderer = PromptRenderer(cfg)
+    rendered = asyncio.run(
+        renderer.render(
+            PromptTemplate.FAILURE_REPORT,
+            scope_args,
+            lambda command: (_ for _ in ()).throw(AssertionError(command)),
+        )
+    )
+
+    assert rendered == (
+        "Role: reviewer\nSession: .pycastle-session/reviewer/main/codex\nRecovery"
     )
 
 

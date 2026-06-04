@@ -19,6 +19,7 @@ from ..errors import (
 )
 from ..services import OperatorActionableGitError
 from ..prompts.pipeline import PromptTemplate
+from ..prompts.scope_args import build_failure_report_scope_args
 from ._deps import Deps
 from ._rows import StatusRow as StatusRow
 from ._rows import status_row as status_row
@@ -269,11 +270,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                         template=PromptTemplate.FAILURE_REPORT,
                         mount_path=err.worktree_path,
                         role=AgentRole.FAILURE_REPORT,
-                        scope_args={
-                            "FAILED_ROLE": err.role_value,
-                            "SESSION_DIR": err.session_dir,
-                            "FAILURE_CLASS": err.failure_class,
-                        },
+                        scope_args=build_failure_report_scope_args(err),
                         service=deps.cfg.preflight_issue_override.service,
                         status_display=deps.status_display,
                     )

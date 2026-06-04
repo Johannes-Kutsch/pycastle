@@ -3,12 +3,20 @@ from __future__ import annotations
 import json
 import platform
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Protocol
 
 from .pipeline import PromptRenderError, PromptTemplate, Scope
 from ..session import RunKind
 
 _ISSUE_VALUE_KEYS = Scope.PER_ISSUE.placeholders & Scope.IMPROVE_ISSUES.placeholders
+
+
+class FailureReportSource(Protocol):
+    role_value: str
+    failure_class: str
+
+    @property
+    def session_dir(self) -> str: ...
 
 
 def _format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
@@ -129,6 +137,17 @@ def build_host_check_scope_args(
             "CHECK_NAME": check_name,
             "COMMAND": command,
             "OUTPUT": output,
+        },
+    )
+
+
+def build_failure_report_scope_args(failure: FailureReportSource) -> dict[str, str]:
+    return validated_scope_args_for_template(
+        PromptTemplate.FAILURE_REPORT,
+        {
+            "FAILED_ROLE": failure.role_value,
+            "SESSION_DIR": failure.session_dir,
+            "FAILURE_CLASS": failure.failure_class,
         },
     )
 
