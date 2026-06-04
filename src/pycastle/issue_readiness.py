@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from .prompts.pipeline import PromptTemplate
 
@@ -73,6 +73,28 @@ class ReadyIssueOutcome:
 
 
 @dataclasses.dataclass(frozen=True)
+class MarkerLabelDecision:
+    label_name: str
+    intent: Literal["add"] = "add"
+
+
+@dataclasses.dataclass(frozen=True)
+class AFKReadyOutcome:
+    slice_mode_display_name: str
+    implement_template: PromptTemplate
+
+
+@dataclasses.dataclass(frozen=True)
+class AFKBlockedOutcome:
+    current_slice_labels: tuple[str, ...]
+    marker_decisions: tuple[MarkerLabelDecision, ...]
+    stripped_body_length: int
+    body_floor: int
+    has_invalid_slice_mode: bool = False
+    has_short_body: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
 class BlockedIssueOutcome:
     slice_status: SliceClassification
     body_floor_status: BodyFloorClassification
@@ -99,6 +121,46 @@ def resolve_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
     if isinstance(carried, IssueReadiness):
         return carried
     return classify_issue_readiness(issue, cfg)
+
+
+def evaluate_issue_afk_readiness(
+    issue: dict, cfg: Config
+) -> AFKReadyOutcome | AFKBlockedOutcome:
+    readiness = resolve_issue_readiness(issue, cfg)
+    if readiness.ready is not None:
+        return AFKReadyOutcome(
+            slice_mode_display_name=readiness.ready.display_name,
+            implement_template=readiness.ready.template,
+        )
+
+    current_slice_labels: tuple[str, ...] = ()
+    if isinstance(readiness.slice_status, Malformed):
+        current_slice_labels = tuple(readiness.slice_status.found)
+
+    marker_decisions: list[MarkerLabelDecision] = []
+    has_invalid_slice_mode = False
+    if readiness.kind in {
+        IssueReadinessKind.MISSING_SLICE_MODE,
+        IssueReadinessKind.MULTIPLE_SLICE_MODES,
+        IssueReadinessKind.MALFORMED,
+    }:
+        has_invalid_slice_mode = True
+        marker_decisions.append(
+            MarkerLabelDecision(label_name=cfg.needs_slice_type_label)
+        )
+    has_short_body = False
+    if isinstance(readiness.body_floor_status, MalformedBody):
+        has_short_body = True
+        marker_decisions.append(MarkerLabelDecision(label_name=cfg.needs_info_label))
+
+    return AFKBlockedOutcome(
+        current_slice_labels=current_slice_labels,
+        marker_decisions=tuple(marker_decisions),
+        stripped_body_length=readiness.body_floor_status.stripped_length,
+        body_floor=readiness.body_floor_status.body_floor,
+        has_invalid_slice_mode=has_invalid_slice_mode,
+        has_short_body=has_short_body,
+    )
 
 
 def selected_mode_for_issue(issue: dict, cfg: Config) -> SliceMode | None:

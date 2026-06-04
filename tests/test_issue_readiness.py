@@ -1,22 +1,123 @@
 from pycastle.config import Config
 from pycastle.issue_readiness import (
+    AFKBlockedOutcome,
+    AFKReadyOutcome,
     BODY_FLOOR,
     BlockedIssueOutcome,
     IssueReadiness,
     IssueReadinessKind,
     Malformed,
     MalformedBody,
+    MarkerLabelDecision,
     ReadyIssueOutcome,
     SliceMode,
     WellFormed,
     WellFormedBody,
     classify_issue_readiness,
     diagnostic_issue_readiness_error,
+    evaluate_issue_afk_readiness,
     resolve_issue_readiness,
     selected_mode_for_issue,
 )
 
 _cfg = Config()
+
+
+def test_evaluate_issue_afk_readiness_returns_ready_outcome_for_single_valid_slice_mode():
+    issue = {
+        "number": 1,
+        "labels": ["bug", "behavior-slice", "ready-for-agent"],
+        "body": "x" * BODY_FLOOR,
+    }
+
+    result = evaluate_issue_afk_readiness(issue, _cfg)
+
+    assert result == AFKReadyOutcome(
+        slice_mode_display_name="behavior",
+        implement_template=SliceMode.BEHAVIOR.template,
+    )
+
+
+def test_evaluate_issue_afk_readiness_returns_blocked_outcome_for_missing_or_multiple_slice_modes():
+    missing = {
+        "number": 1,
+        "labels": ["bug"],
+        "body": "x" * BODY_FLOOR,
+    }
+    multiple = {
+        "number": 2,
+        "labels": ["docs-slice", "behavior-slice", "bug"],
+        "body": "x" * BODY_FLOOR,
+    }
+
+    missing_result = evaluate_issue_afk_readiness(missing, _cfg)
+    multiple_result = evaluate_issue_afk_readiness(multiple, _cfg)
+
+    assert missing_result == AFKBlockedOutcome(
+        current_slice_labels=(),
+        marker_decisions=(MarkerLabelDecision(label_name="needs-slice-type"),),
+        stripped_body_length=BODY_FLOOR,
+        body_floor=BODY_FLOOR,
+        has_invalid_slice_mode=True,
+    )
+    assert multiple_result == AFKBlockedOutcome(
+        current_slice_labels=("docs-slice", "behavior-slice"),
+        marker_decisions=(
+            MarkerLabelDecision(label_name="needs-slice-type", intent="add"),
+        ),
+        stripped_body_length=BODY_FLOOR,
+        body_floor=BODY_FLOOR,
+        has_invalid_slice_mode=True,
+    )
+
+
+def test_evaluate_issue_afk_readiness_honours_configured_slice_and_marker_labels():
+    cfg = Config(
+        refactor_slice_label="custom-refactor",
+        needs_slice_type_label="needs-mode",
+        needs_info_label="awaiting-details",
+    )
+    issue = {
+        "number": 3,
+        "labels": ["bug", "custom-refactor", "docs-slice"],
+        "body": "short",
+    }
+
+    result = evaluate_issue_afk_readiness(issue, cfg)
+
+    assert result == AFKBlockedOutcome(
+        current_slice_labels=("custom-refactor", "docs-slice"),
+        marker_decisions=(
+            MarkerLabelDecision(label_name="needs-mode", intent="add"),
+            MarkerLabelDecision(label_name="awaiting-details", intent="add"),
+        ),
+        stripped_body_length=5,
+        body_floor=BODY_FLOOR,
+        has_invalid_slice_mode=True,
+        has_short_body=True,
+    )
+
+
+def test_evaluate_issue_afk_readiness_reports_both_blocked_facts_in_one_outcome():
+    issue = {
+        "number": 4,
+        "labels": ["refactor-slice", "behavior-slice", "bug"],
+        "body": "@-",
+    }
+
+    result = evaluate_issue_afk_readiness(issue, _cfg)
+
+    assert result == AFKBlockedOutcome(
+        current_slice_labels=("refactor-slice", "behavior-slice"),
+        marker_decisions=(
+            MarkerLabelDecision(label_name="needs-slice-type", intent="add"),
+            MarkerLabelDecision(label_name="needs-info", intent="add"),
+        ),
+        stripped_body_length=2,
+        body_floor=BODY_FLOOR,
+        has_invalid_slice_mode=True,
+        has_short_body=True,
+    )
 
 
 def test_classify_issue_readiness_ready_selects_matching_slice_mode():
