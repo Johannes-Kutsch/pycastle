@@ -23,6 +23,7 @@ from pycastle.services._github_http_transport import (
     GithubHttpTransportAPIError,
     GithubHttpTransportAuthError,
     GithubHttpTransportNetworkError,
+    UrllibGithubHttpTransport,
 )
 
 _cfg = Config()
@@ -257,16 +258,15 @@ def test_check_auth_with_scripted_transport_bypasses_no_real_network_guard(
 
 
 def test_check_auth_calls_get_user_endpoint():
-    svc = _make_service()
-    body = json.dumps({"login": "alice"}).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body),
-    ) as m:
-        svc.check_auth()
-    req = m.call_args[0][0]
-    assert req.full_url == "https://api.github.com/user"
-    assert req.get_method() == "GET"
+    transport = _ScriptedGithubTransport(
+        [_script_step("GET", "/user", payload={"login": "alice"})]
+    )
+    svc = _make_service(transport=transport)
+
+    svc.check_auth()
+
+    assert transport.requests == [_GithubTransportRequest("GET", "/user", None)]
+    transport.assert_exhausted()
 
 
 def test_check_auth_with_scripted_transport_raises_github_auth_error_on_401():
@@ -295,119 +295,130 @@ def test_check_auth_with_scripted_transport_raises_github_auth_error_on_401():
 
 
 def test_check_auth_retries_transient_5xx_and_recovers():
-    svc = _make_service()
-    body = json.dumps({"login": "alice"}).encode()
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/user",
+                error=GithubHttpTransportAPIError(
+                    "server boom",
+                    status=500,
+                    body="server boom",
+                    method="GET",
+                    path="/user",
+                ),
+            ),
+            _script_step("GET", "/user", payload={"login": "alice"}),
+        ]
+    )
+    svc = _make_service(transport=transport)
 
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=[
-                _make_http_error(500, b"server boom"),
-                _make_response(body),
-            ],
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
+    with patch("time.sleep") as mock_sleep:
         assert svc.check_auth() == "alice"
 
     mock_sleep.assert_called_once_with(10)
+    transport.assert_exhausted()
 
 
 def test_check_auth_uses_retry_after_header_when_present():
-    svc = _make_service()
-    body = json.dumps({"login": "alice"}).encode()
-
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=[
-                _make_http_error(
-                    429,
-                    b'{"message":"secondary rate limit"}',
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/user",
+                error=GithubHttpTransportAPIError(
+                    "secondary rate limit",
+                    status=429,
+                    body='{"message":"secondary rate limit"}',
+                    method="GET",
+                    path="/user",
                     headers={"Retry-After": "6"},
                 ),
-                _make_response(body),
-            ],
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
+            ),
+            _script_step("GET", "/user", payload={"login": "alice"}),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with patch("time.sleep") as mock_sleep:
         assert svc.check_auth() == "alice"
 
     mock_sleep.assert_called_once_with(6)
+    transport.assert_exhausted()
 
 
-# ── _request: headers ─────────────────────────────────────────────────────────
+# ── production adapter: headers ──────────────────────────────────────────────
 
 
 def test_request_sets_authorization_bearer_header():
-    svc = _make_service(token="abc123")
+    transport = UrllibGithubHttpTransport(token="abc123", timeout=5)
     with patch(
         "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b"{}"),
     ) as m:
-        svc._request("GET", "/x")
+        transport.request("GET", "/x")
     req = m.call_args[0][0]
     assert req.get_header("Authorization") == "Bearer abc123"
 
 
 def test_request_sets_accept_header():
-    svc = _make_service()
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
     with patch(
         "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b"{}"),
     ) as m:
-        svc._request("GET", "/x")
+        transport.request("GET", "/x")
     req = m.call_args[0][0]
     assert req.get_header("Accept") == "application/vnd.github+json"
 
 
 def test_request_sets_api_version_header():
-    svc = _make_service()
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
     with patch(
         "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b"{}"),
     ) as m:
-        svc._request("GET", "/x")
+        transport.request("GET", "/x")
     req = m.call_args[0][0]
     assert req.get_header("X-github-api-version") == "2022-11-28"
 
 
 def test_request_sets_user_agent_header_with_version():
-    svc = _make_service()
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
     with patch(
         "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b"{}"),
     ) as m:
-        svc._request("GET", "/x")
+        transport.request("GET", "/x")
     req = m.call_args[0][0]
     ua = req.get_header("User-agent")
     assert ua.startswith("pycastle/")
 
 
-# ── _request: timeout ─────────────────────────────────────────────────────────
+# ── production adapter: timeout ──────────────────────────────────────────────
 
 
 def test_request_passes_worktree_timeout_to_urlopen():
-    svc = _make_service(cfg=Config(worktree_timeout=7))
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=7)
     with patch(
         "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b"{}"),
     ) as m:
-        svc._request("GET", "/x")
+        transport.request("GET", "/x")
     assert m.call_args.kwargs.get("timeout") == 7
 
 
-# ── _request: errors ─────────────────────────────────────────────────────────
+# ── production adapter: errors ───────────────────────────────────────────────
 
 
 def test_request_raises_github_api_error_on_non_401_4xx():
-    svc = _make_service()
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
     with patch(
         "pycastle.services._github_http_transport.urlopen",
         side_effect=_make_http_error(404, b'{"message":"Not Found"}'),
     ):
-        with pytest.raises(GithubAPIError) as ei:
-            svc._request("GET", "/missing")
+        with pytest.raises(GithubHttpTransportAPIError) as ei:
+            transport.request("GET", "/missing")
     assert ei.value.status == 404
     assert ei.value.method == "GET"
     assert ei.value.path == "/missing"
@@ -446,171 +457,245 @@ def test_check_auth_with_scripted_transport_raises_github_api_error_on_http_fail
 
 
 def test_request_post_raises_github_api_error_on_5xx_without_retry():
-    svc = _make_service()
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
     with patch(
         "pycastle.services._github_http_transport.urlopen",
         side_effect=_make_http_error(500, b"server boom"),
     ):
-        with pytest.raises(GithubAPIError) as ei:
-            svc._request("POST", "/x")
+        with pytest.raises(GithubHttpTransportAPIError) as ei:
+            transport.request("POST", "/x")
     assert ei.value.status == 500
 
 
 def test_request_post_raises_github_network_error_on_url_error():
-    svc = _make_service()
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
     with patch(
         "pycastle.services._github_http_transport.urlopen",
         side_effect=URLError("dns fail"),
     ):
-        with pytest.raises(GithubNetworkError):
-            svc._request("POST", "/x")
+        with pytest.raises(GithubHttpTransportNetworkError):
+            transport.request("POST", "/x")
 
 
 def test_request_post_raises_github_network_error_on_socket_timeout():
-    svc = _make_service()
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
     with patch(
         "pycastle.services._github_http_transport.urlopen",
         side_effect=socket.timeout("timed out"),
     ):
-        with pytest.raises(GithubNetworkError):
-            svc._request("POST", "/x")
+        with pytest.raises(GithubHttpTransportNetworkError):
+            transport.request("POST", "/x")
 
 
-# ── _request: success/decoding ────────────────────────────────────────────────
+# ── production adapter: success/decoding ─────────────────────────────────────
 
 
 def test_request_returns_decoded_json_payload():
-    svc = _make_service()
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
     body = json.dumps({"a": 1}).encode()
     with patch(
         "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(body),
     ):
-        payload, _ = svc._request("GET", "/x")
+        payload, _ = transport.request("GET", "/x")
     assert payload == {"a": 1}
 
 
 def test_request_returns_none_on_empty_body():
-    svc = _make_service()
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
     with patch(
         "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b""),
     ):
-        payload, _ = svc._request("DELETE", "/x")
+        payload, _ = transport.request("DELETE", "/x")
     assert payload is None
 
 
 def test_request_sends_json_body_when_data_provided():
-    svc = _make_service()
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
     with patch(
         "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b"{}"),
     ) as m:
-        svc._request("POST", "/x", data={"hello": "world"})
+        transport.request("POST", "/x", data={"hello": "world"})
     req = m.call_args[0][0]
     assert req.get_method() == "POST"
     assert json.loads(req.data.decode()) == {"hello": "world"}
     assert req.get_header("Content-type") == "application/json"
 
 
-# ── _paginate ────────────────────────────────────────────────────────────────
+# ── pagination through public methods ────────────────────────────────────────
 
 
 def test_paginate_returns_concatenated_results_across_pages():
-    svc = _make_service()
-    page1 = _make_response(
-        json.dumps([{"n": 1}, {"n": 2}]).encode(),
-        headers={
-            "Link": '<https://api.github.com/x?page=2>; rel="next", '
-            '<https://api.github.com/x?page=3>; rel="last"'
-        },
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7/comments?per_page=100",
+                payload=[
+                    {
+                        "user": {"login": "alice"},
+                        "created_at": "2026-01-01T00:00:00Z",
+                        "body": "one",
+                    },
+                    {
+                        "user": {"login": "bob"},
+                        "created_at": "2026-01-02T00:00:00Z",
+                        "body": "two",
+                    },
+                ],
+                headers={
+                    "Link": '<https://api.github.com/issues/7/comments?page=2>; rel="next", '
+                    '<https://api.github.com/issues/7/comments?page=3>; rel="last"'
+                },
+            ),
+            _script_step(
+                "GET",
+                "https://api.github.com/issues/7/comments?page=2",
+                payload=[
+                    {
+                        "user": {"login": "carol"},
+                        "created_at": "2026-01-03T00:00:00Z",
+                        "body": "three",
+                    }
+                ],
+                headers={
+                    "Link": '<https://api.github.com/issues/7/comments?page=3>; rel="next", '
+                    '<https://api.github.com/issues/7/comments?page=1>; rel="prev"'
+                },
+            ),
+            _script_step(
+                "GET",
+                "https://api.github.com/issues/7/comments?page=3",
+                payload=[
+                    {
+                        "user": {"login": "dave"},
+                        "created_at": "2026-01-04T00:00:00Z",
+                        "body": "four",
+                    }
+                ],
+                headers={
+                    "Link": '<https://api.github.com/issues/7/comments?page=2>; rel="prev"'
+                },
+            ),
+        ]
     )
-    page2 = _make_response(
-        json.dumps([{"n": 3}]).encode(),
-        headers={
-            "Link": '<https://api.github.com/x?page=3>; rel="next", '
-            '<https://api.github.com/x?page=1>; rel="prev"'
-        },
-    )
-    page3 = _make_response(
-        json.dumps([{"n": 4}]).encode(),
-        headers={"Link": '<https://api.github.com/x?page=2>; rel="prev"'},
-    )
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=[page1, page2, page3],
-    ):
-        result = svc._paginate("/x")
-    assert result == [{"n": 1}, {"n": 2}, {"n": 3}, {"n": 4}]
+    svc = _make_service(transport=transport)
+
+    result = svc.get_issue_comments(7)
+
+    assert [comment["body"] for comment in result] == ["one", "two", "three", "four"]
+    transport.assert_exhausted()
 
 
 def test_paginate_returns_single_page_when_no_link_header():
-    svc = _make_service()
-    page = _make_response(json.dumps([{"n": 1}]).encode(), headers={})
-    with patch("pycastle.services._github_http_transport.urlopen", return_value=page):
-        result = svc._paginate("/x")
-    assert result == [{"n": 1}]
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/labels?per_page=100",
+                payload=[{"name": "bug"}],
+                headers={},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.list_labels() == [{"name": "bug"}]
+    transport.assert_exhausted()
 
 
 def test_paginate_returns_single_page_when_link_has_no_next():
-    svc = _make_service()
-    page = _make_response(
-        json.dumps([{"n": 1}]).encode(),
-        headers={"Link": '<https://api.github.com/x?page=1>; rel="prev"'},
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&per_page=100",
+                payload=[{"number": 1}],
+                headers={"Link": '<https://api.github.com/x?page=1>; rel="prev"'},
+            )
+        ]
     )
-    with patch("pycastle.services._github_http_transport.urlopen", return_value=page):
-        result = svc._paginate("/x")
-    assert result == [{"n": 1}]
+    svc = _make_service(transport=transport)
+
+    assert svc.get_open_issue_numbers() == [1]
+    transport.assert_exhausted()
 
 
 def test_paginate_follows_next_url_returned_by_github():
-    svc = _make_service()
     next_url = "https://api.github.com/x?page=2&token=opaque"
-    page1 = _make_response(
-        json.dumps([1]).encode(),
-        headers={"Link": f'<{next_url}>; rel="next"'},
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/labels?per_page=100",
+                payload=[{"name": "bug"}],
+                headers={"Link": f'<{next_url}>; rel="next"'},
+            ),
+            _script_step("GET", next_url, payload=[{"name": "feat"}], headers={}),
+        ]
     )
-    page2 = _make_response(json.dumps([2]).encode(), headers={})
-    captured: list[Any] = []
+    svc = _make_service(transport=transport)
 
-    def fake_urlopen(req: Any, timeout: float = 0) -> Any:
-        captured.append(req.full_url)
-        return page1 if len(captured) == 1 else page2
+    svc.list_labels()
 
-    with patch(
-        "pycastle.services._github_http_transport.urlopen", side_effect=fake_urlopen
-    ):
-        svc._paginate("/x")
-    assert captured[0] == "https://api.github.com/x"
-    assert captured[1] == next_url
+    assert transport.requests == [
+        _GithubTransportRequest("GET", "/repos/owner/repo/labels?per_page=100", None),
+        _GithubTransportRequest("GET", next_url, None),
+    ]
+    transport.assert_exhausted()
 
 
 # ── close_issue ──────────────────────────────────────────────────────────────
 
 
 def test_close_issue_sends_patch_with_state_closed():
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(b'{"state":"closed"}'),
-    ) as m:
-        svc.close_issue(42)
-    req = m.call_args[0][0]
-    assert req.get_method() == "PATCH"
-    assert req.full_url == "https://api.github.com/repos/owner/repo/issues/42"
-    assert json.loads(req.data.decode()) == {"state": "closed"}
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/42",
+                data={"state": "closed"},
+                payload={"state": "closed"},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    svc.close_issue(42)
+
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "PATCH",
+            "/repos/owner/repo/issues/42",
+            {"state": "closed"},
+        )
+    ]
+    transport.assert_exhausted()
 
 
 def test_close_issue_raises_operator_actionable_error_after_retry_exhaustion():
-    svc = _make_service()
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/42",
+                data={"state": "closed"},
+                error=GithubHttpTransportAPIError(
+                    "server error",
+                    status=500,
+                    body="server error",
+                    method="PATCH",
+                    path="/repos/owner/repo/issues/42",
+                ),
+            )
+            for _ in range(4)
+        ]
+    )
+    svc = _make_service(transport=transport)
 
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=[_make_http_error(500, b"server error")] * 4,
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
+    with patch("time.sleep") as mock_sleep:
         with pytest.raises(OperatorActionableGithubError) as exc_info:
             svc.close_issue(42)
 
@@ -619,6 +704,7 @@ def test_close_issue_raises_operator_actionable_error_after_retry_exhaustion():
     assert exc_info.value.attempt_count == 4
     assert isinstance(exc_info.value.cause, GithubAPIError)
     assert [call.args[0] for call in mock_sleep.call_args_list] == [10, 60, 300]
+    transport.assert_exhausted()
 
 
 def test_close_issue_retries_transient_5xx_and_recovers():
@@ -661,13 +747,28 @@ def test_close_issue_retries_transient_5xx_and_recovers():
 
 @pytest.mark.parametrize("status", [404, 410])
 def test_close_issue_treats_gone_as_no_op_with_warning(status):
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=_make_http_error(status, b'{"message":"gone"}'),
-    ):
-        with pytest.warns(UserWarning, match="42"):
-            svc.close_issue(42)
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/42",
+                data={"state": "closed"},
+                error=GithubHttpTransportAPIError(
+                    "gone",
+                    status=status,
+                    body='{"message":"gone"}',
+                    method="PATCH",
+                    path="/repos/owner/repo/issues/42",
+                ),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.warns(UserWarning, match="42"):
+        svc.close_issue(42)
+
+    transport.assert_exhausted()
 
 
 def test_close_issue_on_410_marks_issue_as_closed_for_get_open_issues():
@@ -844,135 +945,216 @@ def test_get_issue_with_scripted_transport_ignores_malformed_labels_and_projects
 
 
 def test_get_issue_title_returns_title():
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=[
-            _make_response(json.dumps({"number": 7, "title": "Fix bug"}).encode()),
-            _make_response(json.dumps([]).encode()),
-        ],
-    ):
-        assert svc.get_issue_title(7) == "Fix bug"
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                payload={"number": 7, "title": "Fix bug"},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7/comments?per_page=100",
+                payload=[],
+                headers={},
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.get_issue_title(7) == "Fix bug"
+    transport.assert_exhausted()
 
 
 def test_get_issue_title_returns_title_when_body_key_absent():
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=[
-            _make_response(json.dumps({"number": 7, "title": "Fix bug"}).encode()),
-            _make_response(json.dumps([]).encode()),
-        ],
-    ):
-        assert svc.get_issue_title(7) == "Fix bug"
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                payload={"number": 7, "title": "Fix bug"},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7/comments?per_page=100",
+                payload=[],
+                headers={},
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.get_issue_title(7) == "Fix bug"
+    transport.assert_exhausted()
 
 
 def test_get_issue_title_retries_transient_5xx_and_recovers():
-    svc = _make_service()
-    issue_body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
-    comments_body = json.dumps([]).encode()
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                error=GithubHttpTransportAPIError(
+                    "server boom",
+                    status=500,
+                    body="server boom",
+                    method="GET",
+                    path="/repos/owner/repo/issues/7",
+                ),
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                payload={"number": 7, "title": "Fix bug"},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7/comments?per_page=100",
+                payload=[],
+                headers={},
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
 
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=[
-                _make_http_error(500, b"server boom"),
-                _make_response(issue_body),
-                _make_response(comments_body, headers={}),
-            ],
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
+    with patch("time.sleep") as mock_sleep:
         assert svc.get_issue_title(7) == "Fix bug"
 
     mock_sleep.assert_called_once_with(10)
+    transport.assert_exhausted()
 
 
 def test_get_issue_title_uses_retry_after_header_when_present():
-    svc = _make_service()
-    issue_body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
-    comments_body = json.dumps([]).encode()
-
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=[
-                _make_http_error(
-                    429,
-                    b'{"message":"secondary rate limit"}',
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                error=GithubHttpTransportAPIError(
+                    "secondary rate limit",
+                    status=429,
+                    body='{"message":"secondary rate limit"}',
+                    method="GET",
+                    path="/repos/owner/repo/issues/7",
                     headers={"Retry-After": "7"},
                 ),
-                _make_response(issue_body),
-                _make_response(comments_body, headers={}),
-            ],
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                payload={"number": 7, "title": "Fix bug"},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7/comments?per_page=100",
+                payload=[],
+                headers={},
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with patch("time.sleep") as mock_sleep:
         assert svc.get_issue_title(7) == "Fix bug"
 
     mock_sleep.assert_called_once_with(7)
+    transport.assert_exhausted()
 
 
 def test_get_issue_title_falls_back_to_exponential_retry_when_retry_after_is_malformed():
-    svc = _make_service()
-    issue_body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
-    comments_body = json.dumps([]).encode()
-
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=[
-                _make_http_error(
-                    429,
-                    b'{"message":"secondary rate limit"}',
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                error=GithubHttpTransportAPIError(
+                    "secondary rate limit",
+                    status=429,
+                    body='{"message":"secondary rate limit"}',
+                    method="GET",
+                    path="/repos/owner/repo/issues/7",
                     headers={"Retry-After": "not-a-delay"},
                 ),
-                _make_response(issue_body),
-                _make_response(comments_body, headers={}),
-            ],
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                payload={"number": 7, "title": "Fix bug"},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7/comments?per_page=100",
+                payload=[],
+                headers={},
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with patch("time.sleep") as mock_sleep:
         assert svc.get_issue_title(7) == "Fix bug"
 
     mock_sleep.assert_called_once_with(10)
+    transport.assert_exhausted()
 
 
 def test_get_issue_title_retries_rate_limited_403_from_headers():
-    svc = _make_service()
-    issue_body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
-    comments_body = json.dumps([]).encode()
-
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=[
-                _make_http_error(
-                    403,
-                    b'{"message":"Forbidden"}',
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                error=GithubHttpTransportAPIError(
+                    "forbidden",
+                    status=403,
+                    body='{"message":"Forbidden"}',
+                    method="GET",
+                    path="/repos/owner/repo/issues/7",
                     headers={"X-RateLimit-Remaining": "0"},
                 ),
-                _make_response(issue_body),
-                _make_response(comments_body, headers={}),
-            ],
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                payload={"number": 7, "title": "Fix bug"},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7/comments?per_page=100",
+                payload=[],
+                headers={},
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with patch("time.sleep") as mock_sleep:
         assert svc.get_issue_title(7) == "Fix bug"
 
     mock_sleep.assert_called_once_with(10)
+    transport.assert_exhausted()
 
 
 def test_get_issue_title_raises_operator_actionable_error_after_retry_exhaustion():
-    svc = _make_service()
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                error=GithubHttpTransportAPIError(
+                    "server boom",
+                    status=500,
+                    body="server boom",
+                    method="GET",
+                    path="/repos/owner/repo/issues/7",
+                ),
+            )
+            for _ in range(4)
+        ]
+    )
+    svc = _make_service(transport=transport)
 
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=[_make_http_error(500, b"server boom")] * 4,
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
+    with patch("time.sleep") as mock_sleep:
         with pytest.raises(OperatorActionableGithubError) as exc_info:
             svc.get_issue_title(7)
 
@@ -981,73 +1163,94 @@ def test_get_issue_title_raises_operator_actionable_error_after_retry_exhaustion
     assert exc_info.value.attempt_count == 4
     assert isinstance(exc_info.value.cause, GithubAPIError)
     assert [call.args[0] for call in mock_sleep.call_args_list] == [10, 60, 300]
+    transport.assert_exhausted()
 
 
 def test_get_issue_title_retries_transport_error_and_recovers():
-    svc = _make_service()
-    issue_body = json.dumps({"number": 7, "title": "Fix bug"}).encode()
-    comments_body = json.dumps([]).encode()
+    cause = URLError("dns fail")
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                error=GithubHttpTransportNetworkError("transport down", cause=cause),
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                payload={"number": 7, "title": "Fix bug"},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7/comments?per_page=100",
+                payload=[],
+                headers={},
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
 
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=[
-                URLError("dns fail"),
-                _make_response(issue_body),
-                _make_response(comments_body, headers={}),
-            ],
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
+    with patch("time.sleep") as mock_sleep:
         assert svc.get_issue_title(7) == "Fix bug"
 
     mock_sleep.assert_called_once_with(10)
+    transport.assert_exhausted()
 
 
 def test_get_issue_title_does_not_retry_stable_403():
-    svc = _make_service()
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                error=GithubHttpTransportAPIError(
+                    "forbidden",
+                    status=403,
+                    body='{"message":"Resource not accessible by personal access token"}',
+                    method="GET",
+                    path="/repos/owner/repo/issues/7",
+                ),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
 
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=_make_http_error(
-                403,
-                b'{"message":"Resource not accessible by personal access token"}',
-            ),
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
+    with patch("time.sleep") as mock_sleep:
         with pytest.raises(GithubAPIError) as exc_info:
             svc.get_issue_title(7)
 
     assert exc_info.value.status == 403
     mock_sleep.assert_not_called()
+    transport.assert_exhausted()
 
 
 def test_get_labels_returns_label_names():
-    svc = _make_service()
-    body = json.dumps(
-        {"labels": [{"name": "bug"}, {"name": "ready-for-agent"}]}
-    ).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body),
-    ):
-        assert svc.get_labels(7) == ["bug", "ready-for-agent"]
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                payload={"labels": [{"name": "bug"}, {"name": "ready-for-agent"}]},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.get_labels(7) == ["bug", "ready-for-agent"]
+    transport.assert_exhausted()
 
 
 def test_get_labels_returns_empty_list_when_no_labels():
-    svc = _make_service()
-    body = json.dumps({"labels": []}).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body),
-    ):
-        assert svc.get_labels(7) == []
+    transport = _ScriptedGithubTransport(
+        [_script_step("GET", "/repos/owner/repo/issues/7", payload={"labels": []})]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.get_labels(7) == []
+    transport.assert_exhausted()
 
 
 def test_get_recent_improve_prds_returns_newest_12_canonical_titles_across_states():
-    svc = _make_service()
     issues = [
         {
             "number": number,
@@ -1073,11 +1276,19 @@ def test_get_recent_improve_prds_returns_newest_12_canonical_titles_across_state
         },
     )
 
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(json.dumps(issues).encode(), headers={}),
-    ):
-        result = svc.get_recent_improve_prds()
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=all&per_page=100",
+                payload=issues,
+                headers={},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_recent_improve_prds()
 
     assert result == [
         {
@@ -1087,103 +1298,156 @@ def test_get_recent_improve_prds_returns_newest_12_canonical_titles_across_state
         }
         for number in range(30, 18, -1)
     ]
+    transport.assert_exhausted()
 
 
 def test_get_recent_improve_prds_returns_empty_list_when_no_matching_issues():
-    svc = _make_service()
     issues = [
         {"number": 1, "title": "Regular issue", "state": "open"},
         {"number": 2, "title": "Follow-up [improve-PRD] mention", "state": "closed"},
     ]
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(json.dumps(issues).encode()),
-    ):
-        assert svc.get_recent_improve_prds() == []
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=all&per_page=100",
+                payload=issues,
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.get_recent_improve_prds() == []
+    transport.assert_exhausted()
 
 
 def test_get_recent_improve_prds_raises_operator_actionable_error_after_retry_exhaustion():
-    svc = _make_service()
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=[_make_http_error(500, b"server error")] * 4,
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=all&per_page=100",
+                error=GithubHttpTransportAPIError(
+                    "server error",
+                    status=500,
+                    body="server error",
+                    method="GET",
+                    path="/repos/owner/repo/issues?state=all&per_page=100",
+                ),
+            )
+            for _ in range(4)
+        ]
+    )
+    svc = _make_service(transport=transport)
+    with patch("time.sleep") as mock_sleep:
         with pytest.raises(OperatorActionableGithubError) as exc_info:
             svc.get_recent_improve_prds()
 
     assert exc_info.value.path == "/repos/owner/repo/issues?state=all&per_page=100"
     assert [call.args[0] for call in mock_sleep.call_args_list] == [10, 60, 300]
+    transport.assert_exhausted()
 
 
 # ── get_parent ───────────────────────────────────────────────────────────────
 
 
 def test_get_parent_returns_parent_number():
-    svc = _make_service()
-    body = json.dumps({"parent": {"number": 100}}).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body),
-    ):
-        assert svc.get_parent(5) == 100
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET", "/repos/owner/repo/issues/5", payload={"parent": {"number": 100}}
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.get_parent(5) == 100
+    transport.assert_exhausted()
 
 
 def test_get_parent_returns_none_when_no_parent():
-    svc = _make_service()
-    body = json.dumps({"number": 5}).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body),
-    ):
-        assert svc.get_parent(5) is None
+    transport = _ScriptedGithubTransport(
+        [_script_step("GET", "/repos/owner/repo/issues/5", payload={"number": 5})]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.get_parent(5) is None
+    transport.assert_exhausted()
 
 
 # ── get_open_sub_issues ──────────────────────────────────────────────────────
 
 
 def test_get_open_sub_issues_filters_to_open_only():
-    svc = _make_service()
-    body = json.dumps(
+    transport = _ScriptedGithubTransport(
         [
-            {"number": 1, "state": "open"},
-            {"number": 2, "state": "closed"},
-            {"number": 3, "state": "open"},
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/10/sub_issues",
+                payload=[
+                    {"number": 1, "state": "open"},
+                    {"number": 2, "state": "closed"},
+                    {"number": 3, "state": "open"},
+                ],
+                headers={},
+            )
         ]
-    ).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body, headers={}),
-    ):
-        assert svc.get_open_sub_issues(10) == [1, 3]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.get_open_sub_issues(10) == [1, 3]
+    transport.assert_exhausted()
 
 
 # ── add_sub_issue ────────────────────────────────────────────────────────────
 
 
 def test_add_sub_issue_posts_to_correct_endpoint():
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(b""),
-    ) as m:
-        svc.add_sub_issue(parent_number=10, child_number=20)
-    req = m.call_args[0][0]
-    assert "/repos/owner/repo/issues/10/sub_issues" in req.full_url
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/owner/repo/issues/10/sub_issues",
+                data={"sub_issue_id": 20},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    svc.add_sub_issue(parent_number=10, child_number=20)
+
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/owner/repo/issues/10/sub_issues",
+            {"sub_issue_id": 20},
+        )
+    ]
+    transport.assert_exhausted()
 
 
 def test_add_sub_issue_sends_child_as_sub_issue_id():
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(b""),
-    ) as m:
-        svc.add_sub_issue(parent_number=10, child_number=20)
-    req = m.call_args[0][0]
-    body = json.loads(req.data.decode("utf-8"))
-    assert body == {"sub_issue_id": 20}
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/owner/repo/issues/10/sub_issues",
+                data={"sub_issue_id": 20},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    svc.add_sub_issue(parent_number=10, child_number=20)
+
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/owner/repo/issues/10/sub_issues",
+            {"sub_issue_id": 20},
+        )
+    ]
+    transport.assert_exhausted()
 
 
 # ── get_issue_comments ───────────────────────────────────────────────────────
@@ -1404,19 +1668,24 @@ def test_close_issue_with_parents_ignores_just_closed_child_when_checking_siblin
 
 
 def test_get_open_issue_numbers_excludes_pull_requests():
-    svc = _make_service()
-    body = json.dumps(
+    transport = _ScriptedGithubTransport(
         [
-            {"number": 1},
-            {"number": 2, "pull_request": {"url": "x"}},
-            {"number": 3},
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&per_page=100",
+                payload=[
+                    {"number": 1},
+                    {"number": 2, "pull_request": {"url": "x"}},
+                    {"number": 3},
+                ],
+                headers={},
+            )
         ]
-    ).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body, headers={}),
-    ):
-        assert svc.get_open_issue_numbers() == [1, 3]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.get_open_issue_numbers() == [1, 3]
+    transport.assert_exhausted()
 
 
 # ── get_open_issues ──────────────────────────────────────────────────────────
@@ -1694,44 +1963,54 @@ def test_get_open_issues_with_scripted_transport_normalizes_mixed_open_issue_pay
 
 
 def test_get_all_open_issues_lightweight_returns_number_title_labels():
-    svc = _make_service()
-    body = json.dumps(
+    transport = _ScriptedGithubTransport(
         [
-            {
-                "number": 1,
-                "title": "Fix it",
-                "body": "should be ignored",
-                "labels": [{"name": "bug"}],
-            }
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&per_page=100",
+                payload=[
+                    {
+                        "number": 1,
+                        "title": "Fix it",
+                        "body": "should be ignored",
+                        "labels": [{"name": "bug"}],
+                    }
+                ],
+                headers={},
+            )
         ]
-    ).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body, headers={}),
-    ):
-        result = svc.get_all_open_issues_lightweight()
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_all_open_issues_lightweight()
     assert result == [{"number": 1, "title": "Fix it", "labels": ["bug"]}]
+    transport.assert_exhausted()
 
 
 def test_get_all_open_issues_lightweight_excludes_pull_requests():
-    svc = _make_service()
-    body = json.dumps(
+    transport = _ScriptedGithubTransport(
         [
-            {"number": 1, "title": "Issue", "labels": []},
-            {
-                "number": 2,
-                "title": "PR",
-                "labels": [],
-                "pull_request": {"url": "x"},
-            },
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&per_page=100",
+                payload=[
+                    {"number": 1, "title": "Issue", "labels": []},
+                    {
+                        "number": 2,
+                        "title": "PR",
+                        "labels": [],
+                        "pull_request": {"url": "x"},
+                    },
+                ],
+                headers={},
+            )
         ]
-    ).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body, headers={}),
-    ):
-        result = svc.get_all_open_issues_lightweight()
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_all_open_issues_lightweight()
     assert [r["number"] for r in result] == [1]
+    transport.assert_exhausted()
 
 
 def test_get_all_open_issues_lightweight_does_not_filter_recently_closed():
@@ -1825,31 +2104,36 @@ def test_get_all_open_issues_lightweight_paginates_and_normalizes_issue_projecti
 
 
 def test_get_all_open_issues_lightweight_normalizes_mixed_open_issue_payload():
-    svc = _make_service()
-    body = json.dumps(
+    transport = _ScriptedGithubTransport(
         [
-            "skip",
-            {"title": "missing number"},
-            {"number": "1", "title": None, "labels": [{"name": "bug"}]},
-            {
-                "number": 2,
-                "title": "PR",
-                "labels": [],
-                "pull_request": {"url": "x"},
-            },
-            {"number": "3", "title": "Keep me", "labels": [{"name": "feat"}]},
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&per_page=100",
+                payload=[
+                    "skip",
+                    {"title": "missing number"},
+                    {"number": "1", "title": None, "labels": [{"name": "bug"}]},
+                    {
+                        "number": 2,
+                        "title": "PR",
+                        "labels": [],
+                        "pull_request": {"url": "x"},
+                    },
+                    {"number": "3", "title": "Keep me", "labels": [{"name": "feat"}]},
+                ],
+                headers={},
+            )
         ]
-    ).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body, headers={}),
-    ):
-        result = svc.get_all_open_issues_lightweight()
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_all_open_issues_lightweight()
 
     assert result == [
         {"number": 1, "title": "", "labels": ["bug"]},
         {"number": 3, "title": "Keep me", "labels": ["feat"]},
     ]
+    transport.assert_exhausted()
 
 
 # ── close_completed_parent_issues ────────────────────────────────────────────
@@ -2274,20 +2558,32 @@ def test_create_issue_in_with_scripted_transport_uses_owner_repo_arg_not_self_re
 
 
 def test_create_issue_in_does_not_retry_transport_error():
-    svc = _make_service()
+    cause = URLError("dns fail")
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/Johannes-Kutsch/pycastle/issues",
+                data={"title": "title", "body": "body", "labels": ["bug"]},
+                error=GithubHttpTransportNetworkError("transport down", cause=cause),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
 
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=URLError("dns fail"),
-        ) as mock_urlopen,
-        patch("time.sleep") as mock_sleep,
-    ):
+    with patch("time.sleep") as mock_sleep:
         with pytest.raises(GithubNetworkError):
             svc.create_issue_in("Johannes-Kutsch/pycastle", "title", "body", ["bug"])
 
-    assert mock_urlopen.call_count == 1
     mock_sleep.assert_not_called()
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/Johannes-Kutsch/pycastle/issues",
+            {"title": "title", "body": "body", "labels": ["bug"]},
+        )
+    ]
+    transport.assert_exhausted()
 
 
 def test_create_issue_in_with_scripted_transport_preserves_original_network_cause():
