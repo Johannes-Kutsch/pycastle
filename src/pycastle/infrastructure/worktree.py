@@ -232,27 +232,38 @@ def _cleanup_stale_sandbox(
 
 @asynccontextmanager
 async def managed_worktree(
-    name: str,
+    name: str | None = None,
     *,
-    branch: str,
+    branch: str | None = None,
+    identity: WorktreeIdentity | None = None,
     sha: str | None,
     delete_branch_on_teardown: bool,
     replace_preserved_failure: bool = False,
     deps: _WorktreeDeps,
 ):
-    identity = worktree_identity(branch, deps.repo_root, name=name)
-    path = identity.path
+    resolved_identity = identity
+    if resolved_identity is None:
+        if name is None or branch is None:
+            raise TypeError(
+                "managed_worktree requires either identity or both name and branch"
+            )
+        resolved_identity = worktree_identity(branch, deps.repo_root, name=name)
+    path = resolved_identity.path
     if delete_branch_on_teardown:
         _cleanup_stale_sandbox(
             deps.git_svc,
             deps.repo_root,
             path,
-            identity.branch,
+            resolved_identity.branch,
             replace_preserved_failure=replace_preserved_failure,
         )
-        _create_worktree(deps.git_svc, deps.repo_root, path, identity.branch, sha)
-    elif not is_worktree_reusable(path, identity.branch, deps.git_svc):
-        _create_worktree(deps.git_svc, deps.repo_root, path, identity.branch, sha)
+        _create_worktree(
+            deps.git_svc, deps.repo_root, path, resolved_identity.branch, sha
+        )
+    elif not is_worktree_reusable(path, resolved_identity.branch, deps.git_svc):
+        _create_worktree(
+            deps.git_svc, deps.repo_root, path, resolved_identity.branch, sha
+        )
     _preservation_worthy_exc = False
     try:
         yield path
@@ -278,7 +289,7 @@ async def managed_worktree(
                 _branch_has_commits = True
             teardown_worktree(deps.git_svc, deps.repo_root, path)
             if delete_branch_on_teardown or not _branch_has_commits:
-                deps.git_svc.delete_branch(identity.branch, deps.repo_root)
+                deps.git_svc.delete_branch(resolved_identity.branch, deps.repo_root)
 
 
 @asynccontextmanager
