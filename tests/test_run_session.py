@@ -216,6 +216,19 @@ def test_role_session_provider_state_dir_matches_worktree_local_provider_layout(
     )
 
 
+def test_role_session_provider_state_relpath_matches_worktree_local_provider_layout(
+    tmp_path: Path,
+) -> None:
+    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+
+    assert role_session.provider_state_relpath("opencode") == (
+        ".pycastle-session/improve/main/opencode"
+    )
+    assert role_session.provider_state_dir("opencode") == (
+        tmp_path / role_session.provider_state_relpath("opencode")
+    )
+
+
 def test_plan_run_session_public_interface_preserves_namespaced_role_session_facts(
     tmp_path: Path,
 ):
