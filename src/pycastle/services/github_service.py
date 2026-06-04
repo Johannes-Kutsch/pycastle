@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-import json
 import time
 import warnings
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from importlib.metadata import PackageNotFoundError, version
-from typing import Any, Protocol
-from urllib.error import HTTPError, URLError
+from typing import Any
 from urllib.parse import quote
-from urllib.request import Request, urlopen
 
 from ..config import Config
+from ._github_http_transport import (
+    GithubHttpTransport as _GithubHttpTransport,
+    GithubHttpTransportAPIError,
+    GithubHttpTransportAuthError,
+    GithubHttpTransportNetworkError,
+    UrllibGithubHttpTransport as _UrllibGithubHttpTransport,
+)
 
 
 class GithubServiceError(RuntimeError):
@@ -65,102 +68,9 @@ class OperatorActionableGithubError(GithubServiceError):
         super().__init__(message)
 
 
-_API_BASE = "https://api.github.com"
 _IMPROVE_PRD_TITLE_PREFIX = "[improve-PRD] "
 _READ_RETRY_MAX_ATTEMPTS = 4
 _READ_RETRY_BACKOFF_SECONDS = (10, 60, 300)
-
-
-def _user_agent() -> str:
-    try:
-        return f"pycastle/{version('pycastle')}"
-    except PackageNotFoundError:
-        return "pycastle/0.0.0"
-
-
-_USER_AGENT = _user_agent()
-
-
-class _GithubHttpTransport(Protocol):
-    def request(
-        self,
-        method: str,
-        path: str,
-        data: dict[str, Any] | None = None,
-    ) -> tuple[Any, dict[str, str]]: ...
-
-
-class _UrllibGithubHttpTransport:
-    def __init__(self, token: str, timeout: int) -> None:
-        self._token = token
-        self._timeout = timeout
-
-    def request(
-        self,
-        method: str,
-        path: str,
-        data: dict[str, Any] | None = None,
-    ) -> tuple[Any, dict[str, str]]:
-        url = path if path.startswith("http") else f"{_API_BASE}{path}"
-        body = json.dumps(data).encode("utf-8") if data is not None else None
-        headers = {
-            "Authorization": f"Bearer {self._token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": _USER_AGENT,
-        }
-        if body is not None:
-            headers["Content-Type"] = "application/json"
-        req = Request(url, data=body, headers=headers, method=method)
-        try:
-            with urlopen(req, timeout=self._timeout) as resp:
-                raw = resp.read()
-                resp_headers = dict(resp.headers.items())
-        except HTTPError as exc:
-            err_body = ""
-            try:
-                err_body = exc.read().decode("utf-8", errors="replace")
-            except Exception:
-                pass
-            status = exc.code
-            err_headers = dict(exc.headers.items()) if exc.headers is not None else {}
-            if status == 401:
-                raise GithubAuthError(
-                    f"GitHub API {method} {path} returned 401: {err_body}",
-                    status=status,
-                    body=err_body,
-                ) from exc
-            raise GithubAPIError(
-                f"GitHub API {method} {path} returned {status}: {err_body}",
-                status=status,
-                body=err_body,
-                method=method,
-                path=path,
-                headers=err_headers,
-            ) from exc
-        except URLError as exc:
-            raise GithubNetworkError(
-                f"GitHub API {method} {path} transport error: {exc.reason}",
-                cause=exc,
-            ) from exc
-        except TimeoutError as exc:
-            raise GithubNetworkError(
-                f"GitHub API {method} {path} timed out after {self._timeout}s",
-                cause=exc,
-            ) from exc
-        if not raw:
-            return None, resp_headers
-        try:
-            return json.loads(raw.decode("utf-8")), resp_headers
-        except json.JSONDecodeError as exc:
-            raise GithubAPIError(
-                f"GitHub API {method} {path} returned invalid JSON",
-                status=200,
-                body=raw.decode("utf-8", errors="replace"),
-                method=method,
-                path=path,
-                headers=resp_headers,
-            ) from exc
 
 
 class GithubService:
@@ -222,7 +132,21 @@ class GithubService:
         path: str,
         data: dict[str, Any] | None = None,
     ) -> tuple[Any, dict[str, str]]:
-        return self._transport.request(method, path, data)
+        try:
+            return self._transport.request(method, path, data)
+        except GithubHttpTransportAuthError as exc:
+            raise GithubAuthError(str(exc), status=exc.status, body=exc.body) from exc
+        except GithubHttpTransportAPIError as exc:
+            raise GithubAPIError(
+                str(exc),
+                status=exc.status,
+                body=exc.body,
+                method=exc.method,
+                path=exc.path,
+                headers=exc.headers,
+            ) from exc
+        except GithubHttpTransportNetworkError as exc:
+            raise GithubNetworkError(str(exc), cause=exc.cause) from exc
 
     def _retry_delay_for_api_error(self, exc: GithubAPIError, attempt: int) -> int:
         fixed_delay = _fixed_retry_delay_seconds(exc.headers)

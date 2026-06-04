@@ -136,7 +136,8 @@ def test_check_auth_returns_login_on_success():
     svc = _make_service()
     body = json.dumps({"login": "alice"}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(body),
     ):
         assert svc.check_auth() == "alice"
 
@@ -155,7 +156,8 @@ def test_check_auth_calls_get_user_endpoint():
     svc = _make_service()
     body = json.dumps({"login": "alice"}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(body),
     ) as m:
         svc.check_auth()
     req = m.call_args[0][0]
@@ -166,7 +168,7 @@ def test_check_auth_calls_get_user_endpoint():
 def test_check_auth_raises_github_auth_error_on_401():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         side_effect=_make_http_error(401, b'{"message":"Bad credentials"}'),
     ):
         with pytest.raises(GithubAuthError) as ei:
@@ -181,7 +183,7 @@ def test_check_auth_retries_transient_5xx_and_recovers():
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=[
                 _make_http_error(500, b"server boom"),
                 _make_response(body),
@@ -200,7 +202,7 @@ def test_check_auth_uses_retry_after_header_when_present():
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=[
                 _make_http_error(
                     429,
@@ -223,7 +225,8 @@ def test_check_auth_uses_retry_after_header_when_present():
 def test_request_sets_authorization_bearer_header():
     svc = _make_service(token="abc123")
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(b"{}")
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(b"{}"),
     ) as m:
         svc._request("GET", "/x")
     req = m.call_args[0][0]
@@ -233,7 +236,8 @@ def test_request_sets_authorization_bearer_header():
 def test_request_sets_accept_header():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(b"{}")
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(b"{}"),
     ) as m:
         svc._request("GET", "/x")
     req = m.call_args[0][0]
@@ -243,7 +247,8 @@ def test_request_sets_accept_header():
 def test_request_sets_api_version_header():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(b"{}")
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(b"{}"),
     ) as m:
         svc._request("GET", "/x")
     req = m.call_args[0][0]
@@ -253,7 +258,8 @@ def test_request_sets_api_version_header():
 def test_request_sets_user_agent_header_with_version():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(b"{}")
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(b"{}"),
     ) as m:
         svc._request("GET", "/x")
     req = m.call_args[0][0]
@@ -267,7 +273,8 @@ def test_request_sets_user_agent_header_with_version():
 def test_request_passes_worktree_timeout_to_urlopen():
     svc = _make_service(cfg=Config(worktree_timeout=7))
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(b"{}")
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(b"{}"),
     ) as m:
         svc._request("GET", "/x")
     assert m.call_args.kwargs.get("timeout") == 7
@@ -279,7 +286,7 @@ def test_request_passes_worktree_timeout_to_urlopen():
 def test_request_raises_github_api_error_on_non_401_4xx():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         side_effect=_make_http_error(404, b'{"message":"Not Found"}'),
     ):
         with pytest.raises(GithubAPIError) as ei:
@@ -293,7 +300,7 @@ def test_request_raises_github_api_error_on_non_401_4xx():
 def test_request_post_raises_github_api_error_on_5xx_without_retry():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         side_effect=_make_http_error(500, b"server boom"),
     ):
         with pytest.raises(GithubAPIError) as ei:
@@ -304,7 +311,7 @@ def test_request_post_raises_github_api_error_on_5xx_without_retry():
 def test_request_post_raises_github_network_error_on_url_error():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         side_effect=URLError("dns fail"),
     ):
         with pytest.raises(GithubNetworkError):
@@ -314,7 +321,7 @@ def test_request_post_raises_github_network_error_on_url_error():
 def test_request_post_raises_github_network_error_on_socket_timeout():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         side_effect=socket.timeout("timed out"),
     ):
         with pytest.raises(GithubNetworkError):
@@ -328,7 +335,8 @@ def test_request_returns_decoded_json_payload():
     svc = _make_service()
     body = json.dumps({"a": 1}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(body),
     ):
         payload, _ = svc._request("GET", "/x")
     assert payload == {"a": 1}
@@ -337,7 +345,8 @@ def test_request_returns_decoded_json_payload():
 def test_request_returns_none_on_empty_body():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(b"")
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(b""),
     ):
         payload, _ = svc._request("DELETE", "/x")
     assert payload is None
@@ -346,7 +355,8 @@ def test_request_returns_none_on_empty_body():
 def test_request_sends_json_body_when_data_provided():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(b"{}")
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(b"{}"),
     ) as m:
         svc._request("POST", "/x", data={"hello": "world"})
     req = m.call_args[0][0]
@@ -379,7 +389,7 @@ def test_paginate_returns_concatenated_results_across_pages():
         headers={"Link": '<https://api.github.com/x?page=2>; rel="prev"'},
     )
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         side_effect=[page1, page2, page3],
     ):
         result = svc._paginate("/x")
@@ -389,7 +399,7 @@ def test_paginate_returns_concatenated_results_across_pages():
 def test_paginate_returns_single_page_when_no_link_header():
     svc = _make_service()
     page = _make_response(json.dumps([{"n": 1}]).encode(), headers={})
-    with patch("pycastle.services.github_service.urlopen", return_value=page):
+    with patch("pycastle.services._github_http_transport.urlopen", return_value=page):
         result = svc._paginate("/x")
     assert result == [{"n": 1}]
 
@@ -400,7 +410,7 @@ def test_paginate_returns_single_page_when_link_has_no_next():
         json.dumps([{"n": 1}]).encode(),
         headers={"Link": '<https://api.github.com/x?page=1>; rel="prev"'},
     )
-    with patch("pycastle.services.github_service.urlopen", return_value=page):
+    with patch("pycastle.services._github_http_transport.urlopen", return_value=page):
         result = svc._paginate("/x")
     assert result == [{"n": 1}]
 
@@ -419,7 +429,9 @@ def test_paginate_follows_next_url_returned_by_github():
         captured.append(req.full_url)
         return page1 if len(captured) == 1 else page2
 
-    with patch("pycastle.services.github_service.urlopen", side_effect=fake_urlopen):
+    with patch(
+        "pycastle.services._github_http_transport.urlopen", side_effect=fake_urlopen
+    ):
         svc._paginate("/x")
     assert captured[0] == "https://api.github.com/x"
     assert captured[1] == next_url
@@ -431,7 +443,7 @@ def test_paginate_follows_next_url_returned_by_github():
 def test_close_issue_sends_patch_with_state_closed():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b'{"state":"closed"}'),
     ) as m:
         svc.close_issue(42)
@@ -446,7 +458,7 @@ def test_close_issue_raises_operator_actionable_error_after_retry_exhaustion():
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=[_make_http_error(500, b"server error")] * 4,
         ),
         patch("time.sleep") as mock_sleep,
@@ -492,7 +504,7 @@ def test_close_issue_retries_transient_5xx_and_recovers():
 def test_close_issue_treats_gone_as_no_op_with_warning(status):
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         side_effect=_make_http_error(status, b'{"message":"gone"}'),
     ):
         with pytest.warns(UserWarning, match="42"):
@@ -502,14 +514,14 @@ def test_close_issue_treats_gone_as_no_op_with_warning(status):
 def test_close_issue_on_410_marks_issue_as_closed_for_subsequent_listings():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         side_effect=_make_http_error(410, b'{"message":"This issue was deleted"}'),
     ):
         with pytest.warns(UserWarning):
             svc.close_issue(99)
     body = json.dumps([{"number": 99, "title": "gone", "labels": []}]).encode()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(body, headers={}),
     ):
         open_issues = svc.get_all_open_issues_lightweight()
@@ -535,7 +547,7 @@ def _make_get_issue_urlopen(issue_payload: dict[str, Any]) -> Any:
 def test_get_issue_returns_title_and_body():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         side_effect=_make_get_issue_urlopen(
             {"number": 7, "title": "Fix bug", "body": "do it"}
         ),
@@ -549,7 +561,7 @@ def test_get_issue_returns_title_and_body():
 def test_get_issue_returns_empty_string_for_null_body():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         side_effect=_make_get_issue_urlopen(
             {"number": 7, "title": "Fix bug", "body": None}
         ),
@@ -562,7 +574,8 @@ def test_get_issue_raises_when_title_missing():
     svc = _make_service()
     body = json.dumps({"number": 7}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(body),
     ):
         with pytest.raises(GithubAPIError):
             svc.get_issue(7)
@@ -594,7 +607,9 @@ def test_get_issue_returns_labels_and_comments():
             return _make_response(comments_body, headers={"Link": ""})
         return _make_response(issue_body)
 
-    with patch("pycastle.services.github_service.urlopen", side_effect=fake_urlopen):
+    with patch(
+        "pycastle.services._github_http_transport.urlopen", side_effect=fake_urlopen
+    ):
         result = svc.get_issue(7)
 
     assert result["labels"] == ["bug", "ready-for-agent"]
@@ -609,7 +624,7 @@ def test_get_issue_returns_labels_and_comments():
 def test_get_issue_title_returns_title():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         side_effect=_make_get_issue_urlopen({"number": 7, "title": "Fix bug"}),
     ):
         assert svc.get_issue_title(7) == "Fix bug"
@@ -618,7 +633,7 @@ def test_get_issue_title_returns_title():
 def test_get_issue_title_returns_title_when_body_key_absent():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         side_effect=_make_get_issue_urlopen({"number": 7, "title": "Fix bug"}),
     ):
         assert svc.get_issue_title(7) == "Fix bug"
@@ -631,7 +646,7 @@ def test_get_issue_title_retries_transient_5xx_and_recovers():
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=[
                 _make_http_error(500, b"server boom"),
                 _make_response(issue_body),
@@ -652,7 +667,7 @@ def test_get_issue_title_uses_retry_after_header_when_present():
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=[
                 _make_http_error(
                     429,
@@ -677,7 +692,7 @@ def test_get_issue_title_falls_back_to_exponential_retry_when_retry_after_is_mal
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=[
                 _make_http_error(
                     429,
@@ -702,7 +717,7 @@ def test_get_issue_title_retries_rate_limited_403_from_headers():
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=[
                 _make_http_error(
                     403,
@@ -725,7 +740,7 @@ def test_get_issue_title_raises_operator_actionable_error_after_retry_exhaustion
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=[_make_http_error(500, b"server boom")] * 4,
         ),
         patch("time.sleep") as mock_sleep,
@@ -747,7 +762,7 @@ def test_get_issue_title_retries_transport_error_and_recovers():
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=[
                 URLError("dns fail"),
                 _make_response(issue_body),
@@ -766,7 +781,7 @@ def test_get_issue_title_does_not_retry_stable_403():
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=_make_http_error(
                 403,
                 b'{"message":"Resource not accessible by personal access token"}',
@@ -787,7 +802,8 @@ def test_get_labels_returns_label_names():
         {"labels": [{"name": "bug"}, {"name": "ready-for-agent"}]}
     ).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(body),
     ):
         assert svc.get_labels(7) == ["bug", "ready-for-agent"]
 
@@ -796,7 +812,8 @@ def test_get_labels_returns_empty_list_when_no_labels():
     svc = _make_service()
     body = json.dumps({"labels": []}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(body),
     ):
         assert svc.get_labels(7) == []
 
@@ -829,7 +846,7 @@ def test_get_recent_improve_prds_returns_newest_12_canonical_titles_across_state
     )
 
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(json.dumps(issues).encode(), headers={}),
     ):
         result = svc.get_recent_improve_prds()
@@ -851,7 +868,7 @@ def test_get_recent_improve_prds_returns_empty_list_when_no_matching_issues():
         {"number": 2, "title": "Follow-up [improve-PRD] mention", "state": "closed"},
     ]
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(json.dumps(issues).encode()),
     ):
         assert svc.get_recent_improve_prds() == []
@@ -861,7 +878,7 @@ def test_get_recent_improve_prds_raises_operator_actionable_error_after_retry_ex
     svc = _make_service()
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=[_make_http_error(500, b"server error")] * 4,
         ),
         patch("time.sleep") as mock_sleep,
@@ -880,7 +897,8 @@ def test_get_parent_returns_parent_number():
     svc = _make_service()
     body = json.dumps({"parent": {"number": 100}}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(body),
     ):
         assert svc.get_parent(5) == 100
 
@@ -889,7 +907,8 @@ def test_get_parent_returns_none_when_no_parent():
     svc = _make_service()
     body = json.dumps({"number": 5}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(body),
     ):
         assert svc.get_parent(5) is None
 
@@ -907,7 +926,7 @@ def test_get_open_sub_issues_filters_to_open_only():
         ]
     ).encode()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(body, headers={}),
     ):
         assert svc.get_open_sub_issues(10) == [1, 3]
@@ -919,7 +938,7 @@ def test_get_open_sub_issues_filters_to_open_only():
 def test_add_sub_issue_posts_to_correct_endpoint():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b""),
     ) as m:
         svc.add_sub_issue(parent_number=10, child_number=20)
@@ -930,7 +949,7 @@ def test_add_sub_issue_posts_to_correct_endpoint():
 def test_add_sub_issue_sends_child_as_sub_issue_id():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b""),
     ) as m:
         svc.add_sub_issue(parent_number=10, child_number=20)
@@ -959,7 +978,7 @@ def test_get_issue_comments_returns_author_created_at_and_body():
         ]
     ).encode()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(body, headers={}),
     ):
         result = svc.get_issue_comments(7)
@@ -980,7 +999,7 @@ def test_get_issue_comments_returns_author_created_at_and_body():
 def test_get_issue_comments_returns_empty_list_when_no_comments():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b"[]", headers={}),
     ):
         assert svc.get_issue_comments(7) == []
@@ -989,7 +1008,7 @@ def test_get_issue_comments_returns_empty_list_when_no_comments():
 def test_get_issue_comments_hits_comments_endpoint():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b"[]", headers={}),
     ) as m:
         svc.get_issue_comments(42)
@@ -1057,7 +1076,7 @@ def test_get_open_issue_numbers_excludes_pull_requests():
         ]
     ).encode()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(body, headers={}),
     ):
         assert svc.get_open_issue_numbers() == [1, 3]
@@ -1079,7 +1098,7 @@ def test_get_open_issues_returns_number_title_body_labels():
         ]
     ).encode()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(body, headers={}),
     ):
         result = svc.get_open_issues("bug")
@@ -1109,7 +1128,7 @@ def test_get_open_issues_filters_pull_requests():
         ]
     ).encode()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(body, headers={}),
     ):
         result = svc.get_open_issues("bug")
@@ -1222,7 +1241,9 @@ def test_get_open_issues_normalizes_mixed_open_issue_payload():
             return _make_response(comments_body, headers={})
         return _make_response(issues_body, headers={})
 
-    with patch("pycastle.services.github_service.urlopen", side_effect=fake_urlopen):
+    with patch(
+        "pycastle.services._github_http_transport.urlopen", side_effect=fake_urlopen
+    ):
         result = svc.get_open_issues("bug")
 
     assert result == [
@@ -1265,7 +1286,7 @@ def test_get_all_open_issues_lightweight_returns_number_title_labels():
         ]
     ).encode()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(body, headers={}),
     ):
         result = svc.get_all_open_issues_lightweight()
@@ -1286,7 +1307,7 @@ def test_get_all_open_issues_lightweight_excludes_pull_requests():
         ]
     ).encode()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(body, headers={}),
     ):
         result = svc.get_all_open_issues_lightweight()
@@ -1371,7 +1392,7 @@ def test_get_all_open_issues_lightweight_normalizes_mixed_open_issue_payload():
         ]
     ).encode()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(body, headers={}),
     ):
         result = svc.get_all_open_issues_lightweight()
@@ -1416,7 +1437,7 @@ def test_list_labels_paginates_and_returns_results():
     svc = _make_service()
     body = json.dumps([{"name": "bug"}, {"name": "feat"}]).encode()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(body, headers={}),
     ):
         result = svc.list_labels()
@@ -1426,7 +1447,7 @@ def test_list_labels_paginates_and_returns_results():
 def test_create_label_posts_body_to_labels_endpoint():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b'{"name":"bug"}'),
     ) as m:
         svc.create_label({"name": "bug", "color": "ff0000"})
@@ -1439,7 +1460,7 @@ def test_create_label_posts_body_to_labels_endpoint():
 def test_delete_label_sends_delete_with_url_encoded_name():
     svc = _make_service()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(b""),
     ) as m:
         svc.delete_label("needs triage")
@@ -1455,7 +1476,7 @@ def test_remove_label_from_issue_retries_transport_error_and_recovers():
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=[
                 URLError("dns fail"),
                 _make_response(b""),
@@ -1473,7 +1494,7 @@ def test_add_label_to_issue_uses_retry_after_header_when_present():
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=[
                 _make_http_error(
                     429,
@@ -1495,7 +1516,7 @@ def test_add_label_to_issue_does_not_retry_stable_403():
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=_make_http_error(
                 403,
                 b'{"message":"Resource not accessible by personal access token"}',
@@ -1515,7 +1536,7 @@ def test_remove_label_from_issue_treats_gone_as_no_op():
     svc = _make_service()
 
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         side_effect=_make_http_error(404, b'{"message":"Not Found"}'),
     ):
         svc.remove_label_from_issue(42, "bug")
@@ -1528,7 +1549,7 @@ def test_create_issue_in_posts_to_target_repo_with_payload():
     svc = _make_service()
     body = json.dumps({"number": 42, "html_url": "https://x"}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(body),
     ) as m:
         result = svc.create_issue_in(
@@ -1554,7 +1575,7 @@ def test_create_issue_in_uses_owner_repo_arg_not_self_repo():
     svc = _make_service(repo="some/other-repo")
     body = json.dumps({"number": 1}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen",
+        "pycastle.services._github_http_transport.urlopen",
         return_value=_make_response(body),
     ) as m:
         svc.create_issue_in("target-owner/target-repo", "t", "b", [])
@@ -1567,7 +1588,7 @@ def test_create_issue_in_does_not_retry_transport_error():
 
     with (
         patch(
-            "pycastle.services.github_service.urlopen",
+            "pycastle.services._github_http_transport.urlopen",
             side_effect=URLError("dns fail"),
         ) as mock_urlopen,
         patch("time.sleep") as mock_sleep,
@@ -1591,7 +1612,8 @@ def test_search_open_issues_by_title_returns_numbers_from_search_api():
         }
     ).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(body),
     ) as m:
         result = svc.search_open_issues_by_title("[pycastle] git remote unreachable")
     req = m.call_args[0][0]
@@ -1603,7 +1625,8 @@ def test_search_open_issues_by_title_returns_empty_list_when_no_matches():
     svc = _make_service()
     body = json.dumps({"total_count": 0, "items": []}).encode()
     with patch(
-        "pycastle.services.github_service.urlopen", return_value=_make_response(body)
+        "pycastle.services._github_http_transport.urlopen",
+        return_value=_make_response(body),
     ):
         result = svc.search_open_issues_by_title("[pycastle] git remote unreachable")
     assert result == []
@@ -1618,7 +1641,7 @@ def test_no_real_network_call(monkeypatch):
     def boom(*args, **kwargs):
         raise AssertionError("real network call attempted")
 
-    monkeypatch.setattr("pycastle.services.github_service.urlopen", boom)
+    monkeypatch.setattr("pycastle.services._github_http_transport.urlopen", boom)
     svc = _make_service()
     with pytest.raises(AssertionError):
         svc.check_auth()
