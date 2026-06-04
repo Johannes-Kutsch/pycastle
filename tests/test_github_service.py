@@ -1999,6 +1999,30 @@ def test_delete_label_sends_delete_with_url_encoded_name():
     transport.assert_exhausted()
 
 
+def test_remove_label_from_issue_returns_none_and_url_encodes_label_name():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "DELETE",
+                "/repos/owner/repo/issues/42/labels/team%2Falpha",
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.remove_label_from_issue(42, "team/alpha")
+
+    assert result is None
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "DELETE",
+            "/repos/owner/repo/issues/42/labels/team%2Falpha",
+            None,
+        )
+    ]
+    transport.assert_exhausted()
+
+
 def test_remove_label_from_issue_retries_transport_error_and_recovers():
     cause = URLError("dns fail")
     transport = _ScriptedGithubTransport(
