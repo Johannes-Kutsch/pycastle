@@ -1,7 +1,9 @@
 import pytest
 
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
+from pycastle.prompts.renderer import PromptRenderer
 from pycastle.prompts.scope_args import (
+    build_plan_scope_args,
     build_interrupted_work_clause,
     build_issue_scope_args,
     validated_scope_args_for_scope,
@@ -150,3 +152,48 @@ def test_build_issue_scope_args_raises_on_missing_required_keys():
 def test_build_interrupted_work_clause_matrix(run_kind, is_dirty, expected):
     result = build_interrupted_work_clause(run_kind, is_dirty=is_dirty)
     assert ("Interrupted Work" in result) is expected
+
+
+def test_build_plan_scope_args_builds_renderable_plan_args(cfg, prompts_dir):
+    import asyncio
+    import json
+
+    all_open_issues = [
+        {"number": 1, "title": "Open A", "labels": ["ready-for-agent"]},
+        {"number": 2, "title": "Open B", "labels": ["blocked"]},
+    ]
+    ready_for_agent_issues = [
+        {
+            "number": 1,
+            "title": "Open A",
+            "body": "x" * 100,
+            "comments": [{"author": "alice", "created_at": "2026-01-01", "body": "ok"}],
+            "labels": ["ready-for-agent", "behavior-slice"],
+        }
+    ]
+    (prompts_dir / "coordination/plan.md").write_text(
+        "All: {{ALL_OPEN_ISSUES_JSON}}\nReady: {{READY_FOR_AGENT_ISSUES_JSON}}"
+    )
+
+    scope_args = build_plan_scope_args(
+        all_open_issues=all_open_issues,
+        ready_for_agent_issues=ready_for_agent_issues,
+    )
+
+    assert validated_scope_args_for_template(PromptTemplate.PLAN, scope_args) is scope_args
+    assert scope_args["ALL_OPEN_ISSUES_JSON"] == json.dumps(all_open_issues)
+    assert scope_args["READY_FOR_AGENT_ISSUES_JSON"] == json.dumps(ready_for_agent_issues)
+
+    renderer = PromptRenderer(cfg)
+    rendered = asyncio.run(
+        renderer.render(
+            PromptTemplate.PLAN,
+            scope_args,
+            lambda command: (_ for _ in ()).throw(AssertionError(command)),
+        )
+    )
+
+    assert rendered == (
+        f"All: {json.dumps(all_open_issues)}\n"
+        f"Ready: {json.dumps(ready_for_agent_issues)}"
+    )
