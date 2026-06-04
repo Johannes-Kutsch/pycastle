@@ -50,7 +50,36 @@ def test_decide_usage_limit_continuation_returns_continue_now_for_stage_fallback
         _now(),
     )
 
-    assert decision == ContinueNow(exhausted_wake_time=primary_wake)
+    assert isinstance(decision, ContinueNow)
+    assert decision.exhausted_wake_time == primary_wake
+
+
+def test_decide_usage_limit_continuation_includes_same_day_switch_message():
+    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
+    registry = ServiceRegistry(
+        {
+            "claude": _make_service(available=False, wake_time=primary_wake),
+            "codex": _make_service(available=True),
+        }
+    )
+    cfg = Config(
+        implement_override=StageOverride(
+            service="claude",
+            fallback=StageOverride(service="codex"),
+        )
+    )
+
+    decision = decide_usage_limit_continuation(
+        AbortedUsageLimit(stage_key="implement"),
+        cfg,
+        registry,
+        _now(),
+    )
+
+    assert decision == ContinueNow(
+        message="Account exhausted until 16:00, switching to next available.",
+        exhausted_wake_time=primary_wake,
+    )
 
 
 def test_decide_usage_limit_continuation_sleeps_for_stage_chain_only():
@@ -97,7 +126,10 @@ def test_decide_usage_limit_continuation_falls_back_to_registry_when_stage_uncon
         _now(),
     )
 
-    assert decision == ContinueNow(exhausted_wake_time=claude_wake)
+    assert decision == ContinueNow(
+        message="Account exhausted until 15:00, switching to next available.",
+        exhausted_wake_time=claude_wake,
+    )
 
 
 def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion():

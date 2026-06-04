@@ -34,12 +34,17 @@ from ..services import (
     GitService,
     ServiceRegistry,
 )
-from ..services._wake_time import compute_wake_time
 from ..session import SESSION_DIR_NAME
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import prune_orphan_worktrees
 from ..log_maintenance import maintain_logs
 from .. import _time as _time_module
+from .usage_limit_decision import (
+    ContinueNow,
+    SleepUntil,
+    Stop,
+    decide_usage_limit_continuation,
+)
 
 
 class FileLogger:
@@ -95,22 +100,6 @@ def _fmt_wake(wake: datetime, now: datetime) -> str:
     if wake.date() != now.date():
         return f"{wake:%b} {wake.day}, {wake:%H:%M}"
     return wake.strftime("%H:%M")
-
-
-def _override_for_stage_key(cfg, stage_key: str | None):
-    if stage_key == "plan":
-        return cfg.plan_override
-    if stage_key == "implement":
-        return cfg.implement_override
-    if stage_key == "review":
-        return cfg.review_override
-    if stage_key == "merge":
-        return cfg.merge_override
-    if stage_key == "preflight_issue":
-        return cfg.preflight_issue_override
-    if stage_key == "improve":
-        return cfg.improve_override
-    return None
 
 
 def _github_retry_exhaustion_message(exc: OperatorActionableGithubError) -> str:
@@ -322,56 +311,30 @@ async def run(
                 case AbortedHardApiError():
                     sys.exit(1)
                 case AbortedUsageLimit(
-                    reset_time=reset_time,
                     provider=provider,
                     raw_message=raw_message,
                     account_label=account_label,
                     is_permanent=is_permanent,
-                    stage_key=stage_key,
                 ):
                     now = _time_module.now_local()
-                    stage_override = _override_for_stage_key(cfg, stage_key)
-                    registry = service_registry
-                    use_stage_scope = (
-                        registry is not None
-                        and stage_override is not None
-                        and registry.has_configured_candidate(stage_override)
+                    decision = decide_usage_limit_continuation(
+                        outcome,
+                        cfg,
+                        service_registry,
+                        now,
                     )
-                    if registry is None:
-                        has_available = False
-                    elif use_stage_scope:
-                        has_available = registry.has_available_for(stage_override, now)
-                    else:
-                        has_available = registry.has_available(now)
-                    if has_available:
-                        if (
-                            is_permanent
-                            and provider is not None
-                            and account_label is not None
-                        ):
+                    if isinstance(decision, ContinueNow):
+                        if is_permanent:
                             _print_permanent_exhaustion_warning(
                                 status_display=status_display,  # type: ignore[arg-type]
                                 provider=provider,
                                 account_label=account_label,
                                 denial_message=raw_message,
                             )
-                        else:
-                            if registry is None:
-                                exhausted_wake = None
-                            elif use_stage_scope:
-                                exhausted_wake = registry.next_wake_time_for(
-                                    stage_override, now
-                                )
-                            else:
-                                exhausted_wake = registry.next_wake_time(now)
-                            if exhausted_wake is not None:
-                                status_display.print(  # type: ignore[union-attr]
-                                    "",
-                                    f"Account exhausted until {_fmt_wake(exhausted_wake, now)}, "
-                                    "switching to next available.",
-                                )
+                        elif decision.message is not None:
+                            status_display.print("", decision.message)  # type: ignore[union-attr]
                         continue
-                    if is_permanent:
+                    if isinstance(decision, Stop):
                         _print_permanent_exhaustion_warning(
                             status_display=status_display,  # type: ignore[arg-type]
                             provider=provider,
@@ -379,18 +342,9 @@ async def run(
                             denial_message=raw_message,
                         )
                         break
-                    if registry is None:
-                        next_wake = None
-                    elif use_stage_scope:
-                        next_wake = registry.next_wake_time_for(stage_override, now)
-                    else:
-                        next_wake = registry.next_wake_time(now)
-                    if next_wake is not None:
-                        wake_time = next_wake
-                        suffix = ""
-                    else:
-                        wake_time, is_estimated = compute_wake_time(reset_time, now)
-                        suffix = " (estimated)" if is_estimated else ""
+                    assert isinstance(decision, SleepUntil)
+                    wake_time = decision.wake_time
+                    suffix = " (estimated)" if decision.is_estimated else ""
                     status_display.print(  # type: ignore[union-attr]
                         "",
                         f"Usage limit reached. Sleeping until {_fmt_wake(wake_time, now)}{suffix}."

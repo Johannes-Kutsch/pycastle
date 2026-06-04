@@ -12,6 +12,7 @@ from . import AbortedUsageLimit
 
 @dataclasses.dataclass(frozen=True)
 class ContinueNow:
+    message: str | None = None
     exhausted_wake_time: datetime | None = None
 
 
@@ -27,6 +28,12 @@ class Stop:
 
 
 UsageLimitContinuationDecision: TypeAlias = ContinueNow | SleepUntil | Stop
+
+
+def _fmt_wake(wake: datetime, now: datetime) -> str:
+    if wake.date() != now.date():
+        return f"{wake:%b} {wake.day}, {wake:%H:%M}"
+    return wake.strftime("%H:%M")
 
 
 def _override_for_stage_key(cfg: Config, stage_key: str | None) -> StageOverride | None:
@@ -77,7 +84,16 @@ def decide_usage_limit_continuation(
             )
         else:
             exhausted_wake_time = service_registry.next_wake_time(now)
-        return ContinueNow(exhausted_wake_time=exhausted_wake_time)
+        message = None
+        if not outcome.is_permanent and exhausted_wake_time is not None:
+            message = (
+                f"Account exhausted until {_fmt_wake(exhausted_wake_time, now)}, "
+                "switching to next available."
+            )
+        return ContinueNow(
+            message=message,
+            exhausted_wake_time=exhausted_wake_time,
+        )
 
     if outcome.is_permanent:
         return Stop()
