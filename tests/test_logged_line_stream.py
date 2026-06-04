@@ -102,6 +102,20 @@ def test_stream_logged_lines_yields_partial_final_line_without_newline(tmp_path)
     assert on_chunk_calls == ["chunk"]
 
 
+def test_stream_logged_lines_decodes_split_utf8_sequences_with_replacement_and_preserves_log_bytes(
+    tmp_path,
+):
+    log_path = tmp_path / "agent.log"
+    chunks = [b"\xf0\x9f", b"\x98\x80\nbad:\xff\n"]
+
+    lines, on_chunk_calls = _collect_stream(chunks, log_path=log_path)
+
+    assert lines == ["😀", "bad:\ufffd"]
+    assert on_chunk_calls == ["chunk", "chunk"]
+    _header, rest = log_path.read_bytes().split(b"\n", 1)
+    assert rest == b"".join(chunks)
+
+
 def test_stream_logged_lines_raises_agent_timeout_error_after_idle_timeout(tmp_path):
     log_path = tmp_path / "agent.log"
     event = threading.Event()

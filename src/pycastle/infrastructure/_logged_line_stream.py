@@ -1,3 +1,4 @@
+import codecs
 import json
 import queue
 import threading
@@ -35,6 +36,7 @@ def stream_logged_lines(
         log.write(json.dumps(input_record).encode() + b"\n")
         log.flush()
 
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         line_buf = ""
         while True:
             try:
@@ -44,6 +46,7 @@ def stream_logged_lines(
                     f"Agent idle for more than {idle_timeout}s"
                 ) from exc
             if chunk is sentinel:
+                line_buf += decoder.decode(b"", final=True)
                 if line_buf:
                     yield line_buf
                 return
@@ -51,7 +54,7 @@ def stream_logged_lines(
             log.write(chunk)
             log.flush()
             on_chunk()
-            line_buf += chunk.decode("utf-8", errors="replace")
+            line_buf += decoder.decode(chunk)
             while "\n" in line_buf:
                 line, line_buf = line_buf.split("\n", 1)
                 yield line
