@@ -11,10 +11,10 @@ from typing import Any, Literal
 
 import platformdirs
 
+from pycastle import stage_priority_chain
 from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
 from pycastle.label_catalog import CANONICAL_LABEL_DEFAULTS
-from pycastle.stage_priority_chain import referenced_service_names
 
 __all__ = [
     "Config",
@@ -192,7 +192,7 @@ def referenced_services(cfg: Config) -> set[str]:
             cfg.preflight_issue_override,
             cfg.improve_override,
         )
-        for service in referenced_service_names(override)
+        for service in stage_priority_chain.referenced_service_names(override)
     }
 
 
