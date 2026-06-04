@@ -127,10 +127,20 @@ def evaluate_issue_afk_readiness(
     issue: dict, cfg: Config
 ) -> AFKReadyOutcome | AFKBlockedOutcome:
     readiness = resolve_issue_readiness(issue, cfg)
+    ready_mode: SliceMode | None = None
     if readiness.ready is not None:
+        ready_mode = readiness.selected_mode
+        if ready_mode is None and isinstance(readiness.slice_status, WellFormed):
+            ready_mode = readiness.slice_status.mode
+    elif readiness.is_ready:
+        ready_mode = readiness.selected_mode
+        if ready_mode is None and isinstance(readiness.slice_status, WellFormed):
+            ready_mode = readiness.slice_status.mode
+
+    if ready_mode is not None:
         return AFKReadyOutcome(
-            slice_mode_display_name=readiness.ready.display_name,
-            implement_template=readiness.ready.template,
+            slice_mode_display_name=ready_mode.display_name,
+            implement_template=ready_mode.template,
         )
 
     current_slice_labels: tuple[str, ...] = ()

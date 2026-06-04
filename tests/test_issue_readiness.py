@@ -120,6 +120,29 @@ def test_evaluate_issue_afk_readiness_reports_both_blocked_facts_in_one_outcome(
     )
 
 
+def test_evaluate_issue_afk_readiness_returns_ready_outcome_for_carried_readiness_without_ready_payload():
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.DOCS, label="docs-slice"),
+        body_floor_status=WellFormedBody(stripped_length=BODY_FLOOR),
+        is_ready=True,
+        selected_mode=SliceMode.DOCS,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    issue = {
+        "number": 5,
+        "labels": ["behavior-slice"],
+        "body": "short",
+        "readiness": readiness,
+    }
+
+    result = evaluate_issue_afk_readiness(issue, _cfg)
+
+    assert result == AFKReadyOutcome(
+        slice_mode_display_name="docs",
+        implement_template=SliceMode.DOCS.template,
+    )
+
+
 def test_classify_issue_readiness_ready_selects_matching_slice_mode():
     issue = {
         "number": 1,
