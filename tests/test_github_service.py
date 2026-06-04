@@ -161,6 +161,9 @@ class _ScriptedGithubTransport:
             raise step.reply.error
         return step.reply.payload, step.reply.headers
 
+    def assert_exhausted(self) -> None:
+        assert self._remaining == []
+
 
 def _script_step(
     method: str,
@@ -216,6 +219,23 @@ def test_check_auth_uses_injected_transport_adapter():
 
     assert svc.check_auth() == "alice"
     assert transport.calls == [("GET", "/user", None)]
+
+
+def test_check_auth_with_scripted_transport_bypasses_no_real_network_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def boom(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("real network call attempted")
+
+    monkeypatch.setattr("pycastle.services._github_http_transport.urlopen", boom)
+    transport = _ScriptedGithubTransport(
+        [_script_step("GET", "/user", payload={"login": "alice"})]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.check_auth() == "alice"
+    assert transport.requests == [_GithubTransportRequest("GET", "/user", None)]
+    transport.assert_exhausted()
 
 
 def test_check_auth_calls_get_user_endpoint():
