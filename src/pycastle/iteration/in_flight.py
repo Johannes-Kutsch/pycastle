@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from ..agents.output_protocol import AgentRole
-from ..infrastructure.worktree import worktree_name_for_branch, worktree_path
+from ..infrastructure.worktree import worktree_identity
 from ..services import GitService
 from ..session import RoleSession
 from .implement import branch_for
@@ -20,7 +20,7 @@ def select_in_flight_issues(
 
 def _issue_is_in_flight(issue: dict, *, repo_root: Path, git_svc: GitService) -> bool:
     branch = branch_for(issue["number"])
-    issue_worktree = worktree_path(worktree_name_for_branch(branch), repo_root)
+    issue_worktree = worktree_identity(branch, repo_root).path
     if _has_resumable_role_session(issue_worktree):
         return True
     if not git_svc.verify_ref_exists(branch, repo_root):

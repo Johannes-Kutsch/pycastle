@@ -2,10 +2,13 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
 
 from pycastle.config import Config
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.infrastructure.worktree import worktree_identity
 from pycastle.iteration.in_flight import select_in_flight_issues
+from pycastle.iteration.implement import branch_for
 from pycastle.services import GitService
 from pycastle.session.resume import RoleSession, SESSION_DIR_NAME
 
@@ -117,6 +120,30 @@ def test_select_in_flight_issues_uses_only_resumable_role_session_worktree_evide
 
     assert result == [issues[0]]
     assert result[0] is issues[0]
+
+
+@pytest.mark.parametrize("role", list(AgentRole))
+def test_select_in_flight_issues_treats_any_role_session_dir_under_issue_worktree_as_in_flight(
+    tmp_path: Path,
+    role: AgentRole,
+):
+    git_svc = MagicMock(spec=GitService)
+    issue_number = 7
+    issue = {
+        "number": issue_number,
+        "title": "Resume from branch-owned worktree role session",
+        "labels": ["behavior-slice"],
+    }
+    issue_worktree = worktree_identity(branch_for(issue_number), tmp_path).path
+    role_dir = issue_worktree / SESSION_DIR_NAME / role.value / "claude"
+    role_dir.mkdir(parents=True)
+    (role_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    git_svc.verify_ref_exists.return_value = False
+
+    assert select_in_flight_issues([issue], repo_root=tmp_path, git_svc=git_svc) == [
+        issue
+    ]
 
 
 def test_select_in_flight_issues_omits_metadata_only_role_session_without_branch_evidence(
