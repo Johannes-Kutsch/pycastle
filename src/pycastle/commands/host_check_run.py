@@ -119,9 +119,7 @@ def resolve_host_check_issue_deps(
     )
 
 
-def _surface_current_host_check(
-    status_display: StatusDisplay, name: str
-) -> None:
+def _surface_current_host_check(status_display: StatusDisplay, name: str) -> None:
     status_display.update_phase("Host Check", name)
     if isinstance(status_display, PlainStatusDisplay):
         status_display.print("Host Check", name)
@@ -146,7 +144,7 @@ def _preserve_host_check_context(
     )
 
 
-def _run_host_check(name: str, command: str, cwd: Path) -> None:
+def _run_host_check(name: str, command: str, cwd: Path) -> HostCheckCommandResult:
     result = subprocess.run(
         command,
         cwd=cwd,
@@ -154,17 +152,21 @@ def _run_host_check(name: str, command: str, cwd: Path) -> None:
         text=True,
         capture_output=True,
     )
-    command_result = HostCheckCommandResult(
+    return HostCheckCommandResult(
         name=name,
         command=command,
+        returncode=result.returncode,
         output=(result.stdout + result.stderr).strip(),
     )
-    if result.returncode == 0:
-        return
-    raise HostCheckFailedError(
+
+
+def _failure_from_command_result(
+    command_result: HostCheckCommandResult,
+) -> HostCheckFailure:
+    return HostCheckFailure(
         name=command_result.name,
         command=command_result.command,
-        output=command_result.output,
+        output=command_result.output.strip(),
     )
 
 
@@ -303,9 +305,12 @@ async def run_host_check_run(
                 if on_check_start is not None:
                     on_check_start(name)
                 try:
-                    execute_host_check(name, command, path)
+                    command_result = execute_host_check(name, command, path)
                 except RuntimeError as exc:
                     failures.append(_failure_from_exception(name, command, exc))
+                    continue
+                if command_result.returncode != 0:
+                    failures.append(_failure_from_command_result(command_result))
             if failures:
                 if status_display is not None:
                     _surface_failed_host_checks(status_display, failures)

@@ -13,6 +13,7 @@ from .agents.runner import RunRequest
 class HostCheckCommandResult:
     name: str
     command: str
+    returncode: int
     output: str
 
 
@@ -48,7 +49,9 @@ class HostCheckFailedError(RuntimeError):
 
 
 class HostCheckCommandExecutor(Protocol):
-    def __call__(self, name: str, command: str, cwd: Path) -> None: ...
+    def __call__(
+        self, name: str, command: str, cwd: Path
+    ) -> HostCheckCommandResult: ...
 
 
 class HostCheckGitAdapter(Protocol):

@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from pycastle._host_check import HostCheckCommandResult
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.commands.host_check_run import (
     HostCheckRunPassed,
@@ -15,6 +16,21 @@ from pycastle.commands.host_check_run import (
 from pycastle.config import StageOverride
 from pycastle.prompts.pipeline import PromptTemplate
 from tests.support import FakeAgentRunner, RecordingStatusDisplay
+
+
+def host_check_command_result(
+    name: str,
+    command: str,
+    *,
+    returncode: int = 0,
+    output: str = "",
+) -> HostCheckCommandResult:
+    return HostCheckCommandResult(
+        name=name,
+        command=command,
+        returncode=returncode,
+        output=output,
+    )
 
 
 def test_prepare_host_check_run_refreshes_before_clean_tree_and_fails_early():
@@ -323,8 +339,9 @@ def test_run_host_check_run_surfaces_host_check_phase_row_before_worktree_steps(
             git_svc=git_svc,
             repo_root=tmp_path,
             status_display=display,
-            run_host_check=lambda name, command, cwd: events.append(
-                ("host-check", name, command, cwd)
+            run_host_check=lambda name, command, cwd: (
+                events.append(("host-check", name, command, cwd))
+                or host_check_command_result(name, command)
             ),
             transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
         )
@@ -373,7 +390,9 @@ def test_run_host_check_run_names_current_host_check_through_status_surface(tmp_
             git_svc=git_svc,
             repo_root=tmp_path,
             status_display=display,
-            run_host_check=lambda *a, **kw: None,
+            run_host_check=lambda name, command, cwd: host_check_command_result(
+                name, command
+            ),
             transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
         )
     )
@@ -455,12 +474,17 @@ def test_run_host_check_run_collects_structured_failed_checks_without_leaking_co
     transient_shas: list[str] = []
     multi_line_command = "python -c lint\npython -c more-lint"
 
-    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+    def fake_run_host_check(
+        name: str, command: str, cwd: Path
+    ) -> HostCheckCommandResult:
         seen_checks.append((name, command, cwd))
         if name == "format":
-            return
-        raise RuntimeError(
-            f"Host check {name!r} failed: {command}\n{name} stdout\n{name} stderr"
+            return host_check_command_result(name, command)
+        return host_check_command_result(
+            name,
+            command,
+            returncode=1,
+            output=f"{name} stdout\n{name} stderr",
         )
 
     class _TransientWorktree:
@@ -535,10 +559,13 @@ def test_run_host_check_run_surfaces_each_failed_host_check_before_host_check_re
         ),
     }
 
-    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+    def fake_run_host_check(
+        name: str, command: str, cwd: Path
+    ) -> HostCheckCommandResult:
         exc = failures.get(name)
         if exc is not None:
             raise exc
+        return host_check_command_result(name, command)
 
     class _TransientWorktree:
         async def __aenter__(self) -> Path:
@@ -618,12 +645,15 @@ def test_run_host_check_run_files_and_validates_one_issue_per_failed_check_in_or
     git_svc.is_working_tree_clean.return_value = True
     git_svc.get_head_sha.return_value = "checked-sha"
 
-    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+    def fake_run_host_check(
+        name: str, command: str, cwd: Path
+    ) -> HostCheckCommandResult:
         if name == "format":
-            return
-        raise run_mod.HostCheckFailedError(
+            return host_check_command_result(name, command)
+        return host_check_command_result(
             name=name,
             command=command,
+            returncode=1,
             output=f"{name} stdout\n{name} stderr",
         )
 
