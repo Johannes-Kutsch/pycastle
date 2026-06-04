@@ -1,10 +1,12 @@
 from pycastle.config import Config
 from pycastle.issue_readiness import (
     BODY_FLOOR,
+    BlockedIssueOutcome,
     IssueReadiness,
     IssueReadinessKind,
     Malformed,
     MalformedBody,
+    ReadyIssueOutcome,
     SliceMode,
     WellFormed,
     WellFormedBody,
@@ -187,6 +189,11 @@ def test_classify_issue_readiness_kind_is_ready_afk_for_well_formed_issue():
     assert result.kind == IssueReadinessKind.READY_AFK
     assert result.is_ready is True
     assert result.selected_mode == SliceMode.BEHAVIOR
+    assert result.ready == ReadyIssueOutcome(
+        display_name="behavior",
+        template=SliceMode.BEHAVIOR.template,
+    )
+    assert result.blocked is None
 
 
 def test_classify_issue_readiness_kind_is_missing_slice_mode_when_no_slice_label():
@@ -218,6 +225,29 @@ def test_classify_issue_readiness_kind_is_short_body_when_body_below_floor():
 
     assert result.kind == IssueReadinessKind.SHORT_BODY
     assert result.is_ready is False
+
+
+def test_classify_issue_readiness_blocked_outcome_carries_slice_and_body_facts():
+    cfg = Config(refactor_slice_label="custom-refactor")
+    issue = {
+        "number": 1,
+        "labels": ["custom-refactor", "behavior-slice"],
+        "body": "short",
+    }
+
+    result = classify_issue_readiness(issue, cfg)
+
+    assert result.blocked == BlockedIssueOutcome(
+        slice_status=Malformed(
+            found=["custom-refactor", "behavior-slice"],
+            configured=frozenset({"custom-refactor", "behavior-slice", "docs-slice"}),
+        ),
+        body_floor_status=MalformedBody(
+            stripped_length=5,
+            body_floor=BODY_FLOOR,
+        ),
+    )
+    assert result.ready is None
 
 
 def test_classify_issue_readiness_kind_is_malformed_when_both_slice_and_body_fail():
@@ -351,6 +381,23 @@ def test_selected_mode_for_issue_returns_carried_selected_mode():
         body_floor_status=WellFormedBody(stripped_length=100),
         is_ready=True,
         selected_mode=SliceMode.BEHAVIOR,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    issue = {"number": 1, "labels": [], "body": "", "readiness": readiness}
+
+    assert selected_mode_for_issue(issue, _cfg) == SliceMode.BEHAVIOR
+
+
+def test_selected_mode_for_issue_falls_back_to_carried_slice_when_ready_payload_exists():
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.BEHAVIOR, label="behavior-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=None,
+        ready=ReadyIssueOutcome(
+            display_name="behavior",
+            template=SliceMode.BEHAVIOR.template,
+        ),
         kind=IssueReadinessKind.READY_AFK,
     )
     issue = {"number": 1, "labels": [], "body": "", "readiness": readiness}

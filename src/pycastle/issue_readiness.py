@@ -103,8 +103,6 @@ def resolve_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
 
 def selected_mode_for_issue(issue: dict, cfg: Config) -> SliceMode | None:
     readiness = resolve_issue_readiness(issue, cfg)
-    if readiness.ready is not None:
-        return readiness.selected_mode
     if readiness.selected_mode is not None:
         return readiness.selected_mode
     if isinstance(readiness.slice_status, WellFormed):
