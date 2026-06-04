@@ -389,6 +389,58 @@ def test_streaming_pipes_output_to_terminal(tmp_path, capsys):
     assert "CACHED" in captured.out
 
 
+def test_streaming_rebuild_start_callback_fires_once_on_first_executed_buildkit_layer(
+    tmp_path,
+):
+    callback = MagicMock()
+    buildkit_output = [
+        "#1 [internal] load .dockerignore\n",
+        "#1 DONE 0.1s\n",
+        "#2 [1/3] FROM python:3.12\n",
+        "#2 CACHED\n",
+        "#3 [2/3] RUN apt-get install -y git\n",
+        "#3 DONE 4.2s\n",
+        "#4 [3/3] COPY . .\n",
+        "#4 DONE 0.5s\n",
+    ]
+
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(buildkit_output),
+    ):
+        result = DockerService().build_image(
+            "img",
+            tmp_path / "Dockerfile",
+            tmp_path,
+            stream=True,
+            on_rebuild_start=callback,
+        )
+
+    assert result == BuildOutcome.REBUILT
+    callback.assert_called_once_with()
+
+
+def test_streaming_rebuild_start_callback_not_called_for_all_cached_classic_output(
+    tmp_path,
+):
+    callback = MagicMock()
+
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=_mock_popen(_CLASSIC_ALL_CACHED),
+    ):
+        result = DockerService().build_image(
+            "img",
+            tmp_path / "Dockerfile",
+            tmp_path,
+            stream=True,
+            on_rebuild_start=callback,
+        )
+
+    assert result == BuildOutcome.FULL_CACHE_HIT
+    callback.assert_not_called()
+
+
 # ── build_image: terse mode — full cache hit ──────────────────────────────────
 
 

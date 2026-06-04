@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 class BuildOutcome(enum.Enum):
@@ -62,35 +62,71 @@ FINAL_OUTCOME_EXAMPLES: dict[str, FinalOutcomeExample] = {
 }
 
 
-def interpret_final_build_outcome(output: str | Iterable[str]) -> BuildOutcome:
-    if _is_full_cache_hit(output):
-        return BuildOutcome.FULL_CACHE_HIT
-    return BuildOutcome.REBUILT
+@dataclass
+class DockerBuildOutputInterpreter:
+    _classic_steps_seen: int = 0
+    _classic_steps_cached: int = 0
+    _pending_classic_step: bool = False
+    _buildkit_step_ids: set[str] = field(default_factory=set)
+    _has_buildkit_cached: bool = False
+    _has_buildkit_done: bool = False
+    _rebuild_started: bool = False
 
+    def observe_line(self, line: str) -> bool:
+        stripped = line.strip()
+        buildkit_step = re.match(r"^#(\d+)\s+\[(\d+)/(\d+)\]", stripped)
+        if buildkit_step:
+            self._buildkit_step_ids.add(buildkit_step.group(1))
+            return False
 
-def _is_full_cache_hit(output: str | Iterable[str]) -> bool:
-    lines = _output_lines(output)
+        if re.match(r"^Step \d+/\d+ :", line):
+            self._classic_steps_seen += 1
+            self._pending_classic_step = True
+            return False
 
-    # Classic builder: look for Step N/M lines and check each for ---> Using cache
-    classic_steps = [
-        i for i, line in enumerate(lines) if re.match(r"^Step \d+/\d+ :", line)
-    ]
-    if classic_steps:
-        for i in classic_steps:
-            cached = any(
-                "---> Using cache" in lines[j]
-                for j in range(i + 1, min(i + 5, len(lines)))
-                if not re.match(r"^Step \d+/\d+ :", lines[j])
-            )
-            if not cached:
+        if self._pending_classic_step:
+            self._pending_classic_step = False
+            if "---> Using cache" in stripped:
+                self._classic_steps_cached += 1
                 return False
+            if stripped:
+                return self._mark_rebuild_started()
+
+        buildkit_cached = re.match(r"^#(\d+)\s+CACHED\s*$", stripped)
+        if buildkit_cached and buildkit_cached.group(1) in self._buildkit_step_ids:
+            self._has_buildkit_cached = True
+            return False
+
+        buildkit_done = re.match(r"^#(\d+)\s+DONE\s+", stripped)
+        if buildkit_done and buildkit_done.group(1) in self._buildkit_step_ids:
+            self._has_buildkit_done = True
+            return self._mark_rebuild_started()
+
+        return False
+
+    @property
+    def final_outcome(self) -> BuildOutcome:
+        if self._classic_steps_seen:
+            if self._classic_steps_seen == self._classic_steps_cached:
+                return BuildOutcome.FULL_CACHE_HIT
+            return BuildOutcome.REBUILT
+
+        if self._has_buildkit_cached and not self._has_buildkit_done:
+            return BuildOutcome.FULL_CACHE_HIT
+        return BuildOutcome.REBUILT
+
+    def _mark_rebuild_started(self) -> bool:
+        if self._rebuild_started:
+            return False
+        self._rebuild_started = True
         return True
 
-    # BuildKit: CACHED means cached, DONE means executed (rebuilt)
-    has_cached = any(re.match(r"^#\d+\s+CACHED\s*$", line.strip()) for line in lines)
-    has_done = any(re.match(r"^#\d+\s+DONE\s+", line.strip()) for line in lines)
 
-    return has_cached and not has_done
+def interpret_final_build_outcome(output: str | Iterable[str]) -> BuildOutcome:
+    interpreter = DockerBuildOutputInterpreter()
+    for line in _output_lines(output):
+        interpreter.observe_line(line)
+    return interpreter.final_outcome
 
 
 def _output_lines(output: str | Iterable[str]) -> list[str]:

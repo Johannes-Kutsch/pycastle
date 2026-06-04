@@ -7,7 +7,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..errors import DockerBuildError, DockerServiceError
-from ._docker_build_output import BuildOutcome, interpret_final_build_outcome
+from ._docker_build_output import (
+    BuildOutcome,
+    DockerBuildOutputInterpreter,
+    interpret_final_build_outcome,
+)
 
 
 _PROGRESS_PREFIX = "Building Docker Image · "
@@ -180,25 +184,14 @@ class DockerService:
 
         assert proc.stdout is not None
         lines: list[str] = []
-        rebuild_signaled = False
-        pending_classic_step = False
+        interpreter = DockerBuildOutputInterpreter()
         for line in proc.stdout:
             sys.stdout.write(line)
             sys.stdout.flush()
             lines.append(line)
 
-            if not rebuild_signaled and on_rebuild_start is not None:
-                stripped = line.strip()
-                if re.match(r"#\d+\s+DONE\s+", stripped):
-                    on_rebuild_start()
-                    rebuild_signaled = True
-                elif re.match(r"Step \d+/\d+ :", stripped):
-                    pending_classic_step = True
-                elif pending_classic_step:
-                    if "---> Using cache" not in stripped and stripped:
-                        on_rebuild_start()
-                        rebuild_signaled = True
-                    pending_classic_step = False
+            if on_rebuild_start is not None and interpreter.observe_line(line):
+                on_rebuild_start()
 
         try:
             returncode = proc.wait(timeout=timeout)
