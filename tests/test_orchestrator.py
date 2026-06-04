@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 from urllib.parse import parse_qs, urlparse
 from unittest.mock import MagicMock, patch
 
@@ -24,6 +25,7 @@ from pycastle.services import (
     GitService,
     ServiceRegistry,
 )
+from pycastle.services.agent_service import AgentService
 from tests.support import FakeAgentRunner, RecordingStatusDisplay
 from pycastle.infrastructure.worktree import prune_orphan_worktrees
 from pycastle.iteration.orchestrator import (
@@ -3800,6 +3802,39 @@ def test_usage_limit_on_resolved_fallback_rechecks_full_stage_chain_before_sleep
 
     assert captured == ["fallback", "primary"]
     mock_sleep.assert_not_called()
+
+
+def test_service_registry_resolve_snapshots_availability_per_configured_service() -> (
+    None
+):
+    registry = ServiceRegistry(
+        cast(
+            dict[str, AgentService],
+            {
+                "codex": _SequencedAvailabilityService([False, True]),
+                "claude": _FakeService(available=False),
+            },
+        )
+    )
+    override = StageOverride(
+        service="codex",
+        model="primary-model",
+        effort="low",
+        fallback=StageOverride(
+            service="claude",
+            model="fallback-model",
+            effort="medium",
+            fallback=StageOverride(
+                service="codex",
+                model="tertiary-model",
+                effort="high",
+            ),
+        ),
+    )
+
+    result = registry.resolve(override, datetime.now(timezone.utc))
+
+    assert result == override
 
 
 def test_stage_with_no_fallback_behaves_as_before(tmp_path):

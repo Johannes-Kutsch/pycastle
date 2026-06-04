@@ -5,6 +5,7 @@ from pycastle.stage_priority_chain import (
     iter_stage_chain,
     referenced_service_names,
     render_chain_label,
+    select_configured_candidate_chain,
     validation_labels,
 )
 
@@ -168,3 +169,101 @@ def test_referenced_service_names_excludes_empty_names_deterministically() -> No
 
     assert first == ("codex", "claude")
     assert second == first
+
+
+def test_select_configured_candidate_chain_skips_unconfigured_primary() -> None:
+    override = StageOverride(
+        service="opencode",
+        model="deepseek-v4-flash",
+        effort="high",
+        fallback=StageOverride(
+            service="codex",
+            model="gpt-5.4-mini",
+            effort="medium",
+            fallback=StageOverride(
+                service="claude",
+                model="haiku",
+                effort="low",
+            ),
+        ),
+    )
+
+    result = select_configured_candidate_chain(
+        override,
+        configured_service_names=("codex", "claude"),
+        available_service_names=("codex", "claude"),
+    )
+
+    assert result.has_configured_candidate is True
+    assert result.selected_chain == StageOverride(
+        service="codex",
+        model="gpt-5.4-mini",
+        effort="medium",
+        fallback=StageOverride(
+            service="claude",
+            model="haiku",
+            effort="low",
+        ),
+    )
+
+
+def test_select_configured_candidate_chain_returns_first_configured_chain_when_all_are_exhausted() -> (
+    None
+):
+    override = StageOverride(
+        service="opencode",
+        model="deepseek-v4-flash",
+        effort="high",
+        fallback=StageOverride(
+            service="codex",
+            model="gpt-5.4-mini",
+            effort="medium",
+            fallback=StageOverride(
+                service="claude",
+                model="haiku",
+                effort="low",
+            ),
+        ),
+    )
+
+    result = select_configured_candidate_chain(
+        override,
+        configured_service_names=("codex", "claude"),
+        available_service_names=(),
+    )
+
+    assert result.has_configured_candidate is True
+    assert result.selected_chain == StageOverride(
+        service="codex",
+        model="gpt-5.4-mini",
+        effort="medium",
+        fallback=StageOverride(
+            service="claude",
+            model="haiku",
+            effort="low",
+        ),
+    )
+
+
+def test_select_configured_candidate_chain_reports_when_no_candidate_is_configured() -> (
+    None
+):
+    override = StageOverride(
+        service="opencode",
+        model="deepseek-v4-flash",
+        effort="high",
+        fallback=StageOverride(
+            service="claude",
+            model="haiku",
+            effort="low",
+        ),
+    )
+
+    result = select_configured_candidate_chain(
+        override,
+        configured_service_names=("codex",),
+        available_service_names=("codex",),
+    )
+
+    assert result.has_configured_candidate is False
+    assert result.selected_chain is None

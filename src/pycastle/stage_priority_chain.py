@@ -14,6 +14,12 @@ class ChainEntry:
     fallback: StageOverride | None
 
 
+@dataclass(frozen=True)
+class ConfiguredCandidateSelection:
+    has_configured_candidate: bool
+    selected_chain: StageOverride | None
+
+
 def iter_stage_chain(override: StageOverride) -> Iterator[StageOverride]:
     node: StageOverride | None = override
     while node is not None:
@@ -57,3 +63,60 @@ def referenced_service_names(override: StageOverride) -> tuple[str, ...]:
         names.append(service)
         seen.add(service)
     return tuple(names)
+
+
+def _build_chain(nodes: tuple[StageOverride, ...]) -> StageOverride | None:
+    chain: StageOverride | None = None
+    for node in reversed(nodes):
+        chain = StageOverride(
+            service=node.service,
+            model=node.model,
+            effort=node.effort,
+            fallback=chain,
+        )
+    return chain
+
+
+def _remaining_chain_is_fully_configured(
+    override: StageOverride, configured: set[str]
+) -> bool:
+    return all(node.service in configured for node in iter_stage_chain(override))
+
+
+def select_configured_candidate_chain(
+    override: StageOverride,
+    *,
+    configured_service_names: tuple[str, ...],
+    available_service_names: tuple[str, ...],
+) -> ConfiguredCandidateSelection:
+    configured = set(configured_service_names)
+    available = set(available_service_names)
+    configured_candidates = tuple(
+        node for node in iter_stage_chain(override) if node.service in configured
+    )
+    if not configured_candidates:
+        return ConfiguredCandidateSelection(
+            has_configured_candidate=False,
+            selected_chain=None,
+        )
+    for index, node in enumerate(configured_candidates):
+        if node.service in available:
+            if _remaining_chain_is_fully_configured(node, configured):
+                return ConfiguredCandidateSelection(
+                    has_configured_candidate=True,
+                    selected_chain=node,
+                )
+            return ConfiguredCandidateSelection(
+                has_configured_candidate=True,
+                selected_chain=_build_chain(configured_candidates[index:]),
+            )
+    first_configured = configured_candidates[0]
+    if _remaining_chain_is_fully_configured(first_configured, configured):
+        return ConfiguredCandidateSelection(
+            has_configured_candidate=True,
+            selected_chain=first_configured,
+        )
+    return ConfiguredCandidateSelection(
+        has_configured_candidate=True,
+        selected_chain=_build_chain(configured_candidates),
+    )

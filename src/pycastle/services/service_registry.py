@@ -5,6 +5,7 @@ from datetime import datetime
 
 from ..config.types import StageOverride
 from ..service_availability import iter_stage_chain
+from ..stage_priority_chain import select_configured_candidate_chain
 from .agent_service import AgentService
 
 
@@ -60,59 +61,40 @@ class ServiceRegistry:
         self, override: StageOverride, now: datetime
     ) -> _StageAvailability:
         candidates: list[_ConfiguredCandidate] = []
-        for node in self._configured_candidates(override):
+        configured_candidates = self._configured_candidates(override)
+        availability_by_service = {
+            node.service: self._services[node.service].is_available(now=now)
+            for node in configured_candidates
+        }
+        for node in configured_candidates:
             service = self._services[node.service]
             candidates.append(
                 _ConfiguredCandidate(
                     override=node,
                     service=service,
-                    is_available=service.is_available(now=now),
+                    is_available=availability_by_service[node.service],
                 )
             )
         return _StageAvailability(tuple(candidates))
-
-    def _remaining_chain_is_fully_configured(self, override: StageOverride) -> bool:
-        return all(
-            node.service in self._services for node in iter_stage_chain(override)
-        )
-
-    def _build_chain(self, nodes: list[StageOverride]) -> StageOverride:
-        chain: StageOverride | None = None
-        for node in reversed(nodes):
-            chain = StageOverride(
-                service=node.service,
-                model=node.model,
-                effort=node.effort,
-                fallback=chain,
-            )
-        if chain is None:
-            raise RuntimeError("Cannot build stage chain from empty node list")
-        return chain
 
     def has_configured_candidate(self, override: StageOverride) -> bool:
         return bool(self._configured_candidates(override))
 
     def resolve(self, override: StageOverride, now: datetime) -> StageOverride:
         stage_availability = self._stage_availability(override, now)
-        available_index = stage_availability.first_available_index()
-        if available_index is not None:
-            available_override = stage_availability.candidates[available_index].override
-            if self._remaining_chain_is_fully_configured(available_override):
-                return available_override
-            return self._build_chain(
-                [
-                    candidate.override
-                    for candidate in stage_availability.candidates[available_index:]
-                ]
-            )
-        if stage_availability.has_configured_candidate():
-            first_configured = stage_availability.candidates[0].override
-            if self._remaining_chain_is_fully_configured(first_configured):
-                return first_configured
-            return self._build_chain(
-                [candidate.override for candidate in stage_availability.candidates]
-            )
-        return override
+        selection = select_configured_candidate_chain(
+            override,
+            configured_service_names=tuple(
+                candidate.override.service
+                for candidate in stage_availability.candidates
+            ),
+            available_service_names=tuple(
+                candidate.override.service
+                for candidate in stage_availability.candidates
+                if candidate.is_available
+            ),
+        )
+        return selection.selected_chain or override
 
     def has_available(self, now: datetime) -> bool:
         return any(svc.is_available(now=now) for svc in self._services.values())
