@@ -199,6 +199,15 @@ def test_provider_state_relpath_formats_role_namespace_and_provider_name() -> No
     assert provider_state_relpath(AgentRole.IMPLEMENTER, "claude", "") == (
         provider_state_relpath(AgentRole.IMPLEMENTER, "claude")
     )
+    assert RoleSession.provider_state_relpath(AgentRole.IMPLEMENTER, "opencode") == (
+        ".pycastle-session/implementer/opencode/"
+    )
+    assert RoleSession.provider_state_relpath(
+        AgentRole.IMPROVE, "opencode", "main"
+    ) == (".pycastle-session/improve/main/opencode/")
+    assert RoleSession.provider_state_relpath(
+        AgentRole.IMPLEMENTER, "opencode", ""
+    ) == (RoleSession.provider_state_relpath(AgentRole.IMPLEMENTER, "opencode"))
 
 
 def test_role_session_provider_state_dir_matches_worktree_local_provider_layout(
