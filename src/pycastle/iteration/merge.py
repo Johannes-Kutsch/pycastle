@@ -22,7 +22,6 @@ from ..infrastructure.worktree import (
     managed_worktree,
     teardown_worktree,
     worktree_identity,
-    worktree_name_for_branch,
 )
 from ._rows import status_row
 from ._utils import _wait_for_clean_working_tree
@@ -179,10 +178,6 @@ def _merge_sandbox_branch(issue_number: int) -> str:
     return f"{MERGE_SANDBOX_PREFIX}-issue-{issue_number}"
 
 
-def _merge_sandbox_name(issue_number: int) -> str:
-    return worktree_name_for_branch(_merge_sandbox_branch(issue_number))
-
-
 async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
     async with status_row(
         deps.status_display,
@@ -294,12 +289,14 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             completed_conflicts: list[dict] = []
             pending_conflicts: list[dict] = []
             for idx, active_issue in enumerate(conflict_issues):
-                sandbox_branch = _merge_sandbox_branch(active_issue["number"])
+                sandbox_identity = worktree_identity(
+                    _merge_sandbox_branch(active_issue["number"]),
+                    deps.repo_root,
+                )
                 target_branch = deps.git_svc.get_current_branch(deps.repo_root)
                 try:
                     async with managed_worktree(
-                        _merge_sandbox_name(active_issue["number"]),
-                        branch=sandbox_branch,
+                        identity=sandbox_identity,
                         sha=deps.git_svc.get_head_sha(deps.repo_root),
                         delete_branch_on_teardown=True,
                         replace_preserved_failure=True,
@@ -336,7 +333,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                             [active_issue], sandbox_path, deps
                         )
                         deps.git_svc.fast_forward_branch(
-                            deps.repo_root, target_branch, sandbox_branch
+                            deps.repo_root, target_branch, sandbox_identity.branch
                         )
                         _ensure_conflict_branches_are_merged(
                             [active_issue], deps.repo_root, deps

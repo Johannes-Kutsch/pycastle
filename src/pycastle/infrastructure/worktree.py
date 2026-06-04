@@ -40,6 +40,9 @@ def _worktree_name_for_branch(branch: str) -> str:
     m = re.match(r"pycastle/issue-(\d+)", branch)
     if m:
         return f"issue-{m.group(1)}"
+    m = re.match(r"pycastle/([a-z0-9-]*sandbox-issue-\d+)$", branch)
+    if m:
+        return m.group(1)
     m = re.match(r"pycastle/([a-z0-9-]*sandbox)$", branch)
     if m:
         return m.group(1)
