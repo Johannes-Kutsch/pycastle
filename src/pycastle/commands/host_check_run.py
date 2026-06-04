@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
 from typing import Callable, TypeAlias
 
+from .._host_check import (
+    HostCheckCommandExecutor,
+    HostCheckCommandResult,
+    HostCheckFailedError,
+    HostCheckFailure,
+    HostCheckIssueFiledVerdict,
+    HostCheckPassedVerdict,
+    HostCheckVerdict,
+    HostCheckWorktreeFactory,
+)
 from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config, StageOverride, load_credential_env
@@ -29,35 +38,9 @@ class HostCheckIssueDeps:
     reporter_override: StageOverride | None = None
 
 
-class HostCheckFailedError(RuntimeError):
-    def __init__(self, *, name: str, command: str, output: str) -> None:
-        self.name = name
-        self.command = command
-        self.output = output
-        detail = f"\n{output}" if output else ""
-        super().__init__(f"Host check {name!r} failed: {command}{detail}")
-
-
-@dataclass(frozen=True)
-class HostCheckFailure:
-    name: str
-    command: str
-    output: str
-
-
-@dataclass(frozen=True)
-class HostCheckRunPassed:
-    checked_sha: str
-
-
-@dataclass(frozen=True)
-class HostCheckRunFailed:
-    checked_sha: str
-    failures: tuple[HostCheckFailure, ...]
-    issue_numbers: tuple[int, ...]
-
-
-HostCheckRunOutcome: TypeAlias = HostCheckRunPassed | HostCheckRunFailed
+HostCheckRunPassed = HostCheckPassedVerdict
+HostCheckRunFailed = HostCheckIssueFiledVerdict
+HostCheckRunOutcome: TypeAlias = HostCheckVerdict
 
 
 @dataclass
@@ -136,7 +119,9 @@ def resolve_host_check_issue_deps(
     )
 
 
-def _surface_current_host_check(status_display: StatusDisplay, name: str) -> None:
+def _surface_current_host_check(
+    status_display: StatusDisplay, name: str
+) -> None:
     status_display.update_phase("Host Check", name)
     if isinstance(status_display, PlainStatusDisplay):
         status_display.print("Host Check", name)
@@ -169,10 +154,18 @@ def _run_host_check(name: str, command: str, cwd: Path) -> None:
         text=True,
         capture_output=True,
     )
+    command_result = HostCheckCommandResult(
+        name=name,
+        command=command,
+        output=(result.stdout + result.stderr).strip(),
+    )
     if result.returncode == 0:
         return
-    output = (result.stdout + result.stderr).strip()
-    raise HostCheckFailedError(name=name, command=command, output=output)
+    raise HostCheckFailedError(
+        name=command_result.name,
+        command=command_result.command,
+        output=command_result.output,
+    )
 
 
 def _failure_from_exception(
@@ -288,10 +281,8 @@ async def run_host_check_run(
     issue_deps_factory: Callable[[], HostCheckIssueDeps] | None = None,
     on_check_start: Callable[[str], None] | None = None,
     on_failures_detected: Callable[[list[HostCheckFailure]], None] | None = None,
-    run_host_check: Callable[[str, str, Path], None] | None = None,
-    transient_worktree_factory: (
-        Callable[..., AbstractAsyncContextManager[Path]] | None
-    ) = None,
+    run_host_check: HostCheckCommandExecutor | None = None,
+    transient_worktree_factory: HostCheckWorktreeFactory | None = None,
 ) -> HostCheckRunOutcome:
     resolved_repo_root = repo_root or Path(".").resolve()
     execute_host_check = run_host_check or _run_host_check
