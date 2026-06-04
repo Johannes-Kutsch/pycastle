@@ -705,91 +705,139 @@ def test_close_issue_on_410_marks_issue_as_closed_for_get_open_issues():
 # ── get_issue ────────────────────────────────────────────────────────────────
 
 
-def _make_get_issue_urlopen(issue_payload: dict[str, Any]) -> Any:
-    issue_body = json.dumps(issue_payload).encode()
-    empty_comments = json.dumps([]).encode()
-
-    def fake_urlopen(req: Any, **_: Any) -> MagicMock:
-        url = req.full_url if hasattr(req, "full_url") else str(req)
-        if "/comments" in url:
-            return _make_response(empty_comments)
-        return _make_response(issue_body)
-
-    return fake_urlopen
-
-
-def test_get_issue_returns_title_and_body():
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=_make_get_issue_urlopen(
-            {"number": 7, "title": "Fix bug", "body": "do it"}
-        ),
-    ):
-        result = svc.get_issue(7)
-    assert result["number"] == 7
-    assert result["title"] == "Fix bug"
-    assert result["body"] == "do it"
-
-
-def test_get_issue_returns_empty_string_for_null_body():
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=_make_get_issue_urlopen(
-            {"number": 7, "title": "Fix bug", "body": None}
-        ),
-    ):
-        result = svc.get_issue(7)
-    assert result["body"] == ""
-
-
-def test_get_issue_raises_when_title_missing():
-    svc = _make_service()
-    body = json.dumps({"number": 7}).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body),
-    ):
-        with pytest.raises(GithubAPIError):
-            svc.get_issue(7)
-
-
-def test_get_issue_returns_labels_and_comments():
-    svc = _make_service()
-    issue_body = json.dumps(
-        {
-            "number": 7,
-            "title": "Fix bug",
-            "body": "do it",
-            "labels": [{"name": "bug"}, {"name": "ready-for-agent"}],
-        }
-    ).encode()
-    comments_body = json.dumps(
+def test_get_issue_with_scripted_transport_returns_number_title_body_labels_and_comments():
+    transport = _ScriptedGithubTransport(
         [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                payload={
+                    "number": 7,
+                    "title": "Fix bug",
+                    "body": "do it",
+                    "labels": [{"name": "bug"}, {"name": "ready-for-agent"}],
+                },
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7/comments?per_page=100",
+                payload=[
+                    {
+                        "user": {"login": "alice"},
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "body": "LGTM",
+                    }
+                ],
+                headers={"Link": ""},
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_issue(7)
+
+    assert result == {
+        "number": 7,
+        "title": "Fix bug",
+        "body": "do it",
+        "labels": ["bug", "ready-for-agent"],
+        "comments": [
             {
-                "user": {"login": "alice"},
+                "author": "alice",
                 "created_at": "2024-01-01T00:00:00Z",
                 "body": "LGTM",
             }
+        ],
+    }
+    transport.assert_exhausted()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"number": 7, "title": "Fix bug", "body": None},
+        {"number": 7, "title": "Fix bug"},
+    ],
+)
+def test_get_issue_with_scripted_transport_returns_empty_string_for_null_or_missing_body(
+    payload: dict[str, Any],
+) -> None:
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step("GET", "/repos/owner/repo/issues/7", payload=payload),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7/comments?per_page=100",
+                payload=[],
+                headers={"Link": ""},
+            ),
         ]
-    ).encode()
+    )
+    svc = _make_service(transport=transport)
 
-    def fake_urlopen(req: Any, **_: Any) -> MagicMock:
-        url = req.full_url if hasattr(req, "full_url") else str(req)
-        if "/comments" in url:
-            return _make_response(comments_body, headers={"Link": ""})
-        return _make_response(issue_body)
+    result = svc.get_issue(7)
 
-    with patch(
-        "pycastle.services._github_http_transport.urlopen", side_effect=fake_urlopen
-    ):
-        result = svc.get_issue(7)
+    assert result["body"] == ""
+    transport.assert_exhausted()
 
-    assert result["labels"] == ["bug", "ready-for-agent"]
-    assert result["comments"] == [
-        {"author": "alice", "created_at": "2024-01-01T00:00:00Z", "body": "LGTM"}
-    ]
+
+def test_get_issue_with_scripted_transport_raises_when_title_missing():
+    transport = _ScriptedGithubTransport(
+        [_script_step("GET", "/repos/owner/repo/issues/7", payload={"number": 7})]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubAPIError):
+        svc.get_issue(7)
+
+    transport.assert_exhausted()
+
+
+def test_get_issue_with_scripted_transport_ignores_malformed_labels_and_projects_comments():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7",
+                payload={
+                    "number": 7,
+                    "title": "Fix bug",
+                    "body": "do it",
+                    "labels": [{"name": "bug"}, 123, {"id": 99}],
+                },
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7/comments?per_page=100",
+                payload=[
+                    {
+                        "user": {"login": "alice"},
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "body": "LGTM",
+                    }
+                ],
+                headers={"Link": ""},
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_issue(7)
+
+    assert result == {
+        "number": 7,
+        "title": "Fix bug",
+        "body": "do it",
+        "labels": ["bug"],
+        "comments": [
+            {
+                "author": "alice",
+                "created_at": "2024-01-01T00:00:00Z",
+                "body": "LGTM",
+            }
+        ],
+    }
+    transport.assert_exhausted()
 
 
 # ── get_issue_title / get_labels ─────────────────────────────────────────────
@@ -799,7 +847,10 @@ def test_get_issue_title_returns_title():
     svc = _make_service()
     with patch(
         "pycastle.services._github_http_transport.urlopen",
-        side_effect=_make_get_issue_urlopen({"number": 7, "title": "Fix bug"}),
+        side_effect=[
+            _make_response(json.dumps({"number": 7, "title": "Fix bug"}).encode()),
+            _make_response(json.dumps([]).encode()),
+        ],
     ):
         assert svc.get_issue_title(7) == "Fix bug"
 
@@ -808,7 +859,10 @@ def test_get_issue_title_returns_title_when_body_key_absent():
     svc = _make_service()
     with patch(
         "pycastle.services._github_http_transport.urlopen",
-        side_effect=_make_get_issue_urlopen({"number": 7, "title": "Fix bug"}),
+        side_effect=[
+            _make_response(json.dumps({"number": 7, "title": "Fix bug"}).encode()),
+            _make_response(json.dumps([]).encode()),
+        ],
     ):
         assert svc.get_issue_title(7) == "Fix bug"
 
@@ -1136,26 +1190,32 @@ def test_add_sub_issue_sends_child_as_sub_issue_id():
 
 
 def test_get_issue_comments_returns_author_created_at_and_body():
-    svc = _make_service()
-    body = json.dumps(
+    transport = _ScriptedGithubTransport(
         [
-            {
-                "user": {"login": "alice"},
-                "created_at": "2026-01-01T10:00:00Z",
-                "body": "first comment",
-            },
-            {
-                "user": {"login": "bob"},
-                "created_at": "2026-01-02T10:00:00Z",
-                "body": "second comment",
-            },
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/7/comments?per_page=100",
+                payload=[
+                    {
+                        "user": {"login": "alice"},
+                        "created_at": "2026-01-01T10:00:00Z",
+                        "body": "first comment",
+                    },
+                    "skip",
+                    {
+                        "user": {"login": "bob"},
+                        "created_at": "2026-01-02T10:00:00Z",
+                        "body": "second comment",
+                    },
+                ],
+                headers={"Link": ""},
+            )
         ]
-    ).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body, headers={}),
-    ):
-        result = svc.get_issue_comments(7)
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_issue_comments(7)
+
     assert result == [
         {
             "author": "alice",
@@ -1168,6 +1228,7 @@ def test_get_issue_comments_returns_author_created_at_and_body():
             "body": "second comment",
         },
     ]
+    transport.assert_exhausted()
 
 
 def test_get_issue_comments_returns_empty_list_when_no_comments():
@@ -1294,23 +1355,48 @@ def test_get_open_issue_numbers_excludes_pull_requests():
 # ── get_open_issues ──────────────────────────────────────────────────────────
 
 
-def test_get_open_issues_returns_number_title_body_labels():
-    svc = _make_service()
-    body = json.dumps(
+def test_get_open_issues_with_scripted_transport_returns_projection_and_comment_loading():
+    transport = _ScriptedGithubTransport(
         [
-            {
-                "number": 1,
-                "title": "Fix",
-                "body": "do it",
-                "labels": [{"name": "bug"}],
-            }
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&labels=bug&per_page=100",
+                payload=[
+                    {
+                        "number": 1,
+                        "title": "Fix",
+                        "body": "do it",
+                        "labels": [{"name": "bug"}, {"id": 1}],
+                        "comments": 0,
+                    },
+                    {
+                        "number": 2,
+                        "title": "Discuss",
+                        "body": "details",
+                        "labels": [{"name": "bug"}],
+                        "comments": 1,
+                    },
+                ],
+                headers={"Link": ""},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/2/comments?per_page=100",
+                payload=[
+                    {
+                        "user": {"login": "alice"},
+                        "created_at": "2026-01-01T00:00:00Z",
+                        "body": "hi",
+                    }
+                ],
+                headers={"Link": ""},
+            ),
         ]
-    ).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body, headers={}),
-    ):
-        result = svc.get_open_issues("bug")
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_open_issues("bug")
+
     assert result == [
         {
             "number": 1,
@@ -1318,8 +1404,22 @@ def test_get_open_issues_returns_number_title_body_labels():
             "body": "do it",
             "labels": ["bug"],
             "comments": [],
-        }
+        },
+        {
+            "number": 2,
+            "title": "Discuss",
+            "body": "details",
+            "labels": ["bug"],
+            "comments": [
+                {
+                    "author": "alice",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "body": "hi",
+                }
+            ],
+        },
     ]
+    transport.assert_exhausted()
 
 
 def test_get_open_issues_filters_pull_requests():
@@ -1440,56 +1540,57 @@ def test_get_open_issues_does_not_filter_issue_when_close_failed():
     assert [r["number"] for r in result] == [42]
 
 
-def test_get_open_issues_normalizes_mixed_open_issue_payload():
-    svc = _make_service()
-    issues_body = json.dumps(
+def test_get_open_issues_with_scripted_transport_normalizes_mixed_open_issue_payload():
+    transport = _ScriptedGithubTransport(
         [
-            "skip",
-            {"title": "missing number"},
-            {
-                "number": "1",
-                "title": None,
-                "body": None,
-                "labels": [{"name": "bug"}],
-                "comments": 0,
-            },
-            {
-                "number": 2,
-                "title": "PR",
-                "body": "",
-                "labels": [],
-                "comments": 3,
-                "pull_request": {"url": "x"},
-            },
-            {
-                "number": "3",
-                "title": "Has comments",
-                "body": "details",
-                "labels": [{"name": "feat"}],
-                "comments": 1,
-            },
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&labels=bug&per_page=100",
+                payload=[
+                    "skip",
+                    {"title": "missing number"},
+                    {
+                        "number": "1",
+                        "title": None,
+                        "body": None,
+                        "labels": [{"name": "bug"}],
+                        "comments": 0,
+                    },
+                    {
+                        "number": 2,
+                        "title": "PR",
+                        "body": "",
+                        "labels": [],
+                        "comments": 3,
+                        "pull_request": {"url": "x"},
+                    },
+                    {
+                        "number": "3",
+                        "title": "Has comments",
+                        "body": "details",
+                        "labels": [{"name": "feat"}],
+                        "comments": 1,
+                    },
+                ],
+                headers={"Link": ""},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/3/comments?per_page=100",
+                payload=[
+                    {
+                        "user": {"login": "alice"},
+                        "created_at": "2026-01-01T00:00:00Z",
+                        "body": "hi",
+                    }
+                ],
+                headers={"Link": ""},
+            ),
         ]
-    ).encode()
-    comments_body = json.dumps(
-        [
-            {
-                "user": {"login": "alice"},
-                "created_at": "2026-01-01T00:00:00Z",
-                "body": "hi",
-            }
-        ]
-    ).encode()
+    )
+    svc = _make_service(transport=transport)
 
-    def fake_urlopen(req: Any, **_: Any) -> MagicMock:
-        url = req.full_url if hasattr(req, "full_url") else str(req)
-        if "/issues/3/comments" in url:
-            return _make_response(comments_body, headers={})
-        return _make_response(issues_body, headers={})
-
-    with patch(
-        "pycastle.services._github_http_transport.urlopen", side_effect=fake_urlopen
-    ):
-        result = svc.get_open_issues("bug")
+    result = svc.get_open_issues("bug")
 
     assert result == [
         {
@@ -1513,6 +1614,7 @@ def test_get_open_issues_normalizes_mixed_open_issue_payload():
             ],
         },
     ]
+    transport.assert_exhausted()
 
 
 # ── get_all_open_issues_lightweight ─────────────────────────────────────────

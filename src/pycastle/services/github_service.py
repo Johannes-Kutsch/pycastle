@@ -393,7 +393,7 @@ class GithubService:
         return [
             str(label_obj["name"] or "")
             for label_obj in (item.get("labels") or [])
-            if "name" in label_obj
+            if isinstance(label_obj, dict) and "name" in label_obj
         ]
 
     def get_open_issues(self, label: str) -> list[dict[str, Any]]:
