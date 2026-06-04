@@ -61,6 +61,10 @@ def worktree_identity(
     )
 
 
+def sandbox_worktree_identity(intent: str, repo_root: Path) -> WorktreeIdentity:
+    return worktree_identity(f"pycastle/{intent}", repo_root, name=intent)
+
+
 def worktree_name_for_branch(branch: str) -> str:
     return _worktree_name_for_branch(branch)
 

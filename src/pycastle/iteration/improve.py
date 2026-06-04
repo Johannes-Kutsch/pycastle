@@ -16,12 +16,13 @@ from ..services import GitService, ServiceRegistry
 from ..services.github_service import GithubService
 from ..session import RoleSession, has_exact_transcript_match
 from ..display.status_display import StatusDisplay
-from ..infrastructure.worktree import managed_worktree
+from ..infrastructure.worktree import managed_worktree, sandbox_worktree_identity
 from ._rows import status_row
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
 
-IMPROVE_SANDBOX = "pycastle/improve-sandbox"
+IMPROVE_SANDBOX_INTENT = "improve-sandbox"
+IMPROVE_SANDBOX = f"pycastle/{IMPROVE_SANDBOX_INTENT}"
 
 
 @dataclass(frozen=True)
@@ -247,9 +248,12 @@ async def improve_phase(
             row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
             return verdict
 
+        sandbox_identity = sandbox_worktree_identity(
+            IMPROVE_SANDBOX_INTENT, deps.repo_root
+        )
         async with managed_worktree(
-            "improve-sandbox",
-            branch=IMPROVE_SANDBOX,
+            sandbox_identity.name,
+            branch=sandbox_identity.branch,
             sha=verdict.sha,
             delete_branch_on_teardown=True,
             deps=deps,
