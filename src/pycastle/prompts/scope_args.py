@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from .pipeline import PromptRenderError
 from ..session import RunKind
 
 _ISSUE_PLACEHOLDER_KEYS = frozenset(
@@ -22,8 +23,6 @@ def _format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
 def build_issue_scope_args(
     issue: dict, *, extra_scope_args: dict[str, str]
 ) -> dict[str, str]:
-    from .pipeline import PromptRenderError
-
     collisions = _ISSUE_PLACEHOLDER_KEYS & extra_scope_args.keys()
     if collisions:
         raise PromptRenderError(

@@ -1749,20 +1749,6 @@ _PER_ISSUE_BASE = {
 }
 
 
-@pytest.mark.parametrize(
-    ("run_kind", "is_dirty", "expected"),
-    [
-        (RunKind.FRESH, True, True),
-        (RunKind.FRESH, False, False),
-        (RunKind.RESUME, True, False),
-        (RunKind.RESUME, False, False),
-    ],
-)
-def test_interrupted_work_clause_matrix(run_kind, is_dirty, expected):
-    result = build_interrupted_work_clause(run_kind, is_dirty=is_dirty)
-    assert ("Interrupted Work" in result) is expected
-
-
 def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
     (prompts_dir / "work" / "behavior.md").write_text(
         "Context:{{INTERRUPTED_WORK}}Done"

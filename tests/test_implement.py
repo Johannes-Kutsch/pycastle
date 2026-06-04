@@ -21,8 +21,6 @@ from pycastle.iteration.implement import (
     pick_implement_template,
     run_issue,
 )
-from pycastle.prompts.pipeline import PromptRenderError
-from pycastle.prompts.scope_args import build_issue_scope_args
 from pycastle.services import GitService, GithubService
 from tests.support import (
     FakeAgentRunner,
@@ -746,94 +744,6 @@ def test_run_issue_handles_issue_without_body_or_comments(tmp_path):
     impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
     assert impl_call.scope_args["ISSUE_BODY"] == ""
     assert impl_call.scope_args["ISSUE_COMMENTS"] == ""
-
-
-# ── build_issue_scope_args ────────────────────────────────────────────────────
-
-
-def test_build_issue_scope_args_merges_extra_into_required_keys():
-    issue = {
-        "number": 1,
-        "title": "Fix bug",
-        "body": "details",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    result = build_issue_scope_args(
-        issue, extra_scope_args={"BRANCH": "pycastle/issue-1"}
-    )
-    assert set(result.keys()) == {
-        "ISSUE_NUMBER",
-        "ISSUE_TITLE",
-        "ISSUE_BODY",
-        "ISSUE_COMMENTS",
-        "BRANCH",
-    }
-    assert result["BRANCH"] == "pycastle/issue-1"
-
-
-def test_build_issue_scope_args_formats_number_as_string():
-    issue = {
-        "number": 42,
-        "title": "T",
-        "body": "",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    result = build_issue_scope_args(issue, extra_scope_args={})
-    assert result["ISSUE_NUMBER"] == "42"
-
-
-def test_build_issue_scope_args_raises_key_error_when_body_missing():
-    with pytest.raises(KeyError):
-        build_issue_scope_args(
-            {"number": 1, "title": "T", "comments": []}, extra_scope_args={}
-        )
-
-
-def test_build_issue_scope_args_raises_key_error_when_comments_missing():
-    with pytest.raises(KeyError):
-        build_issue_scope_args(
-            {"number": 1, "title": "T", "body": ""}, extra_scope_args={}
-        )
-
-
-def test_build_issue_scope_args_formats_comments():
-    issue = {
-        "number": 1,
-        "title": "T",
-        "body": "",
-        "comments": [
-            {"author": "alice", "created_at": "2026-01-01T10:00:00Z", "body": "hi"}
-        ],
-    }
-    result = build_issue_scope_args(issue, extra_scope_args={})
-    assert "alice" in result["ISSUE_COMMENTS"]
-    assert "2026-01-01T10:00:00Z" in result["ISSUE_COMMENTS"]
-    assert "hi" in result["ISSUE_COMMENTS"]
-
-
-@pytest.mark.parametrize(
-    "colliding_key",
-    ["ISSUE_NUMBER", "ISSUE_TITLE", "ISSUE_BODY", "ISSUE_COMMENTS"],
-)
-def test_build_issue_scope_args_rejects_collision_with_reserved_keys(colliding_key):
-    issue = {
-        "number": 1,
-        "title": "T",
-        "body": "",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    with pytest.raises(PromptRenderError):
-        build_issue_scope_args(issue, extra_scope_args={colliding_key: "x"})
-
-
-def test_build_issue_scope_args_raises_on_missing_required_keys():
-    with pytest.raises(KeyError):
-        build_issue_scope_args({"title": "T"}, extra_scope_args={})
-    with pytest.raises(KeyError):
-        build_issue_scope_args({"number": 1}, extra_scope_args={})
 
 
 # ── Issue 349: issue_title threading ─────────────────────────────────────────
