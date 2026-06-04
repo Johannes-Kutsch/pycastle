@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import tempfile
+from dataclasses import dataclass
 from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
 from typing import Protocol
@@ -28,15 +29,40 @@ class _WorktreeDeps(Protocol):
     git_svc: GitService
 
 
-def worktree_name_for_branch(branch: str) -> str:
+@dataclass(frozen=True)
+class WorktreeIdentity:
+    branch: str
+    name: str
+    path: Path
+
+
+def _worktree_name_for_branch(branch: str) -> str:
     m = re.match(r"pycastle/issue-(\d+)", branch)
     if m:
         return f"issue-{m.group(1)}"
+    m = re.match(r"pycastle/([a-z0-9-]*sandbox)$", branch)
+    if m:
+        return m.group(1)
     return re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")
 
 
 def _project_local_worktrees_dir(repo_root: Path) -> Path:
     return repo_root / PROJECT_LOCAL_PYCASTLE_DIR / ".worktrees"
+
+
+def worktree_identity(
+    branch: str, repo_root: Path, *, name: str | None = None
+) -> WorktreeIdentity:
+    resolved_name = name or _worktree_name_for_branch(branch)
+    return WorktreeIdentity(
+        branch=branch,
+        name=resolved_name,
+        path=_project_local_worktrees_dir(repo_root) / resolved_name,
+    )
+
+
+def worktree_name_for_branch(branch: str) -> str:
+    return _worktree_name_for_branch(branch)
 
 
 def worktree_path(name: str, repo_root: Path) -> Path:
@@ -214,18 +240,19 @@ async def managed_worktree(
     replace_preserved_failure: bool = False,
     deps: _WorktreeDeps,
 ):
-    path = worktree_path(name, deps.repo_root)
+    identity = worktree_identity(branch, deps.repo_root, name=name)
+    path = identity.path
     if delete_branch_on_teardown:
         _cleanup_stale_sandbox(
             deps.git_svc,
             deps.repo_root,
             path,
-            branch,
+            identity.branch,
             replace_preserved_failure=replace_preserved_failure,
         )
-        _create_worktree(deps.git_svc, deps.repo_root, path, branch, sha)
-    elif not is_worktree_reusable(path, branch, deps.git_svc):
-        _create_worktree(deps.git_svc, deps.repo_root, path, branch, sha)
+        _create_worktree(deps.git_svc, deps.repo_root, path, identity.branch, sha)
+    elif not is_worktree_reusable(path, identity.branch, deps.git_svc):
+        _create_worktree(deps.git_svc, deps.repo_root, path, identity.branch, sha)
     _preservation_worthy_exc = False
     try:
         yield path
@@ -251,7 +278,7 @@ async def managed_worktree(
                 _branch_has_commits = True
             teardown_worktree(deps.git_svc, deps.repo_root, path)
             if delete_branch_on_teardown or not _branch_has_commits:
-                deps.git_svc.delete_branch(branch, deps.repo_root)
+                deps.git_svc.delete_branch(identity.branch, deps.repo_root)
 
 
 @asynccontextmanager
