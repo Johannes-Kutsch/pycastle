@@ -25,7 +25,7 @@ class SleepUntil:
 
 @dataclasses.dataclass(frozen=True)
 class Stop:
-    pass
+    message: str | None = None
 
 
 UsageLimitContinuationDecision: TypeAlias = ContinueNow | SleepUntil | Stop
@@ -44,6 +44,18 @@ def _sleep_message(wake: datetime, now: datetime, *, is_estimated: bool) -> str:
         f"Usage limit reached. Sleeping until {_fmt_wake(wake, now)}{suffix}."
         " Press Ctrl+C to abort."
     )
+
+
+def _permanent_exhaustion_message(outcome: AbortedUsageLimit) -> str:
+    provider_label = outcome.provider or "claude"
+    account = outcome.account_label or "unknown"
+    message = (
+        f"{provider_label} {account} account retired for this run and will be retried "
+        "on the next run."
+    )
+    if outcome.raw_message:
+        message += f" Claude said: {outcome.raw_message}"
+    return message
 
 
 def _override_for_stage_key(cfg: Config, stage_key: str | None) -> StageOverride | None:
@@ -91,7 +103,9 @@ def decide_usage_limit_continuation(
         else:
             exhausted_wake_time = service_registry.next_wake_time(now)
         message = None
-        if not outcome.is_permanent and exhausted_wake_time is not None:
+        if outcome.is_permanent:
+            message = _permanent_exhaustion_message(outcome)
+        elif exhausted_wake_time is not None:
             message = (
                 f"Account exhausted until {_fmt_wake(exhausted_wake_time, now)}, "
                 "switching to next available."
@@ -102,7 +116,7 @@ def decide_usage_limit_continuation(
         )
 
     if outcome.is_permanent:
-        return Stop()
+        return Stop(message=_permanent_exhaustion_message(outcome))
 
     if service_registry is None:
         next_wake = None

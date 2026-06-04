@@ -110,24 +110,6 @@ def _github_retry_exhaustion_message(exc: OperatorActionableGithubError) -> str:
     )
 
 
-def _print_permanent_exhaustion_warning(
-    *,
-    status_display: StatusDisplay,
-    provider: str | None,
-    account_label: str | None,
-    denial_message: str | None,
-) -> None:
-    provider_label = provider or "claude"
-    account = account_label or "unknown"
-    message = (
-        f"{provider_label} {account} account retired for this run and will be retried "
-        "on the next run."
-    )
-    if denial_message:
-        message += f" Claude said: {denial_message}"
-    status_display.print("", message)
-
-
 def ensure_session_excludes(repo_root: Path) -> None:
     exclude_file = repo_root / ".git" / "info" / "exclude"
     if not exclude_file.parent.exists():
@@ -310,12 +292,7 @@ async def run(
                     sys.exit(1)
                 case AbortedHardApiError():
                     sys.exit(1)
-                case AbortedUsageLimit(
-                    provider=provider,
-                    raw_message=raw_message,
-                    account_label=account_label,
-                    is_permanent=is_permanent,
-                ):
+                case AbortedUsageLimit():
                     now = _time_module.now_local()
                     decision = decide_usage_limit_continuation(
                         outcome,
@@ -324,23 +301,12 @@ async def run(
                         now,
                     )
                     if isinstance(decision, ContinueNow):
-                        if is_permanent:
-                            _print_permanent_exhaustion_warning(
-                                status_display=status_display,  # type: ignore[arg-type]
-                                provider=provider,
-                                account_label=account_label,
-                                denial_message=raw_message,
-                            )
-                        elif decision.message is not None:
+                        if decision.message is not None:
                             status_display.print("", decision.message)  # type: ignore[union-attr]
                         continue
                     if isinstance(decision, Stop):
-                        _print_permanent_exhaustion_warning(
-                            status_display=status_display,  # type: ignore[arg-type]
-                            provider=provider,
-                            account_label=account_label,
-                            denial_message=raw_message,
-                        )
+                        if decision.message is not None:
+                            status_display.print("", decision.message)  # type: ignore[union-attr]
                         break
                     assert isinstance(decision, SleepUntil)
                     wake_time = decision.wake_time

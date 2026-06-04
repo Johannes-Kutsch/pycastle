@@ -246,7 +246,51 @@ def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion():
         _now(),
     )
 
-    assert decision == Stop()
+    assert decision == Stop(
+        message=(
+            "claude unknown account retired for this run and will be retried on the "
+            "next run."
+        )
+    )
+
+
+def test_decide_usage_limit_continuation_returns_continue_now_for_permanent_exhaustion_with_fallback():
+    denial = "disabled Claude subscription access for Claude Code"
+    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
+    registry = ServiceRegistry(
+        {
+            "claude": _make_service(available=False, wake_time=primary_wake),
+            "codex": _make_service(available=True),
+        }
+    )
+    cfg = Config(
+        implement_override=StageOverride(
+            service="claude",
+            fallback=StageOverride(service="codex"),
+        )
+    )
+
+    decision = decide_usage_limit_continuation(
+        AbortedUsageLimit(
+            stage_key="implement",
+            provider="claude",
+            account_label="secondary",
+            raw_message=denial,
+            is_permanent=True,
+        ),
+        cfg,
+        registry,
+        _now(),
+    )
+
+    assert decision == ContinueNow(
+        message=(
+            "claude secondary account retired for this run and will be retried on "
+            "the next run. Claude said: disabled Claude subscription access for "
+            "Claude Code"
+        ),
+        exhausted_wake_time=primary_wake,
+    )
 
 
 def test_decide_usage_limit_continuation_estimates_wake_time_without_registry():
