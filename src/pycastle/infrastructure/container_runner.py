@@ -139,6 +139,7 @@ class ContainerRunner:
         )
         logged_lines = stream_logged_work_lines(
             self._session.exec_stream(command),
+            invocation_log=self._invocation_log,
             log_path=self._log_path,
             role=role,
             run_kind=run_kind,

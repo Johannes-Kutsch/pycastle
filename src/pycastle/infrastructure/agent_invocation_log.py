@@ -11,6 +11,15 @@ from ..agents.output_protocol import AgentRole
 from ..session import RunKind
 
 
+class WorkInvocationLog:
+    def __init__(self, log: BinaryIO) -> None:
+        self._log = log
+
+    def append_provider_chunk(self, provider_bytes: bytes) -> None:
+        self._log.write(provider_bytes)
+        self._log.flush()
+
+
 class AgentInvocationLog:
     def __init__(
         self,
@@ -43,7 +52,7 @@ class AgentInvocationLog:
         run_kind: RunKind,
         session_uuid: str | None,
         prompt: str,
-    ) -> Iterator[BinaryIO]:
+    ) -> Iterator[WorkInvocationLog]:
         with open(log_path, "ab") as log:
             separator = self._separator_for_next_invocation(log_path)
             if separator:
@@ -61,7 +70,7 @@ class AgentInvocationLog:
                 + b"\n"
             )
             log.flush()
-            yield log
+            yield WorkInvocationLog(log)
 
     def append_work_invocation(
         self,
@@ -80,7 +89,7 @@ class AgentInvocationLog:
             session_uuid=session_uuid,
             prompt=prompt,
         ) as log:
-            log.write(provider_bytes)
+            log.append_provider_chunk(provider_bytes)
 
     def _separator_for_next_invocation(self, log_path: Path) -> bytes:
         if not log_path.exists() or log_path.stat().st_size == 0:

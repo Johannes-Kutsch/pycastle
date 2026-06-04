@@ -59,7 +59,7 @@ def stream_logged_lines(
         log.flush()
         yield from _stream_logged_lines_to_open_log(
             chunks,
-            log=log,
+            append_chunk=lambda chunk: _append_chunk_to_log(log, chunk),
             idle_timeout=idle_timeout,
             on_chunk=on_chunk,
         )
@@ -68,7 +68,7 @@ def stream_logged_lines(
 def _stream_logged_lines_to_open_log(
     chunks: Iterable[bytes],
     *,
-    log: BinaryIO,
+    append_chunk: Callable[[bytes], None],
     idle_timeout: float,
     on_chunk: Callable[[], None] | Callable[[bytes], None],
 ) -> Iterator[str]:
@@ -99,8 +99,7 @@ def _stream_logged_lines_to_open_log(
                 yield line_buf
             return
         assert isinstance(chunk, bytes)
-        log.write(chunk)
-        log.flush()
+        append_chunk(chunk)
         notify_progress(chunk)
         line_buf += decoder.decode(chunk)
         while "\n" in line_buf:
@@ -111,6 +110,7 @@ def _stream_logged_lines_to_open_log(
 def stream_logged_work_lines(
     chunks: Iterable[bytes],
     *,
+    invocation_log: AgentInvocationLog | None = None,
     log_path: Path,
     role: AgentRole,
     run_kind: RunKind,
@@ -119,7 +119,10 @@ def stream_logged_work_lines(
     idle_timeout: float,
     on_chunk: Callable[[], None] | Callable[[bytes], None],
 ) -> Iterator[str]:
-    with AgentInvocationLog().open_work_invocation(
+    if invocation_log is None:
+        invocation_log = AgentInvocationLog()
+
+    with invocation_log.open_work_invocation(
         log_path=log_path,
         role=role,
         run_kind=run_kind,
@@ -128,7 +131,12 @@ def stream_logged_work_lines(
     ) as log:
         yield from _stream_logged_lines_to_open_log(
             chunks,
-            log=log,
+            append_chunk=log.append_provider_chunk,
             idle_timeout=idle_timeout,
             on_chunk=on_chunk,
         )
+
+
+def _append_chunk_to_log(log: BinaryIO, chunk: bytes) -> None:
+    log.write(chunk)
+    log.flush()
