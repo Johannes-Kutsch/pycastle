@@ -2319,6 +2319,7 @@ def test_search_open_issues_by_title_returns_numbers_from_search_api():
             None,
         )
     ]
+    transport.assert_exhausted()
     assert result == [10, 23]
 
 
@@ -2343,6 +2344,7 @@ def test_search_open_issues_by_title_returns_empty_list_when_no_matches():
             None,
         )
     ]
+    transport.assert_exhausted()
     assert result == []
 
 
@@ -2367,6 +2369,32 @@ def test_search_open_issues_by_title_returns_empty_list_when_payload_is_not_dict
             None,
         )
     ]
+    transport.assert_exhausted()
+    assert result == []
+
+
+def test_search_open_issues_by_title_returns_empty_list_when_items_missing():
+    prefix = "[pycastle] git remote unreachable"
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/search/issues?q=%5Bpycastle%5D%20git%20remote%20unreachable%20in%3Atitle%20state%3Aopen%20repo%3Aowner%2Frepo&per_page=100",
+                payload={"total_count": 0},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+    result = svc.search_open_issues_by_title(prefix)
+
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "GET",
+            "/search/issues?q=%5Bpycastle%5D%20git%20remote%20unreachable%20in%3Atitle%20state%3Aopen%20repo%3Aowner%2Frepo&per_page=100",
+            None,
+        )
+    ]
+    transport.assert_exhausted()
     assert result == []
 
 
