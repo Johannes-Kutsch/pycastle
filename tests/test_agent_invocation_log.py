@@ -50,3 +50,22 @@ def test_reserve_does_not_collide_across_different_local_minutes(tmp_path):
 
     assert first_path.name == "plan-agent-20260517T1430.log"
     assert second_path.name == "plan-agent-20260517T1431.log"
+
+
+def test_reserve_uses_container_runner_slug_rules_in_missing_effective_logs_dir(
+    tmp_path,
+):
+    from pycastle.infrastructure.agent_invocation_log import AgentInvocationLog
+
+    fixed_dt = datetime(2026, 5, 17, 14, 30, tzinfo=timezone.utc).astimezone()
+    effective_logs_dir = tmp_path / "nested" / "logs"
+
+    log_path = AgentInvocationLog(now_local=lambda: fixed_dt).reserve(
+        agent_name="!!!",
+        effective_logs_dir=effective_logs_dir,
+    )
+
+    assert log_path.parent == effective_logs_dir
+    assert effective_logs_dir.is_dir()
+    assert log_path.name == f"-{fixed_dt.strftime('%Y%m%dT%H%M')}.log"
+    assert log_path.read_text() == ""
