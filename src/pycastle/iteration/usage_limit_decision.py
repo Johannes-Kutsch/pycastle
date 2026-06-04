@@ -20,7 +20,7 @@ class ContinueNow:
 class SleepUntil:
     wake_time: datetime
     is_estimated: bool = False
-    message: str | None = None
+    message: str = ""
 
 
 @dataclasses.dataclass(frozen=True)

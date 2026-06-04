@@ -2,7 +2,6 @@ import dataclasses
 import sys
 import time
 import traceback
-from datetime import datetime
 from pathlib import Path
 
 from ..agents.runner import AgentRunner, AgentRunnerProtocol
@@ -94,12 +93,6 @@ class FileLogger:
 
 
 _SESSION_EXCLUDES = (f"{SESSION_DIR_NAME}/", ".claude/")
-
-
-def _fmt_wake(wake: datetime, now: datetime) -> str:
-    if wake.date() != now.date():
-        return f"{wake:%b} {wake.day}, {wake:%H:%M}"
-    return wake.strftime("%H:%M")
 
 
 def _github_retry_exhaustion_message(exc: OperatorActionableGithubError) -> str:
@@ -312,11 +305,7 @@ async def run(
                     wake_time = decision.wake_time
                     status_display.print(  # type: ignore[union-attr]
                         "",
-                        decision.message
-                        or (
-                            f"Usage limit reached. Sleeping until {_fmt_wake(wake_time, now)}."
-                            " Press Ctrl+C to abort."
-                        ),
+                        decision.message,
                     )
                     time.sleep((wake_time - now).total_seconds())
                     slept_once = True
