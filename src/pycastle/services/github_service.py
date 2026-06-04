@@ -146,7 +146,7 @@ class GithubService:
                 headers=exc.headers,
             ) from exc
         except GithubHttpTransportNetworkError as exc:
-            raise GithubNetworkError(str(exc), cause=exc.cause) from exc
+            raise GithubNetworkError(str(exc), cause=exc.cause) from exc.cause
 
     def _retry_delay_for_api_error(self, exc: GithubAPIError, attempt: int) -> int:
         fixed_delay = _fixed_retry_delay_seconds(exc.headers)

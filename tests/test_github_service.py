@@ -221,6 +221,23 @@ def test_check_auth_uses_injected_transport_adapter():
     assert transport.calls == [("GET", "/user", None)]
 
 
+def test_check_auth_with_scripted_transport_raises_api_error_when_login_missing():
+    transport = _ScriptedGithubTransport(
+        [_script_step("GET", "/user", payload={"id": 1})]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubAPIError) as exc_info:
+        svc.check_auth()
+
+    assert exc_info.value.status == 200
+    assert exc_info.value.body == "{'id': 1}"
+    assert exc_info.value.method == "GET"
+    assert exc_info.value.path == "/user"
+    assert transport.requests == [_GithubTransportRequest("GET", "/user", None)]
+    transport.assert_exhausted()
+
+
 def test_check_auth_with_scripted_transport_bypasses_no_real_network_guard(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -251,16 +268,29 @@ def test_check_auth_calls_get_user_endpoint():
     assert req.get_method() == "GET"
 
 
-def test_check_auth_raises_github_auth_error_on_401():
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=_make_http_error(401, b'{"message":"Bad credentials"}'),
-    ):
-        with pytest.raises(GithubAuthError) as ei:
-            svc.check_auth()
-    assert ei.value.status == 401
-    assert "Bad credentials" in ei.value.body
+def test_check_auth_with_scripted_transport_raises_github_auth_error_on_401():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/user",
+                error=GithubHttpTransportAuthError(
+                    "bad creds",
+                    status=401,
+                    body='{"message":"Bad credentials"}',
+                ),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubAuthError) as exc_info:
+        svc.check_auth()
+
+    assert exc_info.value.status == 401
+    assert exc_info.value.body == '{"message":"Bad credentials"}'
+    assert transport.requests == [_GithubTransportRequest("GET", "/user", None)]
+    transport.assert_exhausted()
 
 
 def test_check_auth_retries_transient_5xx_and_recovers():
@@ -383,57 +413,35 @@ def test_request_raises_github_api_error_on_non_401_4xx():
     assert "Not Found" in ei.value.body
 
 
-def test_request_translates_transport_auth_error():
-    transport = _FakeGithubTransport(
-        lambda method, path, data: (_ for _ in ()).throw(
-            GithubHttpTransportAuthError("bad creds", status=401, body="nope")
-        )
-    )
-    svc = _make_service(transport=transport)
-
-    with pytest.raises(GithubAuthError) as exc_info:
-        svc._request("GET", "/user")
-
-    assert exc_info.value.status == 401
-    assert exc_info.value.body == "nope"
-
-
-def test_request_translates_transport_api_error():
-    transport = _FakeGithubTransport(
-        lambda method, path, data: (_ for _ in ()).throw(
-            GithubHttpTransportAPIError(
-                "boom",
-                status=404,
-                body="not found",
-                method=method,
-                path=path,
-                headers={"X-Test": "1"},
+def test_check_auth_with_scripted_transport_raises_github_api_error_on_http_failure():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/user",
+                error=GithubHttpTransportAPIError(
+                    "boom",
+                    status=404,
+                    body="not found",
+                    method="GET",
+                    path="/user",
+                    headers={"X-Test": "1"},
+                ),
             )
-        )
+        ]
     )
     svc = _make_service(transport=transport)
 
     with pytest.raises(GithubAPIError) as exc_info:
-        svc._request("GET", "/x")
+        svc.check_auth()
 
     assert exc_info.value.status == 404
-    assert exc_info.value.path == "/x"
+    assert exc_info.value.body == "not found"
+    assert exc_info.value.method == "GET"
+    assert exc_info.value.path == "/user"
     assert exc_info.value.headers == {"X-Test": "1"}
-
-
-def test_request_translates_transport_network_error():
-    cause = URLError("dns fail")
-    transport = _FakeGithubTransport(
-        lambda method, path, data: (_ for _ in ()).throw(
-            GithubHttpTransportNetworkError("transport down", cause=cause)
-        )
-    )
-    svc = _make_service(transport=transport)
-
-    with pytest.raises(GithubNetworkError) as exc_info:
-        svc._request("POST", "/x")
-
-    assert exc_info.value.cause is cause
+    assert transport.requests == [_GithubTransportRequest("GET", "/user", None)]
+    transport.assert_exhausted()
 
 
 def test_request_post_raises_github_api_error_on_5xx_without_retry():
@@ -1874,6 +1882,35 @@ def test_create_issue_in_does_not_retry_transport_error():
 
     assert mock_urlopen.call_count == 1
     mock_sleep.assert_not_called()
+
+
+def test_create_issue_in_with_scripted_transport_preserves_original_network_cause():
+    cause = TimeoutError("timed out")
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/Johannes-Kutsch/pycastle/issues",
+                data={"title": "title", "body": "body", "labels": ["bug"]},
+                error=GithubHttpTransportNetworkError("transport down", cause=cause),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubNetworkError) as exc_info:
+        svc.create_issue_in("Johannes-Kutsch/pycastle", "title", "body", ["bug"])
+
+    assert exc_info.value.cause is cause
+    assert exc_info.value.__cause__ is cause
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/Johannes-Kutsch/pycastle/issues",
+            {"title": "title", "body": "body", "labels": ["bug"]},
+        )
+    ]
+    transport.assert_exhausted()
 
 
 # ── search_open_issues_by_title ──────────────────────────────────────────────
