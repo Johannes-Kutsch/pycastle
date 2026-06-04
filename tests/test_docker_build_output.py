@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import pytest
 
 from pycastle.services._docker_build_output import (
@@ -50,6 +52,26 @@ def test_interpreter_signals_rebuild_start_on_first_executed_buildkit_layer():
     assert interpreter.final_outcome == BuildOutcome.REBUILT
 
 
+def test_interpreter_calls_rebuild_start_callback_once_on_first_executed_buildkit_layer():
+    callback = MagicMock()
+    interpreter = DockerBuildOutputInterpreter(on_rebuild_start=callback)
+
+    for line in (
+        "#1 [internal] load .dockerignore\n",
+        "#1 DONE 0.1s\n",
+        "#2 [1/3] FROM python:3.12\n",
+        "#2 CACHED\n",
+        "#3 [2/3] RUN apt-get install -y git\n",
+        "#3 DONE 4.2s\n",
+        "#4 [3/3] COPY . .\n",
+        "#4 DONE 0.5s\n",
+    ):
+        interpreter.observe_line(line)
+
+    assert interpreter.final_outcome == BuildOutcome.REBUILT
+    callback.assert_called_once_with()
+
+
 def test_interpreter_signals_rebuild_start_on_first_non_cache_classic_step_body():
     interpreter = DockerBuildOutputInterpreter()
 
@@ -79,6 +101,36 @@ def test_interpreter_signals_rebuild_start_for_classic_step_body_after_blank_lin
 
     assert signals == [False, False, False, False, False, True]
     assert interpreter.final_outcome == BuildOutcome.REBUILT
+
+
+def test_interpreter_does_not_call_rebuild_start_callback_for_all_cached_classic_output():
+    callback = MagicMock()
+    interpreter = DockerBuildOutputInterpreter(on_rebuild_start=callback)
+
+    for line in FINAL_OUTCOME_EXAMPLES["classic_all_cached"].lines:
+        interpreter.observe_line(line)
+
+    assert interpreter.final_outcome == BuildOutcome.FULL_CACHE_HIT
+    callback.assert_not_called()
+
+
+def test_interpreter_calls_rebuild_start_callback_for_classic_step_body_after_blank_line():
+    callback = MagicMock()
+    interpreter = DockerBuildOutputInterpreter(on_rebuild_start=callback)
+
+    for line in (
+        "Step 1/2 : FROM python:3.12\n",
+        " ---> Using cache\n",
+        " ---> abc123\n",
+        "Step 2/2 : COPY . .\n",
+        "\n",
+        " ---> Running in 789abc\n",
+        "Successfully built 789abc\n",
+    ):
+        interpreter.observe_line(line)
+
+    assert interpreter.final_outcome == BuildOutcome.REBUILT
+    callback.assert_called_once_with()
 
 
 def test_interpreter_ignores_internal_buildkit_done_before_first_executed_layer():
@@ -287,3 +339,10 @@ def test_interpreter_success_progress_text_matches_final_build_outcome(example):
         "up to date" if example.outcome == BuildOutcome.FULL_CACHE_HIT else "completed"
     )
     assert interpreter.success_progress_text == expected
+
+
+def test_interpreter_defaults_empty_output_to_rebuilt():
+    interpreter = DockerBuildOutputInterpreter()
+
+    assert interpreter.final_outcome == BuildOutcome.REBUILT
+    assert interpreter.success_progress_text == "completed"

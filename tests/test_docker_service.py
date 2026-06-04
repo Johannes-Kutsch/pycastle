@@ -17,32 +17,6 @@ _BUILDKIT_ALL_CACHED = [
     "#2 CACHED\n",
 ]
 
-_BUILDKIT_WITH_REBUILD = [
-    "#1 [1/2] FROM python:3.12\n",
-    "#1 CACHED\n",
-    "#2 [2/2] COPY . .\n",
-    "#2 DONE 2.5s\n",
-]
-
-_CLASSIC_ALL_CACHED = [
-    "Step 1/2 : FROM python:3.12\n",
-    " ---> Using cache\n",
-    " ---> abc123\n",
-    "Step 2/2 : RUN pip install requests\n",
-    " ---> Using cache\n",
-    " ---> def456\n",
-    "Successfully built def456\n",
-]
-
-_CLASSIC_MIXED = [
-    "Step 1/2 : FROM python:3.12\n",
-    " ---> Using cache\n",
-    " ---> abc123\n",
-    "Step 2/2 : COPY . .\n",
-    " ---> Running in 789abc\n",
-    "Successfully built 789abc\n",
-]
-
 
 def _mock_popen(output_lines: list[str], returncode: int = 0) -> MagicMock:
     mock_proc = MagicMock()
@@ -50,6 +24,29 @@ def _mock_popen(output_lines: list[str], returncode: int = 0) -> MagicMock:
     mock_proc.wait.return_value = returncode
     mock_proc.returncode = returncode
     return mock_proc
+
+
+def _mock_interpreter(
+    *,
+    initial_progress_text: str = "preparing…",
+    success_progress_text: str = "completed",
+    final_outcome: BuildOutcome = BuildOutcome.REBUILT,
+    progress_texts: list[str | None] | None = None,
+) -> MagicMock:
+    interpreter = MagicMock()
+    interpreter.initial_progress_text = initial_progress_text
+    interpreter.success_progress_text = success_progress_text
+    interpreter.final_outcome = final_outcome
+    iterator = iter(progress_texts or [])
+
+    def observe_line(_line: str) -> MagicMock:
+        interpretation = MagicMock()
+        interpretation.progress_text = next(iterator, None)
+        interpretation.rebuild_started = False
+        return interpretation
+
+    interpreter.observe_line.side_effect = observe_line
+    return interpreter
 
 
 # ── Exception hierarchy ───────────────────────────────────────────────────────
@@ -276,64 +273,6 @@ def test_build_image_raises_on_empty_image_name(tmp_path):
         DockerService().build_image("", tmp_path / "Dockerfile", tmp_path)
 
 
-# ── build_image: streaming mode — cache-hit detection ────────────────────────
-
-
-def test_streaming_buildkit_all_cached_returns_full_cache_hit(tmp_path):
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_BUILDKIT_ALL_CACHED),
-    ):
-        result = DockerService().build_image(
-            "img", tmp_path / "Dockerfile", tmp_path, stream=True
-        )
-    assert result == BuildOutcome.FULL_CACHE_HIT
-
-
-def test_streaming_buildkit_with_rebuild_returns_rebuilt(tmp_path):
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_BUILDKIT_WITH_REBUILD),
-    ):
-        result = DockerService().build_image(
-            "img", tmp_path / "Dockerfile", tmp_path, stream=True
-        )
-    assert result == BuildOutcome.REBUILT
-
-
-def test_streaming_classic_all_cached_returns_full_cache_hit(tmp_path):
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_CLASSIC_ALL_CACHED),
-    ):
-        result = DockerService().build_image(
-            "img", tmp_path / "Dockerfile", tmp_path, stream=True
-        )
-    assert result == BuildOutcome.FULL_CACHE_HIT
-
-
-def test_streaming_classic_mixed_returns_rebuilt(tmp_path):
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_CLASSIC_MIXED),
-    ):
-        result = DockerService().build_image(
-            "img", tmp_path / "Dockerfile", tmp_path, stream=True
-        )
-    assert result == BuildOutcome.REBUILT
-
-
-def test_streaming_empty_success_output_returns_rebuilt(tmp_path):
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen([]),
-    ):
-        result = DockerService().build_image(
-            "img", tmp_path / "Dockerfile", tmp_path, stream=True
-        )
-    assert result == BuildOutcome.REBUILT
-
-
 def test_default_non_streaming_path_returns_none(tmp_path):
     with patch(
         "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
@@ -389,96 +328,24 @@ def test_streaming_pipes_output_to_terminal(tmp_path, capsys):
     assert "CACHED" in captured.out
 
 
-def test_streaming_rebuild_start_callback_fires_once_on_first_executed_buildkit_layer(
-    tmp_path,
-):
-    callback = MagicMock()
-    buildkit_output = [
-        "#1 [internal] load .dockerignore\n",
-        "#1 DONE 0.1s\n",
-        "#2 [1/3] FROM python:3.12\n",
-        "#2 CACHED\n",
-        "#3 [2/3] RUN apt-get install -y git\n",
-        "#3 DONE 4.2s\n",
-        "#4 [3/3] COPY . .\n",
-        "#4 DONE 0.5s\n",
-    ]
-
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(buildkit_output),
-    ):
-        result = DockerService().build_image(
-            "img",
-            tmp_path / "Dockerfile",
-            tmp_path,
-            stream=True,
-            on_rebuild_start=callback,
-        )
-
-    assert result == BuildOutcome.REBUILT
-    callback.assert_called_once_with()
-
-
-def test_streaming_rebuild_start_callback_not_called_for_all_cached_classic_output(
-    tmp_path,
-):
-    callback = MagicMock()
-
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_CLASSIC_ALL_CACHED),
-    ):
-        result = DockerService().build_image(
-            "img",
-            tmp_path / "Dockerfile",
-            tmp_path,
-            stream=True,
-            on_rebuild_start=callback,
-        )
-
-    assert result == BuildOutcome.FULL_CACHE_HIT
-    callback.assert_not_called()
-
-
-def test_streaming_rebuild_start_callback_waits_through_blank_line_in_classic_output(
-    tmp_path,
-):
-    callback = MagicMock()
-    classic_output = [
-        "Step 1/2 : FROM python:3.12\n",
-        " ---> Using cache\n",
-        " ---> abc123\n",
-        "Step 2/2 : COPY . .\n",
-        "\n",
-        " ---> Running in 789abc\n",
-        "Successfully built 789abc\n",
-    ]
-
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(classic_output),
-    ):
-        result = DockerService().build_image(
-            "img",
-            tmp_path / "Dockerfile",
-            tmp_path,
-            stream=True,
-            on_rebuild_start=callback,
-        )
-
-    assert result == BuildOutcome.REBUILT
-    callback.assert_called_once_with()
-
-
 # ── build_image: terse mode — full cache hit ──────────────────────────────────
 
 
 def test_terse_full_cache_hit_prints_up_to_date_summary(tmp_path, capsys):
     """Terse mode: full cache hit produces a single terminal summary line."""
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_BUILDKIT_ALL_CACHED),
+    interpreter = _mock_interpreter(
+        success_progress_text="up to date",
+        final_outcome=BuildOutcome.FULL_CACHE_HIT,
+    )
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            return_value=_mock_popen(_BUILDKIT_ALL_CACHED),
+        ),
+        patch(
+            "pycastle.services.docker_service.DockerBuildOutputInterpreter",
+            return_value=interpreter,
+        ),
     ):
         result = DockerService().build_image(
             "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
@@ -508,9 +375,19 @@ _BUILDKIT_WITH_EXPORT = [
 
 def test_terse_rebuilt_prints_completed_summary(tmp_path, capsys):
     """Terse mode: rebuild completes with 'completed' summary line."""
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_BUILDKIT_WITH_EXPORT),
+    interpreter = _mock_interpreter(
+        success_progress_text="completed",
+        final_outcome=BuildOutcome.REBUILT,
+    )
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            return_value=_mock_popen(_BUILDKIT_WITH_EXPORT),
+        ),
+        patch(
+            "pycastle.services.docker_service.DockerBuildOutputInterpreter",
+            return_value=interpreter,
+        ),
     ):
         result = DockerService().build_image(
             "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
@@ -523,9 +400,18 @@ def test_terse_rebuilt_prints_completed_summary(tmp_path, capsys):
 
 def test_terse_rebuilt_progress_passes_through_phases(tmp_path, capsys):
     """Terse mode: progress passes through preparing, step, exporting phases."""
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_BUILDKIT_WITH_EXPORT),
+    interpreter = _mock_interpreter(
+        progress_texts=["Step 1/3", None, "Step 2/3", None, "exporting…", None],
+    )
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            return_value=_mock_popen(_BUILDKIT_WITH_EXPORT),
+        ),
+        patch(
+            "pycastle.services.docker_service.DockerBuildOutputInterpreter",
+            return_value=interpreter,
+        ),
     ):
         DockerService().build_image(
             "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
@@ -536,71 +422,23 @@ def test_terse_rebuilt_progress_passes_through_phases(tmp_path, capsys):
     assert "exporting" in captured.out
 
 
-def test_terse_step_counter_advances_correctly(tmp_path, capsys):
-    """Step counter advances Y while keeping X fixed from first step line."""
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_BUILDKIT_WITH_EXPORT),
-    ):
-        DockerService().build_image(
-            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
-        )
-    captured = capsys.readouterr()
-    assert "Step 1/3" in captured.out
-    assert "Step 2/3" in captured.out
-    assert "Step 3/3" in captured.out
-
-
-def test_terse_classic_step_parsing(tmp_path, capsys):
-    """Classic builder step lines advance the step counter."""
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_CLASSIC_MIXED),
-    ):
-        DockerService().build_image(
-            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
-        )
-    captured = capsys.readouterr()
-    assert "Step 1/2" in captured.out
-    assert "Step 2/2" in captured.out
-    assert "Step 1/2 : FROM" not in captured.out
-
-
-def test_terse_classic_full_cache_hit(tmp_path, capsys):
-    """Classic builder all-cached returns FULL_CACHE_HIT with 'up to date' line."""
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_CLASSIC_ALL_CACHED),
-    ):
-        result = DockerService().build_image(
-            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
-        )
-    captured = capsys.readouterr()
-    assert result == BuildOutcome.FULL_CACHE_HIT
-    assert "Building Docker Image · up to date" in captured.out
-
-
-def test_terse_empty_success_output_returns_rebuilt(tmp_path, capsys):
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen([]),
-    ):
-        result = DockerService().build_image(
-            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
-        )
-    captured = capsys.readouterr()
-    assert result == BuildOutcome.REBUILT
-    assert "Building Docker Image · completed" in captured.out
-
-
 # ── build_image: terse mode — non-TTY rendering ───────────────────────────────
 
 
 def test_terse_non_tty_each_state_on_own_line(tmp_path, capsys):
     """Non-TTY: each state transition produces its own line, no carriage returns."""
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_BUILDKIT_WITH_EXPORT),
+    interpreter = _mock_interpreter(
+        progress_texts=["Step 1/3", None, "exporting…", None],
+    )
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            return_value=_mock_popen(_BUILDKIT_WITH_EXPORT),
+        ),
+        patch(
+            "pycastle.services.docker_service.DockerBuildOutputInterpreter",
+            return_value=interpreter,
+        ),
     ):
         DockerService().build_image(
             "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
@@ -621,11 +459,18 @@ def test_terse_tty_uses_carriage_return_between_transitions(tmp_path):
 
     buf = io.StringIO()
     buf.isatty = lambda: True  # type: ignore[method-assign]
+    interpreter = _mock_interpreter(
+        progress_texts=["Step 1/3", None, "exporting…", None],
+    )
 
     with (
         patch(
             "pycastle.services.docker_service.subprocess.Popen",
             return_value=_mock_popen(_BUILDKIT_WITH_EXPORT),
+        ),
+        patch(
+            "pycastle.services.docker_service.DockerBuildOutputInterpreter",
+            return_value=interpreter,
         ),
         patch("pycastle.services.docker_service.sys.stdout", buf),
     ):
@@ -644,11 +489,19 @@ def test_terse_tty_final_line_ends_with_newline(tmp_path):
 
     buf = io.StringIO()
     buf.isatty = lambda: True  # type: ignore[method-assign]
+    interpreter = _mock_interpreter(
+        success_progress_text="up to date",
+        final_outcome=BuildOutcome.FULL_CACHE_HIT,
+    )
 
     with (
         patch(
             "pycastle.services.docker_service.subprocess.Popen",
             return_value=_mock_popen(_BUILDKIT_ALL_CACHED),
+        ),
+        patch(
+            "pycastle.services.docker_service.DockerBuildOutputInterpreter",
+            return_value=interpreter,
         ),
         patch("pycastle.services.docker_service.sys.stdout", buf),
     ):
