@@ -329,19 +329,9 @@ class PromptRenderer:
         scope_args: dict[str, str],
         exec_fn,
     ) -> str:
-        expected = template.scope.placeholders
-        actual = set(scope_args.keys())
-        if actual != expected:
-            missing = expected - actual
-            extra = actual - expected
-            parts: list[str] = []
-            if missing:
-                parts.append(f"missing: {missing}")
-            if extra:
-                parts.append(f"extra: {extra}")
-            raise PromptRenderError(
-                f"scope_args mismatch for {template.name}: {'; '.join(parts)}"
-            )
+        from .scope_args import validated_scope_args_for_template
+
+        validated_scope_args_for_template(template, scope_args)
 
         content = self._prompt_source.lookup_reference(template.reference).read_text()
         preprocessed = await _preprocess(content, exec_fn)

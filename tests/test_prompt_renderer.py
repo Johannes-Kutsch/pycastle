@@ -12,7 +12,10 @@ from pycastle.prompts.pipeline import (
     PromptTemplate,
     Scope,
 )
-from pycastle.prompts.scope_args import build_interrupted_work_clause
+from pycastle.prompts.scope_args import (
+    build_interrupted_work_clause,
+    validated_scope_args_for_template,
+)
 from pycastle.prompts.source import PromptReference, PromptSource
 from pycastle.session import RunKind
 
@@ -519,6 +522,27 @@ def test_render_rejects_typo_in_scope_arg(cfg, prompts_dir):
                 _noop_exec,
             )
         )
+
+
+def test_render_accepts_publicly_validated_scope_args(cfg, prompts_dir):
+    (prompts_dir / "coordination/plan.md").write_text(
+        "Issues: {{ALL_OPEN_ISSUES_JSON}} {{READY_FOR_AGENT_ISSUES_JSON}}"
+    )
+    renderer = PromptRenderer(cfg)
+    scope_args = {
+        "ALL_OPEN_ISSUES_JSON": "[]",
+        "READY_FOR_AGENT_ISSUES_JSON": "[]",
+    }
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.PLAN,
+            validated_scope_args_for_template(PromptTemplate.PLAN, scope_args),
+            _noop_exec,
+        )
+    )
+
+    assert result == "Issues: [] []"
 
 
 # ── render: unused global args do not produce warnings ───────────────────────
