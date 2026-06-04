@@ -182,6 +182,23 @@ def selected_mode_for_issue(issue: dict, cfg: Config) -> SliceMode | None:
     return None
 
 
+def ready_slice_outcome_for_issue(issue: dict, cfg: Config) -> ReadyIssueOutcome | None:
+    readiness = resolve_issue_readiness(issue, cfg)
+    if readiness.ready is not None:
+        return readiness.ready
+
+    mode = readiness.selected_mode
+    if mode is None and isinstance(readiness.slice_status, WellFormed):
+        mode = readiness.slice_status.mode
+    if mode is None:
+        return None
+
+    return ReadyIssueOutcome(
+        display_name=mode.display_name,
+        template=mode.template,
+    )
+
+
 def diagnostic_issue_readiness_error(
     *,
     caller: str,
