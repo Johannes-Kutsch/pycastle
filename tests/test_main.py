@@ -183,6 +183,78 @@ def test_run_cmd_default_stage_override_seeds_codex_without_claude_token(
     assert captured["registry"]["claude"] is None
 
 
+def test_run_cmd_builds_registry_from_stage_chain_service_names(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "claude-token")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", "claude-secondary")
+    monkeypatch.setenv("OPENCODE_GO_API_KEY", "opencode-token")
+
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=StageOverride(
+            service="opencode",
+            model="deepseek-v4-flash",
+            effort="medium",
+            fallback=StageOverride(
+                service="codex",
+                model="gpt-5.4-mini",
+                effort="low",
+                fallback=StageOverride(
+                    service="claude",
+                    model="haiku",
+                    effort="low",
+                ),
+            ),
+        ),
+        implement_override=StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+            fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
+        ),
+        review_override=StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+            fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
+        ),
+        merge_override=StageOverride(
+            service="claude",
+            model="opus",
+            effort="high",
+        ),
+        preflight_issue_override=StageOverride(
+            service="opencode",
+            model="kimi-k2.6",
+            effort="medium",
+        ),
+        improve_override=StageOverride(service="claude", model="opus", effort="high"),
+    )
+    captured: dict[str, object] = {}
+
+    async def _fake_run(env, repo_root, **kwargs):
+        captured["registry"] = kwargs.get("service_registry")
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.main"),
+        patch("pycastle.iteration.orchestrator.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    registry = captured["registry"]
+    assert registry is not None
+    assert registry.services.keys() == {"claude", "codex", "opencode"}
+    assert registry.services["claude"].name == "claude"
+    assert registry.services["codex"].name == "codex"
+    assert registry.services["opencode"].name == "opencode"
+
+
 def test_run_cmd_allows_known_unconfigured_primary_service_in_stage_chain(
     tmp_path, monkeypatch
 ):
