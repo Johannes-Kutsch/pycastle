@@ -894,6 +894,44 @@ def test_planning_phase_adds_needs_info_label_and_comment_for_short_body(
     assert "needs-info" in comment_body
 
 
+def test_planning_phase_adds_both_marker_labels_and_comments_for_doubly_blocked_issue(
+    tmp_path, git_svc
+):
+    from unittest.mock import MagicMock, call
+    from pycastle.services.github_service import GithubService
+
+    well = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    doubly_blocked = {
+        "number": 2,
+        "title": "B",
+        "body": "short",
+        "comments": [],
+        "labels": [],
+    }
+    fake = FakeAgentRunner([_plan_output([well])])
+    github_svc = MagicMock(spec=GithubService)
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    asyncio.run(planning_phase(deps, [well, doubly_blocked], []))
+
+    assert github_svc.add_label_to_issue.call_args_list == [
+        call(2, "needs-info"),
+        call(2, "needs-slice-type"),
+    ]
+    assert github_svc.post_comment.call_count == 2
+    comment_bodies = [args[0][1] for args in github_svc.post_comment.call_args_list]
+    assert any("body is too short" in body for body in comment_bodies)
+    assert any(
+        "missing exactly one slice-mode label" in body for body in comment_bodies
+    )
+
+
 def test_planning_phase_single_issue_with_short_body_excluded_from_short_circuit(
     tmp_path, git_svc
 ):

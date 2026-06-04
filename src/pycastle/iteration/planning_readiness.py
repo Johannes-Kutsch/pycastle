@@ -89,14 +89,15 @@ def _needs_info_actions(
     cfg: Config,
 ) -> tuple[LabelSyncAction, ...]:
     flag = cfg.needs_info_label
-    actions: list[LabelSyncAction] = []
+    blocked_actions: list[LabelSyncAction] = []
+    well_formed_actions: list[LabelSyncAction] = []
 
     for issue, outcome in issues_with_outcomes:
         labels: list[str] = issue.get("labels") or []
         if isinstance(outcome, AFKBlockedOutcome) and outcome.has_short_body:
             if flag in labels:
                 continue
-            actions.append(
+            blocked_actions.append(
                 LabelSyncAction(
                     issue_number=issue["number"],
                     label_name=flag,
@@ -106,14 +107,14 @@ def _needs_info_actions(
             )
             continue
         if flag in labels:
-            actions.append(
+            well_formed_actions.append(
                 LabelSyncAction(
                     issue_number=issue["number"],
                     label_name=flag,
                     intent="remove",
                 )
             )
-    return tuple(actions)
+    return tuple(blocked_actions + well_formed_actions)
 
 
 def _needs_slice_type_actions(
