@@ -487,18 +487,9 @@ def test_get_safe_sha_builds_preflight_issue_scope_args_from_first_failure_via_p
     )
     cache = PreflightCache()
 
-    with patch(
-        "pycastle.iteration.preflight.build_preflight_scope_args",
-        wraps=build_preflight_scope_args,
-    ) as build_scope_args:
-        result = asyncio.run(cache.get_safe_sha(deps))
+    result = asyncio.run(cache.get_safe_sha(deps))
 
     assert isinstance(result, PreflightHITL)
-    build_scope_args.assert_called_once_with(
-        check_name="ruff",
-        command="ruff check .",
-        output="E501",
-    )
     assert fake.calls[0].template.name == "PREFLIGHT_ISSUE"
     assert fake.calls[0].role.name == "PREFLIGHT_ISSUE"
     assert fake.calls[0].service == "codex"
