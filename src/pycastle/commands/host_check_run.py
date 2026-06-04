@@ -3,7 +3,6 @@ from __future__ import annotations
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
-import platform
 import subprocess
 from typing import Callable, TypeAlias
 
@@ -17,6 +16,7 @@ from ..iteration import status_row
 from ..iteration.preflight import validate_issue_report
 from ..main import _configured_service_registry
 from ..prompts.pipeline import PromptTemplate
+from ..prompts import scope_args as prompt_scope_args
 from ..services import GitService, GithubService, ServiceRegistry
 
 
@@ -219,14 +219,12 @@ async def _file_host_check_issue(
             template=PromptTemplate.HOST_CHECK_ISSUE,
             mount_path=mount_path,
             role=AgentRole.PREFLIGHT_ISSUE,
-            scope_args={
-                "HOST_OS": platform.system(),
-                "HOST_PLATFORM": platform.platform(),
-                "CHECKED_SHA": sha,
-                "CHECK_NAME": failure.name,
-                "COMMAND": failure.command,
-                "OUTPUT": failure.output,
-            },
+            scope_args=prompt_scope_args.build_host_check_scope_args(
+                checked_sha=sha,
+                check_name=failure.name,
+                command=failure.command,
+                output=failure.output,
+            ),
             model=override.model,
             effort=override.effort,
             service=override.service,

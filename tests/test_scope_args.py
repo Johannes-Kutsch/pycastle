@@ -5,6 +5,7 @@ from pycastle.config import Config
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
 from pycastle.prompts.renderer import PromptRenderer
 from pycastle.prompts.scope_args import (
+    build_host_check_scope_args,
     build_preflight_scope_args,
     build_improve_scope_args,
     build_plan_scope_args,
@@ -325,6 +326,61 @@ def test_build_preflight_scope_args_builds_exact_renderable_preflight_args(
 
     assert rendered == (
         "Check: [PREFLIGHT] ruff\nCommand: ruff check --fix\nOutput: E501 line too long"
+    )
+
+
+def test_build_host_check_scope_args_builds_exact_renderable_host_check_args(
+    cfg, prompts_dir
+):
+    import asyncio
+    import platform
+
+    (prompts_dir / "diagnostics").mkdir(parents=True)
+    (prompts_dir / "diagnostics/host-check-issue.md").write_text(
+        "OS: {{HOST_OS}}\n"
+        "Platform: {{HOST_PLATFORM}}\n"
+        "SHA: {{CHECKED_SHA}}\n"
+        "Check: {{CHECK_NAME}}\n"
+        "Command: {{COMMAND}}\n"
+        "Output: {{OUTPUT}}"
+    )
+
+    scope_args = build_host_check_scope_args(
+        checked_sha="abc123def456",
+        check_name="pytest-host",
+        command="pytest tests/host",
+        output="assertion failed",
+    )
+
+    assert (
+        validated_scope_args_for_template(PromptTemplate.HOST_CHECK_ISSUE, scope_args)
+        is scope_args
+    )
+    assert scope_args == {
+        "HOST_OS": platform.system(),
+        "HOST_PLATFORM": platform.platform(),
+        "CHECKED_SHA": "abc123def456",
+        "CHECK_NAME": "pytest-host",
+        "COMMAND": "pytest tests/host",
+        "OUTPUT": "assertion failed",
+    }
+
+    renderer = PromptRenderer(cfg)
+    rendered = asyncio.run(
+        renderer.render(
+            PromptTemplate.HOST_CHECK_ISSUE,
+            scope_args,
+            lambda command: (_ for _ in ()).throw(AssertionError(command)),
+        )
+    )
+
+    assert rendered == (
+        f"OS: {platform.system()}\n"
+        f"Platform: {platform.platform()}\n"
+        "SHA: abc123def456\n"
+        "Check: pytest-host\n"
+        "Command: pytest tests/host\n"
+        "Output: assertion failed"
     )
 
 

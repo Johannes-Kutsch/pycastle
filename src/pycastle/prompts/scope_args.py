@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import platform
 from collections.abc import Sequence
 from typing import Any
 
@@ -109,6 +110,22 @@ def build_preflight_scope_args(
     return validated_scope_args_for_template(
         PromptTemplate.PREFLIGHT_ISSUE,
         {
+            "CHECK_NAME": check_name,
+            "COMMAND": command,
+            "OUTPUT": output,
+        },
+    )
+
+
+def build_host_check_scope_args(
+    *, checked_sha: str, check_name: str, command: str, output: str
+) -> dict[str, str]:
+    return validated_scope_args_for_template(
+        PromptTemplate.HOST_CHECK_ISSUE,
+        {
+            "HOST_OS": platform.system(),
+            "HOST_PLATFORM": platform.platform(),
+            "CHECKED_SHA": checked_sha,
             "CHECK_NAME": check_name,
             "COMMAND": command,
             "OUTPUT": output,

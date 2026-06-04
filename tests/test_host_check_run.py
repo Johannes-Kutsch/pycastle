@@ -709,3 +709,67 @@ def test_run_host_check_run_files_and_validates_one_issue_per_failed_check_in_or
         for call in agent_runner.calls
     )
     github_svc.get_issue.assert_called_once_with(42)
+
+
+def test_run_host_check_run_uses_scope_args_module_for_host_check_issue_args(
+    tmp_path, monkeypatch
+):
+    from pycastle.agents.output_protocol import IssueOutput
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+    from pycastle.prompts import scope_args as scope_args_mod
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+
+    expected_scope_args = {
+        "HOST_OS": "ScopeArgsOS",
+        "HOST_PLATFORM": "ScopeArgsPlatform-1.0",
+        "CHECKED_SHA": "checked-sha",
+        "CHECK_NAME": "tests",
+        "COMMAND": "pytest tests/host",
+        "OUTPUT": "host output",
+    }
+
+    monkeypatch.setattr(
+        scope_args_mod,
+        "build_host_check_scope_args",
+        lambda **kwargs: expected_scope_args,
+    )
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        raise run_mod.HostCheckFailedError(
+            name=name,
+            command=command,
+            output="host output",
+        )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    agent_runner = FakeAgentRunner(
+        [IssueOutput(number=41, labels=["bug", "ready-for-human"])]
+    )
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {"body": "x" * 100}
+
+    asyncio.run(
+        run_mod.run_host_check_run(
+            host_checks=(("tests", "pytest tests/host"),),
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            cfg=Config(),
+            github_svc=github_svc,
+            agent_runner=agent_runner,
+            status_display=run_mod.PlainStatusDisplay(),
+            run_host_check=fake_run_host_check,
+            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+        )
+    )
+
+    assert agent_runner.calls[0].scope_args == expected_scope_args
