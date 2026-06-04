@@ -5,6 +5,7 @@ from pycastle.config import Config
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
 from pycastle.prompts.renderer import PromptRenderer
 from pycastle.prompts.scope_args import (
+    build_preflight_scope_args,
     build_improve_scope_args,
     build_plan_scope_args,
     build_per_issue_scope_args,
@@ -285,6 +286,46 @@ def test_build_plan_scope_args_accepts_empty_issue_lists():
         "ALL_OPEN_ISSUES_JSON": "[]",
         "READY_FOR_AGENT_ISSUES_JSON": "[]",
     }
+
+
+def test_build_preflight_scope_args_builds_exact_renderable_preflight_args(
+    cfg, prompts_dir
+):
+    import asyncio
+
+    (prompts_dir / "diagnostics").mkdir(parents=True)
+    (prompts_dir / "diagnostics/preflight-issue.md").write_text(
+        "Check: {{CHECK_NAME}}\nCommand: {{COMMAND}}\nOutput: {{OUTPUT}}"
+    )
+
+    scope_args = build_preflight_scope_args(
+        check_name="[PREFLIGHT] ruff",
+        command="ruff check --fix",
+        output="E501 line too long",
+    )
+
+    assert (
+        validated_scope_args_for_template(PromptTemplate.PREFLIGHT_ISSUE, scope_args)
+        is scope_args
+    )
+    assert scope_args == {
+        "CHECK_NAME": "[PREFLIGHT] ruff",
+        "COMMAND": "ruff check --fix",
+        "OUTPUT": "E501 line too long",
+    }
+
+    renderer = PromptRenderer(cfg)
+    rendered = asyncio.run(
+        renderer.render(
+            PromptTemplate.PREFLIGHT_ISSUE,
+            scope_args,
+            lambda command: (_ for _ in ()).throw(AssertionError(command)),
+        )
+    )
+
+    assert rendered == (
+        "Check: [PREFLIGHT] ruff\nCommand: ruff check --fix\nOutput: E501 line too long"
+    )
 
 
 def test_build_improve_scope_args_builds_exact_args_for_each_improve_prompt():

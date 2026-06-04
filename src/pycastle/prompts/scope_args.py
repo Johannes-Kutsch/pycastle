@@ -103,6 +103,19 @@ def build_plan_scope_args(
     }
 
 
+def build_preflight_scope_args(
+    *, check_name: str, command: str, output: str
+) -> dict[str, str]:
+    return validated_scope_args_for_template(
+        PromptTemplate.PREFLIGHT_ISSUE,
+        {
+            "CHECK_NAME": check_name,
+            "COMMAND": command,
+            "OUTPUT": output,
+        },
+    )
+
+
 def _format_recent_improve_prds(recent_prds: list[dict[str, str | int]]) -> str:
     if not recent_prds:
         return "No recent improve PRDs found."

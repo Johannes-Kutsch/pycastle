@@ -28,6 +28,7 @@ from pycastle.iteration.preflight import (
     PreflightReady,
     validate_issue_report,
 )
+from pycastle.prompts.scope_args import build_preflight_scope_args
 
 
 @pytest.fixture
@@ -461,6 +462,51 @@ def test_get_safe_sha_preserves_original_first_failure_details_after_analysis_an
     }
     assert len(fake.preflight_calls) == 1
     assert len(fake.calls) == 1
+
+
+def test_get_safe_sha_builds_preflight_issue_scope_args_from_first_failure_via_prompt_module(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
+        preflight_responses=[
+            [
+                ("ruff", "ruff check .", "E501"),
+                ("pytest", "pytest -q", "FAILED tests/test_demo.py::test_it"),
+            ]
+        ],
+    )
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=Config(
+            preflight_issue_override=StageOverride(service="codex", effort="medium")
+        ),
+    )
+    cache = PreflightCache()
+
+    with patch(
+        "pycastle.iteration.preflight.build_preflight_scope_args",
+        wraps=build_preflight_scope_args,
+    ) as build_scope_args:
+        result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightHITL)
+    build_scope_args.assert_called_once_with(
+        check_name="ruff",
+        command="ruff check .",
+        output="E501",
+    )
+    assert fake.calls[0].template.name == "PREFLIGHT_ISSUE"
+    assert fake.calls[0].role.name == "PREFLIGHT_ISSUE"
+    assert fake.calls[0].service == "codex"
+    assert fake.calls[0].scope_args == build_preflight_scope_args(
+        check_name="ruff",
+        command="ruff check .",
+        output="E501",
+    )
 
 
 # ── get_safe_sha: same-SHA cache hit ─────────────────────────────────────────

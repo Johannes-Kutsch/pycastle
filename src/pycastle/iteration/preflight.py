@@ -12,6 +12,7 @@ from ..agents.output_protocol import (
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompts.pipeline import PromptTemplate
+from ..prompts.scope_args import build_preflight_scope_args
 from ..services import (
     GitCommandError,
     GitService,
@@ -247,11 +248,11 @@ class PreflightCache:
                 template=PromptTemplate.PREFLIGHT_ISSUE,
                 mount_path=mount_path,
                 role=AgentRole.PREFLIGHT_ISSUE,
-                scope_args={
-                    "CHECK_NAME": failure.check_name,
-                    "COMMAND": failure.command,
-                    "OUTPUT": failure.output,
-                },
+                scope_args=build_preflight_scope_args(
+                    check_name=failure.check_name,
+                    command=failure.command,
+                    output=failure.output,
+                ),
                 model=override.model,
                 effort=override.effort,
                 service=override.service,
