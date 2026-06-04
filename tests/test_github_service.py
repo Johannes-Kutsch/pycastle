@@ -1915,113 +1915,270 @@ def test_close_completed_parent_issues_closes_parents_with_all_closed_subs():
 # ── list_labels / create_label / delete_label ────────────────────────────────
 
 
-def test_list_labels_paginates_and_returns_results():
-    svc = _make_service()
-    body = json.dumps([{"name": "bug"}, {"name": "feat"}]).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body, headers={}),
-    ):
-        result = svc.list_labels()
+def test_list_labels_returns_dict_items_from_every_page():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/labels?per_page=100",
+                payload=[{"name": "bug"}, "skip-me"],
+                headers={
+                    "Link": '<https://api.github.com/repos/owner/repo/labels?per_page=100&page=2>; rel="next"'
+                },
+            ),
+            _script_step(
+                "GET",
+                "https://api.github.com/repos/owner/repo/labels?per_page=100&page=2",
+                payload=[{"name": "feat"}, 123],
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.list_labels()
+
     assert [label["name"] for label in result] == ["bug", "feat"]
+    assert transport.requests == [
+        _GithubTransportRequest("GET", "/repos/owner/repo/labels?per_page=100", None),
+        _GithubTransportRequest(
+            "GET",
+            "https://api.github.com/repos/owner/repo/labels?per_page=100&page=2",
+            None,
+        ),
+    ]
+    transport.assert_exhausted()
 
 
 def test_create_label_posts_body_to_labels_endpoint():
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(b'{"name":"bug"}'),
-    ) as m:
-        svc.create_label({"name": "bug", "color": "ff0000"})
-    req = m.call_args[0][0]
-    assert req.get_method() == "POST"
-    assert req.full_url == "https://api.github.com/repos/owner/repo/labels"
-    assert json.loads(req.data.decode()) == {"name": "bug", "color": "ff0000"}
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/owner/repo/labels",
+                data={"name": "bug", "color": "ff0000"},
+                payload={"name": "bug"},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.create_label({"name": "bug", "color": "ff0000"})
+
+    assert result is None
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/owner/repo/labels",
+            {"name": "bug", "color": "ff0000"},
+        )
+    ]
+    transport.assert_exhausted()
 
 
 def test_delete_label_sends_delete_with_url_encoded_name():
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(b""),
-    ) as m:
-        svc.delete_label("needs triage")
-    req = m.call_args[0][0]
-    assert req.get_method() == "DELETE"
-    assert req.full_url == (
-        "https://api.github.com/repos/owner/repo/labels/needs%20triage"
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "DELETE",
+                "/repos/owner/repo/labels/needs%20triage",
+            )
+        ]
     )
+    svc = _make_service(transport=transport)
+
+    result = svc.delete_label("needs triage")
+
+    assert result is None
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "DELETE",
+            "/repos/owner/repo/labels/needs%20triage",
+            None,
+        )
+    ]
+    transport.assert_exhausted()
 
 
 def test_remove_label_from_issue_retries_transport_error_and_recovers():
-    svc = _make_service()
+    cause = URLError("dns fail")
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "DELETE",
+                "/repos/owner/repo/issues/42/labels/bug",
+                error=GithubHttpTransportNetworkError("transport down", cause=cause),
+            ),
+            _script_step(
+                "DELETE",
+                "/repos/owner/repo/issues/42/labels/bug",
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
 
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=[
-                URLError("dns fail"),
-                _make_response(b""),
-            ],
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
+    with patch("time.sleep") as mock_sleep:
         svc.remove_label_from_issue(42, "bug")
 
     mock_sleep.assert_called_once_with(10)
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "DELETE",
+            "/repos/owner/repo/issues/42/labels/bug",
+            None,
+        ),
+        _GithubTransportRequest(
+            "DELETE",
+            "/repos/owner/repo/issues/42/labels/bug",
+            None,
+        ),
+    ]
+    transport.assert_exhausted()
 
 
 def test_add_label_to_issue_uses_retry_after_header_when_present():
-    svc = _make_service()
-
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=[
-                _make_http_error(
-                    429,
-                    b'{"message":"secondary rate limit"}',
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/owner/repo/issues/42/labels",
+                data={"labels": ["bug"]},
+                error=GithubHttpTransportAPIError(
+                    "rate limited",
+                    status=429,
+                    body='{"message":"secondary rate limit"}',
+                    method="POST",
+                    path="/repos/owner/repo/issues/42/labels",
                     headers={"Retry-After": "9"},
                 ),
-                _make_response(b"[]"),
-            ],
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
-        svc.add_label_to_issue(42, "bug")
+            ),
+            _script_step(
+                "POST",
+                "/repos/owner/repo/issues/42/labels",
+                data={"labels": ["bug"]},
+                payload=[],
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
 
+    with patch("time.sleep") as mock_sleep:
+        result = svc.add_label_to_issue(42, "bug")
+
+    assert result is None
     mock_sleep.assert_called_once_with(9)
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/owner/repo/issues/42/labels",
+            {"labels": ["bug"]},
+        ),
+        _GithubTransportRequest(
+            "POST",
+            "/repos/owner/repo/issues/42/labels",
+            {"labels": ["bug"]},
+        ),
+    ]
+    transport.assert_exhausted()
 
 
 def test_add_label_to_issue_does_not_retry_stable_403():
-    svc = _make_service()
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/owner/repo/issues/42/labels",
+                data={"labels": ["bug"]},
+                error=GithubHttpTransportAPIError(
+                    "forbidden",
+                    status=403,
+                    body='{"message":"Resource not accessible by personal access token"}',
+                    method="POST",
+                    path="/repos/owner/repo/issues/42/labels",
+                ),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
 
-    with (
-        patch(
-            "pycastle.services._github_http_transport.urlopen",
-            side_effect=_make_http_error(
-                403,
-                b'{"message":"Resource not accessible by personal access token"}',
-            ),
-        ) as mock_urlopen,
-        patch("time.sleep") as mock_sleep,
-    ):
+    with patch("time.sleep") as mock_sleep:
         with pytest.raises(GithubAPIError) as exc_info:
             svc.add_label_to_issue(42, "bug")
 
     assert exc_info.value.status == 403
-    assert mock_urlopen.call_count == 1
     mock_sleep.assert_not_called()
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/owner/repo/issues/42/labels",
+            {"labels": ["bug"]},
+        )
+    ]
+    transport.assert_exhausted()
 
 
-def test_remove_label_from_issue_treats_gone_as_no_op():
-    svc = _make_service()
+@pytest.mark.parametrize("status", [404, 410])
+def test_remove_label_from_issue_treats_gone_as_no_op(status: int):
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "DELETE",
+                "/repos/owner/repo/issues/42/labels/bug",
+                error=GithubHttpTransportAPIError(
+                    "gone",
+                    status=status,
+                    body='{"message":"Not Found"}',
+                    method="DELETE",
+                    path="/repos/owner/repo/issues/42/labels/bug",
+                ),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
 
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=_make_http_error(404, b'{"message":"Not Found"}'),
-    ):
+    svc.remove_label_from_issue(42, "bug")
+
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "DELETE",
+            "/repos/owner/repo/issues/42/labels/bug",
+            None,
+        )
+    ]
+    transport.assert_exhausted()
+
+
+def test_remove_label_from_issue_propagates_non_gone_api_errors():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "DELETE",
+                "/repos/owner/repo/issues/42/labels/bug",
+                error=GithubHttpTransportAPIError(
+                    "boom",
+                    status=403,
+                    body="forbidden",
+                    method="DELETE",
+                    path="/repos/owner/repo/issues/42/labels/bug",
+                ),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubAPIError) as exc_info:
         svc.remove_label_from_issue(42, "bug")
+
+    assert exc_info.value.status == 403
+    assert exc_info.value.method == "DELETE"
+    assert exc_info.value.path == "/repos/owner/repo/issues/42/labels/bug"
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "DELETE",
+            "/repos/owner/repo/issues/42/labels/bug",
+            None,
+        )
+    ]
+    transport.assert_exhausted()
 
 
 # ── create_issue_in ──────────────────────────────────────────────────────────
