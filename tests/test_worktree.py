@@ -808,6 +808,36 @@ def test_worktree_identity_preserves_current_caller_name_override(tmp_path):
     assert identity.path == worktree_path("issue-42", tmp_path)
 
 
+# ── managed_worktree: WorktreeIdentity interface ─────────────────────────────
+
+
+def test_managed_worktree_accepts_worktree_identity(branch_deps):
+    identity = worktree_identity("pycastle/merge-sandbox", branch_deps.repo_root)
+    branch_deps.git_svc.is_working_tree_clean.return_value = True
+
+    async def _run():
+        async with managed_worktree(
+            identity=identity,
+            sha="abc123",
+            delete_branch_on_teardown=True,
+            deps=branch_deps,
+        ) as path:
+            assert path == identity.path
+
+    asyncio.run(_run())
+
+    branch_deps.git_svc.create_worktree.assert_called_once_with(
+        branch_deps.repo_root,
+        identity.path,
+        identity.branch,
+        "abc123",
+    )
+    branch_deps.git_svc.delete_branch.assert_called_once_with(
+        identity.branch,
+        branch_deps.repo_root,
+    )
+
+
 # ── transient_worktree ────────────────────────────────────────────────────────
 
 
