@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ..agents.output_protocol import AgentRole
 from .. import _time as _time_module
-from ..session import SESSION_DIR_NAME, RunKind
+from ..session import RunKind, provider_state_relpath
 from ..session.service_resume_identity import is_exact_resumable_service_session
 from .flag_profiles import flag_profile_for
 from .agent_service import (
@@ -212,9 +212,7 @@ class ClaudeService:
         return self._pool.mark_permanently_exhausted(self._current_token)
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        if namespace:
-            return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/claude/"
-        return f"{SESSION_DIR_NAME}/{role.value}/claude/"
+        return provider_state_relpath(role, self.name, namespace)
 
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(f.is_file() for f in state_dir.rglob("*"))

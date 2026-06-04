@@ -12,7 +12,7 @@ from typing import Any
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
 from ..agents.output_protocol import AgentOutputProtocolError
-from ..session import SESSION_DIR_NAME, RunKind
+from ..session import RunKind, provider_state_relpath
 from ..session._provider_session_decision import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
@@ -120,9 +120,7 @@ class CodexService:
         self._exhausted_until = wake
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        if namespace:
-            return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/codex/"
-        return f"{SESSION_DIR_NAME}/{role.value}/codex/"
+        return provider_state_relpath(role, self.name, namespace)
 
     def is_resumable(self, state_dir: Path) -> bool:
         sessions_dir = state_dir / "sessions"

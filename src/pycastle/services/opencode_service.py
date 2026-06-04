@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
-from ..session import SESSION_DIR_NAME, RunKind
+from ..session import RunKind, provider_state_relpath
 from ..session.provider_session_state import load_state_dir_provider_session_id
 from ..session.service_resume_identity import (
     is_exact_resumable_service_session,
@@ -326,9 +326,7 @@ class OpenCodeService:
         self._exhausted_until = wake
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        if namespace:
-            return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/opencode/"
-        return f"{SESSION_DIR_NAME}/{role.value}/opencode/"
+        return provider_state_relpath(role, self.name, namespace)
 
     def is_resumable(self, state_dir: Path) -> bool:
         return (state_dir / "resume.jsonl").is_file() or (

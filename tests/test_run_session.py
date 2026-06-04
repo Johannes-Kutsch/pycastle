@@ -27,6 +27,7 @@ from pycastle.session import (
     RoleSession,
     RunKind,
     has_exact_transcript_match,
+    provider_state_relpath,
 )
 from pycastle.session.service_resume_identity import (
     is_exact_resumable_service_session,
@@ -183,6 +184,35 @@ def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: P
         provider_session_id=None,
         auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
         recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
+    )
+
+
+def test_provider_state_relpath_formats_role_namespace_and_provider_name() -> None:
+    assert (
+        provider_state_relpath(AgentRole.IMPLEMENTER, "codex")
+        == ".pycastle-session/implementer/codex/"
+    )
+    assert (
+        provider_state_relpath(AgentRole.IMPROVE, "codex", "main")
+        == ".pycastle-session/improve/main/codex/"
+    )
+    assert provider_state_relpath(AgentRole.IMPLEMENTER, "claude", "") == (
+        provider_state_relpath(AgentRole.IMPLEMENTER, "claude")
+    )
+
+
+def test_role_session_provider_state_dir_matches_worktree_local_provider_layout(
+    tmp_path: Path,
+) -> None:
+    assert RoleSession(tmp_path, AgentRole.IMPLEMENTER).provider_state_dir("codex") == (
+        tmp_path / ".pycastle-session" / "implementer" / "codex"
+    )
+    assert RoleSession(
+        tmp_path,
+        AgentRole.IMPROVE,
+        "main",
+    ).provider_state_dir("opencode") == (
+        tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
     )
 
 

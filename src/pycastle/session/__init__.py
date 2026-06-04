@@ -8,6 +8,7 @@ from .resume import (
     RoleSession,
     any_role_dir_present,
     is_stage_done_for,
+    provider_state_relpath,
 )
 from ._provider_session_state import has_exact_transcript_match
 
@@ -23,4 +24,5 @@ __all__ = [
     "any_role_dir_present",
     "has_exact_transcript_match",
     "is_stage_done_for",
+    "provider_state_relpath",
 ]

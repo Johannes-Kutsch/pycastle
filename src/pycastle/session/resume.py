@@ -38,14 +38,14 @@ def _force_remove_readonly(func, path, _exc_info):
     func(path)
 
 
-def _role_provider_state_dir_relpath(
+def provider_state_relpath(
     role: AgentRole,
-    namespace: str,
-    service_name: str,
+    provider_name: str,
+    namespace: str = "",
 ) -> str:
     if namespace:
-        return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{service_name}/"
-    return f"{SESSION_DIR_NAME}/{role.value}/{service_name}/"
+        return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
+    return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
 
 
 def _normalize_state_dir_relpath(
@@ -56,9 +56,9 @@ def _normalize_state_dir_relpath(
 ) -> str | None:
     if state_dir_relpath is None or not namespace:
         return state_dir_relpath
-    legacy_relpath = _role_provider_state_dir_relpath(role, "", service_name)
+    legacy_relpath = provider_state_relpath(role, service_name)
     if state_dir_relpath == legacy_relpath:
-        return _role_provider_state_dir_relpath(role, namespace, service_name)
+        return provider_state_relpath(role, service_name, namespace)
     return state_dir_relpath
 
 
@@ -169,6 +169,13 @@ class RoleSession:
         session_id = uuid.uuid5(role_ns, str(self._worktree.resolve()))
         return str(session_id)
 
+    def provider_state_dir(self, provider_name: str) -> Path:
+        return self._worktree / provider_state_relpath(
+            self._role,
+            provider_name,
+            self._namespace,
+        ).rstrip("/")
+
     def service_session_id(self, service_name: str) -> str | None:
         return load_service_session_id(self.path, service_name)
 
@@ -214,7 +221,8 @@ class RoleSession:
         selection = select_resumable_provider_session_id(
             self,
             service_name,
-            provider_state_dir=provider_state_dir or (self.path / service_name),
+            provider_state_dir=provider_state_dir
+            or self.provider_state_dir(service_name),
             has_resumable_provider_state=has_resumable_provider_state,
         )
         provider_session_id = selection.provider_session_id
@@ -283,7 +291,14 @@ class RoleSession:
             service.state_dir_relpath(self._role, self._namespace),
         )
         state_dir = (
-            self._worktree / state_dir_relpath
+            self.provider_state_dir(service.name)
+            if state_dir_relpath
+            == provider_state_relpath(
+                self._role,
+                service.name,
+                self._namespace,
+            )
+            else self._worktree / state_dir_relpath
             if state_dir_relpath is not None
             else None
         )
