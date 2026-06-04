@@ -828,7 +828,7 @@ def test_get_safe_sha_divergence_resolver_uses_merge_override_service(
     assert fake.calls[0].service == "codex"
 
 
-def test_get_safe_sha_divergence_resolver_receives_current_branch_scope_arg(
+def test_get_safe_sha_dispatches_divergence_resolver_for_current_branch(
     tmp_path, git_svc, github_svc
 ):
     _setup_worktree_mocks(git_svc)
@@ -846,7 +846,10 @@ def test_get_safe_sha_divergence_resolver_receives_current_branch_scope_arg(
     result = asyncio.run(cache.get_safe_sha(deps))
 
     assert isinstance(result, PreflightReady)
-    assert fake.calls[0].scope_args == {"BRANCH": "pycastle/issue-1484"}
+    assert fake.calls[0].template == PromptTemplate.DIVERGENCE_RESOLVE
+    assert fake.calls[0].role == AgentRole.DIVERGENCE_RESOLVER
+    assert fake.calls[0].work_body == "Resolving divergence"
+    git_svc.get_current_branch.assert_called_once_with(tmp_path)
 
 
 def test_get_safe_sha_propagates_pull_error_when_divergence_agent_fails(

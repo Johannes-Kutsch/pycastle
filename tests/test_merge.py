@@ -65,6 +65,10 @@ def _run(completed, deps):
     return asyncio.run(merge_phase(completed, deps))
 
 
+def _requested_merge_branch(request: RunRequest) -> str:
+    return request.work_body.removeprefix("Merging branch ").strip()
+
+
 def _merge_sandbox_branch(issue_number: int) -> str:
     return f"pycastle/merge-sandbox-issue-{issue_number}"
 
@@ -146,9 +150,7 @@ def test_conflict_spawns_merger_with_conflict_branches_only(
     _run(issues, deps)
     merger_calls = [c for c in agent_runner.calls if c.name == "Merge Agent"]
     assert len(merger_calls) == 1
-    branches_arg = merger_calls[0].scope_args["BRANCHES"]
-    assert "pycastle/issue-2" in branches_arg
-    assert "pycastle/issue-1" not in branches_arg
+    assert merger_calls[0].work_body == "Merging branch pycastle/issue-2"
 
 
 def test_conflict_spawns_merger_with_active_conflict_branch_first(
@@ -169,10 +171,10 @@ def test_conflict_spawns_merger_with_active_conflict_branch_first(
         (AgentRole.MERGER, PromptTemplate.MERGE, "pre-merge"),
         (AgentRole.MERGER, PromptTemplate.MERGE, "pre-merge"),
     ]
-    assert [call.scope_args["BRANCHES"].splitlines()[0] for call in merger_calls] == [
-        "- pycastle/issue-1",
-        "- pycastle/issue-2",
-        "- pycastle/issue-3",
+    assert [call.work_body for call in merger_calls] == [
+        "Merging branch pycastle/issue-1",
+        "Merging branch pycastle/issue-2",
+        "Merging branch pycastle/issue-3",
     ]
 
 
@@ -384,13 +386,7 @@ def test_multiple_conflict_branches_recover_one_branch_per_sandbox(
     async def _resolve_conflict(request: RunRequest):
         if request.name == "Merge Agent":
             seen_mount_paths.append(str(request.mount_path))
-            assert request.scope_args is not None
-            branch = (
-                request.scope_args["BRANCHES"]
-                .splitlines()[0]
-                .removeprefix("- ")
-                .strip()
-            )
+            branch = _requested_merge_branch(request)
             resolved = (
                 "resolved one\n" if branch.endswith("issue-1") else "resolved two\n"
             )
@@ -434,8 +430,7 @@ def test_later_conflict_failure_returns_partial_success_for_earlier_verified_bra
     git_svc.get_head_sha.side_effect = ["sha-1", "sha-2"]
 
     async def _resolve_then_fail(request: RunRequest):
-        assert request.scope_args is not None
-        branch = request.scope_args["BRANCHES"].splitlines()[0].removeprefix("- ")
+        branch = _requested_merge_branch(request)
         if branch == "pycastle/issue-1":
             return CommitMessageOutput(message="resolve conflict one")
         raise RuntimeError("agent crashed on issue 2")
@@ -470,8 +465,7 @@ def test_later_conflict_failure_keeps_earlier_verified_merge_commit_on_target_br
     real_git = GitService(Config())
 
     async def _resolve_then_fail(request: RunRequest):
-        assert request.scope_args is not None
-        branch = request.scope_args["BRANCHES"].splitlines()[0].removeprefix("- ")
+        branch = _requested_merge_branch(request)
         if branch == "pycastle/issue-1":
             (request.mount_path / "conflict.txt").write_text("resolved one\n")
             _git(request.mount_path, "add", "conflict.txt")
@@ -566,6 +560,7 @@ def test_merger_dispatch_uses_merge_template_and_role(deps, git_svc, agent_runne
     assert merger_calls[0].template == PromptTemplate.MERGE
     assert merger_calls[0].role == AgentRole.MERGER
     assert merger_calls[0].stage == "pre-merge"
+    assert merger_calls[0].work_body == "Merging branch pycastle/issue-3"
 
 
 # ── Branch deletion edge cases ────────────────────────────────────────────────
@@ -1027,8 +1022,7 @@ def test_merge_phase_close_summary_distinguishes_completed_and_pending_conflicts
     git_svc.get_head_sha.side_effect = ["sha-1", "sha-2"]
 
     async def _resolve_then_fail(request: RunRequest):
-        assert request.scope_args is not None
-        branch = request.scope_args["BRANCHES"].splitlines()[0].removeprefix("- ")
+        branch = _requested_merge_branch(request)
         if branch == "pycastle/issue-1":
             return CommitMessageOutput(message="resolve conflict one")
         raise RuntimeError("agent crashed on issue 2")

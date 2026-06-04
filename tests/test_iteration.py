@@ -2667,45 +2667,6 @@ def test_run_iteration_failure_report_receives_correct_run_request(
     assert failure_req.mount_path == expected_wt
 
 
-def test_run_iteration_failure_report_passes_original_failure_context(
-    tmp_path, git_svc, logger
-):
-    calls: list[RunRequest] = []
-    original_error = _make_agent_failed_error(
-        AgentRole.IMPROVE, tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    )
-    response_queue = [
-        original_error,
-        IssueOutput(number=99, labels=["bug"]),
-    ]
-
-    async def agent_fn(req: RunRequest):
-        calls.append(req)
-        return response_queue.pop(0)
-
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.get_open_issues.return_value = []
-
-    deps = dataclasses.replace(
-        _make_deps(
-            tmp_path,
-            agent_fn,
-            git_svc=git_svc,
-            github_svc=github_svc,
-            logger=logger,
-            cfg=Config(),
-        ),
-        improve_mode="endless",
-    )
-    asyncio.run(run_iteration(deps))
-
-    assert len(calls) == 2
-    assert calls[1].scope_args is not None
-    assert calls[1].scope_args["FAILED_ROLE"] == original_error.role_value
-    assert calls[1].scope_args["SESSION_DIR"] == original_error.session_dir
-    assert calls[1].scope_args["FAILURE_CLASS"] == original_error.failure_class
-
-
 def test_run_iteration_failure_report_crash_logs_warning_and_error(
     tmp_path, git_svc, logger
 ):
@@ -2820,7 +2781,7 @@ def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
     assert expected_path.exists()
 
 
-def test_run_iteration_failure_report_uses_failed_planner_service_session_dir(
+def test_run_iteration_failure_report_dispatches_after_opencode_planner_failure(
     tmp_path, git_svc, logger
 ):
     calls: list[RunRequest] = []
@@ -2873,9 +2834,10 @@ def test_run_iteration_failure_report_uses_failed_planner_service_session_dir(
     assert result.failed_role == "planner"
     assert len(calls) == 2
     failure_req = calls[1]
+    assert failure_req.role == AgentRole.FAILURE_REPORT
+    assert failure_req.template == PromptTemplate.FAILURE_REPORT
+    assert failure_req.service == "codex"
     assert failure_req.mount_path == expected_path
-    assert failure_req.scope_args is not None
-    assert failure_req.scope_args["SESSION_DIR"].endswith("/opencode")
 
 
 def test_run_iteration_returns_aborted_agent_failure_when_implementer_agent_fails(
