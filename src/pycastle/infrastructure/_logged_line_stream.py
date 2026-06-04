@@ -5,11 +5,12 @@ import queue
 import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
-from typing import cast
+from typing import BinaryIO, cast
 
 from ..agents.output_protocol import AgentRole
 from ..errors import AgentTimeoutError
 from ..session.resume import RunKind
+from .agent_invocation_log import AgentInvocationLog
 
 
 def _build_progress_notifier(
@@ -45,6 +46,32 @@ def stream_logged_lines(
     idle_timeout: float,
     on_chunk: Callable[[], None] | Callable[[bytes], None],
 ) -> Iterator[str]:
+    separator = b""
+    if log_path.exists() and log_path.stat().st_size > 0:
+        with open(log_path, "rb") as existing_log:
+            existing_log.seek(-1, 2)
+            separator = b"\n\n" if existing_log.read(1) != b"\n" else b"\n"
+
+    with open(log_path, "ab") as log:
+        if separator:
+            log.write(separator)
+        log.write(json.dumps(input_record).encode() + b"\n")
+        log.flush()
+        yield from _stream_logged_lines_to_open_log(
+            chunks,
+            log=log,
+            idle_timeout=idle_timeout,
+            on_chunk=on_chunk,
+        )
+
+
+def _stream_logged_lines_to_open_log(
+    chunks: Iterable[bytes],
+    *,
+    log: BinaryIO,
+    idle_timeout: float,
+    on_chunk: Callable[[], None] | Callable[[bytes], None],
+) -> Iterator[str]:
     q: queue.Queue[bytes | object] = queue.Queue()
     sentinel = object()
     notify_progress = _build_progress_notifier(on_chunk)
@@ -57,41 +84,28 @@ def stream_logged_lines(
             q.put(sentinel)
 
     threading.Thread(target=_feed, daemon=True).start()
-
-    separator = b""
-    if log_path.exists() and log_path.stat().st_size > 0:
-        with open(log_path, "rb") as existing_log:
-            existing_log.seek(-1, 2)
-            separator = b"\n\n" if existing_log.read(1) != b"\n" else b"\n"
-
-    with open(log_path, "ab") as log:
-        if separator:
-            log.write(separator)
-        log.write(json.dumps(input_record).encode() + b"\n")
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    line_buf = ""
+    while True:
+        try:
+            chunk = q.get(timeout=idle_timeout)
+        except queue.Empty as exc:
+            raise AgentTimeoutError(
+                f"Agent idle for more than {idle_timeout}s"
+            ) from exc
+        if chunk is sentinel:
+            line_buf += decoder.decode(b"", final=True)
+            if line_buf:
+                yield line_buf
+            return
+        assert isinstance(chunk, bytes)
+        log.write(chunk)
         log.flush()
-
-        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-        line_buf = ""
-        while True:
-            try:
-                chunk = q.get(timeout=idle_timeout)
-            except queue.Empty as exc:
-                raise AgentTimeoutError(
-                    f"Agent idle for more than {idle_timeout}s"
-                ) from exc
-            if chunk is sentinel:
-                line_buf += decoder.decode(b"", final=True)
-                if line_buf:
-                    yield line_buf
-                return
-            assert isinstance(chunk, bytes)
-            log.write(chunk)
-            log.flush()
-            notify_progress(chunk)
-            line_buf += decoder.decode(chunk)
-            while "\n" in line_buf:
-                line, line_buf = line_buf.split("\n", 1)
-                yield line
+        notify_progress(chunk)
+        line_buf += decoder.decode(chunk)
+        while "\n" in line_buf:
+            line, line_buf = line_buf.split("\n", 1)
+            yield line
 
 
 def stream_logged_work_lines(
@@ -105,16 +119,16 @@ def stream_logged_work_lines(
     idle_timeout: float,
     on_chunk: Callable[[], None] | Callable[[bytes], None],
 ) -> Iterator[str]:
-    return stream_logged_lines(
-        chunks,
+    with AgentInvocationLog().open_work_invocation(
         log_path=log_path,
-        input_record={
-            "type": "pycastle_input",
-            "role": role.value,
-            "run_kind": run_kind.value,
-            "session_uuid": session_uuid,
-            "prompt": prompt,
-        },
-        idle_timeout=idle_timeout,
-        on_chunk=on_chunk,
-    )
+        role=role,
+        run_kind=run_kind,
+        session_uuid=session_uuid,
+        prompt=prompt,
+    ) as log:
+        yield from _stream_logged_lines_to_open_log(
+            chunks,
+            log=log,
+            idle_timeout=idle_timeout,
+            on_chunk=on_chunk,
+        )
