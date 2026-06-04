@@ -102,6 +102,32 @@ def test_stream_logged_lines_yields_partial_final_line_without_newline(tmp_path)
     assert on_chunk_calls == ["chunk"]
 
 
+def test_stream_logged_lines_yields_each_line_from_one_multiline_chunk_in_order(
+    tmp_path,
+):
+    log_path = tmp_path / "agent.log"
+
+    lines, on_chunk_calls = _collect_stream(
+        [b"first line\nsecond line\nthird line\n"],
+        log_path=log_path,
+    )
+
+    assert lines == ["first line", "second line", "third line"]
+    assert on_chunk_calls == ["chunk"]
+
+
+def test_stream_logged_lines_waits_for_terminating_newline_before_yielding_split_line(
+    tmp_path,
+):
+    log_path = tmp_path / "agent.log"
+    chunks = [b"split", b" line", b"\nnext line\n"]
+
+    lines, on_chunk_calls = _collect_stream(chunks, log_path=log_path)
+
+    assert lines == ["split line", "next line"]
+    assert on_chunk_calls == ["chunk", "chunk", "chunk"]
+
+
 def test_stream_logged_lines_decodes_split_utf8_sequences_with_replacement_and_preserves_log_bytes(
     tmp_path,
 ):
