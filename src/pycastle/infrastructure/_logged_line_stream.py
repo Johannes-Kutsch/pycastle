@@ -18,7 +18,8 @@ def _build_progress_notifier(
     try:
         params = inspect.signature(on_chunk).parameters.values()
     except (TypeError, ValueError):
-        return cast(Callable[[bytes], None], on_chunk)
+        no_arg_callback = cast(Callable[[], None], on_chunk)
+        return lambda _chunk: no_arg_callback()
 
     accepts_chunk = any(
         param.kind

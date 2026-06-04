@@ -151,6 +151,29 @@ def test_stream_logged_lines_reports_each_provider_chunk_to_progress_callback(
     assert reported_chunks == chunks
 
 
+def test_stream_logged_lines_preserves_no_arg_progress_callback_without_signature(
+    tmp_path,
+):
+    log_path = tmp_path / "agent.log"
+    progress_state = {"pending": True}
+
+    lines = list(
+        stream_logged_lines(
+            [b"done\n"],
+            log_path=log_path,
+            input_record={
+                "type": "pycastle_input",
+                "prompt": "prompt",
+            },
+            idle_timeout=1.0,
+            on_chunk=progress_state.clear,
+        )
+    )
+
+    assert lines == ["done"]
+    assert progress_state == {}
+
+
 def test_stream_logged_lines_appends_new_record_after_blank_separator(tmp_path):
     log_path = tmp_path / "agent.log"
     log_path.write_bytes(b"previous line")
@@ -241,3 +264,46 @@ def test_stream_logged_lines_raises_agent_timeout_error_after_idle_timeout(tmp_p
         "type": "pycastle_input",
         "prompt": "stalled",
     }
+
+
+def test_stream_logged_lines_does_not_report_progress_for_stream_completion(tmp_path):
+    log_path = tmp_path / "agent.log"
+    on_chunk_calls: list[str] = []
+
+    lines = list(
+        stream_logged_lines(
+            [],
+            log_path=log_path,
+            input_record={"type": "pycastle_input", "prompt": "done"},
+            idle_timeout=1.0,
+            on_chunk=lambda: on_chunk_calls.append("chunk"),
+        )
+    )
+
+    assert lines == []
+    assert on_chunk_calls == []
+
+
+def test_stream_logged_lines_resets_idle_wait_after_each_provider_chunk(tmp_path):
+    log_path = tmp_path / "agent.log"
+    on_chunk_calls: list[str] = []
+
+    def delayed_chunks():
+        yield b"first line\n"
+        threading.Event().wait(0.03)
+        yield b"second line\n"
+        threading.Event().wait(0.08)
+        yield b"never"
+
+    with pytest.raises(AgentTimeoutError, match="Agent idle for more than 0.05s"):
+        list(
+            stream_logged_lines(
+                delayed_chunks(),
+                log_path=log_path,
+                input_record={"type": "pycastle_input", "prompt": "prompt"},
+                idle_timeout=0.05,
+                on_chunk=lambda: on_chunk_calls.append("chunk"),
+            )
+        )
+
+    assert on_chunk_calls == ["chunk", "chunk"]
