@@ -18,6 +18,11 @@ from pycastle.services import (
     GithubService,
     GithubServiceError,
 )
+from pycastle.services._github_http_transport import (
+    GithubHttpTransportAPIError,
+    GithubHttpTransportAuthError,
+    GithubHttpTransportNetworkError,
+)
 
 _cfg = Config()
 
@@ -113,6 +118,25 @@ class _FakeGithubTransport:
     ) -> tuple[Any, dict[str, str]]:
         self.calls.append((method, path, data))
         return self._request_fn(method, path, data)
+
+
+def _scripted_transport(
+    responses: dict[tuple[str, str], list[tuple[Any, dict[str, str]] | BaseException]],
+) -> _FakeGithubTransport:
+    remaining = {key: list(items) for key, items in responses.items()}
+
+    def request(
+        method: str, path: str, data: dict[str, Any] | None
+    ) -> tuple[Any, dict[str, str]]:
+        key = (method, path)
+        if key not in remaining or not remaining[key]:
+            raise AssertionError(f"unexpected transport request: {key}")
+        result = remaining[key].pop(0)
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+    return _FakeGithubTransport(request)
 
 
 # ── Construction ───────────────────────────────────────────────────────────────
@@ -297,6 +321,59 @@ def test_request_raises_github_api_error_on_non_401_4xx():
     assert "Not Found" in ei.value.body
 
 
+def test_request_translates_transport_auth_error():
+    transport = _FakeGithubTransport(
+        lambda method, path, data: (_ for _ in ()).throw(
+            GithubHttpTransportAuthError("bad creds", status=401, body="nope")
+        )
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubAuthError) as exc_info:
+        svc._request("GET", "/user")
+
+    assert exc_info.value.status == 401
+    assert exc_info.value.body == "nope"
+
+
+def test_request_translates_transport_api_error():
+    transport = _FakeGithubTransport(
+        lambda method, path, data: (_ for _ in ()).throw(
+            GithubHttpTransportAPIError(
+                "boom",
+                status=404,
+                body="not found",
+                method=method,
+                path=path,
+                headers={"X-Test": "1"},
+            )
+        )
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubAPIError) as exc_info:
+        svc._request("GET", "/x")
+
+    assert exc_info.value.status == 404
+    assert exc_info.value.path == "/x"
+    assert exc_info.value.headers == {"X-Test": "1"}
+
+
+def test_request_translates_transport_network_error():
+    cause = URLError("dns fail")
+    transport = _FakeGithubTransport(
+        lambda method, path, data: (_ for _ in ()).throw(
+            GithubHttpTransportNetworkError("transport down", cause=cause)
+        )
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubNetworkError) as exc_info:
+        svc._request("POST", "/x")
+
+    assert exc_info.value.cause is cause
+
+
 def test_request_post_raises_github_api_error_on_5xx_without_retry():
     svc = _make_service()
     with patch(
@@ -474,20 +551,20 @@ def test_close_issue_raises_operator_actionable_error_after_retry_exhaustion():
 
 
 def test_close_issue_retries_transient_5xx_and_recovers():
-    attempts = 0
-
-    def request(
-        method: str, path: str, data: dict[str, Any] | None
-    ) -> tuple[Any, dict[str, str]]:
-        nonlocal attempts
-        attempts += 1
-        if attempts == 1:
-            raise GithubAPIError(
-                "boom", status=500, body="server boom", method=method, path=path
-            )
-        return None, {}
-
-    transport = _FakeGithubTransport(request)
+    transport = _scripted_transport(
+        {
+            ("PATCH", "/repos/owner/repo/issues/42"): [
+                GithubHttpTransportAPIError(
+                    "boom",
+                    status=500,
+                    body="server boom",
+                    method="PATCH",
+                    path="/repos/owner/repo/issues/42",
+                ),
+                (None, {}),
+            ]
+        }
+    )
     svc = _make_service(transport=transport)
 
     with patch("time.sleep") as mock_sleep:
@@ -1020,47 +1097,55 @@ def test_get_issue_comments_hits_comments_endpoint():
 
 
 def test_close_issue_with_parents_closes_parent_when_no_open_siblings():
-    svc = _make_service()
-    closed: list[int] = []
+    transport = _scripted_transport(
+        {
+            ("PATCH", "/repos/owner/repo/issues/5"): [(None, {})],
+            ("GET", "/repos/owner/repo/issues/5"): [({"parent": {"number": 50}}, {})],
+            ("GET", "/repos/owner/repo/issues/50/sub_issues"): [
+                ([{"number": 5, "state": "closed"}], {"Link": ""})
+            ],
+            ("PATCH", "/repos/owner/repo/issues/50"): [(None, {})],
+            ("GET", "/repos/owner/repo/issues/50"): [({"parent": None}, {})],
+        }
+    )
+    svc = _make_service(transport=transport)
 
-    def fake_request(method, path, data=None, **kwargs):
-        if method == "PATCH":
-            closed.append(int(path.rsplit("/", 1)[-1]))
-            return None, {}
-        if path.endswith("/issues/5"):
-            return {"parent": {"number": 50}}, {}
-        if path.endswith("/issues/50"):
-            return {"parent": None}, {}
-        if "/sub_issues" in path:
-            # parent #50's children all closed
-            return [{"number": 5, "state": "closed"}], {"Link": ""}
-        raise AssertionError(path)
+    svc.close_issue_with_parents(5)
 
-    with patch.object(svc, "_request", side_effect=fake_request):
-        svc.close_issue_with_parents(5)
-    assert closed == [5, 50]
+    assert transport.calls == [
+        ("PATCH", "/repos/owner/repo/issues/5", {"state": "closed"}),
+        ("GET", "/repos/owner/repo/issues/5", None),
+        ("GET", "/repos/owner/repo/issues/50/sub_issues", None),
+        ("PATCH", "/repos/owner/repo/issues/50", {"state": "closed"}),
+        ("GET", "/repos/owner/repo/issues/50", None),
+    ]
 
 
 def test_close_issue_with_parents_stops_when_open_siblings_remain():
-    svc = _make_service()
-    closed: list[int] = []
+    transport = _scripted_transport(
+        {
+            ("PATCH", "/repos/owner/repo/issues/5"): [(None, {})],
+            ("GET", "/repos/owner/repo/issues/5"): [({"parent": {"number": 50}}, {})],
+            ("GET", "/repos/owner/repo/issues/50/sub_issues"): [
+                (
+                    [
+                        {"number": 5, "state": "closed"},
+                        {"number": 6, "state": "open"},
+                    ],
+                    {"Link": ""},
+                )
+            ],
+        }
+    )
+    svc = _make_service(transport=transport)
 
-    def fake_request(method, path, data=None, **kwargs):
-        if method == "PATCH":
-            closed.append(int(path.rsplit("/", 1)[-1]))
-            return None, {}
-        if path.endswith("/issues/5"):
-            return {"parent": {"number": 50}}, {}
-        if "/sub_issues" in path:
-            return [
-                {"number": 5, "state": "closed"},
-                {"number": 6, "state": "open"},
-            ], {"Link": ""}
-        raise AssertionError(path)
+    svc.close_issue_with_parents(5)
 
-    with patch.object(svc, "_request", side_effect=fake_request):
-        svc.close_issue_with_parents(5)
-    assert closed == [5]
+    assert transport.calls == [
+        ("PATCH", "/repos/owner/repo/issues/5", {"state": "closed"}),
+        ("GET", "/repos/owner/repo/issues/5", None),
+        ("GET", "/repos/owner/repo/issues/50/sub_issues", None),
+    ]
 
 
 # ── get_open_issue_numbers ───────────────────────────────────────────────────
@@ -1136,61 +1221,102 @@ def test_get_open_issues_filters_pull_requests():
 
 
 def test_get_open_issues_filters_recently_closed_issue():
-    svc = _make_service()
-    issue_payload = [{"number": 42, "title": "T", "body": "", "labels": []}]
+    transport = _scripted_transport(
+        {
+            ("PATCH", "/repos/owner/repo/issues/42"): [(None, {})],
+            (
+                "GET",
+                "/repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100",
+            ): [
+                ([{"number": 42, "title": "T", "body": "", "labels": []}], {"Link": ""})
+            ],
+        }
+    )
+    svc = _make_service(transport=transport)
 
-    def fake_request(method, path, data=None, **kwargs):
-        if method == "PATCH":
-            return None, {}
-        return issue_payload, {"Link": ""}
-
-    with patch.object(svc, "_request", side_effect=fake_request):
-        svc.close_issue(42)
-        result = svc.get_open_issues("ready-for-agent")
+    svc.close_issue(42)
+    result = svc.get_open_issues("ready-for-agent")
 
     assert [r["number"] for r in result] == []
 
 
 def test_get_open_issues_does_not_filter_after_self_heal_reopen():
-    svc = _make_service()
-    issue_payload = [{"number": 42, "title": "T", "body": "", "labels": []}]
-    call_count = 0
+    list_path = (
+        "/repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100"
+    )
+    transport = _scripted_transport(
+        {
+            ("PATCH", "/repos/owner/repo/issues/42"): [(None, {})],
+            ("GET", list_path): [
+                (
+                    [{"number": 42, "title": "T", "body": "", "labels": []}],
+                    {"Link": ""},
+                ),
+                ([], {"Link": ""}),
+                (
+                    [{"number": 42, "title": "T", "body": "", "labels": []}],
+                    {"Link": ""},
+                ),
+            ],
+        }
+    )
+    svc = _make_service(transport=transport)
 
-    def fake_request(method, path, data=None, **kwargs):
-        nonlocal call_count
-        if method == "PATCH":
-            return None, {}
-        call_count += 1
-        if call_count == 1:
-            return issue_payload, {"Link": ""}
-        if call_count == 2:
-            return [], {"Link": ""}
-        return issue_payload, {"Link": ""}
-
-    with patch.object(svc, "_request", side_effect=fake_request):
-        svc.close_issue(42)
-        svc.get_open_issues("ready-for-agent")
-        svc.get_open_issues("ready-for-agent")
-        result = svc.get_open_issues("ready-for-agent")
+    svc.close_issue(42)
+    svc.get_open_issues("ready-for-agent")
+    svc.get_open_issues("ready-for-agent")
+    result = svc.get_open_issues("ready-for-agent")
 
     assert [r["number"] for r in result] == [42]
 
 
 def test_get_open_issues_does_not_filter_issue_when_close_failed():
-    svc = _make_service()
-    issue_payload = [{"number": 42, "title": "T", "body": "", "labels": []}]
+    transport = _scripted_transport(
+        {
+            ("PATCH", "/repos/owner/repo/issues/42"): [
+                GithubHttpTransportAPIError(
+                    "fail",
+                    status=500,
+                    body="err",
+                    method="PATCH",
+                    path="/repos/owner/repo/issues/42",
+                ),
+                GithubHttpTransportAPIError(
+                    "fail",
+                    status=500,
+                    body="err",
+                    method="PATCH",
+                    path="/repos/owner/repo/issues/42",
+                ),
+                GithubHttpTransportAPIError(
+                    "fail",
+                    status=500,
+                    body="err",
+                    method="PATCH",
+                    path="/repos/owner/repo/issues/42",
+                ),
+                GithubHttpTransportAPIError(
+                    "fail",
+                    status=500,
+                    body="err",
+                    method="PATCH",
+                    path="/repos/owner/repo/issues/42",
+                ),
+            ],
+            (
+                "GET",
+                "/repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100",
+            ): [
+                ([{"number": 42, "title": "T", "body": "", "labels": []}], {"Link": ""})
+            ],
+        }
+    )
+    svc = _make_service(transport=transport)
 
-    def fake_request(method, path, data=None, **kwargs):
-        if method == "PATCH":
-            raise GithubAPIError(
-                "fail", status=500, body="err", method=method, path=path
-            )
-        return issue_payload, {"Link": ""}
-
-    with patch.object(svc, "_request", side_effect=fake_request):
-        with pytest.raises(GithubAPIError):
+    with patch("time.sleep"):
+        with pytest.raises(OperatorActionableGithubError):
             svc.close_issue(42)
-        result = svc.get_open_issues("ready-for-agent")
+    result = svc.get_open_issues("ready-for-agent")
 
     assert [r["number"] for r in result] == [42]
 
@@ -1315,61 +1441,64 @@ def test_get_all_open_issues_lightweight_excludes_pull_requests():
 
 
 def test_get_all_open_issues_lightweight_filters_recently_closed():
-    svc = _make_service()
-    issue_payload = [{"number": 42, "title": "T", "labels": []}]
+    transport = _scripted_transport(
+        {
+            ("PATCH", "/repos/owner/repo/issues/42"): [(None, {})],
+            ("GET", "/repos/owner/repo/issues?state=open&per_page=100"): [
+                ([{"number": 42, "title": "T", "labels": []}], {"Link": ""})
+            ],
+        }
+    )
+    svc = _make_service(transport=transport)
 
-    def fake_request(method, path, data=None, **kwargs):
-        if method == "PATCH":
-            return None, {}
-        return issue_payload, {"Link": ""}
-
-    with patch.object(svc, "_request", side_effect=fake_request):
-        svc.close_issue(42)
-        result = svc.get_all_open_issues_lightweight()
+    svc.close_issue(42)
+    result = svc.get_all_open_issues_lightweight()
 
     assert [r["number"] for r in result] == []
 
 
 def test_get_all_open_issues_lightweight_self_heals_after_disappears():
-    svc = _make_service()
-    issue_payload = [{"number": 42, "title": "T", "labels": []}]
-    call_count = 0
+    list_path = "/repos/owner/repo/issues?state=open&per_page=100"
+    transport = _scripted_transport(
+        {
+            ("PATCH", "/repos/owner/repo/issues/42"): [(None, {})],
+            ("GET", list_path): [
+                ([{"number": 42, "title": "T", "labels": []}], {"Link": ""}),
+                ([], {"Link": ""}),
+                ([{"number": 42, "title": "T", "labels": []}], {"Link": ""}),
+            ],
+        }
+    )
+    svc = _make_service(transport=transport)
 
-    def fake_request(method, path, data=None, **kwargs):
-        nonlocal call_count
-        if method == "PATCH":
-            return None, {}
-        call_count += 1
-        if call_count == 1:
-            return issue_payload, {"Link": ""}
-        if call_count == 2:
-            return [], {"Link": ""}
-        return issue_payload, {"Link": ""}
-
-    with patch.object(svc, "_request", side_effect=fake_request):
-        svc.close_issue(42)
-        svc.get_all_open_issues_lightweight()
-        svc.get_all_open_issues_lightweight()
-        result = svc.get_all_open_issues_lightweight()
+    svc.close_issue(42)
+    svc.get_all_open_issues_lightweight()
+    svc.get_all_open_issues_lightweight()
+    result = svc.get_all_open_issues_lightweight()
 
     assert [r["number"] for r in result] == [42]
 
 
 def test_get_all_open_issues_lightweight_paginates():
-    svc = _make_service()
-    page1_issues = [{"number": 1, "title": "A", "labels": []}]
-    page2_issues = [{"number": 2, "title": "B", "labels": [{"name": "feat"}]}]
-    call_count = 0
+    transport = _scripted_transport(
+        {
+            ("GET", "/repos/owner/repo/issues?state=open&per_page=100"): [
+                (
+                    [{"number": 1, "title": "A", "labels": []}],
+                    {"Link": '<https://api.github.com/page2>; rel="next"'},
+                )
+            ],
+            ("GET", "https://api.github.com/page2"): [
+                (
+                    [{"number": 2, "title": "B", "labels": [{"name": "feat"}]}],
+                    {"Link": ""},
+                )
+            ],
+        }
+    )
+    svc = _make_service(transport=transport)
 
-    def fake_request(method, path, data=None):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return page1_issues, {"Link": '<https://api.github.com/page2>; rel="next"'}
-        return page2_issues, {"Link": ""}
-
-    with patch.object(svc, "_request", side_effect=fake_request):
-        result = svc.get_all_open_issues_lightweight()
+    result = svc.get_all_open_issues_lightweight()
 
     assert [r["number"] for r in result] == [1, 2]
     assert result[1]["labels"] == ["feat"]
@@ -1407,27 +1536,35 @@ def test_get_all_open_issues_lightweight_normalizes_mixed_open_issue_payload():
 
 
 def test_close_completed_parent_issues_closes_parents_with_all_closed_subs():
-    svc = _make_service()
-    closed: list[int] = []
-    open_numbers = [10, 11]
+    open_list_path = "/repos/owner/repo/issues?state=open&per_page=100"
+    transport = _scripted_transport(
+        {
+            ("GET", open_list_path): [
+                ([{"number": 10}, {"number": 11}], {"Link": ""}),
+                ([{"number": 11}], {"Link": ""}),
+            ],
+            ("GET", "/repos/owner/repo/issues/10/sub_issues"): [
+                ([{"number": 1, "state": "closed"}], {"Link": ""})
+            ],
+            ("GET", "/repos/owner/repo/issues/11/sub_issues"): [
+                ([{"number": 2, "state": "open"}], {"Link": ""}),
+                ([{"number": 2, "state": "open"}], {"Link": ""}),
+            ],
+            ("PATCH", "/repos/owner/repo/issues/10"): [(None, {})],
+        }
+    )
+    svc = _make_service(transport=transport)
 
-    def fake_request(method, path, data=None, **kwargs):
-        if method == "PATCH":
-            num = int(path.rsplit("/", 1)[-1])
-            closed.append(num)
-            open_numbers.remove(num)
-            return None, {}
-        if "/issues?state=open" in path:
-            return [{"number": n} for n in open_numbers], {"Link": ""}
-        if path.endswith("/issues/10/sub_issues"):
-            return [{"number": 1, "state": "closed"}], {"Link": ""}
-        if path.endswith("/issues/11/sub_issues"):
-            return [{"number": 2, "state": "open"}], {"Link": ""}
-        raise AssertionError(path)
+    svc.close_completed_parent_issues()
 
-    with patch.object(svc, "_request", side_effect=fake_request):
-        svc.close_completed_parent_issues()
-    assert closed == [10]
+    assert transport.calls == [
+        ("GET", open_list_path, None),
+        ("GET", "/repos/owner/repo/issues/10/sub_issues", None),
+        ("PATCH", "/repos/owner/repo/issues/10", {"state": "closed"}),
+        ("GET", "/repos/owner/repo/issues/11/sub_issues", None),
+        ("GET", open_list_path, None),
+        ("GET", "/repos/owner/repo/issues/11/sub_issues", None),
+    ]
 
 
 # ── list_labels / create_label / delete_label ────────────────────────────────
