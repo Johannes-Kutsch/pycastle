@@ -59,6 +59,58 @@ def test_stream_logged_work_lines_handles_one_complete_invocation(tmp_path):
     )
 
 
+def test_stream_logged_work_lines_repeated_invocations_insert_one_blank_line_separator(
+    tmp_path,
+):
+    log_path = tmp_path / "agent.log"
+
+    list(
+        stream_logged_work_lines(
+            [b'{"type":"result","result":"first"}'],
+            log_path=log_path,
+            role=AgentRole.IMPLEMENTER,
+            run_kind=RunKind.FRESH,
+            session_uuid="session-1",
+            prompt="first prompt",
+            idle_timeout=1.0,
+            on_chunk=lambda: None,
+        )
+    )
+
+    list(
+        stream_logged_work_lines(
+            [b'{"type":"result","result":"second"}\n'],
+            log_path=log_path,
+            role=AgentRole.REVIEWER,
+            run_kind=RunKind.RESUME,
+            session_uuid="session-2",
+            prompt="second prompt",
+            idle_timeout=1.0,
+            on_chunk=lambda: None,
+        )
+    )
+
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+
+    assert json.loads(log_lines[0]) == {
+        "type": "pycastle_input",
+        "role": "implementer",
+        "run_kind": "fresh",
+        "session_uuid": "session-1",
+        "prompt": "first prompt",
+    }
+    assert log_lines[1] == '{"type":"result","result":"first"}'
+    assert log_lines[2] == ""
+    assert json.loads(log_lines[3]) == {
+        "type": "pycastle_input",
+        "role": "reviewer",
+        "run_kind": "resume",
+        "session_uuid": "session-2",
+        "prompt": "second prompt",
+    }
+    assert log_lines[4] == '{"type":"result","result":"second"}'
+
+
 def test_stream_logged_lines_logs_input_record_and_chunk_bytes(tmp_path):
     log_path = tmp_path / "agent.log"
     chunks = [b'{"type":"result"', b',"result":"done"}\n']
@@ -86,11 +138,12 @@ def test_stream_logged_lines_appends_new_record_after_blank_separator(tmp_path):
     assert log_bytes.startswith(b"previous line\n")
     log_lines = log_path.read_text(encoding="utf-8").split("\n")
     assert log_lines[0] == "previous line"
-    assert json.loads(log_lines[1]) == {
+    assert log_lines[1] == ""
+    assert json.loads(log_lines[2]) == {
         "type": "pycastle_input",
         "prompt": "prompt",
     }
-    assert log_lines[2] == "next line"
+    assert log_lines[3] == "next line"
 
 
 def test_stream_logged_lines_yields_partial_final_line_without_newline(tmp_path):

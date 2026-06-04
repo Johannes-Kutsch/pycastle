@@ -30,9 +30,15 @@ def stream_logged_lines(
 
     threading.Thread(target=_feed, daemon=True).start()
 
+    separator = b""
+    if log_path.exists() and log_path.stat().st_size > 0:
+        with open(log_path, "rb") as existing_log:
+            existing_log.seek(-1, 2)
+            separator = b"\n\n" if existing_log.read(1) != b"\n" else b"\n"
+
     with open(log_path, "ab") as log:
-        if log_path.stat().st_size > 0:
-            log.write(b"\n")
+        if separator:
+            log.write(separator)
         log.write(json.dumps(input_record).encode() + b"\n")
         log.flush()
 
