@@ -266,3 +266,42 @@ def test_decide_usage_limit_continuation_estimates_wake_time_without_registry():
         decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
         " Press Ctrl+C to abort."
     )
+
+
+def test_decide_usage_limit_continuation_uses_exact_reset_time_without_registry():
+    now = _now()
+    reset_time = datetime(2026, 1, 1, 15, 30, 0, tzinfo=timezone.utc)
+
+    decision = decide_usage_limit_continuation(
+        AbortedUsageLimit(reset_time=reset_time),
+        Config(),
+        None,
+        now,
+    )
+
+    assert isinstance(decision, SleepUntil)
+    assert decision.wake_time == datetime(2026, 1, 1, 15, 32, 0, tzinfo=timezone.utc)
+    assert decision.is_estimated is False
+    assert (
+        decision.message
+        == "Usage limit reached. Sleeping until 15:32. Press Ctrl+C to abort."
+    )
+
+
+def test_decide_usage_limit_continuation_keeps_stage_key_behavior_without_registry():
+    now = _now()
+
+    decision = decide_usage_limit_continuation(
+        AbortedUsageLimit(stage_key="implement", reset_time=None),
+        Config(implement_override=StageOverride(service="claude")),
+        None,
+        now,
+    )
+
+    assert isinstance(decision, SleepUntil)
+    assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=timezone.utc)
+    assert decision.is_estimated is True
+    assert (
+        decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
+        " Press Ctrl+C to abort."
+    )
