@@ -1,9 +1,11 @@
 import pytest
+from unittest.mock import MagicMock
 
 from pycastle.config import Config
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
 from pycastle.prompts.renderer import PromptRenderer
 from pycastle.prompts.scope_args import (
+    build_improve_scope_args,
     build_plan_scope_args,
     build_per_issue_scope_args,
     build_interrupted_work_clause,
@@ -283,3 +285,100 @@ def test_build_plan_scope_args_accepts_empty_issue_lists():
         "ALL_OPEN_ISSUES_JSON": "[]",
         "READY_FOR_AGENT_ISSUES_JSON": "[]",
     }
+
+
+def test_build_improve_scope_args_builds_exact_args_for_each_improve_prompt():
+    github_svc = MagicMock()
+    github_svc.get_recent_improve_prds.return_value = [
+        {"number": 12, "state": "OPEN", "title": "First candidate"}
+    ]
+    github_svc.get_issue.return_value = {
+        "number": 42,
+        "title": "Improve PRD",
+        "body": "PRD body",
+    }
+    github_svc.get_issue_comments.return_value = [
+        {"author": "alice", "created_at": "2026-01-01T00:00:00Z", "body": "lgtm"}
+    ]
+
+    scan_args = build_improve_scope_args(
+        PromptTemplate.IMPROVE_SCAN,
+        github_svc=github_svc,
+        short_sid="abcd1234",
+    )
+    prd_args = build_improve_scope_args(
+        PromptTemplate.IMPROVE_PRD,
+        github_svc=github_svc,
+        short_sid="abcd1234",
+    )
+    no_candidate_args = build_improve_scope_args(
+        PromptTemplate.IMPROVE_NO_CANDIDATE,
+        github_svc=github_svc,
+        short_sid="abcd1234",
+    )
+    issues_args = build_improve_scope_args(
+        PromptTemplate.IMPROVE_ISSUES,
+        github_svc=github_svc,
+        short_sid="abcd1234",
+        prd_number=42,
+    )
+
+    assert (
+        validated_scope_args_for_template(PromptTemplate.IMPROVE_SCAN, scan_args)
+        is scan_args
+    )
+    assert scan_args == {"RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate"}
+
+    assert (
+        validated_scope_args_for_template(PromptTemplate.IMPROVE_PRD, prd_args)
+        is prd_args
+    )
+    assert prd_args == {
+        "IMPROVE_SHORT_SID": "abcd1234",
+        "RECENT_IMPROVE_PRDS": "#12 OPEN - First candidate",
+    }
+
+    assert (
+        validated_scope_args_for_template(
+            PromptTemplate.IMPROVE_NO_CANDIDATE, no_candidate_args
+        )
+        is no_candidate_args
+    )
+    assert no_candidate_args == prd_args
+
+    assert (
+        validated_scope_args_for_template(PromptTemplate.IMPROVE_ISSUES, issues_args)
+        is issues_args
+    )
+    assert issues_args == {
+        "IMPROVE_SHORT_SID": "abcd1234",
+        "ISSUE_NUMBER": "42",
+        "ISSUE_TITLE": "Improve PRD",
+        "ISSUE_BODY": "PRD body",
+        "ISSUE_COMMENTS": "## Comment by @alice at 2026-01-01T00:00:00Z\n\nlgtm",
+    }
+
+
+def test_build_improve_scope_args_uses_empty_issue_fields_without_prd_number():
+    github_svc = MagicMock()
+
+    issues_args = build_improve_scope_args(
+        PromptTemplate.IMPROVE_ISSUES,
+        github_svc=github_svc,
+        short_sid="abcd1234",
+        prd_number=None,
+    )
+
+    assert (
+        validated_scope_args_for_template(PromptTemplate.IMPROVE_ISSUES, issues_args)
+        is issues_args
+    )
+    assert issues_args == {
+        "IMPROVE_SHORT_SID": "abcd1234",
+        "ISSUE_NUMBER": "",
+        "ISSUE_TITLE": "",
+        "ISSUE_BODY": "",
+        "ISSUE_COMMENTS": "",
+    }
+    github_svc.get_issue.assert_not_called()
+    github_svc.get_issue_comments.assert_not_called()

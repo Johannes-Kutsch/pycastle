@@ -11,7 +11,7 @@ from ..agents.output_protocol import (
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompts.pipeline import PromptTemplate, Scope
-from ..prompts.scope_args import build_issue_scope_args
+from ..prompts.scope_args import build_improve_scope_args
 from ..services import GitService, ServiceRegistry
 from ..services.github_service import GithubService
 from ..session import RoleSession, has_exact_transcript_match
@@ -66,7 +66,6 @@ class Step:
     cfg: _PhaseConfig
     send_role_prompt_on_resume: bool
     fetch_recent_prd_titles: bool
-    scope_args: dict[str, str]
 
 
 class ImprovePhaseDriver:
@@ -81,13 +80,10 @@ class ImprovePhaseDriver:
         {"01-scan:picked", "01-scan:no-candidate", "02-prd", "03-issues", "04-report"}
     )
 
-    def __init__(
-        self, role_session_dir: Path, short_sid: str, no_candidate_report: bool
-    ) -> None:
+    def __init__(self, role_session_dir: Path, no_candidate_report: bool) -> None:
         self._dir = role_session_dir
         self._progress_file = role_session_dir / self._PROGRESS_FILE
         self._in_flight_file = role_session_dir / self._IN_FLIGHT_FILE
-        self._short_sid = short_sid
         self._no_candidate_report = no_candidate_report
         self._last_id: str | None = None
         self._prd_number: int | None = None
@@ -156,18 +152,12 @@ class ImprovePhaseDriver:
         is_mid_phase_retry = in_flight_id == phase_key
         send_role_prompt_on_resume = last_id is not None and not is_mid_phase_retry
 
-        if phase.template.scope in (Scope.IMPROVE_SESSION, Scope.IMPROVE_ISSUES):
-            partial_scope_args: dict[str, str] = {"IMPROVE_SHORT_SID": self._short_sid}
-        else:
-            partial_scope_args = {}
-
         return Step(
             prompt_key=prompt_key,
             cfg=phase,
             send_role_prompt_on_resume=send_role_prompt_on_resume,
             fetch_recent_prd_titles=prompt_key == "01-scan.md"
             and not is_mid_phase_retry,
-            scope_args=partial_scope_args,
         )
 
     def _write_in_flight(self, prompt_key: str) -> None:
@@ -235,50 +225,6 @@ class _ImproveDeps(Protocol):
     improve_dispatched_count: int
 
 
-def _format_recent_improve_prds(recent_prds: list[dict[str, str | int]]) -> str:
-    if not recent_prds:
-        return "No recent improve PRDs found."
-    return "\n".join(
-        f"#{prd['number']} {prd['state']} - {prd['title']}" for prd in recent_prds
-    )
-
-
-def _build_improve_session_scope_args(
-    short_sid: str, github_svc: GithubService
-) -> dict[str, str]:
-    return {
-        "IMPROVE_SHORT_SID": short_sid,
-        "RECENT_IMPROVE_PRDS": _format_recent_improve_prds(
-            github_svc.get_recent_improve_prds()
-        ),
-    }
-
-
-def _build_scan_scope_args(github_svc: GithubService) -> dict[str, str]:
-    return {
-        "RECENT_IMPROVE_PRD_TITLES": _format_recent_improve_prds(
-            github_svc.get_recent_improve_prds()
-        )
-    }
-
-
-def _build_issues_scope_args(
-    short_sid: str,
-    prd_number: int | None,
-    github_svc: GithubService,
-) -> dict[str, str]:
-    if prd_number is None:
-        issue: dict = {"number": "", "title": "", "body": "", "comments": []}
-    else:
-        issue = {
-            **github_svc.get_issue(prd_number),
-            "comments": github_svc.get_issue_comments(prd_number),
-        }
-    return build_issue_scope_args(
-        issue, extra_scope_args={"IMPROVE_SHORT_SID": short_sid}
-    )
-
-
 async def improve_phase(
     deps: _ImproveDeps,
 ) -> ImproveNoCandidate | ImproveContinue | PreflightHITL | PreflightAFK:
@@ -311,9 +257,7 @@ async def improve_phase(
             role_session = RoleSession(sandbox_path, AgentRole.IMPROVE)
             short_sid = role_session.session_uuid().split("-")[0]
             role_session_dir = role_session.path
-            driver = ImprovePhaseDriver(
-                role_session_dir, short_sid, deps.cfg.diagnose_on_failure
-            )
+            driver = ImprovePhaseDriver(role_session_dir, deps.cfg.diagnose_on_failure)
 
             step = driver.start()
             if (
@@ -347,21 +291,31 @@ async def improve_phase(
 
             while step is not None:
                 if step.fetch_recent_prd_titles:
-                    scope_args = _build_scan_scope_args(deps.github_svc)
-                elif step.cfg.template.scope is Scope.IMPROVE_SCAN:
-                    scope_args = {
-                        "RECENT_IMPROVE_PRD_TITLES": _format_recent_improve_prds([])
-                    }
-                elif step.cfg.template.scope is Scope.IMPROVE_ISSUES:
-                    scope_args = _build_issues_scope_args(
-                        short_sid, driver.prd_number, deps.github_svc
+                    scope_args = build_improve_scope_args(
+                        step.cfg.template,
+                        github_svc=deps.github_svc,
+                        short_sid=short_sid,
+                        prd_number=driver.prd_number,
                     )
-                elif step.cfg.template.scope is Scope.IMPROVE_SESSION:
-                    scope_args = _build_improve_session_scope_args(
-                        short_sid, deps.github_svc
+                elif step.cfg.template.scope is Scope.IMPROVE_SCAN:
+                    scope_args = build_improve_scope_args(
+                        step.cfg.template,
+                        github_svc=deps.github_svc,
+                        short_sid=short_sid,
+                        recent_prds=[],
+                    )
+                elif step.cfg.template.scope in (
+                    Scope.IMPROVE_ISSUES,
+                    Scope.IMPROVE_SESSION,
+                ):
+                    scope_args = build_improve_scope_args(
+                        step.cfg.template,
+                        github_svc=deps.github_svc,
+                        short_sid=short_sid,
+                        prd_number=driver.prd_number,
                     )
                 else:
-                    scope_args = {**step.scope_args}
+                    scope_args = {}
                 output = await deps.agent_runner.run(
                     RunRequest(
                         name=step.cfg.display_name,
