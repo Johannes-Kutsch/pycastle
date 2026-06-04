@@ -670,20 +670,35 @@ def test_close_issue_treats_gone_as_no_op_with_warning(status):
             svc.close_issue(42)
 
 
-def test_close_issue_on_410_marks_issue_as_closed_for_subsequent_listings():
-    svc = _make_service()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=_make_http_error(410, b'{"message":"This issue was deleted"}'),
-    ):
-        with pytest.warns(UserWarning):
-            svc.close_issue(99)
-    body = json.dumps([{"number": 99, "title": "gone", "labels": []}]).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body, headers={}),
-    ):
-        open_issues = svc.get_all_open_issues_lightweight()
+def test_close_issue_on_410_marks_issue_as_closed_for_get_open_issues():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/99",
+                data={"state": "closed"},
+                error=GithubHttpTransportAPIError(
+                    "gone",
+                    status=410,
+                    body='{"message":"This issue was deleted"}',
+                    method="PATCH",
+                    path="/repos/owner/repo/issues/99",
+                ),
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&labels=ready-for-agent&per_page=100",
+                payload=[{"number": 99, "title": "gone", "body": "", "labels": []}],
+                headers={"Link": ""},
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.warns(UserWarning):
+        svc.close_issue(99)
+    open_issues = svc.get_open_issues("ready-for-agent")
+
     assert all(i["number"] != 99 for i in open_issues)
 
 
@@ -1544,7 +1559,7 @@ def test_get_all_open_issues_lightweight_excludes_pull_requests():
     assert [r["number"] for r in result] == [1]
 
 
-def test_get_all_open_issues_lightweight_filters_recently_closed():
+def test_get_all_open_issues_lightweight_does_not_filter_recently_closed():
     transport = _ScriptedGithubTransport(
         [
             _script_step(
@@ -1563,40 +1578,6 @@ def test_get_all_open_issues_lightweight_filters_recently_closed():
     svc = _make_service(transport=transport)
 
     svc.close_issue(42)
-    result = svc.get_all_open_issues_lightweight()
-
-    assert [r["number"] for r in result] == []
-
-
-def test_get_all_open_issues_lightweight_self_heals_after_disappears():
-    list_path = "/repos/owner/repo/issues?state=open&per_page=100"
-    transport = _ScriptedGithubTransport(
-        [
-            _script_step(
-                "PATCH",
-                "/repos/owner/repo/issues/42",
-                data={"state": "closed"},
-            ),
-            _script_step(
-                "GET",
-                list_path,
-                payload=[{"number": 42, "title": "T", "labels": []}],
-                headers={"Link": ""},
-            ),
-            _script_step("GET", list_path, payload=[], headers={"Link": ""}),
-            _script_step(
-                "GET",
-                list_path,
-                payload=[{"number": 42, "title": "T", "labels": []}],
-                headers={"Link": ""},
-            ),
-        ]
-    )
-    svc = _make_service(transport=transport)
-
-    svc.close_issue(42)
-    svc.get_all_open_issues_lightweight()
-    svc.get_all_open_issues_lightweight()
     result = svc.get_all_open_issues_lightweight()
 
     assert [r["number"] for r in result] == [42]
