@@ -70,6 +70,7 @@ FINAL_OUTCOME_EXAMPLES: dict[str, FinalOutcomeExample] = {
 
 @dataclass
 class DockerBuildOutputInterpreter:
+    initial_progress_text: str = "preparing…"
     on_rebuild_start: Callable[[], None] | None = None
     _classic_steps_seen: int = 0
     _classic_steps_cached: int = 0
@@ -141,6 +142,12 @@ class DockerBuildOutputInterpreter:
         if self._has_buildkit_cached and not self._has_buildkit_done:
             return BuildOutcome.FULL_CACHE_HIT
         return BuildOutcome.REBUILT
+
+    @property
+    def success_progress_text(self) -> str:
+        if self.final_outcome == BuildOutcome.FULL_CACHE_HIT:
+            return "up to date"
+        return "completed"
 
     def _mark_rebuild_started(self) -> BuildLineInterpretation:
         if self._rebuild_started:

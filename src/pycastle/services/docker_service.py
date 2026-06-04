@@ -99,8 +99,8 @@ class DockerService:
         timeout: float | None,
     ) -> BuildOutcome:
         writer = _ProgressWriter(sys.stdout.isatty())
-        writer.update("preparing…")
         interpreter = DockerBuildOutputInterpreter()
+        writer.update(interpreter.initial_progress_text)
 
         try:
             proc = subprocess.Popen(
@@ -139,11 +139,7 @@ class DockerService:
             raise DockerBuildError(f"docker build failed (exit {returncode})")
 
         outcome = interpreter.final_outcome
-        if outcome == BuildOutcome.FULL_CACHE_HIT:
-            writer.finish("up to date")
-            return outcome
-
-        writer.finish("completed")
+        writer.finish(interpreter.success_progress_text)
         return outcome
 
     def _build_streaming(
