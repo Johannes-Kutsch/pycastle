@@ -243,31 +243,6 @@ def test_build_env_with_state_dir_contains_tz_and_codex_home():
     assert set(env.keys()) == {"TZ", "CODEX_HOME"}
 
 
-# ── CodexService.state_dir_relpath ────────────────────────────────────────────
-
-
-def test_state_dir_relpath_without_namespace():
-    result = CodexService().state_dir_relpath(AgentRole.IMPLEMENTER)
-    assert result == ".pycastle-session/implementer/codex/"
-
-
-def test_state_dir_relpath_with_namespace():
-    result = CodexService().state_dir_relpath(AgentRole.IMPROVE, "main")
-    assert result == ".pycastle-session/improve/main/codex/"
-
-
-def test_state_dir_relpath_has_trailing_slash():
-    result = CodexService().state_dir_relpath(AgentRole.IMPLEMENTER)
-    assert result is not None
-    assert result.endswith("/")
-
-
-def test_state_dir_relpath_empty_namespace_same_as_no_namespace():
-    assert CodexService().state_dir_relpath(
-        AgentRole.IMPLEMENTER, ""
-    ) == CodexService().state_dir_relpath(AgentRole.IMPLEMENTER)
-
-
 # ── CodexService.is_resumable ─────────────────────────────────────────────────
 
 

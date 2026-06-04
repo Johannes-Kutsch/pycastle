@@ -43,9 +43,7 @@ def provider_state_relpath(
     provider_name: str,
     namespace: str = "",
 ) -> str:
-    if namespace:
-        return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
-    return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
+    return RoleSession.provider_state_relpath_for(role, provider_name, namespace)
 
 
 def _normalize_state_dir_relpath(
@@ -159,6 +157,16 @@ class RoleSession:
         base = self._worktree / SESSION_DIR_NAME / self._role.value
         return base / self._namespace if self._namespace else base
 
+    @staticmethod
+    def provider_state_relpath_for(
+        role: AgentRole,
+        provider_name: str,
+        namespace: str = "",
+    ) -> str:
+        if namespace:
+            return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
+        return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
+
     def session_uuid(self) -> str:
         role_key = (
             f"pycastle.{self._role.value}.{self._namespace}"
@@ -170,7 +178,7 @@ class RoleSession:
         return str(session_id)
 
     def provider_state_dir(self, provider_name: str) -> Path:
-        return self._worktree / provider_state_relpath(
+        return self._worktree / self.provider_state_relpath_for(
             self._role,
             provider_name,
             self._namespace,

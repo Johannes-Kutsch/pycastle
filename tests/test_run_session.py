@@ -196,9 +196,14 @@ def test_provider_state_relpath_formats_role_namespace_and_provider_name() -> No
         provider_state_relpath(AgentRole.IMPROVE, "codex", "main")
         == ".pycastle-session/improve/main/codex/"
     )
+    assert (
+        provider_state_relpath(AgentRole.IMPROVE, "codex", "")
+        == ".pycastle-session/improve/codex/"
+    )
     assert provider_state_relpath(AgentRole.IMPLEMENTER, "claude", "") == (
         provider_state_relpath(AgentRole.IMPLEMENTER, "claude")
     )
+    assert provider_state_relpath(AgentRole.IMPLEMENTER, "codex").endswith("/")
 
 
 def test_role_session_provider_state_dir_matches_worktree_local_provider_layout(
