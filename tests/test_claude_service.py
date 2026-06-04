@@ -58,12 +58,14 @@ def test_claude_service_name_is_claude():
 
 def test_state_dir_relpath_without_namespace():
     result = ClaudeService().state_dir_relpath(AgentRole.IMPLEMENTER)
-    assert result == ".pycastle-session/implementer/claude/"
+    assert result == RoleSession.provider_state_relpath(AgentRole.IMPLEMENTER, "claude")
 
 
 def test_state_dir_relpath_with_namespace():
     result = ClaudeService().state_dir_relpath(AgentRole.IMPROVE, "main")
-    assert result == ".pycastle-session/improve/main/claude/"
+    assert result == RoleSession.provider_state_relpath(
+        AgentRole.IMPROVE, "claude", "main"
+    )
 
 
 def test_state_dir_relpath_empty_namespace_same_as_no_namespace():

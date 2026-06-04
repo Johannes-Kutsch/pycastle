@@ -189,6 +189,17 @@ def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: P
 
 def test_provider_state_relpath_formats_role_namespace_and_provider_name() -> None:
     assert (
+        RoleSession.provider_state_relpath(AgentRole.IMPLEMENTER, "codex")
+        == ".pycastle-session/implementer/codex/"
+    )
+    assert (
+        RoleSession.provider_state_relpath(AgentRole.IMPROVE, "codex", "main")
+        == ".pycastle-session/improve/main/codex/"
+    )
+    assert RoleSession.provider_state_relpath(AgentRole.IMPLEMENTER, "claude", "") == (
+        RoleSession.provider_state_relpath(AgentRole.IMPLEMENTER, "claude")
+    )
+    assert (
         provider_state_relpath(AgentRole.IMPLEMENTER, "codex")
         == ".pycastle-session/implementer/codex/"
     )
@@ -365,6 +376,36 @@ def test_run_session_plan_reports_resume_for_claude_with_populated_state_dir(
     assert plan.run_kind is RunKind.RESUME
     assert plan.service_state_dir == expected_state_dir
     assert plan.provider_session_id == expected_session_id
+
+
+def test_run_session_plan_preserves_claude_container_state_dir_path_without_namespace(
+    tmp_path: Path,
+) -> None:
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=ClaudeService(),
+    )
+
+    assert plan.provider_state_dir_container_path("/home/agent/workspace") == (
+        "/home/agent/workspace/.pycastle-session/implementer/claude/"
+    )
+
+
+def test_run_session_plan_preserves_claude_container_state_dir_path_with_namespace(
+    tmp_path: Path,
+) -> None:
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=ClaudeService(),
+    )
+
+    assert plan.provider_state_dir_container_path("/home/agent/workspace") == (
+        "/home/agent/workspace/.pycastle-session/improve/main/claude/"
+    )
 
 
 def test_claude_provider_session_state_uses_role_session_uuid_even_with_preferred_override(
