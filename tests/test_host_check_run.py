@@ -398,6 +398,45 @@ def test_run_host_check_command_preserves_raw_failed_command_diagnostic_payload(
     assert runner_requests[0].scope_args["OUTPUT"] == raw_output
 
 
+def test_run_host_check_command_executes_configured_passing_check_through_module_seam_without_streaming_output(
+    tmp_path, capsys
+):
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+    cfg = Config(host_checks=(("configured", "python -c configured"),))
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    result = asyncio.run(
+        run_mod.run_host_check_command(
+            cfg=cfg,
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            status_display=run_mod.PlainStatusDisplay(),
+            run_host_check=lambda name, command, cwd: host_check_command_result(
+                name,
+                command,
+                output="passing stdout\npassing stderr",
+            ),
+            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+        )
+    )
+
+    assert result == run_mod.HostCheckRunPassed(checked_sha="checked-sha")
+    assert capsys.readouterr().out == (
+        "\n[Host Check] started\n[Host Check] configured\n[Host Check] finished\n"
+    )
+
+
 def test_run_host_check_run_executes_passing_checks_in_checked_sha_worktree_and_returns_sha(
     tmp_path, monkeypatch, capsys
 ):
