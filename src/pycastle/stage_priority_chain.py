@@ -45,3 +45,15 @@ def render_chain_label(override: StageOverride) -> str:
         entry.service if entry.service else "<missing>"
         for entry in chain_entries(override)
     )
+
+
+def referenced_service_names(override: StageOverride) -> tuple[str, ...]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for node in iter_stage_chain(override):
+        service = node.service.strip()
+        if not service or service in seen:
+            continue
+        names.append(service)
+        seen.add(service)
+    return tuple(names)

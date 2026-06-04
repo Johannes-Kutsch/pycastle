@@ -3,6 +3,7 @@ from pycastle.service_availability import iter_stage_chain as iter_legacy_stage_
 from pycastle.stage_priority_chain import (
     chain_entries,
     iter_stage_chain,
+    referenced_service_names,
     render_chain_label,
     validation_labels,
 )
@@ -117,3 +118,53 @@ def test_render_chain_label_marks_missing_primary_service_name() -> None:
     result = render_chain_label(override)
 
     assert result == "<missing>"
+
+
+def test_referenced_service_names_collects_primary_and_fallback_service_names() -> None:
+    override = StageOverride(
+        service="opencode",
+        fallback=StageOverride(
+            service="codex",
+            fallback=StageOverride(service="claude"),
+        ),
+    )
+
+    result = referenced_service_names(override)
+
+    assert result == ("opencode", "codex", "claude")
+
+
+def test_referenced_service_names_deduplicates_repeated_services() -> None:
+    override = StageOverride(
+        service="codex",
+        fallback=StageOverride(
+            service="claude",
+            fallback=StageOverride(
+                service="codex",
+                fallback=StageOverride(service="opencode"),
+            ),
+        ),
+    )
+
+    result = referenced_service_names(override)
+
+    assert result == ("codex", "claude", "opencode")
+
+
+def test_referenced_service_names_excludes_empty_names_deterministically() -> None:
+    override = StageOverride(
+        service=" ",
+        fallback=StageOverride(
+            service="codex",
+            fallback=StageOverride(
+                service="",
+                fallback=StageOverride(service="claude"),
+            ),
+        ),
+    )
+
+    first = referenced_service_names(override)
+    second = referenced_service_names(override)
+
+    assert first == ("codex", "claude")
+    assert second == first
