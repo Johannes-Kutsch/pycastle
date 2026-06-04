@@ -204,6 +204,61 @@ def test_service_session_ids_use_service_specific_sidecars(worktree):
     assert rs.service_session_id("unknown-service") == "default-123"
 
 
+def test_service_session_id_sidecars_follow_role_session_provider_state_layout(
+    worktree,
+):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+
+    rs.save_service_session_id("codex", "thread-123")
+    rs.save_service_session_id("opencode", "sess-123")
+    rs.save_service_session_id("unknown-service", "default-123")
+
+    assert (
+        rs.service_session_id_path("codex")
+        == rs.provider_state_dir("codex") / "thread_id"
+    )
+    assert (
+        rs.service_session_id_path("opencode")
+        == rs.provider_state_dir("opencode") / "session_id"
+    )
+    assert (
+        rs.service_session_id_path("unknown-service")
+        == rs.provider_state_dir("unknown-service") / "thread_id"
+    )
+    assert (
+        worktree / ".pycastle-session" / "improve" / "main" / "codex" / "thread_id"
+    ).read_text(encoding="utf-8") == "thread-123"
+    assert (
+        worktree / ".pycastle-session" / "improve" / "main" / "opencode" / "session_id"
+    ).read_text(encoding="utf-8") == "sess-123"
+    assert (
+        worktree
+        / ".pycastle-session"
+        / "improve"
+        / "main"
+        / "unknown-service"
+        / "thread_id"
+    ).read_text(encoding="utf-8") == "default-123"
+
+
+def test_service_session_metadata_stays_at_role_session_level(worktree):
+    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
+
+    rs.save_service_session_metadata("codex", "thread-123")
+
+    assert service_session_metadata_path(rs.path) == (
+        worktree
+        / ".pycastle-session"
+        / "improve"
+        / "main"
+        / "_service_session_metadata.json"
+    )
+    assert service_session_metadata_path(rs.path).is_file()
+    assert not (
+        rs.provider_state_dir("codex") / "_service_session_metadata.json"
+    ).exists()
+
+
 def test_provider_run_state_for_codex_service_recovers_single_nested_rollout_thread_id(
     worktree,
 ):
