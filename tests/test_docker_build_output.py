@@ -40,10 +40,10 @@ def test_interpreter_signals_rebuild_start_on_first_executed_buildkit_layer():
     interpreter = DockerBuildOutputInterpreter()
 
     signals = [
-        interpreter.observe_line("#1 [1/2] FROM python:3.12\n"),
-        interpreter.observe_line("#1 CACHED\n"),
-        interpreter.observe_line("#2 [2/2] COPY . .\n"),
-        interpreter.observe_line("#2 DONE 2.5s\n"),
+        interpreter.observe_line("#1 [1/2] FROM python:3.12\n").rebuild_started,
+        interpreter.observe_line("#1 CACHED\n").rebuild_started,
+        interpreter.observe_line("#2 [2/2] COPY . .\n").rebuild_started,
+        interpreter.observe_line("#2 DONE 2.5s\n").rebuild_started,
     ]
 
     assert signals == [False, False, False, True]
@@ -54,11 +54,11 @@ def test_interpreter_signals_rebuild_start_on_first_non_cache_classic_step_body(
     interpreter = DockerBuildOutputInterpreter()
 
     signals = [
-        interpreter.observe_line("Step 1/2 : FROM python:3.12\n"),
-        interpreter.observe_line(" ---> Using cache\n"),
-        interpreter.observe_line(" ---> abc123\n"),
-        interpreter.observe_line("Step 2/2 : COPY . .\n"),
-        interpreter.observe_line(" ---> Running in 789abc\n"),
+        interpreter.observe_line("Step 1/2 : FROM python:3.12\n").rebuild_started,
+        interpreter.observe_line(" ---> Using cache\n").rebuild_started,
+        interpreter.observe_line(" ---> abc123\n").rebuild_started,
+        interpreter.observe_line("Step 2/2 : COPY . .\n").rebuild_started,
+        interpreter.observe_line(" ---> Running in 789abc\n").rebuild_started,
     ]
 
     assert signals == [False, False, False, False, True]
@@ -69,12 +69,12 @@ def test_interpreter_signals_rebuild_start_for_classic_step_body_after_blank_lin
     interpreter = DockerBuildOutputInterpreter()
 
     signals = [
-        interpreter.observe_line("Step 1/2 : FROM python:3.12\n"),
-        interpreter.observe_line(" ---> Using cache\n"),
-        interpreter.observe_line(" ---> abc123\n"),
-        interpreter.observe_line("Step 2/2 : COPY . .\n"),
-        interpreter.observe_line("\n"),
-        interpreter.observe_line(" ---> Running in 789abc\n"),
+        interpreter.observe_line("Step 1/2 : FROM python:3.12\n").rebuild_started,
+        interpreter.observe_line(" ---> Using cache\n").rebuild_started,
+        interpreter.observe_line(" ---> abc123\n").rebuild_started,
+        interpreter.observe_line("Step 2/2 : COPY . .\n").rebuild_started,
+        interpreter.observe_line("\n").rebuild_started,
+        interpreter.observe_line(" ---> Running in 789abc\n").rebuild_started,
     ]
 
     assert signals == [False, False, False, False, False, True]
@@ -85,12 +85,12 @@ def test_interpreter_ignores_internal_buildkit_done_before_first_executed_layer(
     interpreter = DockerBuildOutputInterpreter()
 
     signals = [
-        interpreter.observe_line("#1 [internal] load .dockerignore\n"),
-        interpreter.observe_line("#1 DONE 0.1s\n"),
-        interpreter.observe_line("#2 [1/2] FROM python:3.12\n"),
-        interpreter.observe_line("#2 CACHED\n"),
-        interpreter.observe_line("#3 [2/2] COPY . .\n"),
-        interpreter.observe_line("#3 DONE 0.5s\n"),
+        interpreter.observe_line("#1 [internal] load .dockerignore\n").rebuild_started,
+        interpreter.observe_line("#1 DONE 0.1s\n").rebuild_started,
+        interpreter.observe_line("#2 [1/2] FROM python:3.12\n").rebuild_started,
+        interpreter.observe_line("#2 CACHED\n").rebuild_started,
+        interpreter.observe_line("#3 [2/2] COPY . .\n").rebuild_started,
+        interpreter.observe_line("#3 DONE 0.5s\n").rebuild_started,
     ]
 
     assert signals == [False, False, False, False, False, True]
@@ -127,7 +127,7 @@ def test_interpreter_ignores_internal_buildkit_done_before_first_executed_layer(
 def test_interpreter_all_cached_output_never_signals_rebuild_start(lines, outcome):
     interpreter = DockerBuildOutputInterpreter()
 
-    signals = [interpreter.observe_line(line) for line in lines]
+    signals = [interpreter.observe_line(line).rebuild_started for line in lines]
 
     assert signals == [False] * len(lines)
     assert interpreter.final_outcome == outcome
@@ -137,15 +137,101 @@ def test_interpreter_signals_rebuild_start_only_once_per_build():
     interpreter = DockerBuildOutputInterpreter()
 
     signals = [
-        interpreter.observe_line("#1 [1/3] FROM python:3.12\n"),
-        interpreter.observe_line("#1 CACHED\n"),
-        interpreter.observe_line("#2 [2/3] RUN apt-get install -y git\n"),
-        interpreter.observe_line("#2 DONE 4.2s\n"),
-        interpreter.observe_line("#3 [3/3] COPY . .\n"),
-        interpreter.observe_line("#3 DONE 0.5s\n"),
-        interpreter.observe_line("#4 exporting to image\n"),
-        interpreter.observe_line("#4 DONE 0.3s\n"),
+        interpreter.observe_line("#1 [1/3] FROM python:3.12\n").rebuild_started,
+        interpreter.observe_line("#1 CACHED\n").rebuild_started,
+        interpreter.observe_line(
+            "#2 [2/3] RUN apt-get install -y git\n"
+        ).rebuild_started,
+        interpreter.observe_line("#2 DONE 4.2s\n").rebuild_started,
+        interpreter.observe_line("#3 [3/3] COPY . .\n").rebuild_started,
+        interpreter.observe_line("#3 DONE 0.5s\n").rebuild_started,
+        interpreter.observe_line("#4 exporting to image\n").rebuild_started,
+        interpreter.observe_line("#4 DONE 0.3s\n").rebuild_started,
     ]
 
     assert signals == [False, False, False, True, False, False, False, False]
     assert interpreter.final_outcome == BuildOutcome.REBUILT
+
+
+def test_interpreter_emits_buildkit_step_progress_transitions():
+    interpreter = DockerBuildOutputInterpreter()
+
+    transitions = [
+        interpreter.observe_line("#1 [1/3] FROM python:3.12\n").progress_text,
+        interpreter.observe_line("#1 CACHED\n").progress_text,
+        interpreter.observe_line("#2 [2/4] RUN apt-get install -y git\n").progress_text,
+        interpreter.observe_line("#2 DONE 4.2s\n").progress_text,
+        interpreter.observe_line("#3 [3/9] COPY . .\n").progress_text,
+    ]
+
+    assert transitions == [
+        "Step 1/3",
+        None,
+        "Step 2/3",
+        None,
+        "Step 3/3",
+    ]
+
+
+def test_interpreter_emits_classic_step_progress_transitions():
+    interpreter = DockerBuildOutputInterpreter()
+
+    transitions = [
+        interpreter.observe_line("Step 1/2 : FROM python:3.12\n").progress_text,
+        interpreter.observe_line(" ---> Using cache\n").progress_text,
+        interpreter.observe_line(" ---> abc123\n").progress_text,
+        interpreter.observe_line("Step 2/2 : COPY . .\n").progress_text,
+        interpreter.observe_line(" ---> Running in 789abc\n").progress_text,
+    ]
+
+    assert transitions == [
+        "Step 1/2",
+        None,
+        None,
+        "Step 2/2",
+        None,
+    ]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "#4 exporting to image\n",
+        "#4 naming to docker.io/library/img:latest\n",
+        "#4 unpacking to docker.io/library/img:latest\n",
+        "#4 manifest sha256:abc123\n",
+        "#4 pushing layers\n",
+    ],
+)
+def test_interpreter_emits_exporting_progress_after_step_progress(line):
+    interpreter = DockerBuildOutputInterpreter()
+    interpreter.observe_line("#1 [1/2] FROM python:3.12\n")
+    interpreter.observe_line("#1 CACHED\n")
+    interpreter.observe_line("#2 [2/2] COPY . .\n")
+    interpreter.observe_line("#2 DONE 0.5s\n")
+
+    transition = interpreter.observe_line(line).progress_text
+
+    assert transition == "exporting…"
+
+
+def test_interpreter_suppresses_duplicate_progress_transitions_for_repeated_steps():
+    interpreter = DockerBuildOutputInterpreter()
+
+    transitions = [
+        interpreter.observe_line("#1 [1/2] FROM python:3.12\n").progress_text,
+        interpreter.observe_line("#1 [1/2] FROM python:3.12\n").progress_text,
+        interpreter.observe_line("#2 [2/2] COPY . .\n").progress_text,
+        interpreter.observe_line("#2 [2/2] COPY . .\n").progress_text,
+        interpreter.observe_line("#3 exporting to image\n").progress_text,
+        interpreter.observe_line("#3 exporting to image\n").progress_text,
+    ]
+
+    assert transitions == [
+        "Step 1/2",
+        None,
+        "Step 2/2",
+        None,
+        "exporting…",
+        None,
+    ]

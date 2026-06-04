@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import subprocess
 import sys
 from collections.abc import Callable
@@ -10,7 +9,6 @@ from ..errors import DockerBuildError, DockerServiceError
 from ._docker_build_output import (
     BuildOutcome,
     DockerBuildOutputInterpreter,
-    interpret_final_build_outcome,
 )
 
 
@@ -102,6 +100,7 @@ class DockerService:
     ) -> BuildOutcome:
         writer = _ProgressWriter(sys.stdout.isatty())
         writer.update("preparing…")
+        interpreter = DockerBuildOutputInterpreter()
 
         try:
             proc = subprocess.Popen(
@@ -119,27 +118,12 @@ class DockerService:
 
         assert proc.stdout is not None
         lines: list[str] = []
-        total_steps: int | None = None
-        current_step: int | None = None
 
         for line in proc.stdout:
             lines.append(line)
-            stripped = line.strip()
-
-            step = re.match(r"^#\d+\s+\[(\d+)/(\d+)\]", stripped) or re.match(
-                r"^Step (\d+)/(\d+) :", stripped
-            )
-            if step:
-                y, x = int(step.group(1)), int(step.group(2))
-                if total_steps is None:
-                    total_steps = x
-                if current_step != y:
-                    current_step = y
-                    writer.update(f"Step {y}/{total_steps}")
-            elif current_step is not None and re.match(
-                r"^#\d+\s+(exporting|naming|unpacking|manifest|pushing)", stripped
-            ):
-                writer.update("exporting…")
+            interpretation = interpreter.observe_line(line)
+            if interpretation.progress_text is not None:
+                writer.update(interpretation.progress_text)
 
         try:
             returncode = proc.wait(timeout=timeout)
@@ -154,7 +138,7 @@ class DockerService:
             sys.stdout.flush()
             raise DockerBuildError(f"docker build failed (exit {returncode})")
 
-        outcome = interpret_final_build_outcome("".join(lines))
+        outcome = interpreter.final_outcome
         if outcome == BuildOutcome.FULL_CACHE_HIT:
             writer.finish("up to date")
             return outcome
