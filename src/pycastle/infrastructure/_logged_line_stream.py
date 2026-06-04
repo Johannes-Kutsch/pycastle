@@ -4,7 +4,9 @@ import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 
+from ..agents.output_protocol import AgentRole
 from ..errors import AgentTimeoutError
+from ..session.resume import RunKind
 
 
 def stream_logged_lines(
@@ -53,3 +55,29 @@ def stream_logged_lines(
             while "\n" in line_buf:
                 line, line_buf = line_buf.split("\n", 1)
                 yield line
+
+
+def stream_logged_work_lines(
+    chunks: Iterable[bytes],
+    *,
+    log_path: Path,
+    role: AgentRole,
+    run_kind: RunKind,
+    session_uuid: str | None,
+    prompt: str,
+    idle_timeout: float,
+    on_chunk: Callable[[], None],
+) -> Iterator[str]:
+    return stream_logged_lines(
+        chunks,
+        log_path=log_path,
+        input_record={
+            "type": "pycastle_input",
+            "role": role.value,
+            "run_kind": run_kind.value,
+            "session_uuid": session_uuid,
+            "prompt": prompt,
+        },
+        idle_timeout=idle_timeout,
+        on_chunk=on_chunk,
+    )

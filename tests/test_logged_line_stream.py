@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 
 from pycastle.errors import AgentTimeoutError
-from pycastle.infrastructure._logged_line_stream import stream_logged_lines
+from pycastle.agents.output_protocol import AgentRole
+from pycastle.infrastructure._logged_line_stream import (
+    stream_logged_lines,
+    stream_logged_work_lines,
+)
+from pycastle.session.resume import RunKind
 
 
 def _collect_stream(
@@ -26,6 +31,32 @@ def _collect_stream(
         )
     )
     return lines, on_chunk_calls
+
+
+def test_stream_logged_work_lines_handles_one_complete_invocation(tmp_path):
+    log_path = tmp_path / "agent.log"
+    on_chunk_calls: list[str] = []
+
+    lines = list(
+        stream_logged_work_lines(
+            [b'{"type":"result","result":"done"}\n'],
+            log_path=log_path,
+            role=AgentRole.IMPLEMENTER,
+            run_kind=RunKind.FRESH,
+            session_uuid=None,
+            prompt="prompt",
+            idle_timeout=1.0,
+            on_chunk=lambda: on_chunk_calls.append("chunk"),
+        )
+    )
+
+    assert lines == ['{"type":"result","result":"done"}']
+    assert on_chunk_calls == ["chunk"]
+    assert log_path.read_bytes() == (
+        b'{"type": "pycastle_input", "role": "implementer", "run_kind": "fresh", '
+        b'"session_uuid": null, "prompt": "prompt"}\n'
+        b'{"type":"result","result":"done"}\n'
+    )
 
 
 def test_stream_logged_lines_logs_input_record_and_chunk_bytes(tmp_path):
