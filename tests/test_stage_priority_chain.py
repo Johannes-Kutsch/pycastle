@@ -1,5 +1,4 @@
 from pycastle.config.types import StageOverride
-from pycastle.service_availability import iter_stage_chain as iter_legacy_stage_chain
 from pycastle.stage_priority_chain import (
     chain_entries,
     iter_stage_chain,
@@ -31,22 +30,6 @@ def test_iter_stage_chain_yields_stage_chain_in_priority_order() -> None:
     assert result[0] is primary
     assert result[1] is secondary
     assert result[2] is tertiary
-
-
-def test_service_availability_iter_stage_chain_stays_import_compatible() -> None:
-    fallback = StageOverride(service="claude", model="sonnet", effort="medium")
-    override = StageOverride(
-        service="codex",
-        model="gpt-5.4",
-        effort="medium",
-        fallback=fallback,
-    )
-
-    result = list(iter_legacy_stage_chain(override))
-
-    assert result == [override, fallback]
-    assert result[0] is override
-    assert result[1] is fallback
 
 
 def test_chain_entries_exposes_stage_override_chain_facts_in_priority_order() -> None:
