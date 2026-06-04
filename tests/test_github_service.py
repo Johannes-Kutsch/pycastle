@@ -201,14 +201,15 @@ def test_github_service_does_not_inherit_from_subprocess_service():
 # ── check_auth (tracer) ───────────────────────────────────────────────────────
 
 
-def test_check_auth_returns_login_on_success():
-    svc = _make_service()
-    body = json.dumps({"login": "alice"}).encode()
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(body),
-    ):
-        assert svc.check_auth() == "alice"
+def test_check_auth_with_scripted_transport_returns_authenticated_login():
+    transport = _ScriptedGithubTransport(
+        [_script_step("GET", "/user", payload={"login": "alice"})]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.check_auth() == "alice"
+    assert transport.requests == [_GithubTransportRequest("GET", "/user", None)]
+    transport.assert_exhausted()
 
 
 def test_check_auth_uses_injected_transport_adapter():
