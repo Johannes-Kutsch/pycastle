@@ -20,6 +20,7 @@ class ContinueNow:
 class SleepUntil:
     wake_time: datetime
     is_estimated: bool = False
+    message: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -35,6 +36,14 @@ def _fmt_wake(wake: datetime, now: datetime) -> str:
     if local_wake.date() != now.date():
         return f"{local_wake:%b} {local_wake.day}, {local_wake:%H:%M}"
     return local_wake.strftime("%H:%M")
+
+
+def _sleep_message(wake: datetime, now: datetime, *, is_estimated: bool) -> str:
+    suffix = " (estimated)" if is_estimated else ""
+    return (
+        f"Usage limit reached. Sleeping until {_fmt_wake(wake, now)}{suffix}."
+        " Press Ctrl+C to abort."
+    )
 
 
 def _override_for_stage_key(cfg: Config, stage_key: str | None) -> StageOverride | None:
@@ -104,7 +113,14 @@ def decide_usage_limit_continuation(
         next_wake = service_registry.next_wake_time(now)
 
     if next_wake is not None:
-        return SleepUntil(wake_time=next_wake)
+        return SleepUntil(
+            wake_time=next_wake,
+            message=_sleep_message(next_wake, now, is_estimated=False),
+        )
 
     wake_time, is_estimated = compute_wake_time(outcome.reset_time, now)
-    return SleepUntil(wake_time=wake_time, is_estimated=is_estimated)
+    return SleepUntil(
+        wake_time=wake_time,
+        is_estimated=is_estimated,
+        message=_sleep_message(wake_time, now, is_estimated=is_estimated),
+    )

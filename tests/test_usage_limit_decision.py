@@ -136,7 +136,75 @@ def test_decide_usage_limit_continuation_sleeps_for_stage_chain_only():
         _now(),
     )
 
-    assert decision == SleepUntil(wake_time=fallback_wake)
+    assert isinstance(decision, SleepUntil)
+    assert decision.wake_time == fallback_wake
+    assert (
+        decision.message
+        == "Usage limit reached. Sleeping until 15:00. Press Ctrl+C to abort."
+    )
+
+
+def test_decide_usage_limit_continuation_formats_cross_day_sleep_message():
+    now = datetime(2026, 1, 1, 23, 30, 0, tzinfo=timezone.utc)
+    fallback_wake = datetime(2026, 1, 2, 1, 0, 0, tzinfo=timezone.utc)
+    registry = ServiceRegistry(
+        {
+            "claude": _make_service(available=False, wake_time=fallback_wake),
+            "codex": _make_service(available=False, wake_time=fallback_wake),
+            "opencode": _make_service(available=True),
+        }
+    )
+    cfg = Config(
+        implement_override=StageOverride(
+            service="claude",
+            fallback=StageOverride(service="codex"),
+        )
+    )
+
+    decision = decide_usage_limit_continuation(
+        AbortedUsageLimit(stage_key="implement"),
+        cfg,
+        registry,
+        now,
+    )
+
+    assert isinstance(decision, SleepUntil)
+    assert (
+        decision.message
+        == "Usage limit reached. Sleeping until Jan 2, 01:00. Press Ctrl+C to abort."
+    )
+
+
+def test_decide_usage_limit_continuation_ignores_exhausted_services_outside_stage_chain():
+    stage_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc)
+    unrelated_wake = datetime(2026, 1, 1, 14, 45, 0, tzinfo=timezone.utc)
+    registry = ServiceRegistry(
+        {
+            "claude": _make_service(available=False, wake_time=stage_wake),
+            "codex": _make_service(available=False, wake_time=stage_wake),
+            "opencode": _make_service(available=False, wake_time=unrelated_wake),
+        }
+    )
+    cfg = Config(
+        implement_override=StageOverride(
+            service="claude",
+            fallback=StageOverride(service="codex"),
+        )
+    )
+
+    decision = decide_usage_limit_continuation(
+        AbortedUsageLimit(stage_key="implement"),
+        cfg,
+        registry,
+        _now(),
+    )
+
+    assert isinstance(decision, SleepUntil)
+    assert decision.wake_time == stage_wake
+    assert (
+        decision.message
+        == "Usage limit reached. Sleeping until 15:00. Press Ctrl+C to abort."
+    )
 
 
 def test_decide_usage_limit_continuation_ignores_available_services_outside_stage_chain():
@@ -156,9 +224,12 @@ def test_decide_usage_limit_continuation_ignores_available_services_outside_stag
         _now(),
     )
 
-    assert decision == SleepUntil(
-        wake_time=datetime(2026, 1, 1, 15, 2, 0, tzinfo=timezone.utc),
-        is_estimated=True,
+    assert isinstance(decision, SleepUntil)
+    assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=timezone.utc)
+    assert decision.is_estimated is True
+    assert (
+        decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
+        " Press Ctrl+C to abort."
     )
 
 
@@ -188,7 +259,10 @@ def test_decide_usage_limit_continuation_estimates_wake_time_without_registry():
         now,
     )
 
-    assert decision == SleepUntil(
-        wake_time=datetime(2026, 1, 1, 15, 2, 0, tzinfo=timezone.utc),
-        is_estimated=True,
+    assert isinstance(decision, SleepUntil)
+    assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=timezone.utc)
+    assert decision.is_estimated is True
+    assert (
+        decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
+        " Press Ctrl+C to abort."
     )

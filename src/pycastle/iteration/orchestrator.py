@@ -344,11 +344,13 @@ async def run(
                         break
                     assert isinstance(decision, SleepUntil)
                     wake_time = decision.wake_time
-                    suffix = " (estimated)" if decision.is_estimated else ""
                     status_display.print(  # type: ignore[union-attr]
                         "",
-                        f"Usage limit reached. Sleeping until {_fmt_wake(wake_time, now)}{suffix}."
-                        " Press Ctrl+C to abort.",
+                        decision.message
+                        or (
+                            f"Usage limit reached. Sleeping until {_fmt_wake(wake_time, now)}."
+                            " Press Ctrl+C to abort."
+                        ),
                     )
                     time.sleep((wake_time - now).total_seconds())
                     slept_once = True
