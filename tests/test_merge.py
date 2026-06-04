@@ -13,7 +13,7 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.runner import RunRequest
 from pycastle.config import Config
-from pycastle.infrastructure.worktree import worktree_name_for_branch
+from pycastle.infrastructure.worktree import worktree_identity, worktree_name_for_branch
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitCommandError, GitService
 from pycastle.services import GithubAPIError, GithubService
@@ -920,7 +920,7 @@ def test_empty_completed_list_returns_empty_result(deps, github_svc, agent_runne
 
 
 def test_active_worktree_removed_when_merged_branch_is_cleaned_up(deps, git_svc):
-    worktree_path = deps.repo_root / "pycastle" / ".worktrees" / "issue-1"
+    worktree_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
     git_svc.list_worktrees.return_value = [worktree_path]
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
@@ -930,7 +930,7 @@ def test_active_worktree_removed_when_merged_branch_is_cleaned_up(deps, git_svc)
 
 
 def test_worktree_unregistered_before_branch_deletion(deps, git_svc):
-    worktree_path = deps.repo_root / "pycastle" / ".worktrees" / "issue-1"
+    worktree_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
     git_svc.list_worktrees.return_value = [worktree_path]
     call_order: list[str] = []
     git_svc.remove_worktree.side_effect = lambda *a, **kw: call_order.append("remove")
@@ -949,7 +949,7 @@ def test_merged_branch_without_active_worktree_is_deleted_without_worktree_remov
 
 
 def test_worktree_removal_failure_does_not_abort_branch_deletion(deps, git_svc):
-    worktree_path = deps.repo_root / "pycastle" / ".worktrees" / "issue-1"
+    worktree_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
     git_svc.list_worktrees.return_value = [worktree_path]
     git_svc.remove_worktree.side_effect = RuntimeError("disk full")
     issues = [{"number": 1, "title": "Fix A"}]
@@ -1688,7 +1688,7 @@ def test_worktree_removal_warning_routed_to_status_display_not_stderr(
 ):
     """When worktree removal fails, warning must go to status_display.print, not stderr."""
     deps, recording = recording_deps
-    wt_path = deps.repo_root / "pycastle" / ".worktrees" / "issue-1"
+    wt_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
     git_svc.list_worktrees.return_value = [wt_path]
     git_svc.remove_worktree.side_effect = RuntimeError("disk full")
     issues = [{"number": 1, "title": "Fix A"}]
