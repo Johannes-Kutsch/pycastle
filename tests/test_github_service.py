@@ -95,9 +95,24 @@ def _make_http_error(
 
 
 def _make_service(
-    repo: str = "owner/repo", token: str = "tkn", cfg: Config | None = None
+    repo: str = "owner/repo",
+    token: str = "tkn",
+    cfg: Config | None = None,
+    transport: Any | None = None,
 ) -> GithubService:
-    return GithubService(repo, token, cfg or _cfg)
+    return GithubService(repo, token, cfg or _cfg, transport=transport)
+
+
+class _FakeGithubTransport:
+    def __init__(self, request_fn: Any) -> None:
+        self._request_fn = request_fn
+        self.calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    def request(
+        self, method: str, path: str, data: dict[str, Any] | None = None
+    ) -> tuple[Any, dict[str, str]]:
+        self.calls.append((method, path, data))
+        return self._request_fn(method, path, data)
 
 
 # ── Construction ───────────────────────────────────────────────────────────────
@@ -124,6 +139,16 @@ def test_check_auth_returns_login_on_success():
         "pycastle.services.github_service.urlopen", return_value=_make_response(body)
     ):
         assert svc.check_auth() == "alice"
+
+
+def test_check_auth_uses_injected_transport_adapter():
+    transport = _FakeGithubTransport(
+        lambda method, path, data: ({"login": "alice"}, {})
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.check_auth() == "alice"
+    assert transport.calls == [("GET", "/user", None)]
 
 
 def test_check_auth_calls_get_user_endpoint():
@@ -437,21 +462,30 @@ def test_close_issue_raises_operator_actionable_error_after_retry_exhaustion():
 
 
 def test_close_issue_retries_transient_5xx_and_recovers():
-    svc = _make_service()
+    attempts = 0
 
-    with (
-        patch(
-            "pycastle.services.github_service.urlopen",
-            side_effect=[
-                _make_http_error(500, b"server boom"),
-                _make_response(b'{"state":"closed"}'),
-            ],
-        ),
-        patch("time.sleep") as mock_sleep,
-    ):
+    def request(
+        method: str, path: str, data: dict[str, Any] | None
+    ) -> tuple[Any, dict[str, str]]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise GithubAPIError(
+                "boom", status=500, body="server boom", method=method, path=path
+            )
+        return None, {}
+
+    transport = _FakeGithubTransport(request)
+    svc = _make_service(transport=transport)
+
+    with patch("time.sleep") as mock_sleep:
         svc.close_issue(42)
 
     mock_sleep.assert_called_once_with(10)
+    assert transport.calls == [
+        ("PATCH", "/repos/owner/repo/issues/42", {"state": "closed"}),
+        ("PATCH", "/repos/owner/repo/issues/42", {"state": "closed"}),
+    ]
 
 
 @pytest.mark.parametrize("status", [404, 410])

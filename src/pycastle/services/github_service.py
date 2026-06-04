@@ -164,11 +164,18 @@ class _UrllibGithubHttpTransport:
 
 
 class GithubService:
-    def __init__(self, repo: str, token: str, cfg: Config) -> None:
+    def __init__(
+        self,
+        repo: str,
+        token: str,
+        cfg: Config,
+        *,
+        transport: _GithubHttpTransport | None = None,
+    ) -> None:
         self.repo = repo
         self._token = token
         self._timeout = cfg.worktree_timeout
-        self._transport: _GithubHttpTransport = _UrllibGithubHttpTransport(
+        self._transport: _GithubHttpTransport = transport or _UrllibGithubHttpTransport(
             token=token, timeout=self._timeout
         )
         self._recently_closed: set[int] = set()
