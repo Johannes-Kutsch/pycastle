@@ -5,6 +5,7 @@ from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
 from pycastle.prompts.renderer import PromptRenderer
 from pycastle.prompts.scope_args import (
     build_plan_scope_args,
+    build_per_issue_scope_args,
     build_interrupted_work_clause,
     build_issue_scope_args,
     validated_scope_args_for_scope,
@@ -95,18 +96,20 @@ def test_build_issue_scope_args_formats_number_as_string():
     assert result["ISSUE_NUMBER"] == "42"
 
 
-def test_build_issue_scope_args_raises_key_error_when_body_missing():
-    with pytest.raises(KeyError):
-        build_issue_scope_args(
-            {"number": 1, "title": "T", "comments": []}, extra_scope_args={}
-        )
+def test_build_issue_scope_args_uses_empty_string_when_body_missing():
+    result = build_issue_scope_args(
+        {"number": 1, "title": "T", "comments": []}, extra_scope_args={}
+    )
+
+    assert result["ISSUE_BODY"] == ""
 
 
-def test_build_issue_scope_args_raises_key_error_when_comments_missing():
-    with pytest.raises(KeyError):
-        build_issue_scope_args(
-            {"number": 1, "title": "T", "body": ""}, extra_scope_args={}
-        )
+def test_build_issue_scope_args_uses_empty_string_when_comments_missing():
+    result = build_issue_scope_args(
+        {"number": 1, "title": "T", "body": ""}, extra_scope_args={}
+    )
+
+    assert result["ISSUE_COMMENTS"] == ""
 
 
 def test_build_issue_scope_args_formats_comments():
@@ -156,6 +159,42 @@ def test_build_issue_scope_args_raises_on_missing_required_keys():
         build_issue_scope_args({"title": "T"}, extra_scope_args={})
     with pytest.raises(KeyError):
         build_issue_scope_args({"number": 1}, extra_scope_args={})
+
+
+def test_build_per_issue_scope_args_builds_exact_renderable_per_issue_args():
+    issue = {
+        "number": 7,
+        "title": "Fix prompt args",
+        "body": "Detailed issue body",
+        "comments": [],
+    }
+
+    result = build_per_issue_scope_args(
+        issue,
+        branch="pycastle/issue-7",
+        run_kind=RunKind.FRESH,
+        is_dirty=True,
+    )
+
+    assert validated_scope_args_for_scope(Scope.PER_ISSUE, result) is result
+    assert result == {
+        "ISSUE_NUMBER": "7",
+        "ISSUE_TITLE": "Fix prompt args",
+        "ISSUE_BODY": "Detailed issue body",
+        "ISSUE_COMMENTS": "",
+        "BRANCH": "pycastle/issue-7",
+        "INTERRUPTED_WORK": build_interrupted_work_clause(RunKind.FRESH, is_dirty=True),
+    }
+
+
+def test_build_issue_scope_args_normalizes_missing_body_and_comments_to_empty():
+    result = build_issue_scope_args(
+        {"number": 9, "title": "Missing fields"},
+        extra_scope_args={},
+    )
+
+    assert result["ISSUE_BODY"] == ""
+    assert result["ISSUE_COMMENTS"] == ""
 
 
 @pytest.mark.parametrize(

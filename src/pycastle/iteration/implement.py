@@ -19,8 +19,7 @@ from ..errors import (
 )
 from ..prompts.pipeline import PromptTemplate
 from ..prompts.scope_args import (
-    build_interrupted_work_clause,
-    build_issue_scope_args,
+    build_per_issue_scope_args,
 )
 from ..issue_readiness import selected_mode_for_issue
 from ..session import RoleSession, is_stage_done_for
@@ -96,13 +95,11 @@ async def run_issue(
     _token = token if token is not None else CancellationToken()
 
     def _scope_args_for(mount_path: Path, role: AgentRole) -> dict[str, str]:
-        interrupted_work = build_interrupted_work_clause(
-            RoleSession(mount_path, role).run_kind(),
-            is_dirty=not deps.git_svc.is_working_tree_clean(mount_path),
-        )
-        return build_issue_scope_args(
+        return build_per_issue_scope_args(
             issue,
-            extra_scope_args={"BRANCH": _branch, "INTERRUPTED_WORK": interrupted_work},
+            branch=_branch,
+            run_kind=RoleSession(mount_path, role).run_kind(),
+            is_dirty=not deps.git_svc.is_working_tree_clean(mount_path),
         )
 
     _implement_started = False

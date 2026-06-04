@@ -68,10 +68,29 @@ def build_issue_scope_args(
     return {
         "ISSUE_NUMBER": str(issue["number"]),
         "ISSUE_TITLE": issue["title"],
-        "ISSUE_BODY": str(issue["body"] or ""),
-        "ISSUE_COMMENTS": _format_issue_comments(issue["comments"]),
+        "ISSUE_BODY": str(issue.get("body") or ""),
+        "ISSUE_COMMENTS": _format_issue_comments(issue.get("comments") or []),
         **extra_scope_args,
     }
+
+
+def build_per_issue_scope_args(
+    issue: dict,
+    *,
+    branch: str,
+    run_kind: RunKind,
+    is_dirty: bool,
+) -> dict[str, str]:
+    return build_issue_scope_args(
+        issue,
+        extra_scope_args={
+            "BRANCH": branch,
+            "INTERRUPTED_WORK": build_interrupted_work_clause(
+                run_kind,
+                is_dirty=is_dirty,
+            ),
+        },
+    )
 
 
 def build_plan_scope_args(
