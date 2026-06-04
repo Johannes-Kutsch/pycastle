@@ -192,6 +192,26 @@ def test_validate_issue_report_raises_for_missing_slice_mode_on_afk_issue(github
         )
 
 
+def test_validate_issue_report_uses_filed_issue_labels_for_afk_validation(github_svc):
+    github_svc.get_issue.return_value = {
+        "number": 42,
+        "body": "x" * 100,
+        "labels": [],
+    }
+    issue_output = IssueOutput(
+        number=42,
+        labels=["bug", "ready-for-agent", "behavior-slice"],
+    )
+
+    with pytest.raises(RuntimeError, match="without exactly one slice-mode label"):
+        validate_issue_report(
+            caller="Pre-Flight Reporter",
+            issue_output=issue_output,
+            cfg=Config(),
+            github_svc=github_svc,
+        )
+
+
 def test_validate_issue_report_raises_for_short_body_on_afk_issue(github_svc):
     github_svc.get_issue.return_value = {"number": 42, "body": "short"}
     issue_output = IssueOutput(
@@ -695,6 +715,25 @@ def test_get_safe_sha_raises_when_afk_issue_has_multiple_slice_mode_labels(
     cache = PreflightCache()
 
     with pytest.raises(RuntimeError, match="Pre-Flight Reporter"):
+        asyncio.run(cache.get_safe_sha(deps))
+
+
+def test_get_safe_sha_raises_when_filed_afk_issue_labels_are_missing(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
+        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+    )
+    github_svc.get_issue.return_value = {
+        "number": 42,
+        "body": "x" * 100,
+        "labels": [],
+    }
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(RuntimeError, match="Pre-Flight Reporter filed issue #42"):
         asyncio.run(cache.get_safe_sha(deps))
 
 
