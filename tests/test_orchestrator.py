@@ -3812,7 +3812,7 @@ def test_service_registry_resolve_snapshots_availability_per_configured_service(
             dict[str, AgentService],
             {
                 "codex": _SequencedAvailabilityService([False, True]),
-                "claude": _FakeService(available=False),
+                "claude": _FakeService(available=True),
             },
         )
     )
@@ -3834,7 +3834,16 @@ def test_service_registry_resolve_snapshots_availability_per_configured_service(
 
     result = registry.resolve(override, datetime.now(timezone.utc))
 
-    assert result == override
+    assert result == StageOverride(
+        service="claude",
+        model="fallback-model",
+        effort="medium",
+        fallback=StageOverride(
+            service="codex",
+            model="tertiary-model",
+            effort="high",
+        ),
+    )
 
 
 def test_stage_with_no_fallback_behaves_as_before(tmp_path):

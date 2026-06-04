@@ -62,10 +62,13 @@ class ServiceRegistry:
     ) -> _StageAvailability:
         candidates: list[_ConfiguredCandidate] = []
         configured_candidates = self._configured_candidates(override)
-        availability_by_service = {
-            node.service: self._services[node.service].is_available(now=now)
-            for node in configured_candidates
-        }
+        availability_by_service: dict[str, bool] = {}
+        for node in configured_candidates:
+            if node.service in availability_by_service:
+                continue
+            availability_by_service[node.service] = self._services[
+                node.service
+            ].is_available(now=now)
         for node in configured_candidates:
             service = self._services[node.service]
             candidates.append(

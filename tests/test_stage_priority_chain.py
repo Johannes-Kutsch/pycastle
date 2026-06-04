@@ -245,6 +245,44 @@ def test_select_configured_candidate_chain_returns_first_configured_chain_when_a
     )
 
 
+def test_select_configured_candidate_chain_rebuilds_a_compact_chain_for_available_configured_candidates() -> (
+    None
+):
+    override = StageOverride(
+        service="codex",
+        model="gpt-5.4",
+        effort="medium",
+        fallback=StageOverride(
+            service="opencode",
+            model="deepseek-v4-flash",
+            effort="high",
+            fallback=StageOverride(
+                service="claude",
+                model="opus",
+                effort="high",
+            ),
+        ),
+    )
+
+    result = select_configured_candidate_chain(
+        override,
+        configured_service_names=("codex", "claude"),
+        available_service_names=("codex",),
+    )
+
+    assert result.has_configured_candidate is True
+    assert result.selected_chain == StageOverride(
+        service="codex",
+        model="gpt-5.4",
+        effort="medium",
+        fallback=StageOverride(
+            service="claude",
+            model="opus",
+            effort="high",
+        ),
+    )
+
+
 def test_select_configured_candidate_chain_reports_when_no_candidate_is_configured() -> (
     None
 ):
