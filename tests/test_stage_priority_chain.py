@@ -92,6 +92,14 @@ def test_validation_labels_marks_primary_and_fallback_nodes_for_stage() -> None:
     assert result == ("implement", "implement fallback", "implement fallback")
 
 
+def test_validation_labels_returns_only_stage_name_for_single_node_chain() -> None:
+    override = StageOverride(service="codex", model="gpt-5.4", effort="medium")
+
+    result = validation_labels("review", override)
+
+    assert result == ("review",)
+
+
 def test_render_chain_label_joins_services_and_marks_missing_names() -> None:
     override = StageOverride(
         service="codex",
@@ -101,3 +109,11 @@ def test_render_chain_label_joins_services_and_marks_missing_names() -> None:
     result = render_chain_label(override)
 
     assert result == "codex -> <missing> -> claude"
+
+
+def test_render_chain_label_marks_missing_primary_service_name() -> None:
+    override = StageOverride(service="", model="gpt-5.4", effort="medium")
+
+    result = render_chain_label(override)
+
+    assert result == "<missing>"
