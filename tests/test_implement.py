@@ -432,6 +432,28 @@ def test_run_issue_derives_branch_from_issue_number(tmp_path):
     assert branch_arg == "pycastle/issue-7"
 
 
+def test_run_issue_uses_issue_worktree_mount_path_for_both_agents(tmp_path):
+    """run_issue keeps the issue branch mounted at the project-local issue-N path."""
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+
+    issue = {
+        "number": 7,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    deps = _make_deps(tmp_path, fake)
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    expected_path = tmp_path / "pycastle" / ".worktrees" / "issue-7"
+    assert deps.git_svc.create_worktree.call_count == 2
+    assert deps.git_svc.create_worktree.call_args_list[0][0][1] == expected_path
+    assert deps.git_svc.create_worktree.call_args_list[0][0][2] == "pycastle/issue-7"
+    assert deps.git_svc.create_worktree.call_args_list[1][0][1] == expected_path
+    assert deps.git_svc.create_worktree.call_args_list[1][0][2] == "pycastle/issue-7"
+
+
 def test_run_issue_raises_when_implementer_does_not_complete(tmp_path):
     """run_issue must raise PromiseParseError when implementer lacks COMPLETE tag."""
     fake = FakeAgentRunner([PromiseParseError("no <promise>COMPLETE</promise> tag")])
