@@ -175,6 +175,37 @@ def test_decide_usage_limit_continuation_formats_cross_day_sleep_message():
     )
 
 
+def test_decide_usage_limit_continuation_formats_same_local_day_sleep_message():
+    eastern = timezone(timedelta(hours=-5))
+    now = datetime(2026, 1, 1, 20, 30, 0, tzinfo=eastern)
+    fallback_wake = datetime(2026, 1, 2, 1, 0, 0, tzinfo=timezone.utc)
+    registry = ServiceRegistry(
+        {
+            "claude": _make_service(available=False, wake_time=fallback_wake),
+            "codex": _make_service(available=False, wake_time=fallback_wake),
+        }
+    )
+    cfg = Config(
+        implement_override=StageOverride(
+            service="claude",
+            fallback=StageOverride(service="codex"),
+        )
+    )
+
+    decision = decide_usage_limit_continuation(
+        AbortedUsageLimit(stage_key="implement"),
+        cfg,
+        registry,
+        now,
+    )
+
+    assert isinstance(decision, SleepUntil)
+    assert (
+        decision.message
+        == "Usage limit reached. Sleeping until 20:00. Press Ctrl+C to abort."
+    )
+
+
 def test_decide_usage_limit_continuation_ignores_exhausted_services_outside_stage_chain():
     stage_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc)
     unrelated_wake = datetime(2026, 1, 1, 14, 45, 0, tzinfo=timezone.utc)
@@ -361,6 +392,24 @@ def test_decide_usage_limit_continuation_uses_exact_reset_time_without_registry(
     assert (
         decision.message
         == "Usage limit reached. Sleeping until 15:32. Press Ctrl+C to abort."
+    )
+
+
+def test_decide_usage_limit_continuation_formats_cross_day_exact_reset_without_registry():
+    now = datetime(2026, 1, 1, 23, 30, 0, tzinfo=timezone.utc)
+    reset_time = datetime(2026, 1, 2, 0, 30, 0, tzinfo=timezone.utc)
+
+    decision = decide_usage_limit_continuation(
+        AbortedUsageLimit(reset_time=reset_time),
+        Config(),
+        None,
+        now,
+    )
+
+    assert isinstance(decision, SleepUntil)
+    assert (
+        decision.message
+        == "Usage limit reached. Sleeping until Jan 2, 00:32. Press Ctrl+C to abort."
     )
 
 
