@@ -14,8 +14,8 @@ from pycastle.issue_readiness import (
     WellFormed,
     WellFormedBody,
     classify_issue_readiness,
-    diagnostic_issue_readiness_error,
     evaluate_issue_afk_readiness,
+    issue_readiness_error_for_issue,
     ready_slice_outcome_for_issue,
     resolve_issue_readiness,
     selected_mode_for_issue,
@@ -195,44 +195,41 @@ def test_classify_issue_readiness_slice_label_failures_expose_found_labels():
     )
 
 
-def test_classify_issue_readiness_body_floor_status_handles_edge_cases():
-    empty = classify_issue_readiness({"number": 1, "labels": ["docs-slice"]}, _cfg)
-    whitespace = classify_issue_readiness(
+def test_evaluate_issue_afk_readiness_applies_body_floor_at_public_interface():
+    empty = evaluate_issue_afk_readiness({"number": 1, "labels": ["docs-slice"]}, _cfg)
+    whitespace = evaluate_issue_afk_readiness(
         {"number": 1, "labels": ["docs-slice"], "body": " \n\t "},
         _cfg,
     )
-    at_marker = classify_issue_readiness(
+    at_marker = evaluate_issue_afk_readiness(
         {"number": 1, "labels": ["docs-slice"], "body": "@-"},
         _cfg,
     )
-    below_floor = classify_issue_readiness(
+    below_floor = evaluate_issue_afk_readiness(
         {"number": 1, "labels": ["docs-slice"], "body": "x" * (BODY_FLOOR - 1)},
         _cfg,
     )
-    at_floor = classify_issue_readiness(
+    at_floor = evaluate_issue_afk_readiness(
         {"number": 1, "labels": ["docs-slice"], "body": "x" * BODY_FLOOR},
         _cfg,
     )
 
-    assert empty.body_floor_status == MalformedBody(
-        stripped_length=0,
-        body_floor=BODY_FLOOR,
-    )
-    assert whitespace.body_floor_status == MalformedBody(
-        stripped_length=0,
-        body_floor=BODY_FLOOR,
-    )
-    assert at_marker.body_floor_status == MalformedBody(
-        stripped_length=2,
-        body_floor=BODY_FLOOR,
-    )
-    assert below_floor.body_floor_status == MalformedBody(
-        stripped_length=BODY_FLOOR - 1,
-        body_floor=BODY_FLOOR,
-    )
-    assert at_floor.body_floor_status == WellFormedBody(
-        stripped_length=BODY_FLOOR,
-        body_floor=BODY_FLOOR,
+    for result, expected_length in [
+        (empty, 0),
+        (whitespace, 0),
+        (at_marker, 2),
+        (below_floor, BODY_FLOOR - 1),
+    ]:
+        assert result == AFKBlockedOutcome(
+            current_slice_labels=(),
+            marker_decisions=(MarkerLabelDecision(label_name="needs-info"),),
+            stripped_body_length=expected_length,
+            body_floor=BODY_FLOOR,
+            has_short_body=True,
+        )
+    assert at_floor == AFKReadyOutcome(
+        slice_mode_display_name="docs",
+        implement_template=SliceMode.DOCS.template,
     )
 
 
@@ -465,14 +462,11 @@ def test_resolve_issue_readiness_classifies_when_issue_has_no_carried_readiness(
     assert resolve_issue_readiness(issue, _cfg) == classify_issue_readiness(issue, _cfg)
 
 
-def test_diagnostic_issue_readiness_error_reports_missing_slice_mode():
-    readiness = classify_issue_readiness({"number": 1, "body": "x" * BODY_FLOOR}, _cfg)
-
-    assert diagnostic_issue_readiness_error(
+def test_issue_readiness_error_for_issue_reports_missing_slice_mode():
+    assert issue_readiness_error_for_issue(
         caller="Preflight Issue Agent",
-        issue_number=1,
-        issue_labels=["bug"],
-        readiness=readiness,
+        issue={"number": 1, "labels": ["bug"], "body": "x" * BODY_FLOOR},
+        cfg=_cfg,
     ) == (
         "Preflight Issue Agent filed issue #1 on the AFK branch without exactly "
         "one slice-mode label — got labels=['bug']. Expected exactly one of "
@@ -480,17 +474,11 @@ def test_diagnostic_issue_readiness_error_reports_missing_slice_mode():
     )
 
 
-def test_diagnostic_issue_readiness_error_reports_short_body():
-    readiness = classify_issue_readiness(
-        {"number": 1, "labels": ["behavior-slice"], "body": "short"},
-        _cfg,
-    )
-
-    assert diagnostic_issue_readiness_error(
+def test_issue_readiness_error_for_issue_reports_short_body():
+    assert issue_readiness_error_for_issue(
         caller="Host-Check Reporter",
-        issue_number=1,
-        issue_labels=["bug", "behavior-slice"],
-        readiness=readiness,
+        issue={"number": 1, "labels": ["bug", "behavior-slice"], "body": "short"},
+        cfg=_cfg,
     ) == (
         "Host-Check Reporter filed issue #1 whose body is below the minimum "
         "length floor — body too short to be valid."

@@ -26,7 +26,7 @@ from ..services import (
 from ..session import RoleSession
 from ..errors import SetupPhaseError
 from ..issue_readiness import (
-    diagnostic_issue_readiness_error,
+    issue_readiness_error_for_issue,
     resolve_issue_readiness,
 )
 from ..display.status_display import StatusDisplay
@@ -87,14 +87,13 @@ def validate_issue_report(
     )
     filed_issue_with_labels = {
         **filed_issue,
+        "number": issue_output.number,
         "labels": filed_labels,
     }
-    filed_readiness = resolve_issue_readiness(filed_issue_with_labels, cfg)
-    readiness_error = diagnostic_issue_readiness_error(
+    readiness_error = issue_readiness_error_for_issue(
         caller=caller,
-        issue_number=issue_output.number,
-        issue_labels=filed_issue_with_labels["labels"],
-        readiness=filed_readiness,
+        issue=filed_issue_with_labels,
+        cfg=cfg,
     )
     if readiness_error is not None:
         raise RuntimeError(readiness_error)

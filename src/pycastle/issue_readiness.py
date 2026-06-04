@@ -199,7 +199,21 @@ def ready_slice_outcome_for_issue(issue: dict, cfg: Config) -> ReadyIssueOutcome
     )
 
 
-def diagnostic_issue_readiness_error(
+def issue_readiness_error_for_issue(
+    *,
+    caller: str,
+    issue: dict,
+    cfg: Config,
+) -> str | None:
+    return _diagnostic_issue_readiness_error(
+        caller=caller,
+        issue_number=issue["number"],
+        issue_labels=issue.get("labels") or [],
+        readiness=resolve_issue_readiness(issue, cfg),
+    )
+
+
+def _diagnostic_issue_readiness_error(
     *,
     caller: str,
     issue_number: int,
@@ -229,7 +243,7 @@ def diagnostic_issue_readiness_error(
     return None
 
 
-def classify_slice(issue: dict, cfg: Config) -> SliceClassification:
+def _classify_slice(issue: dict, cfg: Config) -> SliceClassification:
     label_to_mode = {
         cfg.refactor_slice_label: SliceMode.REFACTOR,
         cfg.behavior_slice_label: SliceMode.BEHAVIOR,
@@ -250,7 +264,7 @@ def _classify_body_floor(issue: dict) -> BodyFloorClassification:
 
 
 def classify_issue_readiness(issue: dict, cfg: Config) -> IssueReadiness:
-    slice_status = classify_slice(issue, cfg)
+    slice_status = _classify_slice(issue, cfg)
     body_floor_status = _classify_body_floor(issue)
     issue_labels: list[str] = issue.get("labels") or []
     is_ready = False
