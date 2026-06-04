@@ -149,25 +149,24 @@ class ContainerRunner:
             run_kind=run_kind,
             session_uuid=session_uuid,
         )
-        chunks = self._session.exec_stream(command)
+        logged_lines = stream_logged_work_lines(
+            self._session.exec_stream(command),
+            log_path=self._log_path,
+            role=role,
+            run_kind=run_kind,
+            session_uuid=session_uuid,
+            prompt=prompt,
+            idle_timeout=self._cfg.idle_timeout,
+            on_chunk=lambda: self._status_display.reset_idle_timer(self.name),
+        )
+        parsed_events = service.run(
+            logged_lines,
+            on_provider_session_id=on_provider_session_id,
+        )
 
         try:
             return process_stream_from_events(
-                service.run(
-                    stream_logged_work_lines(
-                        chunks,
-                        log_path=self._log_path,
-                        role=role,
-                        run_kind=run_kind,
-                        session_uuid=session_uuid,
-                        prompt=prompt,
-                        idle_timeout=self._cfg.idle_timeout,
-                        on_chunk=lambda: self._status_display.reset_idle_timer(
-                            self.name
-                        ),
-                    ),
-                    on_provider_session_id=on_provider_session_id,
-                ),
+                parsed_events,
                 on_turn,
                 role,
                 on_tokens,
