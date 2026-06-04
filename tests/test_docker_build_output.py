@@ -235,3 +235,30 @@ def test_interpreter_suppresses_duplicate_progress_transitions_for_repeated_step
         "exporting…",
         None,
     ]
+
+
+def test_interpreter_treats_repeated_classic_step_headers_as_one_cached_build_step():
+    interpreter = DockerBuildOutputInterpreter()
+
+    transitions = [
+        interpreter.observe_line("Step 1/2 : FROM python:3.12\n").progress_text,
+        interpreter.observe_line("Step 1/2 : FROM python:3.12\n").progress_text,
+        interpreter.observe_line(" ---> Using cache\n").progress_text,
+        interpreter.observe_line(" ---> abc123\n").progress_text,
+        interpreter.observe_line("Step 2/2 : COPY . .\n").progress_text,
+        interpreter.observe_line("Step 2/2 : COPY . .\n").progress_text,
+        interpreter.observe_line(" ---> Using cache\n").progress_text,
+        interpreter.observe_line(" ---> def456\n").progress_text,
+    ]
+
+    assert transitions == [
+        "Step 1/2",
+        None,
+        None,
+        None,
+        "Step 2/2",
+        None,
+        None,
+        None,
+    ]
+    assert interpreter.final_outcome == BuildOutcome.FULL_CACHE_HIT

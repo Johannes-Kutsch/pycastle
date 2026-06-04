@@ -74,6 +74,7 @@ class DockerBuildOutputInterpreter:
     _classic_steps_seen: int = 0
     _classic_steps_cached: int = 0
     _pending_classic_step: bool = False
+    _classic_step_keys: set[tuple[str, str]] = field(default_factory=set)
     _buildkit_step_ids: set[str] = field(default_factory=set)
     _has_buildkit_cached: bool = False
     _has_buildkit_done: bool = False
@@ -94,7 +95,10 @@ class DockerBuildOutputInterpreter:
 
         classic_step = re.match(r"^Step (\d+)/(\d+) :", line)
         if classic_step:
-            self._classic_steps_seen += 1
+            classic_step_key = (classic_step.group(1), classic_step.group(2))
+            if classic_step_key not in self._classic_step_keys:
+                self._classic_steps_seen += 1
+                self._classic_step_keys.add(classic_step_key)
             self._pending_classic_step = True
             return self._progress(
                 f"Step {classic_step.group(1)}/{classic_step.group(2)}"
