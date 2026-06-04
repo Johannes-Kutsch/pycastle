@@ -117,6 +117,42 @@ def test_resolve_uses_first_available_configured_candidate_in_deep_chain() -> No
     assert result.fallback is None
 
 
+def test_resolve_rebuilds_compact_priority_chain_with_retained_model_and_effort() -> (
+    None
+):
+    codex = _make_svc(available=True)
+    claude = _make_svc(available=False)
+    registry = ServiceRegistry(services={"codex": codex, "claude": claude})
+    override = StageOverride(
+        service="codex",
+        model="gpt-5.4",
+        effort="medium",
+        fallback=StageOverride(
+            service="missing",
+            model="unused-model",
+            effort="high",
+            fallback=StageOverride(
+                service="claude",
+                model="opus",
+                effort="high",
+            ),
+        ),
+    )
+
+    result = registry.resolve(override, _now())
+
+    assert result == StageOverride(
+        service="codex",
+        model="gpt-5.4",
+        effort="medium",
+        fallback=StageOverride(
+            service="claude",
+            model="opus",
+            effort="high",
+        ),
+    )
+
+
 def test_resolve_returns_first_configured_candidate_when_all_configured_are_exhausted() -> (
     None
 ):
@@ -182,6 +218,17 @@ def test_has_available_for_returns_false_when_all_configured_candidates_exhauste
     )
 
     assert registry.has_available_for(override, _now()) is False
+
+
+def test_has_configured_candidate_ignores_unconfigured_priority_chain_nodes() -> None:
+    claude = _make_svc(available=True)
+    registry = ServiceRegistry(services={"claude": claude})
+    override = StageOverride(
+        service="missing-primary",
+        fallback=StageOverride(service="claude"),
+    )
+
+    assert registry.has_configured_candidate(override) is True
 
 
 # --- has_available ---
@@ -279,6 +326,18 @@ def test_next_wake_time_for_skips_available_configured_fallbacks() -> None:
     )
 
     assert registry.next_wake_time_for(override, _now()) == exhausted_wake
+
+
+def test_next_wake_time_for_returns_none_when_priority_chain_has_no_configured_candidate() -> (
+    None
+):
+    registry = ServiceRegistry(services={"claude": _make_svc(available=True)})
+    override = StageOverride(
+        service="missing-primary",
+        fallback=StageOverride(service="missing-fallback"),
+    )
+
+    assert registry.next_wake_time_for(override, _now()) is None
 
 
 # --- summary_lines ---
