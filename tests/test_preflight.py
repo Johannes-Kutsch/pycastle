@@ -1,7 +1,6 @@
 """Tests for PreflightCache.get_safe_sha: observable behaviour via the public interface."""
 
 import asyncio
-import inspect
 import shutil
 from unittest.mock import AsyncMock, patch
 
@@ -22,7 +21,6 @@ from pycastle.services.agent_service import AgentService
 from tests.support import FakeAgentRunner, _make_deps
 from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.iteration.preflight import (
-    BranchRefreshBoundary,
     PreflightAFK,
     PreflightCache,
     PreflightHITL,
@@ -838,11 +836,25 @@ def test_get_safe_sha_divergence_resolver_uses_merge_override_service(
     assert fake.calls[0].service == "codex"
 
 
-def test_branch_refresh_delegates_divergence_scope_arg_construction():
-    source = inspect.getsource(BranchRefreshBoundary.pull_with_resolution)
+def test_get_safe_sha_divergence_resolver_receives_current_branch_scope_arg(
+    tmp_path, git_svc, github_svc
+):
+    _setup_worktree_mocks(git_svc)
 
-    assert "build_divergence_scope_args(" in source
-    assert '"BRANCH"' not in source
+    git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
+        "git merge origin/main failed due to conflicts"
+    )
+    git_svc.get_current_branch.return_value = "pycastle/issue-1484"
+    git_svc.get_head_sha.side_effect = ["abc123", "merged-sha"]
+
+    fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightReady)
+    assert fake.calls[0].scope_args == {"BRANCH": "pycastle/issue-1484"}
 
 
 def test_get_safe_sha_propagates_pull_error_when_divergence_agent_fails(

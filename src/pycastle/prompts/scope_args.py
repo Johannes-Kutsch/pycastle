@@ -115,10 +115,12 @@ def build_plan_scope_args(
 def build_merge_scope_args(
     *, conflict_issues: list[dict], active_issue: dict
 ) -> dict[str, str]:
-    active_branch = f"pycastle/issue-{active_issue['number']}"
+    from ..iteration.implement import branch_for
+
+    active_branch = branch_for(active_issue["number"])
     branches = [active_branch]
     branches.extend(
-        f"pycastle/issue-{issue['number']}"
+        branch_for(issue["number"])
         for issue in conflict_issues
         if issue["number"] != active_issue["number"]
     )

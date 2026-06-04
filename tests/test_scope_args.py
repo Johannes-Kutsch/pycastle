@@ -302,7 +302,6 @@ def test_build_merge_scope_args_builds_exact_renderable_merge_args(cfg, prompts_
 
     scope_args = build_merge_scope_args(
         conflict_issues=[
-            {"number": 1, "title": "Clean branch should be excluded"},
             {"number": 2, "title": "First conflicting branch"},
             {"number": 5, "title": "Active conflicting branch"},
             {"number": 7, "title": "Later conflicting branch"},
@@ -315,12 +314,7 @@ def test_build_merge_scope_args_builds_exact_renderable_merge_args(cfg, prompts_
         is scope_args
     )
     assert scope_args == {
-        "BRANCHES": (
-            "- pycastle/issue-5\n"
-            "- pycastle/issue-1\n"
-            "- pycastle/issue-2\n"
-            "- pycastle/issue-7"
-        )
+        "BRANCHES": ("- pycastle/issue-5\n- pycastle/issue-2\n- pycastle/issue-7")
     }
 
     rendered = asyncio.run(
@@ -332,11 +326,7 @@ def test_build_merge_scope_args_builds_exact_renderable_merge_args(cfg, prompts_
     )
 
     assert rendered == (
-        "Branches:\n"
-        "- pycastle/issue-5\n"
-        "- pycastle/issue-1\n"
-        "- pycastle/issue-2\n"
-        "- pycastle/issue-7"
+        "Branches:\n- pycastle/issue-5\n- pycastle/issue-2\n- pycastle/issue-7"
     )
 
 
