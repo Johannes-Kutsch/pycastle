@@ -267,6 +267,61 @@ def test_run_cmd_fails_clearly_when_stage_chain_has_no_locally_configured_servic
     assert not build_called
 
 
+def test_run_cmd_preserves_full_stage_priority_chain_label_for_unconfigured_services(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    absent_chain = StageOverride(
+        service="claude",
+        model="sonnet",
+        effort="medium",
+        fallback=StageOverride(
+            service="opencode",
+            model="kimi-k2.6",
+            effort="medium",
+            fallback=StageOverride(
+                service="claude",
+                model="haiku",
+                effort="medium",
+            ),
+        ),
+    )
+    codex_only = StageOverride(service="codex", model="gpt-5.4", effort="medium")
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=codex_only,
+        implement_override=absent_chain,
+        review_override=codex_only,
+        merge_override=codex_only,
+        preflight_issue_override=codex_only,
+        improve_override=codex_only,
+    )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert (
+        "stage='implement': no locally configured service in priority chain"
+        in result.output
+    )
+    assert "claude -> opencode -> claude" in result.output
+    assert not build_called
+
+
 def test_run_cmd_rejects_empty_stage_override_service_before_credentials(
     tmp_path, monkeypatch
 ):
@@ -1679,6 +1734,50 @@ def test_run_cmd_rejects_fallback_invalid_model(tmp_path, monkeypatch):
         "  stage='implement fallback': model='gpt-5.4' is invalid"
         " for service='claude'. (valid: ['haiku', 'opus', 'sonnet'])" in result.output
     )
+    assert not build_called
+
+
+def test_run_cmd_reuses_fallback_stage_label_for_each_invalid_fallback_node(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(
+        docker_image_name="img",
+        implement_override=StageOverride(
+            service="claude",
+            effort="medium",
+            fallback=StageOverride(
+                service="claude",
+                model="gpt-5.4",
+                effort="low",
+                fallback=StageOverride(service="", effort=""),
+            ),
+        ),
+    )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert (
+        "  stage='implement fallback': model='gpt-5.4' is invalid"
+        " for service='claude'. (valid: ['haiku', 'opus', 'sonnet'])" in result.output
+    )
+    assert "  stage='implement fallback': service is required" in result.output
+    assert "  stage='implement fallback': effort is required" in result.output
     assert not build_called
 
 
