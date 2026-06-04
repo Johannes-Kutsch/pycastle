@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import pytest
 from unittest.mock import MagicMock
 
@@ -375,6 +377,31 @@ def test_build_failure_report_scope_args_builds_exact_renderable_failure_report_
     assert rendered == (
         "Role: reviewer\nSession: .pycastle-session/reviewer/main/codex\nRecovery"
     )
+
+
+@dataclass
+class _EquivalentFailureReportSource:
+    role_value: str
+    _session_dir: str
+    failure_class: str
+
+    @property
+    def session_dir(self) -> str:
+        return self._session_dir
+
+
+def test_build_failure_report_scope_args_accepts_equivalent_failed_agent_data():
+    failure = _EquivalentFailureReportSource(
+        role_value="planner",
+        _session_dir=".pycastle-session/planner/opencode",
+        failure_class="protocol_error",
+    )
+
+    assert build_failure_report_scope_args(failure) == {
+        "FAILED_ROLE": "planner",
+        "SESSION_DIR": ".pycastle-session/planner/opencode",
+        "FAILURE_CLASS": "protocol_error",
+    }
 
 
 def test_build_host_check_scope_args_builds_exact_renderable_host_check_args(

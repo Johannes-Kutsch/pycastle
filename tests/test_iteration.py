@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import pycastle.iteration as iteration_module
 from pycastle.errors import (
     AgentFailedError,
     AgentTimeoutError,
@@ -33,6 +32,7 @@ from pycastle.iteration import (
 from pycastle.iteration.merge import merge_phase
 from pycastle.iteration.preflight import PreflightCache
 from pycastle.agents.runner import RunRequest
+from pycastle.prompts.scope_args import build_failure_report_scope_args
 from pycastle.iteration._deps import (
     Deps,
 )
@@ -2669,35 +2669,17 @@ def test_run_iteration_failure_report_receives_correct_run_request(
     assert "SESSION_DIR" in failure_req.scope_args
 
 
-def test_run_iteration_failure_report_uses_prompt_scope_builder(
-    tmp_path, git_svc, logger, monkeypatch
+def test_run_iteration_failure_report_uses_exact_prompt_scope_args(
+    tmp_path, git_svc, logger
 ):
     calls: list[RunRequest] = []
-    builder_scope_args = {
-        "FAILED_ROLE": "from-builder",
-        "SESSION_DIR": ".pycastle-session/from-builder",
-        "FAILURE_CLASS": "non_typed_crash",
-    }
+    original_error = _make_agent_failed_error(
+        AgentRole.IMPROVE, tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    )
     response_queue = [
-        _make_agent_failed_error(
-            AgentRole.IMPROVE, tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-        ),
+        original_error,
         IssueOutput(number=99, labels=["bug"]),
     ]
-    builder_calls: list[AgentFailedError] = []
-
-    def fake_build_failure_report_scope_args(
-        failure: AgentFailedError,
-    ) -> dict[str, str]:
-        builder_calls.append(failure)
-        return builder_scope_args
-
-    monkeypatch.setattr(
-        iteration_module,
-        "build_failure_report_scope_args",
-        fake_build_failure_report_scope_args,
-        raising=False,
-    )
 
     async def agent_fn(req: RunRequest):
         calls.append(req)
@@ -2719,9 +2701,8 @@ def test_run_iteration_failure_report_uses_prompt_scope_builder(
     )
     asyncio.run(run_iteration(deps))
 
-    assert len(builder_calls) == 1
     assert len(calls) == 2
-    assert calls[1].scope_args is builder_scope_args
+    assert calls[1].scope_args == build_failure_report_scope_args(original_error)
 
 
 def test_run_iteration_failure_report_crash_logs_warning_and_error(
