@@ -378,6 +378,36 @@ def test_run_session_plan_reports_resume_for_claude_with_populated_state_dir(
     assert plan.provider_session_id == expected_session_id
 
 
+def test_run_session_plan_preserves_claude_container_state_dir_path_without_namespace(
+    tmp_path: Path,
+) -> None:
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=ClaudeService(),
+    )
+
+    assert plan.provider_state_dir_container_path("/home/agent/workspace") == (
+        "/home/agent/workspace/.pycastle-session/implementer/claude/"
+    )
+
+
+def test_run_session_plan_preserves_claude_container_state_dir_path_with_namespace(
+    tmp_path: Path,
+) -> None:
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPROVE,
+        worktree=tmp_path,
+        namespace="main",
+        service=ClaudeService(),
+    )
+
+    assert plan.provider_state_dir_container_path("/home/agent/workspace") == (
+        "/home/agent/workspace/.pycastle-session/improve/main/claude/"
+    )
+
+
 def test_claude_provider_session_state_uses_role_session_uuid_even_with_preferred_override(
     tmp_path: Path,
 ) -> None:
