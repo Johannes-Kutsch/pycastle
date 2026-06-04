@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import enum
 import re
 import subprocess
 import sys
@@ -8,36 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..errors import DockerBuildError, DockerServiceError
-
-
-class BuildOutcome(enum.Enum):
-    REBUILT = "rebuilt"
-    FULL_CACHE_HIT = "full_cache_hit"
-
-
-def _is_full_cache_hit(output: str) -> bool:
-    lines = output.splitlines()
-
-    # Classic builder: look for Step N/M lines and check each for ---> Using cache
-    classic_steps = [
-        i for i, line in enumerate(lines) if re.match(r"^Step \d+/\d+ :", line)
-    ]
-    if classic_steps:
-        for i in classic_steps:
-            cached = any(
-                "---> Using cache" in lines[j]
-                for j in range(i + 1, min(i + 5, len(lines)))
-                if not re.match(r"^Step \d+/\d+ :", lines[j])
-            )
-            if not cached:
-                return False
-        return True
-
-    # BuildKit: CACHED means cached, DONE means executed (rebuilt)
-    has_cached = any(re.match(r"^#\d+\s+CACHED\s*$", line.strip()) for line in lines)
-    has_done = any(re.match(r"^#\d+\s+DONE\s+", line.strip()) for line in lines)
-
-    return has_cached and not has_done
+from ._docker_build_output import BuildOutcome, interpret_final_build_outcome
 
 
 _PROGRESS_PREFIX = "Building Docker Image · "
@@ -180,13 +150,13 @@ class DockerService:
             sys.stdout.flush()
             raise DockerBuildError(f"docker build failed (exit {returncode})")
 
-        output = "".join(lines)
-        if _is_full_cache_hit(output):
+        outcome = interpret_final_build_outcome("".join(lines))
+        if outcome == BuildOutcome.FULL_CACHE_HIT:
             writer.finish("up to date")
-            return BuildOutcome.FULL_CACHE_HIT
-        else:
-            writer.finish("completed")
-            return BuildOutcome.REBUILT
+            return outcome
+
+        writer.finish("completed")
+        return outcome
 
     def _build_streaming(
         self,
@@ -239,9 +209,4 @@ class DockerService:
         if returncode != 0:
             raise DockerBuildError(f"docker build failed (exit {returncode})")
 
-        output = "".join(lines)
-        return (
-            BuildOutcome.FULL_CACHE_HIT
-            if _is_full_cache_hit(output)
-            else BuildOutcome.REBUILT
-        )
+        return interpret_final_build_outcome("".join(lines))
