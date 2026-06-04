@@ -153,6 +153,12 @@ def test_interpreter_signals_rebuild_start_only_once_per_build():
     assert interpreter.final_outcome == BuildOutcome.REBUILT
 
 
+def test_interpreter_exposes_initial_terse_progress_text():
+    interpreter = DockerBuildOutputInterpreter()
+
+    assert interpreter.initial_progress_text == "preparing…"
+
+
 def test_interpreter_emits_buildkit_step_progress_transitions():
     interpreter = DockerBuildOutputInterpreter()
 
@@ -262,3 +268,22 @@ def test_interpreter_treats_repeated_classic_step_headers_as_one_cached_build_st
         None,
     ]
     assert interpreter.final_outcome == BuildOutcome.FULL_CACHE_HIT
+
+
+@pytest.mark.parametrize(
+    "example",
+    [
+        pytest.param(example, id=example_name)
+        for example_name, example in FINAL_OUTCOME_EXAMPLES.items()
+    ],
+)
+def test_interpreter_success_progress_text_matches_final_build_outcome(example):
+    interpreter = DockerBuildOutputInterpreter()
+
+    for line in example.lines:
+        interpreter.observe_line(line)
+
+    expected = (
+        "up to date" if example.outcome == BuildOutcome.FULL_CACHE_HIT else "completed"
+    )
+    assert interpreter.success_progress_text == expected
