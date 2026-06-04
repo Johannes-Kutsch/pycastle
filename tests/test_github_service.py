@@ -1627,6 +1627,47 @@ def test_get_all_open_issues_lightweight_paginates():
     assert result[1]["labels"] == ["feat"]
 
 
+def test_get_all_open_issues_lightweight_paginates_and_normalizes_issue_projections():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&per_page=100",
+                payload=[
+                    {
+                        "number": 1,
+                        "title": None,
+                        "labels": [{"name": None}, {"name": "bug"}],
+                    },
+                    {
+                        "number": 2,
+                        "title": "PR",
+                        "labels": [{"name": "skip-me"}],
+                        "pull_request": {"url": "x"},
+                    },
+                ],
+                headers={"Link": '<https://api.github.com/page2>; rel="next"'},
+            ),
+            _script_step(
+                "GET",
+                "https://api.github.com/page2",
+                payload=[
+                    {"number": 3, "title": "Keep me", "labels": None},
+                ],
+                headers={"Link": ""},
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_all_open_issues_lightweight()
+
+    assert result == [
+        {"number": 1, "title": "", "labels": ["", "bug"]},
+        {"number": 3, "title": "Keep me", "labels": []},
+    ]
+
+
 def test_get_all_open_issues_lightweight_normalizes_mixed_open_issue_payload():
     svc = _make_service()
     body = json.dumps(
