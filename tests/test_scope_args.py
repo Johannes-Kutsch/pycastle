@@ -1,11 +1,45 @@
 import pytest
 
-from pycastle.prompts.pipeline import PromptRenderError
+from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
 from pycastle.prompts.scope_args import (
     build_interrupted_work_clause,
     build_issue_scope_args,
+    validated_scope_args_for_scope,
+    validated_scope_args_for_template,
 )
 from pycastle.session import RunKind
+
+
+def test_validated_scope_args_for_template_and_scope_returns_input_unchanged():
+    template_args = {
+        "ALL_OPEN_ISSUES_JSON": "[]",
+        "READY_FOR_AGENT_ISSUES_JSON": "[]",
+    }
+    assert (
+        validated_scope_args_for_template(PromptTemplate.PLAN, template_args)
+        is template_args
+    )
+
+    scope_args = {"BRANCHES": "branch-a\nbranch-b"}
+    assert validated_scope_args_for_scope(Scope.MERGE, scope_args) is scope_args
+
+
+def test_validated_scope_args_reports_template_or_scope_name_on_key_mismatch():
+    with pytest.raises(
+        PromptRenderError,
+        match=r"template PLAN",
+    ) as template_error:
+        validated_scope_args_for_template(
+            PromptTemplate.PLAN, {"ALL_OPEN_ISSUES_JSON": "[]"}
+        )
+
+    assert "missing" in str(template_error.value)
+    assert "READY_FOR_AGENT_ISSUES_JSON" in str(template_error.value)
+
+    with pytest.raises(PromptRenderError, match=r"scope MERGE") as scope_error:
+        validated_scope_args_for_scope(Scope.MERGE, {"BRANCH": "topic"})
+
+    assert "extra" in str(scope_error.value) or "missing" in str(scope_error.value)
 
 
 def test_build_issue_scope_args_merges_extra_into_required_keys():

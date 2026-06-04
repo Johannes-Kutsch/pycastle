@@ -2,12 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from .pipeline import PromptRenderError
+from .pipeline import PromptRenderError, PromptTemplate, Scope
 from ..session import RunKind
 
-_ISSUE_PLACEHOLDER_KEYS = frozenset(
-    {"ISSUE_NUMBER", "ISSUE_TITLE", "ISSUE_BODY", "ISSUE_COMMENTS"}
-)
+_ISSUE_VALUE_KEYS = Scope.PER_ISSUE.placeholders & Scope.IMPROVE_ISSUES.placeholders
 
 
 def _format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
@@ -20,10 +18,48 @@ def _format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
     return "\n\n".join(parts)
 
 
+def _validated_scope_args(
+    *, subject: str, expected: frozenset[str], scope_args: dict[str, str]
+) -> dict[str, str]:
+    actual = set(scope_args)
+    if actual != expected:
+        missing = expected - actual
+        extra = actual - expected
+        parts: list[str] = []
+        if missing:
+            parts.append(f"missing: {missing}")
+        if extra:
+            parts.append(f"extra: {extra}")
+        raise PromptRenderError(
+            f"scope_args mismatch for {subject}: {'; '.join(parts)}"
+        )
+    return scope_args
+
+
+def validated_scope_args_for_scope(
+    scope: Scope, scope_args: dict[str, str]
+) -> dict[str, str]:
+    return _validated_scope_args(
+        subject=f"scope {scope.name}",
+        expected=scope.placeholders,
+        scope_args=scope_args,
+    )
+
+
+def validated_scope_args_for_template(
+    template: PromptTemplate, scope_args: dict[str, str]
+) -> dict[str, str]:
+    return _validated_scope_args(
+        subject=f"template {template.name}",
+        expected=template.scope.placeholders,
+        scope_args=scope_args,
+    )
+
+
 def build_issue_scope_args(
     issue: dict, *, extra_scope_args: dict[str, str]
 ) -> dict[str, str]:
-    collisions = _ISSUE_PLACEHOLDER_KEYS & extra_scope_args.keys()
+    collisions = _ISSUE_VALUE_KEYS & extra_scope_args.keys()
     if collisions:
         raise PromptRenderError(
             f"extra_scope_args collides with reserved ISSUE_* keys: {collisions}"
