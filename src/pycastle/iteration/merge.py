@@ -21,8 +21,8 @@ from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import (
     managed_worktree,
     teardown_worktree,
+    worktree_identity,
     worktree_name_for_branch,
-    worktree_path,
 )
 from ._rows import status_row
 from ._utils import _wait_for_clean_working_tree
@@ -67,9 +67,7 @@ async def _delete_merged_branches(
         try:
             if not deps.git_svc.is_ancestor(branch, deps.repo_root):
                 return
-            worktree_path_ = worktree_path(
-                worktree_name_for_branch(branch), deps.repo_root
-            )
+            worktree_path_ = worktree_identity(branch, deps.repo_root).path
             if worktree_path_ in registered_worktrees:
                 try:
                     await asyncio.to_thread(
