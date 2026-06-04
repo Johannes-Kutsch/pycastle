@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 from pycastle.config import Config, StageOverride
@@ -82,6 +82,36 @@ def test_decide_usage_limit_continuation_includes_same_day_switch_message():
     )
 
 
+def test_decide_usage_limit_continuation_formats_same_local_day_switch_message():
+    eastern = timezone(timedelta(hours=-5))
+    now = datetime(2026, 1, 1, 20, 30, 0, tzinfo=eastern)
+    primary_wake = datetime(2026, 1, 2, 1, 0, 0, tzinfo=timezone.utc)
+    registry = ServiceRegistry(
+        {
+            "claude": _make_service(available=False, wake_time=primary_wake),
+            "codex": _make_service(available=True),
+        }
+    )
+    cfg = Config(
+        implement_override=StageOverride(
+            service="claude",
+            fallback=StageOverride(service="codex"),
+        )
+    )
+
+    decision = decide_usage_limit_continuation(
+        AbortedUsageLimit(stage_key="implement"),
+        cfg,
+        registry,
+        now,
+    )
+
+    assert decision == ContinueNow(
+        message="Account exhausted until 20:00, switching to next available.",
+        exhausted_wake_time=primary_wake,
+    )
+
+
 def test_decide_usage_limit_continuation_sleeps_for_stage_chain_only():
     primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
     fallback_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc)
@@ -109,7 +139,7 @@ def test_decide_usage_limit_continuation_sleeps_for_stage_chain_only():
     assert decision == SleepUntil(wake_time=fallback_wake)
 
 
-def test_decide_usage_limit_continuation_falls_back_to_registry_when_stage_unconfigured():
+def test_decide_usage_limit_continuation_ignores_available_services_outside_stage_chain():
     claude_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc)
     registry = ServiceRegistry(
         {
@@ -126,9 +156,9 @@ def test_decide_usage_limit_continuation_falls_back_to_registry_when_stage_uncon
         _now(),
     )
 
-    assert decision == ContinueNow(
-        message="Account exhausted until 15:00, switching to next available.",
-        exhausted_wake_time=claude_wake,
+    assert decision == SleepUntil(
+        wake_time=datetime(2026, 1, 1, 15, 2, 0, tzinfo=timezone.utc),
+        is_estimated=True,
     )
 
 

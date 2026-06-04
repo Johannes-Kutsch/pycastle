@@ -2070,7 +2070,7 @@ def test_usage_limit_sleep_message_cross_day_shows_date(tmp_path, capsys):
 
 
 def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, capsys):
-    """Account-switch message shows only HH:MM when wake-time is same day."""
+    """Stage-fallback switch message shows only HH:MM when wake-time is same day."""
     fixed_now = datetime(2026, 1, 1, 14, 0, 0).astimezone()
     wake = datetime(2026, 1, 1, 15, 2, 0).astimezone()  # same day
 
@@ -2095,7 +2095,6 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
         [],
     ]
 
-    # One account exhausted (secondary), one still available (primary)
     svc_exhausted = _FakeService(available=False, wake_time=wake)
     svc_available = _FakeService(available=True)
 
@@ -2104,7 +2103,7 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
             return _plan_output(
                 [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
-        raise UsageLimitError(reset_time=None)
+        raise UsageLimitError(reset_time=None, stage_key="implement")
 
     with (
         patch("time.sleep"),
@@ -2117,6 +2116,10 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
             service_registry=ServiceRegistry(
                 {"secondary": svc_exhausted, "primary": svc_available}
             ),
+            implement_override=StageOverride(
+                service="secondary",
+                fallback=StageOverride(service="primary"),
+            ),
             max_iterations=2,
         )
 
@@ -2126,11 +2129,9 @@ def test_usage_limit_pool_switch_message_same_day_shows_hhmm_only(tmp_path, caps
 
 
 def test_usage_limit_pool_switch_message_cross_day_shows_date(tmp_path, capsys):
-    """Account-switch message includes the date when wake-time is on a different day."""
-    from datetime import datetime as real_datetime
-
-    fixed_now = real_datetime(2026, 1, 1, 23, 0, 0)
-    wake = real_datetime(2026, 1, 2, 6, 2, 0)  # next day
+    """Stage-fallback switch message includes the date on a different local day."""
+    fixed_now = datetime(2026, 1, 1, 23, 0, 0).astimezone()
+    wake = datetime(2026, 1, 2, 6, 2, 0).astimezone()  # next day
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.side_effect = [
@@ -2161,19 +2162,22 @@ def test_usage_limit_pool_switch_message_cross_day_shows_date(tmp_path, capsys):
             return _plan_output(
                 [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
-        raise UsageLimitError(reset_time=None)
+        raise UsageLimitError(reset_time=None, stage_key="implement")
 
     with (
         patch("time.sleep"),
-        patch("pycastle.iteration.orchestrator.datetime") as mock_dt,
+        patch("pycastle._time.now_local", return_value=fixed_now),
     ):
-        mock_dt.now.return_value = fixed_now
         _run(
             tmp_path,
             _fake_run_agent,
             github_service=mock_github,
             service_registry=ServiceRegistry(
                 {"secondary": svc_exhausted, "primary": svc_available}
+            ),
+            implement_override=StageOverride(
+                service="secondary",
+                fallback=StageOverride(service="primary"),
             ),
             max_iterations=2,
         )

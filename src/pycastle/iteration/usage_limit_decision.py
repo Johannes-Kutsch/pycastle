@@ -31,9 +31,10 @@ UsageLimitContinuationDecision: TypeAlias = ContinueNow | SleepUntil | Stop
 
 
 def _fmt_wake(wake: datetime, now: datetime) -> str:
-    if wake.date() != now.date():
-        return f"{wake:%b} {wake.day}, {wake:%H:%M}"
-    return wake.strftime("%H:%M")
+    local_wake = wake.astimezone(now.tzinfo) if now.tzinfo is not None else wake
+    if local_wake.date() != now.date():
+        return f"{local_wake:%b} {local_wake.day}, {local_wake:%H:%M}"
+    return local_wake.strftime("%H:%M")
 
 
 def _override_for_stage_key(cfg: Config, stage_key: str | None) -> StageOverride | None:
@@ -60,11 +61,7 @@ def decide_usage_limit_continuation(
 ) -> UsageLimitContinuationDecision:
     stage_override = _override_for_stage_key(cfg, outcome.stage_key)
     scoped_override = stage_override
-    use_stage_scope = (
-        service_registry is not None
-        and scoped_override is not None
-        and service_registry.has_configured_candidate(scoped_override)
-    )
+    use_stage_scope = service_registry is not None and scoped_override is not None
 
     if service_registry is None:
         has_available = False
