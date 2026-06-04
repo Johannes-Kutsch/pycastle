@@ -25,7 +25,7 @@ from .errors import (
 )
 from .display.status_display import PlainStatusDisplay
 from .stage_priority_chain import (
-    iter_stage_chain,
+    chain_entries,
     render_chain_label,
     validation_labels,
 )
@@ -56,12 +56,12 @@ def _validate_stage_overrides(
         valid_models_by_service = {}
     violations: list[str] = []
     for stage_name, override in _stage_overrides(cfg):
-        for stage_label, node in zip(
+        for stage_label, entry in zip(
             validation_labels(stage_name, override),
-            iter_stage_chain(override),
+            chain_entries(override),
             strict=True,
         ):
-            svc_name = node.service
+            svc_name = entry.service
             valid_efforts: frozenset[str] | None = None
             if not svc_name:
                 violations.append(f"  stage={stage_label!r}: service is required")
@@ -72,18 +72,18 @@ def _validate_stage_overrides(
                         f"  stage={stage_label!r}: service={svc_name!r} is not a known service"
                         f" (known: {sorted(_KNOWN_SERVICES)})"
                     )
-            if not node.effort:
+            if not entry.effort:
                 violations.append(f"  stage={stage_label!r}: effort is required")
-            elif valid_efforts is not None and node.effort not in valid_efforts:
+            elif valid_efforts is not None and entry.effort not in valid_efforts:
                 violations.append(
-                    f"  stage={stage_label!r}: effort={node.effort!r} is invalid"
+                    f"  stage={stage_label!r}: effort={entry.effort!r} is invalid"
                     f" for service={svc_name!r} (valid: {sorted(valid_efforts)})"
                 )
-            if svc_name and node.model:
+            if svc_name and entry.model:
                 valid_models = valid_models_by_service.get(svc_name)
-                if valid_models is not None and node.model not in valid_models:
+                if valid_models is not None and entry.model not in valid_models:
                     suggestion = difflib.get_close_matches(
-                        node.model, sorted(valid_models), n=1
+                        entry.model, sorted(valid_models), n=1
                     )
                     detail = (
                         f' Did you mean "{suggestion[0]}"?'
@@ -91,7 +91,7 @@ def _validate_stage_overrides(
                         else f" (valid: {sorted(valid_models)})"
                     )
                     violations.append(
-                        f"  stage={stage_label!r}: model={node.model!r} is invalid"
+                        f"  stage={stage_label!r}: model={entry.model!r} is invalid"
                         f" for service={svc_name!r}.{detail}"
                     )
     return violations
@@ -138,10 +138,6 @@ def _configured_service_registry(
     return service_registry
 
 
-def _stage_chain_label(override: StageOverride) -> str:
-    return render_chain_label(override)
-
-
 def _validate_locally_configured_stage_overrides(
     cfg: Config, service_registry: dict[str, "AgentService"]
 ) -> list[str]:
@@ -154,7 +150,7 @@ def _validate_locally_configured_stage_overrides(
             continue
         violations.append(
             f"  stage={stage_name!r}: no locally configured service in priority chain "
-            f"{_stage_chain_label(override)!r}"
+            f"{render_chain_label(override)!r}"
         )
     return violations
 
