@@ -326,7 +326,7 @@ class OpenCodeService:
         self._exhausted_until = wake
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        return RoleSession.provider_state_relpath(role, self.name, namespace)
+        return RoleSession.provider_state_relpath_for(role, self.name, namespace)
 
     def is_resumable(self, state_dir: Path) -> bool:
         return (state_dir / "resume.jsonl").is_file() or (

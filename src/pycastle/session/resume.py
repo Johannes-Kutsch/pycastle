@@ -43,7 +43,7 @@ def provider_state_relpath(
     provider_name: str,
     namespace: str = "",
 ) -> str:
-    return RoleSession.provider_state_relpath(role, provider_name, namespace)
+    return RoleSession.provider_state_relpath_for(role, provider_name, namespace)
 
 
 def _normalize_state_dir_relpath(
@@ -157,23 +157,22 @@ class RoleSession:
         base = self._worktree / SESSION_DIR_NAME / self._role.value
         return base / self._namespace if self._namespace else base
 
-    def provider_state_relpath(
-        self_or_role: "RoleSession | AgentRole",
+    @staticmethod
+    def provider_state_relpath_for(
+        role: AgentRole,
         provider_name: str,
         namespace: str = "",
     ) -> str:
-        strip_trailing_slash = False
-        if isinstance(self_or_role, RoleSession):
-            role = self_or_role._role
-            namespace = self_or_role._namespace
-            strip_trailing_slash = True
-        else:
-            role = self_or_role
         if namespace:
-            relpath = f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
-        else:
-            relpath = f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
-        return relpath.rstrip("/") if strip_trailing_slash else relpath
+            return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
+        return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
+
+    def provider_state_relpath(self, provider_name: str) -> str:
+        return self.provider_state_relpath_for(
+            self._role,
+            provider_name,
+            self._namespace,
+        ).rstrip("/")
 
     def session_uuid(self) -> str:
         role_key = (

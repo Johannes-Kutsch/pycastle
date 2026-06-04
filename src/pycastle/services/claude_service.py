@@ -212,7 +212,7 @@ class ClaudeService:
         return self._pool.mark_permanently_exhausted(self._current_token)
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        return RoleSession.provider_state_relpath(role, self.name, namespace)
+        return RoleSession.provider_state_relpath_for(role, self.name, namespace)
 
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(f.is_file() for f in state_dir.rglob("*"))

@@ -58,12 +58,14 @@ def test_claude_service_name_is_claude():
 
 def test_state_dir_relpath_without_namespace():
     result = ClaudeService().state_dir_relpath(AgentRole.IMPLEMENTER)
-    assert result == RoleSession.provider_state_relpath(AgentRole.IMPLEMENTER, "claude")
+    assert result == RoleSession.provider_state_relpath_for(
+        AgentRole.IMPLEMENTER, "claude"
+    )
 
 
 def test_state_dir_relpath_with_namespace():
     result = ClaudeService().state_dir_relpath(AgentRole.IMPROVE, "main")
-    assert result == RoleSession.provider_state_relpath(
+    assert result == RoleSession.provider_state_relpath_for(
         AgentRole.IMPROVE, "claude", "main"
     )
 
