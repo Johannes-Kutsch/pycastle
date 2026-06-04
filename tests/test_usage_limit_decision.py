@@ -293,6 +293,38 @@ def test_decide_usage_limit_continuation_returns_continue_now_for_permanent_exha
     )
 
 
+def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion_without_configured_fallback():
+    denial = "disabled Claude subscription access for Claude Code"
+    registry = ServiceRegistry(
+        {
+            "claude": _make_service(available=False, wake_time=_now()),
+            "codex": _make_service(available=True),
+        }
+    )
+    cfg = Config(implement_override=StageOverride(service="claude"))
+
+    decision = decide_usage_limit_continuation(
+        AbortedUsageLimit(
+            stage_key="implement",
+            provider="claude",
+            account_label="primary",
+            raw_message=denial,
+            is_permanent=True,
+        ),
+        cfg,
+        registry,
+        _now(),
+    )
+
+    assert decision == Stop(
+        message=(
+            "claude primary account retired for this run and will be retried on "
+            "the next run. Claude said: disabled Claude subscription access for "
+            "Claude Code"
+        )
+    )
+
+
 def test_decide_usage_limit_continuation_estimates_wake_time_without_registry():
     now = _now()
 
