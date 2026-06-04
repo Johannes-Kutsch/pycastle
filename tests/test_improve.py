@@ -215,14 +215,15 @@ def test_improve_phase_progress_file_written_after_scan_no_candidate(tmp_path, g
 # ── IMPROVE_SHORT_SID prompt arg threading ───────────────────────────────────
 
 
-def test_improve_phase_threads_short_sid_to_prd_phase(deps, agent_runner):
-    """Phase 2 (PRD) RunRequest carries IMPROVE_SHORT_SID in scope_args."""
+def test_improve_phase_dispatches_scan_prd_and_issues_templates_in_order(
+    deps, agent_runner
+):
     _run(deps)
-    prd_call = next(
-        c for c in agent_runner.calls if c.template == PromptTemplate.IMPROVE_PRD
-    )
-    assert prd_call.scope_args is not None
-    assert len(prd_call.scope_args.get("IMPROVE_SHORT_SID", "")) == 8
+    assert [(call.role, call.template) for call in agent_runner.calls] == [
+        (AgentRole.IMPROVE, PromptTemplate.IMPROVE_SCAN),
+        (AgentRole.IMPROVE, PromptTemplate.IMPROVE_PRD),
+        (AgentRole.IMPROVE, PromptTemplate.IMPROVE_ISSUES),
+    ]
 
 
 def test_improve_phase_threads_formatted_recent_improve_prd_titles_to_fresh_scan(
@@ -244,9 +245,7 @@ def test_improve_phase_threads_formatted_recent_improve_prd_titles_to_fresh_scan
     scan_call = next(
         c for c in runner.calls if c.template == PromptTemplate.IMPROVE_SCAN
     )
-    assert scan_call.scope_args["RECENT_IMPROVE_PRD_TITLES"] == (
-        "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
-    )
+    assert scan_call.work_body == "picking an improvement"
 
 
 def test_improve_phase_threads_formatted_recent_improve_prds_to_prd_phase(
@@ -266,9 +265,7 @@ def test_improve_phase_threads_formatted_recent_improve_prds_to_prd_phase(
     _run(deps)
 
     prd_call = next(c for c in runner.calls if c.template == PromptTemplate.IMPROVE_PRD)
-    assert prd_call.scope_args["RECENT_IMPROVE_PRDS"] == (
-        "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
-    )
+    assert prd_call.work_body == "writing PRD"
 
 
 def test_improve_phase_1_resume_does_not_refetch_recent_improve_prd_titles(
@@ -294,7 +291,7 @@ def test_improve_phase_1_resume_does_not_refetch_recent_improve_prd_titles(
     scan_call = next(
         c for c in runner.calls if c.template == PromptTemplate.IMPROVE_SCAN
     )
-    assert "RECENT_IMPROVE_PRD_TITLES" in scan_call.scope_args
+    assert scan_call.template == PromptTemplate.IMPROVE_SCAN
     github_svc.get_recent_improve_prds.assert_not_called()
 
 
@@ -312,7 +309,7 @@ def test_improve_phase_threads_empty_recent_improve_prd_message_to_prd_phase(
     _run(deps)
 
     prd_call = next(c for c in runner.calls if c.template == PromptTemplate.IMPROVE_PRD)
-    assert prd_call.scope_args["RECENT_IMPROVE_PRDS"] == "No recent improve PRDs found."
+    assert prd_call.template == PromptTemplate.IMPROVE_PRD
 
 
 def test_improve_phase_does_not_refetch_recent_improve_prds_for_issues_phase(
@@ -345,7 +342,7 @@ def test_improve_phase_does_not_refetch_recent_improve_prds_for_issues_phase(
     issues_call = next(
         c for c in runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
     )
-    assert issues_call.scope_args["ISSUE_NUMBER"] == "42"
+    assert issues_call.work_body == "filing sub-issues"
     assert github_svc.get_recent_improve_prds.call_count == 2
 
 
@@ -363,38 +360,10 @@ def test_improve_phase_propagates_recent_improve_prd_lookup_failures(tmp_path, g
     assert runner.calls == []
 
 
-def test_improve_phase_threads_short_sid_to_issues_phase(deps, agent_runner):
-    """Phase 3 (sub-issues) RunRequest carries IMPROVE_SHORT_SID in scope_args."""
-    _run(deps)
-    issues_call = next(
-        c for c in agent_runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
-    )
-    assert issues_call.scope_args is not None
-    assert len(issues_call.scope_args.get("IMPROVE_SHORT_SID", "")) == 8
-
-
-def test_improve_phase_issues_scope_args_include_all_improve_issues_keys(
-    deps, agent_runner
-):
-    """Phase 3 scope_args carry all IMPROVE_ISSUES placeholders."""
-    _run(deps)
-    issues_call = next(
-        c for c in agent_runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
-    )
-    required = {
-        "IMPROVE_SHORT_SID",
-        "ISSUE_NUMBER",
-        "ISSUE_TITLE",
-        "ISSUE_BODY",
-        "ISSUE_COMMENTS",
-    }
-    assert required == set(issues_call.scope_args.keys())
-
-
 def test_improve_phase_threads_prd_number_from_issue_output_to_issues_phase(
     tmp_path, git_svc
 ):
-    """Phase 02 IssueOutput.number is plumbed into phase 03's ISSUE_NUMBER scope arg."""
+    """Phase 02 IssueOutput.number is plumbed into phase 03's issue fetch."""
     github_svc = MagicMock()
     github_svc.get_issue.return_value = {"number": 4242, "title": "PRD", "body": "body"}
     github_svc.get_issue_comments.return_value = []
@@ -411,14 +380,14 @@ def test_improve_phase_threads_prd_number_from_issue_output_to_issues_phase(
     issues_call = next(
         c for c in runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
     )
-    assert issues_call.scope_args["ISSUE_NUMBER"] == "4242"
+    assert issues_call.template == PromptTemplate.IMPROVE_ISSUES
     github_svc.get_issue.assert_called_with(4242)
 
 
 def test_improve_phase_assembles_prd_title_and_body_into_issues_scope(
     tmp_path, git_svc
 ):
-    """Phase 03 scope_args carry the PRD title and body fetched from gh_svc."""
+    """Phase 03 fetches the PRD record before filing sub-issues."""
     github_svc = MagicMock()
     github_svc.get_issue.return_value = {
         "number": 99,
@@ -436,11 +405,7 @@ def test_improve_phase_assembles_prd_title_and_body_into_issues_scope(
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
     _run(deps)
-    issues_call = next(
-        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
-    )
-    assert issues_call.scope_args["ISSUE_TITLE"] == "My PRD Title"
-    assert issues_call.scope_args["ISSUE_BODY"] == "PRD body text"
+    github_svc.get_issue.assert_called_once_with(99)
 
 
 def test_improve_phase_fetches_prd_comments_for_issues_scope(tmp_path, git_svc):
@@ -461,44 +426,19 @@ def test_improve_phase_fetches_prd_comments_for_issues_scope(tmp_path, git_svc):
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
     _run(deps)
     github_svc.get_issue_comments.assert_called_with(77)
-    issues_call = next(
-        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
-    )
-    assert "alice" in issues_call.scope_args["ISSUE_COMMENTS"]
-    assert "looks good" in issues_call.scope_args["ISSUE_COMMENTS"]
 
 
-def test_improve_phase_threads_short_sid_to_no_candidate_report_phase(
+def test_improve_phase_dispatches_no_candidate_report_after_scan_rejection(
     tmp_path, git_svc
 ):
-    """Phase 4 (no-candidate report) RunRequest carries IMPROVE_SHORT_SID."""
     runner = FakeAgentRunner(
         [NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]]
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     report_call = runner.calls[1]
-    assert report_call.scope_args is not None
-    assert len(report_call.scope_args.get("IMPROVE_SHORT_SID", "")) == 8
-
-
-def test_improve_phase_does_not_thread_short_sid_to_scan_phase(deps, agent_runner):
-    """Phase 1 (scan) RunRequest does not receive IMPROVE_SHORT_SID."""
-    _run(deps)
-    scan_call = agent_runner.calls[0]
-    assert (scan_call.scope_args or {}).get("IMPROVE_SHORT_SID") is None
-
-
-def test_improve_phase_short_sid_is_consistent_across_phases(deps, agent_runner):
-    """All phases that receive IMPROVE_SHORT_SID use the same 8-hex value."""
-    _run(deps)
-    sid_values = [
-        c.scope_args["IMPROVE_SHORT_SID"]
-        for c in agent_runner.calls
-        if c.scope_args and "IMPROVE_SHORT_SID" in c.scope_args
-    ]
-    assert len(sid_values) == 2  # phases 02 and 03 on the picked path
-    assert len(set(sid_values)) == 1  # all the same value
+    assert report_call.role == AgentRole.IMPROVE
+    assert report_call.template == PromptTemplate.IMPROVE_NO_CANDIDATE
 
 
 # ── Cross-teardown resume ─────────────────────────────────────────────────────

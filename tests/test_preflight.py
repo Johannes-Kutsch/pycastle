@@ -7,9 +7,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from unittest.mock import MagicMock
 
-from pycastle.agents.output_protocol import CompletionOutput, IssueOutput
+from pycastle.agents.output_protocol import AgentRole, CompletionOutput, IssueOutput
 from pycastle.config import Config, StageOverride
 from pycastle.errors import DockerError, SetupPhaseError
+from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import (
     GitCommandError,
     GitService,
@@ -27,7 +28,6 @@ from pycastle.iteration.preflight import (
     PreflightReady,
     validate_issue_report,
 )
-from pycastle.prompts.scope_args import build_preflight_scope_args
 
 
 @pytest.fixture
@@ -383,11 +383,9 @@ def test_get_safe_sha_treats_runner_failure_tuple_as_ordinary_pre_flight_failure
     assert result.issue_number == 55
     assert len(fake.preflight_calls) == 1
     assert len(fake.calls) == 1
-    assert fake.calls[0].scope_args == {
-        "CHECK_NAME": "ruff",
-        "COMMAND": "ruff check .",
-        "OUTPUT": "Command failed (exit 127): bash: ruff: command not found",
-    }
+    assert fake.calls[0].template == PromptTemplate.PREFLIGHT_ISSUE
+    assert fake.calls[0].role == AgentRole.PREFLIGHT_ISSUE
+    assert fake.calls[0].work_body == "reporting ruff issue"
 
 
 def test_get_safe_sha_keeps_declared_source_quality_failure_on_preflight_issue_route(
@@ -418,11 +416,9 @@ def test_get_safe_sha_keeps_declared_source_quality_failure_on_preflight_issue_r
     assert result.issue_number == 56
     assert len(fake.preflight_calls) == 1
     assert len(fake.calls) == 1
-    assert fake.calls[0].scope_args == {
-        "CHECK_NAME": "ruff",
-        "COMMAND": "ruff check .",
-        "OUTPUT": "src/demo.py:1:1: F401 `os` imported but unused",
-    }
+    assert fake.calls[0].template == PromptTemplate.PREFLIGHT_ISSUE
+    assert fake.calls[0].role == AgentRole.PREFLIGHT_ISSUE
+    assert fake.calls[0].work_body == "reporting ruff issue"
 
 
 def test_get_safe_sha_preserves_original_first_failure_details_after_analysis_and_caches_afk_verdict(
@@ -454,11 +450,9 @@ def test_get_safe_sha_preserves_original_first_failure_details_after_analysis_an
     assert isinstance(result1, PreflightAFK)
     assert result1.issue_number == 77
     assert result2 is result1
-    assert fake.calls[0].scope_args == {
-        "CHECK_NAME": "lint",
-        "COMMAND": "python -X dev -m ruff check .",
-        "OUTPUT": "src/demo.py:1:1: F401 `os` imported but unused",
-    }
+    assert fake.calls[0].template == PromptTemplate.PREFLIGHT_ISSUE
+    assert fake.calls[0].role == AgentRole.PREFLIGHT_ISSUE
+    assert fake.calls[0].work_body == "reporting lint issue"
     assert len(fake.preflight_calls) == 1
     assert len(fake.calls) == 1
 
@@ -489,14 +483,12 @@ def test_get_safe_sha_builds_preflight_issue_scope_args_from_first_failure_via_p
     result = asyncio.run(cache.get_safe_sha(deps))
 
     assert isinstance(result, PreflightHITL)
-    assert fake.calls[0].template.name == "PREFLIGHT_ISSUE"
-    assert fake.calls[0].role.name == "PREFLIGHT_ISSUE"
+    assert fake.calls[0].template == PromptTemplate.PREFLIGHT_ISSUE
+    assert fake.calls[0].role == AgentRole.PREFLIGHT_ISSUE
     assert fake.calls[0].service == "codex"
-    assert fake.calls[0].scope_args == build_preflight_scope_args(
-        check_name="ruff",
-        command="ruff check .",
-        output="E501",
-    )
+    assert fake.calls[0].model == deps.cfg.preflight_issue_override.model
+    assert fake.calls[0].effort == deps.cfg.preflight_issue_override.effort
+    assert fake.calls[0].work_body == "reporting ruff issue"
 
 
 # ── get_safe_sha: same-SHA cache hit ─────────────────────────────────────────

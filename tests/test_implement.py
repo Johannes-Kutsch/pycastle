@@ -6,12 +6,14 @@ from unittest.mock import MagicMock
 import pytest
 
 from pycastle.agents.output_protocol import (
+    AgentRole,
     CommitMessageOutput,
     CompletionOutput,
     PromiseParseError,
 )
 from pycastle.agents.runner import RunRequest
 from pycastle.config import Config
+from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.iteration.implement import (
@@ -409,7 +411,7 @@ def test_implement_phase_reviewer_usage_limit_signals_in_result(tmp_path):
 
 
 def test_run_issue_derives_branch_from_issue_number(tmp_path):
-    """run_issue must derive the branch via branch_for(number) and pass it to create_worktree and prompt_args."""
+    """run_issue must derive the branch via branch_for(number) and pass it to create_worktree."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
 
     issue = {
@@ -423,7 +425,9 @@ def test_run_issue_derives_branch_from_issue_number(tmp_path):
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert implementer_call.scope_args["BRANCH"] == "pycastle/issue-7"
+    assert implementer_call.template == PromptTemplate.IMPLEMENT_BEHAVIOR
+    assert implementer_call.role == AgentRole.IMPLEMENTER
+    assert implementer_call.stage == "pre-implementation"
     branch_arg = deps.git_svc.create_worktree.call_args_list[0][0][2]
     assert branch_arg == "pycastle/issue-7"
 
@@ -567,188 +571,7 @@ def test_implement_phase_reviewer_timeout_does_not_complete_issue(tmp_path):
 # ── Issue 497: issue body/comments and diff threading ───────────────────────
 
 
-def test_run_issue_threads_issue_body_to_implementer_prompt(tmp_path):
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    issue = {
-        "number": 1,
-        "title": "T",
-        "body": "BODY-X",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-
-    asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert impl_call.scope_args["ISSUE_BODY"] == "BODY-X"
-
-
-def test_run_issue_threads_issue_body_to_reviewer_prompt(tmp_path):
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    issue = {
-        "number": 1,
-        "title": "T",
-        "body": "BODY-X",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-
-    asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    rev_call = next(c for c in fake.calls if "Review Agent" in c.name)
-    assert rev_call.scope_args["ISSUE_BODY"] == "BODY-X"
-
-
-def test_run_issue_threads_issue_comments_formatted_to_implementer(tmp_path):
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    issue = {
-        "number": 1,
-        "title": "T",
-        "body": "",
-        "comments": [
-            {"author": "alice", "created_at": "2026-01-01T10:00:00Z", "body": "hi"},
-            {"author": "bob", "created_at": "2026-01-02T11:00:00Z", "body": "yo"},
-        ],
-        "labels": ["behavior-slice"],
-    }
-
-    asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    rendered = impl_call.scope_args["ISSUE_COMMENTS"]
-    assert "alice" in rendered
-    assert "2026-01-01T10:00:00Z" in rendered
-    assert "hi" in rendered
-    assert "bob" in rendered
-    assert rendered.index("alice") < rendered.index("bob")
-
-
-def test_run_issue_renders_empty_string_when_no_comments(tmp_path):
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    issue = {
-        "number": 1,
-        "title": "T",
-        "body": "x",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-
-    asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert impl_call.scope_args["ISSUE_COMMENTS"] == ""
-
-
-def test_run_issue_does_not_pass_diff_to_either_agent(tmp_path):
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    issue = {
-        "number": 1,
-        "title": "T",
-        "body": "",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-
-    asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    rev_call = next(c for c in fake.calls if "Review Agent" in c.name)
-    assert "DIFF" not in impl_call.scope_args
-    assert "DIFF" not in rev_call.scope_args
-
-
-def test_run_issue_injects_interrupted_work_for_fresh_dirty_worktree(tmp_path):
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    deps.git_svc.is_working_tree_clean.return_value = False
-    issue = {
-        "number": 6,
-        "title": "Resume dirty work",
-        "body": "",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-
-    asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    interrupted_work = fake.calls[0].scope_args["INTERRUPTED_WORK"]
-    assert "Interrupted Work" in interrupted_work
-    assert "git diff" in interrupted_work
-    assert "git status" in interrupted_work
-    assert "diff --git" not in interrupted_work
-
-
-def test_run_issue_omits_interrupted_work_for_fresh_clean_worktree(tmp_path):
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    deps.git_svc.is_working_tree_clean.return_value = True
-    issue = {
-        "number": 6,
-        "title": "Fresh clean work",
-        "body": "",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-
-    asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    assert fake.calls[0].scope_args["INTERRUPTED_WORK"] == ""
-
-
-def test_run_issue_omits_interrupted_work_for_resume_dirty_worktree(tmp_path):
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    deps.git_svc.is_working_tree_clean.return_value = False
-    wt_path = tmp_path / "pycastle" / ".worktrees" / "issue-6"
-    impl_session_dir = wt_path / ".pycastle-session" / "implementer"
-    original_create = deps.git_svc.create_worktree.side_effect
-
-    def _seeding_create(repo, path, branch, sha=None):
-        original_create(repo, path, branch, sha)
-        impl_session_dir.mkdir(parents=True, exist_ok=True)
-        (impl_session_dir / "session.json").write_text("{}")
-
-    deps.git_svc.create_worktree.side_effect = _seeding_create
-    issue = {
-        "number": 6,
-        "title": "Resume dirty work",
-        "body": "",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-
-    asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    assert fake.calls[0].scope_args["INTERRUPTED_WORK"] == ""
-
-
-def test_run_issue_handles_issue_without_body_or_comments(tmp_path):
-    """AFK-path issues lack body/comments — prompt args must still be populated."""
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    issue = {
-        "number": 1,
-        "title": "T",
-        "body": "",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-
-    asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    impl_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert impl_call.scope_args["ISSUE_BODY"] == ""
-    assert impl_call.scope_args["ISSUE_COMMENTS"] == ""
-
-
-def test_run_issue_passes_exact_per_issue_scope_args_to_implementer_and_reviewer(
-    tmp_path,
-):
+def test_run_issue_dispatches_implementer_then_reviewer_with_expected_stages(tmp_path):
     fake = FakeAgentRunner([CompletionOutput()] * 2)
     deps = _make_deps(tmp_path, fake)
     issue = {
@@ -758,20 +581,16 @@ def test_run_issue_passes_exact_per_issue_scope_args_to_implementer_and_reviewer
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    deps.git_svc.is_working_tree_clean.return_value = True
-
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
-    assert [call.scope_args for call in fake.calls] == [
-        {
-            "ISSUE_NUMBER": "3",
-            "ISSUE_TITLE": "T",
-            "ISSUE_BODY": "body",
-            "ISSUE_COMMENTS": "",
-            "BRANCH": "pycastle/issue-3",
-            "INTERRUPTED_WORK": "",
-        }
-    ] * 2
+    assert [(call.role, call.template, call.stage) for call in fake.calls] == [
+        (
+            AgentRole.IMPLEMENTER,
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
+            "pre-implementation",
+        ),
+        (AgentRole.REVIEWER, PromptTemplate.REVIEW, "pre-review"),
+    ]
 
 
 # ── Issue 349: issue_title threading ─────────────────────────────────────────

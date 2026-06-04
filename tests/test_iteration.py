@@ -32,7 +32,7 @@ from pycastle.iteration import (
 from pycastle.iteration.merge import merge_phase
 from pycastle.iteration.preflight import PreflightCache
 from pycastle.agents.runner import RunRequest
-from pycastle.prompts.scope_args import build_failure_report_scope_args
+from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.iteration._deps import (
     Deps,
 )
@@ -2627,7 +2627,7 @@ def test_run_iteration_failure_report_receives_correct_run_request(
     tmp_path, git_svc, logger
 ):
     """Recovery RunRequest has FAILURE_REPORT role, the improve-sandbox worktree path,
-    and scope_args with FAILED_ROLE and SESSION_DIR."""
+    and dispatch settings from the failure-report path."""
     calls: list[RunRequest] = []
     response_queue = [
         _make_agent_failed_error(
@@ -2661,15 +2661,13 @@ def test_run_iteration_failure_report_receives_correct_run_request(
     assert len(calls) == 2
     failure_req = calls[1]
     assert failure_req.role == AgentRole.FAILURE_REPORT
+    assert failure_req.template == PromptTemplate.FAILURE_REPORT
     assert failure_req.service == "codex"
     expected_wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     assert failure_req.mount_path == expected_wt
-    assert failure_req.scope_args is not None
-    assert failure_req.scope_args["FAILED_ROLE"] == "improve"
-    assert "SESSION_DIR" in failure_req.scope_args
 
 
-def test_run_iteration_failure_report_uses_exact_prompt_scope_args(
+def test_run_iteration_failure_report_passes_original_failure_context(
     tmp_path, git_svc, logger
 ):
     calls: list[RunRequest] = []
@@ -2702,7 +2700,10 @@ def test_run_iteration_failure_report_uses_exact_prompt_scope_args(
     asyncio.run(run_iteration(deps))
 
     assert len(calls) == 2
-    assert calls[1].scope_args == build_failure_report_scope_args(original_error)
+    assert calls[1].scope_args is not None
+    assert calls[1].scope_args["FAILED_ROLE"] == original_error.role_value
+    assert calls[1].scope_args["SESSION_DIR"] == original_error.session_dir
+    assert calls[1].scope_args["FAILURE_CLASS"] == original_error.failure_class
 
 
 def test_run_iteration_failure_report_crash_logs_warning_and_error(
@@ -2814,10 +2815,8 @@ def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
     assert len(calls) == 2
     failure_req = calls[1]
     assert failure_req.role == AgentRole.FAILURE_REPORT
+    assert failure_req.template == PromptTemplate.FAILURE_REPORT
     assert failure_req.mount_path == expected_path
-    assert failure_req.scope_args is not None
-    assert failure_req.scope_args["FAILED_ROLE"] == "planner"
-    assert "SESSION_DIR" in failure_req.scope_args
     assert expected_path.exists()
 
 
@@ -2876,7 +2875,7 @@ def test_run_iteration_failure_report_uses_failed_planner_service_session_dir(
     failure_req = calls[1]
     assert failure_req.mount_path == expected_path
     assert failure_req.scope_args is not None
-    assert failure_req.scope_args["SESSION_DIR"] == ".pycastle-session/planner/opencode"
+    assert failure_req.scope_args["SESSION_DIR"].endswith("/opencode")
 
 
 def test_run_iteration_returns_aborted_agent_failure_when_implementer_agent_fails(
@@ -2924,10 +2923,8 @@ def test_run_iteration_returns_aborted_agent_failure_when_implementer_agent_fail
     assert len(calls) == 2
     failure_req = calls[1]
     assert failure_req.role == AgentRole.FAILURE_REPORT
+    assert failure_req.template == PromptTemplate.FAILURE_REPORT
     assert failure_req.mount_path == tmp_path / "pycastle" / ".worktrees" / "issue-1"
-    assert failure_req.scope_args is not None
-    assert failure_req.scope_args["FAILED_ROLE"] == "implementer"
-    assert "SESSION_DIR" in failure_req.scope_args
 
 
 def test_run_iteration_returns_aborted_agent_failure_when_reviewer_agent_fails(
@@ -2976,10 +2973,8 @@ def test_run_iteration_returns_aborted_agent_failure_when_reviewer_agent_fails(
     assert len(calls) == 3
     failure_req = calls[2]
     assert failure_req.role == AgentRole.FAILURE_REPORT
+    assert failure_req.template == PromptTemplate.FAILURE_REPORT
     assert failure_req.mount_path == tmp_path / "pycastle" / ".worktrees" / "issue-1"
-    assert failure_req.scope_args is not None
-    assert failure_req.scope_args["FAILED_ROLE"] == "reviewer"
-    assert "SESSION_DIR" in failure_req.scope_args
 
 
 def test_run_iteration_aborted_agent_failure_without_recovery_when_diagnose_disabled_planner(

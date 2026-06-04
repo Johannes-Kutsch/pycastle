@@ -6,6 +6,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 import pytest
 
 from pycastle.agents.output_protocol import (
+    AgentRole,
     CommitMessageOutput,
     CompletionOutput,
     PromiseParseError,
@@ -13,6 +14,7 @@ from pycastle.agents.output_protocol import (
 from pycastle.agents.runner import RunRequest
 from pycastle.config import Config
 from pycastle.infrastructure.worktree import worktree_name_for_branch
+from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitCommandError, GitService
 from pycastle.services import GithubAPIError, GithubService
 from tests.support import (
@@ -162,10 +164,15 @@ def test_conflict_spawns_merger_with_active_conflict_branch_first(
     _run(issues, deps)
 
     merger_calls = [c for c in agent_runner.calls if c.name == "Merge Agent"]
-    assert [call.scope_args["BRANCHES"] for call in merger_calls] == [
-        "- pycastle/issue-1\n- pycastle/issue-2\n- pycastle/issue-3",
-        "- pycastle/issue-2\n- pycastle/issue-1\n- pycastle/issue-3",
-        "- pycastle/issue-3\n- pycastle/issue-1\n- pycastle/issue-2",
+    assert [(call.role, call.template, call.stage) for call in merger_calls] == [
+        (AgentRole.MERGER, PromptTemplate.MERGE, "pre-merge"),
+        (AgentRole.MERGER, PromptTemplate.MERGE, "pre-merge"),
+        (AgentRole.MERGER, PromptTemplate.MERGE, "pre-merge"),
+    ]
+    assert [call.scope_args["BRANCHES"].splitlines()[0] for call in merger_calls] == [
+        "- pycastle/issue-1",
+        "- pycastle/issue-2",
+        "- pycastle/issue-3",
     ]
 
 
@@ -550,13 +557,15 @@ def test_conflict_recovery_leaves_other_branch_preserved_sandbox_untouched(
     assert preserved_path not in touched_paths
 
 
-def test_merger_does_not_receive_issues_prompt_arg(deps, git_svc, agent_runner):
+def test_merger_dispatch_uses_merge_template_and_role(deps, git_svc, agent_runner):
     git_svc.try_merge.return_value = False
     issues = [{"number": 3, "title": "Conflict"}]
     _run(issues, deps)
     merger_calls = [c for c in agent_runner.calls if c.name == "Merge Agent"]
     assert len(merger_calls) == 1
-    assert "ISSUES" not in merger_calls[0].scope_args
+    assert merger_calls[0].template == PromptTemplate.MERGE
+    assert merger_calls[0].role == AgentRole.MERGER
+    assert merger_calls[0].stage == "pre-merge"
 
 
 # ── Branch deletion edge cases ────────────────────────────────────────────────

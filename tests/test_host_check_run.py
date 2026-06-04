@@ -7,11 +7,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+from pycastle.agents.output_protocol import AgentRole
 from pycastle.commands.host_check_run import (
     HostCheckRunPassed,
     prepare_host_check_run,
 )
 from pycastle.config import StageOverride
+from pycastle.prompts.pipeline import PromptTemplate
 from tests.support import FakeAgentRunner, RecordingStatusDisplay
 
 
@@ -153,8 +155,9 @@ def test_run_host_check_command_builds_default_issue_filing_deps_when_host_check
     assert runner_requests[0].service == cfg.preflight_issue_override.service
     assert runner_requests[0].model == cfg.preflight_issue_override.model
     assert runner_requests[0].effort == cfg.preflight_issue_override.effort
-    assert runner_requests[0].scope_args["CHECK_NAME"] == check_name
-    assert runner_requests[0].scope_args["CHECKED_SHA"] == "checked-sha"
+    assert runner_requests[0].template == PromptTemplate.HOST_CHECK_ISSUE
+    assert runner_requests[0].role == AgentRole.PREFLIGHT_ISSUE
+    assert runner_requests[0].work_body == f"reporting {check_name} host-check issue"
 
 
 def test_run_host_check_command_uses_service_registry_for_reporter_override(
@@ -686,26 +689,12 @@ def test_run_host_check_run_files_and_validates_one_issue_per_failed_check_in_or
         PromptTemplate.HOST_CHECK_ISSUE,
         PromptTemplate.HOST_CHECK_ISSUE,
     ]
-    assert [call.scope_args["CHECK_NAME"] for call in agent_runner.calls] == [
-        "lint",
-        "tests",
+    assert [call.role for call in agent_runner.calls] == [
+        AgentRole.PREFLIGHT_ISSUE,
+        AgentRole.PREFLIGHT_ISSUE,
     ]
-    assert [call.scope_args["COMMAND"] for call in agent_runner.calls] == [
-        "python -c lint",
-        "python -c tests",
+    assert [call.work_body for call in agent_runner.calls] == [
+        "reporting lint host-check issue",
+        "reporting tests host-check issue",
     ]
-    assert [call.scope_args["OUTPUT"] for call in agent_runner.calls] == [
-        "lint stdout\nlint stderr",
-        "tests stdout\ntests stderr",
-    ]
-    assert all(
-        call.scope_args["CHECKED_SHA"] == "checked-sha" for call in agent_runner.calls
-    )
-    assert all(
-        call.scope_args["HOST_OS"] == platform.system() for call in agent_runner.calls
-    )
-    assert all(
-        call.scope_args["HOST_PLATFORM"] == platform.platform()
-        for call in agent_runner.calls
-    )
     github_svc.get_issue.assert_called_once_with(42)

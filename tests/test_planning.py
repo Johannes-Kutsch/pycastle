@@ -4,11 +4,13 @@ import pytest
 from unittest.mock import MagicMock
 
 from pycastle.agents.output_protocol import (
+    AgentRole,
     CompletionOutput,
     PlanParseError,
     PlannerOutput,
 )
 from pycastle.config import Config, StageOverride
+from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitService
 from tests.support import (
     FakeAgentRunner,
@@ -235,11 +237,7 @@ def test_planning_phase_returns_plan_ready_with_issues_sorted_by_number(
     assert [i["number"] for i in result.issues] == [1, 2, 3]
 
 
-def test_planning_phase_passes_ready_for_agent_issues_as_json_to_planner(
-    tmp_path, git_svc
-):
-    import json
-
+def test_planning_phase_dispatches_plan_template_to_planner(tmp_path, git_svc):
     issues = [
         {
             "number": 2,
@@ -261,12 +259,12 @@ def test_planning_phase_passes_ready_for_agent_issues_as_json_to_planner(
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     asyncio.run(planning_phase(deps, issues, []))
 
-    assert fake.calls[0].scope_args["READY_FOR_AGENT_ISSUES_JSON"] == json.dumps(issues)
+    assert fake.calls[0].template == PromptTemplate.PLAN
+    assert fake.calls[0].role == AgentRole.PLANNER
+    assert fake.calls[0].stage == "plan-sandbox"
 
 
-def test_planning_phase_passes_all_open_issues_as_json_to_planner(tmp_path, git_svc):
-    import json
-
+def test_planning_phase_sets_plan_work_body_from_candidate_count(tmp_path, git_svc):
     issues = [
         {
             "number": 1,
@@ -292,7 +290,7 @@ def test_planning_phase_passes_all_open_issues_as_json_to_planner(tmp_path, git_
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     asyncio.run(planning_phase(deps, issues, all_open))
 
-    assert fake.calls[0].scope_args["ALL_OPEN_ISSUES_JSON"] == json.dumps(all_open)
+    assert fake.calls[0].work_body == "Creating Plan from 2 issues"
 
 
 def test_planning_phase_uses_plan_override_service(tmp_path, git_svc):
@@ -319,6 +317,8 @@ def test_planning_phase_uses_plan_override_service(tmp_path, git_svc):
     asyncio.run(planning_phase(deps, issues, []))
 
     assert fake.calls[0].service == "codex"
+    assert fake.calls[0].model == cfg.plan_override.model
+    assert fake.calls[0].effort == cfg.plan_override.effort
 
 
 # ── planning_phase: worktree lifecycle ──────────────────────────────────────
@@ -796,38 +796,6 @@ def test_config_needs_slice_type_label_defaults_to_needs_slice_type():
     assert Config().needs_slice_type_label == "needs-slice-type"
 
 
-def test_planning_phase_all_open_issues_json_unaffected_by_partition(tmp_path, git_svc):
-    import json
-
-    well1 = {
-        "number": 1,
-        "title": "A",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    well2 = {
-        "number": 2,
-        "title": "B",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["refactor-slice"],
-    }
-    malformed = {"number": 3, "title": "C", "body": "", "comments": [], "labels": []}
-    all_open = [
-        {"number": 1, "title": "A", "labels": ["ready-for-agent", "behavior-slice"]},
-        {"number": 2, "title": "B", "labels": ["ready-for-agent", "refactor-slice"]},
-        {"number": 3, "title": "C", "labels": ["ready-for-agent"]},
-        {"number": 4, "title": "D", "labels": ["ready-for-human"]},
-    ]
-    fake = FakeAgentRunner([_plan_output([well1, well2])])
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
-    asyncio.run(planning_phase(deps, [well1, well2, malformed], all_open))
-
-    assert fake.calls[0].scope_args["ALL_OPEN_ISSUES_JSON"] == json.dumps(all_open)
-
-
 def test_planning_phase_adds_label_and_comment_for_malformed_without_flag(
     tmp_path, git_svc
 ):
@@ -890,40 +858,6 @@ def test_planning_phase_removes_stale_flag_from_well_formed_issue(tmp_path, git_
     github_svc.post_comment.assert_not_called()
 
 
-def test_planning_phase_filters_malformed_from_ready_for_agent_json(tmp_path, git_svc):
-    import json
-
-    well1 = {
-        "number": 1,
-        "title": "A",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["ready-for-agent", "behavior-slice"],
-    }
-    well2 = {
-        "number": 2,
-        "title": "B",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["ready-for-agent", "refactor-slice"],
-    }
-    malformed = {
-        "number": 3,
-        "title": "C",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["ready-for-agent"],
-    }
-    fake = FakeAgentRunner([_plan_output([well1, well2])])
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
-    asyncio.run(planning_phase(deps, [well1, well2, malformed], []))
-
-    assert fake.calls[0].scope_args["READY_FOR_AGENT_ISSUES_JSON"] == json.dumps(
-        [well1, well2]
-    )
-
-
 # ── planning_phase: needs-info body lifecycle ────────────────────────────────
 
 
@@ -958,42 +892,6 @@ def test_planning_phase_adds_needs_info_label_and_comment_for_short_body(
     comment_body = github_svc.post_comment.call_args[0][1]
     assert "too short" in comment_body
     assert "needs-info" in comment_body
-
-
-def test_planning_phase_excludes_short_body_issues_from_candidate_set(
-    tmp_path, git_svc
-):
-    import json
-
-    well1 = {
-        "number": 1,
-        "title": "A",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    well2 = {
-        "number": 3,
-        "title": "C",
-        "body": "x" * 100,
-        "comments": [],
-        "labels": ["refactor-slice"],
-    }
-    short_body = {
-        "number": 2,
-        "title": "B",
-        "body": "short",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    fake = FakeAgentRunner([_plan_output([well1, well2])])
-
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
-    asyncio.run(planning_phase(deps, [well1, short_body, well2], []))
-
-    assert fake.calls[0].scope_args["READY_FOR_AGENT_ISSUES_JSON"] == json.dumps(
-        [well1, well2]
-    )
 
 
 def test_planning_phase_single_issue_with_short_body_excluded_from_short_circuit(
