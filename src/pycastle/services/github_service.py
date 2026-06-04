@@ -328,7 +328,9 @@ class GithubService:
         return [
             int(item["number"])
             for item in self._get_all_sub_issues(number)
-            if item.get("state") == "open" and "number" in item
+            if item.get("state") == "open"
+            and "number" in item
+            and int(item["number"]) not in self._recently_closed
         ]
 
     def add_sub_issue(self, parent_number: int, child_number: int) -> None:
