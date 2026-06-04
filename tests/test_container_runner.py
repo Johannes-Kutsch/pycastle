@@ -327,6 +327,8 @@ def test_work_executes_selected_service_command(tmp_path):
     runner = ContainerRunner(
         "agent",
         cast(DockerSession, session),
+        model="demo-model",
+        effort="high",
         cfg=Config(logs_dir=tmp_path),
         service=cast(ClaudeService, service),
     )
@@ -339,8 +341,8 @@ def test_work_executes_selected_service_command(tmp_path):
     assert service.build_command_calls == [
         {
             "role": _ROLE,
-            "model": "",
-            "effort": "",
+            "model": "demo-model",
+            "effort": "high",
             "run_kind": RunKind.RESUME,
             "session_uuid": "s1",
         }
@@ -423,6 +425,15 @@ def test_work_cleans_up_prompt_file_when_stream_processing_fails(tmp_path):
     runner, _ = _make_runner(session=session, tmp_path=tmp_path)
     with pytest.raises(UsageLimitError):
         asyncio.run(runner.work(_ROLE, "prompt"))
+    assert session.exec_calls[-1] == "rm -f /tmp/.pycastle_prompt"
+
+
+def test_work_cleans_up_prompt_file_after_success(tmp_path):
+    runner, session = _make_runner(tmp_path=tmp_path)
+
+    result = asyncio.run(runner.work(_ROLE, "prompt"))
+
+    assert isinstance(result, CommitMessageOutput)
     assert session.exec_calls[-1] == "rm -f /tmp/.pycastle_prompt"
 
 
