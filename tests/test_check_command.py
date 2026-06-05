@@ -18,9 +18,7 @@ def test_check_keeps_adr_0036_terminal_ordering_contract(tmp_path, monkeypatch):
         status_display.remove("Host Check")
         return HostCheckRunPassed(checked_sha="checked-sha")
 
-    monkeypatch.setattr(
-        check_mod, "run_host_check_command", fake_run_host_check_command
-    )
+    monkeypatch.setattr(check_mod, "run_host_check_loop", fake_run_host_check_command)
     monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(cli, ["check"])
 
@@ -38,9 +36,7 @@ def test_check_prints_passed_summary_from_host_check_command(
     async def fake_run_host_check_command(**kwargs):
         return HostCheckRunPassed(checked_sha="checked-sha")
 
-    monkeypatch.setattr(
-        check_mod, "run_host_check_command", fake_run_host_check_command
-    )
+    monkeypatch.setattr(check_mod, "run_host_check_loop", fake_run_host_check_command)
     monkeypatch.chdir(tmp_path)
 
     check_mod.main(cfg=Config())
@@ -63,7 +59,7 @@ def test_check_prints_host_check_issue_summary_after_failed_run(
             issue_numbers=(41, 42),
         )
 
-    monkeypatch.setattr(check_mod, "run_host_check_command", fake_run_host_check_run)
+    monkeypatch.setattr(check_mod, "run_host_check_loop", fake_run_host_check_run)
     monkeypatch.chdir(tmp_path)
 
     check_mod.main(cfg=Config())
@@ -77,7 +73,7 @@ def test_check_reports_the_checked_sha_from_run_module(tmp_path, monkeypatch, ca
     async def fake_run_host_check_run(**kwargs):
         return HostCheckRunPassed(checked_sha="checked-sha")
 
-    monkeypatch.setattr(check_mod, "run_host_check_command", fake_run_host_check_run)
+    monkeypatch.setattr(check_mod, "run_host_check_loop", fake_run_host_check_run)
     monkeypatch.chdir(tmp_path)
 
     check_mod.main(cfg=Config())
@@ -95,7 +91,7 @@ def test_check_propagates_host_check_run_failures_without_extra_summary(
     async def fake_run_host_check_run(**kwargs):
         raise RuntimeError("Working tree must be clean before running host checks.")
 
-    monkeypatch.setattr(check_mod, "run_host_check_command", fake_run_host_check_run)
+    monkeypatch.setattr(check_mod, "run_host_check_loop", fake_run_host_check_run)
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(

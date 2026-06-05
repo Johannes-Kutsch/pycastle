@@ -129,7 +129,9 @@ def _preserve_host_check_context(
     )
 
 
-def _run_host_check(name: str, command: str, cwd: Path) -> HostCheckCommandResult:
+def run_host_check_subprocess(
+    name: str, command: str, cwd: Path
+) -> HostCheckCommandResult:
     result = subprocess.run(
         command,
         cwd=cwd,
@@ -143,6 +145,9 @@ def _run_host_check(name: str, command: str, cwd: Path) -> HostCheckCommandResul
         returncode=result.returncode,
         output=result.stdout + result.stderr,
     )
+
+
+_run_host_check = run_host_check_subprocess
 
 
 def prepare_host_check_run(
@@ -225,6 +230,40 @@ async def _file_host_check_issue(
     return agent_result.number
 
 
+def create_host_check_issue_filer(
+    *,
+    cfg: Config,
+    github_svc: GithubService,
+    agent_runner: AgentRunnerProtocol,
+    status_display: StatusDisplay,
+    reporter_override: StageOverride | None,
+) -> HostCheckIssueFiler:
+    async def file_issue_for_failure(
+        payload: HostCheckIssuePayload, mount_path: Path
+    ) -> int:
+        try:
+            return await _file_host_check_issue(
+                payload=payload,
+                mount_path=mount_path,
+                cfg=cfg,
+                github_svc=github_svc,
+                agent_runner=agent_runner,
+                status_display=status_display,
+                reporter_override=reporter_override,
+            )
+        except SetupPhaseError as exc:
+            raise _preserve_host_check_context(
+                exc,
+                HostCheckFailure(
+                    name=payload.check_name,
+                    command=payload.command,
+                    output=payload.output,
+                ),
+            ) from exc
+
+    return file_issue_for_failure
+
+
 async def run_host_check_command(
     *,
     cfg: Config,
@@ -294,29 +333,13 @@ async def run_host_check_run(
         and agent_runner is not None
         and status_display is not None
     ):
-
-        async def file_issue_for_failure(
-            payload: HostCheckIssuePayload, mount_path: Path
-        ) -> int:
-            try:
-                return await _file_host_check_issue(
-                    payload=payload,
-                    mount_path=mount_path,
-                    cfg=cfg,
-                    github_svc=github_svc,
-                    agent_runner=agent_runner,
-                    status_display=status_display,
-                    reporter_override=reporter_override,
-                )
-            except SetupPhaseError as exc:
-                raise _preserve_host_check_context(
-                    exc,
-                    HostCheckFailure(
-                        name=payload.check_name,
-                        command=payload.command,
-                        output=payload.output,
-                    ),
-                ) from exc
+        file_issue_for_failure = create_host_check_issue_filer(
+            cfg=cfg,
+            github_svc=github_svc,
+            agent_runner=agent_runner,
+            status_display=status_display,
+            reporter_override=reporter_override,
+        )
     elif issue_deps_factory is not None:
         resolved_issue_deps: HostCheckIssueDeps | None = None
 
@@ -330,25 +353,13 @@ async def run_host_check_run(
             payload: HostCheckIssuePayload, mount_path: Path
         ) -> int:
             issue_deps = get_issue_deps()
-            try:
-                return await _file_host_check_issue(
-                    payload=payload,
-                    mount_path=mount_path,
-                    cfg=issue_deps.cfg,
-                    github_svc=issue_deps.github_svc,
-                    agent_runner=issue_deps.agent_runner,
-                    status_display=issue_deps.status_display,
-                    reporter_override=issue_deps.reporter_override,
-                )
-            except SetupPhaseError as exc:
-                raise _preserve_host_check_context(
-                    exc,
-                    HostCheckFailure(
-                        name=payload.check_name,
-                        command=payload.command,
-                        output=payload.output,
-                    ),
-                ) from exc
+            return await create_host_check_issue_filer(
+                cfg=issue_deps.cfg,
+                github_svc=issue_deps.github_svc,
+                agent_runner=issue_deps.agent_runner,
+                status_display=issue_deps.status_display,
+                reporter_override=issue_deps.reporter_override,
+            )(payload, mount_path)
 
     return await run_host_check_loop(
         host_checks=host_checks,
