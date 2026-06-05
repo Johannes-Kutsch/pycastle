@@ -1150,6 +1150,56 @@ def test_run_host_check_run_raises_when_filed_afk_issue_labels_are_missing(tmp_p
         )
 
 
+def test_run_host_check_run_raises_when_filed_afk_issue_has_multiple_slice_mode_labels(
+    tmp_path,
+):
+    from pycastle.agents.output_protocol import IssueOutput
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        raise run_mod.HostCheckFailedError(
+            name=name,
+            command=command,
+            output=f"{name} stdout\n{name} stderr",
+        )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    agent_runner = FakeAgentRunner(
+        [IssueOutput(number=41, labels=["bug", "behavior-slice", "ready-for-agent"])]
+    )
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {
+        "body": "x" * 100,
+        "labels": ["behavior-slice", "docs-slice"],
+    }
+
+    with pytest.raises(RuntimeError, match="Host-Check Reporter filed issue #41"):
+        asyncio.run(
+            run_mod.run_host_check_run(
+                host_checks=(("lint", "python -c lint"),),
+                git_svc=git_svc,
+                repo_root=tmp_path,
+                cfg=Config(),
+                github_svc=github_svc,
+                agent_runner=agent_runner,
+                status_display=MagicMock(),
+                run_host_check=fake_run_host_check,
+                transient_worktree_factory=lambda *args, **kwargs: _TransientWorktree(),
+            )
+        )
+
+
 def test_run_host_check_run_raises_when_filed_afk_issue_body_is_too_short(tmp_path):
     from pycastle.agents.output_protocol import IssueOutput
     from pycastle.commands import host_check_run as run_mod
