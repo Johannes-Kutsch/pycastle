@@ -890,6 +890,12 @@ def test_run_host_check_run_surfaces_each_failed_host_check_before_host_check_re
     assert out.index("[Host Check] failed tests") < out.index(
         "[Host-Check Reporter] started"
     )
+    assert out.index("[Host Check] failed lint") < out.rindex(
+        "[Host Check] failed lint"
+    )
+    assert out.rindex("[Host Check] failed lint") < out.index(
+        "[Host-Check Reporter] started"
+    )
     assert out.index("[Host Check] format") < out.index("[Host-Check Reporter] started")
 
 

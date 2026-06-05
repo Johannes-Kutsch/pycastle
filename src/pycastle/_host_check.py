@@ -171,7 +171,47 @@ async def run_host_check_loop(
         repo_root: Path
         git_svc: HostCheckGitAdapter
 
-    async def _run_checks() -> HostCheckVerdict:
+    def _run_configured_host_checks(path: Path) -> list[HostCheckFailure]:
+        failures: list[HostCheckFailure] = []
+        for name, command in host_checks:
+            if status_display is not None:
+                _surface_current_host_check(status_display, name)
+            if on_check_start is not None:
+                on_check_start(name)
+            try:
+                command_result = run_host_check(name, command, path)
+            except RuntimeError as exc:
+                failures.append(_failure_from_exception(name, command, exc))
+                continue
+            if _is_failed_command_result(command_result):
+                assert command_result is not None
+                failures.append(_failure_from_command_result(command_result))
+        if failures and status_display is not None:
+            _surface_failed_host_checks(status_display, failures)
+        return failures
+
+    async def _verdict_for_failures(
+        *, checked_sha: str, path: Path, failures: list[HostCheckFailure]
+    ) -> HostCheckVerdict:
+        if not failures:
+            return HostCheckPassedVerdict(checked_sha=checked_sha)
+        if on_failures_detected is not None:
+            on_failures_detected(failures)
+        issue_numbers: tuple[int, ...] = ()
+        if file_issue_for_failure is not None:
+            issue_numbers = tuple(
+                [
+                    await file_issue_for_failure(failure, path, checked_sha)
+                    for failure in failures
+                ]
+            )
+        return HostCheckIssueFiledVerdict(
+            checked_sha=checked_sha,
+            failures=tuple(failures),
+            issue_numbers=issue_numbers,
+        )
+
+    if status_display is None:
         checked_sha = prepare_host_check_loop(
             git_svc=git_svc, repo_root=resolved_repo_root
         )
@@ -179,42 +219,10 @@ async def run_host_check_loop(
         async with transient_worktree_factory(
             f"host-check-{checked_sha[:7]}", sha=checked_sha, deps=deps
         ) as path:
-            failures: list[HostCheckFailure] = []
-            for name, command in host_checks:
-                if status_display is not None:
-                    _surface_current_host_check(status_display, name)
-                if on_check_start is not None:
-                    on_check_start(name)
-                try:
-                    command_result = run_host_check(name, command, path)
-                except RuntimeError as exc:
-                    failures.append(_failure_from_exception(name, command, exc))
-                    continue
-                if _is_failed_command_result(command_result):
-                    assert command_result is not None
-                    failures.append(_failure_from_command_result(command_result))
-            if not failures:
-                return HostCheckPassedVerdict(checked_sha=checked_sha)
-            if status_display is not None:
-                _surface_failed_host_checks(status_display, failures)
-            if on_failures_detected is not None:
-                on_failures_detected(failures)
-            issue_numbers: tuple[int, ...] = ()
-            if file_issue_for_failure is not None:
-                issue_numbers = tuple(
-                    [
-                        await file_issue_for_failure(failure, path, checked_sha)
-                        for failure in failures
-                    ]
-                )
-            return HostCheckIssueFiledVerdict(
-                checked_sha=checked_sha,
-                failures=tuple(failures),
-                issue_numbers=issue_numbers,
+            failures = _run_configured_host_checks(path)
+            return await _verdict_for_failures(
+                checked_sha=checked_sha, path=path, failures=failures
             )
-
-    if status_display is None:
-        return await _run_checks()
 
     async with status_row(
         status_display,
@@ -222,9 +230,18 @@ async def run_host_check_loop(
         kind="phase",
         must_close=True,
     ) as row:
-        outcome = await _run_checks()
-        if isinstance(outcome, HostCheckPassedVerdict):
-            row.close("finished")
-            return outcome
-        row.close(f"failed {outcome.failures[0].name}", shutdown_style="error")
-        return outcome
+        checked_sha = prepare_host_check_loop(
+            git_svc=git_svc, repo_root=resolved_repo_root
+        )
+        deps = _CheckDeps(repo_root=resolved_repo_root, git_svc=git_svc)
+        async with transient_worktree_factory(
+            f"host-check-{checked_sha[:7]}", sha=checked_sha, deps=deps
+        ) as path:
+            failures = _run_configured_host_checks(path)
+            if not failures:
+                row.close("finished")
+            else:
+                row.close(f"failed {failures[0].name}", shutdown_style="error")
+            return await _verdict_for_failures(
+                checked_sha=checked_sha, path=path, failures=failures
+            )

@@ -2,7 +2,13 @@ import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from pycastle._host_check import HostCheckPassedVerdict, run_host_check_loop
+from pycastle._host_check import (
+    HostCheckFailedError,
+    HostCheckFailure,
+    HostCheckIssueFiledVerdict,
+    HostCheckPassedVerdict,
+    run_host_check_loop,
+)
 from tests.support import RecordingStatusDisplay
 
 
@@ -65,3 +71,70 @@ def test_run_host_check_loop_surfaces_aggregate_phase_row_before_returning_verdi
     ]
     assert ("host-check", "tests", "python -c tests", tmp_path) in events
     assert display.calls[-1] == ("remove", "Host Check", "finished", "success")
+
+
+def test_run_host_check_loop_closes_host_check_row_before_issue_filing_starts(
+    tmp_path: Path,
+) -> None:
+    events: list[tuple[object, ...]] = []
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "abc123def456"
+
+    class _RecordingDisplay(RecordingStatusDisplay):
+        def remove(
+            self,
+            caller: str,
+            shutdown_message: str = "finished",
+            shutdown_style: str = "success",
+        ) -> None:
+            events.append(("remove", caller, shutdown_message, shutdown_style))
+            super().remove(caller, shutdown_message, shutdown_style)
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            events.append(("worktree-enter",))
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            events.append(("worktree-exit",))
+            return None
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        raise HostCheckFailedError(name=name, command=command, output="tests broke")
+
+    async def fake_file_issue(
+        failure: HostCheckFailure, mount_path: Path, checked_sha: str
+    ) -> int:
+        events.append(("file-issue", failure.name, mount_path, checked_sha))
+        return 41
+
+    result = asyncio.run(
+        run_host_check_loop(
+            host_checks=(("tests", "python -c tests"),),
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            status_display=_RecordingDisplay(),
+            run_host_check=fake_run_host_check,
+            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            file_issue_for_failure=fake_file_issue,
+        )
+    )
+
+    assert result == HostCheckIssueFiledVerdict(
+        checked_sha="abc123def456",
+        failures=(
+            HostCheckFailure(
+                name="tests",
+                command="python -c tests",
+                output="tests broke",
+            ),
+        ),
+        issue_numbers=(41,),
+    )
+    assert events == [
+        ("worktree-enter",),
+        ("remove", "Host Check", "failed tests", "error"),
+        ("file-issue", "tests", tmp_path, "abc123def456"),
+        ("worktree-exit",),
+    ]
