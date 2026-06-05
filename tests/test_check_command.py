@@ -1,10 +1,9 @@
+import inspect
 import platform
 
 import pytest
 from click.testing import CliRunner
 
-from pycastle._host_check import HostCheckIssuePayload
-from pycastle.agents.output_protocol import IssueOutput
 from pycastle.commands.host_check_run import HostCheckRunFailed, HostCheckRunPassed
 from pycastle.config import Config
 
@@ -20,7 +19,9 @@ def test_check_keeps_adr_0036_terminal_ordering_contract(tmp_path, monkeypatch):
         status_display.remove("Host Check")
         return HostCheckRunPassed(checked_sha="checked-sha")
 
-    monkeypatch.setattr(check_mod, "run_host_check_loop", fake_run_host_check_command)
+    monkeypatch.setattr(
+        check_mod, "run_host_check_command", fake_run_host_check_command
+    )
     monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(cli, ["check"])
 
@@ -38,7 +39,9 @@ def test_check_prints_passed_summary_from_host_check_command(
     async def fake_run_host_check_command(**kwargs):
         return HostCheckRunPassed(checked_sha="checked-sha")
 
-    monkeypatch.setattr(check_mod, "run_host_check_loop", fake_run_host_check_command)
+    monkeypatch.setattr(
+        check_mod, "run_host_check_command", fake_run_host_check_command
+    )
     monkeypatch.chdir(tmp_path)
 
     check_mod.main(cfg=Config())
@@ -61,7 +64,7 @@ def test_check_prints_host_check_issue_summary_after_failed_run(
             issue_numbers=(41, 42),
         )
 
-    monkeypatch.setattr(check_mod, "run_host_check_loop", fake_run_host_check_run)
+    monkeypatch.setattr(check_mod, "run_host_check_command", fake_run_host_check_run)
     monkeypatch.chdir(tmp_path)
 
     check_mod.main(cfg=Config())
@@ -75,7 +78,7 @@ def test_check_reports_the_checked_sha_from_run_module(tmp_path, monkeypatch, ca
     async def fake_run_host_check_run(**kwargs):
         return HostCheckRunPassed(checked_sha="checked-sha")
 
-    monkeypatch.setattr(check_mod, "run_host_check_loop", fake_run_host_check_run)
+    monkeypatch.setattr(check_mod, "run_host_check_command", fake_run_host_check_run)
     monkeypatch.chdir(tmp_path)
 
     check_mod.main(cfg=Config())
@@ -93,7 +96,7 @@ def test_check_propagates_host_check_run_failures_without_extra_summary(
     async def fake_run_host_check_run(**kwargs):
         raise RuntimeError("Working tree must be clean before running host checks.")
 
-    monkeypatch.setattr(check_mod, "run_host_check_loop", fake_run_host_check_run)
+    monkeypatch.setattr(check_mod, "run_host_check_command", fake_run_host_check_run)
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(
@@ -104,59 +107,44 @@ def test_check_propagates_host_check_run_failures_without_extra_summary(
     assert capsys.readouterr().out == ""
 
 
-def test_check_uses_injected_issue_adapters_without_loading_credential_env(
-    tmp_path, monkeypatch, capsys
+def test_check_delegates_host_check_orchestration_to_run_module_adapter(
+    tmp_path, monkeypatch
 ):
     import pycastle.commands.check as check_mod
-    import pycastle.commands.host_check_run as host_check_run_mod
 
     cfg = Config()
-    github_service = type(
-        "_GithubService",
-        (),
-        {"get_issue": lambda self, number: {"labels": ["bug", "ready-for-human"]}},
-    )()
-    runner_requests: list[object] = []
+    github_service = object()
+    agent_runner = object()
+    service_registry = object()
+    recorded_kwargs: dict[str, object] = {}
 
-    class _AgentRunner:
-        async def run(self, request):
-            runner_requests.append(request)
-            return IssueOutput(number=41, labels=["bug", "ready-for-human"])
+    async def fake_run_host_check_command(**kwargs):
+        recorded_kwargs.update(kwargs)
+        return HostCheckRunPassed(checked_sha="checked-sha")
 
-    async def fake_run_host_check_loop(**kwargs):
-        issue_number = await kwargs["file_issue_for_failure"](
-            HostCheckIssuePayload(
-                host_os="Linux",
-                host_platform="Linux-6.0",
-                checked_sha="checked-sha",
-                check_name="tests",
-                command="pytest",
-                output="tests broke",
-            ),
-            tmp_path,
-        )
-        return HostCheckRunFailed(
-            checked_sha="checked-sha",
-            failures=(),
-            issue_numbers=(issue_number,),
-        )
-
-    monkeypatch.setattr(check_mod, "run_host_check_loop", fake_run_host_check_loop)
     monkeypatch.setattr(
-        host_check_run_mod,
-        "load_credential_env",
-        lambda **kwargs: pytest.fail("load_credential_env should not be called"),
+        check_mod, "run_host_check_command", fake_run_host_check_command
     )
     monkeypatch.chdir(tmp_path)
 
     check_mod.main(
         cfg=cfg,
         github_service=github_service,
-        agent_runner=_AgentRunner(),
+        agent_runner=agent_runner,
+        service_registry=service_registry,
     )
 
-    assert capsys.readouterr().out == "Host checks filed or updated issues: #41\n"
-    assert len(runner_requests) == 1
-    assert runner_requests[0].service == cfg.preflight_issue_override.service
-    assert runner_requests[0].model == cfg.preflight_issue_override.model
-    assert runner_requests[0].effort == cfg.preflight_issue_override.effort
+    assert recorded_kwargs == {
+        "cfg": cfg,
+        "git_svc": recorded_kwargs["git_svc"],
+        "repo_root": tmp_path.resolve(),
+        "github_svc": github_service,
+        "agent_runner": agent_runner,
+        "status_display": recorded_kwargs["status_display"],
+        "service_registry": service_registry,
+    }
+    assert inspect.getsource(check_mod).count("run_host_check_command") >= 1
+    assert "run_host_check_loop" not in inspect.getsource(check_mod)
+    assert "create_host_check_issue_filer" not in inspect.getsource(check_mod)
+    assert "resolve_host_check_issue_deps" not in inspect.getsource(check_mod)
+    assert "transient_worktree" not in inspect.getsource(check_mod)
