@@ -398,6 +398,115 @@ def test_run_host_check_command_preserves_raw_failed_command_diagnostic_payload(
     assert runner_requests[0].scope_args["OUTPUT"] == raw_output
 
 
+def test_run_host_check_command_uses_in_memory_reporter_adapters_with_exact_host_check_scope_args(
+    tmp_path, monkeypatch
+):
+    from pycastle.agents.output_protocol import IssueOutput
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+    cfg = Config(host_checks=(("pytest-host", "pytest tests/host"),))
+    status_display = RecordingStatusDisplay()
+    raw_output = "\nstdout line\nstderr line\n"
+
+    monkeypatch.setattr(
+        "pycastle._host_check.platform.system",
+        lambda: "HostOS",
+    )
+    monkeypatch.setattr(
+        "pycastle._host_check.platform.platform",
+        lambda: "HostOS-1.0",
+    )
+    monkeypatch.setattr(
+        run_mod,
+        "resolve_host_check_issue_deps",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("production host-check issue deps should not be resolved")
+        ),
+    )
+    original_build_host_check_scope_args = (
+        run_mod.prompt_scope_args.build_host_check_scope_args
+    )
+    captured_scope_kwargs: list[dict[str, str]] = []
+
+    def capture_host_check_scope_args(**kwargs):
+        captured_scope_kwargs.append(kwargs)
+        return original_build_host_check_scope_args(**kwargs)
+
+    monkeypatch.setattr(
+        run_mod.prompt_scope_args,
+        "build_host_check_scope_args",
+        capture_host_check_scope_args,
+    )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    agent_runner = FakeAgentRunner(
+        [IssueOutput(number=41, labels=["bug", "ready-for-human"])]
+    )
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {"body": "x" * 100}
+
+    result = asyncio.run(
+        run_mod.run_host_check_command(
+            cfg=cfg,
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            github_svc=github_svc,
+            agent_runner=agent_runner,
+            status_display=status_display,
+            run_host_check=lambda name, command, cwd: host_check_command_result(
+                name,
+                command,
+                returncode=1,
+                output=raw_output,
+            ),
+            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+        )
+    )
+
+    assert result == run_mod.HostCheckRunFailed(
+        checked_sha="checked-sha",
+        failures=(
+            run_mod.HostCheckFailure(
+                name="pytest-host",
+                command="pytest tests/host",
+                output=raw_output,
+            ),
+        ),
+        issue_numbers=(41,),
+    )
+    assert len(agent_runner.calls) == 1
+    assert agent_runner.calls[0].template == PromptTemplate.HOST_CHECK_ISSUE
+    assert agent_runner.calls[0].role == AgentRole.PREFLIGHT_ISSUE
+    assert captured_scope_kwargs == [
+        {
+            "checked_sha": "checked-sha",
+            "check_name": "pytest-host",
+            "command": "pytest tests/host",
+            "output": raw_output,
+            "host_os": "HostOS",
+            "host_platform": "HostOS-1.0",
+        }
+    ]
+    assert agent_runner.calls[0].scope_args == {
+        "HOST_OS": "HostOS",
+        "HOST_PLATFORM": "HostOS-1.0",
+        "CHECKED_SHA": "checked-sha",
+        "CHECK_NAME": "pytest-host",
+        "COMMAND": "pytest tests/host",
+        "OUTPUT": raw_output,
+    }
+
+
 def test_run_host_check_command_executes_configured_passing_check_through_module_seam_without_streaming_output(
     tmp_path, capsys
 ):

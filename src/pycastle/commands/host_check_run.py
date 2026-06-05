@@ -211,11 +211,18 @@ async def run_host_check_command(
 ) -> HostCheckRunOutcome:
     resolved_repo_root = repo_root or Path(".").resolve()
     resolved_status_display = status_display or PlainStatusDisplay()
+    resolved_reporter_override: StageOverride | None = None
+    if github_svc is not None and agent_runner is not None:
+        resolved_reporter_override = _resolve_reporter_override(cfg, service_registry)
     return await run_host_check_run(
         host_checks=cfg.host_checks,
         git_svc=git_svc,
         repo_root=resolved_repo_root,
+        cfg=cfg,
+        github_svc=github_svc,
+        agent_runner=agent_runner,
         status_display=resolved_status_display,
+        reporter_override=resolved_reporter_override,
         issue_deps_factory=lambda: resolve_host_check_issue_deps(
             cfg=cfg,
             git_svc=git_svc,
