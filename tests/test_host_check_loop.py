@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from pycastle._host_check import (
+    HostCheckCommandResult,
     HostCheckFailedError,
     HostCheckFailure,
     HostCheckIssueFiledVerdict,
@@ -210,6 +211,88 @@ def test_run_host_check_loop_collects_all_failed_commands_before_reporting_issue
                 name="typecheck",
                 command="mypy .",
                 output="typing broke",
+            ),
+        ),
+        issue_numbers=(41, 42),
+    )
+    assert events == [
+        ("host-check", "tests", "python -m pytest", tmp_path),
+        ("host-check", "lint", "ruff check .", tmp_path),
+        ("host-check", "typecheck", "mypy .", tmp_path),
+        ("print", "Host Check", "failed tests", "error"),
+        ("print", "Host Check", "failed typecheck", "error"),
+        ("file-issue", "tests", tmp_path, "abc123def456"),
+        ("file-issue", "typecheck", tmp_path, "abc123def456"),
+    ]
+
+
+def test_run_host_check_loop_collects_all_failed_command_results_before_reporting_issues(
+    tmp_path: Path,
+) -> None:
+    events: list[tuple[object, ...]] = []
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "abc123def456"
+
+    class _RecordingDisplay(RecordingStatusDisplay):
+        def print(self, caller: str, message: object, style: str | None = None) -> None:
+            events.append(("print", caller, message, style))
+            super().print(caller, message, style)
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_run_host_check(
+        name: str, command: str, cwd: Path
+    ) -> HostCheckCommandResult | None:
+        events.append(("host-check", name, command, cwd))
+        if name == "lint":
+            return None
+        return HostCheckCommandResult(
+            name=name,
+            command=command,
+            returncode=1,
+            output=f"{name} broke",
+        )
+
+    async def fake_file_issue(
+        failure: HostCheckFailure, mount_path: Path, checked_sha: str
+    ) -> int:
+        events.append(("file-issue", failure.name, mount_path, checked_sha))
+        return {"tests": 41, "typecheck": 42}[failure.name]
+
+    result = asyncio.run(
+        run_host_check_loop(
+            host_checks=(
+                ("tests", "python -m pytest"),
+                ("lint", "ruff check ."),
+                ("typecheck", "mypy ."),
+            ),
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            status_display=_RecordingDisplay(),
+            run_host_check=fake_run_host_check,
+            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            file_issue_for_failure=fake_file_issue,
+        )
+    )
+
+    assert result == HostCheckIssueFiledVerdict(
+        checked_sha="abc123def456",
+        failures=(
+            HostCheckFailure(
+                name="tests",
+                command="python -m pytest",
+                output="tests broke",
+            ),
+            HostCheckFailure(
+                name="typecheck",
+                command="mypy .",
+                output="typecheck broke",
             ),
         ),
         issue_numbers=(41, 42),
