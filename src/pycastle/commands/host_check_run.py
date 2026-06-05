@@ -3,17 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
-from typing import Callable, TypeAlias
+from typing import Callable, TypeAlias, cast
 
+from .. import _host_check as _host_check_module
 from .._host_check import (
     HostCheckCommandExecutor,
     HostCheckCommandResult,
-    HostCheckFailedError,
     HostCheckFailure,
     HostCheckIssueFiledVerdict,
+    HostCheckIssueFiler,
     HostCheckPassedVerdict,
     HostCheckVerdict,
     HostCheckWorktreeFactory,
+    prepare_host_check_loop,
+    run_host_check_loop,
 )
 from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
@@ -21,7 +24,6 @@ from ..config import Config, StageOverride, load_credential_env
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
 from ..errors import SetupPhaseError
 from ..infrastructure.worktree import transient_worktree
-from ..iteration import status_row
 from ..iteration.preflight import validate_issue_report
 from ..main import _configured_service_registry
 from ..prompts.pipeline import PromptTemplate
@@ -38,15 +40,10 @@ class HostCheckIssueDeps:
     reporter_override: StageOverride | None = None
 
 
+HostCheckFailedError = _host_check_module.HostCheckFailedError
 HostCheckRunPassed = HostCheckPassedVerdict
 HostCheckRunFailed = HostCheckIssueFiledVerdict
 HostCheckRunOutcome: TypeAlias = HostCheckVerdict
-
-
-@dataclass
-class _CheckDeps:
-    repo_root: Path
-    git_svc: GitService
 
 
 def _resolve_github_service(
@@ -119,19 +116,6 @@ def resolve_host_check_issue_deps(
     )
 
 
-def _surface_current_host_check(status_display: StatusDisplay, name: str) -> None:
-    status_display.update_phase("Host Check", name)
-    if isinstance(status_display, PlainStatusDisplay):
-        status_display.print("Host Check", name)
-
-
-def _surface_failed_host_checks(
-    status_display: StatusDisplay, failures: list[HostCheckFailure]
-) -> None:
-    for failure in failures:
-        status_display.print("Host Check", f"failed {failure.name}", style="error")
-
-
 def _preserve_host_check_context(
     exc: SetupPhaseError, failure: HostCheckFailure
 ) -> SetupPhaseError:
@@ -160,46 +144,10 @@ def _run_host_check(name: str, command: str, cwd: Path) -> HostCheckCommandResul
     )
 
 
-def _failure_from_command_result(
-    command_result: HostCheckCommandResult,
-) -> HostCheckFailure:
-    return HostCheckFailure(
-        name=command_result.name,
-        command=command_result.command,
-        output=command_result.output,
-    )
-
-
-def _failure_from_exception(
-    name: str, command: str, exc: RuntimeError
-) -> HostCheckFailure:
-    if isinstance(exc, HostCheckFailedError):
-        return HostCheckFailure(
-            name=exc.name,
-            command=exc.command,
-            output=exc.output,
-        )
-
-    text = str(exc)
-    prefix = f"Host check {name!r} failed: {command}"
-    output = text.removeprefix(prefix).lstrip("\n")
-    return HostCheckFailure(name=name, command=command, output=output)
-
-
-def _is_failed_command_result(
-    command_result: HostCheckCommandResult | None,
-) -> bool:
-    return command_result is not None and command_result.returncode != 0
-
-
 def prepare_host_check_run(
     *, git_svc: GitService, repo_root: Path | None = None
 ) -> str:
-    resolved_repo_root = repo_root or Path(".").resolve()
-    git_svc.pull_with_merge_fallback(resolved_repo_root)
-    if not git_svc.is_working_tree_clean(resolved_repo_root):
-        raise RuntimeError("Working tree must be clean before running host checks.")
-    return git_svc.get_head_sha(resolved_repo_root)
+    return prepare_host_check_loop(git_svc=git_svc, repo_root=repo_root)
 
 
 async def _file_host_check_issue(
@@ -298,96 +246,69 @@ async def run_host_check_run(
 ) -> HostCheckRunOutcome:
     resolved_repo_root = repo_root or Path(".").resolve()
     execute_host_check = run_host_check or _run_host_check
-    create_transient_worktree = transient_worktree_factory or transient_worktree
+    create_transient_worktree = cast(
+        HostCheckWorktreeFactory,
+        transient_worktree_factory or transient_worktree,
+    )
+    file_issue_for_failure: HostCheckIssueFiler | None = None
+    if (
+        cfg is not None
+        and github_svc is not None
+        and agent_runner is not None
+        and status_display is not None
+    ):
 
-    async def _run_checks() -> HostCheckRunOutcome:
-        checked_sha = prepare_host_check_run(
-            git_svc=git_svc, repo_root=resolved_repo_root
-        )
-        deps = _CheckDeps(repo_root=resolved_repo_root, git_svc=git_svc)
-        async with create_transient_worktree(
-            f"host-check-{checked_sha[:7]}", sha=checked_sha, deps=deps
-        ) as path:
-            failures: list[HostCheckFailure] = []
-            for name, command in host_checks:
-                if status_display is not None:
-                    _surface_current_host_check(status_display, name)
-                if on_check_start is not None:
-                    on_check_start(name)
-                try:
-                    command_result = execute_host_check(name, command, path)
-                except RuntimeError as exc:
-                    failures.append(_failure_from_exception(name, command, exc))
-                    continue
-                if _is_failed_command_result(command_result):
-                    assert command_result is not None
-                    failures.append(_failure_from_command_result(command_result))
-            if failures:
-                if status_display is not None:
-                    _surface_failed_host_checks(status_display, failures)
-                if on_failures_detected is not None:
-                    on_failures_detected(failures)
-                issue_numbers: tuple[int, ...] = ()
-                resolved_cfg = cfg
-                resolved_github_svc = github_svc
-                resolved_agent_runner = agent_runner
-                resolved_status_display = status_display
-                resolved_reporter_override = reporter_override
-                if issue_deps_factory is not None and (
-                    resolved_cfg is None
-                    or resolved_github_svc is None
-                    or resolved_agent_runner is None
-                    or resolved_status_display is None
-                ):
-                    issue_deps = issue_deps_factory()
-                    resolved_cfg = issue_deps.cfg
-                    resolved_github_svc = issue_deps.github_svc
-                    resolved_agent_runner = issue_deps.agent_runner
-                    resolved_status_display = issue_deps.status_display
-                    resolved_reporter_override = issue_deps.reporter_override
-                if (
-                    resolved_cfg is not None
-                    and resolved_github_svc is not None
-                    and resolved_agent_runner is not None
-                    and resolved_status_display is not None
-                ):
-                    filed_issue_numbers: list[int] = []
-                    for failure in failures:
-                        try:
-                            filed_issue_numbers.append(
-                                await _file_host_check_issue(
-                                    failure=failure,
-                                    mount_path=path,
-                                    sha=checked_sha,
-                                    cfg=resolved_cfg,
-                                    github_svc=resolved_github_svc,
-                                    agent_runner=resolved_agent_runner,
-                                    status_display=resolved_status_display,
-                                    reporter_override=resolved_reporter_override,
-                                )
-                            )
-                        except SetupPhaseError as exc:
-                            raise _preserve_host_check_context(exc, failure) from exc
-                    issue_numbers = tuple(filed_issue_numbers)
-                return HostCheckRunFailed(
-                    checked_sha=checked_sha,
-                    failures=tuple(failures),
-                    issue_numbers=issue_numbers,
+        async def file_issue_for_failure(
+            failure: HostCheckFailure, mount_path: Path, checked_sha: str
+        ) -> int:
+            try:
+                return await _file_host_check_issue(
+                    failure=failure,
+                    mount_path=mount_path,
+                    sha=checked_sha,
+                    cfg=cfg,
+                    github_svc=github_svc,
+                    agent_runner=agent_runner,
+                    status_display=status_display,
+                    reporter_override=reporter_override,
                 )
-            return HostCheckRunPassed(checked_sha=checked_sha)
+            except SetupPhaseError as exc:
+                raise _preserve_host_check_context(exc, failure) from exc
+    elif issue_deps_factory is not None:
+        resolved_issue_deps: HostCheckIssueDeps | None = None
 
-    if status_display is None:
-        return await _run_checks()
+        def get_issue_deps() -> HostCheckIssueDeps:
+            nonlocal resolved_issue_deps
+            if resolved_issue_deps is None:
+                resolved_issue_deps = issue_deps_factory()
+            return resolved_issue_deps
 
-    async with status_row(
-        status_display,
-        "Host Check",
-        kind="phase",
-        must_close=True,
-    ) as row:
-        outcome = await _run_checks()
-        if isinstance(outcome, HostCheckRunPassed):
-            row.close("finished")
-            return outcome
-        row.close(f"failed {outcome.failures[0].name}", shutdown_style="error")
-        return outcome
+        async def file_issue_for_failure(
+            failure: HostCheckFailure, mount_path: Path, checked_sha: str
+        ) -> int:
+            issue_deps = get_issue_deps()
+            try:
+                return await _file_host_check_issue(
+                    failure=failure,
+                    mount_path=mount_path,
+                    sha=checked_sha,
+                    cfg=issue_deps.cfg,
+                    github_svc=issue_deps.github_svc,
+                    agent_runner=issue_deps.agent_runner,
+                    status_display=issue_deps.status_display,
+                    reporter_override=issue_deps.reporter_override,
+                )
+            except SetupPhaseError as exc:
+                raise _preserve_host_check_context(exc, failure) from exc
+
+    return await run_host_check_loop(
+        host_checks=host_checks,
+        git_svc=git_svc,
+        repo_root=resolved_repo_root,
+        status_display=status_display,
+        on_check_start=on_check_start,
+        on_failures_detected=on_failures_detected,
+        run_host_check=execute_host_check,
+        transient_worktree_factory=create_transient_worktree,
+        file_issue_for_failure=file_issue_for_failure,
+    )
