@@ -25,7 +25,7 @@ from ..config import Config, StageOverride, load_credential_env
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
 from ..errors import SetupPhaseError
 from ..infrastructure.worktree import transient_worktree
-from ..iteration.preflight import validate_issue_report
+from ..issue_readiness import issue_readiness_error_for_issue, resolve_issue_readiness
 from ..main import _configured_service_registry
 from ..prompts.pipeline import PromptTemplate
 from ..prompts import scope_args as prompt_scope_args
@@ -151,6 +151,35 @@ def prepare_host_check_run(
     return prepare_host_check_loop(git_svc=git_svc, repo_root=repo_root)
 
 
+def _validate_host_check_issue_report(
+    *,
+    issue_output: IssueOutput,
+    cfg: Config,
+    github_svc: GithubService,
+) -> None:
+    reported_readiness = resolve_issue_readiness(
+        {"labels": list(issue_output.labels)}, cfg
+    )
+    if reported_readiness.is_hitl_exempt:
+        return
+
+    filed_issue = github_svc.get_issue(issue_output.number)
+    filed_labels = (
+        filed_issue["labels"] if "labels" in filed_issue else list(issue_output.labels)
+    )
+    readiness_error = issue_readiness_error_for_issue(
+        caller="Host-Check Reporter",
+        issue={
+            **filed_issue,
+            "number": issue_output.number,
+            "labels": filed_labels,
+        },
+        cfg=cfg,
+    )
+    if readiness_error is not None:
+        raise RuntimeError(readiness_error)
+
+
 async def _file_host_check_issue(
     *,
     payload: HostCheckIssuePayload,
@@ -185,11 +214,10 @@ async def _file_host_check_issue(
     )
     if not isinstance(agent_result, IssueOutput):
         raise RuntimeError(
-            "Host-check issue agent returned unexpected output type: "
+            "Host-Check Reporter returned non-issue output: "
             f"{type(agent_result).__name__}"
         )
-    validate_issue_report(
-        caller="Host-Check Reporter",
+    _validate_host_check_issue_report(
         issue_output=agent_result,
         cfg=cfg,
         github_svc=github_svc,

@@ -1148,3 +1148,159 @@ def test_run_host_check_run_raises_when_filed_afk_issue_labels_are_missing(tmp_p
                 transient_worktree_factory=lambda *args, **kwargs: _TransientWorktree(),
             )
         )
+
+
+def test_run_host_check_run_raises_when_filed_afk_issue_body_is_too_short(tmp_path):
+    from pycastle.agents.output_protocol import IssueOutput
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        raise run_mod.HostCheckFailedError(
+            name=name,
+            command=command,
+            output=f"{name} stdout\n{name} stderr",
+        )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    agent_runner = FakeAgentRunner(
+        [IssueOutput(number=41, labels=["bug", "behavior-slice", "ready-for-agent"])]
+    )
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {
+        "body": "short",
+        "labels": ["bug", "behavior-slice", "ready-for-agent"],
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match="Host-Check Reporter filed issue #41 whose body is below the minimum length floor",
+    ):
+        asyncio.run(
+            run_mod.run_host_check_run(
+                host_checks=(("lint", "python -c lint"),),
+                git_svc=git_svc,
+                repo_root=tmp_path,
+                cfg=Config(),
+                github_svc=github_svc,
+                agent_runner=agent_runner,
+                status_display=MagicMock(),
+                run_host_check=fake_run_host_check,
+                transient_worktree_factory=lambda *args, **kwargs: _TransientWorktree(),
+            )
+        )
+
+
+def test_run_host_check_run_raises_clear_error_when_reporter_output_is_not_issue_output(
+    tmp_path,
+):
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        raise run_mod.HostCheckFailedError(
+            name=name,
+            command=command,
+            output=f"{name} stdout\n{name} stderr",
+        )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _BadAgentRunner:
+        async def run(self, request):
+            return object()
+
+    with pytest.raises(
+        RuntimeError,
+        match="Host-Check Reporter returned non-issue output: object",
+    ):
+        asyncio.run(
+            run_mod.run_host_check_run(
+                host_checks=(("lint", "python -c lint"),),
+                git_svc=git_svc,
+                repo_root=tmp_path,
+                cfg=Config(),
+                github_svc=MagicMock(),
+                agent_runner=_BadAgentRunner(),
+                status_display=MagicMock(),
+                run_host_check=fake_run_host_check,
+                transient_worktree_factory=lambda *args, **kwargs: _TransientWorktree(),
+            )
+        )
+
+
+def test_run_host_check_run_accepts_hitl_issue_without_fetching_issue_body(tmp_path):
+    from pycastle.agents.output_protocol import IssueOutput
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        raise run_mod.HostCheckFailedError(
+            name=name,
+            command=command,
+            output=f"{name} stdout\n{name} stderr",
+        )
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    github_svc = MagicMock()
+    github_svc.get_issue.side_effect = AssertionError(
+        "HITL host-check issues must not be fetched"
+    )
+
+    result = asyncio.run(
+        run_mod.run_host_check_run(
+            host_checks=(("lint", "python -c lint"),),
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            cfg=Config(),
+            github_svc=github_svc,
+            agent_runner=FakeAgentRunner(
+                [IssueOutput(number=41, labels=["bug", "ready-for-human"])]
+            ),
+            status_display=MagicMock(),
+            run_host_check=fake_run_host_check,
+            transient_worktree_factory=lambda *args, **kwargs: _TransientWorktree(),
+        )
+    )
+
+    assert result == run_mod.HostCheckRunFailed(
+        checked_sha="checked-sha",
+        failures=(
+            run_mod.HostCheckFailure(
+                name="lint",
+                command="python -c lint",
+                output="lint stdout\nlint stderr",
+            ),
+        ),
+        issue_numbers=(41,),
+    )
+    github_svc.get_issue.assert_not_called()
