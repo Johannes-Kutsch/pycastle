@@ -6,22 +6,21 @@ import sys
 from pathlib import Path
 from typing import cast
 
-from .. import _time as _time_module
 from .._host_check import (
     HostCheckVerdict,
     HostCheckWorktreeFactory,
     run_host_check_loop,
 )
 from ..agents.runner import AgentRunnerProtocol
-from ..config import Config, load_config, load_credential_env
+from ..config import Config, load_config
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
 from ..infrastructure.worktree import transient_worktree
-from ..main import _configured_service_registry
 from ..services import GitService, GithubService, ServiceRegistry
 from . import host_check_run as _host_check_run
 from .host_check_run import (
     HostCheckRunPassed,
     create_host_check_issue_filer,
+    resolve_host_check_issue_deps,
     run_host_check_subprocess,
 )
 
@@ -99,45 +98,21 @@ def _create_host_check_issue_filer(
         if resolved_issue_filer is not None:
             return resolved_issue_filer
 
-        env = load_credential_env()
-        resolved_service_registry = service_registry or ServiceRegistry(
-            _configured_service_registry(cfg, env)
-        )
-        resolved_agent_runner = agent_runner
-        if resolved_agent_runner is None:
-            from ..agents.runner import AgentRunner
-
-            resolved_agent_runner = AgentRunner(
-                env,
-                cfg,
-                git_svc,
-                service_registry=resolved_service_registry.services,
-            )
-
-        resolved_github_service = github_service
-        if resolved_github_service is None:
-            token = env.get("GH_TOKEN", "").strip()
-            if not token:
-                raise RuntimeError("GH_TOKEN is required to file host-check issues.")
-            remote = git_svc.get_github_remote_repo(repo_root)
-            if remote is None:
-                raise RuntimeError(
-                    "Could not resolve GitHub origin repo for host-check issues."
-                )
-            owner, repo = remote
-            resolved_github_service = GithubService(f"{owner}/{repo}", token, cfg)
-
-        reporter_override = cfg.preflight_issue_override
-        if resolved_service_registry is not None:
-            reporter_override = resolved_service_registry.resolve(
-                reporter_override, _time_module.now_local()
-            )
-        resolved_issue_filer = create_host_check_issue_filer(
+        issue_deps = resolve_host_check_issue_deps(
             cfg=cfg,
-            github_svc=resolved_github_service,
-            agent_runner=resolved_agent_runner,
+            git_svc=git_svc,
+            repo_root=repo_root,
             status_display=status_display,
-            reporter_override=reporter_override,
+            github_svc=github_service,
+            agent_runner=agent_runner,
+            service_registry=service_registry,
+        )
+        resolved_issue_filer = create_host_check_issue_filer(
+            cfg=issue_deps.cfg,
+            github_svc=issue_deps.github_svc,
+            agent_runner=issue_deps.agent_runner,
+            status_display=issue_deps.status_display,
+            reporter_override=issue_deps.reporter_override,
         )
         return resolved_issue_filer
 

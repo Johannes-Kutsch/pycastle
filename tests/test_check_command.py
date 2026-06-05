@@ -3,6 +3,8 @@ import platform
 import pytest
 from click.testing import CliRunner
 
+from pycastle._host_check import HostCheckIssuePayload
+from pycastle.agents.output_protocol import IssueOutput
 from pycastle.commands.host_check_run import HostCheckRunFailed, HostCheckRunPassed
 from pycastle.config import Config
 
@@ -100,3 +102,61 @@ def test_check_propagates_host_check_run_failures_without_extra_summary(
         check_mod.main(cfg=Config())
 
     assert capsys.readouterr().out == ""
+
+
+def test_check_uses_injected_issue_adapters_without_loading_credential_env(
+    tmp_path, monkeypatch, capsys
+):
+    import pycastle.commands.check as check_mod
+    import pycastle.commands.host_check_run as host_check_run_mod
+
+    cfg = Config()
+    github_service = type(
+        "_GithubService",
+        (),
+        {"get_issue": lambda self, number: {"labels": ["bug", "ready-for-human"]}},
+    )()
+    runner_requests: list[object] = []
+
+    class _AgentRunner:
+        async def run(self, request):
+            runner_requests.append(request)
+            return IssueOutput(number=41, labels=["bug", "ready-for-human"])
+
+    async def fake_run_host_check_loop(**kwargs):
+        issue_number = await kwargs["file_issue_for_failure"](
+            HostCheckIssuePayload(
+                host_os="Linux",
+                host_platform="Linux-6.0",
+                checked_sha="checked-sha",
+                check_name="tests",
+                command="pytest",
+                output="tests broke",
+            ),
+            tmp_path,
+        )
+        return HostCheckRunFailed(
+            checked_sha="checked-sha",
+            failures=(),
+            issue_numbers=(issue_number,),
+        )
+
+    monkeypatch.setattr(check_mod, "run_host_check_loop", fake_run_host_check_loop)
+    monkeypatch.setattr(
+        host_check_run_mod,
+        "load_credential_env",
+        lambda **kwargs: pytest.fail("load_credential_env should not be called"),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    check_mod.main(
+        cfg=cfg,
+        github_service=github_service,
+        agent_runner=_AgentRunner(),
+    )
+
+    assert capsys.readouterr().out == "Host checks filed or updated issues: #41\n"
+    assert len(runner_requests) == 1
+    assert runner_requests[0].service == cfg.preflight_issue_override.service
+    assert runner_requests[0].model == cfg.preflight_issue_override.model
+    assert runner_requests[0].effort == cfg.preflight_issue_override.effort
