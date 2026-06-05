@@ -10,6 +10,7 @@ from .._host_check import (
     HostCheckCommandExecutor,
     HostCheckCommandResult,
     HostCheckFailure,
+    HostCheckIssuePayload,
     HostCheckIssueFiledVerdict,
     HostCheckIssueFiler,
     HostCheckPassedVerdict,
@@ -152,9 +153,8 @@ def prepare_host_check_run(
 
 async def _file_host_check_issue(
     *,
-    failure: HostCheckFailure,
+    payload: HostCheckIssuePayload,
     mount_path: Path,
-    sha: str,
     cfg: Config,
     github_svc: GithubService,
     agent_runner: AgentRunnerProtocol,
@@ -169,16 +169,18 @@ async def _file_host_check_issue(
             mount_path=mount_path,
             role=AgentRole.PREFLIGHT_ISSUE,
             scope_args=prompt_scope_args.build_host_check_scope_args(
-                checked_sha=sha,
-                check_name=failure.name,
-                command=failure.command,
-                output=failure.output,
+                checked_sha=payload.checked_sha,
+                check_name=payload.check_name,
+                command=payload.command,
+                output=payload.output,
+                host_os=payload.host_os,
+                host_platform=payload.host_platform,
             ),
             model=override.model,
             effort=override.effort,
             service=override.service,
             status_display=status_display,
-            work_body=f"reporting {failure.name} host-check issue",
+            work_body=f"reporting {payload.check_name} host-check issue",
         )
     )
     if not isinstance(agent_result, IssueOutput):
@@ -259,13 +261,12 @@ async def run_host_check_run(
     ):
 
         async def file_issue_for_failure(
-            failure: HostCheckFailure, mount_path: Path, checked_sha: str
+            payload: HostCheckIssuePayload, mount_path: Path
         ) -> int:
             try:
                 return await _file_host_check_issue(
-                    failure=failure,
+                    payload=payload,
                     mount_path=mount_path,
-                    sha=checked_sha,
                     cfg=cfg,
                     github_svc=github_svc,
                     agent_runner=agent_runner,
@@ -273,7 +274,14 @@ async def run_host_check_run(
                     reporter_override=reporter_override,
                 )
             except SetupPhaseError as exc:
-                raise _preserve_host_check_context(exc, failure) from exc
+                raise _preserve_host_check_context(
+                    exc,
+                    HostCheckFailure(
+                        name=payload.check_name,
+                        command=payload.command,
+                        output=payload.output,
+                    ),
+                ) from exc
     elif issue_deps_factory is not None:
         resolved_issue_deps: HostCheckIssueDeps | None = None
 
@@ -284,14 +292,13 @@ async def run_host_check_run(
             return resolved_issue_deps
 
         async def file_issue_for_failure(
-            failure: HostCheckFailure, mount_path: Path, checked_sha: str
+            payload: HostCheckIssuePayload, mount_path: Path
         ) -> int:
             issue_deps = get_issue_deps()
             try:
                 return await _file_host_check_issue(
-                    failure=failure,
+                    payload=payload,
                     mount_path=mount_path,
-                    sha=checked_sha,
                     cfg=issue_deps.cfg,
                     github_svc=issue_deps.github_svc,
                     agent_runner=issue_deps.agent_runner,
@@ -299,7 +306,14 @@ async def run_host_check_run(
                     reporter_override=issue_deps.reporter_override,
                 )
             except SetupPhaseError as exc:
-                raise _preserve_host_check_context(exc, failure) from exc
+                raise _preserve_host_check_context(
+                    exc,
+                    HostCheckFailure(
+                        name=payload.check_name,
+                        command=payload.command,
+                        output=payload.output,
+                    ),
+                ) from exc
 
     return await run_host_check_loop(
         host_checks=host_checks,

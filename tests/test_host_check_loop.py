@@ -1,11 +1,14 @@
 import asyncio
 from pathlib import Path
+import platform
 from unittest.mock import MagicMock
+
 
 from pycastle._host_check import (
     HostCheckCommandResult,
     HostCheckFailedError,
     HostCheckFailure,
+    HostCheckIssuePayload,
     HostCheckIssueFiledVerdict,
     HostCheckPassedVerdict,
     run_host_check_loop,
@@ -104,10 +107,10 @@ def test_run_host_check_loop_closes_host_check_row_before_issue_filing_starts(
     def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
         raise HostCheckFailedError(name=name, command=command, output="tests broke")
 
-    async def fake_file_issue(
-        failure: HostCheckFailure, mount_path: Path, checked_sha: str
-    ) -> int:
-        events.append(("file-issue", failure.name, mount_path, checked_sha))
+    async def fake_file_issue(payload, mount_path: Path) -> int:
+        events.append(
+            ("file-issue", payload.check_name, mount_path, payload.checked_sha)
+        )
         return 41
 
     result = asyncio.run(
@@ -177,11 +180,11 @@ def test_run_host_check_loop_collects_all_failed_commands_before_reporting_issue
             output="typing broke",
         )
 
-    async def fake_file_issue(
-        failure: HostCheckFailure, mount_path: Path, checked_sha: str
-    ) -> int:
-        events.append(("file-issue", failure.name, mount_path, checked_sha))
-        return {"tests": 41, "typecheck": 42}[failure.name]
+    async def fake_file_issue(payload, mount_path: Path) -> int:
+        events.append(
+            ("file-issue", payload.check_name, mount_path, payload.checked_sha)
+        )
+        return {"tests": 41, "typecheck": 42}[payload.check_name]
 
     result = asyncio.run(
         run_host_check_loop(
@@ -259,11 +262,11 @@ def test_run_host_check_loop_collects_all_failed_command_results_before_reportin
             output=f"{name} broke",
         )
 
-    async def fake_file_issue(
-        failure: HostCheckFailure, mount_path: Path, checked_sha: str
-    ) -> int:
-        events.append(("file-issue", failure.name, mount_path, checked_sha))
-        return {"tests": 41, "typecheck": 42}[failure.name]
+    async def fake_file_issue(payload, mount_path: Path) -> int:
+        events.append(
+            ("file-issue", payload.check_name, mount_path, payload.checked_sha)
+        )
+        return {"tests": 41, "typecheck": 42}[payload.check_name]
 
     result = asyncio.run(
         run_host_check_loop(
@@ -305,4 +308,69 @@ def test_run_host_check_loop_collects_all_failed_command_results_before_reportin
         ("print", "Host Check", "failed typecheck", "error"),
         ("file-issue", "tests", tmp_path, "abc123def456"),
         ("file-issue", "typecheck", tmp_path, "abc123def456"),
+    ]
+
+
+def test_run_host_check_loop_passes_raw_failed_command_payload_to_reporter_adapter(
+    tmp_path: Path,
+) -> None:
+    captured_payloads: list[object] = []
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "abc123def456"
+    raw_output = "\nstdout line\nstderr line\n"
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_run_host_check(
+        name: str, command: str, cwd: Path
+    ) -> HostCheckCommandResult | None:
+        return HostCheckCommandResult(
+            name=name,
+            command=command,
+            returncode=1,
+            output=raw_output,
+        )
+
+    async def fake_file_issue(payload, mount_path: Path) -> int:
+        captured_payloads.append(payload)
+        assert mount_path == tmp_path
+        return 41
+
+    result = asyncio.run(
+        run_host_check_loop(
+            host_checks=(("tests", "python -m pytest"),),
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            run_host_check=fake_run_host_check,
+            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            file_issue_for_failure=fake_file_issue,
+        )
+    )
+
+    assert result == HostCheckIssueFiledVerdict(
+        checked_sha="abc123def456",
+        failures=(
+            HostCheckFailure(
+                name="tests",
+                command="python -m pytest",
+                output=raw_output,
+            ),
+        ),
+        issue_numbers=(41,),
+    )
+    assert captured_payloads == [
+        HostCheckIssuePayload(
+            host_os=platform.system(),
+            host_platform=platform.platform(),
+            checked_sha="abc123def456",
+            check_name="tests",
+            command="python -m pytest",
+            output=raw_output,
+        )
     ]

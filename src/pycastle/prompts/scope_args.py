@@ -151,13 +151,21 @@ def build_divergence_scope_args(*, branch: str) -> dict[str, str]:
 
 
 def build_host_check_scope_args(
-    *, checked_sha: str, check_name: str, command: str, output: str
+    *,
+    checked_sha: str,
+    check_name: str,
+    command: str,
+    output: str,
+    host_os: str | None = None,
+    host_platform: str | None = None,
 ) -> dict[str, str]:
     return validated_scope_args_for_template(
         PromptTemplate.HOST_CHECK_ISSUE,
         {
-            "HOST_OS": platform.system(),
-            "HOST_PLATFORM": platform.platform(),
+            "HOST_OS": platform.system() if host_os is None else host_os,
+            "HOST_PLATFORM": (
+                platform.platform() if host_platform is None else host_platform
+            ),
             "CHECKED_SHA": checked_sha,
             "CHECK_NAME": check_name,
             "COMMAND": command,

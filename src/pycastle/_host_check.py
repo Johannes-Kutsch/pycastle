@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
+import platform
 from typing import Awaitable, Callable, Protocol, TypeAlias
 
 from .agents.output_protocol import IssueOutput
@@ -36,6 +37,16 @@ class HostCheckIssueFiledVerdict:
     checked_sha: str
     failures: tuple[HostCheckFailure, ...]
     issue_numbers: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class HostCheckIssuePayload:
+    host_os: str
+    host_platform: str
+    checked_sha: str
+    check_name: str
+    command: str
+    output: str
 
 
 HostCheckVerdict: TypeAlias = HostCheckPassedVerdict | HostCheckIssueFiledVerdict
@@ -94,7 +105,7 @@ class HostCheckWorktreeFactory(Protocol):
     ) -> AbstractAsyncContextManager[Path]: ...
 
 
-HostCheckIssueFiler: TypeAlias = Callable[[HostCheckFailure, Path, str], Awaitable[int]]
+HostCheckIssueFiler: TypeAlias = Callable[[HostCheckIssuePayload, Path], Awaitable[int]]
 
 
 def prepare_host_check_loop(
@@ -165,6 +176,8 @@ async def run_host_check_loop(
     file_issue_for_failure: HostCheckIssueFiler | None = None,
 ) -> HostCheckVerdict:
     resolved_repo_root = repo_root or Path(".").resolve()
+    host_os = platform.system()
+    host_platform = platform.platform()
 
     @dataclass
     class _CheckDeps:
@@ -201,7 +214,17 @@ async def run_host_check_loop(
         if file_issue_for_failure is not None:
             issue_numbers = tuple(
                 [
-                    await file_issue_for_failure(failure, path, checked_sha)
+                    await file_issue_for_failure(
+                        HostCheckIssuePayload(
+                            host_os=host_os,
+                            host_platform=host_platform,
+                            checked_sha=checked_sha,
+                            check_name=failure.name,
+                            command=failure.command,
+                            output=failure.output,
+                        ),
+                        path,
+                    )
                     for failure in failures
                 ]
             )
