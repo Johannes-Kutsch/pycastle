@@ -374,3 +374,43 @@ def test_run_host_check_loop_passes_raw_failed_command_payload_to_reporter_adapt
             output=raw_output,
         )
     ]
+
+
+def test_run_host_check_loop_does_not_file_issue_when_checks_pass(
+    tmp_path: Path,
+) -> None:
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "abc123def456"
+    filed_payloads: list[HostCheckIssuePayload] = []
+
+    class _TransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    async def fake_file_issue(payload: HostCheckIssuePayload, mount_path: Path) -> int:
+        filed_payloads.append(payload)
+        assert mount_path == tmp_path
+        return 41
+
+    result = asyncio.run(
+        run_host_check_loop(
+            host_checks=(("tests", "python -m pytest"),),
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            run_host_check=lambda name, command, cwd: HostCheckCommandResult(
+                name=name,
+                command=command,
+                returncode=0,
+                output="passing stdout\npassing stderr",
+            ),
+            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            file_issue_for_failure=fake_file_issue,
+        )
+    )
+
+    assert result == HostCheckPassedVerdict(checked_sha="abc123def456")
+    assert filed_payloads == []

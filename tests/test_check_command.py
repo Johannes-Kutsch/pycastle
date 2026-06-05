@@ -1,3 +1,4 @@
+import ast
 import inspect
 import platform
 
@@ -143,8 +144,18 @@ def test_check_delegates_host_check_orchestration_to_run_module_adapter(
         "status_display": recorded_kwargs["status_display"],
         "service_registry": service_registry,
     }
-    assert inspect.getsource(check_mod).count("run_host_check_command") >= 1
-    assert "run_host_check_loop" not in inspect.getsource(check_mod)
-    assert "create_host_check_issue_filer" not in inspect.getsource(check_mod)
-    assert "resolve_host_check_issue_deps" not in inspect.getsource(check_mod)
-    assert "transient_worktree" not in inspect.getsource(check_mod)
+    module_tree = ast.parse(inspect.getsource(check_mod))
+    main_def = next(
+        node
+        for node in module_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+    referenced_names = {
+        node.id for node in ast.walk(main_def) if isinstance(node, ast.Name)
+    }
+
+    assert "run_host_check_command" in referenced_names
+    assert "run_host_check_loop" not in referenced_names
+    assert "create_host_check_issue_filer" not in referenced_names
+    assert "resolve_host_check_issue_deps" not in referenced_names
+    assert "transient_worktree" not in referenced_names
