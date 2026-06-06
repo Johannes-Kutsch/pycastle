@@ -119,6 +119,35 @@ def test_interpret_preflight_command_failures_returns_empty_for_no_failures(
     assert result == ()
 
 
+def test_interpret_preflight_command_failures_preserves_original_command_failure_facts_for_ordinary_failure(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['ruff>=0.5']\n",
+        encoding="utf-8",
+    )
+
+    result = interpret_preflight_command_failures(
+        tmp_path,
+        (
+            PreflightCommandFailure(
+                check_name="lint",
+                command="python -X dev -m ruff check .",
+                output="src/demo.py:1:1: F401 `os` imported but unused",
+            ),
+        ),
+    )
+
+    assert result == (
+        OrdinaryPreflightFailureDecision(
+            check_name="lint",
+            command="python -X dev -m ruff check .",
+            output="src/demo.py:1:1: F401 `os` imported but unused",
+            tool="ruff",
+        ),
+    )
+
+
 @pytest.mark.parametrize(
     "command, output",
     [

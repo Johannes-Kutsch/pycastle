@@ -497,6 +497,53 @@ def test_get_safe_sha_preserves_original_first_failure_details_after_analysis_an
     assert len(fake.calls) == 1
 
 
+def test_get_safe_sha_routes_first_ordinary_preflight_failure_decision_through_preflight_issue_scope(
+    tmp_path, git_svc, github_svc
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['ruff>=0.5', 'mypy>=1.0']\n",
+        encoding="utf-8",
+    )
+    fake = FakeAgentRunner(
+        [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
+        preflight_responses=[
+            [
+                _preflight_failure(
+                    "lint",
+                    "python -X dev -m ruff check .",
+                    "src/demo.py:1:1: F401 `os` imported but unused",
+                ),
+                _preflight_failure(
+                    "mypy",
+                    "mypy .",
+                    "Command failed (exit 127): bash: mypy: command not found",
+                ),
+            ]
+        ],
+    )
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=Config(
+            preflight_issue_override=StageOverride(service="codex", effort="medium")
+        ),
+    )
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightHITL)
+    assert fake.calls[0].scope_args == {
+        "CHECK_NAME": "lint",
+        "COMMAND": "python -X dev -m ruff check .",
+        "OUTPUT": "src/demo.py:1:1: F401 `os` imported but unused",
+    }
+    assert len(fake.preflight_calls) == 1
+    assert len(fake.calls) == 1
+
+
 # ── get_safe_sha: same-SHA cache hit ─────────────────────────────────────────
 
 
