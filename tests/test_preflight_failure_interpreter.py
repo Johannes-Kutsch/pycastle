@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from pycastle.errors import SetupPhaseError
-from pycastle.preflight_tool_failure_analysis import (
+from pycastle.infrastructure.preflight_failure_interpreter import (
     OrdinaryCheckFailure,
     PreflightCommandFailure,
     analyze_preflight_command_failures,

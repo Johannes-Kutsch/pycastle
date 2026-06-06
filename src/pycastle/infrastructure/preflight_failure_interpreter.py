@@ -7,7 +7,7 @@ import tomllib
 from pathlib import Path
 from typing import Sequence
 
-from .errors import SetupPhaseError
+from ..errors import SetupPhaseError
 
 _DECLARED_TOOL_MISSING_PATTERNS = (
     re.compile(r"\b(?P<tool>[A-Za-z0-9_.-]+): command not found\b", re.IGNORECASE),

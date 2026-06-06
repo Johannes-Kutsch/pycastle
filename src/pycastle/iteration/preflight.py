@@ -31,7 +31,7 @@ from ..issue_readiness import (
 )
 from ..display.status_display import StatusDisplay
 from ._utils import _wait_for_clean_working_tree
-from ..preflight_tool_failure_analysis import (
+from ..infrastructure.preflight_failure_interpreter import (
     analyze_preflight_command_failures,
     OrdinaryCheckFailure,
     PreflightCommandFailure,
