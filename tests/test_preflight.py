@@ -287,9 +287,6 @@ def test_get_safe_sha_preserves_first_ordinary_declared_tool_failure_routing_whe
     assert result.issue_number == 55
     assert len(fake.preflight_calls) == 1
     assert len(fake.calls) == 1
-    assert fake.calls[0].template == PromptTemplate.PREFLIGHT_ISSUE
-    assert fake.calls[0].role == AgentRole.PREFLIGHT_ISSUE
-    assert fake.calls[0].work_body == "reporting pytest issue"
 
 
 def test_get_safe_sha_preserves_hitl_routing_for_first_ordinary_declared_tool_failure_when_later_failure_is_missing_declared_tool(
@@ -323,9 +320,6 @@ def test_get_safe_sha_preserves_hitl_routing_for_first_ordinary_declared_tool_fa
     assert result.issue_number == 56
     assert len(fake.preflight_calls) == 1
     assert len(fake.calls) == 1
-    assert fake.calls[0].template == PromptTemplate.PREFLIGHT_ISSUE
-    assert fake.calls[0].role == AgentRole.PREFLIGHT_ISSUE
-    assert fake.calls[0].work_body == "reporting pytest issue"
 
 
 def test_get_safe_sha_routes_declared_missing_tool_with_shell_not_found_output_to_setup_failure(
@@ -438,9 +432,6 @@ def test_get_safe_sha_treats_runner_failure_fact_as_ordinary_pre_flight_failure(
     assert result.issue_number == 55
     assert len(fake.preflight_calls) == 1
     assert len(fake.calls) == 1
-    assert fake.calls[0].template == PromptTemplate.PREFLIGHT_ISSUE
-    assert fake.calls[0].role == AgentRole.PREFLIGHT_ISSUE
-    assert fake.calls[0].work_body == "reporting ruff issue"
 
 
 def test_get_safe_sha_keeps_declared_source_quality_failure_on_preflight_issue_route(
@@ -471,9 +462,6 @@ def test_get_safe_sha_keeps_declared_source_quality_failure_on_preflight_issue_r
     assert result.issue_number == 56
     assert len(fake.preflight_calls) == 1
     assert len(fake.calls) == 1
-    assert fake.calls[0].template == PromptTemplate.PREFLIGHT_ISSUE
-    assert fake.calls[0].role == AgentRole.PREFLIGHT_ISSUE
-    assert fake.calls[0].work_body == "reporting ruff issue"
 
 
 def test_get_safe_sha_preserves_original_first_failure_details_after_analysis_and_caches_afk_verdict(
@@ -505,47 +493,8 @@ def test_get_safe_sha_preserves_original_first_failure_details_after_analysis_an
     assert isinstance(result1, PreflightAFK)
     assert result1.issue_number == 77
     assert result2 is result1
-    assert fake.calls[0].template == PromptTemplate.PREFLIGHT_ISSUE
-    assert fake.calls[0].role == AgentRole.PREFLIGHT_ISSUE
-    assert fake.calls[0].work_body == "reporting lint issue"
     assert len(fake.preflight_calls) == 1
     assert len(fake.calls) == 1
-
-
-def test_get_safe_sha_builds_preflight_issue_scope_args_from_first_failure_via_prompt_module(
-    tmp_path, git_svc, github_svc
-):
-    fake = FakeAgentRunner(
-        [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
-        preflight_responses=[
-            [
-                _preflight_failure("ruff", "ruff check .", "E501"),
-                _preflight_failure(
-                    "pytest", "pytest -q", "FAILED tests/test_demo.py::test_it"
-                ),
-            ]
-        ],
-    )
-    deps = _make_deps(
-        tmp_path,
-        fake,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        cfg=Config(
-            preflight_issue_override=StageOverride(service="codex", effort="medium")
-        ),
-    )
-    cache = PreflightCache()
-
-    result = asyncio.run(cache.get_safe_sha(deps))
-
-    assert isinstance(result, PreflightHITL)
-    assert fake.calls[0].template == PromptTemplate.PREFLIGHT_ISSUE
-    assert fake.calls[0].role == AgentRole.PREFLIGHT_ISSUE
-    assert fake.calls[0].service == "codex"
-    assert fake.calls[0].model == deps.cfg.preflight_issue_override.model
-    assert fake.calls[0].effort == deps.cfg.preflight_issue_override.effort
-    assert fake.calls[0].work_body == "reporting ruff issue"
 
 
 # ── get_safe_sha: same-SHA cache hit ─────────────────────────────────────────

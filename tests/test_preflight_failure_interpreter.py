@@ -2,13 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from pycastle.errors import SetupPhaseError
 from pycastle.infrastructure.preflight_failure_interpreter import (
     MissingDeclaredPythonToolDecision,
-    OrdinaryCheckFailure,
     OrdinaryPreflightFailureDecision,
     PreflightCommandFailure,
-    analyze_preflight_command_failures,
     interpret_preflight_command_failures,
     load_python_dependency_metadata,
 )
@@ -73,130 +70,6 @@ def test_load_python_dependency_metadata_prefers_pyproject_source_when_tool_decl
     assert metadata.declared_packages == frozenset({"ruff"})
     assert metadata.source == "pyproject.toml"
     assert metadata.package_sources["ruff"] == "pyproject.toml"
-
-
-def test_analyze_preflight_command_failures_returns_setup_failure_for_missing_requirements_declared_command_with_mixed_metadata(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "pyproject.toml").write_text(
-        "[project]\nname = 'demo'\ndependencies = ['click>=8']\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "requirements.txt").write_text("ruff==0.6.0\n", encoding="utf-8")
-
-    result = analyze_preflight_command_failures(
-        tmp_path,
-        (
-            PreflightCommandFailure(
-                check_name="ruff",
-                command="ruff check .",
-                output="Command failed (exit 127): bash: ruff: command not found",
-            ),
-        ),
-    )
-
-    assert isinstance(result, SetupPhaseError)
-    assert result.phase == "preflight"
-    assert (
-        str(result)
-        == "Missing expected preflight tool 'ruff' declared in requirements.txt."
-    )
-    assert result.command == "ruff check ."
-    assert result.output == "Command failed (exit 127): bash: ruff: command not found"
-
-
-def test_analyze_preflight_command_failures_returns_setup_failure_with_pyproject_precedence_when_tool_declared_in_both_metadata_files(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "pyproject.toml").write_text(
-        "[project]\nname = 'demo'\ndependencies = ['ruff>=0.5']\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "requirements.txt").write_text("ruff==0.6.0\n", encoding="utf-8")
-
-    result = analyze_preflight_command_failures(
-        tmp_path,
-        (
-            PreflightCommandFailure(
-                check_name="ruff",
-                command="ruff check .",
-                output="Command failed (exit 127): bash: ruff: command not found",
-            ),
-        ),
-    )
-
-    assert isinstance(result, SetupPhaseError)
-    assert result.phase == "preflight"
-    assert (
-        str(result)
-        == "Missing expected preflight tool 'ruff' declared in pyproject.toml."
-    )
-    assert result.command == "ruff check ."
-    assert result.output == "Command failed (exit 127): bash: ruff: command not found"
-
-
-def test_analyze_preflight_command_failures_keeps_undeclared_missing_tool_as_ordinary_check_failure(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "pyproject.toml").write_text(
-        "[project]\nname = 'demo'\ndependencies = ['pytest>=8']\n",
-        encoding="utf-8",
-    )
-    failure = PreflightCommandFailure(
-        check_name="ruff",
-        command="ruff check .",
-        output="Command failed (exit 127): bash: ruff: command not found",
-    )
-
-    result = analyze_preflight_command_failures(tmp_path, (failure,))
-
-    assert result == (OrdinaryCheckFailure(tool="ruff", failure=failure),)
-
-
-def test_analyze_preflight_command_failures_returns_setup_failure_for_missing_pyproject_declared_command(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "pyproject.toml").write_text(
-        "[project]\nname = 'demo'\ndependencies = ['ruff>=0.5']\n", encoding="utf-8"
-    )
-
-    result = analyze_preflight_command_failures(
-        tmp_path,
-        (
-            PreflightCommandFailure(
-                check_name="ruff",
-                command="ruff check .",
-                output="Command failed (exit 127): bash: ruff: command not found",
-            ),
-        ),
-    )
-
-    assert isinstance(result, SetupPhaseError)
-    assert result.phase == "preflight"
-    assert (
-        str(result)
-        == "Missing expected preflight tool 'ruff' declared in pyproject.toml."
-    )
-    assert result.command == "ruff check ."
-    assert result.output == "Command failed (exit 127): bash: ruff: command not found"
-
-
-def test_analyze_preflight_command_failures_keeps_declared_source_quality_failure_as_ordinary(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "pyproject.toml").write_text(
-        "[project]\nname = 'demo'\ndependencies = ['ruff>=0.5']\n",
-        encoding="utf-8",
-    )
-    failure = PreflightCommandFailure(
-        check_name="ruff",
-        command="ruff check .",
-        output="src/demo.py:1:1: F401 `os` imported but unused",
-    )
-
-    result = analyze_preflight_command_failures(tmp_path, (failure,))
-
-    assert result == (OrdinaryCheckFailure(tool="ruff", failure=failure),)
 
 
 def test_interpret_preflight_command_failures_returns_typed_decisions(
@@ -267,7 +140,7 @@ def test_interpret_preflight_command_failures_returns_empty_for_no_failures(
         ),
     ],
 )
-def test_analyze_preflight_command_failures_uses_python_module_name_for_launcher_variants(
+def test_interpret_preflight_command_failures_uses_python_module_name_for_launcher_variants(
     tmp_path: Path, command: str, output: str
 ) -> None:
     (tmp_path / "pyproject.toml").write_text(
@@ -275,7 +148,7 @@ def test_analyze_preflight_command_failures_uses_python_module_name_for_launcher
         encoding="utf-8",
     )
 
-    result = analyze_preflight_command_failures(
+    result = interpret_preflight_command_failures(
         tmp_path,
         (
             PreflightCommandFailure(
@@ -286,11 +159,12 @@ def test_analyze_preflight_command_failures_uses_python_module_name_for_launcher
         ),
     )
 
-    assert isinstance(result, SetupPhaseError)
-    assert result.phase == "preflight"
-    assert (
-        str(result)
-        == "Missing expected preflight tool 'ruff' declared in pyproject.toml."
+    assert result == (
+        MissingDeclaredPythonToolDecision(
+            check_name="lint",
+            command=command,
+            output=output,
+            tool="ruff",
+            dependency_source="pyproject.toml",
+        ),
     )
-    assert result.command == command
-    assert result.output == output

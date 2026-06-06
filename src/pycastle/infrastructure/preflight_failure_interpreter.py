@@ -7,8 +7,6 @@ import tomllib
 from pathlib import Path
 from typing import Sequence
 
-from ..errors import SetupPhaseError
-
 _DECLARED_TOOL_MISSING_PATTERNS = (
     re.compile(r"\b(?P<tool>[A-Za-z0-9_.-]+): command not found\b", re.IGNORECASE),
     re.compile(r"\b(?P<tool>[A-Za-z0-9_.-]+): not found\b", re.IGNORECASE),
@@ -65,15 +63,15 @@ class PreflightCommandFailure:
 
 
 @dataclasses.dataclass(frozen=True)
-class OrdinaryCheckFailure:
-    tool: str
-    failure: PreflightCommandFailure
-
-
-@dataclasses.dataclass(frozen=True)
 class MissingDeclaredTool:
     tool: str
     dependency_source: str
+
+
+@dataclasses.dataclass(frozen=True)
+class OrdinaryCheckFailure:
+    tool: str
+    failure: PreflightCommandFailure
 
 
 _PreflightToolFailureClassification = OrdinaryCheckFailure | MissingDeclaredTool
@@ -203,31 +201,3 @@ def interpret_preflight_command_failures(
             )
         )
     return tuple(decisions)
-
-
-def analyze_preflight_command_failures(
-    project_root: Path,
-    failures: Sequence[PreflightCommandFailure],
-) -> tuple[OrdinaryCheckFailure, ...] | SetupPhaseError:
-    ordinary_failures: list[OrdinaryCheckFailure] = []
-    for decision in interpret_preflight_command_failures(project_root, failures):
-        if isinstance(decision, MissingDeclaredPythonToolDecision):
-            return SetupPhaseError(
-                "preflight",
-                "Missing expected preflight tool "
-                f"'{decision.tool}' declared in "
-                f"{decision.dependency_source}.",
-                command=decision.command,
-                output=decision.output,
-            )
-        ordinary_failures.append(
-            OrdinaryCheckFailure(
-                tool=decision.tool,
-                failure=PreflightCommandFailure(
-                    check_name=decision.check_name,
-                    command=decision.command,
-                    output=decision.output,
-                ),
-            )
-        )
-    return tuple(ordinary_failures)
