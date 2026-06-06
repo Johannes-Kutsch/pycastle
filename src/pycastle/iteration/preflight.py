@@ -32,8 +32,10 @@ from ..issue_readiness import (
 from ..display.status_display import StatusDisplay
 from ._utils import _wait_for_clean_working_tree
 from ..infrastructure.preflight_failure_interpreter import (
-    analyze_preflight_command_failures,
-    OrdinaryCheckFailure,
+    MissingDeclaredPythonToolDecision,
+    OrdinaryPreflightFailureDecision,
+    PreflightFailureDecision,
+    interpret_preflight_command_failures,
 )
 from .. import _time as _time_module
 
@@ -225,12 +227,11 @@ class PreflightCache:
 
     async def _handle_failure(
         self,
-        failures: tuple[OrdinaryCheckFailure, ...],
+        failure: OrdinaryPreflightFailureDecision,
         deps: _PreflightDeps,
         mount_path: Path,
         sha: str,
     ) -> PreflightHITL | PreflightAFK:
-        failure = failures[0].failure
         override = self._resolved_preflight_issue_override(deps)
         agent_result = await deps.agent_runner.run(
             RunRequest(
@@ -263,6 +264,30 @@ class PreflightCache:
         if validation == "hitl":
             return PreflightHITL(sha=sha, issue_number=agent_result.number)
         return PreflightAFK(sha=sha, issue_number=agent_result.number)
+
+    @staticmethod
+    def _setup_error_for_missing_declared_tool(
+        decision: MissingDeclaredPythonToolDecision,
+    ) -> SetupPhaseError:
+        return SetupPhaseError(
+            "preflight",
+            "Missing expected preflight tool "
+            f"'{decision.tool}' declared in "
+            f"{decision.dependency_source}.",
+            command=decision.command,
+            output=decision.output,
+        )
+
+    @staticmethod
+    def _resolve_failure_decision(
+        decisions: tuple[PreflightFailureDecision, ...],
+    ) -> OrdinaryPreflightFailureDecision:
+        for decision in decisions:
+            if isinstance(decision, MissingDeclaredPythonToolDecision):
+                raise PreflightCache._setup_error_for_missing_declared_tool(decision)
+        first_decision = decisions[0]
+        assert isinstance(first_decision, OrdinaryPreflightFailureDecision)
+        return first_decision
 
     async def pull_with_resolution(self, deps: _PreflightDeps) -> None:
         await self._branch_refresh.pull_with_resolution(deps)
@@ -303,15 +328,12 @@ class PreflightCache:
 
                 result: PreflightResult
                 if failures:
-                    analysis = analyze_preflight_command_failures(
-                        deps.repo_root, failures
+                    decision = self._resolve_failure_decision(
+                        interpret_preflight_command_failures(deps.repo_root, failures)
                     )
-                    if isinstance(analysis, SetupPhaseError):
-                        raise analysis
-                    ordinary_failures: tuple[OrdinaryCheckFailure, ...] = analysis
                     try:
                         result = await self._handle_failure(
-                            ordinary_failures,
+                            decision,
                             deps,
                             mount_path,
                             sha,
