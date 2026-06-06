@@ -79,6 +79,28 @@ class MissingDeclaredTool:
 _PreflightToolFailureClassification = OrdinaryCheckFailure | MissingDeclaredTool
 
 
+@dataclasses.dataclass(frozen=True)
+class OrdinaryPreflightFailureDecision:
+    check_name: str
+    command: str
+    output: str
+    tool: str
+
+
+@dataclasses.dataclass(frozen=True)
+class MissingDeclaredPythonToolDecision:
+    check_name: str
+    command: str
+    output: str
+    tool: str
+    dependency_source: str
+
+
+PreflightFailureDecision = (
+    OrdinaryPreflightFailureDecision | MissingDeclaredPythonToolDecision
+)
+
+
 def load_python_dependency_metadata(project_root: Path) -> PythonDependencyMetadata:
     package_sources: dict[str, str] = {}
     pyproject_path = project_root / "pyproject.toml"
@@ -151,24 +173,61 @@ def _classify_preflight_tool_failure(
     return OrdinaryCheckFailure(tool=tool, failure=failure)
 
 
-def analyze_preflight_command_failures(
+def interpret_preflight_command_failures(
     project_root: Path,
     failures: Sequence[PreflightCommandFailure],
-) -> tuple[OrdinaryCheckFailure, ...] | SetupPhaseError:
+) -> tuple[PreflightFailureDecision, ...]:
     python_dependency_metadata = load_python_dependency_metadata(project_root)
-    ordinary_failures: list[OrdinaryCheckFailure] = []
+    decisions: list[PreflightFailureDecision] = []
     for failure in failures:
         classification = _classify_preflight_tool_failure(
             python_dependency_metadata, failure
         )
         if isinstance(classification, MissingDeclaredTool):
+            decisions.append(
+                MissingDeclaredPythonToolDecision(
+                    check_name=failure.check_name,
+                    command=failure.command,
+                    output=failure.output,
+                    tool=classification.tool,
+                    dependency_source=classification.dependency_source,
+                )
+            )
+            continue
+        decisions.append(
+            OrdinaryPreflightFailureDecision(
+                check_name=failure.check_name,
+                command=failure.command,
+                output=failure.output,
+                tool=classification.tool,
+            )
+        )
+    return tuple(decisions)
+
+
+def analyze_preflight_command_failures(
+    project_root: Path,
+    failures: Sequence[PreflightCommandFailure],
+) -> tuple[OrdinaryCheckFailure, ...] | SetupPhaseError:
+    ordinary_failures: list[OrdinaryCheckFailure] = []
+    for decision in interpret_preflight_command_failures(project_root, failures):
+        if isinstance(decision, MissingDeclaredPythonToolDecision):
             return SetupPhaseError(
                 "preflight",
                 "Missing expected preflight tool "
-                f"'{classification.tool}' declared in "
-                f"{classification.dependency_source}.",
-                command=failure.command,
-                output=failure.output,
+                f"'{decision.tool}' declared in "
+                f"{decision.dependency_source}.",
+                command=decision.command,
+                output=decision.output,
             )
-        ordinary_failures.append(classification)
+        ordinary_failures.append(
+            OrdinaryCheckFailure(
+                tool=decision.tool,
+                failure=PreflightCommandFailure(
+                    check_name=decision.check_name,
+                    command=decision.command,
+                    output=decision.output,
+                ),
+            )
+        )
     return tuple(ordinary_failures)
