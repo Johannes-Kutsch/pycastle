@@ -282,10 +282,9 @@ class PreflightCache:
     def _resolve_failure_decision(
         decisions: tuple[PreflightFailureDecision, ...],
     ) -> OrdinaryPreflightFailureDecision:
-        for decision in decisions:
-            if isinstance(decision, MissingDeclaredPythonToolDecision):
-                raise PreflightCache._setup_error_for_missing_declared_tool(decision)
         first_decision = decisions[0]
+        if isinstance(first_decision, MissingDeclaredPythonToolDecision):
+            raise PreflightCache._setup_error_for_missing_declared_tool(first_decision)
         assert isinstance(first_decision, OrdinaryPreflightFailureDecision)
         return first_decision
 

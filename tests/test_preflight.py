@@ -255,15 +255,15 @@ def test_get_safe_sha_routes_requirements_declared_missing_tool_to_setup_failure
     assert fake.calls == []
 
 
-def test_get_safe_sha_aborts_before_issue_dispatch_when_later_failure_is_missing_declared_tool(
+def test_get_safe_sha_preserves_first_ordinary_declared_tool_failure_routing_when_later_failure_is_missing_declared_tool(
     tmp_path, git_svc, github_svc
 ):
     (tmp_path / "pyproject.toml").write_text(
-        "[project]\nname = 'demo'\ndependencies = ['mypy>=1.0']\n",
+        "[project]\nname = 'demo'\ndependencies = ['pytest>=8.0', 'mypy>=1.0']\n",
         encoding="utf-8",
     )
     fake = FakeAgentRunner(
-        [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
+        [IssueOutput(number=55, labels=["bug", "ready-for-agent", "behavior-slice"])],
         preflight_responses=[
             [
                 _preflight_failure(
@@ -277,19 +277,19 @@ def test_get_safe_sha_aborts_before_issue_dispatch_when_later_failure_is_missing
             ]
         ],
     )
+    github_svc.get_issue.return_value = {"number": 55, "body": "x" * 100}
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 
-    with pytest.raises(SetupPhaseError) as exc_info:
-        asyncio.run(cache.get_safe_sha(deps))
+    result = asyncio.run(cache.get_safe_sha(deps))
 
-    err = exc_info.value
-    assert (
-        str(err) == "Missing expected preflight tool 'mypy' declared in pyproject.toml."
-    )
-    assert err.command == "mypy ."
-    assert err.output == "Command failed (exit 127): bash: mypy: command not found"
-    assert fake.calls == []
+    assert isinstance(result, PreflightAFK)
+    assert result.issue_number == 55
+    assert len(fake.preflight_calls) == 1
+    assert len(fake.calls) == 1
+    assert fake.calls[0].template == PromptTemplate.PREFLIGHT_ISSUE
+    assert fake.calls[0].role == AgentRole.PREFLIGHT_ISSUE
+    assert fake.calls[0].work_body == "reporting pytest issue"
 
 
 def test_get_safe_sha_routes_declared_missing_tool_with_shell_not_found_output_to_setup_failure(
