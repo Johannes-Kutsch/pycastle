@@ -16,6 +16,9 @@ from pycastle.services.claude_service import ClaudeService
 from pycastle.errors import AgentTimeoutError, DockerError, UsageLimitError
 from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.infrastructure.docker_session import DockerSession
+from pycastle.infrastructure.preflight_failure_interpreter import (
+    PreflightCommandFailure,
+)
 from tests.support import RecordingStatusDisplay
 
 _ROLE = AgentRole.IMPLEMENTER
@@ -205,7 +208,7 @@ def test_preflight_returns_empty_list_on_clean_pass(tmp_path):
     assert result == []
 
 
-def test_preflight_returns_failure_tuples_for_failing_checks(tmp_path):
+def test_preflight_returns_typed_failures_for_failing_checks(tmp_path):
     session = FakeDockerSession(
         exec_handlers={"ruff check": DockerError("E501 line too long")}
     )
@@ -214,10 +217,9 @@ def test_preflight_returns_failure_tuples_for_failing_checks(tmp_path):
         runner.preflight([("ruff", "ruff check ."), ("mypy", "mypy .")])
     )
     assert len(result) == 1
-    name, cmd, output = result[0]
-    assert name == "ruff"
-    assert cmd == "ruff check ."
-    assert "E501" in output
+    assert result[0].check_name == "ruff"
+    assert result[0].command == "ruff check ."
+    assert "E501" in result[0].output
 
 
 def test_preflight_runs_all_checks_when_one_fails(tmp_path):
@@ -249,8 +251,16 @@ def test_preflight_collects_raw_failures_without_classifying_missing_tools(tmp_p
     )
 
     assert result == [
-        ("ruff", "ruff check .", "bash: ruff: command not found"),
-        ("mypy", "mypy .", "src/app.py:1: error: boom"),
+        PreflightCommandFailure(
+            check_name="ruff",
+            command="ruff check .",
+            output="bash: ruff: command not found",
+        ),
+        PreflightCommandFailure(
+            check_name="mypy",
+            command="mypy .",
+            output="src/app.py:1: error: boom",
+        ),
     ]
     assert any("ruff check" in c for c in session.exec_calls)
     assert any("mypy" in c for c in session.exec_calls)

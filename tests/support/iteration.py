@@ -14,6 +14,9 @@ from pycastle.agents.runner import (
 from pycastle.config import Config
 from pycastle.display.status_display import ModelDisplayMetadata, StatusDisplay
 from pycastle.errors import HardAgentError
+from pycastle.infrastructure.preflight_failure_interpreter import (
+    PreflightCommandFailure,
+)
 from pycastle.iteration._deps import Deps, Logger
 from pycastle.iteration.preflight import PreflightCache, PreflightReady, PreflightResult
 from pycastle.services import GitService, GithubService, ServiceRegistry
@@ -84,15 +87,15 @@ class FakeAgentRunner:
         responses: list[AgentOutput | BaseException] | None = None,
         *,
         side_effect: Callable[..., Any] | None = None,
-        preflight_responses: list[list[tuple[str, str, str]] | BaseException]
+        preflight_responses: list[list[PreflightCommandFailure] | BaseException]
         | None = None,
     ) -> None:
         self._responses: list[AgentOutput | BaseException] = list(responses or [])
         self._side_effect = side_effect
         self._preflight_unlimited = preflight_responses is None
-        self._preflight_responses: list[list[tuple[str, str, str]] | BaseException] = (
-            list(preflight_responses or [])
-        )
+        self._preflight_responses: list[
+            list[PreflightCommandFailure] | BaseException
+        ] = list(preflight_responses or [])
         self.calls: list[RunRequest] = []
         self.preflight_calls: list[dict] = []
 
@@ -129,7 +132,7 @@ class FakeAgentRunner:
         stage: str = "",
         status_display: StatusDisplay | None = None,
         work_body: str = "",
-    ) -> list[tuple[str, str, str]]:
+    ) -> list[PreflightCommandFailure]:
         call = {
             "name": name,
             "mount_path": mount_path,
@@ -199,7 +202,8 @@ def _make_deps(
     status_display: StatusDisplay | None = None,
     preflight_cache: PreflightCache | StubPreflightCache | None = None,
     service_registry: ServiceRegistry | None = None,
-    preflight_responses: list[list[tuple[str, str, str]] | BaseException] | None = None,
+    preflight_responses: list[list[PreflightCommandFailure] | BaseException]
+    | None = None,
     setup_worktrees: bool = False,
 ) -> Deps:
     if hasattr(agent_runner, "run") and hasattr(agent_runner, "run_preflight"):

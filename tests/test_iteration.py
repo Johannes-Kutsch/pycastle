@@ -32,6 +32,9 @@ from pycastle.iteration import (
 from pycastle.iteration.merge import merge_phase
 from pycastle.iteration.preflight import PreflightCache
 from pycastle.agents.runner import RunRequest
+from pycastle.infrastructure.preflight_failure_interpreter import (
+    PreflightCommandFailure,
+)
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.iteration._deps import (
     Deps,
@@ -52,6 +55,16 @@ from tests.support import (
     RecordingStatusDisplay,
     _make_deps as _make_test_deps,
 )
+
+
+def _preflight_failure(
+    check_name: str, command: str, output: str
+) -> PreflightCommandFailure:
+    return PreflightCommandFailure(
+        check_name=check_name,
+        command=command,
+        output=output,
+    )
 
 
 def _make_agent_failed_error(role: AgentRole, worktree_path: Path) -> AgentFailedError:
@@ -212,7 +225,7 @@ def test_run_iteration_returns_aborted_hitl_on_hitl_verdict(tmp_path, git_svc, l
         git_svc=git_svc,
         github_svc=github_svc,
         logger=logger,
-        preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     result = asyncio.run(run_iteration(deps))
 
@@ -263,7 +276,9 @@ def test_run_iteration_aborted_hitl_carries_issue_number(tmp_path, git_svc, logg
         git_svc=git_svc,
         github_svc=github_svc,
         logger=logger,
-        preflight_responses=[(("mypy", "mypy .", "error: Missing module"),)],
+        preflight_responses=[
+            [_preflight_failure("mypy", "mypy .", "error: Missing module")]
+        ],
     )
     result = asyncio.run(run_iteration(deps))
 
@@ -295,7 +310,7 @@ def test_run_iteration_aborted_hitl_does_not_raise_system_exit(
         git_svc=git_svc,
         github_svc=github_svc,
         logger=logger,
-        preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
 
     result = asyncio.run(run_iteration(deps))
@@ -672,7 +687,7 @@ def test_run_iteration_returns_continue_on_afk_preflight_verdict(
         git_svc=git_svc,
         github_svc=github_svc,
         logger=logger,
-        preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     result = asyncio.run(run_iteration(deps))
 
@@ -808,7 +823,7 @@ def test_run_iteration_routes_hitl_abort_message_through_status_display(
         github_svc=github_svc,
         logger=logger,
         status_display=recording,
-        preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     asyncio.run(run_iteration(deps))
 
@@ -1934,7 +1949,7 @@ def test_run_iteration_hitl_message_uses_preflight_caller(tmp_path, git_svc, log
         github_svc=github_svc,
         logger=logger,
         status_display=recording,
-        preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     asyncio.run(run_iteration(deps))
 
@@ -2414,7 +2429,7 @@ def test_run_iteration_returns_aborted_usage_limit_for_each_single_agent_phase(
             git_svc=git_svc,
             github_svc=github_svc,
             logger=logger,
-            preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+            preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
         )
     elif phase == "plan":
         github_svc.get_open_issues.return_value = [
@@ -3107,7 +3122,7 @@ def test_run_iteration_returns_aborted_timeout_for_each_single_agent_phase(
             git_svc=git_svc,
             github_svc=github_svc,
             logger=logger,
-            preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+            preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
         )
         expected_role = AgentRole.PREFLIGHT_ISSUE.value
         expected_wt = tmp_path / "pycastle" / ".worktrees" / "preflight-sandbox"

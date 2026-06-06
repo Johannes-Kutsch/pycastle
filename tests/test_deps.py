@@ -5,6 +5,9 @@ import pytest
 
 from pycastle.agents.output_protocol import CompletionOutput
 from pycastle.agents.runner import RunRequest
+from pycastle.infrastructure.preflight_failure_interpreter import (
+    PreflightCommandFailure,
+)
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.iteration._deps import Deps
 from tests.support import FakeAgentRunner, RecordingLogger, _make_deps
@@ -297,7 +300,13 @@ def test_fake_agent_runner_run_preflight_returns_queued_empty_list(
 def test_fake_agent_runner_run_preflight_returns_queued_failures(
     mount_path,
 ) -> None:
-    failures = [("ruff", "ruff check .", "E501 line too long")]
+    failures = [
+        PreflightCommandFailure(
+            check_name="ruff",
+            command="ruff check .",
+            output="E501 line too long",
+        )
+    ]
     runner = FakeAgentRunner(preflight_responses=[failures])
 
     result = asyncio.run(
@@ -352,8 +361,14 @@ def test_fake_agent_runner_run_preflight_starts_with_empty_preflight_calls() -> 
 
 
 def test_fake_agent_runner_run_preflight_returns_responses_in_order(mount_path) -> None:
-    failures_1 = [("ruff", "ruff check .", "E501")]
-    failures_2: list[tuple[str, str, str]] = []
+    failures_1 = [
+        PreflightCommandFailure(
+            check_name="ruff",
+            command="ruff check .",
+            output="E501",
+        )
+    ]
+    failures_2: list[PreflightCommandFailure] = []
     runner = FakeAgentRunner(preflight_responses=[failures_1, failures_2])
 
     async def _run():

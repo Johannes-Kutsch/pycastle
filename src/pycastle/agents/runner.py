@@ -32,6 +32,7 @@ from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
 from ..display.status_display import ModelDisplayMetadata, PlainStatusDisplay
+from ..infrastructure.preflight_failure_interpreter import PreflightCommandFailure
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
 
@@ -107,7 +108,7 @@ class AgentRunnerProtocol(Protocol):
         stage: str = "",
         status_display=None,
         work_body: str = "",
-    ) -> list[tuple[str, str, str]]: ...
+    ) -> list[PreflightCommandFailure]: ...
 
 
 class AgentRunner:
@@ -372,7 +373,7 @@ class AgentRunner:
         stage: str = "",
         status_display=None,
         work_body: str = "",
-    ) -> list[tuple[str, str, str]]:
+    ) -> list[PreflightCommandFailure]:
         from ..iteration._rows import status_row
 
         if status_display is None:

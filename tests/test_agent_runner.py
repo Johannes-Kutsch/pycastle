@@ -34,6 +34,9 @@ from pycastle.errors import (
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session import ProviderRunState, RoleSession, RunKind
 from pycastle.session.agent import RunSessionPlan
+from pycastle.infrastructure.preflight_failure_interpreter import (
+    PreflightCommandFailure,
+)
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
@@ -1323,7 +1326,7 @@ def test_agent_runner_run_preflight_raises_setup_phase_error_when_container_star
     assert "sleep: executable file not found in $PATH" in str(exc_info.value)
 
 
-def test_agent_runner_run_preflight_returns_failure_tuple_when_check_fails(tmp_path):
+def test_agent_runner_run_preflight_returns_typed_failure_when_check_fails(tmp_path):
     mock_client = _make_preflight_docker_client(
         exit_code=1, stdout=b"E501 line too long"
     )
@@ -1333,10 +1336,9 @@ def test_agent_runner_run_preflight_returns_failure_tuple_when_check_fails(tmp_p
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     assert len(result) == 1
-    check_name, command, output = result[0]
-    assert check_name == "ruff"
-    assert command == "ruff check ."
-    assert "E501" in output
+    assert result[0].check_name == "ruff"
+    assert result[0].command == "ruff check ."
+    assert "E501" in result[0].output
 
 
 def test_agent_runner_run_preflight_collects_all_failures_when_multiple_checks_fail(
@@ -1352,8 +1354,8 @@ def test_agent_runner_run_preflight_collects_all_failures_when_multiple_checks_f
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     assert len(result) == 2
-    assert result[0][0] == "ruff"
-    assert result[1][0] == "mypy"
+    assert result[0].check_name == "ruff"
+    assert result[1].check_name == "mypy"
 
 
 def test_agent_runner_run_preflight_stops_container_after_checks_pass(tmp_path):
@@ -1420,10 +1422,10 @@ def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_pyproject_
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     assert result == [
-        (
-            "ruff",
-            "ruff check .",
-            "Command failed (exit 127): bash: ruff: command not found",
+        PreflightCommandFailure(
+            check_name="ruff",
+            command="ruff check .",
+            output="Command failed (exit 127): bash: ruff: command not found",
         )
     ]
 
@@ -1444,10 +1446,10 @@ def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_requiremen
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     assert result == [
-        (
-            "ruff",
-            "ruff check .",
-            "Command failed (exit 127): bash: ruff: command not found",
+        PreflightCommandFailure(
+            check_name="ruff",
+            command="ruff check .",
+            output="Command failed (exit 127): bash: ruff: command not found",
         )
     ]
 
@@ -1465,10 +1467,10 @@ def test_agent_runner_run_preflight_ignores_malformed_pyproject_and_returns_raw_
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     assert result == [
-        (
-            "ruff",
-            "ruff check .",
-            "Command failed (exit 127): bash: ruff: command not found",
+        PreflightCommandFailure(
+            check_name="ruff",
+            command="ruff check .",
+            output="Command failed (exit 127): bash: ruff: command not found",
         )
     ]
 
@@ -1488,10 +1490,10 @@ def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_undeclared
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     assert result == [
-        (
-            "black",
-            "black --check .",
-            "Command failed (exit 127): bash: black: command not found",
+        PreflightCommandFailure(
+            check_name="black",
+            command="black --check .",
+            output="Command failed (exit 127): bash: black: command not found",
         )
     ]
 
@@ -1509,10 +1511,10 @@ def test_agent_runner_run_preflight_keeps_missing_tool_without_python_declaratio
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     assert result == [
-        (
-            "shellcheck",
-            "shellcheck .",
-            "Command failed (exit 127): bash: shellcheck: command not found",
+        PreflightCommandFailure(
+            check_name="shellcheck",
+            command="shellcheck .",
+            output="Command failed (exit 127): bash: shellcheck: command not found",
         )
     ]
 
@@ -1532,10 +1534,10 @@ def test_agent_runner_run_preflight_returns_failure_tuple_for_declared_tool_proj
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     assert result == [
-        (
-            "ruff",
-            "ruff check .",
-            "Command failed (exit 1): src/app.py:1:1: F401 imported but unused",
+        PreflightCommandFailure(
+            check_name="ruff",
+            command="ruff check .",
+            output="Command failed (exit 1): src/app.py:1:1: F401 imported but unused",
         )
     ]
 
@@ -1577,12 +1579,16 @@ def test_agent_runner_run_preflight_returns_all_failures_after_running_later_che
     mypy_idx = next(i for i, call in enumerate(exec_calls) if "mypy ." in call)
     assert ruff_idx < mypy_idx
     assert result == [
-        (
-            "ruff",
-            "ruff check .",
-            "Command failed (exit 127): bash: ruff: command not found",
+        PreflightCommandFailure(
+            check_name="ruff",
+            command="ruff check .",
+            output="Command failed (exit 127): bash: ruff: command not found",
         ),
-        ("mypy", "mypy .", "Command failed (exit 1): src/app.py:1: error: boom"),
+        PreflightCommandFailure(
+            check_name="mypy",
+            command="mypy .",
+            output="Command failed (exit 1): src/app.py:1: error: boom",
+        ),
     ]
 
 
@@ -1621,8 +1627,16 @@ def test_agent_runner_run_preflight_returns_all_ordinary_failures_in_configured_
     result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
 
     assert result == [
-        ("ruff", "ruff check .", "Command failed (exit 1): src/app.py:1:1: F401"),
-        ("pytest", "pytest", "Command failed (exit 1): FAILED tests/test_app.py"),
+        PreflightCommandFailure(
+            check_name="ruff",
+            command="ruff check .",
+            output="Command failed (exit 1): src/app.py:1:1: F401",
+        ),
+        PreflightCommandFailure(
+            check_name="pytest",
+            command="pytest",
+            output="Command failed (exit 1): FAILED tests/test_app.py",
+        ),
     ]
     assert any("mypy ." in call for call in exec_calls)
 

@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 import re
 from pathlib import Path
-from typing import Protocol, Sequence, TypeAlias, cast
+from typing import Protocol, TypeAlias, cast
 
 from ..agents.output_protocol import (
     AgentOutputProtocolError,
@@ -34,7 +34,6 @@ from ._utils import _wait_for_clean_working_tree
 from ..infrastructure.preflight_failure_interpreter import (
     analyze_preflight_command_failures,
     OrdinaryCheckFailure,
-    PreflightCommandFailure,
 )
 from .. import _time as _time_module
 
@@ -224,19 +223,6 @@ class PreflightCache:
             return override
         return registry.resolve(override, _time_module.now_local())
 
-    def _preflight_command_failures(
-        self,
-        failures: Sequence[tuple[str, str, str]],
-    ) -> tuple[PreflightCommandFailure, ...]:
-        return tuple(
-            PreflightCommandFailure(
-                check_name=check_name,
-                command=command,
-                output=output,
-            )
-            for check_name, command, output in failures
-        )
-
     async def _handle_failure(
         self,
         failures: tuple[OrdinaryCheckFailure, ...],
@@ -317,9 +303,8 @@ class PreflightCache:
 
                 result: PreflightResult
                 if failures:
-                    command_failures = self._preflight_command_failures(failures)
                     analysis = analyze_preflight_command_failures(
-                        deps.repo_root, command_failures
+                        deps.repo_root, failures
                     )
                     if isinstance(analysis, SetupPhaseError):
                         raise analysis

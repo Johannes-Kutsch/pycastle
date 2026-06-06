@@ -28,6 +28,9 @@ from pycastle.iteration.preflight import (
     PreflightReady,
 )
 from pycastle.infrastructure.worktree import worktree_identity
+from pycastle.infrastructure.preflight_failure_interpreter import (
+    PreflightCommandFailure,
+)
 from pycastle.session import RoleSession
 
 
@@ -42,6 +45,16 @@ def git_svc():
 @pytest.fixture
 def github_svc():
     return MagicMock(spec=GithubService)
+
+
+def _preflight_failure(
+    check_name: str, command: str, output: str
+) -> PreflightCommandFailure:
+    return PreflightCommandFailure(
+        check_name=check_name,
+        command=command,
+        output=output,
+    )
 
 
 # ── get_safe_sha: basic return variants ──────────────────────────────────────
@@ -65,7 +78,7 @@ def test_get_safe_sha_returns_hitl_when_checks_fail_with_hitl_label(
 ):
     fake = FakeAgentRunner(
         [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
-        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
@@ -82,7 +95,7 @@ def test_get_safe_sha_preflight_issue_uses_preflight_issue_override_service(
 ):
     fake = FakeAgentRunner(
         [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
-        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     deps = _make_deps(
         tmp_path,
@@ -108,7 +121,7 @@ def test_get_safe_sha_preflight_issue_resolves_override_at_failure_dispatch(
 ):
     fake = FakeAgentRunner(
         [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
-        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     unavailable = MagicMock(spec=AgentService)
     unavailable.is_available.return_value = False
@@ -150,7 +163,7 @@ def test_get_safe_sha_returns_afk_when_checks_fail_with_afk_label(
 ):
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
-        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     github_svc.get_issue.return_value = {"number": 42, "body": "x" * 100}
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -168,7 +181,7 @@ def test_get_safe_sha_raises_for_missing_slice_mode_on_afk_issue(
 ):
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent"])],
-        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     github_svc.get_issue.return_value = {"number": 42, "body": "x" * 100}
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -183,7 +196,7 @@ def test_get_safe_sha_uses_filed_issue_labels_for_afk_validation(
 ):
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
-        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     github_svc.get_issue.return_value = {
         "number": 42,
@@ -200,7 +213,7 @@ def test_get_safe_sha_uses_filed_issue_labels_for_afk_validation(
 def test_get_safe_sha_raises_for_short_body_on_afk_issue(tmp_path, git_svc, github_svc):
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
-        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     github_svc.get_issue.return_value = {"number": 42, "body": "short"}
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -218,7 +231,7 @@ def test_get_safe_sha_routes_requirements_declared_missing_tool_to_setup_failure
         [],
         preflight_responses=[
             [
-                (
+                _preflight_failure(
                     "ruff",
                     "ruff check .",
                     "Command failed (exit 127): bash: ruff: command not found",
@@ -253,8 +266,10 @@ def test_get_safe_sha_aborts_before_issue_dispatch_when_later_failure_is_missing
         [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
         preflight_responses=[
             [
-                ("pytest", "pytest", "FAILED tests/test_demo.py::test_it"),
-                (
+                _preflight_failure(
+                    "pytest", "pytest", "FAILED tests/test_demo.py::test_it"
+                ),
+                _preflight_failure(
                     "mypy",
                     "mypy .",
                     "Command failed (exit 127): bash: mypy: command not found",
@@ -285,7 +300,7 @@ def test_get_safe_sha_routes_declared_missing_tool_with_shell_not_found_output_t
         [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
         preflight_responses=[
             [
-                (
+                _preflight_failure(
                     "ruff",
                     "ruff check .",
                     "Command failed (exit 127): /bin/sh: 1: ruff: not found",
@@ -317,7 +332,7 @@ def test_get_safe_sha_does_not_cache_verdict_when_missing_declared_tool_raises_s
         [],
         preflight_responses=[
             [
-                (
+                _preflight_failure(
                     "ruff",
                     "ruff check .",
                     "Command failed (exit 127): /bin/sh: 1: ruff: not found",
@@ -363,14 +378,14 @@ def test_get_safe_sha_propagates_setup_phase_error_metadata_unchanged(
     assert fake.calls == []
 
 
-def test_get_safe_sha_treats_runner_failure_tuple_as_ordinary_pre_flight_failure(
+def test_get_safe_sha_treats_runner_failure_fact_as_ordinary_pre_flight_failure(
     tmp_path, git_svc, github_svc
 ):
     fake = FakeAgentRunner(
         [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
         preflight_responses=[
             [
-                (
+                _preflight_failure(
                     "ruff",
                     "ruff check .",
                     "Command failed (exit 127): bash: ruff: command not found",
@@ -403,7 +418,7 @@ def test_get_safe_sha_keeps_declared_source_quality_failure_on_preflight_issue_r
         [IssueOutput(number=56, labels=["bug", "ready-for-human"])],
         preflight_responses=[
             [
-                (
+                _preflight_failure(
                     "ruff",
                     "ruff check .",
                     "src/demo.py:1:1: F401 `os` imported but unused",
@@ -436,7 +451,7 @@ def test_get_safe_sha_preserves_original_first_failure_details_after_analysis_an
         [IssueOutput(number=77, labels=["bug", "ready-for-agent", "behavior-slice"])],
         preflight_responses=[
             [
-                (
+                _preflight_failure(
                     "lint",
                     "python -X dev -m ruff check .",
                     "src/demo.py:1:1: F401 `os` imported but unused",
@@ -468,8 +483,10 @@ def test_get_safe_sha_builds_preflight_issue_scope_args_from_first_failure_via_p
         [IssueOutput(number=55, labels=["bug", "ready-for-human"])],
         preflight_responses=[
             [
-                ("ruff", "ruff check .", "E501"),
-                ("pytest", "pytest -q", "FAILED tests/test_demo.py::test_it"),
+                _preflight_failure("ruff", "ruff check .", "E501"),
+                _preflight_failure(
+                    "pytest", "pytest -q", "FAILED tests/test_demo.py::test_it"
+                ),
             ]
         ],
     )
@@ -520,7 +537,7 @@ def test_get_safe_sha_failure_cached_on_second_call_at_same_sha(
     SHA reuses the cached AFK verdict without re-running checks or re-filing."""
     fake = FakeAgentRunner(
         [IssueOutput(number=99, labels=["ready-for-agent", "refactor-slice"])],
-        preflight_responses=[[("mypy", "mypy .", "error")]],
+        preflight_responses=[[_preflight_failure("mypy", "mypy .", "error")]],
     )
     github_svc.get_issue.return_value = {"number": 99, "body": "x" * 100}
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -656,7 +673,7 @@ def test_get_safe_sha_raises_when_afk_issue_missing_slice_mode_label(
 ):
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent"])],
-        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
@@ -670,7 +687,7 @@ def test_get_safe_sha_does_not_validate_slice_label_on_hitl_branch(
 ):
     fake = FakeAgentRunner(
         [IssueOutput(number=7, labels=["bug", "ready-for-human"])],
-        preflight_responses=[[("mypy", "mypy .", "error")]],
+        preflight_responses=[[_preflight_failure("mypy", "mypy .", "error")]],
     )
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
@@ -691,7 +708,7 @@ def test_get_safe_sha_raises_when_afk_issue_has_multiple_slice_mode_labels(
                 labels=["ready-for-agent", "behavior-slice", "refactor-slice"],
             )
         ],
-        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
@@ -705,7 +722,7 @@ def test_get_safe_sha_raises_when_filed_afk_issue_labels_are_missing(
 ):
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
-        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     github_svc.get_issue.return_value = {
         "number": 42,
@@ -727,7 +744,7 @@ def test_get_safe_sha_raises_when_afk_issue_body_is_too_short(
 ):
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
-        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     github_svc.get_issue.return_value = {"number": 42, "body": "x" * 99}
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -742,7 +759,7 @@ def test_get_safe_sha_does_not_check_body_length_on_hitl_branch(
 ):
     fake = FakeAgentRunner(
         [IssueOutput(number=7, labels=["bug", "ready-for-human"])],
-        preflight_responses=[[("mypy", "mypy .", "error")]],
+        preflight_responses=[[_preflight_failure("mypy", "mypy .", "error")]],
     )
     github_svc.get_issue.return_value = {"number": 7, "body": "x" * 5}
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -760,7 +777,7 @@ def test_get_safe_sha_returns_afk_when_filed_body_meets_floor(
 ):
     fake = FakeAgentRunner(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
-        preflight_responses=[[("ruff", "ruff check .", "E501")]],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
     github_svc.get_issue.return_value = {"number": 42, "body": "x" * 100}
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)

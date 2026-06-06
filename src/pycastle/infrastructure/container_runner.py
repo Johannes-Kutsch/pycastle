@@ -8,6 +8,7 @@ from ..config import Config, resolve_logs_dir
 from ..display.status_display import PlainStatusDisplay
 from .docker_session import DockerSession
 from ..errors import DockerError
+from .preflight_failure_interpreter import PreflightCommandFailure
 from ..services.agent_service import AgentService
 from ..session import RunKind
 from ._logged_line_stream import stream_logged_work_lines
@@ -69,9 +70,9 @@ class ContainerRunner:
     async def preflight(
         self,
         checks: list[tuple[str, str]],
-    ) -> list[tuple[str, str, str]]:
+    ) -> list[PreflightCommandFailure]:
         loop = asyncio.get_running_loop()
-        failures: list[tuple[str, str, str]] = []
+        failures: list[PreflightCommandFailure] = []
         total = len(checks)
         for i, (check_name, command) in enumerate(checks, 1):
             self._status_display.update_phase(
@@ -80,7 +81,13 @@ class ContainerRunner:
             try:
                 await loop.run_in_executor(None, self._session.exec_simple, command)
             except DockerError as exc:
-                failures.append((check_name, command, str(exc)))
+                failures.append(
+                    PreflightCommandFailure(
+                        check_name=check_name,
+                        command=command,
+                        output=str(exc),
+                    )
+                )
         return failures
 
     async def work(

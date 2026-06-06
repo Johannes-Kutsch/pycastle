@@ -16,6 +16,9 @@ from pycastle.agents.output_protocol import (
 from pycastle.agents.runner import RunRequest
 from pycastle.config import StageOverride
 from pycastle.errors import AgentTimeoutError, SetupPhaseError, UsageLimitError
+from pycastle.infrastructure.preflight_failure_interpreter import (
+    PreflightCommandFailure,
+)
 from pycastle.services import (
     GitCommandError,
     GithubAPIError,
@@ -47,6 +50,16 @@ def _plan_output(issues: list[dict]) -> PlannerOutput:
             }
             for i in issues
         ]
+    )
+
+
+def _preflight_failure(
+    check_name: str, command: str, output: str
+) -> PreflightCommandFailure:
+    return PreflightCommandFailure(
+        check_name=check_name,
+        command=command,
+        output=output,
     )
 
 
@@ -1142,13 +1155,13 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
             agent_runner=FakeAgentRunner(
                 side_effect=_fake_run_agent,
                 preflight_responses=[
-                    (
-                        (
+                    [
+                        _preflight_failure(
                             "pytest",
                             "pytest -x",
                             "FAILED tests/test_bar.py::test_something",
-                        ),
-                    )
+                        )
+                    ]
                 ],
             ),
             github_service=_make_github_svc_hitl(),
@@ -1485,7 +1498,9 @@ def test_preflight_failure_hitl_exits_nonzero_no_implementer(tmp_path):
             tmp_path,
             agent_runner=FakeAgentRunner(
                 side_effect=_fake_run_agent,
-                preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+                preflight_responses=[
+                    [_preflight_failure("ruff", "ruff check .", "E501")]
+                ],
             ),
             github_service=_make_github_svc_hitl(),
         )
@@ -1514,11 +1529,11 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
             agent_runner=FakeAgentRunner(
                 side_effect=_fake_run_agent,
                 preflight_responses=[
-                    (
-                        ("ruff", "ruff check .", "ruff error"),
-                        ("mypy", "mypy .", "mypy error"),
-                        ("pytest", "pytest", "pytest error"),
-                    )
+                    [
+                        _preflight_failure("ruff", "ruff check .", "ruff error"),
+                        _preflight_failure("mypy", "mypy .", "mypy error"),
+                        _preflight_failure("pytest", "pytest", "pytest error"),
+                    ]
                 ],
             ),
             github_service=_make_github_svc_hitl(),
@@ -1712,7 +1727,10 @@ def test_usage_limit_in_preflight_sleeps_instead_of_crashing(tmp_path):
             tmp_path,
             agent_runner=FakeAgentRunner(
                 side_effect=_fake_run_agent,
-                preflight_responses=[(("ruff", "ruff check .", "E501"),), []],
+                preflight_responses=[
+                    [_preflight_failure("ruff", "ruff check .", "E501")],
+                    [],
+                ],
             ),
             github_service=mock_github,
             max_iterations=2,
@@ -2287,7 +2305,9 @@ def test_planner_preflight_error_spawns_no_implementers(tmp_path):
             tmp_path,
             agent_runner=FakeAgentRunner(
                 side_effect=_fake_run_agent,
-                preflight_responses=[(("ruff", "ruff check .", "E501 line too long"),)],
+                preflight_responses=[
+                    [_preflight_failure("ruff", "ruff check .", "E501 line too long")]
+                ],
             ),
             github_service=_make_github_svc_hitl(),
         )
@@ -2304,7 +2324,9 @@ def test_planner_preflight_error_message_names_issue_number(tmp_path, capsys):
             tmp_path,
             agent_runner=FakeAgentRunner(
                 side_effect=_fake_run_agent,
-                preflight_responses=[(("ruff", "ruff check .", "E501 line too long"),)],
+                preflight_responses=[
+                    [_preflight_failure("ruff", "ruff check .", "E501 line too long")]
+                ],
             ),
             github_service=_make_github_svc_hitl(),
         )
@@ -2677,7 +2699,7 @@ def test_preflight_afk_from_planning_routes_to_implement_same_iteration(tmp_path
         tmp_path,
         agent_runner=FakeAgentRunner(
             side_effect=_fake_run_agent,
-            preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+            preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
         ),
         github_service=mock_github,
         git_service=_make_git_svc(try_merge_side_effect=[True]),
@@ -2700,7 +2722,9 @@ def test_preflight_hitl_from_planning_returns_aborted_hitl(tmp_path):
             tmp_path,
             agent_runner=FakeAgentRunner(
                 side_effect=_fake_run_agent,
-                preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+                preflight_responses=[
+                    [_preflight_failure("ruff", "ruff check .", "E501")]
+                ],
             ),
             github_service=_make_github_svc_hitl(),
         )
@@ -3594,7 +3618,9 @@ def test_log_maintenance_runs_after_error_exit(tmp_path):
             tmp_path,
             agent_runner=FakeAgentRunner(
                 side_effect=_fake_run_agent,
-                preflight_responses=[(("ruff", "ruff check .", "E501"),)],
+                preflight_responses=[
+                    [_preflight_failure("ruff", "ruff check .", "E501")]
+                ],
             ),
             github_service=_make_github_svc_hitl(),
             logs_dir=logs_dir,
