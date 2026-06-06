@@ -292,6 +292,42 @@ def test_get_safe_sha_preserves_first_ordinary_declared_tool_failure_routing_whe
     assert fake.calls[0].work_body == "reporting pytest issue"
 
 
+def test_get_safe_sha_preserves_hitl_routing_for_first_ordinary_declared_tool_failure_when_later_failure_is_missing_declared_tool(
+    tmp_path, git_svc, github_svc
+):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['pytest>=8.0', 'mypy>=1.0']\n",
+        encoding="utf-8",
+    )
+    fake = FakeAgentRunner(
+        [IssueOutput(number=56, labels=["bug", "ready-for-human"])],
+        preflight_responses=[
+            [
+                _preflight_failure(
+                    "pytest", "pytest", "FAILED tests/test_demo.py::test_it"
+                ),
+                _preflight_failure(
+                    "mypy",
+                    "mypy .",
+                    "Command failed (exit 127): bash: mypy: command not found",
+                ),
+            ]
+        ],
+    )
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightHITL)
+    assert result.issue_number == 56
+    assert len(fake.preflight_calls) == 1
+    assert len(fake.calls) == 1
+    assert fake.calls[0].template == PromptTemplate.PREFLIGHT_ISSUE
+    assert fake.calls[0].role == AgentRole.PREFLIGHT_ISSUE
+    assert fake.calls[0].work_body == "reporting pytest issue"
+
+
 def test_get_safe_sha_routes_declared_missing_tool_with_shell_not_found_output_to_setup_failure(
     tmp_path, git_svc, github_svc
 ):
