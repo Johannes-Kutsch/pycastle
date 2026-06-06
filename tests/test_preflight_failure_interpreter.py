@@ -4,9 +4,12 @@ import pytest
 
 from pycastle.errors import SetupPhaseError
 from pycastle.infrastructure.preflight_failure_interpreter import (
+    MissingDeclaredPythonToolDecision,
     OrdinaryCheckFailure,
+    OrdinaryPreflightFailureDecision,
     PreflightCommandFailure,
     analyze_preflight_command_failures,
+    interpret_preflight_command_failures,
     load_python_dependency_metadata,
 )
 
@@ -194,6 +197,53 @@ def test_analyze_preflight_command_failures_keeps_declared_source_quality_failur
     result = analyze_preflight_command_failures(tmp_path, (failure,))
 
     assert result == (OrdinaryCheckFailure(tool="ruff", failure=failure),)
+
+
+def test_interpret_preflight_command_failures_returns_typed_decisions(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\ndependencies = ['ruff>=0.5']\n",
+        encoding="utf-8",
+    )
+    failures = (
+        PreflightCommandFailure(
+            check_name="format",
+            command="black --check .",
+            output="would reformat src/demo.py",
+        ),
+        PreflightCommandFailure(
+            check_name="lint",
+            command="ruff check .",
+            output="Command failed (exit 127): bash: ruff: command not found",
+        ),
+    )
+
+    result = interpret_preflight_command_failures(tmp_path, failures)
+
+    assert result == (
+        OrdinaryPreflightFailureDecision(
+            check_name="format",
+            command="black --check .",
+            output="would reformat src/demo.py",
+            tool="black",
+        ),
+        MissingDeclaredPythonToolDecision(
+            check_name="lint",
+            command="ruff check .",
+            output="Command failed (exit 127): bash: ruff: command not found",
+            tool="ruff",
+            dependency_source="pyproject.toml",
+        ),
+    )
+
+
+def test_interpret_preflight_command_failures_returns_empty_for_no_failures(
+    tmp_path: Path,
+) -> None:
+    result = interpret_preflight_command_failures(tmp_path, ())
+
+    assert result == ()
 
 
 @pytest.mark.parametrize(
