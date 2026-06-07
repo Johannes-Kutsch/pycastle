@@ -23,6 +23,7 @@ from pycastle.agents.result import CancellationToken
 from pycastle.agents.runner import AgentRunner, RunRequest
 from pycastle.config import Config
 from pycastle.errors import (
+    AgentCredentialFailureError,
     AgentFailedError,
     AgentTimeoutError,
     DockerError,
@@ -2229,7 +2230,7 @@ def test_agent_runner_marks_picked_token_exhausted_on_usage_limit(tmp_path):
     assert env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok-primary"
 
 
-def test_agent_runner_marks_picked_token_permanently_exhausted_on_subscription_access_denial(
+def test_agent_runner_routes_subscription_access_denial_to_agent_credential_failure(
     tmp_path,
 ):
     from pycastle.services.claude_service import ClaudeService
@@ -2259,7 +2260,7 @@ def test_agent_runner_marks_picked_token_permanently_exhausted_on_subscription_a
         service_registry={"claude": svc},
     )
 
-    with pytest.raises(UsageLimitError) as exc_info:
+    with pytest.raises(AgentCredentialFailureError) as exc_info:
         asyncio.run(
             runner.run(
                 _run_request(
@@ -2271,13 +2272,13 @@ def test_agent_runner_marks_picked_token_permanently_exhausted_on_subscription_a
             )
         )
 
-    assert exc_info.value.is_permanent is True
-    assert exc_info.value.account_label == "secondary"
+    assert exc_info.value.service_name == "claude"
+    assert exc_info.value.status_code == 403
     env = svc.build_env()
-    assert env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok-primary"
+    assert env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok-secondary"
 
 
-def test_agent_runner_treats_subscription_access_denial_variant_as_permanent_exhaustion(
+def test_agent_runner_routes_subscription_access_denial_variant_to_agent_credential_failure(
     tmp_path,
 ):
     from pycastle.services.claude_service import ClaudeService
@@ -2312,7 +2313,7 @@ def test_agent_runner_treats_subscription_access_denial_variant_as_permanent_exh
         service_registry={"claude": svc},
     )
 
-    with pytest.raises(UsageLimitError) as exc_info:
+    with pytest.raises(AgentCredentialFailureError) as exc_info:
         asyncio.run(
             runner.run(
                 _run_request(
@@ -2324,10 +2325,10 @@ def test_agent_runner_treats_subscription_access_denial_variant_as_permanent_exh
             )
         )
 
-    assert exc_info.value.is_permanent is True
-    assert exc_info.value.account_label == "secondary"
+    assert exc_info.value.service_name == "claude"
+    assert exc_info.value.status_code == 403
     env = svc.build_env()
-    assert env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok-primary"
+    assert env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok-secondary"
 
 
 def test_agent_runner_treats_unrelated_403_as_hard_error(tmp_path):

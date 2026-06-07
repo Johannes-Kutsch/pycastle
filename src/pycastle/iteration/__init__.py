@@ -14,6 +14,7 @@ from ..bug_reporter import (
     file_agent_credential_failure_issue,
 )
 from ..errors import (
+    AgentCredentialFailureError,
     AgentFailedError,
     AgentTimeoutError,
     HardAgentError,
@@ -87,6 +88,10 @@ def _is_codex_missing_host_auth_signature(text: str) -> bool:
     )
 
 
+def _is_claude_subscription_access_signature(text: str) -> bool:
+    return "disabled claude subscription access for claude code" in text.lower()
+
+
 def _classify_agent_credential_failure(
     *,
     service_name: str,
@@ -100,13 +105,21 @@ def _classify_agent_credential_failure(
             (obs.source_stream, obs.raw_provider_text) for obs in observations
         ) or (("raw error", raw),)
         return ("Repair the local agent credentials/account access.", rendered)
-    if service_name != "codex" or status_code != 401:
-        return None
 
     rendered_observations = tuple(
         (obs.source_stream, obs.raw_provider_text) for obs in observations
     )
     haystacks = tuple(text for _, text in rendered_observations) + (raw,)
+    if service_name == "claude" and status_code == 403:
+        if any(_is_claude_subscription_access_signature(text) for text in haystacks):
+            return (
+                "Restore Claude Code subscription access or switch to a token with access.",
+                rendered_observations or (("raw error", raw),),
+            )
+        return None
+    if service_name != "codex" or status_code != 401:
+        return None
+
     if any(_is_codex_refresh_token_reused_signature(text) for text in haystacks):
         return (
             "Run `codex login` on the host to reseed credentials.",
@@ -407,6 +420,52 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
     except TransientAgentError:
         return Continue()
+    except AgentCredentialFailureError as err:
+        raw = err.args[0] if err.args else ""
+        service_name = getattr(err, "service_name", "claude") or "claude"
+        credential_failure = _classify_agent_credential_failure(
+            service_name=service_name,
+            status_code=err.status_code,
+            classification=getattr(err, "classification", None),
+            raw=raw,
+            observations=getattr(err, "observations", ()),
+        )
+        remediation, rendered_observations = credential_failure or (
+            "Repair the local agent credentials/account access.",
+            tuple(
+                (obs.source_stream, obs.raw_provider_text)
+                for obs in getattr(err, "observations", ())
+            )
+            or (("raw error", raw),),
+        )
+        url = file_agent_credential_failure_issue(
+            service_name=service_name,
+            role_name=err.caller,
+            status_code=err.status_code,
+            raw_result_envelope=raw,
+            remediation=remediation,
+            observations=rendered_observations,
+            github_svc=deps.github_svc,
+        )
+        status_code_str = (
+            str(err.status_code) if err.status_code is not None else "no status"
+        )
+        status_message = (
+            f"operator-actionable agent credential failure: status {status_code_str}"
+        )
+        if url is None:
+            local_evidence = (
+                rendered_observations[0][1] if rendered_observations else raw
+            )
+            status_message = (
+                "operator-actionable agent credential failure: "
+                f"{remediation} Evidence: {local_evidence}"
+            )
+        deps.status_display.print(
+            err.caller,
+            status_message + (f" — {url}" if url else ""),
+        )
+        return AbortedAgentCredentialFailure(status_code=err.status_code)
     except HardAgentError as err:
         raw = err.args[0] if err.args else ""
         service_name = getattr(err, "service_name", "claude") or "claude"
