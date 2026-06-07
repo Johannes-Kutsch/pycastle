@@ -102,7 +102,7 @@ def _is_subscription_access_denial(
         is_error is True
         and status == 403
         and isinstance(result, str)
-        and _SUBSCRIPTION_ACCESS_DENIAL_PHRASE in result
+        and _SUBSCRIPTION_ACCESS_DENIAL_PHRASE.lower() in result.lower()
     )
 
 

@@ -109,6 +109,25 @@ def test_process_stream_routes_exact_subscription_access_denial_to_agent_credent
     assert exc_info.value.status_code == 403
 
 
+def test_process_stream_routes_subscription_access_denial_variant_to_agent_credential_failure():
+    line = json.dumps(
+        {
+            "type": "result",
+            "is_error": True,
+            "api_error_status": 403,
+            "result": (
+                "Your organization has DISABLED Claude subscription access for "
+                "Claude Code."
+            ),
+        }
+    )
+
+    with pytest.raises(AgentCredentialFailureError) as exc_info:
+        process_stream([line], on_turn=lambda t: None, role=AgentRole.IMPLEMENTER)
+    assert exc_info.value.service_name == "claude"
+    assert exc_info.value.status_code == 403
+
+
 def test_process_stream_raises_hard_agent_error_on_400():
     """400 Bad Request raises HardAgentError."""
     with pytest.raises(HardAgentError) as exc_info:
