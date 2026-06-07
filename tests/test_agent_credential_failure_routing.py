@@ -207,6 +207,37 @@ def test_route_agent_credential_failure_files_stable_codex_issue_contract_at_mod
     assert body.count("[REDACTED]") >= 3
 
 
+def test_route_agent_credential_failure_selects_codex_reseed_remediation_from_adapter_classification():
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = 42
+
+    err = AgentCredentialFailureError(
+        message="Codex request failed with credential failure.",
+        status_code=401,
+        service_name="codex",
+        classification="codex_auth_lineage_exhausted",
+        observations=(
+            ProviderErrorObservation(
+                service_name="codex",
+                raw_provider_text="Credential failure observed by provider adapter.",
+                source_stream="json_event.error",
+                status_code=401,
+            ),
+        ),
+    )
+    err.caller = "Implementer"
+
+    route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    _, _, body, _ = github_svc.create_issue_in.call_args[0]
+    assert "Run `codex login` on the host to reseed credentials." in body
+
+
 def test_route_agent_credential_failure_interprets_claude_subscription_access_denial_in_routing_module():
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
@@ -243,10 +274,80 @@ def test_route_agent_credential_failure_interprets_claude_subscription_access_de
     )
     _, _, body, _ = github_svc.create_issue_in.call_args[0]
     assert (
-        "Restore Claude Code subscription access or switch to a token with access."
-        in body
+        "Restore Claude Code subscription access or use a token/account with "
+        "access and rerun pycastle." in body
     )
     assert message in body
+
+
+def test_route_agent_credential_failure_uses_shared_claude_subscription_remediation_at_module_seam():
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = 42
+    message = (
+        "Your organization has disabled Claude subscription access for Claude Code. "
+        "Please ask your admin to enable Claude subscription access for Claude Code."
+    )
+    err = HardAgentError(
+        message=message,
+        status_code=403,
+        service_name="claude",
+        observations=(
+            ProviderErrorObservation(
+                service_name="claude",
+                raw_provider_text=message,
+                source_stream="result",
+                status_code=403,
+            ),
+        ),
+    )
+    err.caller = "Planner"
+
+    route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    _, _, body, _ = github_svc.create_issue_in.call_args[0]
+    assert (
+        "Restore Claude Code subscription access or use a token/account with "
+        "access and rerun pycastle."
+    ) in body
+
+
+def test_route_agent_credential_failure_selects_claude_access_remediation_from_adapter_classification():
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = 42
+
+    err = AgentCredentialFailureError(
+        message="Claude request failed with credential failure.",
+        status_code=403,
+        service_name="claude",
+        classification="operator_actionable_agent_credential_failure",
+        observations=(
+            ProviderErrorObservation(
+                service_name="claude",
+                raw_provider_text="Credential failure observed by provider adapter.",
+                source_stream="result",
+                status_code=403,
+            ),
+        ),
+    )
+    err.caller = "Planner"
+
+    route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    _, _, body, _ = github_svc.create_issue_in.call_args[0]
+    assert (
+        "Restore Claude Code subscription access or use a token/account with "
+        "access and rerun pycastle."
+    ) in body
 
 
 def test_route_agent_credential_failure_reuses_existing_family_issue_in_routing_module():
@@ -394,6 +495,37 @@ def test_route_agent_credential_failure_uses_raw_error_as_local_evidence_without
         ),
         issue_url=None,
     )
+
+
+def test_route_agent_credential_failure_selects_opencode_api_key_remediation_from_adapter_classification():
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = 42
+
+    err = AgentCredentialFailureError(
+        message="OpenCode request failed with credential failure.",
+        status_code=401,
+        service_name="opencode",
+        classification="operator_actionable_agent_credential_failure",
+        observations=(
+            ProviderErrorObservation(
+                service_name="opencode",
+                raw_provider_text="Credential failure observed by provider adapter.",
+                source_stream="json_event.error",
+                status_code=401,
+            ),
+        ),
+    )
+    err.caller = "Implementer"
+
+    route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    _, _, body, _ = github_svc.create_issue_in.call_args[0]
+    assert "Update the configured OpenCode API key and rerun pycastle." in body
 
 
 def test_route_agent_credential_failure_returns_none_for_unrelated_hard_error():

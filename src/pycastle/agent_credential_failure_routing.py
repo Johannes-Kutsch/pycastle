@@ -197,9 +197,21 @@ def _build_local_fallback_status_message(
 def _select_remediation(
     *,
     service_name: str,
+    classification: str | None = None,
     raw: str,
     rendered_observations: tuple[tuple[str, str], ...],
 ) -> str:
+    if classification == _CODEX_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION:
+        return "Run `codex login` on the host to reseed credentials."
+    if classification == _SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION:
+        if service_name == "claude":
+            return (
+                "Restore Claude Code subscription access or use a token/account with "
+                "access and rerun pycastle."
+            )
+        if service_name == "opencode":
+            return "Update the configured OpenCode API key and rerun pycastle."
+
     haystacks = tuple(text for _, text in rendered_observations) + (raw,)
     if service_name == "codex":
         if any(_is_codex_refresh_token_reused_signature(text) for text in haystacks):
@@ -236,6 +248,7 @@ def _interpret_agent_credential_failure(
         return _CredentialFailureInterpretation(
             remediation=_select_remediation(
                 service_name=service_name,
+                classification=classification,
                 raw=raw,
                 rendered_observations=rendered_observations,
             ),
@@ -246,9 +259,10 @@ def _interpret_agent_credential_failure(
     if service_name == "claude" and status_code == 403:
         if any(_is_claude_subscription_access_denial(text) for text in haystacks):
             return _CredentialFailureInterpretation(
-                remediation=(
-                    "Restore Claude Code subscription access or switch to a token "
-                    "with access."
+                remediation=_select_remediation(
+                    service_name=service_name,
+                    raw=raw,
+                    rendered_observations=rendered_observations,
                 ),
                 rendered_observations=rendered_observations,
             )
