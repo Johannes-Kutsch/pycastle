@@ -14,6 +14,7 @@ from ..bug_reporter import (
     file_agent_credential_failure_issue,
 )
 from ..errors import (
+    AgentCredentialFailureError,
     AgentFailedError,
     AgentTimeoutError,
     HardAgentError,
@@ -160,6 +161,51 @@ def _classify_agent_credential_failure(
             rendered_observations or (("raw error", raw),),
         )
     return None
+
+
+def _abort_agent_credential_failure(
+    err: HardAgentError,
+    deps: Deps,
+) -> "AbortedAgentCredentialFailure | None":
+    raw = err.args[0] if err.args else ""
+    service_name = getattr(err, "service_name", "claude") or "claude"
+    credential_failure = _classify_agent_credential_failure(
+        service_name=service_name,
+        status_code=err.status_code,
+        classification=getattr(err, "classification", None),
+        raw=raw,
+        observations=getattr(err, "observations", ()),
+    )
+    if credential_failure is None:
+        return None
+
+    remediation, rendered_observations = credential_failure
+    url = file_agent_credential_failure_issue(
+        service_name=service_name,
+        role_name=err.caller,
+        status_code=err.status_code,
+        raw_result_envelope=raw,
+        remediation=remediation,
+        observations=rendered_observations,
+        github_svc=deps.github_svc,
+    )
+    status_code_str = (
+        str(err.status_code) if err.status_code is not None else "no status"
+    )
+    status_message = (
+        f"operator-actionable agent credential failure: status {status_code_str}"
+    )
+    if url is None:
+        local_evidence = rendered_observations[0][1] if rendered_observations else raw
+        status_message = (
+            "operator-actionable agent credential failure: "
+            f"{remediation} Evidence: {local_evidence}"
+        )
+    deps.status_display.print(
+        err.caller,
+        status_message + (f" — {url}" if url else ""),
+    )
+    return AbortedAgentCredentialFailure(status_code=err.status_code)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -403,6 +449,11 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 )
                 if isinstance(result, IssueOutput):
                     issue_number = result.number
+            except AgentCredentialFailureError as report_err:
+                aborted = _abort_agent_credential_failure(report_err, deps)
+                if aborted is not None:
+                    return aborted
+                raise
             except Exception as report_err:
                 deps.status_display.print(
                     "Failure Report",
@@ -452,44 +503,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
     except HardAgentError as err:
         raw = err.args[0] if err.args else ""
         service_name = getattr(err, "service_name", "claude") or "claude"
-        credential_failure = _classify_agent_credential_failure(
-            service_name=service_name,
-            status_code=err.status_code,
-            classification=getattr(err, "classification", None),
-            raw=raw,
-            observations=getattr(err, "observations", ()),
-        )
-        if credential_failure is not None:
-            remediation, rendered_observations = credential_failure
-            url = file_agent_credential_failure_issue(
-                service_name=service_name,
-                role_name=err.caller,
-                status_code=err.status_code,
-                raw_result_envelope=raw,
-                remediation=remediation,
-                observations=rendered_observations,
-                github_svc=deps.github_svc,
-            )
-            status_code_str = (
-                str(err.status_code) if err.status_code is not None else "no status"
-            )
-            status_message = (
-                "operator-actionable agent credential failure: "
-                f"status {status_code_str}"
-            )
-            if url is None:
-                local_evidence = (
-                    rendered_observations[0][1] if rendered_observations else raw
-                )
-                status_message = (
-                    "operator-actionable agent credential failure: "
-                    f"{remediation} Evidence: {local_evidence}"
-                )
-            deps.status_display.print(
-                err.caller,
-                status_message + (f" — {url}" if url else ""),
-            )
-            return AbortedAgentCredentialFailure(status_code=err.status_code)
+        aborted = _abort_agent_credential_failure(err, deps)
+        if aborted is not None:
+            return aborted
 
         error_text = _extract_legacy_hard_error_text(raw)
         first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"

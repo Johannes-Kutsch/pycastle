@@ -2733,6 +2733,73 @@ def test_run_iteration_failure_report_crash_logs_warning_and_error(
     assert logged_cause is original_error
 
 
+def test_run_iteration_routes_failure_report_credential_failure_through_shared_terminal_path(
+    tmp_path, git_svc, logger
+):
+    original_error = _make_agent_failed_error(
+        AgentRole.IMPLEMENTER, tmp_path / "pycastle" / ".worktrees" / "issue-1"
+    )
+    credential_error = AgentCredentialFailureError(
+        "Codex authentication missing: run `codex login` on the host.",
+        status_code=401,
+        service_name="codex",
+        observations=(
+            ProviderErrorObservation(
+                service_name="codex",
+                raw_provider_text=(
+                    "Codex authentication missing: run `codex login` on the host."
+                ),
+                source_stream="pre-dispatch host check",
+                status_code=401,
+            ),
+        ),
+    )
+    response_queue: list = [original_error, credential_error]
+
+    async def agent_fn(req: RunRequest):
+        resp = response_queue.pop(0)
+        if isinstance(resp, BaseException):
+            raise resp
+        return resp
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.repo = "owner/consuming-project"
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Fix bug",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
+    github_svc.get_all_open_issues_lightweight.return_value = []
+    github_svc.search_open_issues_by_title.return_value = []
+
+    deps = _make_deps(
+        tmp_path,
+        agent_fn,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        cfg=Config(diagnose_on_failure=True),
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 401
+    github_svc.create_issue_in.assert_called_once()
+    _owner_repo, title, body, labels = github_svc.create_issue_in.call_args[0]
+    assert title == "[pycastle] operator-actionable agent credential failure"
+    assert "Agent: Failure Report Agent" in body
+    assert (
+        "Run `codex login` on the host to seed Codex credentials before dispatch."
+        in body
+    )
+    assert labels == ["bug", "needs-triage"]
+    assert logger.internal_errors == []
+
+
 def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
     tmp_path, git_svc, logger
 ):

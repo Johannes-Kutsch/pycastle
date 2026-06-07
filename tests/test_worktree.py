@@ -10,6 +10,7 @@ import pytest
 
 from pycastle.config import Config
 from pycastle.errors import (
+    AgentCredentialFailureError,
     AgentFailedError,
     HardAgentError,
     TransientAgentError,
@@ -1326,6 +1327,80 @@ def test_managed_worktree_preserves_worktree_on_hard_agent_error(branch_deps):
 
     branch_deps.git_svc.remove_worktree.assert_not_called()
     branch_deps.git_svc.delete_branch.assert_not_called()
+
+
+def test_managed_worktree_cleans_up_on_agent_credential_failure(branch_deps):
+    """Credential failures are terminal but not preservation-worthy by themselves."""
+    expected_path = branch_deps.repo_root / "pycastle" / ".worktrees" / "issue-42"
+
+    async def _run():
+        with pytest.raises(AgentCredentialFailureError):
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha=None,
+                delete_branch_on_teardown=True,
+                deps=branch_deps,
+            ):
+                raise AgentCredentialFailureError(
+                    message="Codex authentication missing: run `codex login` on the host.",
+                    status_code=401,
+                    service_name="codex",
+                    observations=(),
+                )
+
+    asyncio.run(_run())
+
+    branch_deps.git_svc.remove_worktree.assert_called_once_with(
+        branch_deps.repo_root, expected_path
+    )
+    branch_deps.git_svc.delete_branch.assert_called_once_with(
+        "pycastle/issue-42", branch_deps.repo_root
+    )
+    marker = expected_path / ".pycastle-session" / ".preserved-failure"
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("dirty, has_resumable_session", [(True, False), (False, True)])
+def test_managed_worktree_preserves_independent_worktree_state_on_agent_credential_failure(
+    branch_deps, dirty, has_resumable_session
+):
+    """Dirty or resumable work still preserves after a credential failure."""
+    branch_deps.git_svc.is_working_tree_clean.return_value = not dirty
+
+    async def _run():
+        with pytest.raises(AgentCredentialFailureError):
+            async with managed_worktree(
+                "issue-42",
+                branch="pycastle/issue-42",
+                sha=None,
+                delete_branch_on_teardown=True,
+                deps=branch_deps,
+            ) as wt_path:
+                if has_resumable_session:
+                    session_dir = wt_path / ".pycastle-session" / "implementer"
+                    session_dir.mkdir(parents=True, exist_ok=True)
+                    (session_dir / "session.json").write_text("{}")
+                raise AgentCredentialFailureError(
+                    message="Codex authentication missing: run `codex login` on the host.",
+                    status_code=401,
+                    service_name="codex",
+                    observations=(),
+                )
+
+    asyncio.run(_run())
+
+    branch_deps.git_svc.remove_worktree.assert_not_called()
+    branch_deps.git_svc.delete_branch.assert_not_called()
+    marker = (
+        branch_deps.repo_root
+        / "pycastle"
+        / ".worktrees"
+        / "issue-42"
+        / ".pycastle-session"
+        / ".preserved-failure"
+    )
+    assert not marker.exists()
 
 
 # ── prune_orphan_worktrees ────────────────────────────────────────────────────
