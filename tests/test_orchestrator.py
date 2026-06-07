@@ -35,6 +35,7 @@ from pycastle.iteration.orchestrator import (
     ensure_session_excludes,
     run,
 )
+from pycastle.iteration import AbortedAgentCredentialFailure
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -3165,6 +3166,21 @@ def test_orchestrator_files_upstream_bug_and_exits_on_preflight_setup_failure(
     assert "Report: https://github.com/Johannes-Kutsch/pycastle/issues/new?" in (
         final_message
     )
+
+
+def test_orchestrator_exits_nonzero_on_agent_credential_failure_result(tmp_path):
+    with patch(
+        "pycastle.iteration.orchestrator.run_iteration",
+        return_value=AbortedAgentCredentialFailure(status_code=401),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            _run(
+                tmp_path,
+                github_service=_make_github_svc(),
+                git_service=_make_git_svc(),
+            )
+
+    assert exc_info.value.code == 1
 
 
 def test_orchestrator_routes_missing_pyproject_declared_preflight_tool_as_setup_failure(

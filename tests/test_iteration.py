@@ -21,6 +21,7 @@ from pycastle.services import GithubService
 from pycastle.provider_errors import ProviderErrorObservation
 from pycastle.iteration import (
     AbortedAgentFailure,
+    AbortedAgentCredentialFailure,
     AbortedHardApiError,
     AbortedHITL,
     AbortedSetup,
@@ -3912,7 +3913,8 @@ def test_run_iteration_files_exact_codex_refresh_token_reused_failure_on_consumi
         )
         result = asyncio.run(run_iteration(deps))
 
-    assert type(result).__name__ == "AbortedAgentCredentialFailure"
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 401
     mock_file.assert_not_called()
     github_svc.search_open_issues_by_title.assert_called_once_with(
         "[pycastle] operator-actionable agent credential failure"
@@ -3951,7 +3953,8 @@ def test_run_iteration_returns_distinct_terminal_result_for_shared_credential_fa
         result = asyncio.run(run_iteration(deps))
 
     mock_file.assert_not_called()
-    assert type(result).__name__ == "AbortedAgentCredentialFailure"
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 401
     assert not isinstance(result, AbortedHardApiError)
 
 
@@ -3986,7 +3989,8 @@ def test_run_iteration_prints_credential_failure_and_remediation_when_consuming_
         result = asyncio.run(run_iteration(deps))
 
     mock_file.assert_not_called()
-    assert type(result).__name__ == "AbortedAgentCredentialFailure"
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 401
     print_calls = [c for c in display.calls if c[0] == "print"]
     assert any(
         "Run `codex login` on the host to reseed credentials." in str(call[2])
@@ -4040,7 +4044,8 @@ def test_run_iteration_files_shared_credential_issue_for_codex_refresh_token_alr
         )
         result = asyncio.run(run_iteration(deps))
 
-    assert type(result).__name__ == "AbortedAgentCredentialFailure"
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 401
     mock_file.assert_not_called()
     github_svc.search_open_issues_by_title.assert_called_once_with(
         "[pycastle] operator-actionable agent credential failure"
@@ -4102,7 +4107,8 @@ def test_run_iteration_files_shared_credential_issue_for_refresh_token_reused_ma
         )
         result = asyncio.run(run_iteration(deps))
 
-    assert type(result).__name__ == "AbortedAgentCredentialFailure"
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 401
     mock_file.assert_not_called()
     github_svc.search_open_issues_by_title.assert_called_once_with(
         "[pycastle] operator-actionable agent credential failure"
@@ -4155,7 +4161,8 @@ def test_run_iteration_preserves_codex_consuming_project_routing_for_distinct_cr
         )
         result = asyncio.run(run_iteration(deps))
 
-    assert type(result).__name__ == "AbortedAgentCredentialFailure"
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 401
     mock_file.assert_not_called()
     github_svc.search_open_issues_by_title.assert_called_once_with(
         "[pycastle] operator-actionable agent credential failure"
@@ -4204,7 +4211,8 @@ def test_run_iteration_reuses_existing_consuming_project_issue_for_exact_codex_r
         )
         result = asyncio.run(run_iteration(deps))
 
-    assert type(result).__name__ == "AbortedAgentCredentialFailure"
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 401
     mock_file.assert_not_called()
     github_svc.create_issue_in.assert_not_called()
     print_calls = [c for c in display.calls if c[0] == "print"]
@@ -4246,7 +4254,8 @@ def test_run_iteration_files_shared_credential_issue_for_missing_codex_host_auth
         )
         result = asyncio.run(run_iteration(deps))
 
-    assert type(result).__name__ == "AbortedAgentCredentialFailure"
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 401
     mock_file.assert_not_called()
     github_svc.search_open_issues_by_title.assert_called_once_with(
         "[pycastle] operator-actionable agent credential failure"
