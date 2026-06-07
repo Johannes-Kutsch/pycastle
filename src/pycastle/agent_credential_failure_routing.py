@@ -25,7 +25,7 @@ _CREDENTIAL_KEY_RE = (
     r"token|secret|password)"
 )
 _CREDENTIAL_NAMED_VALUE_RE = re.compile(
-    rf'(?i)(["\']?{_CREDENTIAL_KEY_RE}["\']?\s*[:=]\s*)(["\']?)([^"\'\s,}}]+)(\2)'
+    rf'(?i)(["\']?{_CREDENTIAL_KEY_RE}["\']?\s*[:=]\s*)(["\']?)([^"\'\s,;}}]+)(\2)'
 )
 _CREDENTIAL_AFTER_LABEL_RE = re.compile(
     r"(?i)\b(access token|refresh token|api key|token|secret|password)\s+([A-Za-z0-9._:-]{8,})"
@@ -197,9 +197,10 @@ def _build_local_fallback_status_message(
         if interpretation.rendered_observations
         else raw
     )
+    redacted_local_evidence = _redact_credential_material(local_evidence)
     return (
         "operator-actionable agent credential failure: "
-        f"{interpretation.remediation} Evidence: {local_evidence}"
+        f"{interpretation.remediation} Evidence: {redacted_local_evidence}"
     )
 
 
