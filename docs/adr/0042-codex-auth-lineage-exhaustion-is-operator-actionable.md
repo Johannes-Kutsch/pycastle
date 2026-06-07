@@ -1,5 +1,7 @@
 # Codex auth-lineage exhaustion is operator-actionable and deduped
 
+Superseded by ADR 0043.
+
 Codex can fail with a refresh-token reuse error when the current OAuth lineage can no longer refresh. In the observed failure, the CLI reported that the refresh token had already been used. This is not a consuming-project defect and it is not a pycastle bug in the sense of an internal crash. It is a local operator credential problem on the machine running pycastle.
 
 Pycastle should surface that condition to the operator without requiring log inspection by filing one issue on the consuming project's issue tracker with `bug` and `needs-triage`. The issue should be deduped across repeated runs while the credential remains broken so cron-driven runs do not spam new issues every tick.

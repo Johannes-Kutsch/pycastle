@@ -1,5 +1,7 @@
 # Claude subscription denial is permanent account exhaustion
 
+Superseded by ADR 0043.
+
 Claude Code can return a `403` result envelope whose message says the organization has disabled Claude subscription access for Claude Code and suggests using an Anthropic API key or asking an admin to enable access. Pycastle does not support an Anthropic API-key fallback for Claude, so this specific denial is treated as a permanent exhaustion signal for the active Claude account rather than as a normal hard API failure.
 
 The key distinction is scope. This is not a blanket `403` policy. Other Claude authorization failures remain errors. Only a `403` whose result text contains the stable phrase "disabled Claude subscription access for Claude Code" is mapped to permanent account exhaustion; surrounding remediation text and punctuation may vary without changing the classification.
