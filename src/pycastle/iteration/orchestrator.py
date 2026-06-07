@@ -8,6 +8,7 @@ from ..agents.runner import AgentRunner, AgentRunnerProtocol
 from ..config import load_config, replace_config_runtime_fields, resolve_logs_dir
 from . import (
     AbortedAgentFailure,
+    AbortedAgentCredentialFailure,
     AbortedHardApiError,
     AbortedHITL,
     AbortedOperatorActionable,
@@ -282,6 +283,8 @@ async def run(
                     )
                     break
                 case AbortedHITL():
+                    sys.exit(1)
+                case AbortedAgentCredentialFailure():
                     sys.exit(1)
                 case AbortedHardApiError():
                     sys.exit(1)

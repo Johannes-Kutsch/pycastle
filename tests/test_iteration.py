@@ -3912,7 +3912,7 @@ def test_run_iteration_files_exact_codex_refresh_token_reused_failure_on_consumi
         )
         result = asyncio.run(run_iteration(deps))
 
-    assert isinstance(result, AbortedHardApiError)
+    assert type(result).__name__ == "AbortedAgentCredentialFailure"
     mock_file.assert_not_called()
     github_svc.search_open_issues_by_title.assert_called_once_with(
         "[pycastle] operator-actionable agent credential failure"
@@ -3924,6 +3924,75 @@ def test_run_iteration_files_exact_codex_refresh_token_reused_failure_on_consumi
     assert raw_line in body
     assert "Run `codex login` on the host to reseed credentials." in body
     assert labels == ["bug", "needs-triage"]
+
+
+def test_run_iteration_returns_distinct_terminal_result_for_shared_credential_failure(
+    tmp_path, git_svc, github_svc, logger
+):
+    raw_line = (
+        '{"type":"error","message":"Error: API request failed: 401 Unauthorized: '
+        '{\\"type\\":\\"error\\",\\"code\\":\\"refresh_token_reused\\",'
+        '\\"message\\":\\"This refresh token has already been used.\\"}"}'
+    )
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
+            )
+        raise HardAgentError(message=raw_line, status_code=401, service_name="codex")
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    mock_file.assert_not_called()
+    assert type(result).__name__ == "AbortedAgentCredentialFailure"
+    assert not isinstance(result, AbortedHardApiError)
+
+
+def test_run_iteration_prints_credential_failure_and_remediation_when_consuming_project_issue_lookup_fails(
+    tmp_path, git_svc, github_svc, logger
+):
+    raw_line = (
+        '{"type":"error","message":"Error: API request failed: 401 Unauthorized: '
+        '{\\"type\\":\\"error\\",\\"code\\":\\"refresh_token_reused\\",'
+        '\\"message\\":\\"This refresh token has already been used.\\"}"}'
+    )
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.side_effect = RuntimeError("gh unavailable")
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
+            )
+        raise HardAgentError(message=raw_line, status_code=401, service_name="codex")
+
+    display = RecordingStatusDisplay()
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        deps = _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            status_display=display,
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    mock_file.assert_not_called()
+    assert type(result).__name__ == "AbortedAgentCredentialFailure"
+    print_calls = [c for c in display.calls if c[0] == "print"]
+    assert any(
+        "Run `codex login` on the host to reseed credentials." in str(call[2])
+        and "refresh_token_reused" in str(call[2])
+        for call in print_calls
+    )
 
 
 def test_run_iteration_files_shared_credential_issue_for_codex_refresh_token_already_used_observation_bundle(
@@ -3971,7 +4040,7 @@ def test_run_iteration_files_shared_credential_issue_for_codex_refresh_token_alr
         )
         result = asyncio.run(run_iteration(deps))
 
-    assert isinstance(result, AbortedHardApiError)
+    assert type(result).__name__ == "AbortedAgentCredentialFailure"
     mock_file.assert_not_called()
     github_svc.search_open_issues_by_title.assert_called_once_with(
         "[pycastle] operator-actionable agent credential failure"
@@ -4033,7 +4102,7 @@ def test_run_iteration_files_shared_credential_issue_for_refresh_token_reused_ma
         )
         result = asyncio.run(run_iteration(deps))
 
-    assert isinstance(result, AbortedHardApiError)
+    assert type(result).__name__ == "AbortedAgentCredentialFailure"
     mock_file.assert_not_called()
     github_svc.search_open_issues_by_title.assert_called_once_with(
         "[pycastle] operator-actionable agent credential failure"
@@ -4086,7 +4155,7 @@ def test_run_iteration_preserves_codex_consuming_project_routing_for_distinct_cr
         )
         result = asyncio.run(run_iteration(deps))
 
-    assert isinstance(result, AbortedHardApiError)
+    assert type(result).__name__ == "AbortedAgentCredentialFailure"
     mock_file.assert_not_called()
     github_svc.search_open_issues_by_title.assert_called_once_with(
         "[pycastle] operator-actionable agent credential failure"
@@ -4135,7 +4204,7 @@ def test_run_iteration_reuses_existing_consuming_project_issue_for_exact_codex_r
         )
         result = asyncio.run(run_iteration(deps))
 
-    assert isinstance(result, AbortedHardApiError)
+    assert type(result).__name__ == "AbortedAgentCredentialFailure"
     mock_file.assert_not_called()
     github_svc.create_issue_in.assert_not_called()
     print_calls = [c for c in display.calls if c[0] == "print"]
@@ -4177,7 +4246,7 @@ def test_run_iteration_files_shared_credential_issue_for_missing_codex_host_auth
         )
         result = asyncio.run(run_iteration(deps))
 
-    assert isinstance(result, AbortedHardApiError)
+    assert type(result).__name__ == "AbortedAgentCredentialFailure"
     mock_file.assert_not_called()
     github_svc.search_open_issues_by_title.assert_called_once_with(
         "[pycastle] operator-actionable agent credential failure"

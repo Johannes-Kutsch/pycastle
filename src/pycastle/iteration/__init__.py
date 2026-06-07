@@ -163,6 +163,11 @@ class AbortedHardApiError:
 
 
 @dataclasses.dataclass(frozen=True)
+class AbortedAgentCredentialFailure:
+    status_code: int | None
+
+
+@dataclasses.dataclass(frozen=True)
 class AbortedSetup:
     phase: str
     message: str
@@ -191,6 +196,7 @@ IterationOutcome: TypeAlias = (
     | AbortedAgentFailure
     | AbortedTimeout
     | AbortedHardApiError
+    | AbortedAgentCredentialFailure
     | AbortedSetup
     | AbortedOperatorActionable
 )
@@ -425,12 +431,23 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             status_code_str = (
                 str(err.status_code) if err.status_code is not None else "no status"
             )
+            status_message = (
+                "operator-actionable agent credential failure: "
+                f"status {status_code_str}"
+            )
+            if url is None:
+                local_evidence = (
+                    rendered_observations[0][1] if rendered_observations else raw
+                )
+                status_message = (
+                    "operator-actionable agent credential failure: "
+                    f"{remediation} Evidence: {local_evidence}"
+                )
             deps.status_display.print(
                 err.caller,
-                "hard API error: status "
-                f"{status_code_str}" + (f" — {url}" if url else ""),
+                status_message + (f" — {url}" if url else ""),
             )
-            return AbortedHardApiError(status_code=err.status_code)
+            return AbortedAgentCredentialFailure(status_code=err.status_code)
 
         error_text = _extract_legacy_hard_error_text(raw)
         first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"
