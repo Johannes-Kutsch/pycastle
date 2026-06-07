@@ -870,6 +870,12 @@ def test_run_error_event_unauthorized_yields_hard_error():
     assert events == [HardError(status_code=401, raw_message=message)]
 
 
+def test_run_error_event_invalid_grant_yields_hard_error():
+    message = "invalid_grant"
+    events = list(CodexService().run([_error_line(message)]))
+    assert events == [HardError(status_code=401, raw_message=message)]
+
+
 def test_run_turn_failed_4xx_status_yields_hard_error():
     message = "unexpected status 403 Forbidden"
     events = list(CodexService().run([_turn_failed(message)]))
@@ -894,6 +900,24 @@ def test_run_error_event_exact_refresh_token_reused_yields_credential_failure():
     assert observation.service_name == "codex"
     assert observation.source_stream == "json_event.error"
     assert observation.provider_code == "refresh_token_reused"
+
+
+def test_run_error_event_refresh_token_already_used_prose_yields_credential_failure():
+    message = (
+        "The access token could not be refreshed because the refresh token was "
+        "already used."
+    )
+    events = list(CodexService().run([_error_line(message)]))
+
+    assert len(events) == 1
+    event = events[0]
+    assert isinstance(event, CredentialFailure)
+    assert event.status_code == 401
+    assert len(event.source_observations) == 1
+    observation = event.source_observations[0]
+    assert observation.service_name == "codex"
+    assert observation.source_stream == "json_event.error"
+    assert observation.raw_provider_text == message
 
 
 def test_run_error_event_5xx_status_yields_transient_error():

@@ -168,8 +168,8 @@ def auto_file_issue(
 
 _GIT_REMOTE_UNREACHABLE_TITLE_PREFIX = "[pycastle] git remote unreachable"
 _GIT_REMOTE_UNREACHABLE_LABELS = ["bug", "needs-triage"]
-_CODEX_AUTH_LINEAGE_TITLE = (
-    "[pycastle] Codex auth lineage exhausted: refresh_token_reused"
+_AGENT_CREDENTIAL_FAILURE_TITLE = (
+    "[pycastle] operator-actionable agent credential failure"
 )
 
 
@@ -203,30 +203,41 @@ def file_operator_actionable_git_issue(
         pass
 
 
-def file_codex_auth_lineage_issue(
+def file_agent_credential_failure_issue(
     *,
-    raw_error_text: str,
+    service_name: str,
+    role_name: str,
+    status_code: int | None,
     raw_result_envelope: str,
+    remediation: str,
+    observations: tuple[tuple[str, str], ...],
     github_svc: "GithubService",
 ) -> str | None:
-    """File or reuse one consuming-project issue for the exact Codex auth-lineage failure."""
+    """File or reuse one consuming-project issue for operator-actionable
+    agent-provider credential or account-access failures."""
     try:
-        existing = github_svc.search_open_issues_by_title(_CODEX_AUTH_LINEAGE_TITLE)
+        existing = github_svc.search_open_issues_by_title(
+            _AGENT_CREDENTIAL_FAILURE_TITLE
+        )
         if existing:
             return f"https://github.com/{github_svc.repo}/issues/{existing[0]}"
-        body = _build_codex_auth_lineage_body(
-            raw_error_text=raw_error_text,
+        body = _build_agent_credential_failure_body(
+            service_name=service_name,
+            role_name=role_name,
+            status_code=status_code,
             raw_result_envelope=raw_result_envelope,
+            remediation=remediation,
+            observations=observations,
         )
         number = github_svc.create_issue_in(
             github_svc.repo,
-            _CODEX_AUTH_LINEAGE_TITLE,
+            _AGENT_CREDENTIAL_FAILURE_TITLE,
             body,
             BUG_REPORT_LABEL_LIST,
         )
         url = f"https://github.com/{github_svc.repo}/issues/{number}"
         print(
-            f"Filed issue #{number} on {github_svc.repo}: {_CODEX_AUTH_LINEAGE_TITLE}"
+            f"Filed issue #{number} on {github_svc.repo}: {_AGENT_CREDENTIAL_FAILURE_TITLE}"
         )
         return url
     except Exception:
@@ -246,18 +257,30 @@ def _build_operator_actionable_body(*, op: str, stderr: str, attempt_count: int)
     )
 
 
-def _build_codex_auth_lineage_body(
+def _build_agent_credential_failure_body(
     *,
-    raw_error_text: str,
+    service_name: str,
+    role_name: str,
+    status_code: int | None,
     raw_result_envelope: str,
+    remediation: str,
+    observations: tuple[tuple[str, str], ...],
 ) -> str:
     env = _env_block()
+    observation_blocks = "\n\n".join(
+        f"### {source_stream}\n\n```\n{raw_text}\n```"
+        for source_stream, raw_text in observations
+    )
     return (
-        "## Codex auth lineage exhausted\n\n"
-        "The local Codex refresh-token lineage can no longer refresh. "
-        "Run `codex login` on the host to reseed credentials.\n\n"
-        "### Raw Codex error text\n\n"
-        f"```\n{raw_error_text}\n```\n\n"
+        "## Operator-actionable agent credential failure\n\n"
+        "Repair local agent credentials/account access and rerun pycastle.\n\n"
+        "This issue is about local agent-provider credentials/account access, "
+        "not a source-code defect in the consuming repository.\n\n"
+        f"{remediation}\n\n"
+        f"Service: {service_name}\n"
+        f"Agent: {role_name or '<unknown>'}\n"
+        f"Status: {status_code}\n\n"
+        f"{observation_blocks}\n\n"
         "### Raw result envelope\n\n"
         f"```json\n{raw_result_envelope}\n```\n\n"
         f"{env}"

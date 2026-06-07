@@ -11,7 +11,7 @@ from ..agents.runner import RunRequest
 from ..bug_reporter import (
     BUG_REPORT_LABEL_LIST,
     auto_file_issue,
-    file_codex_auth_lineage_issue,
+    file_agent_credential_failure_issue,
 )
 from ..errors import (
     AgentFailedError,
@@ -63,7 +63,7 @@ def _extract_legacy_hard_error_text(raw: str) -> str:
     return error_text
 
 
-def _extract_codex_auth_lineage_error_text(raw: str) -> str:
+def _extract_provider_error_text(raw: str) -> str:
     error_text = _extract_legacy_hard_error_text(raw)
     if error_text != raw:
         return error_text
@@ -81,26 +81,64 @@ def _extract_codex_auth_lineage_error_text(raw: str) -> str:
     return error_text
 
 
-def _is_exact_codex_auth_lineage_exhaustion(
+_SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION = (
+    "operator_actionable_agent_credential_failure"
+)
+
+
+def _is_codex_refresh_token_reused_signature(text: str) -> bool:
+    lowered = text.lower()
+    if (
+        "refresh_token_reused" in text
+        and "this refresh token has already been used." in lowered
+    ):
+        return True
+    return (
+        "access token could not be refreshed" in lowered
+        and "refresh token was already used" in lowered
+    )
+
+
+def _is_codex_missing_host_auth_signature(text: str) -> bool:
+    lowered = text.lower()
+    return (
+        "codex authentication missing" in lowered
+        and "codex login" in lowered
+        and "host" in lowered
+    )
+
+
+def _classify_agent_credential_failure(
     *,
     service_name: str,
     status_code: int | None,
     classification: str | None,
     raw: str,
-    error_text: str,
-) -> bool:
-    if classification == "codex_auth_lineage_exhausted":
-        return service_name == "codex" and status_code == 401
+    observations: tuple,
+) -> tuple[str, tuple[tuple[str, str], ...]] | None:
+    if classification == _SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION:
+        rendered = tuple(
+            (obs.source_stream, obs.raw_provider_text) for obs in observations
+        ) or (("raw error", raw),)
+        return ("Repair the local agent credentials/account access.", rendered)
     if service_name != "codex" or status_code != 401:
-        return False
-    exact_markers = (
-        "refresh_token_reused",
-        "This refresh token has already been used.",
+        return None
+
+    rendered_observations = tuple(
+        (obs.source_stream, obs.raw_provider_text) for obs in observations
     )
-    haystacks = (raw, error_text)
-    return all(
-        any(marker in haystack for haystack in haystacks) for marker in exact_markers
-    )
+    haystacks = tuple(text for _, text in rendered_observations) + (raw,)
+    if any(_is_codex_refresh_token_reused_signature(text) for text in haystacks):
+        return (
+            "Run `codex login` on the host to reseed credentials.",
+            rendered_observations or (("raw error", raw),),
+        )
+    if any(_is_codex_missing_host_auth_signature(text) for text in haystacks):
+        return (
+            "Run `codex login` on the host to seed Codex credentials before dispatch.",
+            rendered_observations or (("raw error", raw),),
+        )
+    return None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -387,17 +425,22 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
     except HardAgentError as err:
         raw = err.args[0] if err.args else ""
         service_name = getattr(err, "service_name", "claude") or "claude"
-        codex_auth_error_text = _extract_codex_auth_lineage_error_text(raw)
-        if _is_exact_codex_auth_lineage_exhaustion(
+        credential_failure = _classify_agent_credential_failure(
             service_name=service_name,
             status_code=err.status_code,
             classification=getattr(err, "classification", None),
             raw=raw,
-            error_text=codex_auth_error_text,
-        ):
-            url = file_codex_auth_lineage_issue(
-                raw_error_text=codex_auth_error_text,
+            observations=getattr(err, "observations", ()),
+        )
+        if credential_failure is not None:
+            remediation, rendered_observations = credential_failure
+            url = file_agent_credential_failure_issue(
+                service_name=service_name,
+                role_name=err.caller,
+                status_code=err.status_code,
                 raw_result_envelope=raw,
+                remediation=remediation,
+                observations=rendered_observations,
                 github_svc=deps.github_svc,
             )
             status_code_str = (

@@ -45,6 +45,10 @@ _UNAUTHORIZED_RE = re.compile(
     r"\b(?:401|unauthorized|missing bearer|basic authentication)\b",
     re.IGNORECASE,
 )
+_GENERIC_AUTH_RE = re.compile(
+    r"\b(?:401|unauthorized|invalid_grant|invalid token|missing bearer|basic authentication)\b",
+    re.IGNORECASE,
+)
 _HTTP_STATUS_RE = re.compile(r"\bstatus\s+(?P<status>\d{3})\b", re.IGNORECASE)
 _AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION = "codex_auth_lineage_exhausted"
 
@@ -55,6 +59,14 @@ def _is_exact_refresh_token_reused_message(message: str) -> bool:
         "This refresh token has already been used.",
     )
     return all(marker in message for marker in exact_markers)
+
+
+def _is_refresh_token_already_used_prose(message: str) -> bool:
+    lowered = message.lower()
+    return (
+        "access token could not be refreshed" in lowered
+        and "refresh token was already used" in lowered
+    )
 
 
 def _provider_error_observation(
@@ -80,7 +92,21 @@ def _classify_error_message(
     *,
     source_stream: str,
 ) -> CredentialFailure | HardError | TransientError | None:
-    if _UNAUTHORIZED_RE.search(message):
+    if _is_refresh_token_already_used_prose(message):
+        return CredentialFailure(
+            raw_message=message,
+            service_name="codex",
+            status_code=401,
+            classification=_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION,
+            source_observations=(
+                _provider_error_observation(
+                    raw_provider_text=message,
+                    source_stream=source_stream,
+                    status_code=401,
+                ),
+            ),
+        )
+    if _GENERIC_AUTH_RE.search(message):
         if _is_exact_refresh_token_reused_message(message):
             return CredentialFailure(
                 raw_message=message,
