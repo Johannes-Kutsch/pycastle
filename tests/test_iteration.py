@@ -51,6 +51,7 @@ from pycastle.agents.output_protocol import (
     NoCandidateOutput,
     PlannerOutput,
     PromiseParseError,
+    process_stream,
 )
 from tests.support import (
     FakeAgentRunner,
@@ -4023,6 +4024,52 @@ def test_run_iteration_returns_distinct_terminal_result_for_shared_credential_fa
     assert isinstance(result, AbortedAgentCredentialFailure)
     assert result.status_code == 401
     assert not isinstance(result, AbortedHardApiError)
+
+
+def test_run_iteration_routes_claude_subscription_access_denial_to_shared_credential_issue(
+    tmp_path, git_svc, github_svc, logger
+):
+    denial = (
+        "Your organization has disabled Claude subscription access for Claude Code. "
+        "Please use an Anthropic API key instead, or ask your admin to enable "
+        "Claude subscription access for Claude Code."
+    )
+    raw_line = (
+        '{"type": "result", "is_error": true, "api_error_status": 403, '
+        f'"result": "{denial}"}}'
+    )
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Claude access", "labels": ["behavior-slice"]}]
+            )
+        process_stream([raw_line], on_turn=lambda t: None, role=AgentRole.IMPLEMENTER)
+        raise AssertionError("unreachable")
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert not isinstance(result, AbortedUsageLimit)
+    assert result.status_code == 403
+    mock_file.assert_not_called()
+    github_svc.search_open_issues_by_title.assert_called_once_with(
+        "[pycastle] operator-actionable agent credential failure"
+    )
+    github_svc.create_issue_in.assert_called_once()
+    owner_repo, title, body, labels = github_svc.create_issue_in.call_args[0]
+    assert owner_repo == "owner/consuming-project"
+    assert title == "[pycastle] operator-actionable agent credential failure"
+    assert "Restore Claude Code subscription access" in body
+    assert "Service: claude" in body
+    assert denial in body
+    assert labels == ["bug", "needs-triage"]
 
 
 def test_run_iteration_prints_credential_failure_and_remediation_when_consuming_project_issue_lookup_fails(

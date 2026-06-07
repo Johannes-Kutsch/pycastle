@@ -16,6 +16,7 @@ from ..config import Config, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
 from ..infrastructure.docker_session import DockerSession, build_volume_spec
 from ..errors import (
+    AgentCredentialFailureError,
     AgentFailedError,
     AgentTimeoutError,
     DockerError,
@@ -346,6 +347,11 @@ class AgentRunner:
                             name,
                             f"transient API error: status {status_code_str}",
                         )
+                        raise
+                    except AgentCredentialFailureError as err:
+                        _token.cancel()
+                        err.caller = name
+                        err.service_name = service.name
                         raise
                     except HardAgentError as err:
                         _token.cancel()

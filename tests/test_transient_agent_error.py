@@ -11,7 +11,12 @@ import json
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole, process_stream
-from pycastle.errors import TransientAgentError, UsageLimitError
+from pycastle.errors import (
+    AgentCredentialFailureError,
+    HardAgentError,
+    TransientAgentError,
+    UsageLimitError,
+)
 
 _SUBSCRIPTION_ACCESS_DENIAL = (
     "Your organization has disabled Claude subscription access for Claude Code. "
@@ -76,9 +81,6 @@ def test_process_stream_raises_transient_agent_error_for_all_roles():
 # ── 4xx-non-429 result raises HardAgentError ─────────────────────────────────
 
 
-from pycastle.errors import HardAgentError  # noqa: E402
-
-
 def _4xx_result_line(status: int) -> str:
     return json.dumps(
         {
@@ -91,7 +93,7 @@ def _4xx_result_line(status: int) -> str:
     )
 
 
-def test_process_stream_treats_exact_subscription_access_denial_as_usage_limit():
+def test_process_stream_routes_exact_subscription_access_denial_to_agent_credential_failure():
     line = json.dumps(
         {
             "type": "result",
@@ -101,8 +103,29 @@ def test_process_stream_treats_exact_subscription_access_denial_as_usage_limit()
         }
     )
 
-    with pytest.raises(UsageLimitError):
+    with pytest.raises(AgentCredentialFailureError) as exc_info:
         process_stream([line], on_turn=lambda t: None, role=AgentRole.IMPLEMENTER)
+    assert exc_info.value.service_name == "claude"
+    assert exc_info.value.status_code == 403
+
+
+def test_process_stream_routes_subscription_access_denial_variant_to_agent_credential_failure():
+    line = json.dumps(
+        {
+            "type": "result",
+            "is_error": True,
+            "api_error_status": 403,
+            "result": (
+                "Your organization has DISABLED Claude subscription access for "
+                "Claude Code."
+            ),
+        }
+    )
+
+    with pytest.raises(AgentCredentialFailureError) as exc_info:
+        process_stream([line], on_turn=lambda t: None, role=AgentRole.IMPLEMENTER)
+    assert exc_info.value.service_name == "claude"
+    assert exc_info.value.status_code == 403
 
 
 def test_process_stream_raises_hard_agent_error_on_400():
@@ -135,7 +158,6 @@ def test_process_stream_raises_hard_agent_error_for_all_roles():
 
 def test_process_stream_does_not_raise_hard_agent_error_on_429():
     """429 must NOT raise HardAgentError — it goes through the UsageLimitError path."""
-    from pycastle.errors import UsageLimitError
 
     line = json.dumps(
         {

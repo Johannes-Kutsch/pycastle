@@ -9,11 +9,13 @@ from pathlib import Path
 
 from ..agents.output_protocol import AgentRole
 from .. import _time as _time_module
+from ..provider_errors import ProviderErrorObservation
 from ..session import RoleSession, RunKind
 from ..session.service_resume_identity import is_exact_resumable_service_session
 from .flag_profiles import flag_profile_for
 from .agent_service import (
     AssistantTurn,
+    CredentialFailure,
     HardError,
     ParsedTurn,
     PromptTokens,
@@ -100,7 +102,7 @@ def _is_subscription_access_denial(
         is_error is True
         and status == 403
         and isinstance(result, str)
-        and _SUBSCRIPTION_ACCESS_DENIAL_PHRASE in result
+        and _SUBSCRIPTION_ACCESS_DENIAL_PHRASE.lower() in result.lower()
     )
 
 
@@ -122,10 +124,20 @@ def _classify_line(line: str) -> list[ParsedTurn]:
     ):
         denial_message = obj.get("result")
         return [
-            UsageLimit(
-                reset_time=None,
-                raw_message=denial_message if isinstance(denial_message, str) else None,
-                is_permanent=True,
+            CredentialFailure(
+                raw_message=line,
+                service_name="claude",
+                source_observations=(
+                    ProviderErrorObservation(
+                        service_name="claude",
+                        raw_provider_text=(
+                            denial_message if isinstance(denial_message, str) else line
+                        ),
+                        source_stream="json_event.result",
+                        status_code=403,
+                    ),
+                ),
+                status_code=403,
             )
         ]
 
@@ -312,5 +324,8 @@ class ClaudeService:
         for line in lines:
             for event in _classify_line(line):
                 yield event
-                if isinstance(event, (Result, UsageLimit, TransientError, HardError)):
+                if isinstance(
+                    event,
+                    (Result, UsageLimit, TransientError, HardError, CredentialFailure),
+                ):
                     return
