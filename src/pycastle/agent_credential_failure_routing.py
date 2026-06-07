@@ -19,6 +19,7 @@ _CODEX_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION = "codex_auth_lineage_exhausted"
 _AGENT_CREDENTIAL_FAILURE_TITLE = (
     "[pycastle] operator-actionable agent credential failure"
 )
+_AGENT_CREDENTIAL_FAILURE_LABELS = ["bug", "needs-triage"]
 _CREDENTIAL_KEY_RE = (
     r"(?:api(?:[_ -]?|)key|access(?:[_ -]?|)token|refresh(?:[_ -]?|)token|"
     r"token|secret|password)"
@@ -138,7 +139,7 @@ def _build_agent_credential_failure_body(
     )
 
 
-def _file_agent_credential_failure_issue(
+def _file_or_reuse_agent_credential_failure_issue(
     *,
     service_name: str,
     role_name: str,
@@ -166,7 +167,7 @@ def _file_agent_credential_failure_issue(
             github_svc.repo,
             _AGENT_CREDENTIAL_FAILURE_TITLE,
             body,
-            ["bug", "needs-triage"],
+            _AGENT_CREDENTIAL_FAILURE_LABELS,
         )
         url = f"https://github.com/{github_svc.repo}/issues/{number}"
         print(
@@ -175,6 +176,22 @@ def _file_agent_credential_failure_issue(
         return url
     except Exception:
         return None
+
+
+def _build_local_fallback_status_message(
+    *,
+    raw: str,
+    interpretation: _CredentialFailureInterpretation,
+) -> str:
+    local_evidence = (
+        interpretation.rendered_observations[0][1]
+        if interpretation.rendered_observations
+        else raw
+    )
+    return (
+        "operator-actionable agent credential failure: "
+        f"{interpretation.remediation} Evidence: {local_evidence}"
+    )
 
 
 def _select_remediation(
@@ -279,7 +296,7 @@ def route_agent_credential_failure(
             ),
         )
 
-    issue_url = _file_agent_credential_failure_issue(
+    issue_url = _file_or_reuse_agent_credential_failure_issue(
         service_name=service_name,
         role_name=provider_failure.caller,
         status_code=provider_failure.status_code,
@@ -297,14 +314,9 @@ def route_agent_credential_failure(
         f"operator-actionable agent credential failure: status {status_code_str}"
     )
     if issue_url is None:
-        local_evidence = (
-            interpretation.rendered_observations[0][1]
-            if interpretation.rendered_observations
-            else raw
-        )
-        status_message = (
-            "operator-actionable agent credential failure: "
-            f"{interpretation.remediation} Evidence: {local_evidence}"
+        status_message = _build_local_fallback_status_message(
+            raw=raw,
+            interpretation=interpretation,
         )
     return AgentCredentialFailureRouteResult(
         status_code=provider_failure.status_code,
