@@ -87,6 +87,10 @@ def _is_codex_missing_host_auth_signature(text: str) -> bool:
     )
 
 
+def _is_opencode_invalid_api_key_signature(text: str) -> bool:
+    return text.strip().lower() == "invalid api key"
+
+
 def _classify_agent_credential_failure(
     *,
     service_name: str,
@@ -99,7 +103,15 @@ def _classify_agent_credential_failure(
         rendered = tuple(
             (obs.source_stream, obs.raw_provider_text) for obs in observations
         ) or (("raw error", raw),)
-        return ("Repair the local agent credentials/account access.", rendered)
+        remediation = "Repair the local agent credentials/account access."
+        haystacks = tuple(text for _, text in rendered) + (raw,)
+        if (
+            service_name == "opencode"
+            and status_code == 401
+            and any(_is_opencode_invalid_api_key_signature(text) for text in haystacks)
+        ):
+            remediation = "Update the configured OpenCode API key."
+        return (remediation, rendered)
     if service_name != "codex" or status_code != 401:
         return None
 

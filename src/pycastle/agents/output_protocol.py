@@ -450,6 +450,7 @@ def process_stream_from_events(
             raise HardAgentError(
                 message=event.raw_message,
                 status_code=event.status_code,
+                service_name=provider or "claude",
                 classification=event.classification,
                 observations=event.observations,
             )

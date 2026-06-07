@@ -22,10 +22,15 @@ from pycastle.agents.output_protocol import (
     process_stream,
     process_stream_from_events,
 )
-from pycastle.errors import AgentCredentialFailureError, UsageLimitError
+from pycastle.errors import (
+    AgentCredentialFailureError,
+    HardAgentError,
+    UsageLimitError,
+)
 from pycastle.services.agent_service import (
     AssistantTurn,
     CredentialFailure,
+    HardError,
     PromptTokens,
     Result,
     UnsupportedTokens,
@@ -1154,6 +1159,26 @@ def test_process_stream_from_events_raises_agent_credential_failure_error():
 
     assert exc_info.value.service_name == "codex"
     assert exc_info.value.status_code == 401
+
+
+def test_process_stream_from_events_preserves_opencode_service_name_for_hard_error():
+    events = [
+        HardError(
+            status_code=400,
+            raw_message="Model not found: opencode-go/deepseek-v4-flash",
+        )
+    ]
+
+    with pytest.raises(HardAgentError) as exc_info:
+        process_stream_from_events(
+            iter(events),
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+            provider="opencode",
+        )
+
+    assert exc_info.value.service_name == "opencode"
+    assert exc_info.value.status_code == 400
 
 
 def test_process_stream_from_events_calls_on_tokens():
