@@ -292,8 +292,12 @@ def _build_agent_credential_failure_body(
     )
 
 
+_CREDENTIAL_KEY_RE = (
+    r"(?:api(?:[_ -]?|)key|access(?:[_ -]?|)token|refresh(?:[_ -]?|)token|"
+    r"token|secret|password)"
+)
 _CREDENTIAL_NAMED_VALUE_RE = re.compile(
-    r'(?i)(\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|secret|password)\b\s*[:=]\s*)(["\']?)([^"\'\s,}]+)(\2)'
+    rf'(?i)(["\']?{_CREDENTIAL_KEY_RE}["\']?\s*[:=]\s*)(["\']?)([^"\'\s,}}]+)(\2)'
 )
 _CREDENTIAL_AFTER_LABEL_RE = re.compile(
     r"(?i)\b(access token|refresh token|api key|token|secret|password)\s+([A-Za-z0-9._:-]{8,})"

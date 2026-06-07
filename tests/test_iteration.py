@@ -4393,6 +4393,54 @@ def test_run_iteration_builds_opencode_invalid_api_key_remediation_in_shared_cre
     assert "invalid API key" in body
 
 
+def test_run_iteration_redacts_json_credential_fields_in_shared_credential_issue_body(
+    tmp_path, git_svc, github_svc, logger
+):
+    message = (
+        '{"type":"error","code":"invalid_api_key","apiKey":"plain-secret-123456",'
+        '"refreshToken":"rt-secret-123456","accessToken":"at-secret-123456"}'
+    )
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
+            )
+        raise AgentCredentialFailureError(
+            message=message,
+            status_code=401,
+            service_name="opencode",
+            classification="operator_actionable_agent_credential_failure",
+            observations=(
+                ProviderErrorObservation(
+                    service_name="opencode",
+                    raw_provider_text=message,
+                    source_stream="json_event.error",
+                    status_code=401,
+                ),
+            ),
+        )
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 401
+    mock_file.assert_not_called()
+    github_svc.create_issue_in.assert_called_once()
+    _owner_repo, _title, body, labels = github_svc.create_issue_in.call_args[0]
+    assert labels == ["bug", "needs-triage"]
+    assert "plain-secret-123456" not in body
+    assert "rt-secret-123456" not in body
+    assert "at-secret-123456" not in body
+    assert body.count("[REDACTED]") >= 3
+
+
 def test_run_iteration_files_shared_credential_issue_for_missing_codex_host_auth_before_dispatch(
     tmp_path, git_svc, github_svc, logger
 ):
