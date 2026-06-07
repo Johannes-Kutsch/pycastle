@@ -126,10 +126,12 @@ class HardAgentError(PycastleError):
         message: str = "",
         status_code: int | None = None,
         service_name: str = "claude",
+        classification: str | None = None,
     ) -> None:
         self.status_code = status_code
         self.caller = ""
         self.service_name = service_name or "claude"
+        self.classification = classification
         super().__init__(message)
 
 

@@ -44,11 +44,27 @@ _UNAUTHORIZED_RE = re.compile(
     re.IGNORECASE,
 )
 _HTTP_STATUS_RE = re.compile(r"\bstatus\s+(?P<status>\d{3})\b", re.IGNORECASE)
+_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION = "codex_auth_lineage_exhausted"
+
+
+def _is_exact_refresh_token_reused_message(message: str) -> bool:
+    exact_markers = (
+        "refresh_token_reused",
+        "This refresh token has already been used.",
+    )
+    return all(marker in message for marker in exact_markers)
 
 
 def _classify_error_message(message: str) -> HardError | TransientError | None:
     if _UNAUTHORIZED_RE.search(message):
-        return HardError(status_code=401, raw_message=message)
+        classification = None
+        if _is_exact_refresh_token_reused_message(message):
+            classification = _AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION
+        return HardError(
+            status_code=401,
+            raw_message=message,
+            classification=classification,
+        )
 
     match = _HTTP_STATUS_RE.search(message)
     if match is None:

@@ -6,7 +6,12 @@ from datetime import datetime, timezone
 import pytest
 
 from pycastle import _time as _time_module
-from pycastle.agents.output_protocol import AgentOutputProtocolError, AgentRole
+from pycastle.agents.output_protocol import (
+    AgentOutputProtocolError,
+    AgentRole,
+    process_stream_from_events,
+)
+from pycastle.errors import HardAgentError
 from pycastle.services import CodexService
 from pycastle.services.codex_service import CodexPromptTokensContract
 from pycastle.services.agent_service import (
@@ -145,6 +150,22 @@ def test_build_command_fresh_includes_json_flag():
 def test_build_command_fresh_includes_prompt_redirect():
     cmd = CodexService().build_command(run_kind=RunKind.FRESH)
     assert "< /tmp/.pycastle_prompt" in cmd
+
+
+def test_process_stream_from_events_classifies_exact_refresh_token_reused_as_auth_lineage_exhaustion():
+    line = _error_line(
+        'Error: API request failed: 401 Unauthorized: {"type":"error","code":"refresh_token_reused","message":"This refresh token has already been used."}'
+    )
+
+    with pytest.raises(HardAgentError) as exc_info:
+        process_stream_from_events(
+            CodexService().run([line]),
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+            provider="codex",
+        )
+
+    assert exc_info.value.classification == "codex_auth_lineage_exhausted"
 
 
 # ── CodexService.build_command: resume session ───────────────────────────────

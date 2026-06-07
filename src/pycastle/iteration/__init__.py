@@ -8,7 +8,11 @@ from typing import TypeAlias
 from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.result import CancellationToken
 from ..agents.runner import RunRequest
-from ..bug_reporter import BUG_REPORT_LABEL_LIST, auto_file_issue
+from ..bug_reporter import (
+    BUG_REPORT_LABEL_LIST,
+    auto_file_issue,
+    file_codex_auth_lineage_issue,
+)
 from ..errors import (
     AgentFailedError,
     AgentTimeoutError,
@@ -40,6 +44,49 @@ from .preflight import (
 )
 
 _FILED_USAGE_LIMIT_RAW_MESSAGES: set[str] = set()
+
+
+def _extract_hard_error_text(raw: str) -> str:
+    error_text = raw
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and parsed.get("result"):
+            error_text = str(parsed["result"])
+        elif isinstance(parsed, dict):
+            error = parsed.get("error")
+            if isinstance(error, dict):
+                data = error.get("data")
+                if isinstance(data, dict) and data.get("message"):
+                    error_text = str(data["message"])
+                elif error.get("message"):
+                    error_text = str(error["message"])
+            elif parsed.get("message"):
+                error_text = str(parsed["message"])
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return error_text
+
+
+def _is_exact_codex_auth_lineage_exhaustion(
+    *,
+    service_name: str,
+    status_code: int | None,
+    classification: str | None,
+    raw: str,
+    error_text: str,
+) -> bool:
+    if classification == "codex_auth_lineage_exhausted":
+        return service_name == "codex" and status_code == 401
+    if service_name != "codex" or status_code != 401:
+        return False
+    exact_markers = (
+        "refresh_token_reused",
+        "This refresh token has already been used.",
+    )
+    haystacks = (raw, error_text)
+    return all(
+        any(marker in haystack for haystack in haystacks) for marker in exact_markers
+    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -325,21 +372,31 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         return Continue()
     except HardAgentError as err:
         raw = err.args[0] if err.args else ""
-        error_text = raw
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, dict) and parsed.get("result"):
-                error_text = str(parsed["result"])
-            elif isinstance(parsed, dict):
-                error = parsed.get("error")
-                if isinstance(error, dict):
-                    data = error.get("data")
-                    if isinstance(data, dict) and data.get("message"):
-                        error_text = str(data["message"])
-        except (json.JSONDecodeError, TypeError):
-            pass
-        first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"
         service_name = getattr(err, "service_name", "claude") or "claude"
+        error_text = _extract_hard_error_text(raw)
+        if _is_exact_codex_auth_lineage_exhaustion(
+            service_name=service_name,
+            status_code=err.status_code,
+            classification=getattr(err, "classification", None),
+            raw=raw,
+            error_text=error_text,
+        ):
+            url = file_codex_auth_lineage_issue(
+                raw_error_text=error_text,
+                raw_result_envelope=raw,
+                github_svc=deps.github_svc,
+            )
+            status_code_str = (
+                str(err.status_code) if err.status_code is not None else "no status"
+            )
+            deps.status_display.print(
+                err.caller,
+                "hard API error: status "
+                f"{status_code_str}" + (f" — {url}" if url else ""),
+            )
+            return AbortedHardApiError(status_code=err.status_code)
+
+        first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"
         service_label = {
             "claude": "Claude",
             "codex": "Codex",

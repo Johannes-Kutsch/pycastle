@@ -168,6 +168,9 @@ def auto_file_issue(
 
 _GIT_REMOTE_UNREACHABLE_TITLE_PREFIX = "[pycastle] git remote unreachable"
 _GIT_REMOTE_UNREACHABLE_LABELS = ["bug", "needs-triage"]
+_CODEX_AUTH_LINEAGE_TITLE = (
+    "[pycastle] Codex auth lineage exhausted: refresh_token_reused"
+)
 
 
 def file_operator_actionable_git_issue(
@@ -200,6 +203,36 @@ def file_operator_actionable_git_issue(
         pass
 
 
+def file_codex_auth_lineage_issue(
+    *,
+    raw_error_text: str,
+    raw_result_envelope: str,
+    github_svc: "GithubService",
+) -> str | None:
+    """File or reuse one consuming-project issue for the exact Codex auth-lineage failure."""
+    try:
+        existing = github_svc.search_open_issues_by_title(_CODEX_AUTH_LINEAGE_TITLE)
+        if existing:
+            return f"https://github.com/{github_svc.repo}/issues/{existing[0]}"
+        body = _build_codex_auth_lineage_body(
+            raw_error_text=raw_error_text,
+            raw_result_envelope=raw_result_envelope,
+        )
+        number = github_svc.create_issue_in(
+            github_svc.repo,
+            _CODEX_AUTH_LINEAGE_TITLE,
+            body,
+            BUG_REPORT_LABEL_LIST,
+        )
+        url = f"https://github.com/{github_svc.repo}/issues/{number}"
+        print(
+            f"Filed issue #{number} on {github_svc.repo}: {_CODEX_AUTH_LINEAGE_TITLE}"
+        )
+        return url
+    except Exception:
+        return None
+
+
 def _build_operator_actionable_body(*, op: str, stderr: str, attempt_count: int) -> str:
     env = _env_block()
     return (
@@ -209,6 +242,24 @@ def _build_operator_actionable_body(*, op: str, stderr: str, attempt_count: int)
         f"- Check your SSH key or HTTPS credentials are valid for the remote.\n"
         f"- Verify the remote URL with `git remote get-url origin`.\n"
         f"- Confirm network connectivity to the remote host.\n\n"
+        f"{env}"
+    )
+
+
+def _build_codex_auth_lineage_body(
+    *,
+    raw_error_text: str,
+    raw_result_envelope: str,
+) -> str:
+    env = _env_block()
+    return (
+        "## Codex auth lineage exhausted\n\n"
+        "The local Codex refresh-token lineage can no longer refresh. "
+        "Run `codex login` on the host to reseed credentials.\n\n"
+        "### Raw Codex error text\n\n"
+        f"```\n{raw_error_text}\n```\n\n"
+        "### Raw result envelope\n\n"
+        f"```json\n{raw_result_envelope}\n```\n\n"
         f"{env}"
     )
 

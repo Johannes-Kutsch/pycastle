@@ -444,6 +444,7 @@ def process_stream_from_events(
             raise HardAgentError(
                 message=event.raw_message,
                 status_code=event.status_code,
+                classification=event.classification,
             )
         elif isinstance(event, PromptTokens):
             if on_tokens is not None:

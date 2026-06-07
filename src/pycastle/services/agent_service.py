@@ -51,6 +51,7 @@ class TransientError:
 class HardError:
     status_code: int
     raw_message: str
+    classification: str | None = None
 
 
 ParsedTurn = (
