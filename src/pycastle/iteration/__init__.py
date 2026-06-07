@@ -63,36 +63,15 @@ def _extract_legacy_hard_error_text(raw: str) -> str:
     return error_text
 
 
-def _extract_provider_error_text(raw: str) -> str:
-    error_text = _extract_legacy_hard_error_text(raw)
-    if error_text != raw:
-        return error_text
-    try:
-        parsed = json.loads(raw)
-        if not isinstance(parsed, dict):
-            return error_text
-        error = parsed.get("error")
-        if isinstance(error, dict) and error.get("message"):
-            return str(error["message"])
-        if parsed.get("message"):
-            return str(parsed["message"])
-    except (json.JSONDecodeError, TypeError):
-        pass
-    return error_text
-
-
 _SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION = (
     "operator_actionable_agent_credential_failure"
 )
 
 
 def _is_codex_refresh_token_reused_signature(text: str) -> bool:
-    lowered = text.lower()
-    if (
-        "refresh_token_reused" in text
-        and "this refresh token has already been used." in lowered
-    ):
+    if "refresh_token_reused" in text:
         return True
+    lowered = text.lower()
     return (
         "access token could not be refreshed" in lowered
         and "refresh token was already used" in lowered

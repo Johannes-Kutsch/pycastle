@@ -54,11 +54,7 @@ _AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION = "codex_auth_lineage_exhausted"
 
 
 def _is_exact_refresh_token_reused_message(message: str) -> bool:
-    exact_markers = (
-        "refresh_token_reused",
-        "This refresh token has already been used.",
-    )
-    return all(marker in message for marker in exact_markers)
+    return "refresh_token_reused" in message
 
 
 def _is_refresh_token_already_used_prose(message: str) -> bool:
@@ -92,6 +88,21 @@ def _classify_error_message(
     *,
     source_stream: str,
 ) -> CredentialFailure | HardError | TransientError | None:
+    if _is_exact_refresh_token_reused_message(message):
+        return CredentialFailure(
+            raw_message=message,
+            service_name="codex",
+            status_code=401,
+            classification=_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION,
+            source_observations=(
+                _provider_error_observation(
+                    raw_provider_text=message,
+                    source_stream=source_stream,
+                    status_code=401,
+                    provider_code="refresh_token_reused",
+                ),
+            ),
+        )
     if _is_refresh_token_already_used_prose(message):
         return CredentialFailure(
             raw_message=message,
@@ -107,21 +118,6 @@ def _classify_error_message(
             ),
         )
     if _GENERIC_AUTH_RE.search(message):
-        if _is_exact_refresh_token_reused_message(message):
-            return CredentialFailure(
-                raw_message=message,
-                service_name="codex",
-                status_code=401,
-                classification=_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION,
-                source_observations=(
-                    _provider_error_observation(
-                        raw_provider_text=message,
-                        source_stream=source_stream,
-                        status_code=401,
-                        provider_code="refresh_token_reused",
-                    ),
-                ),
-            )
         return HardError(
             status_code=401,
             raw_message=message,

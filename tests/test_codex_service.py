@@ -902,6 +902,24 @@ def test_run_error_event_exact_refresh_token_reused_yields_credential_failure():
     assert observation.provider_code == "refresh_token_reused"
 
 
+def test_run_error_event_refresh_token_reused_marker_yields_credential_failure():
+    message = (
+        'Error: API request failed: 401 Unauthorized: {"code":"refresh_token_reused"}'
+    )
+    events = list(CodexService().run([_error_line(message)]))
+
+    assert len(events) == 1
+    event = events[0]
+    assert isinstance(event, CredentialFailure)
+    assert event.status_code == 401
+    assert event.classification == "codex_auth_lineage_exhausted"
+    assert len(event.source_observations) == 1
+    observation = event.source_observations[0]
+    assert observation.service_name == "codex"
+    assert observation.source_stream == "json_event.error"
+    assert observation.provider_code == "refresh_token_reused"
+
+
 def test_run_error_event_refresh_token_already_used_prose_yields_credential_failure():
     message = (
         "The access token could not be refreshed because the refresh token was "
