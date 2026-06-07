@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock
 
+import pytest
+
 from pycastle.agent_credential_failure_routing import (
     AgentCredentialFailureRouteResult,
     route_agent_credential_failure,
@@ -635,6 +637,65 @@ def test_route_agent_credential_failure_returns_none_for_unrelated_hard_error():
 
     assert result is None
     github_svc.search_open_issues_by_title.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("message", "observation_text"),
+    [
+        (
+            "Codex request failed: 401",
+            "Codex request failed: 401",
+        ),
+        (
+            "Error: API request failed: 401 Unauthorized",
+            "Error: API request failed: 401 Unauthorized",
+        ),
+        (
+            "OAuth exchange failed with invalid_grant",
+            "OAuth exchange failed with invalid_grant",
+        ),
+        (
+            "Unauthorized: invalid token",
+            "Unauthorized: invalid token",
+        ),
+        (
+            "Request rejected: missing bearer token",
+            "Request rejected: missing bearer token",
+        ),
+        (
+            "basic-authentication credentials are missing",
+            "basic-authentication credentials are missing",
+        ),
+    ],
+)
+def test_route_agent_credential_failure_does_not_route_generic_codex_auth_looking_401s(
+    message, observation_text
+):
+    github_svc = MagicMock(spec=GithubService)
+    err = AgentCredentialFailureError(
+        message=message,
+        status_code=401,
+        service_name="codex",
+        classification="operator_actionable_agent_credential_failure",
+        observations=(
+            ProviderErrorObservation(
+                service_name="codex",
+                raw_provider_text=observation_text,
+                source_stream="json_event.error",
+                status_code=401,
+            ),
+        ),
+    )
+    err.caller = "Implementer"
+
+    result = route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    assert result is None
+    github_svc.search_open_issues_by_title.assert_not_called()
+    github_svc.create_issue_in.assert_not_called()
 
 
 def test_route_agent_credential_failure_files_new_issue_when_no_open_family_issue_exists():

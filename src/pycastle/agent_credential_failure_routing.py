@@ -251,10 +251,23 @@ def _interpret_agent_credential_failure(
     observations: tuple,
 ) -> _CredentialFailureInterpretation | None:
     rendered_observations = _render_observations(raw, observations)
-    if classification in {
-        _SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION,
-        _CODEX_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION,
-    }:
+    haystacks = tuple(text for _, text in rendered_observations) + (raw,)
+    if classification == _CODEX_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION:
+        return _CredentialFailureInterpretation(
+            remediation=_select_remediation(
+                service_name=service_name,
+                classification=classification,
+                raw=raw,
+                rendered_observations=rendered_observations,
+            ),
+            rendered_observations=rendered_observations,
+        )
+    if classification == _SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION:
+        if service_name == "codex" and not (
+            any(_is_codex_refresh_token_reused_signature(text) for text in haystacks)
+            or any(_is_codex_missing_host_auth_signature(text) for text in haystacks)
+        ):
+            return None
         return _CredentialFailureInterpretation(
             remediation=_select_remediation(
                 service_name=service_name,
@@ -265,7 +278,6 @@ def _interpret_agent_credential_failure(
             rendered_observations=rendered_observations,
         )
 
-    haystacks = tuple(text for _, text in rendered_observations) + (raw,)
     if service_name == "claude" and status_code == 403:
         if any(_is_claude_subscription_access_denial(text) for text in haystacks):
             return _CredentialFailureInterpretation(
@@ -311,6 +323,12 @@ def route_agent_credential_failure(
         observations=getattr(provider_failure, "observations", ()),
     )
     if interpretation is None:
+        if (
+            service_name == "codex"
+            and getattr(provider_failure, "classification", None)
+            == _SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION
+        ):
+            return None
         if not isinstance(provider_failure, AgentCredentialFailureError):
             return None
         interpretation = _CredentialFailureInterpretation(

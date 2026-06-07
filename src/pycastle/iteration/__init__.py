@@ -379,10 +379,6 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
     except TransientAgentError:
         return Continue()
-    except AgentCredentialFailureError as err:
-        routed_result = _route_and_abort_agent_credential_failure(err, deps)
-        assert routed_result is not None
-        return routed_result
     except HardAgentError as err:
         raw = err.args[0] if err.args else ""
         service_name = getattr(err, "service_name", "claude") or "claude"
