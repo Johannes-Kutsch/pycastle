@@ -421,13 +421,16 @@ class GithubService:
 
     def get_all_open_issues_lightweight(self) -> list[dict[str, Any]]:
         results = self._paginate(f"/repos/{self.repo}/issues?state=open&per_page=100")
+        issues = self._filter_recently_closed_open_issue_items(
+            self._normalize_open_issue_items(results)
+        )
         return [
             {
                 "number": issue["number"],
                 "title": issue["title"],
                 "labels": issue["labels"],
             }
-            for issue in self._normalize_open_issue_items(results)
+            for issue in issues
         ]
 
     def close_completed_parent_issues(self) -> None:

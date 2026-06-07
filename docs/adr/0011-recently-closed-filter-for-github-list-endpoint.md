@@ -19,6 +19,7 @@ Absorbed inside `GithubService`: every successful `close_issue(n)` adds `n` to p
 - `GithubService` gains private `_recently_closed: set[int]`, init empty.
 - `close_issue(n)` adds `n` after PATCH returns successfully. On `GithubAPIError` / `NetworkError` / `AuthError` the set is untouched.
 - `get_open_issues(label)`: call list endpoint → build response number set → for each `n` in `_recently_closed`, discard `n` if not in response → filter response by `_recently_closed`. Discard uses the *raw* response so a just-closed issue still present stays filtered, while one that has fallen out is forgotten.
+- `get_all_open_issues_lightweight()`: applies the same recently-closed filter before projecting number/title/labels, so planner blocker context cannot reintroduce a just-closed issue into `ALL_OPEN_ISSUES_JSON`.
 - Self-healing naturally bounds the set. Unbounded growth requires an unbounded close stream with no `get_open_issues` calls — orchestrator never produces this.
 - No new params on iteration loop, `merge_phase`, `preflight_phase`, `planning_phase`, `_close_issues_parallel`.
 - Concurrency: `set.add` is GIL-atomic in CPython; service is single-threaded; no lock. Changes if `GithubService` ever shared across threads.

@@ -689,17 +689,49 @@ def test_hydrate_planned_issues_merges_body_and_comments_from_open_issues():
     assert result.issues[1]["labels"] == ["ready-for-agent", "refactor-slice"]
 
 
-def test_hydrate_planned_issues_raises_when_planned_number_not_in_open_issues():
+def test_hydrate_planned_issues_drops_numbers_not_in_open_issues():
     plan = PlanReady(
-        issues=[{"number": 99, "title": "Hallucinated"}],
+        issues=[
+            {"number": 1, "title": "A"},
+            {"number": 99, "title": "Hallucinated"},
+        ],
         sha="abc123",
     )
     open_issues = [
-        {"number": 1, "title": "A", "body": "x", "comments": [], "labels": []},
+        {"number": 1, "title": "A", "body": "body of A", "comments": [], "labels": []},
     ]
 
-    with pytest.raises(RuntimeError, match="#99"):
-        hydrate_planned_issues(plan, open_issues)
+    result = hydrate_planned_issues(plan, open_issues)
+
+    assert [issue["number"] for issue in result.issues] == [1]
+    assert result.issues[0]["body"] == "body of A"
+
+
+def test_planning_phase_ignores_stale_planner_issue_and_keeps_valid_ones(
+    tmp_path, git_svc
+):
+    valid_a = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    valid_b = {
+        "number": 2,
+        "title": "B",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    stale = {"number": 99, "title": "Stale", "body": "", "comments": []}
+    fake = FakeAgentRunner([_plan_output([valid_a, stale])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(planning_phase(deps, [valid_a, valid_b], []))
+
+    assert isinstance(result, PlanReady)
+    assert [issue["number"] for issue in result.issues] == [1]
 
 
 def test_hydrate_planned_issues_carries_readiness_from_sources_into_result():

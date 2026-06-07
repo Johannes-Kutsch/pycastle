@@ -2039,7 +2039,7 @@ def test_get_all_open_issues_lightweight_excludes_pull_requests():
     transport.assert_exhausted()
 
 
-def test_get_all_open_issues_lightweight_does_not_filter_recently_closed():
+def test_get_all_open_issues_lightweight_filters_recently_closed():
     transport = _ScriptedGithubTransport(
         [
             _script_step(
@@ -2060,7 +2060,7 @@ def test_get_all_open_issues_lightweight_does_not_filter_recently_closed():
     svc.close_issue(42)
     result = svc.get_all_open_issues_lightweight()
 
-    assert [r["number"] for r in result] == [42]
+    assert [r["number"] for r in result] == []
 
 
 def test_get_all_open_issues_lightweight_paginates():

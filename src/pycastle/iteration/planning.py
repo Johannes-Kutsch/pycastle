@@ -71,10 +71,7 @@ def hydrate_planned_issues(
     for issue in plan_result.issues:
         source = by_number.get(issue["number"])
         if source is None:
-            raise RuntimeError(
-                f"Planner returned issue #{issue['number']} which is not in the "
-                f"ready-for-agent open issues list"
-            )
+            continue
         hydrated.append(
             {
                 **issue,
@@ -235,6 +232,15 @@ async def planning_phase(
                 for issue in well_formed
             ]
             hydrated = hydrate_planned_issues(plan, ready_sources)
+            if not hydrated.issues:
+                blocker_summary = planning_blocker_summary(
+                    readiness_result.blocker_summary_inputs
+                )
+                lines = ["All ready-for-agent issues are blocked."]
+                if blocker_summary:
+                    lines.append(blocker_summary)
+                row.close("\n".join(lines))
+                return AllBlocked(blocked=[])
             issue_lines = [
                 f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
                 for i in hydrated.issues

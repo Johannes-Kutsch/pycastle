@@ -273,7 +273,10 @@ async def run(
                 case Done():
                     status_display.print(  # type: ignore[union-attr]
                         "",
-                        f"No issues with label '{cfg.issue_label}' found. Skipping.",
+                        (
+                            f"No unblocked issues with label '{cfg.issue_label}' "
+                            "found. Skipping."
+                        ),
                     )
                     break
                 case NoCandidate():

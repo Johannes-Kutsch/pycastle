@@ -1763,7 +1763,7 @@ def test_planner_not_invoked_when_no_ready_for_agent_issues(tmp_path):
 
 
 def test_skip_message_emitted_before_any_agent_when_no_issues(tmp_path, capsys):
-    """'No issues with label ... found. Skipping.' must be printed and no agent must run."""
+    """'No unblocked issues with label ... found. Skipping.' must be printed and no agent must run."""
     agent_names: list[str] = []
 
     async def _fake_run_agent(request: RunRequest):
@@ -1776,7 +1776,7 @@ def test_skip_message_emitted_before_any_agent_when_no_issues(tmp_path, capsys):
     _run(tmp_path, _fake_run_agent, github_service=mock_github)
 
     out = capsys.readouterr().out
-    assert "No issues with label" in out and "found. Skipping." in out, (
+    assert "No unblocked issues with label" in out and "found. Skipping." in out, (
         f"Skip message not printed; stdout={out!r}"
     )
     assert agent_names == [], (
