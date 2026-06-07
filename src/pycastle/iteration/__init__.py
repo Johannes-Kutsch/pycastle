@@ -87,6 +87,41 @@ def _is_codex_missing_host_auth_signature(text: str) -> bool:
     )
 
 
+def _is_claude_subscription_access_denial(text: str) -> bool:
+    return "disabled claude subscription access for claude code" in text.lower()
+
+
+def _is_opencode_invalid_api_key_signature(text: str) -> bool:
+    lowered = text.lower()
+    return "invalid api key" in lowered or "invalid_api_key" in lowered
+
+
+def _shared_credential_failure_remediation(
+    *,
+    service_name: str,
+    raw: str,
+    rendered_observations: tuple[tuple[str, str], ...],
+) -> str:
+    haystacks = tuple(text for _, text in rendered_observations) + (raw,)
+    if service_name == "codex":
+        if any(_is_codex_refresh_token_reused_signature(text) for text in haystacks):
+            return "Run `codex login` on the host to reseed credentials."
+        if any(_is_codex_missing_host_auth_signature(text) for text in haystacks):
+            return "Run `codex login` on the host to seed Codex credentials before dispatch."
+    if service_name == "claude" and any(
+        _is_claude_subscription_access_denial(text) for text in haystacks
+    ):
+        return (
+            "Restore Claude Code subscription access or use a token/account with "
+            "access and rerun pycastle."
+        )
+    if service_name == "opencode" and any(
+        _is_opencode_invalid_api_key_signature(text) for text in haystacks
+    ):
+        return "Update the configured OpenCode API key and rerun pycastle."
+    return "Repair the local agent credentials/account access."
+
+
 def _classify_agent_credential_failure(
     *,
     service_name: str,
@@ -99,7 +134,14 @@ def _classify_agent_credential_failure(
         rendered = tuple(
             (obs.source_stream, obs.raw_provider_text) for obs in observations
         ) or (("raw error", raw),)
-        return ("Repair the local agent credentials/account access.", rendered)
+        return (
+            _shared_credential_failure_remediation(
+                service_name=service_name,
+                raw=raw,
+                rendered_observations=rendered,
+            ),
+            rendered,
+        )
     if service_name != "codex" or status_code != 401:
         return None
 

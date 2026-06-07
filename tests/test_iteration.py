@@ -4013,7 +4013,7 @@ def test_run_iteration_files_shared_credential_issue_for_codex_refresh_token_alr
             return _plan_output(
                 [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(
+        err = HardAgentError(
             message=raw_line,
             status_code=401,
             service_name="codex",
@@ -4037,6 +4037,8 @@ def test_run_iteration_files_shared_credential_issue_for_codex_refresh_token_alr
                 ),
             ),
         )
+        err.caller = "Implementer"
+        raise err
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         deps = _make_deps(
@@ -4078,7 +4080,7 @@ def test_run_iteration_files_shared_credential_issue_for_refresh_token_reused_ma
             return _plan_output(
                 [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(
+        err = HardAgentError(
             message=raw_line,
             status_code=401,
             service_name="codex",
@@ -4100,6 +4102,8 @@ def test_run_iteration_files_shared_credential_issue_for_refresh_token_reused_ma
                 ),
             ),
         )
+        err.caller = "Implementer"
+        raise err
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         deps = _make_deps(
@@ -4121,6 +4125,81 @@ def test_run_iteration_files_shared_credential_issue_for_refresh_token_reused_ma
     assert "Run `codex login` on the host to reseed credentials." in body
     assert '{"code":"refresh_token_reused"}' in body
     assert 'Error: API request failed: 401 Unauthorized: {"type":"error"}' in body
+
+
+def test_run_iteration_builds_redacted_codex_credential_issue_body_with_bundle_context(
+    tmp_path, git_svc, github_svc, logger
+):
+    raw_line = (
+        '{"type":"error","message":"Error: API request failed: 401 Unauthorized: '
+        '{\\"type\\":\\"error\\",\\"code\\":\\"refresh_token_reused\\",'
+        '\\"message\\":\\"This refresh token has already been used for sk-live-abc123SECRET\\"}"}'
+    )
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
+            )
+        err = HardAgentError(
+            message=raw_line,
+            status_code=401,
+            service_name="codex",
+            observations=(
+                ProviderErrorObservation(
+                    service_name="codex",
+                    raw_provider_text=(
+                        "The access token sk-live-abc123SECRET could not be refreshed "
+                        "because the refresh token was already used."
+                    ),
+                    source_stream="stderr",
+                    status_code=401,
+                ),
+                ProviderErrorObservation(
+                    service_name="codex",
+                    raw_provider_text=(
+                        "Error: API request failed: 401 Unauthorized: "
+                        '{"type":"error","code":"refresh_token_reused","message":'
+                        '"This refresh token has already been used for '
+                        'sk-live-abc123SECRET"}'
+                    ),
+                    source_stream="json_event.error",
+                    status_code=401,
+                ),
+            ),
+        )
+        err.caller = "Implementer"
+        raise err
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 401
+    mock_file.assert_not_called()
+    github_svc.create_issue_in.assert_called_once()
+    _owner_repo, _title, body, labels = github_svc.create_issue_in.call_args[0]
+    assert labels == ["bug", "needs-triage"]
+    assert body.startswith(
+        "Repair local agent credentials/account access and rerun pycastle."
+    )
+    assert (
+        "This issue is about local agent-provider credentials/account access, "
+        "not a source-code defect in the consuming repository." in body
+    )
+    assert "Service: codex" in body
+    assert "Agent: " in body
+    assert "Agent: <unknown>" not in body
+    assert "Run `codex login` on the host to reseed credentials." in body
+    assert "refresh token was already used" in body
+    assert "refresh_token_reused" in body
+    assert "sk-live-abc123SECRET" not in body
+    assert "[REDACTED]" in body
 
 
 def test_run_iteration_preserves_codex_consuming_project_routing_for_distinct_credential_failure(
@@ -4176,6 +4255,55 @@ def test_run_iteration_preserves_codex_consuming_project_routing_for_distinct_cr
     assert labels == ["bug", "needs-triage"]
 
 
+def test_run_iteration_builds_claude_subscription_access_remediation_in_shared_credential_issue(
+    tmp_path, git_svc, github_svc, logger
+):
+    message = (
+        "Your organization has disabled Claude subscription access for Claude Code. "
+        "Please ask your admin to enable Claude subscription access for Claude Code."
+    )
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
+            )
+        raise AgentCredentialFailureError(
+            message=message,
+            status_code=403,
+            service_name="claude",
+            classification="operator_actionable_agent_credential_failure",
+            observations=(
+                ProviderErrorObservation(
+                    service_name="claude",
+                    raw_provider_text=message,
+                    source_stream="result",
+                    status_code=403,
+                ),
+            ),
+        )
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 403
+    mock_file.assert_not_called()
+    github_svc.create_issue_in.assert_called_once()
+    _owner_repo, _title, body, labels = github_svc.create_issue_in.call_args[0]
+    assert labels == ["bug", "needs-triage"]
+    assert (
+        "Restore Claude Code subscription access or use a token/account with access "
+        "and rerun pycastle." in body
+    )
+    assert "disabled Claude subscription access for Claude Code" in body
+
+
 def test_run_iteration_reuses_existing_consuming_project_issue_for_exact_codex_refresh_token_reused_failure(
     tmp_path, git_svc, github_svc, logger
 ):
@@ -4220,6 +4348,49 @@ def test_run_iteration_reuses_existing_consuming_project_issue_for_exact_codex_r
         "https://github.com/owner/consuming-project/issues/77" in str(c[2])
         for c in print_calls
     )
+
+
+def test_run_iteration_builds_opencode_invalid_api_key_remediation_in_shared_credential_issue(
+    tmp_path, git_svc, github_svc, logger
+):
+    message = "OpenCode request failed: 401 invalid API key for provider opencode-go"
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
+            )
+        raise AgentCredentialFailureError(
+            message=message,
+            status_code=401,
+            service_name="opencode",
+            classification="operator_actionable_agent_credential_failure",
+            observations=(
+                ProviderErrorObservation(
+                    service_name="opencode",
+                    raw_provider_text=message,
+                    source_stream="json_event.error",
+                    status_code=401,
+                ),
+            ),
+        )
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 401
+    mock_file.assert_not_called()
+    github_svc.create_issue_in.assert_called_once()
+    _owner_repo, _title, body, labels = github_svc.create_issue_in.call_args[0]
+    assert labels == ["bug", "needs-triage"]
+    assert "Update the configured OpenCode API key and rerun pycastle." in body
+    assert "invalid API key" in body
 
 
 def test_run_iteration_files_shared_credential_issue_for_missing_codex_host_auth_before_dispatch(

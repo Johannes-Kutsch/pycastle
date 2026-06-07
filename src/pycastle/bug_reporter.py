@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import sys
 import traceback
 from importlib.metadata import PackageNotFoundError, version
@@ -267,24 +268,43 @@ def _build_agent_credential_failure_body(
     observations: tuple[tuple[str, str], ...],
 ) -> str:
     env = _env_block()
-    observation_blocks = "\n\n".join(
-        f"### {source_stream}\n\n```\n{raw_text}\n```"
+    redacted_observations = tuple(
+        (source_stream, _redact_credential_material(raw_text))
         for source_stream, raw_text in observations
     )
+    observation_blocks = "\n\n".join(
+        f"### {source_stream}\n\n```\n{raw_text}\n```"
+        for source_stream, raw_text in redacted_observations
+    )
     return (
-        "## Operator-actionable agent credential failure\n\n"
         "Repair local agent credentials/account access and rerun pycastle.\n\n"
         "This issue is about local agent-provider credentials/account access, "
         "not a source-code defect in the consuming repository.\n\n"
+        "## Operator-actionable agent credential failure\n\n"
         f"{remediation}\n\n"
         f"Service: {service_name}\n"
         f"Agent: {role_name or '<unknown>'}\n"
         f"Status: {status_code}\n\n"
         f"{observation_blocks}\n\n"
         "### Raw result envelope\n\n"
-        f"```json\n{raw_result_envelope}\n```\n\n"
+        f"```json\n{_redact_credential_material(raw_result_envelope)}\n```\n\n"
         f"{env}"
     )
+
+
+_CREDENTIAL_NAMED_VALUE_RE = re.compile(
+    r'(?i)(\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|secret|password)\b\s*[:=]\s*)(["\']?)([^"\'\s,}]+)(\2)'
+)
+_CREDENTIAL_AFTER_LABEL_RE = re.compile(
+    r"(?i)\b(access token|refresh token|api key|token|secret|password)\s+([A-Za-z0-9._:-]{8,})"
+)
+_SK_STYLE_TOKEN_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
+
+
+def _redact_credential_material(text: str) -> str:
+    redacted = _CREDENTIAL_NAMED_VALUE_RE.sub(r"\1\2[REDACTED]\4", text)
+    redacted = _CREDENTIAL_AFTER_LABEL_RE.sub(r"\1 [REDACTED]", redacted)
+    return _SK_STYLE_TOKEN_RE.sub("[REDACTED]", redacted)
 
 
 def report_and_exit(
