@@ -4304,7 +4304,7 @@ def test_run_iteration_builds_redacted_codex_credential_issue_body_with_bundle_c
     )
     assert (
         "This issue is about local agent-provider credentials/account access, "
-        "not a source-code defect in the consuming repository." in body
+        "not a source-code defect in the consuming project." in body
     )
     assert "Service: codex" in body
     assert "Agent: " in body

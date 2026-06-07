@@ -126,7 +126,7 @@ def _build_agent_credential_failure_body(
     return (
         "Repair local agent credentials/account access and rerun pycastle.\n\n"
         "This issue is about local agent-provider credentials/account access, "
-        "not a source-code defect in the consuming repository.\n\n"
+        "not a source-code defect in the consuming project.\n\n"
         "## Operator-actionable agent credential failure\n\n"
         f"{remediation}\n\n"
         f"Service: {service_name}\n"

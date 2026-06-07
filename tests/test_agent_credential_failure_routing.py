@@ -140,6 +140,68 @@ def test_route_agent_credential_failure_builds_redacted_issue_body_in_routing_mo
     assert body.count("[REDACTED]") >= 3
 
 
+def test_route_agent_credential_failure_files_stable_codex_issue_contract_at_module_seam():
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = 42
+    raw_result = (
+        '{"type":"error","code":"refresh_token_reused","apiKey":"plain-secret-123456",'
+        '"message":"The access token sk-live-abc123SECRET could not be refreshed."}'
+    )
+    err = AgentCredentialFailureError(
+        message=raw_result,
+        status_code=401,
+        service_name="codex",
+        classification="operator_actionable_agent_credential_failure",
+        observations=(
+            ProviderErrorObservation(
+                service_name="codex",
+                raw_provider_text=(
+                    "The access token could not be refreshed because "
+                    "refreshToken=rt-secret-123456 was already used."
+                ),
+                source_stream="stderr",
+                status_code=401,
+                provider_code="refresh_token_reused",
+            ),
+        ),
+    )
+    err.caller = "Implementer"
+
+    result = route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    assert result == AgentCredentialFailureRouteResult(
+        status_code=401,
+        status_message="operator-actionable agent credential failure: status 401",
+        issue_url="https://github.com/owner/consuming-project/issues/42",
+    )
+    github_svc.create_issue_in.assert_called_once()
+    owner_repo, title, body, labels = github_svc.create_issue_in.call_args[0]
+    assert owner_repo == "owner/consuming-project"
+    assert title == "[pycastle] operator-actionable agent credential failure"
+    assert labels == ["bug", "needs-triage"]
+    assert "Repair local agent credentials/account access and rerun pycastle." in body
+    assert (
+        "This issue is about local agent-provider credentials/account access, "
+        "not a source-code defect in the consuming project."
+    ) in body
+    assert "Run `codex login` on the host to reseed credentials." in body
+    assert "Agent: Implementer" in body
+    assert "Service: codex" in body
+    assert "Status: 401" in body
+    assert "### stderr" in body
+    assert "### Raw result envelope" in body
+    assert "## Environment" in body
+    assert "plain-secret-123456" not in body
+    assert "rt-secret-123456" not in body
+    assert "sk-live-abc123SECRET" not in body
+    assert body.count("[REDACTED]") >= 3
+
+
 def test_route_agent_credential_failure_interprets_claude_subscription_access_denial_in_routing_module():
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
