@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import dataclasses
+import platform
+import re
+import sys
+from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
-from .bug_reporter import file_agent_credential_failure_issue
 from .errors import AgentCredentialFailureError, HardAgentError
 
 if TYPE_CHECKING:
@@ -13,6 +16,20 @@ _SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION = (
     "operator_actionable_agent_credential_failure"
 )
 _CODEX_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION = "codex_auth_lineage_exhausted"
+_AGENT_CREDENTIAL_FAILURE_TITLE = (
+    "[pycastle] operator-actionable agent credential failure"
+)
+_CREDENTIAL_KEY_RE = (
+    r"(?:api(?:[_ -]?|)key|access(?:[_ -]?|)token|refresh(?:[_ -]?|)token|"
+    r"token|secret|password)"
+)
+_CREDENTIAL_NAMED_VALUE_RE = re.compile(
+    rf'(?i)(["\']?{_CREDENTIAL_KEY_RE}["\']?\s*[:=]\s*)(["\']?)([^"\'\s,}}]+)(\2)'
+)
+_CREDENTIAL_AFTER_LABEL_RE = re.compile(
+    r"(?i)\b(access token|refresh token|api key|token|secret|password)\s+([A-Za-z0-9._:-]{8,})"
+)
+_SK_STYLE_TOKEN_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -26,6 +43,23 @@ class AgentCredentialFailureRouteResult:
 class _CredentialFailureInterpretation:
     remediation: str
     rendered_observations: tuple[tuple[str, str], ...]
+
+
+def _pycastle_version() -> str:
+    try:
+        return version("pycastle")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def _env_block() -> str:
+    py = sys.version_info
+    return (
+        "## Environment\n"
+        f"- pycastle: {_pycastle_version()}\n"
+        f"- Python: {py.major}.{py.minor}.{py.micro}\n"
+        f"- OS: {platform.platform()}\n"
+    )
 
 
 def _is_codex_refresh_token_reused_signature(text: str) -> bool:
@@ -62,6 +96,85 @@ def _render_observations(
 ) -> tuple[tuple[str, str], ...]:
     rendered = tuple((obs.source_stream, obs.raw_provider_text) for obs in observations)
     return rendered or (("raw error", raw),)
+
+
+def _redact_credential_material(text: str) -> str:
+    redacted = _CREDENTIAL_NAMED_VALUE_RE.sub(r"\1\2[REDACTED]\4", text)
+    redacted = _CREDENTIAL_AFTER_LABEL_RE.sub(r"\1 [REDACTED]", redacted)
+    return _SK_STYLE_TOKEN_RE.sub("[REDACTED]", redacted)
+
+
+def _build_agent_credential_failure_body(
+    *,
+    service_name: str,
+    role_name: str,
+    status_code: int | None,
+    raw_result_envelope: str,
+    remediation: str,
+    observations: tuple[tuple[str, str], ...],
+) -> str:
+    env = _env_block()
+    redacted_observations = tuple(
+        (source_stream, _redact_credential_material(raw_text))
+        for source_stream, raw_text in observations
+    )
+    observation_blocks = "\n\n".join(
+        f"### {source_stream}\n\n```\n{raw_text}\n```"
+        for source_stream, raw_text in redacted_observations
+    )
+    return (
+        "Repair local agent credentials/account access and rerun pycastle.\n\n"
+        "This issue is about local agent-provider credentials/account access, "
+        "not a source-code defect in the consuming repository.\n\n"
+        "## Operator-actionable agent credential failure\n\n"
+        f"{remediation}\n\n"
+        f"Service: {service_name}\n"
+        f"Agent: {role_name or '<unknown>'}\n"
+        f"Status: {status_code}\n\n"
+        f"{observation_blocks}\n\n"
+        "### Raw result envelope\n\n"
+        f"```json\n{_redact_credential_material(raw_result_envelope)}\n```\n\n"
+        f"{env}"
+    )
+
+
+def _file_agent_credential_failure_issue(
+    *,
+    service_name: str,
+    role_name: str,
+    status_code: int | None,
+    raw_result_envelope: str,
+    remediation: str,
+    observations: tuple[tuple[str, str], ...],
+    github_svc: "GithubService",
+) -> str | None:
+    try:
+        existing = github_svc.search_open_issues_by_title(
+            _AGENT_CREDENTIAL_FAILURE_TITLE
+        )
+        if existing:
+            return f"https://github.com/{github_svc.repo}/issues/{existing[0]}"
+        body = _build_agent_credential_failure_body(
+            service_name=service_name,
+            role_name=role_name,
+            status_code=status_code,
+            raw_result_envelope=raw_result_envelope,
+            remediation=remediation,
+            observations=observations,
+        )
+        number = github_svc.create_issue_in(
+            github_svc.repo,
+            _AGENT_CREDENTIAL_FAILURE_TITLE,
+            body,
+            ["bug", "needs-triage"],
+        )
+        url = f"https://github.com/{github_svc.repo}/issues/{number}"
+        print(
+            f"Filed issue #{number} on {github_svc.repo}: {_AGENT_CREDENTIAL_FAILURE_TITLE}"
+        )
+        return url
+    except Exception:
+        return None
 
 
 def _select_remediation(
@@ -166,7 +279,7 @@ def route_agent_credential_failure(
             ),
         )
 
-    issue_url = file_agent_credential_failure_issue(
+    issue_url = _file_agent_credential_failure_issue(
         service_name=service_name,
         role_name=provider_failure.caller,
         status_code=provider_failure.status_code,
