@@ -14,11 +14,12 @@ from ..prompts.scope_args import build_plan_scope_args
 from ..services import GitService
 from ..services.github_service import GithubService
 from ..display.status_display import StatusDisplay
-from ..issue_readiness import IssueReadiness
 from ..infrastructure.worktree import transient_worktree
 from ._rows import status_row
 from .implement import branch_for
-from .planning_readiness import (
+from .planning_issue_intake import (
+    PlanReady,
+    hydrate_planned_issues,
     evaluate_planning_readiness,
     planning_blocker_summary,
 )
@@ -33,15 +34,6 @@ class _PlanningDeps(Protocol):
     git_svc: GitService
     github_svc: GithubService
     preflight_cache: PreflightCache
-
-
-@dataclasses.dataclass(frozen=True)
-class PlanReady:
-    issues: list[dict]
-    sha: str | None
-    readiness_by_number: dict[int, IssueReadiness] = dataclasses.field(
-        default_factory=dict
-    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -60,34 +52,6 @@ def _hydrate_blocked_issues(blocked: list[dict], open_issues: list[dict]) -> lis
             continue
         hydrated.append({"number": number, "title": title})
     return hydrated
-
-
-def hydrate_planned_issues(
-    plan_result: "PlanReady", open_issues: list[dict]
-) -> "PlanReady":
-    by_number = {i["number"]: i for i in open_issues}
-    hydrated: list[dict] = []
-    readiness_by_number = dict(plan_result.readiness_by_number)
-    for issue in plan_result.issues:
-        source = by_number.get(issue["number"])
-        if source is None:
-            continue
-        hydrated.append(
-            {
-                **issue,
-                "body": source.get("body") or "",
-                "comments": source.get("comments") or [],
-                "labels": source.get("labels") or [],
-            }
-        )
-        readiness = source.get("readiness")
-        if isinstance(readiness, IssueReadiness):
-            readiness_by_number[issue["number"]] = readiness
-    return PlanReady(
-        issues=hydrated,
-        sha=plan_result.sha,
-        readiness_by_number=readiness_by_number,
-    )
 
 
 def _fill_fields(issues: list[dict]) -> list[dict]:
