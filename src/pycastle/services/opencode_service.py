@@ -16,12 +16,14 @@ from ..session.service_resume_identity import (
 )
 from .agent_service import (
     AssistantTurn,
+    CredentialFailure,
     HardError,
     ParsedTurn,
     Result,
     TransientError,
     UsageLimit,
 )
+from ..provider_errors import ProviderErrorObservation
 from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
@@ -137,6 +139,39 @@ def _extract_error(event: dict[str, object]) -> HardError | TransientError | Non
     if status is None:
         return TransientError(status_code=None, raw_message=message)
 
+    return None
+
+
+def _extract_credential_failure(event: dict[str, object]) -> CredentialFailure | None:
+    data = _error_data(event)
+    if data is None:
+        return None
+
+    status = data.get("statusCode")
+    message = data.get("message")
+    error = event.get("error")
+    error_name = error.get("name") if isinstance(error, dict) else None
+    if (
+        status == 401
+        and isinstance(message, str)
+        and message.lower() == "invalid api key"
+        and error_name == "AuthenticationError"
+    ):
+        return CredentialFailure(
+            raw_message=message,
+            service_name="opencode",
+            classification="operator_actionable_agent_credential_failure",
+            source_observations=(
+                ProviderErrorObservation(
+                    service_name="opencode",
+                    raw_provider_text=message,
+                    source_stream="json_event.error",
+                    status_code=401,
+                    error_name="AuthenticationError",
+                ),
+            ),
+            status_code=401,
+        )
     return None
 
 
@@ -298,7 +333,9 @@ class OpenCodeService:
                 if limit is not None:
                     yield limit
                 else:
-                    classified = _extract_error(event)
+                    classified: ParsedTurn | None = _extract_credential_failure(event)
+                    if classified is None:
+                        classified = _extract_error(event)
                     if classified is not None:
                         yield classified
                 return

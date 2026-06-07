@@ -5,7 +5,7 @@ from datetime import datetime
 from datetime import timezone
 from pathlib import Path
 
-from pycastle.services.agent_service import AssistantTurn, Result
+from pycastle.services.agent_service import AssistantTurn, CredentialFailure, Result
 from pycastle.services.agent_service import HardError
 from pycastle.services.agent_service import TransientError
 from pycastle.services.agent_service import UsageLimit
@@ -206,7 +206,7 @@ def test_opencode_service_maps_transient_and_hard_runtime_errors() -> None:
             [
                 (
                     '{"type":"error","timestamp":1,"sessionID":"sess_123","error":{'
-                    '"name":"AuthenticationError","data":{"message":"invalid api key",'
+                    '"name":"ProviderConfigError","data":{"message":"provider misconfigured",'
                     '"statusCode":401,"isRetryable":false}}}'
                 )
             ]
@@ -219,7 +219,35 @@ def test_opencode_service_maps_transient_and_hard_runtime_errors() -> None:
     assert missing_status == [
         TransientError(status_code=None, raw_message="connection dropped")
     ]
-    assert hard == [HardError(status_code=401, raw_message="invalid api key")]
+    assert hard == [HardError(status_code=401, raw_message="provider misconfigured")]
+
+
+def test_opencode_service_routes_structured_invalid_api_key_through_shared_credential_failure() -> (
+    None
+):
+    service = OpenCodeService()
+
+    events = list(
+        service.run(
+            [
+                (
+                    '{"type":"error","timestamp":1,"sessionID":"sess_123","error":{'
+                    '"name":"AuthenticationError","data":{"message":"invalid api key",'
+                    '"statusCode":401,"isRetryable":false}}}'
+                )
+            ]
+        )
+    )
+
+    assert events == [
+        CredentialFailure(
+            raw_message="invalid api key",
+            service_name="opencode",
+            classification="operator_actionable_agent_credential_failure",
+            source_observations=(),
+            status_code=401,
+        )
+    ]
 
 
 def test_opencode_service_maps_missing_model_without_status_as_hard_error() -> None:

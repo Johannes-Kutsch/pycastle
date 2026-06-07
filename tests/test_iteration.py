@@ -4605,6 +4605,56 @@ def test_run_iteration_files_shared_credential_issue_for_missing_codex_host_auth
     assert message in body
 
 
+def test_run_iteration_files_shared_credential_issue_for_opencode_invalid_api_key(
+    tmp_path, git_svc, github_svc, logger
+):
+    raw_line = "invalid api key"
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
+            )
+        raise AgentCredentialFailureError(
+            message=raw_line,
+            status_code=401,
+            service_name="opencode",
+            classification="operator_actionable_agent_credential_failure",
+            observations=(
+                ProviderErrorObservation(
+                    service_name="opencode",
+                    raw_provider_text="invalid api key",
+                    source_stream="json_event.error",
+                    status_code=401,
+                    error_name="AuthenticationError",
+                ),
+            ),
+        )
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentCredentialFailure)
+    assert result.status_code == 401
+    mock_file.assert_not_called()
+    github_svc.search_open_issues_by_title.assert_called_once_with(
+        "[pycastle] operator-actionable agent credential failure"
+    )
+    github_svc.create_issue_in.assert_called_once()
+    owner_repo, title, body, labels = github_svc.create_issue_in.call_args[0]
+    assert owner_repo == "owner/consuming-project"
+    assert title == "[pycastle] operator-actionable agent credential failure"
+    assert labels == ["bug", "needs-triage"]
+    assert "Update the configured OpenCode API key" in body
+    assert "json_event.error" in body
+    assert "invalid api key" in body
+
+
 def test_run_iteration_does_not_route_unrelated_codex_auth_failure_to_consuming_project_issue(
     tmp_path, git_svc, github_svc, logger
 ):
