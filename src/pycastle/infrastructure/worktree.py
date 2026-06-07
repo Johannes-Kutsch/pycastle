@@ -9,6 +9,7 @@ from typing import Protocol
 
 from ..config import Config, load_config
 from ..errors import (
+    AgentCredentialFailureError,
     AgentFailedError,
     HardAgentError,
     TransientAgentError,
@@ -275,6 +276,8 @@ async def managed_worktree(
     try:
         yield path
     except (UsageLimitError, TransientAgentError):
+        raise
+    except AgentCredentialFailureError:
         raise
     except (AgentFailedError, HardAgentError):
         _preservation_worthy_exc = True
