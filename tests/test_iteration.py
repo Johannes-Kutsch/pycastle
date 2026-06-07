@@ -3990,6 +3990,36 @@ def test_run_iteration_does_not_route_unrelated_codex_auth_failure_to_consuming_
     github_svc.create_issue_in.assert_not_called()
 
 
+def test_run_iteration_keeps_legacy_raw_title_for_unrelated_top_level_message_hard_error(
+    tmp_path, git_svc, github_svc, logger
+):
+    raw_line = (
+        '{"type":"error","message":"Error: API request failed: 400 Bad Request: '
+        'model_not_found"}'
+    )
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
+            )
+        raise HardAgentError(message=raw_line, status_code=400, service_name="codex")
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedHardApiError)
+    mock_file.assert_called_once()
+    title, body, _labels = mock_file.call_args[0]
+    assert title == f"[pycastle] Codex API 400: {raw_line}"
+    assert raw_line in body
+    github_svc.create_issue_in.assert_not_called()
+
+
 def test_run_iteration_uses_service_name_in_hard_agent_error_title(
     tmp_path, git_svc, github_svc, logger
 ):

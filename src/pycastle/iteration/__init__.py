@@ -46,7 +46,7 @@ from .preflight import (
 _FILED_USAGE_LIMIT_RAW_MESSAGES: set[str] = set()
 
 
-def _extract_hard_error_text(raw: str) -> str:
+def _extract_legacy_hard_error_text(raw: str) -> str:
     error_text = raw
     try:
         parsed = json.loads(raw)
@@ -58,10 +58,24 @@ def _extract_hard_error_text(raw: str) -> str:
                 data = error.get("data")
                 if isinstance(data, dict) and data.get("message"):
                     error_text = str(data["message"])
-                elif error.get("message"):
-                    error_text = str(error["message"])
-            elif parsed.get("message"):
-                error_text = str(parsed["message"])
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return error_text
+
+
+def _extract_codex_auth_lineage_error_text(raw: str) -> str:
+    error_text = _extract_legacy_hard_error_text(raw)
+    if error_text != raw:
+        return error_text
+    try:
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            return error_text
+        error = parsed.get("error")
+        if isinstance(error, dict) and error.get("message"):
+            return str(error["message"])
+        if parsed.get("message"):
+            return str(parsed["message"])
     except (json.JSONDecodeError, TypeError):
         pass
     return error_text
@@ -373,16 +387,16 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
     except HardAgentError as err:
         raw = err.args[0] if err.args else ""
         service_name = getattr(err, "service_name", "claude") or "claude"
-        error_text = _extract_hard_error_text(raw)
+        codex_auth_error_text = _extract_codex_auth_lineage_error_text(raw)
         if _is_exact_codex_auth_lineage_exhaustion(
             service_name=service_name,
             status_code=err.status_code,
             classification=getattr(err, "classification", None),
             raw=raw,
-            error_text=error_text,
+            error_text=codex_auth_error_text,
         ):
             url = file_codex_auth_lineage_issue(
-                raw_error_text=error_text,
+                raw_error_text=codex_auth_error_text,
                 raw_result_envelope=raw,
                 github_svc=deps.github_svc,
             )
@@ -396,6 +410,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             )
             return AbortedHardApiError(status_code=err.status_code)
 
+        error_text = _extract_legacy_hard_error_text(raw)
         first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"
         service_label = {
             "claude": "Claude",
