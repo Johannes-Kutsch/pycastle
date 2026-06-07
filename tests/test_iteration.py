@@ -4717,6 +4717,36 @@ def test_run_iteration_keeps_generic_codex_shared_classification_on_hard_provide
     github_svc.create_issue_in.assert_not_called()
 
 
+def test_run_iteration_keeps_generic_codex_agent_credential_failure_without_classification_on_hard_provider_failure_path(
+    tmp_path, git_svc, github_svc, logger
+):
+    raw_line = '{"type": "result", "is_error": true, "api_error_status": 401, "result": "Unauthorized: invalid token"}'
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
+            )
+        raise AgentCredentialFailureError(
+            message=raw_line,
+            status_code=401,
+            service_name="codex",
+            observations=(),
+        )
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedHardApiError)
+    mock_file.assert_called_once()
+    github_svc.search_open_issues_by_title.assert_not_called()
+    github_svc.create_issue_in.assert_not_called()
+
+
 def test_run_iteration_keeps_legacy_raw_title_for_unrelated_top_level_message_hard_error(
     tmp_path, git_svc, github_svc, logger
 ):

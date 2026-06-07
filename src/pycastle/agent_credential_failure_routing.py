@@ -323,11 +323,7 @@ def route_agent_credential_failure(
         observations=getattr(provider_failure, "observations", ()),
     )
     if interpretation is None:
-        if (
-            service_name == "codex"
-            and getattr(provider_failure, "classification", None)
-            == _SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION
-        ):
+        if service_name == "codex":
             return None
         if not isinstance(provider_failure, AgentCredentialFailureError):
             return None

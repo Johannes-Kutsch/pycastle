@@ -698,6 +698,26 @@ def test_route_agent_credential_failure_does_not_route_generic_codex_auth_lookin
     github_svc.create_issue_in.assert_not_called()
 
 
+def test_route_agent_credential_failure_does_not_route_generic_codex_auth_looking_error_without_classification():
+    github_svc = MagicMock(spec=GithubService)
+    err = AgentCredentialFailureError(
+        message="Unauthorized: invalid token",
+        status_code=401,
+        service_name="codex",
+        observations=(),
+    )
+    err.caller = "Implementer"
+
+    result = route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    assert result is None
+    github_svc.search_open_issues_by_title.assert_not_called()
+    github_svc.create_issue_in.assert_not_called()
+
+
 def test_route_agent_credential_failure_files_new_issue_when_no_open_family_issue_exists():
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
