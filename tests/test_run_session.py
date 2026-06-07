@@ -7,7 +7,7 @@ from typing import cast
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.errors import HardAgentError
+from pycastle.errors import AgentCredentialFailureError
 from pycastle.services import ClaudeService
 from pycastle.services.codex_service import CodexService
 from pycastle.services.opencode_service import OpenCodeService
@@ -1304,16 +1304,21 @@ def test_local_auth_seed_action_preserves_host_auth_file_mode(
     assert destination.stat().st_mode & 0o777 == source.stat().st_mode & 0o777
 
 
-def test_local_auth_seed_action_require_source_raises_hard_agent_error_when_missing(
+def test_local_auth_seed_action_require_source_raises_agent_credential_failure_when_missing(
     tmp_path: Path,
 ) -> None:
     missing = tmp_path / "missing" / "auth.json"
     action = LocalAuthSeedAction(source=missing, destination=tmp_path / "dest.json")
 
-    with pytest.raises(HardAgentError) as exc_info:
+    with pytest.raises(AgentCredentialFailureError) as exc_info:
         action.require_source()
 
     assert exc_info.value.status_code == 401
+    assert exc_info.value.service_name == "codex"
+    assert len(exc_info.value.observations) == 1
+    observation = exc_info.value.observations[0]
+    assert observation.source_stream == "pre-dispatch host check"
+    assert observation.status_code == 401
 
 
 def test_run_session_plan_capture_without_record_persists_session_id_but_not_metadata(

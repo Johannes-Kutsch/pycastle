@@ -22,9 +22,10 @@ from pycastle.agents.output_protocol import (
     process_stream,
     process_stream_from_events,
 )
-from pycastle.errors import UsageLimitError
+from pycastle.errors import AgentCredentialFailureError, UsageLimitError
 from pycastle.services.agent_service import (
     AssistantTurn,
+    CredentialFailure,
     PromptTokens,
     Result,
     UnsupportedTokens,
@@ -1134,6 +1135,25 @@ def test_process_stream_from_events_propagates_raw_message_to_usage_limit_error(
             iter(events), on_turn=lambda t: None, role=AgentRole.IMPLEMENTER
         )
     assert exc_info.value.raw_message == "hit usage limit, no reset"
+
+
+def test_process_stream_from_events_raises_agent_credential_failure_error():
+    events = [
+        CredentialFailure(
+            raw_message="Codex authentication missing: run `codex login` on the host.",
+            service_name="codex",
+            source_observations=(),
+            status_code=401,
+        )
+    ]
+
+    with pytest.raises(AgentCredentialFailureError) as exc_info:
+        process_stream_from_events(
+            iter(events), on_turn=lambda t: None, role=AgentRole.IMPLEMENTER
+        )
+
+    assert exc_info.value.service_name == "codex"
+    assert exc_info.value.status_code == 401
 
 
 def test_process_stream_from_events_calls_on_tokens():

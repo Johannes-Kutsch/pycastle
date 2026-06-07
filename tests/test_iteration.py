@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.errors import (
+    AgentCredentialFailureError,
     AgentFailedError,
     AgentTimeoutError,
     HardAgentError,
@@ -17,6 +18,7 @@ from pycastle.errors import (
 from pycastle.config import Config, StageOverride
 from pycastle.services import GitService
 from pycastle.services import GithubService
+from pycastle.provider_errors import ProviderErrorObservation
 from pycastle.iteration import (
     AbortedAgentFailure,
     AbortedHardApiError,
@@ -3903,6 +3905,55 @@ def test_run_iteration_files_exact_codex_refresh_token_reused_failure_on_consumi
                 [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
             )
         raise HardAgentError(message=raw_line, status_code=401, service_name="codex")
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedHardApiError)
+    mock_file.assert_not_called()
+    github_svc.search_open_issues_by_title.assert_called_once()
+    github_svc.create_issue_in.assert_called_once()
+    owner_repo, title, body, labels = github_svc.create_issue_in.call_args[0]
+    assert owner_repo == "owner/consuming-project"
+    assert title.startswith("[pycastle] Codex auth lineage exhausted:")
+    assert raw_line in body
+    assert labels == ["bug", "needs-triage"]
+
+
+def test_run_iteration_preserves_codex_consuming_project_routing_for_distinct_credential_failure(
+    tmp_path, git_svc, github_svc, logger
+):
+    raw_line = (
+        '{"type":"error","message":"Error: API request failed: 401 Unauthorized: '
+        '{\\"type\\":\\"error\\",\\"code\\":\\"refresh_token_reused\\",'
+        '\\"message\\":\\"This refresh token has already been used.\\"}"}'
+    )
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
+            )
+        raise AgentCredentialFailureError(
+            message=raw_line,
+            status_code=401,
+            service_name="codex",
+            classification="codex_auth_lineage_exhausted",
+            observations=(
+                ProviderErrorObservation(
+                    service_name="codex",
+                    raw_provider_text=raw_line,
+                    source_stream="json_event.error",
+                    status_code=401,
+                    provider_code="refresh_token_reused",
+                ),
+            ),
+        )
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         deps = _make_deps(

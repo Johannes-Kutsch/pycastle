@@ -11,11 +11,12 @@ from pycastle.agents.output_protocol import (
     AgentRole,
     process_stream_from_events,
 )
-from pycastle.errors import HardAgentError
+from pycastle.errors import AgentCredentialFailureError
 from pycastle.services import CodexService
 from pycastle.services.codex_service import CodexPromptTokensContract
 from pycastle.services.agent_service import (
     AssistantTurn,
+    CredentialFailure,
     HardError,
     PromptTokens,
     UnsupportedTokens,
@@ -157,7 +158,7 @@ def test_process_stream_from_events_classifies_exact_refresh_token_reused_as_aut
         'Error: API request failed: 401 Unauthorized: {"type":"error","code":"refresh_token_reused","message":"This refresh token has already been used."}'
     )
 
-    with pytest.raises(HardAgentError) as exc_info:
+    with pytest.raises(AgentCredentialFailureError) as exc_info:
         process_stream_from_events(
             CodexService().run([line]),
             on_turn=lambda t: None,
@@ -166,6 +167,15 @@ def test_process_stream_from_events_classifies_exact_refresh_token_reused_as_aut
         )
 
     assert exc_info.value.classification == "codex_auth_lineage_exhausted"
+    assert exc_info.value.service_name == "codex"
+    assert exc_info.value.status_code == 401
+    assert len(exc_info.value.observations) == 1
+    observation = exc_info.value.observations[0]
+    assert observation.service_name == "codex"
+    assert observation.source_stream == "json_event.error"
+    assert observation.status_code == 401
+    assert observation.provider_code == "refresh_token_reused"
+    assert "This refresh token has already been used." in observation.raw_provider_text
 
 
 # ── CodexService.build_command: resume session ───────────────────────────────
@@ -864,6 +874,26 @@ def test_run_turn_failed_4xx_status_yields_hard_error():
     message = "unexpected status 403 Forbidden"
     events = list(CodexService().run([_turn_failed(message)]))
     assert events == [HardError(status_code=403, raw_message=message)]
+
+
+def test_run_error_event_exact_refresh_token_reused_yields_credential_failure():
+    message = (
+        'Error: API request failed: 401 Unauthorized: {"type":"error",'
+        '"code":"refresh_token_reused","message":"This refresh token has already '
+        'been used."}'
+    )
+    events = list(CodexService().run([_error_line(message)]))
+
+    assert len(events) == 1
+    event = events[0]
+    assert isinstance(event, CredentialFailure)
+    assert event.status_code == 401
+    assert event.classification == "codex_auth_lineage_exhausted"
+    assert len(event.source_observations) == 1
+    observation = event.source_observations[0]
+    assert observation.service_name == "codex"
+    assert observation.source_stream == "json_event.error"
+    assert observation.provider_code == "refresh_token_reused"
 
 
 def test_run_error_event_5xx_status_yields_transient_error():
