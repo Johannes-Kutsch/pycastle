@@ -6,7 +6,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..errors import HardAgentError
+from ..errors import AgentCredentialFailureError
+from ..provider_errors import ProviderErrorObservation
 
 if TYPE_CHECKING:
     from .resume import RunKind
@@ -28,9 +29,18 @@ class LocalAuthSeedAction:
 
     def require_source(self) -> Path:
         if not self.source.exists():
-            raise HardAgentError(
+            raise AgentCredentialFailureError(
                 self.missing_source_message,
                 status_code=401,
+                service_name="codex",
+                observations=(
+                    ProviderErrorObservation(
+                        service_name="codex",
+                        raw_provider_text=self.missing_source_message,
+                        source_stream="pre-dispatch host check",
+                        status_code=401,
+                    ),
+                ),
             )
         return self.source
 

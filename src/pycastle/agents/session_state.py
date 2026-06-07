@@ -5,7 +5,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .output_protocol import AgentRole
-from ..errors import HardAgentError
+from ..errors import AgentCredentialFailureError
+from ..provider_errors import ProviderErrorObservation
 from ..session import RoleSession, RunKind
 from ..session.agent import LocalAuthSeedAction, RunSessionPlan, RunSessionPlanRequest
 from ..session.agent import plan_run_session as _plan_run_session
@@ -209,9 +210,18 @@ def _require_auth_seed_source(
 ) -> None:
     if auth_seed_action is None or auth_seed_action.source.exists():
         return
-    raise HardAgentError(
+    raise AgentCredentialFailureError(
         auth_seed_action.missing_source_message,
         status_code=401,
+        service_name="codex",
+        observations=(
+            ProviderErrorObservation(
+                service_name="codex",
+                raw_provider_text=auth_seed_action.missing_source_message,
+                source_stream="pre-dispatch host check",
+                status_code=401,
+            ),
+        ),
     )
 
 

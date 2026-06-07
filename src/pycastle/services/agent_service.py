@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from ..agents.output_protocol import AgentRole
+from ..provider_errors import ProviderErrorObservation
 from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
 
 if TYPE_CHECKING:
@@ -45,12 +46,31 @@ class UsageLimit:
 class TransientError:
     status_code: int | None
     raw_message: str
+    observations: tuple[ProviderErrorObservation, ...] = dataclasses.field(
+        default=(),
+        compare=False,
+    )
 
 
 @dataclasses.dataclass
 class HardError:
     status_code: int
     raw_message: str
+    classification: str | None = None
+    observations: tuple[ProviderErrorObservation, ...] = dataclasses.field(
+        default=(),
+        compare=False,
+    )
+
+
+@dataclasses.dataclass
+class CredentialFailure:
+    raw_message: str
+    service_name: str
+    source_observations: tuple[ProviderErrorObservation, ...] = dataclasses.field(
+        compare=False,
+    )
+    status_code: int | None = None
     classification: str | None = None
 
 
@@ -62,6 +82,7 @@ ParsedTurn = (
     | UsageLimit
     | TransientError
     | HardError
+    | CredentialFailure
 )
 
 

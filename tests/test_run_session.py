@@ -216,9 +216,7 @@ def test_provider_state_relpath_formats_role_namespace_and_provider_name() -> No
     )
     assert RoleSession.provider_state_relpath_for(
         AgentRole.IMPLEMENTER, "opencode"
-    ) == (
-        ".pycastle-session/implementer/opencode/"
-    )
+    ) == (".pycastle-session/implementer/opencode/")
     assert RoleSession.provider_state_relpath_for(
         AgentRole.IMPROVE, "opencode", "main"
     ) == (".pycastle-session/improve/main/opencode/")

@@ -1,6 +1,8 @@
 from datetime import datetime
 from pathlib import Path
 
+from .provider_errors import ProviderErrorObservation
+
 
 class PycastleError(RuntimeError):
     pass
@@ -127,12 +129,34 @@ class HardAgentError(PycastleError):
         status_code: int | None = None,
         service_name: str = "claude",
         classification: str | None = None,
+        observations: tuple[ProviderErrorObservation, ...] = (),
     ) -> None:
         self.status_code = status_code
         self.caller = ""
         self.service_name = service_name or "claude"
         self.classification = classification
+        self.observations = observations
         super().__init__(message)
+
+
+class AgentCredentialFailureError(HardAgentError):
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        status_code: int | None = None,
+        service_name: str,
+        classification: str | None = None,
+        observations: tuple[ProviderErrorObservation, ...],
+    ) -> None:
+        self.is_operator_actionable = True
+        super().__init__(
+            message=message,
+            status_code=status_code,
+            service_name=service_name,
+            classification=classification,
+            observations=observations,
+        )
 
 
 class AgentFailedError(PycastleError):

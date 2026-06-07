@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING, Protocol, TypeAlias
 if TYPE_CHECKING:
     from ..services.agent_service import ParsedTurn
 
-from ..errors import HardAgentError, TransientAgentError, UsageLimitError
+from ..errors import (
+    AgentCredentialFailureError,
+    HardAgentError,
+    TransientAgentError,
+    UsageLimitError,
+)
 
 
 class AgentRole(enum.Enum):
@@ -416,6 +421,7 @@ def process_stream_from_events(
 ) -> AgentOutput:
     from ..services.agent_service import (
         AssistantTurn,
+        CredentialFailure,
         HardError,
         PromptTokens,
         Result,
@@ -445,6 +451,15 @@ def process_stream_from_events(
                 message=event.raw_message,
                 status_code=event.status_code,
                 classification=event.classification,
+                observations=event.observations,
+            )
+        elif isinstance(event, CredentialFailure):
+            raise AgentCredentialFailureError(
+                message=event.raw_message,
+                status_code=event.status_code,
+                service_name=event.service_name,
+                classification=event.classification,
+                observations=event.source_observations,
             )
         elif isinstance(event, PromptTokens):
             if on_tokens is not None:

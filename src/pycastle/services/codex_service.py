@@ -22,8 +22,10 @@ from ..session.service_resume_identity import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
 )
+from ..provider_errors import ProviderErrorObservation
 from .agent_service import (
     AssistantTurn,
+    CredentialFailure,
     HardError,
     ParsedTurn,
     PromptTokens,
@@ -55,15 +57,55 @@ def _is_exact_refresh_token_reused_message(message: str) -> bool:
     return all(marker in message for marker in exact_markers)
 
 
-def _classify_error_message(message: str) -> HardError | TransientError | None:
+def _provider_error_observation(
+    *,
+    raw_provider_text: str,
+    source_stream: str,
+    status_code: int | None = None,
+    provider_code: str | None = None,
+    error_name: str | None = None,
+) -> ProviderErrorObservation:
+    return ProviderErrorObservation(
+        service_name="codex",
+        raw_provider_text=raw_provider_text,
+        source_stream=source_stream,
+        status_code=status_code,
+        provider_code=provider_code,
+        error_name=error_name,
+    )
+
+
+def _classify_error_message(
+    message: str,
+    *,
+    source_stream: str,
+) -> CredentialFailure | HardError | TransientError | None:
     if _UNAUTHORIZED_RE.search(message):
-        classification = None
         if _is_exact_refresh_token_reused_message(message):
-            classification = _AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION
+            return CredentialFailure(
+                raw_message=message,
+                service_name="codex",
+                status_code=401,
+                classification=_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION,
+                source_observations=(
+                    _provider_error_observation(
+                        raw_provider_text=message,
+                        source_stream=source_stream,
+                        status_code=401,
+                        provider_code="refresh_token_reused",
+                    ),
+                ),
+            )
         return HardError(
             status_code=401,
             raw_message=message,
-            classification=classification,
+            observations=(
+                _provider_error_observation(
+                    raw_provider_text=message,
+                    source_stream=source_stream,
+                    status_code=401,
+                ),
+            ),
         )
 
     match = _HTTP_STATUS_RE.search(message)
@@ -72,9 +114,29 @@ def _classify_error_message(message: str) -> HardError | TransientError | None:
 
     status = int(match.group("status"))
     if status >= 500:
-        return TransientError(status_code=status, raw_message=message)
+        return TransientError(
+            status_code=status,
+            raw_message=message,
+            observations=(
+                _provider_error_observation(
+                    raw_provider_text=message,
+                    source_stream=source_stream,
+                    status_code=status,
+                ),
+            ),
+        )
     if 400 <= status < 500:
-        return HardError(status_code=status, raw_message=message)
+        return HardError(
+            status_code=status,
+            raw_message=message,
+            observations=(
+                _provider_error_observation(
+                    raw_provider_text=message,
+                    source_stream=source_stream,
+                    status_code=status,
+                ),
+            ),
+        )
     return None
 
 
@@ -355,7 +417,10 @@ class CodexService:
                 if limit is not None:
                     yield limit
                 else:
-                    classified = _classify_error_message(message)
+                    classified = _classify_error_message(
+                        message,
+                        source_stream="json_event.turn_failed",
+                    )
                     if classified is not None:
                         yield classified
                     _log.warning("codex turn.failed: %s", message)
@@ -367,7 +432,10 @@ class CodexService:
                 if limit is not None:
                     yield limit
                 else:
-                    classified = _classify_error_message(message)
+                    classified = _classify_error_message(
+                        message,
+                        source_stream="json_event.error",
+                    )
                     if classified is not None:
                         yield classified
                     _log.warning("codex error: %s", message)
