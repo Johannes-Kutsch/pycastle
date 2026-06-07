@@ -2743,15 +2743,13 @@ def test_run_iteration_routes_failure_report_credential_failure_through_shared_t
         AgentRole.IMPLEMENTER, tmp_path / "pycastle" / ".worktrees" / "issue-1"
     )
     credential_error = AgentCredentialFailureError(
-        "Codex authentication missing: run `codex login` on the host.",
+        "Credential failure observed while running the Failure-Report agent.",
         status_code=401,
         service_name="codex",
         observations=(
             ProviderErrorObservation(
                 service_name="codex",
-                raw_provider_text=(
-                    "Codex authentication missing: run `codex login` on the host."
-                ),
+                raw_provider_text="Provider adapter surfaced a credential failure.",
                 source_stream="pre-dispatch host check",
                 status_code=401,
             ),
@@ -3976,11 +3974,7 @@ def test_run_iteration_returns_distinct_terminal_result_for_shared_credential_fa
     tmp_path, git_svc, github_svc, logger
 ):
     hard_error = HardAgentError(
-        message=(
-            '{"type":"error","message":"Error: API request failed: 401 Unauthorized: '
-            '{\\"type\\":\\"error\\",\\"code\\":\\"refresh_token_reused\\",'
-            '\\"message\\":\\"This refresh token has already been used.\\"}"}'
-        ),
+        message="Credential failure surfaced by the provider adapter.",
         status_code=401,
         service_name="codex",
     )
@@ -4036,21 +4030,16 @@ def test_run_iteration_preserves_codex_consuming_project_routing_for_distinct_cr
     tmp_path, git_svc, github_svc, logger
 ):
     credential_error = AgentCredentialFailureError(
-        message=(
-            '{"type":"error","message":"Error: API request failed: 401 Unauthorized: '
-            '{\\"type\\":\\"error\\",\\"code\\":\\"refresh_token_reused\\",'
-            '\\"message\\":\\"This refresh token has already been used.\\"}"}'
-        ),
+        message="Credential failure surfaced by the provider adapter.",
         status_code=401,
         service_name="codex",
-        classification="codex_auth_lineage_exhausted",
+        classification="operator_actionable_agent_credential_failure",
         observations=(
             ProviderErrorObservation(
                 service_name="codex",
                 raw_provider_text="credential failure observed by provider adapter",
                 source_stream="json_event.error",
                 status_code=401,
-                provider_code="refresh_token_reused",
             ),
         ),
     )
