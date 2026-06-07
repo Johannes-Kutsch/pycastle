@@ -196,6 +196,11 @@ def test_route_agent_credential_failure_files_stable_codex_issue_contract_at_mod
     assert "### stderr" in body
     assert "### Raw result envelope" in body
     assert "## Environment" in body
+    assert (
+        "The access token could not be refreshed because "
+        "refreshToken=[REDACTED] was already used."
+    ) in body
+    assert '"code":"refresh_token_reused"' in body
     assert "plain-secret-123456" not in body
     assert "rt-secret-123456" not in body
     assert "sk-live-abc123SECRET" not in body
