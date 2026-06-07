@@ -260,6 +260,45 @@ def test_route_agent_credential_failure_returns_local_remediation_when_issue_fil
     )
 
 
+def test_route_agent_credential_failure_returns_local_remediation_when_issue_creation_fails():
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.side_effect = RuntimeError("tracker write failed")
+
+    err = AgentCredentialFailureError(
+        message="Codex authentication missing: run `codex login` on the host.",
+        status_code=401,
+        service_name="codex",
+        observations=(
+            ProviderErrorObservation(
+                service_name="codex",
+                raw_provider_text=(
+                    "Codex authentication missing: run `codex login` on the host."
+                ),
+                source_stream="pre-dispatch host check",
+                status_code=401,
+            ),
+        ),
+    )
+    err.caller = "Failure Report Agent"
+
+    result = route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    assert result == AgentCredentialFailureRouteResult(
+        status_code=401,
+        status_message=(
+            "operator-actionable agent credential failure: "
+            "Run `codex login` on the host to seed Codex credentials before "
+            "dispatch. Evidence: Codex authentication missing: run `codex login` "
+            "on the host."
+        ),
+        issue_url=None,
+    )
+
+
 def test_route_agent_credential_failure_uses_raw_error_as_local_evidence_without_observations():
     github_svc = MagicMock(spec=GithubService)
     github_svc.search_open_issues_by_title.side_effect = RuntimeError("tracker down")
