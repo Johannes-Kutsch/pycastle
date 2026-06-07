@@ -381,7 +381,55 @@ def test_route_agent_credential_failure_reuses_existing_family_issue_in_routing_
 
     assert result == AgentCredentialFailureRouteResult(
         status_code=401,
-        status_message="operator-actionable agent credential failure: status 401",
+        status_message=(
+            "operator-actionable agent credential failure: "
+            "reusing existing issue #77 "
+            "(https://github.com/owner/consuming-project/issues/77)"
+        ),
+        issue_url="https://github.com/owner/consuming-project/issues/77",
+    )
+    github_svc.search_open_issues_by_title.assert_called_once_with(
+        "[pycastle] operator-actionable agent credential failure"
+    )
+    github_svc.create_issue_in.assert_not_called()
+
+
+def test_route_agent_credential_failure_reports_reused_issue_in_terminal_status_facts():
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = [77]
+
+    err = AgentCredentialFailureError(
+        message="OpenCode request failed: 401 invalid API key for provider opencode-go",
+        status_code=401,
+        service_name="opencode",
+        classification="operator_actionable_agent_credential_failure",
+        observations=(
+            ProviderErrorObservation(
+                service_name="opencode",
+                raw_provider_text=(
+                    "OpenCode request failed: 401 invalid API key for provider "
+                    "opencode-go"
+                ),
+                source_stream="json_event.error",
+                status_code=401,
+            ),
+        ),
+    )
+    err.caller = "Implementer"
+
+    result = route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    assert result == AgentCredentialFailureRouteResult(
+        status_code=401,
+        status_message=(
+            "operator-actionable agent credential failure: "
+            "reusing existing issue #77 "
+            "(https://github.com/owner/consuming-project/issues/77)"
+        ),
         issue_url="https://github.com/owner/consuming-project/issues/77",
     )
     github_svc.search_open_issues_by_title.assert_called_once_with(
@@ -544,3 +592,44 @@ def test_route_agent_credential_failure_returns_none_for_unrelated_hard_error():
 
     assert result is None
     github_svc.search_open_issues_by_title.assert_not_called()
+
+
+def test_route_agent_credential_failure_files_new_issue_when_no_open_family_issue_exists():
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = 88
+
+    err = AgentCredentialFailureError(
+        message="OpenCode request failed: 401 invalid API key for provider opencode-go",
+        status_code=401,
+        service_name="opencode",
+        classification="operator_actionable_agent_credential_failure",
+        observations=(
+            ProviderErrorObservation(
+                service_name="opencode",
+                raw_provider_text=(
+                    "OpenCode request failed: 401 invalid API key for provider "
+                    "opencode-go"
+                ),
+                source_stream="json_event.error",
+                status_code=401,
+            ),
+        ),
+    )
+    err.caller = "Implementer"
+
+    result = route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    assert result == AgentCredentialFailureRouteResult(
+        status_code=401,
+        status_message="operator-actionable agent credential failure: status 401",
+        issue_url="https://github.com/owner/consuming-project/issues/88",
+    )
+    github_svc.search_open_issues_by_title.assert_called_once_with(
+        "[pycastle] operator-actionable agent credential failure"
+    )
+    github_svc.create_issue_in.assert_called_once()

@@ -41,6 +41,12 @@ class AgentCredentialFailureRouteResult:
 
 
 @dataclasses.dataclass(frozen=True)
+class _CredentialFailureIssueLookupResult:
+    issue_url: str | None
+    reused_issue_number: int | None = None
+
+
+@dataclasses.dataclass(frozen=True)
 class _CredentialFailureInterpretation:
     remediation: str
     rendered_observations: tuple[tuple[str, str], ...]
@@ -148,13 +154,16 @@ def _file_or_reuse_agent_credential_failure_issue(
     remediation: str,
     observations: tuple[tuple[str, str], ...],
     github_svc: "GithubService",
-) -> str | None:
+) -> _CredentialFailureIssueLookupResult:
     try:
         existing = github_svc.search_open_issues_by_title(
             _AGENT_CREDENTIAL_FAILURE_TITLE
         )
         if existing:
-            return f"https://github.com/{github_svc.repo}/issues/{existing[0]}"
+            return _CredentialFailureIssueLookupResult(
+                issue_url=f"https://github.com/{github_svc.repo}/issues/{existing[0]}",
+                reused_issue_number=existing[0],
+            )
         body = _build_agent_credential_failure_body(
             service_name=service_name,
             role_name=role_name,
@@ -173,9 +182,9 @@ def _file_or_reuse_agent_credential_failure_issue(
         print(
             f"Filed issue #{number} on {github_svc.repo}: {_AGENT_CREDENTIAL_FAILURE_TITLE}"
         )
-        return url
+        return _CredentialFailureIssueLookupResult(issue_url=url)
     except Exception:
-        return None
+        return _CredentialFailureIssueLookupResult(issue_url=None)
 
 
 def _build_local_fallback_status_message(
@@ -310,7 +319,7 @@ def route_agent_credential_failure(
             ),
         )
 
-    issue_url = _file_or_reuse_agent_credential_failure_issue(
+    issue_result = _file_or_reuse_agent_credential_failure_issue(
         service_name=service_name,
         role_name=provider_failure.caller,
         status_code=provider_failure.status_code,
@@ -319,6 +328,7 @@ def route_agent_credential_failure(
         observations=interpretation.rendered_observations,
         github_svc=github_svc,
     )
+    issue_url = issue_result.issue_url
     status_code_str = (
         str(provider_failure.status_code)
         if provider_failure.status_code is not None
@@ -327,7 +337,13 @@ def route_agent_credential_failure(
     status_message = (
         f"operator-actionable agent credential failure: status {status_code_str}"
     )
-    if issue_url is None:
+    if issue_result.reused_issue_number is not None and issue_url is not None:
+        status_message = (
+            "operator-actionable agent credential failure: "
+            f"reusing existing issue #{issue_result.reused_issue_number} "
+            f"({issue_url})"
+        )
+    elif issue_url is None:
         status_message = _build_local_fallback_status_message(
             raw=raw,
             interpretation=interpretation,
