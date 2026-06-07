@@ -18,10 +18,12 @@ from tests.support import (
     StubPreflightCache,
     _make_deps,
 )
-from pycastle.iteration.planning import (
-    AllBlocked,
+from pycastle.iteration.planning_issue_intake import (
     PlanReady,
     hydrate_planned_issues,
+)
+from pycastle.iteration.planning import (
+    AllBlocked,
     planning_phase,
 )
 

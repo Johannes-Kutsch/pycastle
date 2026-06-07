@@ -1,5 +1,5 @@
 from pycastle.config import Config
-from pycastle.iteration.planning_readiness import (
+from pycastle.iteration.planning_issue_intake import (
     BlockerSummaryInputs,
     LabelSyncAction,
     evaluate_planning_readiness,
@@ -381,3 +381,25 @@ def test_planning_blocker_summary_uses_plural_label_noun_for_multiple_slice_issu
     )
 
     assert summary == "Planning blockers: 2 missing exactly one slice-mode labels."
+
+
+def test_planning_readiness_compatibility_shim_reexports_issue_intake_interface():
+    from pycastle.iteration import planning_issue_intake, planning_readiness
+
+    assert (
+        planning_readiness.BlockerSummaryInputs
+        is planning_issue_intake.BlockerSummaryInputs
+    )
+    assert planning_readiness.LabelSyncAction is planning_issue_intake.LabelSyncAction
+    assert (
+        planning_readiness.PlanningReadinessResult
+        is planning_issue_intake.PlanningReadinessResult
+    )
+    assert (
+        planning_readiness.evaluate_planning_readiness
+        is planning_issue_intake.evaluate_planning_readiness
+    )
+    assert (
+        planning_readiness.planning_blocker_summary
+        is planning_issue_intake.planning_blocker_summary
+    )
