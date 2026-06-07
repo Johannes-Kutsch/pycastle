@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import dataclasses
 import json
 from collections.abc import Mapping
@@ -5,7 +7,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import TypeAlias
 
-from ..agent_credential_failure_routing import route_agent_credential_failure
+from ..agent_credential_failure_routing import (
+    AgentCredentialFailureRouteResult,
+    route_agent_credential_failure,
+)
 from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.result import CancellationToken
 from ..agents.runner import RunRequest
@@ -64,17 +69,11 @@ def _extract_legacy_hard_error_text(raw: str) -> str:
     return error_text
 
 
-def _abort_agent_credential_failure(
+def _print_and_abort_agent_credential_failure(
     err: HardAgentError,
+    routed_failure: AgentCredentialFailureRouteResult,
     deps: Deps,
-) -> "AbortedAgentCredentialFailure | None":
-    routed_failure = route_agent_credential_failure(
-        provider_failure=err,
-        github_svc=deps.github_svc,
-    )
-    if routed_failure is None:
-        return None
-
+) -> "AbortedAgentCredentialFailure":
     deps.status_display.print(
         err.caller,
         routed_failure.status_message
@@ -325,10 +324,16 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 if isinstance(result, IssueOutput):
                     issue_number = result.number
             except AgentCredentialFailureError as report_err:
-                aborted = _abort_agent_credential_failure(report_err, deps)
-                if aborted is not None:
-                    return aborted
-                raise
+                routed_failure = route_agent_credential_failure(
+                    provider_failure=report_err,
+                    github_svc=deps.github_svc,
+                )
+                assert routed_failure is not None
+                return _print_and_abort_agent_credential_failure(
+                    report_err,
+                    routed_failure,
+                    deps,
+                )
             except Exception as report_err:
                 deps.status_display.print(
                     "Failure Report",
@@ -375,24 +380,15 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         )
     except TransientAgentError:
         return Continue()
-    except AgentCredentialFailureError as err:
+    except HardAgentError as err:
+        raw = err.args[0] if err.args else ""
+        service_name = getattr(err, "service_name", "claude") or "claude"
         routed_failure = route_agent_credential_failure(
             provider_failure=err,
             github_svc=deps.github_svc,
         )
-        assert routed_failure is not None
-        deps.status_display.print(
-            err.caller,
-            routed_failure.status_message
-            + (f" — {routed_failure.issue_url}" if routed_failure.issue_url else ""),
-        )
-        return AbortedAgentCredentialFailure(status_code=routed_failure.status_code)
-    except HardAgentError as err:
-        raw = err.args[0] if err.args else ""
-        service_name = getattr(err, "service_name", "claude") or "claude"
-        aborted = _abort_agent_credential_failure(err, deps)
-        if aborted is not None:
-            return aborted
+        if routed_failure is not None:
+            return _print_and_abort_agent_credential_failure(err, routed_failure, deps)
 
         error_text = _extract_legacy_hard_error_text(raw)
         first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"
