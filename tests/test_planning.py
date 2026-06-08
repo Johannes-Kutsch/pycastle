@@ -299,9 +299,11 @@ def test_planning_phase_returns_plan_ready_with_issues_sorted_by_number(
     assert [i["number"] for i in result.issues] == [1, 2, 3]
 
 
-def test_planning_phase_preserves_planner_issue_fields_when_hydrating(
+def test_planning_phase_uses_prepared_issue_fields_when_resolving_planner_output(
     tmp_path, git_svc
 ):
+    from pycastle.issue_readiness import SliceMode
+
     source_issue = {
         "number": 1,
         "title": "Source title",
@@ -334,12 +336,13 @@ def test_planning_phase_preserves_planner_issue_fields_when_hydrating(
     assert result.issues == [
         {
             "number": 1,
-            "title": "Planner title",
+            "title": "Source title",
             "body": "Summary\n\n" + ("x" * 120),
             "comments": [],
             "labels": ["behavior-slice"],
         }
     ]
+    assert result.readiness_by_number[1].selected_mode == SliceMode.BEHAVIOR
 
 
 def test_planning_phase_dispatches_plan_template_to_planner(tmp_path, git_svc):

@@ -20,9 +20,9 @@ from .implement import branch_for
 from .planning_issue_intake import (
     PlanReady,
     PreparedPlanningIssueSet,
-    hydrate_planned_issues,
     planning_blocker_summary,
     prepare_planning_issue_set,
+    resolve_planner_issue_intake,
 )
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
@@ -190,22 +190,11 @@ async def planning_phase(
                 row.close("\n".join(lines))
                 return AllBlocked(blocked=blocked)
 
-            plan_numbers = {issue["number"] for issue in output.issues}
-            plan = PlanReady(
-                issues=sorted(output.issues, key=lambda i: i["number"]),
-                sha=sha,
-                readiness_by_number={
-                    issue_number: readiness
-                    for issue_number, readiness in readiness_by_number.items()
-                    if issue_number in plan_numbers
-                },
+            resolved = resolve_planner_issue_intake(
+                PlanReady(issues=output.issues, sha=sha),
+                issue_set,
             )
-            ready_sources = [
-                {**issue, "readiness": readiness_by_number[issue["number"]]}
-                for issue in well_formed
-            ]
-            hydrated = hydrate_planned_issues(plan, ready_sources)
-            if not hydrated.issues:
+            if not resolved.issues:
                 blocker_summary = planning_blocker_summary(
                     issue_set.blocker_summary_inputs
                 )
@@ -216,17 +205,17 @@ async def planning_phase(
                 return AllBlocked(blocked=[])
             issue_lines = [
                 f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
-                for i in hydrated.issues
+                for i in resolved.issues
             ]
             row.close(
                 "\n".join(
                     [
-                        f"Planning complete, implementing {len(hydrated.issues)} issue(s):"
+                        f"Planning complete, implementing {len(resolved.issues)} issue(s):"
                     ]
                     + issue_lines
                 )
             )
-            return hydrated
+            return resolved
 
 
 def _format_blocked_issue_line(blocked_issue: dict) -> str:
