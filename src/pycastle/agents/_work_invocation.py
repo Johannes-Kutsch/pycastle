@@ -8,6 +8,7 @@ from typing import Any, Generic, Protocol, TypeVar
 
 from ..display.status_display import ModelDisplayMetadata, PlainStatusDisplay
 from ..errors import (
+    AgentFailedError,
     AgentCredentialFailureError,
     AgentTimeoutError,
     DockerError,
@@ -62,6 +63,16 @@ class WorkOutputAdapter(Protocol[WorkResultT]):
     def protocol_error_result(self) -> WorkResultT | None: ...
 
     def non_typed_failure_result(self) -> WorkResultT | None: ...
+
+    def finalize_result(
+        self,
+        result: WorkResultT,
+        *,
+        role: AgentRole,
+        mount_path: Path,
+        session_namespace: str,
+        service_name: str,
+    ) -> WorkResultT: ...
 
 
 @dataclasses.dataclass(frozen=True)
@@ -129,6 +140,25 @@ class ProtocolOutputAdapter:
     def non_typed_failure_result(self) -> AgentOutput | None:
         return FailedOutput(failure_class="non_typed_crash")
 
+    def finalize_result(
+        self,
+        result: AgentOutput,
+        *,
+        role: AgentRole,
+        mount_path: Path,
+        session_namespace: str,
+        service_name: str,
+    ) -> AgentOutput:
+        if isinstance(result, FailedOutput):
+            raise AgentFailedError(
+                role_value=role.value,
+                worktree_path=mount_path,
+                namespace=session_namespace,
+                failure_class=result.failure_class,
+                service_name=service_name,
+            )
+        return result
+
 
 @dataclasses.dataclass(frozen=True)
 class TextOutputAdapter:
@@ -164,6 +194,18 @@ class TextOutputAdapter:
 
     def non_typed_failure_result(self) -> str | None:
         return None
+
+    def finalize_result(
+        self,
+        result: str,
+        *,
+        role: AgentRole,
+        mount_path: Path,
+        session_namespace: str,
+        service_name: str,
+    ) -> str:
+        del role, mount_path, session_namespace, service_name
+        return result
 
 
 async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResultT:
@@ -249,7 +291,13 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
                         provider_run_session.record_successful_run()
                     else:
                         row.close("failed", shutdown_style="error")
-                    return result
+                    return request.output_adapter.finalize_result(
+                        result,
+                        role=request.role,
+                        mount_path=request.mount_path,
+                        session_namespace=request.session_namespace,
+                        service_name=request.service.name,
+                    )
                 except AgentTimeoutError:
                     if retries_left <= 0:
                         raise
