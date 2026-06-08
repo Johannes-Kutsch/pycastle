@@ -11,7 +11,7 @@ from typing import BinaryIO, cast
 from ..agents.output_protocol import AgentRole
 from ..errors import AgentTimeoutError
 from ..session.resume import RunKind
-from .agent_invocation_log import (
+from pycastle_agent_runtime.agent_log import (
     LogicalAgentInvocationLog,
     WorkInvocationLog,
 )

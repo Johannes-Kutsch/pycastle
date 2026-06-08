@@ -2,8 +2,8 @@ import json
 from datetime import datetime, timezone
 
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.infrastructure.agent_invocation_log import AgentInvocationLog
 from pycastle.session import RunKind
+from pycastle_agent_runtime.agent_log import AgentInvocationLog
 
 
 def test_logical_session_reuses_one_reserved_log_for_multiple_work_invocations(
