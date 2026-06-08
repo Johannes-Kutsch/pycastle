@@ -6,6 +6,53 @@ from pycastle.infrastructure.agent_invocation_log import AgentInvocationLog
 from pycastle.session import RunKind
 
 
+def test_logical_session_reuses_one_reserved_log_for_multiple_work_invocations(
+    tmp_path,
+):
+    fixed_dt = datetime(2026, 5, 17, 14, 30, tzinfo=timezone.utc).astimezone()
+    log = AgentInvocationLog(now_local=lambda: fixed_dt)
+
+    session = log.start_logical_session(
+        agent_name="implementer",
+        effective_logs_dir=tmp_path,
+    )
+    session.append_work_invocation(
+        role=AgentRole.IMPLEMENTER,
+        run_kind=RunKind.FRESH,
+        session_uuid="session-1",
+        prompt="first prompt",
+        provider_bytes=b'{"type":"result","result":"first"}',
+    )
+    session.append_work_invocation(
+        role=AgentRole.REVIEWER,
+        run_kind=RunKind.RESUME,
+        session_uuid="session-2",
+        prompt="second prompt",
+        provider_bytes=b'{"type":"result","result":"second"}\n',
+    )
+
+    assert session.log_path == tmp_path / "implementer-20260517T1430.log"
+
+    log_lines = session.log_path.read_text(encoding="utf-8").splitlines()
+    assert json.loads(log_lines[0]) == {
+        "type": "pycastle_input",
+        "role": "implementer",
+        "run_kind": "fresh",
+        "session_uuid": "session-1",
+        "prompt": "first prompt",
+    }
+    assert log_lines[1] == '{"type":"result","result":"first"}'
+    assert log_lines[2] == ""
+    assert json.loads(log_lines[3]) == {
+        "type": "pycastle_input",
+        "role": "reviewer",
+        "run_kind": "resume",
+        "session_uuid": "session-2",
+        "prompt": "second prompt",
+    }
+    assert log_lines[4] == '{"type":"result","result":"second"}'
+
+
 def test_reserve_creates_empty_agent_log_with_slug_and_local_minute_timestamp(
     tmp_path,
 ):

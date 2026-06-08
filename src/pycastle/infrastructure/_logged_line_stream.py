@@ -4,13 +4,17 @@ import json
 import queue
 import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import BinaryIO, cast
 
 from ..agents.output_protocol import AgentRole
 from ..errors import AgentTimeoutError
 from ..session.resume import RunKind
-from .agent_invocation_log import AgentInvocationLog
+from .agent_invocation_log import (
+    LogicalAgentInvocationLog,
+    WorkInvocationLog,
+)
 
 
 def _build_progress_notifier(
@@ -110,8 +114,7 @@ def _stream_logged_lines_to_open_log(
 def stream_logged_work_lines(
     chunks: Iterable[bytes],
     *,
-    invocation_log: AgentInvocationLog | None = None,
-    log_path: Path,
+    logical_session: LogicalAgentInvocationLog,
     role: AgentRole,
     run_kind: RunKind,
     session_uuid: str | None,
@@ -119,16 +122,16 @@ def stream_logged_work_lines(
     idle_timeout: float,
     on_chunk: Callable[[], None] | Callable[[bytes], None],
 ) -> Iterator[str]:
-    if invocation_log is None:
-        invocation_log = AgentInvocationLog()
+    work_invocation: AbstractContextManager[WorkInvocationLog] = (
+        logical_session.open_work_invocation(
+            role=role,
+            run_kind=run_kind,
+            session_uuid=session_uuid,
+            prompt=prompt,
+        )
+    )
 
-    with invocation_log.open_work_invocation(
-        log_path=log_path,
-        role=role,
-        run_kind=run_kind,
-        session_uuid=session_uuid,
-        prompt=prompt,
-    ) as log:
+    with work_invocation as log:
         yield from _stream_logged_lines_to_open_log(
             chunks,
             append_chunk=log.append_provider_chunk,

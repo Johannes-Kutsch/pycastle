@@ -6,6 +6,7 @@ import pytest
 
 from pycastle.errors import AgentTimeoutError
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.infrastructure.agent_invocation_log import AgentInvocationLog
 from pycastle.infrastructure._logged_line_stream import (
     stream_logged_lines,
     stream_logged_work_lines,
@@ -34,13 +35,16 @@ def _collect_stream(
 
 
 def test_stream_logged_work_lines_handles_one_complete_invocation(tmp_path):
-    log_path = tmp_path / "agent.log"
+    logical_session = AgentInvocationLog().start_logical_session(
+        agent_name="agent",
+        effective_logs_dir=tmp_path,
+    )
     on_chunk_calls: list[str] = []
 
     lines = list(
         stream_logged_work_lines(
             [b'{"type":"result","result":"done"}\n'],
-            log_path=log_path,
+            logical_session=logical_session,
             role=AgentRole.IMPLEMENTER,
             run_kind=RunKind.FRESH,
             session_uuid=None,
@@ -52,22 +56,41 @@ def test_stream_logged_work_lines_handles_one_complete_invocation(tmp_path):
 
     assert lines == ['{"type":"result","result":"done"}']
     assert on_chunk_calls == ["chunk"]
-    assert log_path.read_bytes() == (
+    assert logical_session.log_path.read_bytes() == (
         b'{"type": "pycastle_input", "role": "implementer", "run_kind": "fresh", '
         b'"session_uuid": null, "prompt": "prompt"}\n'
         b'{"type":"result","result":"done"}\n'
     )
 
 
+def test_stream_logged_work_lines_requires_package_owned_logical_session(tmp_path):
+    with pytest.raises(TypeError, match="unexpected keyword argument 'log_path'"):
+        list(
+            stream_logged_work_lines(
+                [b'{"type":"result","result":"done"}\n'],
+                log_path=tmp_path / "agent.log",
+                role=AgentRole.IMPLEMENTER,
+                run_kind=RunKind.FRESH,
+                session_uuid=None,
+                prompt="prompt",
+                idle_timeout=1.0,
+                on_chunk=lambda: None,
+            )
+        )
+
+
 def test_stream_logged_work_lines_repeated_invocations_insert_one_blank_line_separator(
     tmp_path,
 ):
-    log_path = tmp_path / "agent.log"
+    logical_session = AgentInvocationLog().start_logical_session(
+        agent_name="agent",
+        effective_logs_dir=tmp_path,
+    )
 
     list(
         stream_logged_work_lines(
             [b'{"type":"result","result":"first"}'],
-            log_path=log_path,
+            logical_session=logical_session,
             role=AgentRole.IMPLEMENTER,
             run_kind=RunKind.FRESH,
             session_uuid="session-1",
@@ -80,7 +103,7 @@ def test_stream_logged_work_lines_repeated_invocations_insert_one_blank_line_sep
     list(
         stream_logged_work_lines(
             [b'{"type":"result","result":"second"}\n'],
-            log_path=log_path,
+            logical_session=logical_session,
             role=AgentRole.REVIEWER,
             run_kind=RunKind.RESUME,
             session_uuid="session-2",
@@ -90,7 +113,7 @@ def test_stream_logged_work_lines_repeated_invocations_insert_one_blank_line_sep
         )
     )
 
-    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+    log_lines = logical_session.log_path.read_text(encoding="utf-8").splitlines()
 
     assert json.loads(log_lines[0]) == {
         "type": "pycastle_input",
