@@ -53,6 +53,44 @@ def test_logical_session_reuses_one_reserved_log_for_multiple_work_invocations(
     assert log_lines[4] == '{"type":"result","result":"second"}'
 
 
+def test_logical_sessions_keep_work_invocations_in_separate_agent_logs(tmp_path):
+    fixed_dt = datetime(2026, 5, 17, 14, 30, tzinfo=timezone.utc).astimezone()
+    log = AgentInvocationLog(now_local=lambda: fixed_dt)
+
+    first_session = log.start_logical_session(
+        agent_name="implementer",
+        effective_logs_dir=tmp_path,
+    )
+    second_session = log.start_logical_session(
+        agent_name="implementer",
+        effective_logs_dir=tmp_path,
+    )
+
+    first_session.append_work_invocation(
+        role=AgentRole.IMPLEMENTER,
+        run_kind=RunKind.FRESH,
+        session_uuid="session-1",
+        prompt="first prompt",
+        provider_bytes=b'{"type":"result","result":"first"}\n',
+    )
+    second_session.append_work_invocation(
+        role=AgentRole.REVIEWER,
+        run_kind=RunKind.RESUME,
+        session_uuid="session-2",
+        prompt="second prompt",
+        provider_bytes=b'{"type":"result","result":"second"}\n',
+    )
+
+    assert first_session.log_path == tmp_path / "implementer-20260517T1430.log"
+    assert second_session.log_path == tmp_path / "implementer-20260517T1430-2.log"
+    assert first_session.log_path.read_text(encoding="utf-8").count("first prompt") == 1
+    assert (
+        second_session.log_path.read_text(encoding="utf-8").count("second prompt") == 1
+    )
+    assert "second prompt" not in first_session.log_path.read_text(encoding="utf-8")
+    assert "first prompt" not in second_session.log_path.read_text(encoding="utf-8")
+
+
 def test_reserve_creates_empty_agent_log_with_slug_and_local_minute_timestamp(
     tmp_path,
 ):

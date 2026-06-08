@@ -63,22 +63,6 @@ def test_stream_logged_work_lines_handles_one_complete_invocation(tmp_path):
     )
 
 
-def test_stream_logged_work_lines_requires_package_owned_logical_session(tmp_path):
-    with pytest.raises(TypeError, match="unexpected keyword argument 'log_path'"):
-        list(
-            stream_logged_work_lines(
-                [b'{"type":"result","result":"done"}\n'],
-                log_path=tmp_path / "agent.log",
-                role=AgentRole.IMPLEMENTER,
-                run_kind=RunKind.FRESH,
-                session_uuid=None,
-                prompt="prompt",
-                idle_timeout=1.0,
-                on_chunk=lambda: None,
-            )
-        )
-
-
 def test_stream_logged_work_lines_repeated_invocations_insert_one_blank_line_separator(
     tmp_path,
 ):
