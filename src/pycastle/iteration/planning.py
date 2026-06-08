@@ -22,6 +22,7 @@ from .planning_issue_intake import (
     PreparedPlanningIssueSet,
     planning_blocker_summary,
     prepare_planning_issue_set,
+    resolve_planner_blocked_intake,
     resolve_planner_issue_intake,
 )
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
@@ -40,19 +41,6 @@ class _PlanningDeps(Protocol):
 @dataclasses.dataclass(frozen=True)
 class AllBlocked:
     blocked: list[dict]
-
-
-def _hydrate_blocked_issues(blocked: list[dict], open_issues: list[dict]) -> list[dict]:
-    titles_by_number = {issue["number"]: issue["title"] for issue in open_issues}
-    hydrated: list[dict] = []
-    for blocked_issue in blocked:
-        number = blocked_issue["number"]
-        title = titles_by_number.get(number) or blocked_issue.get("title")
-        if title is None:
-            hydrated.append({"number": number})
-            continue
-        hydrated.append({"number": number, "title": title})
-    return hydrated
 
 
 def _fill_fields(issues: list[dict]) -> list[dict]:
@@ -171,7 +159,7 @@ async def planning_phase(
                     f"Planner returned unexpected output type: {type(output).__name__}"
                 )
             if not output.issues:
-                blocked = _hydrate_blocked_issues(output.blocked, well_formed)
+                blocked = resolve_planner_blocked_intake(output.blocked, issue_set)
                 blocker_summary = planning_blocker_summary(
                     issue_set.blocker_summary_inputs
                 )

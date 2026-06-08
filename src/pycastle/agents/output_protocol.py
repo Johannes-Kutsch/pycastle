@@ -235,8 +235,6 @@ def _normalize_blocked_entry(entry: dict) -> dict:
     blocked = {"number": entry["number"]}
     if "title" in entry:
         blocked["title"] = entry["title"]
-    if len(entry) == 1:
-        raise KeyError("title")
     return blocked
 
 
