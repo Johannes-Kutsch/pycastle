@@ -7,6 +7,7 @@ import threading
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -18,6 +19,12 @@ from pycastle.agents.output_protocol import (
     FailedOutput,
     IssueOutput,
     PlannerOutput,
+)
+from pycastle.agents._work_invocation import (
+    ProtocolOutputAdapter,
+    WorkInvocationDependencies,
+    WorkInvocationRequest,
+    invoke_work,
 )
 from pycastle.agents.result import CancellationToken
 from pycastle.agents.runner import AgentRunner, RunRequest
@@ -38,6 +45,7 @@ from pycastle.session.agent import RunSessionPlan
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )
+from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
@@ -2991,6 +2999,85 @@ def test_resume_run_consecutive_non_typed_exceptions_raise_agent_failed_error(tm
         )
 
     assert exc_info.value.failure_class == "non_typed_crash"
+
+
+def test_work_invocation_resume_non_typed_retry_raises_agent_failed_error(
+    tmp_path: Path,
+):
+    _seed_implementer_session(tmp_path)
+    status_display = RecordingStatusDisplay()
+    work_calls: list[tuple[RunKind, str | None, str]] = []
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> CommitMessageOutput:
+            del role, on_provider_session_id
+            work_calls.append((run_kind, session_uuid, prompt))
+            raise RuntimeError(f"boom-{len(work_calls)}")
+
+    service = ClaudeService()
+    session = _FakeSession()
+    runner = _FakeRunner()
+    expected_session_id = RoleSession(
+        tmp_path,
+        AgentRole.IMPLEMENTER,
+        "",
+    ).session_uuid()
+
+    async def prompt_factory(*, run_kind: RunKind, container_exec) -> str:
+        del run_kind, container_exec
+        return "resume"
+
+    with pytest.raises(AgentFailedError) as exc_info:
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Impl",
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPLEMENTER,
+                    service=service,
+                    model="sonnet",
+                    effort="high",
+                    prompt_factory=prompt_factory,
+                    output_adapter=ProtocolOutputAdapter("reprompt"),
+                    dependencies=WorkInvocationDependencies(
+                        container_workspace="/home/agent/workspace",
+                        timeout_retries=0,
+                        stage_key_for_role=lambda role: role.value,
+                        build_session=lambda *_args: session,
+                        build_runner=lambda *_args: cast(ContainerRunner, runner),
+                        get_git_identity=lambda: ("Test User", "test@example.com"),
+                    ),
+                    status_display=status_display,
+                    allow_non_typed_resume_retry=True,
+                )
+            )
+        )
+
+    assert exc_info.value.failure_class == "non_typed_crash"
+    assert exc_info.value.service_name == "claude"
+    assert work_calls == [
+        (RunKind.RESUME, expected_session_id, "resume"),
+        (RunKind.RESUME, expected_session_id, "resume"),
+    ]
+    assert ("remove", "Impl", "failed", "error") in status_display.calls
 
 
 def test_resume_run_non_typed_exception_does_not_wipe_session(tmp_path):

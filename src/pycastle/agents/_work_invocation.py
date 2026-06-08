@@ -351,7 +351,13 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
                         raise
                     if non_typed_retry_done:
                         row.close("failed", shutdown_style="error")
-                        return failure_result
+                        return request.output_adapter.finalize_result(
+                            failure_result,
+                            role=request.role,
+                            mount_path=request.mount_path,
+                            session_namespace=request.session_namespace,
+                            service_name=request.service.name,
+                        )
                     non_typed_retry_done = True
         finally:
             try:
