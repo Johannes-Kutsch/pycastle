@@ -284,8 +284,10 @@ class AgentRunner:
                 service=service,
                 model=request.model,
                 effort=request.effort,
-                prompt_factory=prompt_factory,
-                output_adapter=ProtocolOutputAdapter(REPROMPT_MESSAGE),
+                output_adapter=ProtocolOutputAdapter(
+                    prompt_factory=prompt_factory,
+                    reprompt_message=REPROMPT_MESSAGE,
+                ),
                 dependencies=dependencies,
                 status_display=request.status_display,
                 token=request.token,

@@ -3055,8 +3055,10 @@ def test_work_invocation_resume_non_typed_retry_raises_agent_failed_error(
                     service=service,
                     model="sonnet",
                     effort="high",
-                    prompt_factory=prompt_factory,
-                    output_adapter=ProtocolOutputAdapter("reprompt"),
+                    output_adapter=ProtocolOutputAdapter(
+                        prompt_factory=prompt_factory,
+                        reprompt_message="reprompt",
+                    ),
                     dependencies=WorkInvocationDependencies(
                         container_workspace="/home/agent/workspace",
                         timeout_retries=0,

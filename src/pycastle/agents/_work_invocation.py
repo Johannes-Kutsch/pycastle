@@ -45,6 +45,13 @@ class WorkPromptFactory(Protocol):
 
 
 class WorkOutputAdapter(Protocol[WorkResultT]):
+    async def build_prompt(
+        self,
+        *,
+        run_kind: RunKind,
+        container_exec: Callable[[str], Awaitable[str]],
+    ) -> str: ...
+
     async def invoke(
         self,
         *,
@@ -94,7 +101,6 @@ class WorkInvocationRequest(Generic[WorkResultT]):
     service: AgentService
     model: str
     effort: str
-    prompt_factory: WorkPromptFactory = dataclasses.field(repr=False)
     output_adapter: WorkOutputAdapter[WorkResultT] = dataclasses.field(repr=False)
     dependencies: WorkInvocationDependencies = dataclasses.field(repr=False)
     status_display: Any = None
@@ -108,7 +114,19 @@ class WorkInvocationRequest(Generic[WorkResultT]):
 
 @dataclasses.dataclass(frozen=True)
 class ProtocolOutputAdapter:
+    prompt_factory: WorkPromptFactory = dataclasses.field(repr=False)
     reprompt_message: str
+
+    async def build_prompt(
+        self,
+        *,
+        run_kind: RunKind,
+        container_exec: Callable[[str], Awaitable[str]],
+    ) -> str:
+        return await self.prompt_factory(
+            run_kind=run_kind,
+            container_exec=container_exec,
+        )
 
     async def invoke(
         self,
@@ -162,7 +180,17 @@ class ProtocolOutputAdapter:
 
 @dataclasses.dataclass(frozen=True)
 class TextOutputAdapter:
+    prompt: str
     tool_policy: AgentToolPolicyGroup = AgentToolPolicyGroup.FULL
+
+    async def build_prompt(
+        self,
+        *,
+        run_kind: RunKind,
+        container_exec: Callable[[str], Awaitable[str]],
+    ) -> str:
+        del run_kind, container_exec
+        return self.prompt
 
     async def invoke(
         self,
@@ -275,7 +303,7 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
                     else prepared_session.resumable_provider_run_session()
                 )
                 try:
-                    prompt = await request.prompt_factory(
+                    prompt = await request.output_adapter.build_prompt(
                         run_kind=provider_run_session.run_kind,
                         container_exec=container_exec,
                     )

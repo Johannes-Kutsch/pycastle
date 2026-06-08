@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 from pycastle import _time as _time_module
@@ -108,14 +107,6 @@ async def run_prompt(
         ),
     )
 
-    async def prompt_factory(
-        *,
-        run_kind: Any,
-        container_exec: Callable[[str], Awaitable[str]],
-    ) -> str:
-        del run_kind, container_exec
-        return request.prompt
-
     return await invoke_work(
         WorkInvocationRequest(
             name=request.name,
@@ -124,8 +115,10 @@ async def run_prompt(
             service=resolved_service,
             model=resolved_override.model,
             effort=resolved_override.effort,
-            prompt_factory=prompt_factory,
-            output_adapter=TextOutputAdapter(tool_policy=request.tool_policy),
+            output_adapter=TextOutputAdapter(
+                prompt=request.prompt,
+                tool_policy=request.tool_policy,
+            ),
             dependencies=dependencies,
             status_display=request.status_display,
             token=request.token,
