@@ -3,18 +3,23 @@ from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.agents.result import CancellationToken
 from pycastle.config import Config
+from pycastle.errors import UsageLimitError
+from pycastle.infrastructure.container_runner import ContainerRunner
+from pycastle.services.claude_service import ClaudeService
 from pycastle.services import GitService
 from pycastle.services.agent_service import AssistantTurn, ParsedTurn, Result
 from pycastle.services.provider_session_state import (
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
+from pycastle.session.agent import RunSessionPlan
 from pycastle.session import RunKind
 
 
@@ -122,6 +127,32 @@ class _SequencedAvailabilityRuntimeService(_RecordingRuntimeService):
     def is_available(self, now: datetime | None = None) -> bool:
         del now
         return next(self._availability)
+
+
+class _PlanRecordingClaudeRuntimeService(ClaudeService):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_provider_session_state = False
+        self.build_env_state_dir_args: list[str | None] = []
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        if self.fail_provider_session_state:
+            raise AssertionError("provider_session_state should not be recomputed")
+        return super().provider_session_state(request)
+
+    def build_env(
+        self,
+        state_dir_container_path: str | None = None,
+        token: str | None = None,
+    ) -> dict[str, str]:
+        self.build_env_state_dir_args.append(state_dir_container_path)
+        return super().build_env(
+            state_dir_container_path=state_dir_container_path,
+            token=token,
+        )
 
 
 def test_runtime_package_runs_prompt_contract_and_returns_llm_output(tmp_path: Path):
@@ -276,6 +307,147 @@ def test_runtime_package_service_registry_snapshots_availability_per_configured_
             effort="high",
         ),
     )
+
+
+def test_runtime_package_run_prompt_raises_usage_limit_when_token_pre_cancelled(
+    tmp_path: Path,
+):
+    import pycastle_agent_runtime as runtime
+
+    service = _RecordingRuntimeService("codex")
+    docker_client = _make_docker_client([])
+    runner = runtime.AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=docker_client,
+        service_registry={"codex": service},
+    )
+    registry = runtime.ServiceRegistry({"codex": service})
+    token = CancellationToken()
+    token.cancel()
+    request = runtime.PromptRunRequest(
+        mount_path=tmp_path,
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        token=token,
+    )
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(
+            runtime.run_prompt(
+                runner=runner, service_registry=registry, request=request
+            )
+        )
+
+    docker_client.containers.run.assert_not_called()
+
+
+def test_runtime_package_run_prompt_uses_namespaced_state_dir_for_claude(
+    tmp_path: Path,
+):
+    import pycastle_agent_runtime as runtime
+
+    service = _PlanRecordingClaudeRuntimeService()
+    runner = runtime.AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client([]),
+        service_registry={"claude": service},
+    )
+    registry = runtime.ServiceRegistry({"claude": service})
+    request = runtime.PromptRunRequest(
+        mount_path=tmp_path,
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+        ),
+        session_namespace="main",
+    )
+
+    with patch.object(ContainerRunner, "work_text", return_value="runtime result"):
+        result = asyncio.run(
+            runtime.run_prompt(
+                runner=runner, service_registry=registry, request=request
+            )
+        )
+
+    assert result == "runtime result"
+    assert service.build_env_state_dir_args == [
+        "/home/agent/workspace/.pycastle-session/implementer/main/claude/"
+    ]
+
+
+def test_runtime_package_run_prompt_uses_supplied_run_session_plan(
+    tmp_path: Path,
+):
+    import pycastle_agent_runtime as runtime
+
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "main" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    service = _PlanRecordingClaudeRuntimeService()
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+    service.fail_provider_session_state = True
+    runner = runtime.AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client([]),
+        service_registry={"claude": service},
+    )
+    registry = runtime.ServiceRegistry({"claude": service})
+    request = runtime.PromptRunRequest(
+        mount_path=tmp_path,
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+        ),
+        session_namespace="main",
+        run_session_plan=plan,
+    )
+    work_calls: list[tuple[RunKind, str | None]] = []
+
+    async def _fake_work_text(
+        prompt: str,
+        *,
+        role: AgentRole = AgentRole.IMPLEMENTER,
+        tool_policy=None,
+        run_kind: RunKind = RunKind.FRESH,
+        session_uuid: str | None = None,
+        on_provider_session_id=None,
+    ) -> str:
+        del prompt, role, tool_policy, on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        return "runtime result"
+
+    with patch.object(ContainerRunner, "work_text", side_effect=_fake_work_text):
+        result = asyncio.run(
+            runtime.run_prompt(
+                runner=runner, service_registry=registry, request=request
+            )
+        )
+
+    assert result == "runtime result"
+    assert work_calls == [(RunKind.RESUME, plan.provider_session_id)]
+    assert service.build_env_state_dir_args == [
+        "/home/agent/workspace/.pycastle-session/implementer/main/claude/"
+    ]
 
 
 class _ExpectedFallback(TypedDict):
