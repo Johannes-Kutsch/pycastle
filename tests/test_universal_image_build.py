@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from pycastle._universal_image_build import (
     UniversalImageBuildAdapter,
     UniversalImageBuildOptions,
     UniversalImageBuildRequest,
 )
-from pycastle.services._docker_build_output import BuildOutcome
+from pycastle.services._docker_build_output import BuildOutcome, FINAL_OUTCOME_EXAMPLES
 from pycastle.services.docker_service import DockerService
 
 
@@ -53,16 +53,68 @@ def test_universal_image_build_adapter_protocol_accepts_fake_adapter(tmp_path):
     assert adapter.requests == [request]
 
 
-def test_docker_service_forwards_typed_request_fields(
-    tmp_path,
-):
-    def callback() -> None:
-        return None
+def _mock_proc(output_lines: tuple[str, ...], *, returncode: int = 0) -> MagicMock:
+    proc = MagicMock()
+    proc.stdout = iter(output_lines)
+    proc.wait.return_value = returncode
+    proc.returncode = returncode
+    return proc
 
-    docker_service = DockerService(
-        timeout=42.0,
-        on_rebuild_start=callback,
+
+def test_docker_service_build_uses_verbose_stream_mode_for_typed_request(
+    tmp_path, capsys
+):
+    rebuild_started: list[str] = []
+
+    def on_rebuild_start() -> None:
+        rebuild_started.append("called")
+
+    docker_service = DockerService(timeout=42.0, on_rebuild_start=on_rebuild_start)
+    request = UniversalImageBuildRequest(
+        image_tag="pycastle:test",
+        dockerfile_path=tmp_path / "Dockerfile",
+        context_dir=tmp_path,
+        options=UniversalImageBuildOptions(
+            python_version="3.12",
+            no_cache=True,
+            stream=True,
+        ),
     )
+    proc = _mock_proc(FINAL_OUTCOME_EXAMPLES["buildkit_rebuilt"].lines)
+
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=proc,
+    ) as mock_popen:
+        result = _build_with_adapter(docker_service, request)
+
+    assert result == BuildOutcome.REBUILT
+    assert rebuild_started == ["called"]
+    proc.wait.assert_called_once_with(timeout=42.0)
+    assert "COPY . ." in capsys.readouterr().out
+    mock_popen.assert_called_once_with(
+        [
+            "docker",
+            "build",
+            "--no-cache",
+            "-t",
+            "pycastle:test",
+            "-f",
+            str(tmp_path / "Dockerfile"),
+            "--build-arg",
+            "PYTHON_VERSION=3.12",
+            str(tmp_path),
+        ],
+        stdout=-1,
+        stderr=-2,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
+def test_docker_service_build_uses_terse_mode_for_typed_request(tmp_path, capsys):
+    docker_service = DockerService(timeout=42.0)
     request = UniversalImageBuildRequest(
         image_tag="pycastle:test",
         dockerfile_path=tmp_path / "Dockerfile",
@@ -74,23 +126,35 @@ def test_docker_service_forwards_typed_request_fields(
             terse=True,
         ),
     )
+    proc = _mock_proc(FINAL_OUTCOME_EXAMPLES["buildkit_all_cached"].lines)
 
-    with patch.object(
-        docker_service,
-        "build_image",
-        return_value=BuildOutcome.REBUILT,
-    ) as mock_build_image:
+    with patch(
+        "pycastle.services.docker_service.subprocess.Popen",
+        return_value=proc,
+    ) as mock_popen:
         result = _build_with_adapter(docker_service, request)
 
-    assert result == BuildOutcome.REBUILT
-    mock_build_image.assert_called_once_with(
-        "pycastle:test",
-        tmp_path / "Dockerfile",
-        tmp_path,
-        no_cache=True,
-        python_version="3.12",
-        timeout=42.0,
-        stream=True,
-        terse=True,
-        on_rebuild_start=callback,
+    assert result == BuildOutcome.FULL_CACHE_HIT
+    proc.wait.assert_called_once_with(timeout=42.0)
+    captured = capsys.readouterr().out
+    assert "Building Docker Image" in captured
+    assert "CACHED" not in captured
+    mock_popen.assert_called_once_with(
+        [
+            "docker",
+            "build",
+            "--no-cache",
+            "-t",
+            "pycastle:test",
+            "-f",
+            str(tmp_path / "Dockerfile"),
+            "--build-arg",
+            "PYTHON_VERSION=3.12",
+            str(tmp_path),
+        ],
+        stdout=-1,
+        stderr=-2,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
