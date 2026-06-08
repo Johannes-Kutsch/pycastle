@@ -32,6 +32,7 @@ from ..session.agent import RunSessionPlan
 from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
+from ..services.flag_profiles import AgentToolPolicyGroup
 from ..display.status_display import ModelDisplayMetadata, PlainStatusDisplay
 from ..infrastructure.preflight_failure_interpreter import PreflightCommandFailure
 
@@ -189,6 +190,143 @@ class AgentRunner:
 
     async def run(self, request: RunRequest) -> AgentSuccessOutput:
         return await translate_run_outcome(self._run(request), request)
+
+    async def run_prompt(
+        self,
+        *,
+        name: str,
+        prompt: str,
+        mount_path: Path,
+        model: str,
+        effort: str,
+        service: str,
+        tool_policy: AgentToolPolicyGroup = AgentToolPolicyGroup.FULL,
+        token: CancellationToken | None = None,
+        status_display: Any = None,
+        work_body: str = "",
+        session_namespace: str = "",
+        run_session_plan: RunSessionPlan | None = None,
+    ) -> str:
+        role = AgentRole.IMPLEMENTER
+        resolved_service = self._resolve_service(service)
+        if status_display is None:
+            status_display = PlainStatusDisplay()
+
+        _token = token if token is not None else CancellationToken()
+        if _token.is_cancelled:
+            raise UsageLimitError(reset_time=None, stage_key=_stage_key_for_role(role))
+
+        prepared_session = prepare_agent_session(
+            SessionDispatchRequest(
+                mount_path=mount_path,
+                role=role,
+                session_namespace=session_namespace,
+                service=resolved_service,
+                container_workspace=_CONTAINER_WORKSPACE,
+                run_session_plan=run_session_plan,
+            )
+        )
+        initial_attempt = True
+
+        from ..iteration._rows import status_row
+
+        async with status_row(
+            status_display,
+            name,
+            kind="agent",
+            must_close=False,
+            work_body=work_body,
+            model_display=ModelDisplayMetadata(
+                service=resolved_service.name,
+                model=model,
+                effort=effort,
+            ),
+        ):
+            session = self._build_session(
+                mount_path,
+                resolved_service,
+                prepared_session.provider_state_dir_container_path,
+            )
+            runner = ContainerRunner(
+                name,
+                session,
+                model=model,
+                effort=effort,
+                status_display=status_display,
+                cfg=self._cfg,
+                service=resolved_service,
+            )
+            try:
+                git_name = self._git_service.get_user_name()
+                git_email = self._git_service.get_user_email()
+                try:
+                    await runner.setup(git_name, git_email, work_body)
+                except DockerError as exc:
+                    raise SetupPhaseError(role.value, str(exc)) from exc
+
+                prepared_session.prepare_for_run()
+                retries_left = self._cfg.timeout_retries
+                while True:
+                    try:
+                        provider_run_session = (
+                            prepared_session.initial_provider_run_session()
+                            if initial_attempt
+                            else prepared_session.resumable_provider_run_session()
+                        )
+                        result = await runner.work_text(
+                            prompt,
+                            role=role,
+                            tool_policy=tool_policy,
+                            run_kind=provider_run_session.run_kind,
+                            session_uuid=provider_run_session.provider_session_id,
+                            on_provider_session_id=(
+                                provider_run_session.record_provider_session_id
+                            ),
+                        )
+                        provider_run_session.record_successful_run()
+                        return result
+                    except AgentTimeoutError:
+                        if retries_left <= 0:
+                            raise
+                        restart_num = self._cfg.timeout_retries - retries_left + 1
+                        status_display.print(
+                            name,
+                            f"Timeout — restarting"
+                            f" (attempt {restart_num}/{self._cfg.timeout_retries})",
+                        )
+                        retries_left -= 1
+                        initial_attempt = False
+                    except UsageLimitError as err:
+                        if err.stage_key is None:
+                            err.stage_key = _stage_key_for_role(role)
+                        if err.is_permanent and isinstance(
+                            resolved_service, ClaudeService
+                        ):
+                            err.account_label = (
+                                resolved_service.mark_permanently_exhausted()
+                            )
+                        else:
+                            resolved_service.mark_exhausted(err.reset_time)
+                        _token.cancel()
+                        raise
+                    except TransientAgentError:
+                        _token.cancel()
+                        raise
+                    except AgentCredentialFailureError as err:
+                        _token.cancel()
+                        err.caller = name
+                        err.service_name = resolved_service.name
+                        raise
+                    except HardAgentError as err:
+                        _token.cancel()
+                        err.caller = name
+                        err.service_name = resolved_service.name
+                        raise
+            finally:
+                try:
+                    session.__exit__(None, None, None)
+                except Exception:
+                    pass
 
     async def _run(self, request: RunRequest) -> AgentOutput:
         from ..iteration._rows import status_row

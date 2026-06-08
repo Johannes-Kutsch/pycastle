@@ -50,3 +50,7 @@ def tool_policy_group_for(role: AgentRole) -> AgentToolPolicyGroup:
 
 def flag_profile_for(role: AgentRole) -> FlagProfile:
     return _FLAG_PROFILES_BY_POLICY_GROUP[tool_policy_group_for(role)]
+
+
+def flag_profile_for_tool_policy(tool_policy: AgentToolPolicyGroup) -> FlagProfile:
+    return _FLAG_PROFILES_BY_POLICY_GROUP[tool_policy]

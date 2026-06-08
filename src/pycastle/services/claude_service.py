@@ -12,7 +12,11 @@ from .. import _time as _time_module
 from ..provider_errors import ProviderErrorObservation
 from ..session import RoleSession, RunKind
 from ..session.service_resume_identity import is_exact_resumable_service_session
-from .flag_profiles import flag_profile_for
+from .flag_profiles import (
+    AgentToolPolicyGroup,
+    flag_profile_for,
+    flag_profile_for_tool_policy,
+)
 from .agent_service import (
     AssistantTurn,
     CredentialFailure,
@@ -276,8 +280,14 @@ class ClaudeService:
         effort: str = "",
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
+        *,
+        tool_policy: AgentToolPolicyGroup | None = None,
     ) -> str:
-        profile = flag_profile_for(role)
+        profile = (
+            flag_profile_for_tool_policy(tool_policy)
+            if tool_policy is not None
+            else flag_profile_for(role)
+        )
         flags = (
             "--verbose --dangerously-skip-permissions --output-format stream-json -p -"
             " --disable-slash-commands --exclude-dynamic-system-prompt-sections"

@@ -15,6 +15,7 @@ from pycastle.services.agent_service import (
     UsageLimit,
 )
 from pycastle.services.service_registry import ServiceRegistry
+from pycastle_agent_runtime.runtime import PromptRunRequest, ToolPolicy, run_prompt
 
 __all__ = [
     "AgentRunner",
@@ -24,12 +25,15 @@ __all__ = [
     "CredentialFailure",
     "HardError",
     "ParsedTurn",
+    "PromptRunRequest",
     "PromptTokens",
     "Result",
     "RunRequest",
     "ServiceRegistry",
     "StageOverride",
+    "ToolPolicy",
     "TransientError",
     "UnsupportedTokens",
     "UsageLimit",
+    "run_prompt",
 ]

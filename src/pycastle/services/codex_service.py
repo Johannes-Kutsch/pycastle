@@ -346,8 +346,12 @@ class CodexService:
         effort: str = "",
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
+        *,
+        tool_policy: AgentToolPolicyGroup | None = None,
     ) -> str:
-        policy_group = tool_policy_group_for(role)
+        policy_group = (
+            tool_policy if tool_policy is not None else tool_policy_group_for(role)
+        )
         if run_kind == RunKind.RESUME and session_uuid:
             parts = ["codex exec resume"]
         else:

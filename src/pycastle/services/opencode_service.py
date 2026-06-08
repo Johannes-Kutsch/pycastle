@@ -191,9 +191,13 @@ class OpenCodeService:
         effort: str = "",
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
+        *,
+        tool_policy: AgentToolPolicyGroup | None = None,
     ) -> str:
         del effort
-        policy_mapping = _OPENCODE_POLICY_MAPPINGS[tool_policy_group_for(role)]
+        policy_mapping = _OPENCODE_POLICY_MAPPINGS[
+            tool_policy if tool_policy is not None else tool_policy_group_for(role)
+        ]
         parts = ["opencode run", "--format json"]
         if run_kind == RunKind.RESUME and session_uuid:
             parts.append(f"--session {session_uuid}")
