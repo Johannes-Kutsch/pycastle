@@ -26,6 +26,7 @@ from pycastle.agents._work_invocation import (
     TextOutputAdapter,
     WorkInvocationDependencies,
     WorkInvocationRequest,
+    format_transient_status_message,
     invoke_work,
 )
 from pycastle.agents.result import CancellationToken
@@ -3620,6 +3621,93 @@ def test_work_invocation_text_usage_limit_marks_exhaustion_cancels_token_and_ski
     assert exc_info.value.stage_key == "implement"
     assert token.is_cancelled
     assert service.mark_exhausted_calls == [reset_time]
+    assert prepared_session.initial_session.recorded_provider_session_ids == [
+        "provider-runtime"
+    ]
+    assert prepared_session.initial_session.successful_run_calls == 0
+
+
+def test_work_invocation_text_transient_provider_failure_cancels_token_keeps_service_available_logs_status_and_skips_success_metadata(
+    tmp_path: Path,
+):
+    prepared_session = _PreparedRunSessionStandIn(
+        initial_run_kind=RunKind.FRESH,
+        initial_provider_session_id="provider-fresh",
+    )
+    status_display = RecordingStatusDisplay()
+    token = CancellationToken()
+
+    class _TrackingService(_RecordingAgentService):
+        def __init__(self) -> None:
+            super().__init__("codex")
+            self.mark_exhausted_calls: list[datetime | None] = []
+
+        def mark_exhausted(self, reset_time: datetime | None) -> None:
+            self.mark_exhausted_calls.append(reset_time)
+
+    service = _TrackingService()
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole,
+            tool_policy,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> str:
+            del prompt, role, tool_policy, run_kind, session_uuid
+            assert on_provider_session_id is not None
+            on_provider_session_id("provider-runtime")
+            raise TransientAgentError(status_code=529)
+
+    with pytest.raises(TransientAgentError) as exc_info:
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Runtime Consumer",
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPLEMENTER,
+                    service=service,
+                    model="gpt-5.4",
+                    effort="medium",
+                    output_adapter=TextOutputAdapter(prompt="already-rendered prompt"),
+                    dependencies=WorkInvocationDependencies(
+                        container_workspace="/home/agent/workspace",
+                        timeout_retries=0,
+                        stage_key_for_role=_stage_key_for_role,
+                        prepare_session=lambda _request: prepared_session,
+                        build_session=lambda *_args: _FakeSession(),
+                        build_runner=lambda *_args: cast(
+                            ContainerRunner, _FakeRunner()
+                        ),
+                        get_git_identity=lambda: ("Test User", "test@example.com"),
+                        transient_status_message=format_transient_status_message,
+                    ),
+                    status_display=status_display,
+                    token=token,
+                )
+            )
+        )
+
+    assert exc_info.value.status_code == 529
+    assert token.is_cancelled
+    assert service.mark_exhausted_calls == []
+    assert ("print", "Runtime Consumer", "transient API error: status 529", None) in (
+        status_display.calls
+    )
     assert prepared_session.initial_session.recorded_provider_session_ids == [
         "provider-runtime"
     ]
