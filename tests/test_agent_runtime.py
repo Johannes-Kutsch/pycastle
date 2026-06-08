@@ -427,8 +427,17 @@ class _StateDirRecordingRuntimeService(_RecordingRuntimeService):
 
 def test_runtime_package_orchestration_entrypoint_owns_service_selection_session_boundary_and_logging(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     import pycastle_agent_runtime as runtime
+
+    fake_home = tmp_path / "home"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_text(
+        '{"access_token":"tok"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(fake_home))
 
     requested_service = _StateDirRecordingRuntimeService(
         "codex",
@@ -446,7 +455,7 @@ def test_runtime_package_orchestration_entrypoint_owns_service_selection_session
         env={},
         cfg=_make_cfg(tmp_path),
         git_service=_make_git_service(),
-        docker_client=_make_docker_client([]),
+        docker_client=_make_docker_client([b'{"result":"runtime result"}\n']),
         service_registry={
             "codex": requested_service,
             "claude": fallback_service,
@@ -473,9 +482,11 @@ def test_runtime_package_orchestration_entrypoint_owns_service_selection_session
 
     assert result == "runtime result"
     assert requested_service.tool_policies == [runtime.ToolPolicy.PARTIAL]
-    assert requested_service.state_dir_container_paths == [
+    [state_dir_container_path] = requested_service.state_dir_container_paths
+    assert state_dir_container_path is not None
+    assert state_dir_container_path.rstrip("/") == (
         "/home/agent/workspace/.pycastle-session/implementer/codex"
-    ]
+    )
     assert (tmp_path / ".pycastle-session" / "implementer" / "codex").is_dir()
 
     [log_path] = list(tmp_path.glob("runtime-consumer-*.log"))
