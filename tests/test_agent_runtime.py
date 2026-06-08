@@ -1166,6 +1166,61 @@ def test_runtime_package_run_prompt_credential_failure_cancels_token_and_preserv
     )
 
 
+def test_runtime_package_run_prompt_credential_failure_uses_requested_service_when_provider_annotation_is_blank(
+    tmp_path: Path,
+):
+    import pycastle_agent_runtime as runtime
+
+    token = CancellationToken()
+    service = _CredentialFailureRuntimeService(
+        "resolved-runtime-service",
+        ProviderSessionState(RunKind.RESUME, "provider-resume"),
+        observed_provider_session_id="provider-runtime",
+        status_code=401,
+        provider_service_name="",
+    )
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+    session = _RuntimeSessionStandIn()
+    runner = _RuntimeRunnerStandIn(
+        cfg=_make_cfg(tmp_path),
+        git_service=_make_git_service(),
+        service=service,
+        session=session,
+    )
+    registry = runtime.ServiceRegistry({"resolved-runtime-service": service})
+    request = runtime.PromptRunRequest(
+        name="Runtime Consumer",
+        mount_path=tmp_path,
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="resolved-runtime-service",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        token=token,
+        session_namespace="main",
+        run_session_plan=plan,
+    )
+
+    with pytest.raises(AgentCredentialFailureError) as exc_info:
+        asyncio.run(
+            runtime.run_prompt(
+                runner=runner, service_registry=registry, request=request
+            )
+        )
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.caller == "Runtime Consumer"
+    assert exc_info.value.service_name == "resolved-runtime-service"
+    assert type(exc_info.value) is AgentCredentialFailureError
+    assert token.is_cancelled is True
+
+
 class _ExpectedFallback(TypedDict):
     service: str
     model: str
