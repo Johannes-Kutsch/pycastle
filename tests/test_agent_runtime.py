@@ -575,3 +575,93 @@ def test_runtime_package_stage_selection_reports_when_no_candidate_is_configured
         has_configured_candidate=False,
         selected_chain=None,
     )
+
+
+class _StateDirRecordingRuntimeService(_RecordingRuntimeService):
+    def __init__(self, name: str, *, relpath: str) -> None:
+        super().__init__(name)
+        self._relpath = relpath
+        self.state_dir_container_paths: list[str | None] = []
+
+    def build_env(
+        self,
+        state_dir_container_path: str | None = None,
+        token: str | None = None,
+    ) -> dict[str, str]:
+        del token
+        self.state_dir_container_paths.append(state_dir_container_path)
+        return {}
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        del role, namespace
+        return self._relpath
+
+
+def test_runtime_package_orchestration_entrypoint_owns_service_selection_session_boundary_and_logging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import pycastle_agent_runtime as runtime
+
+    fake_home = tmp_path / "home"
+    (fake_home / ".codex").mkdir(parents=True)
+    (fake_home / ".codex" / "auth.json").write_text(
+        '{"access_token":"tok"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    requested_service = _StateDirRecordingRuntimeService(
+        "codex",
+        relpath=".pycastle-session/implementer/codex/",
+    )
+    fallback_service = _RecordingRuntimeService("claude")
+
+    def _unavailable(now: datetime | None = None) -> bool:
+        del now
+        return False
+
+    fallback_service.is_available = _unavailable  # type: ignore[method-assign]
+
+    prompt_runtime = runtime.PromptRuntime(
+        env={},
+        cfg=_make_cfg(tmp_path),
+        git_service=_make_git_service(),
+        docker_client=_make_docker_client([b'{"result":"runtime result"}\n']),
+        service_registry={
+            "codex": requested_service,
+            "claude": fallback_service,
+        },
+    )
+    request = runtime.PromptRunRequest(
+        name="Runtime Consumer",
+        mount_path=tmp_path,
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="high",
+            fallback=runtime.StageOverride(
+                service="codex",
+                model="gpt-5.4",
+                effort="medium",
+            ),
+        ),
+        tool_policy=runtime.ToolPolicy.PARTIAL,
+    )
+
+    result = asyncio.run(prompt_runtime.run_prompt(request))
+
+    assert result == "runtime result"
+    assert requested_service.tool_policies == [runtime.ToolPolicy.PARTIAL]
+    [state_dir_container_path] = requested_service.state_dir_container_paths
+    assert state_dir_container_path is not None
+    assert state_dir_container_path.rstrip("/") == (
+        "/home/agent/workspace/.pycastle-session/implementer/codex"
+    )
+    assert (tmp_path / ".pycastle-session" / "implementer" / "codex").is_dir()
+
+    [log_path] = list(tmp_path.glob("runtime-consumer-*.log"))
+    log_text = log_path.read_text(encoding="utf-8")
+    assert '"prompt": "Return the final answer only."' in log_text
+    assert '"result":"runtime result"' in log_text

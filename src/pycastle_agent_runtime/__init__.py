@@ -18,7 +18,11 @@ from pycastle.services.agent_service import (
 
 if TYPE_CHECKING:
     from pycastle.agents.runner import AgentRunner, AgentRunnerProtocol, RunRequest
-    from pycastle_agent_runtime.runtime import PromptRunRequest, ToolPolicy
+    from pycastle_agent_runtime.runtime import (
+        PromptRunRequest,
+        PromptRuntime,
+        ToolPolicy,
+    )
     from pycastle_agent_runtime.service_registry import ServiceRegistry
     from pycastle_agent_runtime.stage_priority_chain import (
         ChainEntry,
@@ -38,6 +42,7 @@ __all__ = [
     "HardError",
     "ParsedTurn",
     "PromptRunRequest",
+    "PromptRuntime",
     "PromptTokens",
     "Result",
     "RunRequest",
@@ -63,7 +68,7 @@ def __getattr__(name: str):
         from pycastle.agents import runner
 
         return getattr(runner, name)
-    if name in {"PromptRunRequest", "ToolPolicy", "run_prompt"}:
+    if name in {"PromptRunRequest", "PromptRuntime", "ToolPolicy", "run_prompt"}:
         from pycastle_agent_runtime import runtime
 
         return getattr(runtime, name)

@@ -53,6 +53,38 @@ class PromptRunRequest:
     run_session_plan: RunSessionPlan | None = None
 
 
+class PromptRuntime:
+    def __init__(
+        self,
+        *,
+        env: dict[str, str],
+        cfg: Any,
+        git_service: Any,
+        docker_client: Any = None,
+        service_registry: ServiceRegistry | dict[str, Any] | None = None,
+    ) -> None:
+        registry = (
+            service_registry
+            if isinstance(service_registry, ServiceRegistry)
+            else ServiceRegistry(service_registry or {})
+        )
+        self._service_registry = registry
+        self._runner = AgentRunner(
+            env,
+            cfg,
+            git_service,
+            docker_client=docker_client,
+            service_registry=registry.services,
+        )
+
+    async def run_prompt(self, request: PromptRunRequest) -> str:
+        return await run_prompt(
+            runner=self._runner,
+            service_registry=self._service_registry,
+            request=request,
+        )
+
+
 async def run_prompt(
     *,
     runner: AgentRunner,
