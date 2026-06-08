@@ -18,6 +18,7 @@ from pycastle.services.agent_service import (
 
 if TYPE_CHECKING:
     from pycastle.agents.runner import AgentRunner, AgentRunnerProtocol, RunRequest
+    from pycastle_agent_runtime.orchestration import run
     from pycastle_agent_runtime.runtime import (
         PromptRunRequest,
         PromptRuntime,
@@ -59,6 +60,7 @@ __all__ = [
     "UnsupportedTokens",
     "UsageLimit",
     "validation_labels",
+    "run",
     "run_prompt",
 ]
 
@@ -68,6 +70,10 @@ def __getattr__(name: str):
         from pycastle.agents import runner
 
         return getattr(runner, name)
+    if name == "run":
+        from pycastle_agent_runtime.orchestration import run
+
+        return run
     if name in {"PromptRunRequest", "PromptRuntime", "ToolPolicy", "run_prompt"}:
         from pycastle_agent_runtime import runtime
 

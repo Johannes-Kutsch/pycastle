@@ -295,7 +295,6 @@ def _do_run(
 
     from .commands.build import main as _build
     from .iteration._deps import ImproveMode
-    from .iteration.orchestrator import run
     from .services.agent_service import AgentService
     from .services.claude_service import ClaudeService
     from .services.codex_service import CodexService
@@ -355,7 +354,7 @@ def _do_run(
         effective_improve_mode = cfg.improve_mode
     registry = agent_runtime.ServiceRegistry(service_registry)
     asyncio.run(
-        run(
+        agent_runtime.run(
             container_env,
             Path(".").resolve(),
             service_registry=registry,

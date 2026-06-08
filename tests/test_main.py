@@ -100,7 +100,7 @@ def test_run_cmd_uses_remaining_known_services_when_oauth_token_missing(
 
     with (
         patch("pycastle.commands.build.main"),
-        patch("pycastle.iteration.orchestrator.run"),
+        patch("pycastle.main.agent_runtime.run"),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -143,7 +143,7 @@ def test_run_cmd_skips_unconfigured_opencode_when_claude_fallback_available(
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.main"),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -174,7 +174,7 @@ def test_run_cmd_default_stage_override_seeds_codex_without_claude_token(
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.main"),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -242,7 +242,7 @@ def test_run_cmd_builds_registry_from_stage_chain_service_names(tmp_path, monkey
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.main"),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -285,7 +285,7 @@ def test_run_cmd_allows_known_unconfigured_primary_service_in_stage_chain(
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.main"),
-        patch("pycastle.iteration.orchestrator.run"),
+        patch("pycastle.main.agent_runtime.run"),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -828,7 +828,7 @@ def test_run_cmd_ignores_legacy_default_service_codex_for_service_registry(
 
     with (
         patch("pycastle.commands.build.main"),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -869,7 +869,7 @@ def test_run_cmd_explicit_codex_only_does_not_require_claude_token(
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -910,7 +910,7 @@ def test_run_cmd_does_not_seed_unreferenced_codex_service_into_registry(
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -954,7 +954,7 @@ def test_run_cmd_routes_opencode_go_key_through_service_env_only(tmp_path, monke
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -985,7 +985,7 @@ def test_run_cmd_seeds_pool_with_primary_only_when_secondary_absent(
 
     with (
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -1017,7 +1017,7 @@ def test_run_cmd_seeds_pool_with_secondary_first_when_present(tmp_path, monkeypa
 
     with (
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -1042,7 +1042,7 @@ def test_run_cmd_skips_claude_when_primary_token_missing_even_with_secondary(
 
     with (
         patch("pycastle.commands.build.main"),
-        patch("pycastle.iteration.orchestrator.run"),
+        patch("pycastle.main.agent_runtime.run"),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -1056,7 +1056,7 @@ def test_run_cmd_skips_claude_when_primary_token_missing_even_with_secondary(
 def _run_cmd_capturing_improve_mode(
     tmp_path, monkeypatch, cli_args: list[str], cfg: Config
 ):
-    """Helper: invoke run_cmd and return the improve_mode passed to orchestrator.run."""
+    """Helper: invoke run_cmd and return the improve_mode passed to the runtime entrypoint."""
     import dataclasses
 
     from pycastle.main import main as cli
@@ -1080,7 +1080,7 @@ def _run_cmd_capturing_improve_mode(
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"] + cli_args)
 
@@ -1153,7 +1153,7 @@ def test_run_cmd_improve_and_no_improve_are_mutually_exclusive(tmp_path, monkeyp
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run", "--improve", "--no-improve"])
 
@@ -1185,7 +1185,7 @@ def _run_cmd_with_build_outcome(tmp_path, monkeypatch, outcome):
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         return CliRunner().invoke(cli, ["run"])
 
@@ -1211,7 +1211,7 @@ def test_run_cmd_triggers_docker_build_before_orchestrator(tmp_path, monkeypatch
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -1263,7 +1263,7 @@ def test_run_cmd_exits_one_when_build_fails(tmp_path, monkeypatch):
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -1310,7 +1310,7 @@ def test_run_cmd_does_not_invoke_docker_when_image_name_empty(tmp_path, monkeypa
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         CliRunner().invoke(cli, ["run"])
 
@@ -1338,7 +1338,7 @@ def test_run_cmd_passes_python_version_from_file_to_build(tmp_path, monkeypatch)
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -1366,7 +1366,7 @@ def test_run_cmd_build_uses_streaming_mode(tmp_path, monkeypatch):
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
@@ -1940,7 +1940,7 @@ def test_run_cmd_valid_config_passes_validation_silently(tmp_path, monkeypatch):
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
 
