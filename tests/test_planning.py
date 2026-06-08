@@ -758,6 +758,46 @@ def test_planning_phase_all_blocked_accepts_custom_blocked_entries(tmp_path, git
     )
 
 
+def test_planning_phase_all_blocked_does_not_hydrate_titles_for_non_ready_candidates(
+    tmp_path, git_svc
+):
+    recording = RecordingStatusDisplay()
+    output = PlannerOutput(issues=[], blocked=[{"number": 6, "blocked_by": 3}])
+    issues = [
+        {
+            "number": 5,
+            "title": "Ready planner candidate",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["ready-for-agent", "behavior-slice"],
+        },
+        {
+            "number": 7,
+            "title": "Second ready planner candidate",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["ready-for-agent", "docs-slice"],
+        },
+        {
+            "number": 6,
+            "title": "Malformed issue that should not hydrate blocked titles",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["ready-for-agent"],
+        },
+    ]
+    fake = FakeAgentRunner([output])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
+    result = asyncio.run(planning_phase(deps, issues, []))
+
+    assert isinstance(result, AllBlocked)
+    assert result.blocked == [{"number": 6}]
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must be removed"
+    assert plan_removes[0][2].endswith("\n  #6")
+
+
 # ── hydrate_planned_issues ──────────────────────────────────────────────────
 
 
