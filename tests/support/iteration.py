@@ -43,6 +43,9 @@ class RecordingLogger:
 class RecordingStatusDisplay:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
+        self.register_calls: list[dict[str, Any]] = []
+        self.remove_calls: list[dict[str, str]] = []
+        self.phase_updates: list[tuple[str, str]] = []
 
     def register(
         self,
@@ -54,11 +57,23 @@ class RecordingStatusDisplay:
         color_key: int | None = None,
         model_display: ModelDisplayMetadata | None = None,
     ) -> None:
+        self.register_calls.append(
+            {
+                "caller": caller,
+                "kind": kind,
+                "startup_message": startup_message,
+                "work_body": work_body,
+                "initial_phase": initial_phase,
+                "color_key": color_key,
+                "model_display": model_display,
+            }
+        )
         self.calls.append(
             ("register", caller, kind, startup_message, initial_phase, model_display)
         )
 
     def update_phase(self, name: str, phase: str) -> None:
+        self.phase_updates.append((name, phase))
         self.calls.append(("update_phase", name, phase))
 
     def reset_idle_timer(self, name: str) -> None:
@@ -73,6 +88,13 @@ class RecordingStatusDisplay:
         shutdown_message: str = "finished",
         shutdown_style: str = "success",
     ) -> None:
+        self.remove_calls.append(
+            {
+                "caller": caller,
+                "shutdown_message": shutdown_message,
+                "shutdown_style": shutdown_style,
+            }
+        )
         self.calls.append(("remove", caller, shutdown_message, shutdown_style))
 
     def print(self, caller: str, message: object, style: str | None = None) -> None:

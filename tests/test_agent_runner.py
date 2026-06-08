@@ -7,7 +7,7 @@ import threading
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -3249,6 +3249,401 @@ def test_work_invocation_typed_fresh_success_returns_adapter_output_and_forwarde
     assert session_state_dirs == ["/workspace/provider-state"]
     assert prepared_session.prepare_for_run_calls == 1
     assert prepared_session.initial_session.successful_run_calls == 1
+
+
+def test_work_invocation_wraps_setup_docker_error_and_skips_work_adapter(
+    tmp_path: Path,
+):
+    status_display = RecordingStatusDisplay()
+    adapter_calls: list[str] = []
+    exit_calls: list[tuple[object, object, object]] = []
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            exit_calls.append((exc_type, exc, tb))
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+            raise DockerError("dependency install failed")
+
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> PlannerOutput:
+            del role, prompt, run_kind, session_uuid, on_provider_session_id
+            adapter_calls.append("work")
+            return PlannerOutput(issues=[])
+
+    async def prompt_factory(*, run_kind: RunKind, container_exec) -> str:
+        del run_kind, container_exec
+        adapter_calls.append("build_prompt")
+        return "caller-rendered prompt text"
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Planner",
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service=ClaudeService(),
+                    model="sonnet",
+                    effort="high",
+                    output_adapter=ProtocolOutputAdapter(
+                        prompt_factory=prompt_factory,
+                        reprompt_message="reprompt",
+                    ),
+                    dependencies=WorkInvocationDependencies(
+                        container_workspace="/home/agent/workspace",
+                        timeout_retries=0,
+                        stage_key_for_role=lambda role: role.value,
+                        build_session=lambda *_args: _FakeSession(),
+                        build_runner=lambda *_args: cast(
+                            ContainerRunner, _FakeRunner()
+                        ),
+                        get_git_identity=lambda: ("Test User", "test@example.com"),
+                    ),
+                    status_display=status_display,
+                )
+            )
+        )
+
+    assert exc_info.value.phase == AgentRole.PLANNER.value
+    assert str(exc_info.value) == "dependency install failed"
+    assert adapter_calls == []
+    assert exit_calls == [(None, None, None)]
+    assert ("remove", "Planner", "failed", "error") in status_display.calls
+
+
+def test_work_invocation_opens_status_row_with_caller_metadata_before_setup(
+    tmp_path: Path,
+):
+    status_display = RecordingStatusDisplay()
+    observed_events: list[str] = []
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email
+            observed_events.append("setup")
+            assert status_display.register_calls[0] == {
+                "caller": "Planner",
+                "kind": "agent",
+                "startup_message": "started",
+                "work_body": "implement feature slice",
+                "initial_phase": "Setup",
+                "color_key": 7,
+                "model_display": ModelDisplayMetadata(
+                    service="claude",
+                    model="sonnet",
+                    effort="high",
+                ),
+            }
+            assert work_body == "implement feature slice"
+
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> PlannerOutput:
+            del role, prompt, run_kind, session_uuid, on_provider_session_id
+            observed_events.append("work")
+            assert len(status_display.register_calls) == 1
+            return PlannerOutput(issues=[])
+
+    async def prompt_factory(*, run_kind: RunKind, container_exec) -> str:
+        del run_kind, container_exec
+        observed_events.append("build_prompt")
+        return "caller-rendered prompt text"
+
+    result = asyncio.run(
+        invoke_work(
+            WorkInvocationRequest(
+                name="Planner",
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+                service=ClaudeService(),
+                model="sonnet",
+                effort="high",
+                output_adapter=ProtocolOutputAdapter(
+                    prompt_factory=prompt_factory,
+                    reprompt_message="reprompt",
+                ),
+                dependencies=WorkInvocationDependencies(
+                    container_workspace="/home/agent/workspace",
+                    timeout_retries=0,
+                    stage_key_for_role=lambda role: role.value,
+                    build_session=lambda *_args: _FakeSession(),
+                    build_runner=lambda *_args: cast(ContainerRunner, _FakeRunner()),
+                    get_git_identity=lambda: ("Test User", "test@example.com"),
+                ),
+                status_display=status_display,
+                work_body="implement feature slice",
+                color_key=7,
+            )
+        )
+    )
+
+    assert result == PlannerOutput(issues=[])
+    assert observed_events == ["setup", "build_prompt", "work"]
+
+
+def test_work_invocation_exits_container_session_once_across_work_outcomes(
+    tmp_path: Path,
+):
+    credential_error = AgentCredentialFailureError(
+        "credential failure",
+        service_name="claude",
+        observations=(),
+    )
+    hard_error = HardAgentError(
+        "hard failure",
+        service_name="claude",
+        observations=(),
+    )
+    scenarios = [
+        ("success", "typed", PlannerOutput(issues=[]), None),
+        ("failed_output", "typed", FailedOutput(failure_class="agent_failed"), None),
+        ("setup_failure", "typed", None, DockerError("setup failed")),
+        ("timeout_failure", "text", None, AgentTimeoutError("timeout")),
+        ("usage_limit_failure", "text", None, UsageLimitError(stage_key="plan")),
+        ("transient_failure", "text", None, TransientAgentError("transient")),
+        ("hard_failure", "text", None, hard_error),
+        ("credential_failure", "text", None, credential_error),
+    ]
+
+    for scenario_name, mode, result, error in scenarios:
+        status_display = RecordingStatusDisplay()
+        exit_calls: list[tuple[object, object, object]] = []
+
+        class _FakeSession:
+            def exec_simple(self, cmd: str) -> str:
+                raise AssertionError(
+                    f"{scenario_name}: unexpected container exec: {cmd}"
+                )
+
+            def __exit__(self, exc_type, exc, tb) -> None:
+                exit_calls.append((exc_type, exc, tb))
+                return None
+
+        class _FakeRunner:
+            async def setup(
+                self, git_name: str, git_email: str, work_body: str
+            ) -> None:
+                del git_name, git_email, work_body
+                if scenario_name == "setup_failure":
+                    raise cast(DockerError, error)
+
+            async def work(
+                self,
+                role: AgentRole,
+                prompt: str,
+                *,
+                run_kind: RunKind,
+                session_uuid: str | None,
+                on_provider_session_id=None,
+            ) -> PlannerOutput | FailedOutput:
+                del role, prompt, run_kind, session_uuid, on_provider_session_id
+                if error is not None:
+                    raise error
+                assert result is not None
+                return cast(PlannerOutput | FailedOutput, result)
+
+            async def work_text(
+                self,
+                prompt: str,
+                *,
+                role: AgentRole,
+                tool_policy,
+                run_kind: RunKind,
+                session_uuid: str | None,
+                on_provider_session_id=None,
+            ) -> str:
+                del (
+                    prompt,
+                    role,
+                    tool_policy,
+                    run_kind,
+                    session_uuid,
+                    on_provider_session_id,
+                )
+                assert error is not None
+                raise error
+
+        output_adapter: ProtocolOutputAdapter | TextOutputAdapter
+        if mode == "typed":
+            output_adapter = ProtocolOutputAdapter(
+                prompt_factory=lambda **_kwargs: asyncio.sleep(
+                    0, result="caller-rendered prompt text"
+                ),
+                reprompt_message="reprompt",
+            )
+        else:
+            output_adapter = TextOutputAdapter(prompt="text prompt")
+
+        request: WorkInvocationRequest[Any] = WorkInvocationRequest(
+            name=f"Planner {scenario_name}",
+            mount_path=tmp_path,
+            role=AgentRole.PLANNER,
+            service=ClaudeService(),
+            model="sonnet",
+            effort="high",
+            output_adapter=output_adapter,
+            dependencies=WorkInvocationDependencies(
+                container_workspace="/home/agent/workspace",
+                timeout_retries=0,
+                stage_key_for_role=lambda role: role.value,
+                build_session=lambda *_args: _FakeSession(),
+                build_runner=lambda *_args: cast(ContainerRunner, _FakeRunner()),
+                get_git_identity=lambda: ("Test User", "test@example.com"),
+            ),
+            status_display=status_display,
+        )
+
+        if scenario_name == "success":
+            observed_result = asyncio.run(invoke_work(request))
+            assert observed_result == PlannerOutput(issues=[])
+        elif scenario_name == "failed_output":
+            with pytest.raises(AgentFailedError):
+                asyncio.run(invoke_work(request))
+        elif scenario_name == "setup_failure":
+            with pytest.raises(SetupPhaseError):
+                asyncio.run(invoke_work(request))
+        else:
+            with pytest.raises(type(cast(BaseException, error))):
+                asyncio.run(invoke_work(request))
+
+        assert exit_calls == [(None, None, None)]
+        assert len(status_display.remove_calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_exception"),
+    [
+        ("typed_failed_output", AgentFailedError),
+        ("text_protocol_error", AgentOutputProtocolError),
+    ],
+)
+def test_work_invocation_closes_failed_work_rows_consistently_for_typed_and_text_runs(
+    tmp_path: Path,
+    mode: str,
+    expected_exception: type[BaseException],
+):
+    status_display = RecordingStatusDisplay()
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        def __init__(self, display: RecordingStatusDisplay) -> None:
+            self._display = display
+
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> FailedOutput:
+            del role, prompt, run_kind, session_uuid, on_provider_session_id
+            self._display.update_phase("Planner", "Work")
+            return FailedOutput(failure_class="agent_failed")
+
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole,
+            tool_policy,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> str:
+            del (
+                prompt,
+                role,
+                tool_policy,
+                run_kind,
+                session_uuid,
+                on_provider_session_id,
+            )
+            self._display.update_phase("Planner", "Work")
+            raise AgentOutputProtocolError("text outputs do not reprompt")
+
+    output_adapter: ProtocolOutputAdapter | TextOutputAdapter
+    if mode == "typed_failed_output":
+        output_adapter = ProtocolOutputAdapter(
+            prompt_factory=lambda **_kwargs: asyncio.sleep(
+                0, result="caller-rendered prompt text"
+            ),
+            reprompt_message="reprompt",
+        )
+    else:
+        output_adapter = TextOutputAdapter(prompt="text prompt")
+
+    with pytest.raises(expected_exception):
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Planner",
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service=ClaudeService(),
+                    model="sonnet",
+                    effort="high",
+                    output_adapter=output_adapter,
+                    dependencies=WorkInvocationDependencies(
+                        container_workspace="/home/agent/workspace",
+                        timeout_retries=0,
+                        stage_key_for_role=lambda role: role.value,
+                        build_session=lambda *_args: _FakeSession(),
+                        build_runner=lambda *_args: cast(
+                            ContainerRunner, _FakeRunner(status_display)
+                        ),
+                        get_git_identity=lambda: ("Test User", "test@example.com"),
+                    ),
+                    status_display=status_display,
+                )
+            )
+        )
+
+    assert status_display.phase_updates == [("Planner", "Work")]
+    assert status_display.remove_calls == [
+        {
+            "caller": "Planner",
+            "shutdown_message": "failed",
+            "shutdown_style": "error",
+        }
+    ]
 
 
 def test_work_invocation_typed_resume_success_uses_prepared_run_kind_and_provider_session_id(
