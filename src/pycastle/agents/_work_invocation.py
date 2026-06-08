@@ -387,7 +387,8 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
                 except AgentCredentialFailureError as err:
                     token.cancel()
                     err.caller = request.name
-                    err.service_name = request.service.name
+                    if not err.service_name:
+                        err.service_name = request.service.name
                     raise
                 except HardAgentError as err:
                     token.cancel()
