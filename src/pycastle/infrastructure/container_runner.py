@@ -13,6 +13,7 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
+from pycastle_agent_runtime.agent_log import AgentInvocationLog
 from ..services.flag_profiles import AgentToolPolicyGroup
 from .docker_session import DockerSession
 from ..errors import DockerError
@@ -20,7 +21,6 @@ from .preflight_failure_interpreter import PreflightCommandFailure
 from ..services.agent_service import AgentService
 from ..session import RunKind
 from ._logged_line_stream import stream_logged_work_lines
-from .agent_invocation_log import AgentInvocationLog
 
 
 class ContainerRunner:
