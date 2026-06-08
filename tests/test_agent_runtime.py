@@ -10,7 +10,7 @@ import pytest
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.result import CancellationToken
 from pycastle.config import Config
-from pycastle.errors import UsageLimitError
+from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.services.claude_service import ClaudeService
 from pycastle.services import GitService
@@ -448,6 +448,79 @@ def test_runtime_package_run_prompt_uses_supplied_run_session_plan(
     assert service.build_env_state_dir_args == [
         "/home/agent/workspace/.pycastle-session/implementer/main/claude/"
     ]
+
+
+def test_runtime_package_run_prompt_retries_timeout_and_resumes_work_session(
+    tmp_path: Path,
+):
+    import pycastle_agent_runtime as runtime
+
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "main" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    service = _PlanRecordingClaudeRuntimeService()
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+    service.fail_provider_session_state = True
+    status_display = MagicMock()
+    runner = runtime.AgentRunner(
+        {},
+        _make_cfg(tmp_path, timeout_retries=1),
+        _make_git_service(),
+        docker_client=_make_docker_client([]),
+        service_registry={"claude": service},
+    )
+    registry = runtime.ServiceRegistry({"claude": service})
+    request = runtime.PromptRunRequest(
+        mount_path=tmp_path,
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+        ),
+        status_display=status_display,
+        session_namespace="main",
+        run_session_plan=plan,
+    )
+    work_calls: list[tuple[RunKind, str | None]] = []
+
+    async def _fake_work_text(
+        prompt: str,
+        *,
+        role: AgentRole = AgentRole.IMPLEMENTER,
+        tool_policy=None,
+        run_kind: RunKind = RunKind.FRESH,
+        session_uuid: str | None = None,
+        on_provider_session_id=None,
+    ) -> str:
+        del prompt, role, tool_policy, on_provider_session_id
+        work_calls.append((run_kind, session_uuid))
+        if len(work_calls) == 1:
+            raise AgentTimeoutError("timeout")
+        return "runtime result"
+
+    with patch.object(ContainerRunner, "work_text", side_effect=_fake_work_text):
+        result = asyncio.run(
+            runtime.run_prompt(
+                runner=runner, service_registry=registry, request=request
+            )
+        )
+
+    assert result == "runtime result"
+    assert work_calls == [
+        (RunKind.RESUME, plan.provider_session_id),
+        (RunKind.RESUME, plan.provider_session_id),
+    ]
+    status_display.print.assert_called_once_with(
+        "Runtime Agent",
+        "Timeout — restarting (attempt 1/1)",
+    )
 
 
 class _ExpectedFallback(TypedDict):
