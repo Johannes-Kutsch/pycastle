@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from pycastle.agents.output_protocol import (
+    AgentOutputProtocolError,
     AgentRole,
     CommitMessageOutput,
     CompletionOutput,
@@ -98,6 +99,32 @@ class _PreparedRunSessionStandIn:
 
     def protocol_reprompt_provider_run_session(self):
         return None
+
+
+class _PreparedRunSessionWithRepromptStandIn(_PreparedRunSessionStandIn):
+    def __init__(
+        self,
+        *,
+        initial_run_kind: RunKind,
+        initial_provider_session_id: str | None,
+        reprompt_run_kind: RunKind,
+        reprompt_provider_session_id: str | None,
+        provider_state_dir_container_path: str | None = None,
+    ) -> None:
+        super().__init__(
+            initial_run_kind=initial_run_kind,
+            initial_provider_session_id=initial_provider_session_id,
+            provider_state_dir_container_path=provider_state_dir_container_path,
+        )
+        self.reprompt_session = _PreparedProviderRunSessionStandIn(
+            run_kind=reprompt_run_kind,
+            provider_session_id=reprompt_provider_session_id,
+        )
+
+    def protocol_reprompt_provider_run_session(
+        self,
+    ) -> "_PreparedProviderRunSessionStandIn":
+        return self.reprompt_session
 
 
 class _PreparedProviderRunSessionStandIn:
@@ -3373,6 +3400,91 @@ def test_work_invocation_typed_success_records_provider_session_metadata_through
         observed_provider_session_id
     )
     assert prepared_session.initial_session.successful_run_calls == 1
+
+
+def test_work_invocation_protocol_reprompt_success_records_metadata_on_successful_reprompt_run(
+    tmp_path: Path,
+):
+    prepared_session = _PreparedRunSessionWithRepromptStandIn(
+        initial_run_kind=RunKind.FRESH,
+        initial_provider_session_id="provider-fresh",
+        reprompt_run_kind=RunKind.RESUME,
+        reprompt_provider_session_id="provider-resume",
+    )
+    work_calls: list[tuple[RunKind, str | None, str]] = []
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> PlannerOutput:
+            del role
+            work_calls.append((run_kind, session_uuid, prompt))
+            if len(work_calls) == 1:
+                raise AgentOutputProtocolError("missing tag")
+            assert on_provider_session_id is not None
+            on_provider_session_id("provider-resume-runtime")
+            return PlannerOutput(issues=[])
+
+    async def prompt_factory(*, run_kind: RunKind, container_exec) -> str:
+        del container_exec
+        assert run_kind is RunKind.FRESH
+        return "caller-rendered prompt text"
+
+    result = asyncio.run(
+        invoke_work(
+            WorkInvocationRequest(
+                name="Planner",
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+                service=ClaudeService(),
+                model="sonnet",
+                effort="high",
+                output_adapter=ProtocolOutputAdapter(
+                    prompt_factory=prompt_factory,
+                    reprompt_message="reprompt",
+                ),
+                dependencies=WorkInvocationDependencies(
+                    container_workspace="/home/agent/workspace",
+                    timeout_retries=0,
+                    stage_key_for_role=lambda role: role.value,
+                    prepare_session=lambda _request: prepared_session,
+                    build_session=lambda *_args: _FakeSession(),
+                    build_runner=lambda *_args: cast(ContainerRunner, _FakeRunner()),
+                    get_git_identity=lambda: ("Test User", "test@example.com"),
+                ),
+            )
+        )
+    )
+
+    assert result == PlannerOutput(issues=[])
+    assert work_calls == [
+        (RunKind.FRESH, "provider-fresh", "caller-rendered prompt text"),
+        (RunKind.RESUME, "provider-resume", "reprompt"),
+    ]
+    assert prepared_session.initial_session.successful_run_calls == 0
+    assert prepared_session.reprompt_session.recorded_provider_session_ids == [
+        "provider-resume-runtime"
+    ]
+    assert prepared_session.reprompt_session.provider_session_id == (
+        "provider-resume-runtime"
+    )
+    assert prepared_session.reprompt_session.successful_run_calls == 1
 
 
 def test_resume_run_non_typed_exception_does_not_wipe_session(tmp_path):
