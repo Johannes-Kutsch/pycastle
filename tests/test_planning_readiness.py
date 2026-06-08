@@ -483,3 +483,49 @@ def test_prepare_planning_issue_set_normalizes_missing_fields_and_preserves_bloc
     assert planning_blocker_summary(prepared.blocker_summary_inputs) == (
         planning_blocker_summary(legacy.blocker_summary_inputs)
     )
+
+
+def test_resolve_planner_issue_intake_drops_non_ready_numbers_and_uses_prepared_issue_shape():
+    from pycastle.iteration.planning_issue_intake import (
+        PlanReady,
+        prepare_planning_issue_set,
+        resolve_planner_issue_intake,
+    )
+
+    cfg = Config()
+    ready_issue = {
+        "number": 11,
+        "title": "Canonical ready title",
+        "body": "Summary\n\nBlocked by #99\n\n" + ("x" * 120),
+        "comments": None,
+        "labels": ["behavior-slice"],
+    }
+    malformed_issue = {
+        "number": 12,
+        "title": "Malformed",
+        "body": "x" * 120,
+        "comments": [],
+        "labels": [],
+    }
+    prepared = prepare_planning_issue_set([ready_issue, malformed_issue], cfg)
+    planner_output = PlanReady(
+        issues=[
+            {"number": 11, "title": "Planner title"},
+            {"number": 12, "title": "Planner picked malformed"},
+            {"number": 99, "title": "Hallucinated"},
+        ],
+        sha="plan-sha",
+    )
+
+    result = resolve_planner_issue_intake(planner_output, prepared)
+
+    assert result.sha == "plan-sha"
+    assert result.issues == [
+        {
+            "number": 11,
+            "title": "Canonical ready title",
+            "body": "Summary\n\n" + ("x" * 120),
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]

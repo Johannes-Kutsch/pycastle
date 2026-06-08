@@ -50,6 +50,29 @@ def hydrate_planned_issues(
     )
 
 
+def resolve_planner_issue_intake(
+    plan_result: PlanReady, prepared_issue_set: "PreparedPlanningIssueSet"
+) -> PlanReady:
+    plan_numbers = {issue["number"] for issue in plan_result.issues}
+    resolved_issues = sorted(
+        (
+            issue
+            for issue in prepared_issue_set.ready_candidates
+            if issue["number"] in plan_numbers
+        ),
+        key=lambda issue: issue["number"],
+    )
+    return PlanReady(
+        issues=resolved_issues,
+        sha=plan_result.sha,
+        readiness_by_number={
+            issue_number: readiness
+            for issue_number, readiness in prepared_issue_set.ready_readiness_by_number.items()
+            if issue_number in plan_numbers
+        },
+    )
+
+
 LabelActionIntent: TypeAlias = Literal["add", "remove"]
 
 
