@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
+from unittest.mock import patch
 
 from pycastle._universal_image_build import (
     UniversalImageBuildAdapter,
@@ -9,7 +9,7 @@ from pycastle._universal_image_build import (
     UniversalImageBuildRequest,
 )
 from pycastle.services._docker_build_output import BuildOutcome
-from pycastle.services.docker_service import DockerServiceUniversalImageBuildAdapter
+from pycastle.services.docker_service import DockerService
 
 
 def _build_with_adapter(
@@ -53,49 +53,13 @@ def test_universal_image_build_adapter_protocol_accepts_fake_adapter(tmp_path):
     assert adapter.requests == [request]
 
 
-@dataclass
-class _RecordingDockerService:
-    outcome: BuildOutcome | None
-    calls: list[dict[str, object]] = field(default_factory=list)
-
-    def build_image(
-        self,
-        image_name: str,
-        dockerfile_path: Path,
-        context_dir: Path,
-        *,
-        no_cache: bool = False,
-        python_version: str | None = None,
-        timeout: float | None = None,
-        stream: bool = False,
-        terse: bool = False,
-        on_rebuild_start: object = None,
-    ) -> BuildOutcome | None:
-        self.calls.append(
-            {
-                "image_name": image_name,
-                "dockerfile_path": dockerfile_path,
-                "context_dir": context_dir,
-                "no_cache": no_cache,
-                "python_version": python_version,
-                "timeout": timeout,
-                "stream": stream,
-                "terse": terse,
-                "on_rebuild_start": on_rebuild_start,
-            }
-        )
-        return self.outcome
-
-
-def test_docker_service_universal_image_build_adapter_forwards_typed_request_fields(
+def test_docker_service_forwards_typed_request_fields(
     tmp_path,
 ):
     def callback() -> None:
         return None
 
-    docker_service = _RecordingDockerService(BuildOutcome.REBUILT)
-    adapter = DockerServiceUniversalImageBuildAdapter(
-        docker_service,
+    docker_service = DockerService(
         timeout=42.0,
         on_rebuild_start=callback,
     )
@@ -111,19 +75,22 @@ def test_docker_service_universal_image_build_adapter_forwards_typed_request_fie
         ),
     )
 
-    result = _build_with_adapter(adapter, request)
+    with patch.object(
+        docker_service,
+        "build_image",
+        return_value=BuildOutcome.REBUILT,
+    ) as mock_build_image:
+        result = _build_with_adapter(docker_service, request)
 
     assert result == BuildOutcome.REBUILT
-    assert docker_service.calls == [
-        {
-            "image_name": "pycastle:test",
-            "dockerfile_path": tmp_path / "Dockerfile",
-            "context_dir": tmp_path,
-            "no_cache": True,
-            "python_version": "3.12",
-            "timeout": 42.0,
-            "stream": True,
-            "terse": True,
-            "on_rebuild_start": callback,
-        }
-    ]
+    mock_build_image.assert_called_once_with(
+        "pycastle:test",
+        tmp_path / "Dockerfile",
+        tmp_path,
+        no_cache=True,
+        python_version="3.12",
+        timeout=42.0,
+        stream=True,
+        terse=True,
+        on_rebuild_start=callback,
+    )
