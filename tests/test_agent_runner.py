@@ -74,8 +74,6 @@ class _PreparedRunSessionStandIn:
     ) -> None:
         self.provider_state_dir_container_path = provider_state_dir_container_path
         self.prepare_for_run_calls = 0
-        self.initial_provider_run_session_calls = 0
-        self.resumable_provider_run_session_calls = 0
         self.initial_session = _PreparedProviderRunSessionStandIn(
             run_kind=initial_run_kind,
             provider_session_id=initial_provider_session_id,
@@ -93,11 +91,9 @@ class _PreparedRunSessionStandIn:
         self.prepare_for_run_calls += 1
 
     def initial_provider_run_session(self) -> "_PreparedProviderRunSessionStandIn":
-        self.initial_provider_run_session_calls += 1
         return self.initial_session
 
     def resumable_provider_run_session(self) -> "_PreparedProviderRunSessionStandIn":
-        self.resumable_provider_run_session_calls += 1
         return self.resumable_session
 
     def protocol_reprompt_provider_run_session(self):
@@ -3148,6 +3144,7 @@ def test_work_invocation_typed_fresh_success_returns_adapter_output_and_forwarde
         initial_provider_session_id="provider-fresh",
         provider_state_dir_container_path="/workspace/provider-state",
     )
+    session_state_dirs: list[str | None] = []
     work_calls: list[tuple[RunKind, str | None, str]] = []
 
     class _FakeSession:
@@ -3178,6 +3175,12 @@ def test_work_invocation_typed_fresh_success_returns_adapter_output_and_forwarde
     session = _FakeSession()
     runner = _FakeRunner()
 
+    def build_session(
+        _mount_path: Path, _service, state_dir: str | None
+    ) -> _FakeSession:
+        session_state_dirs.append(state_dir)
+        return session
+
     async def prompt_factory(*, run_kind: RunKind, container_exec) -> str:
         del container_exec
         assert run_kind is RunKind.FRESH
@@ -3201,7 +3204,7 @@ def test_work_invocation_typed_fresh_success_returns_adapter_output_and_forwarde
                     timeout_retries=0,
                     stage_key_for_role=lambda role: role.value,
                     prepare_session=lambda _request: prepared_session,
-                    build_session=lambda *_args: session,
+                    build_session=build_session,
                     build_runner=lambda *_args: cast(ContainerRunner, runner),
                     get_git_identity=lambda: ("Test User", "test@example.com"),
                 ),
@@ -3214,13 +3217,12 @@ def test_work_invocation_typed_fresh_success_returns_adapter_output_and_forwarde
     assert work_calls == [
         (RunKind.FRESH, "provider-fresh", "caller-rendered prompt text")
     ]
+    assert session_state_dirs == ["/workspace/provider-state"]
     assert prepared_session.prepare_for_run_calls == 1
-    assert prepared_session.initial_provider_run_session_calls == 1
-    assert prepared_session.resumable_provider_run_session_calls == 0
     assert prepared_session.initial_session.successful_run_calls == 1
 
 
-def test_work_invocation_typed_resume_success_uses_prepared_provider_run_state(
+def test_work_invocation_typed_resume_success_uses_prepared_run_kind_and_provider_session_id(
     tmp_path: Path,
 ):
     prepared_session = _PreparedRunSessionStandIn(
@@ -3288,8 +3290,6 @@ def test_work_invocation_typed_resume_success_uses_prepared_provider_run_state(
     assert work_calls == [
         (RunKind.RESUME, "provider-resume", "resume prompt from adapter")
     ]
-    assert prepared_session.initial_provider_run_session_calls == 1
-    assert prepared_session.resumable_provider_run_session_calls == 0
     assert prepared_session.initial_session.successful_run_calls == 1
 
 
