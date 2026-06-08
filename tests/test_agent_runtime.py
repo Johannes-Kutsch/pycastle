@@ -11,12 +11,18 @@ from pycastle.agents.output_protocol import PlanParseError
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.result import CancellationToken
 from pycastle.config import Config
-from pycastle.errors import AgentTimeoutError, TransientAgentError, UsageLimitError
+from pycastle.errors import (
+    AgentTimeoutError,
+    HardAgentError,
+    TransientAgentError,
+    UsageLimitError,
+)
 from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.services.claude_service import ClaudeService
 from pycastle.services import GitService
 from pycastle.services.agent_service import (
     AssistantTurn,
+    HardError,
     ParsedTurn,
     Result,
     TransientError,
@@ -257,6 +263,37 @@ class _TransientRuntimeService(_PlanRecordingRuntimeService):
                 if self._status_code is not None
                 else "network drop"
             ),
+        )
+
+    def mark_exhausted(self, reset_time: datetime | None) -> None:
+        self.mark_exhausted_calls.append(reset_time)
+
+
+class _HardRuntimeService(_PlanRecordingRuntimeService):
+    def __init__(
+        self,
+        name: str,
+        provider_state: ProviderSessionState,
+        *,
+        observed_provider_session_id: str,
+        status_code: int,
+    ) -> None:
+        super().__init__(name, provider_state)
+        self._observed_provider_session_id = observed_provider_session_id
+        self._status_code = status_code
+        self.mark_exhausted_calls: list[datetime | None] = []
+
+    def run(
+        self,
+        lines: Iterable[str],
+        on_provider_session_id: Callable[[str], None] | None = None,
+    ) -> Iterator[ParsedTurn]:
+        list(lines)
+        if on_provider_session_id is not None:
+            on_provider_session_id(self._observed_provider_session_id)
+        yield HardError(
+            status_code=self._status_code,
+            raw_message="API Error: 403 Forbidden",
         )
 
     def mark_exhausted(self, reset_time: datetime | None) -> None:
@@ -874,6 +911,71 @@ def test_runtime_package_run_prompt_transient_failure_cancels_token_preserves_se
         "Runtime Consumer",
         "transient API error: status 529",
     )
+    assert session.written_files == [
+        ("Return the final answer only.", "/tmp/.pycastle_prompt")
+    ]
+    assert (
+        RoleSession(
+            tmp_path,
+            AgentRole.IMPLEMENTER,
+            "main",
+        ).service_session_metadata("fake")
+        is None
+    )
+
+
+def test_runtime_package_run_prompt_hard_failure_cancels_token_annotates_context_and_skips_success_metadata(
+    tmp_path: Path,
+):
+    import pycastle_agent_runtime as runtime
+
+    token = CancellationToken()
+    service = _HardRuntimeService(
+        "fake",
+        ProviderSessionState(RunKind.RESUME, "provider-resume"),
+        observed_provider_session_id="provider-runtime",
+        status_code=403,
+    )
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+    session = _RuntimeSessionStandIn()
+    runner = _RuntimeRunnerStandIn(
+        cfg=_make_cfg(tmp_path),
+        git_service=_make_git_service(),
+        service=service,
+        session=session,
+    )
+    registry = runtime.ServiceRegistry({"fake": service})
+    request = runtime.PromptRunRequest(
+        name="Runtime Consumer",
+        mount_path=tmp_path,
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="fake",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        token=token,
+        session_namespace="main",
+        run_session_plan=plan,
+    )
+
+    with pytest.raises(HardAgentError) as exc_info:
+        asyncio.run(
+            runtime.run_prompt(
+                runner=runner, service_registry=registry, request=request
+            )
+        )
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.caller == "Runtime Consumer"
+    assert exc_info.value.service_name == "fake"
+    assert token.is_cancelled is True
+    assert service.mark_exhausted_calls == []
     assert session.written_files == [
         ("Return the final answer only.", "/tmp/.pycastle_prompt")
     ]
