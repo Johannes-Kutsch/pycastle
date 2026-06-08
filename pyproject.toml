@@ -77,6 +77,9 @@ pycastle = [
     "defaults/setup/cron-uninstall.sh",
     "defaults/setup/cron.sh",
 ]
+pycastle_agent_runtime = [
+    "py.typed",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
