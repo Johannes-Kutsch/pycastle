@@ -5,6 +5,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from .._universal_image_build import UniversalImageBuildRequest
 from ..errors import DockerBuildError, DockerServiceError
 from ._docker_build_output import (
     BuildOutcome,
@@ -179,3 +180,29 @@ class DockerService:
             raise DockerBuildError(f"docker build failed (exit {returncode})")
 
         return interpreter.final_outcome
+
+
+class DockerServiceUniversalImageBuildAdapter:
+    def __init__(
+        self,
+        docker_service: DockerService,
+        *,
+        timeout: float | None = None,
+        on_rebuild_start: Callable[[], None] | None = None,
+    ) -> None:
+        self._docker_service = docker_service
+        self._timeout = timeout
+        self._on_rebuild_start = on_rebuild_start
+
+    def build(self, request: UniversalImageBuildRequest) -> BuildOutcome | None:
+        return self._docker_service.build_image(
+            request.image_tag,
+            request.dockerfile_path,
+            request.context_dir,
+            no_cache=request.options.no_cache,
+            python_version=request.options.python_version,
+            timeout=self._timeout,
+            stream=request.options.stream,
+            terse=request.options.terse,
+            on_rebuild_start=self._on_rebuild_start,
+        )
