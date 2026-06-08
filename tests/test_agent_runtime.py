@@ -2,7 +2,10 @@ import asyncio
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
+from typing import TypedDict
 from unittest.mock import MagicMock
+
+import pytest
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.config import Config
@@ -184,3 +187,140 @@ def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(
 
     assert result == "first turn\nsecond turn"
     assert service.tool_policies == [runtime.ToolPolicy.FULL]
+
+
+def test_runtime_package_owns_service_selection_contract() -> None:
+    import pycastle_agent_runtime as runtime
+
+    primary = _RecordingRuntimeService("codex")
+    fallback = _RecordingRuntimeService("claude")
+
+    def _unavailable(now: datetime | None = None) -> bool:
+        del now
+        return False
+
+    primary.is_available = _unavailable  # type: ignore[method-assign]
+    registry = runtime.ServiceRegistry({"codex": primary, "claude": fallback})
+    override = runtime.StageOverride(
+        service="missing",
+        model="ignored",
+        effort="medium",
+        fallback=runtime.StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+            fallback=runtime.StageOverride(
+                service="claude",
+                model="sonnet",
+                effort="high",
+            ),
+        ),
+    )
+
+    resolved = registry.resolve(override, datetime(2026, 1, 1))
+
+    assert runtime.ServiceRegistry.__module__.startswith("pycastle_agent_runtime")
+    assert resolved == runtime.StageOverride(
+        service="claude",
+        model="sonnet",
+        effort="high",
+    )
+
+
+class _ExpectedFallback(TypedDict):
+    service: str
+    model: str
+    effort: str
+
+
+class _ExpectedSelection(TypedDict):
+    service: str
+    model: str
+    effort: str
+    fallback: _ExpectedFallback | None
+
+
+@pytest.mark.parametrize(
+    ("available_service_names", "expected"),
+    [
+        (
+            ("codex", "claude"),
+            {
+                "service": "codex",
+                "model": "gpt-5.4",
+                "effort": "medium",
+                "fallback": {
+                    "service": "claude",
+                    "model": "sonnet",
+                    "effort": "high",
+                },
+            },
+        ),
+        (
+            ("claude",),
+            {
+                "service": "claude",
+                "model": "sonnet",
+                "effort": "high",
+                "fallback": None,
+            },
+        ),
+        (
+            (),
+            {
+                "service": "codex",
+                "model": "gpt-5.4",
+                "effort": "medium",
+                "fallback": {
+                    "service": "claude",
+                    "model": "sonnet",
+                    "effort": "high",
+                },
+            },
+        ),
+    ],
+)
+def test_runtime_package_exports_stage_selection_contract(
+    available_service_names: tuple[str, ...],
+    expected: _ExpectedSelection,
+) -> None:
+    import pycastle_agent_runtime as runtime
+
+    override = runtime.StageOverride(
+        service="missing",
+        model="ignored",
+        effort="medium",
+        fallback=runtime.StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+            fallback=runtime.StageOverride(
+                service="claude",
+                model="sonnet",
+                effort="high",
+            ),
+        ),
+    )
+
+    selection = runtime.select_configured_candidate_chain(
+        override,
+        configured_service_names=("codex", "claude"),
+        available_service_names=available_service_names,
+    )
+
+    assert selection.has_configured_candidate is True
+    fallback = expected["fallback"]
+    assert selection.selected_chain == runtime.StageOverride(
+        service=str(expected["service"]),
+        model=str(expected["model"]),
+        effort=str(expected["effort"]),
+        fallback=(
+            None
+            if fallback is None
+            else runtime.StageOverride(
+                service=str(fallback["service"]),
+                model=str(fallback["model"]),
+                effort=str(fallback["effort"]),
+            )
+        ),
+    )

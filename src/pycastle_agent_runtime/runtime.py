@@ -8,7 +8,8 @@ from pycastle import _time as _time_module
 from pycastle.agents.runner import AgentRunner
 from pycastle.config.types import StageOverride
 from pycastle.services.flag_profiles import AgentToolPolicyGroup
-from pycastle.services.service_registry import ServiceRegistry
+
+from .service_registry import ServiceRegistry
 
 
 ToolPolicy = AgentToolPolicyGroup
