@@ -529,3 +529,33 @@ def test_resolve_planner_issue_intake_drops_non_ready_numbers_and_uses_prepared_
             "labels": ["behavior-slice"],
         }
     ]
+
+
+def test_resolve_planner_issue_intake_preserves_duplicate_planner_selections():
+    from pycastle.iteration.planning_issue_intake import (
+        PlanReady,
+        prepare_planning_issue_set,
+        resolve_planner_issue_intake,
+    )
+
+    cfg = Config()
+    ready_issue = {
+        "number": 11,
+        "title": "Canonical ready title",
+        "body": "Summary\n\n" + ("x" * 120),
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    prepared = prepare_planning_issue_set([ready_issue], cfg)
+    planner_output = PlanReady(
+        issues=[
+            {"number": 11, "title": "First selection"},
+            {"number": 11, "title": "Duplicate selection"},
+        ],
+        sha="plan-sha",
+    )
+
+    result = resolve_planner_issue_intake(planner_output, prepared)
+
+    assert [issue["number"] for issue in result.issues] == [11, 11]
+    assert result.issues[0] == result.issues[1]
