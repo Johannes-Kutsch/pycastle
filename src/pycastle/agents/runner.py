@@ -27,7 +27,7 @@ from ..errors import (
 )
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session import RunKind
-from .session_dispatch import SessionDispatchRequest, prepare_agent_session
+from ..session import RunSessionRequest, prepare_run_session
 from ..session.agent import RunSessionPlan
 from ..services import GitService
 from ..services.agent_service import AgentService
@@ -216,9 +216,9 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError(reset_time=None, stage_key=_stage_key_for_role(role))
 
-        prepared_session = prepare_agent_session(
-            SessionDispatchRequest(
-                mount_path=mount_path,
+        prepared_session = prepare_run_session(
+            RunSessionRequest(
+                worktree=mount_path,
                 role=role,
                 session_namespace=session_namespace,
                 service=resolved_service,
@@ -350,9 +350,9 @@ class AgentRunner:
         if _token.is_cancelled:
             raise UsageLimitError(reset_time=None, stage_key=_stage_key_for_role(role))
 
-        prepared_session = prepare_agent_session(
-            SessionDispatchRequest(
-                mount_path=mount_path,
+        prepared_session = prepare_run_session(
+            RunSessionRequest(
+                worktree=mount_path,
                 role=role,
                 session_namespace=request.session_namespace,
                 service=service,
