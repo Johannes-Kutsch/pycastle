@@ -989,6 +989,78 @@ def test_runtime_package_run_prompt_hard_failure_cancels_token_annotates_context
     )
 
 
+def test_runtime_package_run_prompt_hard_failure_reports_resolved_fallback_service_name(
+    tmp_path: Path,
+):
+    import pycastle_agent_runtime as runtime
+
+    token = CancellationToken()
+    primary = _RecordingRuntimeService("codex")
+
+    def _unavailable(now: datetime | None = None) -> bool:
+        del now
+        return False
+
+    primary.is_available = _unavailable  # type: ignore[method-assign]
+    fallback = _HardRuntimeService(
+        "claude",
+        ProviderSessionState(RunKind.RESUME, "provider-resume"),
+        observed_provider_session_id="provider-runtime",
+        status_code=403,
+    )
+    runner = runtime.AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client([]),
+        service_registry={"codex": primary, "claude": fallback},
+    )
+    registry = runtime.ServiceRegistry({"codex": primary, "claude": fallback})
+    request = runtime.PromptRunRequest(
+        name="Runtime Consumer",
+        mount_path=tmp_path,
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="missing",
+            model="ignored",
+            effort="medium",
+            fallback=runtime.StageOverride(
+                service="codex",
+                model="gpt-5.4",
+                effort="medium",
+                fallback=runtime.StageOverride(
+                    service="claude",
+                    model="sonnet",
+                    effort="high",
+                ),
+            ),
+        ),
+        token=token,
+        session_namespace="main",
+    )
+
+    with pytest.raises(HardAgentError) as exc_info:
+        asyncio.run(
+            runtime.run_prompt(
+                runner=runner, service_registry=registry, request=request
+            )
+        )
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.caller == "Runtime Consumer"
+    assert exc_info.value.service_name == "claude"
+    assert token.is_cancelled is True
+    assert fallback.mark_exhausted_calls == []
+    assert (
+        RoleSession(
+            tmp_path,
+            AgentRole.IMPLEMENTER,
+            "main",
+        ).service_session_metadata("claude")
+        is None
+    )
+
+
 class _ExpectedFallback(TypedDict):
     service: str
     model: str
