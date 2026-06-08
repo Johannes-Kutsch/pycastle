@@ -12,6 +12,7 @@ from .provider_session_state import ProviderSessionState, ProviderSessionStateRe
 
 if TYPE_CHECKING:
     from ..session.resume import RunKind
+    from .flag_profiles import AgentToolPolicyGroup
 
 
 @dataclasses.dataclass
@@ -97,6 +98,8 @@ class AgentService(Protocol):
         effort: str,
         run_kind: RunKind,
         session_uuid: str | None,
+        *,
+        tool_policy: AgentToolPolicyGroup | None = None,
     ) -> str: ...
 
     def build_env(

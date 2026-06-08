@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.config import Config
 from pycastle.services import GitService
-from pycastle.services.agent_service import ParsedTurn, Result
+from pycastle.services.agent_service import AssistantTurn, ParsedTurn, Result
 from pycastle.services.provider_session_state import (
     ProviderSessionState,
     ProviderSessionStateRequest,
@@ -43,8 +43,9 @@ def _make_docker_client(chunks: list[bytes]) -> MagicMock:
 
 
 class _RecordingRuntimeService:
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, events: Iterable[ParsedTurn] | None = None) -> None:
         self.name = name
+        self._events = tuple(events or (Result(text="runtime result"),))
         self.tool_policies: list[object] = []
 
     def build_command(
@@ -76,7 +77,7 @@ class _RecordingRuntimeService:
     ) -> Iterator[ParsedTurn]:
         del on_provider_session_id
         list(lines)
-        yield Result(text="runtime result")
+        yield from self._events
 
     def is_available(self, now: datetime | None = None) -> bool:
         del now
@@ -145,3 +146,41 @@ def test_runtime_package_runs_prompt_contract_and_returns_llm_output(tmp_path: P
 
     assert result == "runtime result"
     assert service.tool_policies == [runtime.ToolPolicy.PARTIAL]
+
+
+def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(
+    tmp_path: Path,
+):
+    import pycastle_agent_runtime as runtime
+
+    service = _RecordingRuntimeService(
+        "codex",
+        events=(
+            AssistantTurn(text="first turn"),
+            AssistantTurn(text="second turn"),
+        ),
+    )
+    runner = runtime.AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client([]),
+        service_registry={"codex": service},
+    )
+    registry = runtime.ServiceRegistry({"codex": service})
+    request = runtime.PromptRunRequest(
+        mount_path=tmp_path,
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+    )
+
+    result = asyncio.run(
+        runtime.run_prompt(runner=runner, service_registry=registry, request=request)
+    )
+
+    assert result == "first turn\nsecond turn"
+    assert service.tool_policies == [runtime.ToolPolicy.FULL]

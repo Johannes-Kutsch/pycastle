@@ -426,7 +426,10 @@ class _RecordingAgentService:
         effort: str,
         run_kind: RunKind,
         session_uuid: str | None,
+        *,
+        tool_policy=None,
     ) -> str:
+        del role, model, effort, run_kind, session_uuid, tool_policy
         command = f"{self.name} exec"
         self.commands.append(command)
         return command
