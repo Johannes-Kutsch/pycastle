@@ -21,6 +21,7 @@ from tests.support import (
 from pycastle.iteration.planning_issue_intake import (
     PlanReady,
     hydrate_planned_issues,
+    prepare_planning_issue_set,
 )
 from pycastle.iteration.planning import (
     AllBlocked,
@@ -107,6 +108,40 @@ def test_planning_phase_single_issue_skip_uses_prepared_issue_body(tmp_path, git
 
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     result = asyncio.run(planning_phase(deps, [issue], []))
+
+    assert isinstance(result, PlanReady)
+    assert result.issues == [
+        {
+            "number": 5,
+            "title": "Solo",
+            "body": "Summary\n\n" + ("x" * 120),
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
+
+
+def test_planning_phase_single_issue_skip_uses_supplied_planning_issue_intake_result(
+    tmp_path, git_svc
+):
+    issue = {
+        "number": 5,
+        "title": "Solo",
+        "body": "Summary\n\nBlocked by #99\n\n" + ("x" * 120),
+        "comments": None,
+        "labels": ["behavior-slice"],
+    }
+    fake = FakeAgentRunner([])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+
+    result = asyncio.run(
+        planning_phase(
+            deps,
+            [issue],
+            [],
+            prepared_issue_set=prepare_planning_issue_set([issue], deps.cfg),
+        )
+    )
 
     assert isinstance(result, PlanReady)
     assert result.issues == [
@@ -929,6 +964,45 @@ def test_planning_phase_adds_label_and_comment_for_malformed_without_flag(
     comment_body = github_svc.post_comment.call_args[0][1]
     assert "ready-for-agent" in comment_body
     assert "none" in comment_body
+
+
+def test_planning_phase_applies_supplied_planning_issue_intake_label_sync_actions(
+    tmp_path, git_svc
+):
+    from unittest.mock import MagicMock
+    from pycastle.services.github_service import GithubService
+
+    well = {
+        "number": 1,
+        "title": "A",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    malformed = {
+        "number": 2,
+        "title": "B",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
+    fake = FakeAgentRunner([_plan_output([well])])
+    github_svc = MagicMock(spec=GithubService)
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    prepared_issue_set = prepare_planning_issue_set([well, malformed], deps.cfg)
+
+    asyncio.run(
+        planning_phase(
+            deps,
+            [well, malformed],
+            [],
+            prepared_issue_set=prepared_issue_set,
+        )
+    )
+
+    github_svc.add_label_to_issue.assert_called_once_with(2, "needs-slice-type")
+    github_svc.post_comment.assert_called_once()
+    github_svc.remove_label_from_issue.assert_not_called()
 
 
 def test_planning_phase_removes_stale_flag_from_well_formed_issue(tmp_path, git_svc):
